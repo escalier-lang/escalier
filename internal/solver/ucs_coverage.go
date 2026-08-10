@@ -7,52 +7,44 @@ import (
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 )
 
-// The interim coverage check, read off the UCS normalized form.
+// The interim coverage check, read off the UCS normalized form: the tag tests over the root
+// scrutinee, and the default tail a value reaches when none of them matched. The predicates
+// stay here rather than moving into `ucs`, since union exactness, an open structural tail,
+// and which member a tag covers are all facts about a soltype.
 //
-// A conditional form is exhaustive when no value of its scrutinee falls through every arm.
-// What the decision reads is the split structure the IR already carries: the tag tests over
-// the root scrutinee, and the default tail a value reaches when none of those tests matched.
-// The predicates it rests on stay here rather than moving into `ucs`, because each one reads
-// a soltype. Whether a union is exact, whether an object or tuple carries an open tail, and
-// which union member a tag test covers are all facts about the type.
-//
-// The rules are the interim ones M4 and M6 settled on. An inexact scrutinee takes a
-// catch-all, an exact union is covered once every member has a covering branch, and an arm
-// that can fail its guard covers nothing on its own. Phase 2 (#883) replaces all three with
-// `residual = scrutinee ∧ ¬covered ; exhaustive iff residual <: ⊥`, and this file is the
-// seam it replaces.
+// The rules are M4's and M6's. An inexact scrutinee takes a catch-all, an exact union is
+// covered once every member has a covering branch, and an arm that can fail its guard covers
+// nothing on its own. Phase 2 (#883) replaces all three with
+// `residual = scrutinee ∧ ¬covered ; exhaustive iff residual <: ⊥`.
 
 // coverage is what the check reads off one normalized form.
 type coverage struct {
 	// catchAll reports whether a value failing every tag test at the root still reaches an
-	// arm body. It is the IR's reading of an unguarded catch-all arm, which normalization
-	// moves out of the branches and into the split's default tail.
+	// arm body. It is the IR's reading of an unguarded catch-all arm.
 	catchAll bool
-	// tags holds the tag test of every branch over the root scrutinee that covers what it
-	// tests, meaning every path below the branch reaches an arm body. A union member is
-	// covered when one of these tests names it.
+	// tags holds the tag test of every branch that covers what it tests. A union member is
+	// covered when one of these names it.
 	tags []ucs.Test
 }
 
-// coverageWalk reads the coverage of one normalized form. root is the scrutinee the form's
-// top-level split tests, which is what tells a test of the whole value apart from a test of
-// a projection out of it.
+// coverageWalk reads the coverage of one normalized form. root is the scrutinee the
+// top-level split tests, which tells a test of the whole value apart from one of a projection
+// out of it.
 type coverageWalk struct {
 	root *ucs.Scrutinee
 	tags []ucs.Test
-	// matched memoizes alwaysMatches per term, since a tail several branches fall into is
-	// asked about once per branch.
+	// matched memoizes alwaysMatches, since a tail is asked about once per branch falling
+	// into it.
 	matched map[ucs.Norm]bool
-	// seen holds every term collect has read, so a term two edges reach is read once.
+	// seen bounds the walk to one visit per term.
 	seen set.Set[ucs.Norm]
 }
 
-// readCoverage collects what the arms of the form rooted at split cover.
-//
-// More than the top-level split is read. A guarded arm whose pattern makes no test takes the
-// whole split's tail, so the arms after it are branches of a split inside that tail and of no
-// other. `match v { _ if g => 0, {x} => 1, {y} => 2 }` is one such form, and reading its
-// top-level split alone would find no covering branch at all.
+// readCoverage collects what the arms of the form rooted at split cover. More than the
+// top-level split is read: a guarded arm whose pattern makes no test takes the whole split's
+// tail, so the arms after it are branches of a split inside that tail and of no other.
+// Reading the top-level split of `match v { _ if g => 0, {x} => 1, {y} => 2 }` alone would
+// find no covering branch at all.
 func readCoverage(split *ucs.NormSplit) coverage {
 	w := &coverageWalk{
 		root:    split.Scrutinee,
@@ -65,22 +57,18 @@ func readCoverage(split *ucs.NormSplit) coverage {
 	return coverage{catchAll: catchAll, tags: w.tags}
 }
 
-// collect records the covering tag tests every value of the scrutinee is offered. It walks
-// the terms such a value reaches before it has passed a tag test, following default tails
-// down from the top-level split.
+// collect records the covering tags every value of the scrutinee is offered, following
+// default tails down from the top-level split.
 //
-// A branch's continuation is left out, and that is what keeps the credit sound. Normalization
-// copies the arms below a branch into its fallthrough, specialized against the tag that
-// branch tested, so a covering branch inside one is offered only to values that already
-// passed that tag. `match v { {a} if g => 0, {b} if g => 1, {a} => 2 }` puts a covering `{b}`
-// branch inside the `{a}` branch's fallthrough. A `{b: string}` value never reaches it. It
-// takes the top-level `{b}` branch, whose guard falls into a tail that covers nothing, so the
-// form is not exhaustive.
+// Leaving out a branch's continuation is what keeps the credit sound. Normalization copies
+// the arms below a branch into its fallthrough, specialized against the tag that branch
+// tested, so a covering branch inside one is offered only to values that already passed that
+// tag. `match v { {a} if g => 0, {b} if g => 1, {a} => 2 }` puts a covering `{b}` branch
+// inside the `{a}` branch's fallthrough, which no `{b: string}` value reaches.
 //
 // A guard's failure continuation stays on the walk. Whether a condition holds is no fact
 // about the value's tag, so a value reaching the guard reaches that continuation with nothing
-// yet passed. Its success continuation is left out along with every other branch, since it
-// runs the arm's own body rather than offering a test to anything else.
+// yet passed.
 func (w *coverageWalk) collect(term ucs.Norm) {
 	for term != nil && !w.seen.Contains(term) {
 		w.seen.Add(term)
@@ -99,8 +87,8 @@ func (w *coverageWalk) collect(term ucs.Norm) {
 }
 
 // creditBranches records the tag of every branch of split that covers what it tests. A split
-// over a projection tests a value reached through the scrutinee rather than the scrutinee
-// itself, so its tags say nothing about which of the scrutinee's own values are covered.
+// over a projection tests a value reached through the scrutinee, so its tags say nothing
+// about which of the scrutinee's own values are covered.
 func (w *coverageWalk) creditBranches(split *ucs.NormSplit) {
 	if split.Scrutinee != w.root {
 		return
@@ -113,19 +101,15 @@ func (w *coverageWalk) creditBranches(split *ucs.NormSplit) {
 }
 
 // alwaysMatches reports whether control reaching term reaches an arm body however the tests
-// below it turn out. A branch whose continuation always matches covers the tag it tested,
-// and a default tail that always matches covers everything the branches left.
+// below it turn out.
 //
-// This is where the guard rule lives. A guard sends a false condition to its own failure
-// continuation, so a branch holding one covers its tag only when that continuation reaches
-// a body too. A lone `{x} if b => x` does not, which is what makes a guarded arm cover
-// nothing.
+// This is where the guard rule lives. A false condition goes to the guard's own failure
+// continuation, so a branch holding a guard covers its tag only when that continuation
+// reaches a body too. A lone `{x} if b => x` does not.
 //
 // A bind names a value and tests nothing, so it matches whenever what runs below it does.
-// That covers the identifier arm of `match p { other => 1 }`, and it covers a bare `...rest`
-// arm too, which normalization keeps whole as a nameless bind rather than flattening into a
-// split. Such an arm binds every value, so a coverage error would ask for a catch-all the
-// arm already is, on top of the unsupported-pattern error the pass that binds it reports.
+// That covers the `other` of `match p { other => 1 }`, and a bare `...rest` arm too, which
+// binds every value. Such an arm is already reported unsupported by the pass that binds it.
 func (w *coverageWalk) alwaysMatches(term ucs.Norm) bool {
 	if term == nil {
 		return false
@@ -133,9 +117,8 @@ func (w *coverageWalk) alwaysMatches(term ucs.Norm) bool {
 	if got, asked := w.matched[term]; asked {
 		return got
 	}
-	// Seed the memo before recursing. The normalized form is a tree of shared subterms with
-	// no cycle, so no caller reads the seed. It bounds the recursion should a later rewrite
-	// introduce one.
+	// Seed the memo before recursing. The form has no cycle, so no caller reads the seed. It
+	// bounds the recursion should a later rewrite introduce one.
 	w.matched[term] = false
 	got := false
 	switch n := term.(type) {
@@ -148,26 +131,24 @@ func (w *coverageWalk) alwaysMatches(term ucs.Norm) bool {
 	case *ucs.NormSplit:
 		got = w.splitAlwaysMatches(n)
 	case *ucs.EscapeLeaf, *ucs.FallbackLeaf:
-		// The two leaves of a `val pat = init else { … }`. The fallback runs precisely when
-		// the pattern failed, so counting it as a body would make every such declaration
-		// cover its scrutinee. The escape leaf ends the success path and carries no body at
-		// all. Neither is an arm a coverage question is asked about, and `ucs.DesugarMatch`
-		// mints neither.
+		// The two leaves of a `val pat = init else { … }`. Its fallback runs precisely when the
+		// pattern failed, so counting it as a body would make every such declaration cover its
+		// scrutinee, and its escape leaf carries no body at all. `ucs.DesugarMatch` mints
+		// neither.
 	}
 	w.matched[term] = got
 	return got
 }
 
 // splitAlwaysMatches reports whether control reaching a split reaches an arm body. A value
-// either passes one branch's test and continues below it, or fails every test and continues
-// into the tail, so the split matches when all of those continuations do.
+// passes one branch's test and continues below it or fails every test and continues into the
+// tail, so the split matches when all of those continuations do.
 //
-// A split over a projection gets a second reading. `{a: {b}}` tests `{a}` on the scrutinee
-// and then `{b}` on the projection `p.a`. The interim rules read a structural sub-pattern as
-// irrefutable, so such a split matches whenever the continuation under its test does. A
-// projected literal, class, or extractor test is refutable and gets no such reading. Neither
-// does a test of the root scrutinee. Whether a structural test covers the whole value
-// depends on the scrutinee's exactness, which checkCondExhaustive decides from the type.
+// A split over a projection gets a second reading, since the interim rules read a structural
+// sub-pattern as irrefutable: `{a: {b}}` tests `{a}` on the scrutinee and then `{b}` on the
+// projection `p.a`, and the second test is taken to hold. A projected literal, class, or
+// extractor test is refutable and gets no such reading. Neither does a test of the root
+// scrutinee, whose coverage depends on the exactness checkCondExhaustive reads off the type.
 func (w *coverageWalk) splitAlwaysMatches(split *ucs.NormSplit) bool {
 	if w.alwaysMatches(split.Default) && w.branchesAlwaysMatch(split) {
 		return true
@@ -190,13 +171,10 @@ func (w *coverageWalk) branchesAlwaysMatch(split *ucs.NormSplit) bool {
 	return true
 }
 
-// checkCondExhaustive reports a NonExhaustiveMatchError when the arms of one conditional
-// form leave a value of its scrutinee uncovered. norm is the form's normalized IR, and
-// shape the scrutinee snapshot taken before any arm bound, which is what the union members
-// and the structural exactness are read off.
-//
-// The message names the construct the top-level split lowered from rather than assuming a
-// `match`, so the wording follows the surface form the user wrote.
+// checkCondExhaustive reports a NonExhaustiveMatchError when the arms of one conditional form
+// leave a value of its scrutinee uncovered. shape is the scrutinee snapshot taken before any
+// arm bound, which the union members and the structural exactness are read off. The message
+// names the construct the top-level split lowered from rather than assuming a `match`.
 func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype.Type) {
 	split, isSplit := norm.(*ucs.NormSplit)
 	if !isSplit {
@@ -207,9 +185,9 @@ func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype
 		return
 	}
 	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
-	// alias rather than the type it stands for. Expand it to that type before dispatching, the
-	// same unfold constrain performs, so `match c { Color.RGB(..) => .., Color.Hex(..) => .. }`
-	// over `val c: Color` covers the variant union without a default arm.
+	// alias rather than the type it stands for. Expanding it first, the same unfold constrain
+	// performs, is what lets `match c { Color.RGB(..) => .., Color.Hex(..) => .. }` over
+	// `val c: Color` cover the variant union without a default arm.
 	carrier := c.expandAliasChain(soltype.CarrierOf(shape))
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		if !c.unionTagsExhaustive(scope, u, cov.tags) {
@@ -229,9 +207,9 @@ func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype
 	c.report(&NonExhaustiveMatchError{Origin: split.Origin})
 }
 
-// unionTagsExhaustive reports whether the covering tag tests cover a union scrutinee. An
-// inexact union carries an open tail no tag names, so it takes a catch-all, which the caller
-// has already ruled out. An exact one is covered when every member is.
+// unionTagsExhaustive reports whether the covering tags cover a union scrutinee. An inexact
+// union carries an open tail no tag names, so it takes the catch-all the caller has already
+// ruled out. An exact one is covered when every member is.
 func (c *checker) unionTagsExhaustive(scope *Scope, u *soltype.UnionType, tags []ucs.Test) bool {
 	if u.Inexact {
 		return false
@@ -244,11 +222,9 @@ func (c *checker) unionTagsExhaustive(scope *Scope, u *soltype.UnionType, tags [
 	return true
 }
 
-// memberTagged reports whether some covering tag test names a single union member,
-// dispatching on the member's kind. A literal member needs an equal literal test, a `null`
-// or `undefined` member a test on that same word, a nominal member a class or extractor test
-// naming its class, and a structural object or tuple member a test of its shape. Any other
-// member kind has no tag short of a catch-all, which the caller has already ruled out.
+// memberTagged reports whether some covering tag names a single union member, dispatching on
+// the member's kind. Any kind with no arm below has no tag short of a catch-all, which the
+// caller has already ruled out.
 func (c *checker) memberTagged(scope *Scope, member soltype.Type, tags []ucs.Test) bool {
 	switch m := member.(type) {
 	case *soltype.LitType:
@@ -264,8 +240,7 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, tags []ucs.Tes
 	}
 }
 
-// litTagged reports whether some covering test is a literal equal to the given literal
-// member.
+// litTagged reports whether some covering test is a literal equal to the literal member.
 func (c *checker) litTagged(member *soltype.LitType, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		lit, isLit := tag.(*ucs.LitTest)
@@ -279,9 +254,8 @@ func (c *checker) litTagged(member *soltype.LitType, tags []ucs.Test) bool {
 	return false
 }
 
-// atomTagged reports whether some covering test names the given member, which is the `null`
-// or the `undefined` atom. It is the atom twin of litTagged, and equalType decides the match
-// since neither atom carries a value to compare.
+// atomTagged is the twin of litTagged for a `null` or `undefined` member. Neither atom
+// carries a value to compare, so equalType decides the match.
 func atomTagged(member soltype.Type, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		lit, isLit := tag.(*ucs.LitTest)
@@ -295,11 +269,9 @@ func atomTagged(member soltype.Type, tags []ucs.Test) bool {
 	return false
 }
 
-// nominalTagged reports whether some covering test names the member's class. An instance
-// pattern lowers to a class test and an extractor pattern to an extractor test, and each
-// resolves its name through the type sort so `Color.RGB` covers the `Color.RGB` variant.
-// Whether the values under the tag are bound irrefutably is already settled: a refutable
-// sub-pattern becomes a split of its own, which leaves the branch out of the covering tags.
+// nominalTagged reports whether some covering test names the member's class, resolving the
+// test's name through the type sort so `Color.RGB` covers the `Color.RGB` variant. An
+// instance pattern lowers to a class test and an extractor pattern to an extractor test.
 func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		switch t := tag.(type) {
@@ -318,8 +290,8 @@ func (c *checker) nominalTagged(scope *Scope, member *soltype.ClassType, tags []
 	return false
 }
 
-// structuralTagged reports whether some covering test is an object or tuple shape the member
-// carries, which is what lets the branch under that test destructure the member.
+// structuralTagged reports whether some covering test is a shape the member carries, which is
+// what lets the branch under that test destructure it.
 func structuralTagged(member soltype.Type, tags []ucs.Test) bool {
 	for _, tag := range tags {
 		if testMatchesMemberShape(tag, member) {
@@ -340,9 +312,8 @@ func hasStructuralTag(tags []ucs.Test) bool {
 	return false
 }
 
-// structuralTest reports whether a tag test names an object or tuple shape. Those are the
-// two tests a value of a structural type can pass, and the two the interim semantics read
-// as irrefutable below the level they test.
+// structuralTest reports whether a tag names an object or tuple shape. Those are the two the
+// interim rules read as irrefutable below the level they test.
 func structuralTest(test ucs.Test) bool {
 	switch test.(type) {
 	case *ucs.ObjectTest, *ucs.TupleTest:
