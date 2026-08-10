@@ -175,6 +175,10 @@ func (w *coverageWalk) branchesAlwaysMatch(split *ucs.NormSplit) bool {
 // leave a value of its scrutinee uncovered. shape is the scrutinee snapshot taken before any
 // arm bound, which the union members and the structural exactness are read off. The message
 // names the construct the top-level split lowered from rather than assuming a `match`.
+//
+// The inexact rule below is conservative, which is #1077. An object tag matches a value
+// carrying extra fields, and a rest-relaxed tuple tag matches a longer one, so both cover an
+// inexact scrutinee that this asks a catch-all for.
 func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype.Type) {
 	split, isSplit := norm.(*ucs.NormSplit)
 	if !isSplit {
