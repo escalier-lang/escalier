@@ -3039,23 +3039,10 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, IfValBranch)
 	core := ucs.DesugarIfVal(e)
-	norm := ucs.Normalize(core)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `if val x = f() { … }` runs its call once.
-	start := condState{scope: scope, binder: c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)}
-	w := newCondWalk(c, lvl, e, res, norm)
-	// Nothing has been tested at the top of the form, so the state the walk runs in, the
-	// state its fallthrough returns to, and the binder that fallthrough inherits are all
-	// the state the `if val` itself started from.
-	w.walkNorm(start, start, start.binder, norm)
-	// A pattern that tests nothing always binds, so normalization drops the `else` as a
-	// path nothing reaches and the walk never types it. `if val x = u { … } else { … }` is
-	// such a form. Type it anyway, in the scope it would have run in, so a fault inside it
-	// is still reported and its value still joins the result. Reporting the `else` itself
-	// as dead is left to the coverage work, which decides reachability off this same form.
-	if alt, ok := core.Else.(*ucs.BodyLeaf); ok && !w.seen.Contains(alt) {
-		w.walkBody(start, alt)
-	}
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)
+	w := c.walkCond(scope, lvl, e, core, binder, res)
 	// The two halves join into one value, so they have to agree on ownership, exactly as
 	// inferIfElse's do. A diverging half produces no value and is left out of the check.
 	c.checkUniformOwnership(e, w.bodies)
@@ -3163,7 +3150,6 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 		root, bound = res, res
 	}
 
-	norm := ucs.Normalize(core)
 	// The binder is seeded with the type above, so the walk never re-infers the initializer
 	// and a side-effecting one such as `val x = f() else { … }` runs its call once. Marking
 	// it joined is what keeps the fallback checked against the pattern, since no tag test
@@ -3173,16 +3159,7 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	binder.joined = joins
 	// A `val … else` holds no arm body, so the walk joins nothing and takes no branch-join
 	// var.
-	start := condState{scope: scope, binder: binder}
-	w := newCondWalk(c, lvl, d, nil, norm)
-	w.walkNorm(start, start, start.binder, norm)
-	// A pattern that tests nothing always binds, so normalization drops the `else` as a
-	// path nothing reaches. `val n = u else { 0 }` is such a declaration. Type it anyway,
-	// in the scope it would have run in, for the reason inferIfVal types its dropped
-	// alternate.
-	if leaf, isFallback := core.Else.(*ucs.FallbackLeaf); isFallback && !w.seen.Contains(leaf) {
-		w.walkFallback(start, leaf)
-	}
+	w := c.walkCond(scope, lvl, d, core, binder, nil)
 	if w.narrowed != nil {
 		// A narrowed identifier pins the binding, so the fallback has to fit the annotated
 		// type rather than the initializer's.
@@ -3218,15 +3195,10 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, MatchBranch)
 	core := ucs.DesugarMatch(e)
-	norm := ucs.Normalize(core)
 	// The binder is seeded with the type inferred above, so the walk never re-infers the
 	// target and a side-effecting one such as `match f() { … }` runs its call once.
-	start := condState{scope: scope, binder: c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)}
-	w := newCondWalk(c, lvl, e, res, norm)
-	// No test has matched at the top of a `match`, so the walk starts with nothing
-	// refined: the state it runs in, the state a fallthrough returns to, and the binder a
-	// fallthrough inherits are all the state the `match` itself started from.
-	w.walkNorm(start, start, start.binder, norm)
+	binder := c.newPathBinder(lvl, e, core.Scrutinee, scrutinee)
+	w := c.walkCond(scope, lvl, e, core, binder, res)
 	// An arm below an unguarded catch-all can never run, so normalization leaves it out of
 	// the split and the walk never reaches it. Report each one, then type it anyway through
 	// the same per-arm path a `try`'s catch clauses take, so a fault inside dead code is

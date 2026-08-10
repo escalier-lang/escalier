@@ -103,6 +103,35 @@ func newCondWalk(c *checker, lvl int, node ast.Node, res soltype.Type, norm ucs.
 	}
 }
 
+// walkCond normalizes one desugared form and types it, returning the walk so the caller can
+// read what it collected. node is the construct a body's join is blamed on, binder resolves
+// the projections the form's paths name, and res the branch-join variable each body
+// constrains into. It is what every surface form's infer function calls once it has lowered
+// itself and inferred its scrutinee.
+//
+// Nothing has been tested at the top of a form, so the state the walk runs in, the state its
+// fallthrough returns to, and the binder that fallthrough inherits are all the state the
+// form itself started from.
+//
+// The `else` gets a second walk. A pattern that tests nothing always matches, so
+// normalization drops the `else` below it as a path nothing reaches, and the first walk
+// never sees it. `if val x = u { … } else { … }` and `val n = u else { … }` are the two such
+// forms. Typing it anyway is what keeps a fault inside it reported and its value joined.
+// walkNorm skips a term it has already typed, so the second call is a no-op for the `else`
+// of a refutable form, and a `match` names no `else` at all.
+func (c *checker) walkCond(
+	scope *Scope, lvl int, node ast.Node, core *ucs.CoreSplit, binder *pathBinder, res soltype.Type,
+) *condWalk {
+	norm := ucs.Normalize(core)
+	start := condState{scope: scope, binder: binder}
+	w := newCondWalk(c, lvl, node, res, norm)
+	w.walkNorm(start, start, start.binder, norm)
+	if dropped, isLeaf := core.Else.(ucs.Norm); isLeaf {
+		w.walkNorm(start, start, start.binder, dropped)
+	}
+	return w
+}
+
 // walkNorm types term. cur is the state term runs in, fall the state the whole form
 // started in, and matched fall's binder with the enclosing branch's tag test applied.
 func (w *condWalk) walkNorm(cur, fall condState, matched *pathBinder, term ucs.Norm) {
