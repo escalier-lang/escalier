@@ -417,9 +417,9 @@ func (b *pathBinder) narrowingAnn(s *ucs.Scrutinee) (ast.TypeAnn, bool) {
 
 // narrowUnion drops the union members the test cannot destructure, so a branch that
 // tests one variant binds against that variant alone rather than against the whole
-// union. It is narrowMatchArm read off the IR's tag test instead of off the source
-// pattern, and it keeps that function's rules so PR6 inherits variant-narrowing
-// unchanged.
+// union. It applies the same narrowing rule as narrowArmScrutinee, read off the IR's tag
+// test instead of off the source pattern, so a reachable arm and an arm typed outside the
+// walk agree on which members a branch keeps.
 func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 	if b.joined {
 		// The value the leaves read holds a half no test admitted, so no member can be
@@ -438,7 +438,7 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 	})
 	if !ok {
 		// Narrowing does not apply, so the scrutinee's own type stays the bind target. The
-		// borrow needs no rewrap the way narrowMatchArm's does, since it rides mode rather
+		// borrow needs no rewrap the way narrowArmScrutinee's does, since it rides mode rather
 		// than the type.
 		return v
 	}
@@ -451,7 +451,7 @@ func (b *pathBinder) narrowUnion(v scrutineeView, test ucs.Test) scrutineeView {
 // patternMatchesMemberShape read off the IR's test rather than off the source pattern. An
 // object test fits an object member carrying every key the test names, and a tuple test
 // fits a tuple member of its fixed arity, or of at least that arity under a trailing
-// rest. Every other test kind returns false, the same gate narrowMatchArm puts on object
+// rest. Every other test kind returns false, the same gate narrowArmScrutinee puts on object
 // and tuple patterns alone.
 func testMatchesMemberShape(test ucs.Test, member soltype.Type) bool {
 	switch t := test.(type) {

@@ -257,7 +257,7 @@ split p {                       split p {
   check is `checkCondExhaustive` in
   [internal/solver/ucs_coverage.go](../../internal/solver/ucs_coverage.go), and the
   typed predicates it and the arms below a catch-all lean on — `structuralInexact`,
-  `narrowMatchArm`, and `isCatchAll` — are in
+  `narrowArmScrutinee`, and `isCatchAll` — are in
   [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go).
 - **Reuse the shared pattern path.** Leaf binding keeps going through
   `bindPattern` / `bindPatternWith` in
@@ -594,7 +594,7 @@ pure-IR PRs land unwired.
   propagation — then bind through `bindPattern` / `bindPatternWith`. The `ucs`
   package supplies only the ast-level path; every type is computed here in
   `internal/solver`.
-- Reproduce `narrowMatchArm`'s union narrowing at the path level: a path into one
+- Reproduce `narrowArmScrutinee`'s union narrowing at the path level: a path into one
   union variant must resolve against only that variant's members, so PR6 inherits
   variant-narrowing with no regression.
 
@@ -675,18 +675,30 @@ carrier peels.
 
 Cleanup only, no behavior change.
 
-- Delete only the helpers PR8's coverage walk has made truly dead: `narrowMatchArm`
-  and the pattern-shape branches of `isCatchAll`. PR8 removed `unionMatchExhaustive`
-  and `armCoversShape` along with the arm-walking check that called them, and its
-  own carrier dispatch still calls `structuralInexact`.
-- Do not move these into the `ucs` package. They inspect `soltype` — exact-union
-  membership, inexact-scrutinee shape, guarded-arm coverage — and `ucs` is ast-only,
-  so it cannot host type-dependent logic. Their replacement is the typed coverage
-  adapter PR8 already puts in `internal/solver`. If any predicate is still reachable
-  after PR8, it stays solver-side; nothing type-dependent folds into `ucs`.
+PR8 already deleted `unionMatchExhaustive` and `armCoversShape` along with the
+arm-walking check that called them, so no helper is left to remove. What PR9 ships
+instead is the rename of `narrowMatchArm` to `narrowArmScrutinee` and two tests
+pinning the narrowing that keeps it alive. The rest of the ad-hoc helpers stay,
+each for a reason:
 
-**Tests.** `go test ./...` unchanged; this PR removes code with no reachable
-callers after PR7 and PR8.
+- `structuralInexact` is live. `checkCondExhaustive` calls it to read the
+  exactness of an object or tuple carrier.
+- `isCatchAll` is `ast.IsCatchAllPat`, and it already tests only a wildcard and an
+  identifier. There are no pattern-shape branches to strip.
+- `narrowArmScrutinee` is live, under that name because it no longer narrows a
+  reachable `match` arm. `inferMatchArms` calls it for the arms of a `try`'s catch
+  clause and for the unreachable arms below a catch-all, neither of which the walk
+  types. Dropping the call adds a redundant diagnostic where an arm's tuple pattern
+  meets a union of tuples: `match p { _ => 0, [a, b] => a }` over
+  `[number, number] | [string]` gains `cannot constrain tuple of length 1 <: tuple
+  of length 2` on top of the unreachable-arm error. Retiring it takes routing catch
+  arms through the IR, which is its own change.
+- Nothing moves into the `ucs` package. These inspect `soltype` — exact-union
+  membership, inexact-scrutinee shape, guarded-arm coverage — and `ucs` is ast-only,
+  so it cannot host type-dependent logic. Every predicate that survives stays
+  solver-side, alongside the typed coverage adapter PR8 puts in `internal/solver`.
+
+**Tests.** `go test ./...` unchanged.
 
 ## Dependency graph and parallelism
 
@@ -784,7 +796,7 @@ with an ast-only dependency lets codegen import it later without a solver cycle.
   be the same projection `bindPattern` would compute through `CarrierOf` and the
   member-lookup path, or leaf types drift. Mitigate by having the IR walk call the
   existing projection rather than recomputing it.
-- **Union-variant narrowing.** `narrowMatchArm` currently drops the union members
+- **Union-variant narrowing.** `narrowArmScrutinee` currently drops the union members
   an arm cannot destructure. The normalized split must reproduce this so a
   one-variant arm does not bind against the whole union. Snapshot the normalized
   IR for a union scrutinee to lock the split boundaries.

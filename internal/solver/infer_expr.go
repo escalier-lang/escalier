@@ -3187,7 +3187,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	// lower bound, which would otherwise leak a phantom member into the coalesced union read
 	// after the walk. Both the coverage check and the arms below a catch-all read their union
 	// structure off this. The borrow stays on the snapshot rather than being peeled the way
-	// groundedCarrier peels one, since narrowMatchArm rewraps what it narrows and
+	// groundedCarrier peels one, since narrowArmScrutinee rewraps what it narrows and
 	// checkCondExhaustive reads its own carrier.
 	matchShape := scrutinee
 	if carrierIsVar(scrutinee) {
@@ -3241,20 +3241,22 @@ func (c *checker) reportUnreachableArms(arms []*ast.MatchCase, walked set.Set[uc
 	return unreachable
 }
 
-// inferMatchArms types each arm of a `match` or of a `try`'s catch clause, constrains every
-// non-diverging body into res, and returns those bodies for the caller's ownership check.
-// Each arm binds in a fresh child scope, so a name one arm binds is invisible to the next,
-// and node is blamed for each body's join. shape is the coalesced scrutinee narrowMatchArm
-// reads union members from. scrutinee is what an arm binds against when no narrowing
-// applies, so a var's identity and borrow survive there. inferMatch passes a snapshot and
-// the original, inferTryCatch one already-concrete type for both.
+// inferMatchArms types each arm of a `try`'s catch clause and each unreachable arm of a
+// `match`, constrains every non-diverging body into res, and returns those bodies for the
+// caller's ownership check. Each arm binds in a fresh child scope, so a name one arm binds is
+// invisible to the next, and node is blamed for each body's join. shape is the coalesced
+// scrutinee narrowArmScrutinee reads union members from. scrutinee is what an arm binds
+// against when no narrowing applies, so a var's identity and borrow survive there. inferMatch
+// passes a snapshot and the original, inferTryCatch one already-concrete type for both.
+//
+// The reachable arms of a `match` are typed by condWalk instead, off the normalized form.
 func (c *checker) inferMatchArms(
 	scope *Scope, lvl int, node ast.Node, arms []*ast.MatchCase, shape, scrutinee, res soltype.Type,
 ) []soltype.Type {
 	var bodies []soltype.Type
 	for _, arm := range arms {
 		armScope := scope.Child()
-		armScrut := narrowMatchArm(shape, scrutinee, arm.Pattern)
+		armScrut := narrowArmScrutinee(shape, scrutinee, arm.Pattern)
 		c.bindPattern(armScope, lvl, arm.Pattern, armScrut, nil)
 		if arm.Guard != nil {
 			// A guard is an ordinary boolean condition over the arm's bindings. As in
@@ -3594,15 +3596,21 @@ func tuplePatArity(p *ast.TuplePat) (fixed int, hasRest bool) {
 	return fixed, hasRest
 }
 
-// narrowMatchArm returns the type a match arm's pattern binds against. For a structural
-// object or tuple pattern over a union scrutinee, it keeps only the members whose shape the
-// pattern matches, so the pattern destructures those members and leaves the rest for other
-// arms. Narrowing is sound only in a refutable context such as a match arm. An irrefutable
-// binding must still require the pattern's fields on every member. Every other pattern, and
-// every non-union scrutinee, binds against the scrutinee unchanged. shape is the coalesced
-// scrutinee the union structure is read from. scrutinee is what a non-narrowing arm binds
-// against, so its var identity and borrow survive when no narrowing applies.
-func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
+// narrowArmScrutinee returns the type an arm's pattern binds against. inferMatchArms is its
+// only caller. For a structural object or tuple pattern over a union scrutinee, it keeps only
+// the members whose shape the pattern matches, so the pattern destructures those members and
+// leaves the rest for other arms. Narrowing is sound only in a refutable context such as an
+// arm of a `match` or of a `try`'s catch clause. An irrefutable binding must still require
+// the pattern's fields on every member. Every other pattern, and every non-union scrutinee,
+// binds against the scrutinee unchanged.
+//
+// shape is the coalesced scrutinee the union structure is read from. scrutinee is what a
+// non-narrowing arm binds against, so its var identity and borrow survive when no narrowing
+// applies.
+//
+// The reachable arms of a `match` narrow through condWalk instead, which reads the same rule
+// off the IR's tag tests rather than off the source pattern.
+func narrowArmScrutinee(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	switch pat.(type) {
 	case *ast.ObjectPat, *ast.TuplePat:
 	default:
@@ -3630,7 +3638,7 @@ func narrowMatchArm(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 // all of them, in which case the narrowed union would reproduce the original including an
 // inexact one's open tail.
 //
-// It is the narrowing rule itself, shared by narrowMatchArm and the UCS IR's structural
+// It is the narrowing rule itself, shared by narrowArmScrutinee and the UCS IR's structural
 // tests. shape must already be peeled of any borrow. Rewrapping is the caller's job,
 // because the IR carries the borrow in its binding mode rather than on the type.
 func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (soltype.Type, bool) {

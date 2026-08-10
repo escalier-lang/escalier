@@ -357,6 +357,23 @@ func TestInferMatchGuardedCatchAllLeavesLaterArmsReachable(t *testing.T) {
 	require.Equal(t, `fn (n: number, b: boolean) -> number | "one"`, values["f"])
 }
 
+// An unreachable arm is typed outside the walk, so narrowArmScrutinee rather than the IR's
+// tag test decides what its pattern binds against. `[a, b]` keeps only the member it can
+// destructure, narrowing the exact union to `[number, number]`, so the dead arm draws the
+// unreachable diagnostic alone. Binding it against the whole union would add a second message
+// naming the `[string]` member the pattern was never meant to match.
+func TestInferMatchUnreachableArmNarrowsItsScrutinee(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(p: [number, number] | [string]) {
+			return match p {
+				_ => 0,
+				[a, b] => a
+			}
+		}
+	`)
+	require.Equal(t, []string{unreachableArm(5, 5, 16)}, messagesWithSpan(errs))
+}
+
 // unreachableArm renders the unreachable-arm message prefixed by the span of the arm it
 // blames, which runs from startCol to endCol on line.
 func unreachableArm(line, startCol, endCol int) string {
