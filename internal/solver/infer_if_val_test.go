@@ -475,6 +475,53 @@ func TestInferValElseChecksTheFallbackAgainstALeafAnnotation(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["f"])
 }
 
+// A leaf's annotation fixes its type even where the scrutinee is a union of borrows, so the
+// fallback fits the annotation rather than widening the name beside it. Such a leaf is no
+// borrow itself. concreteLeaf drops the shape hint for an annotated leaf, and applyBindMode
+// wraps a leaf in a borrow only where that hint says the value is borrowable.
+//
+// The borrow union reports a lifetime diagnostic of its own. It belongs to the scrutinee
+// rather than to the join, and the same declaration with a diverging `else` reports it too.
+func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		wantErrs []string
+	}{
+		"FallbackFitsTheAnnotation": {
+			src: `fn f(p: &{x: number} | &{y: string}) {
+					val {x: v: number} = p else { {x: 5} }
+					return 0
+				}`,
+			wantErrs: []string{
+				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
+			},
+		},
+		"FallbackViolatesTheAnnotation": {
+			src: `fn f(p: &{x: number} | &{y: string}) {
+					val {x: v: number} = p else { {x: "s"} }
+					return 0
+				}`,
+			wantErrs: []string{
+				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
+				`2:40-2:43: cannot constrain "s" <: number`,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			module := parseModule(t, tt.src)
+			c := newChecker()
+			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
+			leaf := findIdentPat(module, "v")
+			require.NotNil(t, leaf)
+			// The name binds at the annotation on both paths, with no fallback member beside it.
+			require.Equal(t, "number", soltype.Print(coalesce(c.info.TypeOf(leaf), soltype.Positive)))
+		})
+	}
+}
+
 // An object `...rest` leaf reads its leftover members off the fallback's own shape, so the
 // members the pattern did not name survive the join. Both `p` and the fallback carry `z`
 // outside the keys `{x, ...rest}` names, so `rest` reads it from either source.

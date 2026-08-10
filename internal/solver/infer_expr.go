@@ -3292,11 +3292,18 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 // fallback has to fit it. `val {x::number} = p else { {x: "s"} }` reports the `"s"` rather
 // than widening `x` to `number | "s"`.
 //
-// A leaf of a BORROWED scrutinee is not one of the two. Such a leaf carries a lifetime, and
-// what it names is a place inside the initializer. The fallback is a fresh value that lives
-// nowhere in there, so it joins beside the borrow and the name binds a union. A write
-// through it is then rejected, which is the honest answer for a name that holds a borrow on
-// one path and a temporary on the other.
+// An UNANNOTATED leaf of a borrowed scrutinee is neither. It carries a lifetime, and what it
+// names is a place inside the initializer. The fallback is a fresh value living nowhere in
+// there, so it joins beside the borrow and the name binds a union. A write through that
+// union is rejected, which is the honest answer for a name holding a borrow on one path and
+// a temporary on the other.
+//
+// An ANNOTATED leaf of that same scrutinee is no borrow. concreteLeaf drops the shape hint
+// for every annotated leaf, and applyBindMode wraps a leaf only where that hint says the
+// value is borrowable. Such a leaf takes the annotation above, so its fallback fits the
+// annotation exactly as it would over an owned scrutinee. The one leaf the annotation branch
+// hands back a borrow for is one the annotation itself named a borrow type for, which the
+// fallback then has to fit.
 func leafFixedType(matched soltype.Type, node ast.Node) (soltype.Type, bool) {
 	if ref, isRef := matched.(*soltype.RefType); isRef && ref.Mut && ref.Lt == nil {
 		return ref.Inner, true
