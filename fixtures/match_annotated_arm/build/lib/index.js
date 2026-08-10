@@ -28,4 +28,15 @@ if (temp6.length == 2 && typeof temp6[0] === "number" && typeof temp6[1] === "st
   temp5 = b.length + a;
 }
 export const nestedLeafAnnotations = temp5;
+let temp7;
+let temp8;
+temp8 = litsOrStr;
+if (typeof temp8 === "number") {
+  const n = temp8;
+  temp7 = n;
+} else if (typeof temp8 === "string") {
+  const s = temp8;
+  temp7 = s.length;
+}
+export const widerThanAMember = temp7;
 //# sourceMappingURL=./index.js.map

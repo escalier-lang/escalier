@@ -3055,10 +3055,10 @@ func (c *checker) inferIfVal(scope *Scope, lvl int, e *ast.IfValExpr) soltype.Ty
 // parts of a refutable binding the IR does not model: the narrowing rule, the leaf's
 // VarID, and the caller's own scope.
 //
-// ann is the narrowing annotation the surface wrote. An `if val` writes it on the pattern
-// and a `val … else` on the declaration. The IR carries it on the branch's test and passes
-// it here, so neither caller has to know which node holds it. A bare identifier binds at
-// the member the annotation picks, through bindNarrowedIdent.
+// ann is the narrowing annotation the surface wrote. A `match` arm and an `if val` write it
+// on the pattern, and a `val … else` on the declaration. The IR carries it on the branch's
+// test and passes it here, so no caller has to know which node holds it. A bare identifier
+// binds at the part of the scrutinee the annotation admits, through bindNarrowedIdent.
 //
 // Any other pattern destructures through the shared structural path. Normalization mints
 // no annotation test over such a pattern, so that arm recovers from a lowering that pairs
@@ -3073,19 +3073,28 @@ func (c *checker) bindRefutable(
 	return scrutinee
 }
 
-// bindNarrowedIdent binds a single identifier at the type the narrowing annotation `ann`
-// resolves to, picked from the scrutinee by the union-super exists rule, and returns it.
-// It is the shared core of the refutable identifier-narrowing path. Both if-val and
-// val-else pass the annotation in directly, if-val from its pattern and val-else from
-// the decl, so the annotation never moves between AST nodes.
+// bindNarrowedIdent binds a single identifier at the part of the scrutinee the narrowing
+// annotation `ann` picks out, and returns it. It is the shared core of the refutable
+// identifier-narrowing path. All three refutable forms pass the annotation in directly, a
+// `match` arm and an `if val` from the pattern and a `val … else` from the decl, so the
+// annotation never moves between AST nodes.
 func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann ast.TypeAnn, scrutinee soltype.Type) soltype.Type {
 	narrowed, resolved := c.resolveTypeAnn(scope, ann, lvl)
-	if !resolved {
+	switch admitted, picks := c.admittedPart(scrutinee, narrowed); {
+	case !resolved:
 		// The annotation was unsupported and already reported. Bind the name to the
 		// whole scrutinee so the body still type-checks against a real type rather
 		// than cascading a second error off a `never` placeholder.
 		narrowed = scrutinee
-	} else {
+	case picks:
+		// The annotation admits part of the scrutinee, so the branch binds that part and
+		// the annotation itself constrains nothing.
+		narrowed = admitted
+	default:
+		// The annotation admits nothing the scrutinee holds. It may still name something
+		// narrower than a member, the `1` of `if val x: 1 = u` over a `number | string`, so
+		// the union-super exists rule decides. A `number` over a `string` fails it and is
+		// reported here.
 		c.constrain(ip, narrowed, scrutinee)
 	}
 	binding := ValueBinding{Schemes: []TypeScheme{monoScheme(narrowed)}}
@@ -3097,6 +3106,61 @@ func (c *checker) bindNarrowedIdent(scope *Scope, lvl int, ip *ast.IdentPat, ann
 	scope.defineValue(ip.Name, binding)
 	c.recordType(ip, narrowed)
 	return narrowed
+}
+
+// admittedPart returns the part of the scrutinee a narrowing annotation admits, and false
+// when the annotation admits none of it. A value takes the annotated branch when it fits the
+// annotation, so the part that fits is what the branch binds.
+//
+// A union is answered member by member. `x: number` over a `1 | 2 | string` admits `1` and
+// `2`, so the branch binds `1 | 2`. An annotation admitting every member keeps the scrutinee
+// whole, borrow and all, since the test is then irrefutable and narrows nothing. `x: number`
+// over a `1 | 2` is that case.
+//
+// Two shapes are left to the caller's fallback. An annotation naming something narrower than
+// every member admits no member, which is the `1` of `x: 1` over a `number | string`. An
+// unsolved scrutinee has no members to test at all, and trialling one would record a bound
+// the probe then rolls back.
+func (c *checker) admittedPart(scrutinee, ann soltype.Type) (soltype.Type, bool) {
+	if carrierIsVar(scrutinee) {
+		return nil, false
+	}
+	shape := soltype.CarrierOf(scrutinee)
+	u, isUnion := shape.(*soltype.UnionType)
+	if !isUnion {
+		if c.typeAdmits(ann, shape) {
+			return scrutinee, true
+		}
+		return nil, false
+	}
+	kept := make([]soltype.Type, 0, len(u.Types))
+	for _, member := range u.Types {
+		if c.typeAdmits(ann, member) {
+			kept = append(kept, member)
+		}
+	}
+	// An inexact union carries an open tail holding values no listed member describes, so the
+	// annotation admits no more of it than the members it admitted. The narrowed type keeps
+	// the tail and stays a union however few members survived, which is the rule
+	// narrowUnionMembers applies to a tag test's narrowing.
+	switch {
+	case len(kept) == 0:
+		return nil, false
+	case u.Inexact:
+		return &soltype.UnionType{Types: kept, Inexact: true}, true
+	case len(kept) == len(u.Types):
+		return scrutinee, true
+	case len(kept) == 1:
+		return kept[0], true
+	}
+	return &soltype.UnionType{Types: kept, Inexact: false}, true
+}
+
+// typeAdmits reports whether every value of t fits ann, which is the question the runtime
+// test of a narrowing annotation answers. The trial runs under its own probe and returns its
+// failures rather than reporting them, so a false answer leaves nothing behind.
+func (c *checker) typeAdmits(ann, t soltype.Type) bool {
+	return !hasHardError(c.ctx.trialUnderProbe(t, ann))
 }
 
 // inferValElse types a `val pat = init else { … }` binding off the UCS normalized form.

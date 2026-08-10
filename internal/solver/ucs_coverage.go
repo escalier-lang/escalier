@@ -288,19 +288,11 @@ func (c *checker) annTypes(scope *Scope, lvl int, tags []ucs.Test) []soltype.Typ
 // that test covers t. The `number` of `x: number => x` admits the `number` member of a
 // `number | string` scrutinee and no other member.
 //
-// The trial asks `t <: ann`, which is the question the runtime test answers. bindNarrowedIdent
-// asks the other direction, `ann <: scrutinee`. That one is a restriction on which annotations
-// narrow at all, not a reading of what the arm matches, so the two are asking different things.
-// They still agree on every annotation the restriction admits, since such an annotation names
-// one of the scrutinee's members and covers exactly that member. An annotation the restriction
-// rejects already carries the walk's diagnostic. Crediting the members it admits is what keeps
-// a second one off the same arm.
-//
-// The trial runs under its own probe and returns its failures rather than reporting them, so
-// a member no annotation admits leaves nothing behind.
+// It asks typeAdmits, the same question bindNarrowedIdent asks to decide what the arm binds,
+// so the type a covered member binds at and the credit it earns here come from one rule.
 func (c *checker) annAdmits(t soltype.Type, cov coverage) bool {
 	for _, ann := range cov.anns {
-		if !hasHardError(c.ctx.trialUnderProbe(t, ann)) {
+		if c.typeAdmits(ann, t) {
 			return true
 		}
 	}

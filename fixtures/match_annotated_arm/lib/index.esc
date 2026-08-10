@@ -13,6 +13,15 @@ export val annotatedThenCatchAll = match numOrStr {
 	other => other,
 }
 
+// An annotation wider than a member still picks that member out. Every value of a
+// `1 | 2 | string` that is a number is a `1` or a `2`, so the first arm binds `1 | 2` and
+// the second takes the rest.
+declare val litsOrStr: 1 | 2 | string
+export val widerThanAMember = match litsOrStr {
+	n: number => n,
+	s: string => s.length,
+}
+
 // An annotation on a nested leaf asserts against the value that leaf binds rather than
 // testing it, so the tuple's arity is the only tag the arm carries.
 declare val pair: [number, string]

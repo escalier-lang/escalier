@@ -1,5 +1,10 @@
-lib/index.esc:19:36: Non-exhaustive match: type '[number, string]' is not fully covered; add a catch-all branch
+lib/index.esc:28:36: Non-exhaustive match: type '[number, string]' is not fully covered; add a catch-all branch
 
-19: export val nestedLeafAnnotations = match pair {
+28: export val nestedLeafAnnotations = match pair {
                                        
+
+lib/index.esc:21:2: number cannot be assigned to 1 | 2 | string
+
+21: 	n: number => n,
+     ^^^^^^^^^
 

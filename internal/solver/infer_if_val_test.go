@@ -10,9 +10,9 @@ import (
 
 // TestInferIfValAndValElse drives the refutable-binding forms through inferSource.
 // Each case either infers a binding type, asserted against want, or reports errors,
-// asserted in full against wantErrs. A type-annotated identifier pattern narrows a
-// union to one member via the union-super exists rule; subsumption at finalization
-// then drops a literal alternate such as 0 into a primitive sibling like number.
+// asserted in full against wantErrs. A type-annotated identifier pattern binds at the part
+// of the union its annotation admits. Subsumption at finalization then drops a literal
+// alternate such as 0 into a primitive sibling like number.
 func TestInferIfValAndValElse(t *testing.T) {
 	tests := []struct {
 		name string
@@ -539,45 +539,79 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 	}
 }
 
-// A narrowing annotation names one of the scrutinee's members, so an annotation wider than
-// every member narrows nothing and is rejected. `x: number` over a `1 | 2` picks no member,
-// even though every value of `1 | 2` is a number, and `x: unknown` picks none of a
-// `number | string`. bindNarrowedIdent constrains the annotation into the scrutinee, and the
-// union-super exists rule it goes through asks for one member the annotation fits.
+// A narrowing annotation picks out the part of the scrutinee it admits, so an annotation
+// wider than a member still narrows to that member rather than being rejected. Every value of
+// a `1 | 2` is a number, so `x: number` matches all of them and binds `x` at `1 | 2`. The
+// annotation is not the type the name takes; the part of the scrutinee it admits is.
 //
-// All three forms report it, at the span of the annotation, so a `match` arm rejects exactly
-// what the two declaration forms reject. An arm carrying this error reports nothing further.
-// The coverage check credits the arm with the members its annotation admits, which keeps a
-// second diagnostic off an arm that already earned one.
-func TestInferAnnotationWiderThanEveryMemberIsRejected(t *testing.T) {
+// The three forms share bindNarrowedIdent, so each accepts and rejects the same annotations.
+// The `binding` column is the name whose inferred type is checked, since the two declaration
+// forms below join their fallback value into what `f` returns and the arm's own type is the
+// one worth reading.
+func TestInferAnnotationWiderThanAMemberNarrowsToIt(t *testing.T) {
 	tests := map[string]struct {
-		src  string
+		src string
+		// binding is the name whose printed type is checked.
+		binding string
+		// want is that name's printed type, checked when wantErr is empty.
 		want string
+		// wantErr, when non-empty, is the one message expected.
+		wantErr string
 	}{
+		// The whole scrutinee fits the annotation, so the test is irrefutable and the arm
+		// binds every member.
 		"MatchArm": {
-			src:  "fn f(u: 1 | 2) {\n\treturn match u {\n\t\tx: number => x,\n\t}\n}",
-			want: "3:6-3:12: cannot constrain number <: 1 | 2",
+			src:     "fn f(u: 1 | 2) {\n\treturn match u {\n\t\tx: number => x,\n\t}\n}",
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> 1 | 2",
 		},
 		"IfVal": {
-			src:  `fn f(u: 1 | 2) { return if val x: number = u { x } else { 0 } }`,
-			want: "1:35-1:41: cannot constrain number <: 1 | 2",
+			src:     `fn f(u: 1 | 2) { return if val x: number = u { x } else { 0 } }`,
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> 0 | 1 | 2",
 		},
 		"ValElse": {
-			src:  "fn f(u: 1 | 2) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
-			want: "2:6-2:7: cannot constrain number <: 1 | 2",
+			src:     "fn f(u: 1 | 2) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> 0 | 1 | 2",
 		},
-		// `unknown` is the top of the lattice, so it admits every value and still names no
-		// member. The rule turns on naming a member, not on how wide the annotation is.
-		"MatchArmUnknown": {
-			src:  "fn f(u: number | string) {\n\treturn match u {\n\t\tx: unknown => x,\n\t}\n}",
-			want: "3:3-3:13: cannot constrain unknown <: number | string",
+		// `unknown` is the top of the lattice, so it admits every value of any scrutinee.
+		"Unknown": {
+			src:     "fn f(u: number | string) {\n\treturn match u {\n\t\tx: unknown => x,\n\t}\n}",
+			binding: "f",
+			want:    "fn (u: number | string) -> number | string",
+		},
+		// Only some members fit, so the arm binds those and the arm below it takes the rest.
+		"WiderThanSomeMembers": {
+			src:     "fn f(u: 1 | 2 | string) {\n\treturn match u {\n\t\tx: number => x,\n\t\ts: string => s,\n\t}\n}",
+			binding: "f",
+			want:    "fn (u: string | 1 | 2) -> string | 1 | 2",
+		},
+		// An annotation narrower than every member admits none of them, so the union-super
+		// exists rule decides and the name takes the annotation itself.
+		"NarrowerThanEveryMember": {
+			src:     `fn f(u: number | string) { return if val x: 1 = u { x } else { 0 } }`,
+			binding: "f",
+			want:    "fn (u: number | string) -> 0 | 1",
+		},
+		// No value of the scrutinee is a number and no member holds one, so the annotation
+		// picks out nothing and the arm can never run.
+		"AdmitsNothing": {
+			src:     "fn f(s: string) {\n\treturn match s {\n\t\tx: number => x,\n\t}\n}",
+			binding: "f",
+			wantErr: "3:6-3:12: cannot constrain number <: string",
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, []string{tt.want}, messagesWithSpan(errs))
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr != "" {
+				require.Equal(t, []string{tt.wantErr}, messagesWithSpan(errs))
+				return
+			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
 }

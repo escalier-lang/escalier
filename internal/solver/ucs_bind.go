@@ -89,9 +89,9 @@ type testedTuple struct {
 // also binds through until M7's `[Symbol.customMatcher]` lands.
 type testedExtractor struct{ params []*soltype.FuncParam }
 
-// testedAnn carries the narrowing annotation an `if val` or a `val … else` tested, which
-// the leaf beneath reads through narrowingAnn. Applying the test resolves nothing itself:
-// bindNarrowedIdent both picks the member the annotation names and binds the identifier at
+// testedAnn carries the narrowing annotation a refutable form tested, which the leaf beneath
+// reads through narrowingAnn. Applying the test resolves nothing itself. bindNarrowedIdent
+// both picks out the part of the scrutinee the annotation admits and binds the identifier at
 // it, so resolving it here too would report an unsupported one twice.
 type testedAnn struct{ ann ast.TypeAnn }
 
