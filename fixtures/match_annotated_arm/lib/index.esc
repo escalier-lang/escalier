@@ -1,0 +1,21 @@
+// A top-level type annotation on a `match` arm's pattern narrows the scrutinee, the same
+// way the annotation of an `if val x: number = u` does. The arms below an annotated one
+// stay reachable, and together the two arms cover the union with no catch-all.
+declare val numOrStr: number | string
+export val annotatedArms = match numOrStr {
+	n: number => n + 1,
+	s: string => s.length,
+}
+
+// A value the annotation rejects falls through to the arm below it.
+export val annotatedThenCatchAll = match numOrStr {
+	n: number => n.toString(),
+	other => other,
+}
+
+// An annotation on a nested leaf asserts against the value that leaf binds rather than
+// testing it, so the tuple's arity is the only tag the arm carries.
+declare val pair: [number, string]
+export val nestedLeafAnnotations = match pair {
+	[a: number, b: string] => b.length + a,
+}

@@ -229,6 +229,89 @@ func TestMatchCoverageBareRestArmReportsOnlyTheUnsupportedPattern(t *testing.T) 
 	}
 }
 
+// An annotation test covers whichever values of the scrutinee its type admits. That is a
+// fact about the annotation rather than about a pattern's shape, so it is asked of every
+// union member kind rather than dispatched on the member the way a shape tag is.
+func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
+	tests := map[string]struct {
+		src string
+		// wantErrs is the full set of expected messages, and empty when the arms cover the
+		// scrutinee.
+		wantErrs []string
+	}{
+		// Primitive members, each named by the arm annotated with it.
+		"PrimitiveMembers": {
+			src: `
+				fn f(u: number | string) {
+					return match u {
+						x: number => x,
+						y: string => y
+					}
+				}
+			`,
+		},
+		// Literal members. A literal type annotation admits the one value its member holds.
+		"LiteralMembers": {
+			src: `
+				fn f(u: 1 | 2) {
+					return match u {
+						x: 1 => x,
+						y: 2 => y
+					}
+				}
+			`,
+		},
+		// An annotation test and a shape tag credit different members of one union, so the
+		// two kinds of tag add up.
+		"AnnotationAndShapeTag": {
+			src: `
+				fn f(u: number | {x: number}) {
+					return match u {
+						n: number => n,
+						{x} => x
+					}
+				}
+			`,
+		},
+		// A guarded arm covers nothing, since a false condition falls past it. The annotation
+		// it tests does not change that.
+		"GuardedAnnotatedArm": {
+			src: `
+				fn f(u: number | string, b: boolean) {
+					return match u {
+						x: number if b => x,
+						y: string => y
+					}
+				}
+			`,
+			wantErrs: []string{"3:13-6:7: match is not exhaustive; add a catch-all branch"},
+		},
+		// An annotation naming no type resolves to nothing, so the arm credits no member. The
+		// walk reports the missing type once, and this check resolves the annotation again
+		// without repeating that diagnostic.
+		"UnresolvableAnnotation": {
+			src: `
+				fn f(u: number | string) {
+					return match u {
+						x: Nope => 0
+					}
+				}
+			`,
+			wantErrs: []string{
+				"4:10-4:14: cannot find type `Nope`",
+				"3:13-5:7: match is not exhaustive; add a catch-all branch",
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+		})
+	}
+}
+
 // The wording is a function of the split's origin rather than of the node the error holds.
 // Lowering erases the difference between `match`, `if val`, and `val … else`, so a message
 // keyed off anything else would name the wrong construct once a second form reports this.

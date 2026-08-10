@@ -1,0 +1,5 @@
+lib/index.esc:19:36: Non-exhaustive match: type '[number, string]' is not fully covered; add a catch-all branch
+
+19: export val nestedLeafAnnotations = match pair {
+                                       
+

@@ -60,6 +60,10 @@ func scrutineeOrigin(kind OriginKind, target ast.Expr, cause Origin) Origin {
 // rather than a whole expression so that more than one surface form can reach it.
 // The AST stores a `TryCatchExpr`'s catch clauses as []*ast.MatchCase too, so those
 // clauses can lower through this path once the solver types them.
+//
+// A `match` arm writes its narrowing annotation inside the pattern, as the `number` of
+// `x: number => x`, the same node an `if val` writes it on. The branch reads it from
+// there, so the three surface forms agree on what the annotation means.
 func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 	origin := At(OriginMatchArm, matchCase)
 	var cont Core = &BodyLeaf{Body: matchCase.Body, Arm: matchCase, Origin: origin}
@@ -77,6 +81,7 @@ func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 		Pattern: matchCase.Pattern,
 		Cont:    cont,
 		Arm:     matchCase,
+		Ann:     patternNarrowingAnn(matchCase.Pattern),
 		Origin:  branchOrigin(OriginMatchArm, matchCase.Pattern, origin),
 	}
 }

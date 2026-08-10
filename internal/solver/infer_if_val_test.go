@@ -467,6 +467,77 @@ func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
 	}
 }
 
+// A top-level annotation on a `match` arm's pattern narrows the scrutinee, the same way the
+// annotation of an `if val x: number = u` does. The arm runs only for the values the
+// annotation admits, so the arms below it stay reachable and bind the whole scrutinee.
+func TestInferMatchArmAnnotationNarrows(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// want is the printed type of `f`, checked when wantErrs is nil.
+		want string
+		// wantErrs, when non-nil, is the full set of expected messages.
+		wantErrs []string
+	}{
+		{
+			// The arm picks the `number` member of the union rather than asserting the whole
+			// union fits `number`, and the catch-all below it is not reported unreachable.
+			name: "an annotated arm narrows a union",
+			src:  "fn f(u: number | string) {\n\treturn match u {\n\t\tx: number => x,\n\t\t_ => 0,\n\t}\n}",
+			want: "fn (u: number | string) -> number",
+		},
+		{
+			// Two annotated arms name the two members between them, so the arms cover the
+			// union with no catch-all.
+			name: "annotated arms cover a union",
+			src:  "fn f(u: number | string) {\n\treturn match u {\n\t\tx: number => x,\n\t\ty: string => y,\n\t}\n}",
+			want: "fn (u: number | string) -> number | string",
+		},
+		{
+			// One annotated arm leaves the `string` member with no arm to run, so the arms
+			// are not exhaustive. The span runs from `match` to the closing brace.
+			name:     "one annotated arm leaves a member uncovered",
+			src:      "fn f(u: number | string) {\n\treturn match u {\n\t\tx: number => x,\n\t}\n}",
+			wantErrs: []string{"2:9-4:3: match is not exhaustive; add a catch-all branch"},
+		},
+		{
+			// An annotation admitting the whole scrutinee covers it outright, so no arm below
+			// is needed.
+			name: "an arm annotated with the whole union covers it",
+			src:  "fn f(u: number | string) {\n\treturn match u {\n\t\tx: number | string => x,\n\t}\n}",
+			want: "fn (u: number | string) -> number | string",
+		},
+		{
+			// The same annotation one line away in an `if val`, which is the spelling the
+			// `match` arm above now agrees with.
+			name: "if val narrows the same union",
+			src:  `fn f(u: number | string) { return if val x: number = u { x } else { 0 } }`,
+			want: "fn (u: number | string) -> number",
+		},
+		{
+			// The scrutinee holds no value the annotation admits, so the arm can never run and
+			// the narrowing constraint fails. The direction is the narrowing one, `number <:
+			// string`, and the span is the annotation rather than the scrutinee, which is what
+			// an assertion on the bound value would have blamed.
+			name:     "an annotation no member fits is rejected",
+			src:      "fn f(s: string) {\n\treturn match s {\n\t\tx: number => x,\n\t}\n}",
+			wantErrs: []string{"3:6-3:12: cannot constrain number <: string"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				return
+			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
 // A type annotation on a pattern leaf asserts rather than narrows, which is the opposite of
 // what the same syntax does on a whole binding. A top-level `if val x: number = u` picks the
 // member of `u` the annotation names, so a `u` that is a `string` takes the `else`. A leaf's

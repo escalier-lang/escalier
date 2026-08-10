@@ -297,6 +297,34 @@ func TestDesugarIfValReadsTheAnnotationOffThePattern(t *testing.T) {
 	require.Same(t, ident.TypeAnn, core.Branches[0].Ann)
 }
 
+// A `match` arm writes its annotation on the same node an `if val` does, so the arm
+// `x: number => x` hands normalization what `if val x: number = u` hands it. That is what
+// makes one spelling mean one thing across the two forms.
+func TestDesugarMatchArmReadsTheAnnotationOffThePattern(t *testing.T) {
+	expr := findExpr[*ast.MatchExpr](t, `match u { x: number => x, other => other }`)
+
+	core := DesugarMatch(expr)
+
+	ident, ok := expr.Cases[0].Pattern.(*ast.IdentPat)
+	require.True(t, ok)
+	require.Same(t, ident.TypeAnn, core.Branches[0].Ann)
+	// The unannotated arm below it carries none, so its branch still matches every value.
+	require.Nil(t, core.Branches[1].Ann)
+}
+
+// An annotation on a pattern's nested leaf, the `number` of `[a: number, b]`, is no tag the
+// branch tests. It asserts against the value that leaf binds, so the branch's Ann stays nil
+// and the arm's tag is the tuple's arity alone.
+func TestDesugarMatchArmLeavesANestedAnnotationOffTheBranch(t *testing.T) {
+	expr := findExpr[*ast.MatchExpr](t, `match p { [a: number, b] => a }`)
+
+	core := DesugarMatch(expr)
+
+	require.Nil(t, core.Branches[0].Ann)
+	branch := Normalize(core).(*NormSplit).Branches[0]
+	require.IsType(t, &TupleTest{}, branch.Test)
+}
+
 // A narrowing annotation applies to the whole binding, so it narrows only a bare
 // identifier. A destructuring pattern's branch carries none, and the consumer reports
 // the annotation it cannot distribute across the pattern's leaves.

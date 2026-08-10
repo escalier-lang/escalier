@@ -113,8 +113,10 @@ type ExtractorTest struct {
 // takes the `else`. That is what makes an annotated binding refutable, where the same
 // identifier without one matches every value.
 //
-// The tag comes from what the surface wrote rather than from a pattern's shape, so only
-// `if val` and `val … else` produce it and never a `match` arm.
+// The tag comes from what the surface wrote rather than from a pattern's shape, so all
+// three refutable forms produce it. The `match` arm `x: number => x` narrows exactly as
+// `if val x: number = u` does. An annotation on a pattern's nested leaf, the `string` of
+// `[a: string, b]`, mints no test. It asserts against the value that leaf binds.
 type AnnTest struct{ Ann ast.TypeAnn }
 
 // String renders the tag test.

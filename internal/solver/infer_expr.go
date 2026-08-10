@@ -3211,7 +3211,7 @@ func (c *checker) inferMatch(scope *Scope, lvl int, e *ast.MatchExpr) soltype.Ty
 	unreachable := c.reportUnreachableArms(e.Cases, w.arms)
 	c.inferMatchArms(scope, lvl, e, unreachable, matchShape, scrutinee, c.freshAt(lvl))
 	c.checkUniformOwnership(e, w.bodies)
-	c.checkCondExhaustive(scope, w.norm, matchShape)
+	c.checkCondExhaustive(scope, lvl, w.norm, matchShape)
 	c.recordType(e, res)
 	return res
 }
