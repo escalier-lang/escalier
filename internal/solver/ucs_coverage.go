@@ -201,8 +201,8 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	carrier := c.expandAliasChain(soltype.CarrierOf(shape))
 	// An annotation admitting the whole scrutinee covers every value, exactly as an unguarded
 	// catch-all arm does. `match u { x: number | string => x }` over a `number | string` needs
-	// no arm below it. Asking here rather than per union member is what also covers a
-	// scrutinee the rules below read as a single shape.
+	// no arm below it. Asking about the whole carrier is what covers a scrutinee that is no
+	// union, since the per-member rule below never runs for one.
 	if c.annAdmits(carrier, cov) {
 		return
 	}
@@ -240,9 +240,10 @@ func (c *checker) unionTagsExhaustive(scope *Scope, u *soltype.UnionType, cov co
 }
 
 // memberTagged reports whether some covering tag names a single union member. An annotation
-// test covers whichever members fit it, so it is asked first and for every kind. The
-// remaining tags name a shape, so they dispatch on the member's kind. Any kind with no arm
-// below has no tag short of a catch-all, which the caller has already ruled out.
+// test names a type rather than a shape, so it can cover a member of any kind and is asked
+// before the dispatch. The remaining tags each name a shape, so they dispatch on the member's
+// kind. Any kind with no arm below has no tag short of a catch-all, which the caller has
+// already ruled out.
 func (c *checker) memberTagged(scope *Scope, member soltype.Type, cov coverage) bool {
 	if c.annAdmits(member, cov) {
 		return true
@@ -261,8 +262,8 @@ func (c *checker) memberTagged(scope *Scope, member soltype.Type, cov coverage) 
 	}
 }
 
-// annTypes resolves the annotation of every annotation test among the covering tags, which
-// is what an arm such as `x: number => x` contributes.
+// annTypes resolves the annotation of every annotation test among the covering tags. An arm
+// such as `x: number => x` contributes one.
 //
 // Resolution runs under a discarded probe. The typing walk resolved each of these
 // annotations already, through bindNarrowedIdent, and reported whatever it could not
@@ -286,6 +287,14 @@ func (c *checker) annTypes(scope *Scope, lvl int, tags []ucs.Test) []soltype.Typ
 // annAdmits reports whether some annotation test accepts every value of t, so the arm making
 // that test covers t. The `number` of `x: number => x` admits the `number` member of a
 // `number | string` scrutinee and no other member.
+//
+// The trial asks `t <: ann`, which is the question the runtime test answers. bindNarrowedIdent
+// asks the other direction, `ann <: scrutinee`. That one is a restriction on which annotations
+// narrow at all, not a reading of what the arm matches, so the two are asking different things.
+// They still agree on every annotation the restriction admits, since such an annotation names
+// one of the scrutinee's members and covers exactly that member. An annotation the restriction
+// rejects already carries the walk's diagnostic. Crediting the members it admits is what keeps
+// a second one off the same arm.
 //
 // The trial runs under its own probe and returns its failures rather than reporting them, so
 // a member no annotation admits leaves nothing behind.

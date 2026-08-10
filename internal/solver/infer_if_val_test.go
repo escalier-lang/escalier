@@ -508,17 +508,18 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 			want: "fn (u: number | string) -> number | string",
 		},
 		{
-			// The same annotation one line away in an `if val`, which is the spelling the
-			// `match` arm above now agrees with.
+			// The same annotation one line away in an `if val`. The arm above reads it the
+			// same way, which is what makes one spelling mean one thing.
 			name: "if val narrows the same union",
 			src:  `fn f(u: number | string) { return if val x: number = u { x } else { 0 } }`,
 			want: "fn (u: number | string) -> number",
 		},
 		{
 			// The scrutinee holds no value the annotation admits, so the arm can never run and
-			// the narrowing constraint fails. The direction is the narrowing one, `number <:
-			// string`, and the span is the annotation rather than the scrutinee, which is what
-			// an assertion on the bound value would have blamed.
+			// the narrowing constraint fails. Two things in the message say it is a narrowing
+			// failure rather than a failed assertion on the bound value. The direction is
+			// `number <: string`, the annotation into the scrutinee, and the span is the
+			// annotation rather than the value the arm binds.
 			name:     "an annotation no member fits is rejected",
 			src:      "fn f(s: string) {\n\treturn match s {\n\t\tx: number => x,\n\t}\n}",
 			wantErrs: []string{"3:6-3:12: cannot constrain number <: string"},
@@ -534,6 +535,49 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 			}
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// A narrowing annotation names one of the scrutinee's members, so an annotation wider than
+// every member narrows nothing and is rejected. `x: number` over a `1 | 2` picks no member,
+// even though every value of `1 | 2` is a number, and `x: unknown` picks none of a
+// `number | string`. bindNarrowedIdent constrains the annotation into the scrutinee, and the
+// union-super exists rule it goes through asks for one member the annotation fits.
+//
+// All three forms report it, at the span of the annotation, so a `match` arm rejects exactly
+// what the two declaration forms reject. An arm carrying this error reports nothing further.
+// The coverage check credits the arm with the members its annotation admits, which keeps a
+// second diagnostic off an arm that already earned one.
+func TestInferAnnotationWiderThanEveryMemberIsRejected(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"MatchArm": {
+			src:  "fn f(u: 1 | 2) {\n\treturn match u {\n\t\tx: number => x,\n\t}\n}",
+			want: "3:6-3:12: cannot constrain number <: 1 | 2",
+		},
+		"IfVal": {
+			src:  `fn f(u: 1 | 2) { return if val x: number = u { x } else { 0 } }`,
+			want: "1:35-1:41: cannot constrain number <: 1 | 2",
+		},
+		"ValElse": {
+			src:  "fn f(u: 1 | 2) {\n\tval x: number = u else { return 0 }\n\treturn x\n}",
+			want: "2:6-2:7: cannot constrain number <: 1 | 2",
+		},
+		// `unknown` is the top of the lattice, so it admits every value and still names no
+		// member. The rule turns on naming a member, not on how wide the annotation is.
+		"MatchArmUnknown": {
+			src:  "fn f(u: number | string) {\n\treturn match u {\n\t\tx: unknown => x,\n\t}\n}",
+			want: "3:3-3:13: cannot constrain unknown <: number | string",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, []string{tt.want}, messagesWithSpan(errs))
 		})
 	}
 }
