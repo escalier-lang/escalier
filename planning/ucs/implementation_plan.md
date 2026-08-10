@@ -256,9 +256,11 @@ split p {                       split p {
   algorithm is written here — that is Phase 2's residual-based check. The interim
   check is `checkCondExhaustive` in
   [internal/solver/ucs_coverage.go](../../internal/solver/ucs_coverage.go), and the
-  typed predicates it and the arms below a catch-all lean on — `structuralInexact`,
-  `narrowArmScrutinee`, and `isCatchAll` — are in
-  [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go).
+  typed predicates it and the arms below a catch-all lean on — `structuralInexact`
+  and `narrowArmScrutinee` — are in
+  [internal/solver/infer_expr.go](../../internal/solver/infer_expr.go). The
+  catch-all test itself is `ast.IsCatchAllPat` in
+  [internal/ast/pattern.go](../../internal/ast/pattern.go), which needs no type.
 - **Reuse the shared pattern path.** Leaf binding keeps going through
   `bindPattern` / `bindPatternWith` in
   [internal/solver/pattern.go](../../internal/solver/pattern.go). It already
@@ -310,9 +312,11 @@ split p {                       split p {
   desugarer is shaped to accept one branch producing several core branches, but
   wiring real alternatives needs parser and AST work first. Flagged, not built.
 - **`try` / `catch` arms.** `TryCatchExpr` carries `[]*MatchCase` for its catch
-  clauses but has no solver typing yet. The desugarer is designed so catch arms
-  can lower through the same `Split`, but throws-narrowing is a Phase 2 (#883)
-  payoff and is not part of this plan.
+  clauses, and `inferTryCatch` already types them through `inferMatchArms` off the
+  source patterns. They do not lower through the IR. The desugarer is designed so
+  they could reach the same `Split`, but throws-narrowing is a Phase 2 (#883) payoff
+  and is not part of this plan. Leaving them on the source path is what keeps
+  `narrowArmScrutinee` and the pattern-shaped coverage predicates alive after PR9.
 
 ## Package layout
 
@@ -444,7 +448,8 @@ testing before anything calls it. Retyping split into PR6 and PR7, since rewirin
 all four ad-hoc paths at once put four entry points and their whole test surface in
 one review. PR1 through PR5 change no inferred type — PR1 through PR4 are pure IR
 and PR5 is an unwired helper. PR6 and PR7 flip type checking onto the IR. PR8 moves
-coverage. PR9 deletes the superseded code. The
+coverage and deletes the helpers that move makes dead. PR9 retires the names left
+behind. The
 [dependency graph](#dependency-graph-and-parallelism) below marks the two windows
 where PRs can proceed in parallel.
 
@@ -658,7 +663,8 @@ on any current input.
   `match`. It reads the IR's split structure but keeps its type-dependent
   predicates in `internal/solver`: deciding exact-union membership, inexactness, and
   guarded-arm coverage needs `soltype`, so this is a typed coverage adapter, not
-  ast-only logic. It is the replacement PR9 deletes the old helpers in favor of.
+  ast-only logic. It replaces `unionMatchExhaustive` and `armCoversShape`, which
+  this PR deletes along with the arm-walking check that called them.
 - Keep the interim semantics identical: an inexact scrutinee needs a catch-all, an
   exact union is covered when every member has an unguarded covering branch, and a
   guarded branch covers nothing. This is the seam Phase 2 (#883) later replaces
@@ -671,7 +677,7 @@ split's `Origin` per the [Diagnostics](#diagnostics) section rather than assumin
 reads it to narrow the arms below a catch-all and needs the borrow the coverage
 carrier peels.
 
-### PR9 — Remove the superseded ad-hoc helpers
+### PR9 — Retire the superseded helper names
 
 Cleanup only, no behavior change.
 
@@ -717,7 +723,7 @@ code it supersedes.
 | PR6 — Type-check `match` | PR2, PR4, PR5 | — |
 | PR7 — Type-check `if val` / `else` | PR6 | PR8 |
 | PR8 — Coverage off the IR | PR6 | PR7 |
-| PR9 — Remove superseded helpers | PR7, PR8 | — |
+| PR9 — Retire superseded helper names | PR7, PR8 | — |
 
 Two parallel windows open up:
 
@@ -745,7 +751,7 @@ graph TD
     PR6["PR6 · Type-check match"]
     PR7["PR7 · Type-check if val / else"]
     PR8["PR8 · Coverage off the IR"]
-    PR9["PR9 · Remove superseded helpers"]
+    PR9["PR9 · Retire superseded helper names"]
 
     PR0 --> PR5
     PR1 --> PR2
@@ -773,7 +779,7 @@ graph TD
 Green is the PR0 prerequisite, on M9's types rather than the UCS IR. Blue is
 IR-only work that changes no inferred type — PR1 through PR4 build the IR and PR5
 adds the unwired project-and-bind helper. Orange flips type checking or coverage
-onto the IR, purple is deletion. The two diamonds in the graph, PR6 and PR9, are
+onto the IR, purple is cleanup. The two diamonds in the graph, PR6 and PR9, are
 the join points where a parallel window closes.
 
 ## Handoff to Phase 2 (#883)
