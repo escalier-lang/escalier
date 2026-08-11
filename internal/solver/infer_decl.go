@@ -112,7 +112,9 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 	case elseDiverges:
 		bound = initType
 	default:
-		// The binding is the matched initializer OR the non-diverging fallback.
+		// The binding is the matched initializer OR the non-diverging fallback, so the two
+		// have to agree on ownership.
+		c.checkUniformOwnership(d, []soltype.Type{initType, elseT})
 		bound = c.joinBranches(d, lvl, ValElseBranch, []soltype.Type{initType, elseT})
 	}
 	c.recordType(ip, bound)

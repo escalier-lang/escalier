@@ -222,8 +222,10 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			wantErrs: []string{"3:5-3:12: cannot constrain immutable object <: mutable object"},
 		},
 		{
-			// One immutable member makes the whole mode immutable, since a leaf the value may
-			// have reached through that member is not writable.
+			// One immutable member makes the whole mode immutable, so the write is rejected.
+			// The `{x}` test can only have matched the mutable member here, so a mode that
+			// narrowed with the members would accept it. peelBorrowUnion fixes the mode at the
+			// whole scrutinee instead, and its TODO tracks the imprecision.
 			name: "mixed mutability binds immutable leaves",
 			src: `fn f(p: &mut {x: {a: number}} | &{y: string}) {
   if val {x: v} = p {
@@ -265,14 +267,35 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			wantErrs: []string{"2:3-2:55: " + mixedOwnershipMsg},
 		},
 		{
-			// Both sides of the join are borrows, so ownership is uniform and the leaf binds
-			// the union of the two.
-			name: "val else leaf join accepts a borrowed fallback",
+			// The fallback is an owned object, but the value it supplies for `x` is a borrow, so
+			// both halves of the leaf are borrows and ownership is uniform.
+			name: "val else leaf join accepts a fallback field that is a borrow",
 			src: `fn f(p: &{x: {a: number}} | &{y: string}, q: &{a: number}) {
   val {x: v} = p else { {x: q} }
   return v
 }`,
 			want: "fn <'a: 'd, 'b: 'd, 'c, 'd>(p: &'a {x: {a: number}} | &'b {y: string}, q: &'c {a: number}) -> &'c {a: number} | &'d {a: number}",
+		},
+		{
+			// A borrowed fallback is peeled the way the scrutinee is, so the pattern's owned
+			// requirements meet its carrier. Its leaves reach the borrow through the mode, which
+			// is what makes this join uniform rather than mixed.
+			name: "val else leaf join accepts a fallback that is itself a borrow union",
+			src: `fn f(p: &{x: {a: number}} | &{y: string}, q: &{x: {a: number}} | &{x: {b: number}}) {
+  val {x: v} = p else { q }
+  return 0
+}`,
+			want: "fn (p: &{x: {a: number}} | &{y: string}, q: &{x: {a: number}} | &{x: {b: number}}) -> 0",
+		},
+		{
+			// The reverse mix reports too. An owned initializer and a borrowed fallback cannot
+			// both be what one name binds.
+			name: "val else leaf join rejects a borrowed fallback for an owned scrutinee",
+			src: `fn f(p: {x: {a: number}} | {y: string}, q: &{x: {a: number}}) {
+  val {x: v} = p else { q }
+  return 0
+}`,
+			wantErrs: []string{"2:3-2:28: " + mixedOwnershipMsg},
 		},
 	}
 	for _, tc := range cases {

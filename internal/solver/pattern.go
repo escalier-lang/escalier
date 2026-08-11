@@ -145,7 +145,7 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 //
 // ok is false for every other type. A union holding one non-borrow member has no single
 // borrow to lift out, and an owned-mutable `mut {…}` cell carries no lifetime, so its
-// leaves move out rather than projecting a borrow. An INEXACT union is refused too: only
+// leaves move out rather than projecting a borrow. An INEXACT union is refused too. Only
 // its listed members are there to inspect, so its open tail may hold an owned member the
 // peel would wrongly claim as a borrow.
 //
@@ -153,6 +153,12 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // immutable member cannot be written. Its lifetime is the join of the members', which
 // joinLifetimes bounds below by each, so a leaf outlives none of the members it may have
 // been projected from.
+//
+// TODO: narrow the mode along with the members. The mode is fixed here, at the whole
+// scrutinee, before any branch's tag test drops members from it. A branch of
+// `&mut {x: …} | &{y: …}` that tests for `x` can only have matched the mutable member, yet
+// its leaves still bind immutable and a write through one is rejected. Rejecting a legal
+// write is the safe direction to be wrong in, but it is still wrong.
 func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
 	u, isUnion := t.(*soltype.UnionType)
 	if !isUnion || u.Inexact || len(u.Types) == 0 {
@@ -184,12 +190,12 @@ func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMo
 	return peeled, bindMode{borrow: borrow, lt: c.joinLifetimes(lvl, lts)}, true
 }
 
-// joinLifetimes returns the one lifetime that outlives no member of lts. Several distinct
-// lifetimes unite under a fresh join variable bounded below by each, which is what lets a
-// value drawn from any of them carry a single lifetime. lts must not be empty.
+// joinLifetimes returns one lifetime that every member of lts outlives, so a value drawn
+// from any of them may carry it. Several distinct lifetimes unite under a fresh join
+// variable holding each of them as a lower bound. lts must not be empty.
 //
-// A set that already names one lifetime returns it unchanged, so the common
-// `&'a A | &'a B` needs no join variable.
+// Where lts names one lifetime already, that lifetime is returned unchanged and the common
+// `&'a A | &'a B` mints no join variable.
 func (c *checker) joinLifetimes(lvl int, lts []soltype.Lifetime) soltype.Lifetime {
 	shared := true
 	for _, lt := range lts[1:] {
@@ -563,8 +569,8 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 // `{p: number} | {q: number}` and borrows it, rather than reading no shape and moving it out.
 //
 // The members must agree on arity, since one element position has to name one type. An
-// inexact member, or an inexact union whose open tail names no elements at all, fixes no
-// arity either.
+// inexact member fixes no arity, and neither does an inexact union whose open tail may hold
+// a tuple of any length.
 func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
 	if tup, ok := c.groundedTuple(t); ok {
 		return tup
@@ -1124,9 +1130,9 @@ func fieldConcrete(t soltype.Type, name string) soltype.Type {
 		}
 	case *soltype.UnionType:
 		// A union of objects knows the field's shape as the union of what each member holds
-		// there. Reading it is what lets a leaf of a scrutinee that narrowing left as several
-		// members still decide whether to borrow. An inexact union's open tail may carry the
-		// field at any type, so its shape is not known and the switch falls through to nil.
+		// there. Reading it is what lets a leaf still decide whether to borrow when narrowing
+		// left the scrutinee as several members. An inexact union's open tail may carry the
+		// field at any type, so its shape is not known and the read answers nil.
 		if t.Inexact {
 			return nil
 		}
