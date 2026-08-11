@@ -147,27 +147,17 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // peelBorrowUnion peels a union whose every member is a borrow into the union of the
 // members' carriers, plus the mode a leaf of that union binds through. So
 // `&'a {x: number} | &'b {y: string}` peels to `{x: number} | {y: string}`, and a leaf
-// projects out of an owned member while the borrow rides the mode exactly as it does for
-// a single `&{…}` scrutinee. Without the peel a leaf projects out of `&'a {x: number}`
-// itself, and the owned requirement that projection emits reads as a borrow escaping into
-// an owned destination.
+// projects out of an owned member while the borrow rides the mode.
 //
-// ok is false for every other type. A union holding one non-borrow member has no single
-// borrow to lift out, and an owned-mutable `mut {…}` cell carries no lifetime, so its
-// leaves move out rather than projecting a borrow. An INEXACT union is refused too. Only
-// its listed members are there to inspect, so its open tail may hold an owned member the
-// peel would wrongly claim as a borrow.
+// ok is false for every other type, including a union holding one non-borrow member, an
+// owned-mutable `mut {…}` cell, and an INEXACT union whose unlisted tail may be owned.
 //
-// The mode is mutable only when every member is, since a leaf reached through an
-// immutable member cannot be written. Its lifetime is the join of the members', which
-// joinLifetimes bounds below by each, so a leaf outlives none of the members it may have
-// been projected from.
+// The mode is mutable only when every member is, since a leaf reached through an immutable
+// member cannot be written. Its lifetime is the members' join.
 //
-// TODO: narrow the mode along with the members. The mode is fixed here, at the whole
-// scrutinee, before any branch's tag test drops members from it. A branch of
-// `&mut {x: …} | &{y: …}` that tests for `x` can only have matched the mutable member, yet
-// its leaves still bind immutable and a write through one is rejected. Rejecting a legal
-// write is the safe direction to be wrong in, but it is still wrong.
+// TODO(#1087): narrow the mode along with the members. It is fixed here, at the whole
+// scrutinee, before any branch's tag test drops members from it, so a branch of
+// `&mut {x: …} | &{y: …}` testing for `x` binds immutable leaves and rejects a legal write.
 func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
 	u, isUnion := t.(*soltype.UnionType)
 	if !isUnion || u.Inexact || len(u.Types) == 0 {
@@ -571,15 +561,14 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 }
 
 // concreteTupleShape resolves the statically known tuple a destructured leaf reads its
-// element out of, and nil for a type that fixes no element. A tuple grounds through
-// groundedTuple. A union of tuples grounds to the elementwise union of theirs, which is the
-// shape a leaf reads when narrowing left the scrutinee as several members. So a `[a, b]`
-// over `&[{p: number}, string] | &[{q: number}, string]` reads its first element as
-// `{p: number} | {q: number}` and borrows it, rather than reading no shape and moving it out.
+// element out of, and nil for a type that fixes no element. It is the tuple twin of
+// fieldConcrete's union arm: a tuple grounds through groundedTuple, and a union of tuples
+// grounds to the elementwise union of theirs. So `[a, b]` over
+// `&[{p: number}, string] | &[{q: number}, string]` reads its first element as
+// `{p: number} | {q: number}` and borrows it rather than moving it out.
 //
 // The members must agree on arity, since one element position has to name one type. An
-// inexact member fixes no arity, and neither does an inexact union whose open tail may hold
-// a tuple of any length.
+// inexact member or union fixes no arity at all.
 func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
 	if tup, ok := c.groundedTuple(t); ok {
 		return tup

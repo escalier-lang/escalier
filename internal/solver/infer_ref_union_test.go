@@ -225,7 +225,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			// One immutable member makes the whole mode immutable, so the write is rejected.
 			// The `{x}` test can only have matched the mutable member here, so a mode that
 			// narrowed with the members would accept it. peelBorrowUnion fixes the mode at the
-			// whole scrutinee instead, and its TODO tracks the imprecision.
+			// whole scrutinee instead, which is #1087. This row flips to a clean check there.
 			name: "mixed mutability binds immutable leaves",
 			src: `fn f(p: &mut {x: {a: number}} | &{y: string}) {
   if val {x: v} = p {
