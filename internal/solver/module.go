@@ -60,6 +60,9 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	for _, component := range g.Components {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
 	}
+	// Every class is inferred, so each superclass edge and body is final. Check the members
+	// each subclass redeclares against the ones they override.
+	c.checkQueuedInheritedMembers()
 	// Reconcile against the source: BuildDepGraph only produces binding keys for
 	// the decl kinds it models, so a kind it does not descend into — e.g. a
 	// NamespaceDecl — yields no component and would vanish without a diagnostic.

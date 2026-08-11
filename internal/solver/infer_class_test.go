@@ -1308,34 +1308,30 @@ func TestInferClassMutVariance(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
 	})
-	t.Run("a mut subclass reference does not reach its superclass", func(t *testing.T) {
-		// A cross-name pair stays pinned by the RefType arm's residual write-back, so this
-		// widening is rejected even though the immutable one below is accepted. The
-		// nominal walk decides `Dog <: Animal` on the declared extends edge alone, and
-		// nothing checks that Dog's redeclared `pos` keeps the type Animal declares. Were
-		// the widening accepted, `reset` would store a `{x: number}` into a field Dog
-		// declares as `{x: number, y: number}`. Re-examine this once
-		// escalier-lang/escalier#985 checks an inherited member's type.
+	t.Run("a mut subclass reference reaches its superclass", func(t *testing.T) {
+		// The write `reset` performs lands on `pos`, and checkInheritedMembers makes a
+		// member Dog redeclares invariant against Animal's declaration whenever Animal's is
+		// writable. Every member reachable through `mut Animal` therefore holds the type
+		// Animal declares, so the widening is licensed. Dog's extra `breed` is unreachable
+		// through the Animal view, so adding it changes nothing.
 		_, _, errs := inferSource(t, `
 			class Animal {
 				pos: {x: number},
 				constructor(mut self, pos: {x: number}) { self.pos = pos },
 			}
 			class Dog extends Animal {
-				pos: {x: number, y: number},
-				constructor(mut self, pos: {x: number, y: number}) { self.pos = pos },
+				breed: string,
+				constructor(mut self, breed: string) { self.breed = breed },
 			}
 			fn reset(a: mut Animal) { a.pos = {x: 0} }
 			fn resetDog(d: mut Dog) { reset(d) }
 		`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain Animal <: Dog", errs[0].Message())
+		require.Empty(t, errs)
 	})
 	t.Run("an immutable subclass reference reaches its superclass", func(t *testing.T) {
-		// The immutable widening is the one the extends edge does license. `describe` can
-		// only read through `a`, and every member Animal declares is one Dog carries, so
-		// no read can miss. The redeclared-member gap that blocks the `mut` case above
-		// cannot bite here, since reaching it needs a write.
+		// The immutable widening is licensed for the same reason with less to check.
+		// `describe` can only read through `a`, and every member Animal declares is one Dog
+		// carries, so no read can miss.
 		_, _, errs := inferSource(t, `
 			class Animal {
 				name: string,

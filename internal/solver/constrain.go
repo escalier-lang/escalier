@@ -280,23 +280,25 @@ func (c *Context) Constrain(sub, super soltype.Type) []SolverError {
 //
 //   - object/object and tuple/tuple, which pin each named field or element the flag marks
 //     writable;
-//   - same-name class/class, whose nominal walk dispatches each type argument by the
-//     class's mutable-view variance vector;
+//   - class/class, whose nominal walk dispatches each type argument by the class's
+//     mutable-view variance vector;
 //   - class/object, which projects the class body and hands the flag to the object arm.
 //
-// Any other inner reaches no such arm, so the whole reverse constraint pins it. That
-// covers a type variable, two mismatched kinds, and one case worth naming: two classes
-// with DIFFERENT names, where the nominal walk decides `Sub <: Super` on the declared
-// extends edge alone. Nothing checks that a subclass redeclaring an inherited field keeps
-// it at the superclass's type, so widening `mut Sub` to `mut Super` would otherwise hand
-// out a write permission the subclass's own field may not accept. The reverse constraint
-// stands in for that missing check until escalier-lang/escalier#985 adds it.
+// A cross-name class pair is one of those arms. The nominal walk decides `Sub <: Super` on
+// the declared `extends` edge, and checkInheritedMembers is what makes that edge stand for
+// something. For every member Super declares as writable, it requires Sub to still offer a
+// write and to accept every value Super's declaration accepts. A write through `mut Super`
+// therefore lands somewhere Sub admits it, so `mut Sub <: mut Super` needs no reverse
+// constraint of its own.
+//
+// Any other inner reaches no such arm, so the whole reverse constraint pins it. That covers
+// a type variable and two mismatched kinds.
 //
 // Both sides are peeled through the transparent wrappers first, so a class or object
 // spelled through an alias dispatches the same way as the bare type it names.
 func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 	sub, sup = c.peelTransparent(sub), c.peelTransparent(sup)
-	switch sub := sub.(type) {
+	switch sub.(type) {
 	case *soltype.ObjectType:
 		_, ok := sup.(*soltype.ObjectType)
 		return !ok
@@ -304,10 +306,8 @@ func (c *Context) needsResidualWriteBack(sub, sup soltype.Type) bool {
 		_, ok := sup.(*soltype.TupleType)
 		return !ok
 	case *soltype.ClassType:
-		switch sup := sup.(type) {
-		case *soltype.ClassType:
-			return sub.Name != sup.Name // a cross-name pair rides the extends edge unchecked
-		case *soltype.ObjectType:
+		switch sup.(type) {
+		case *soltype.ClassType, *soltype.ObjectType:
 			return false
 		}
 		return true

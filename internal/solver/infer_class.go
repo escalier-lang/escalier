@@ -122,6 +122,12 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// sits under.
 	def.Variance, def.MutVariance = c.inferVariance(def, decl)
 
+	// Queue this class for the override check the driver runs once every class is inferred.
+	// The nominal subtype rule decides `Dog <: Animal` on the `extends` edge alone, so that
+	// check is what keeps a subclass from contradicting the edge with a member typed
+	// unrelated to the one it inherits.
+	c.queueInheritedMemberCheck(def, self, decl)
+
 	if quiet() && paramsClean {
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorType))
 	}
