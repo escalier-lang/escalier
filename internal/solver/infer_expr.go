@@ -806,21 +806,19 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 // To write, narrow to one branch with
 // `if val r2: mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
-	refs := make([]*soltype.RefType, len(types))
-	objs := make([]*soltype.ObjectType, len(types))
-	for i, t := range types {
-		r, ok := t.(*soltype.RefType)
-		if !ok || !r.Mut || r.Lt == nil {
-			return nil, false
-		}
-		obj, ok := r.Inner.(*soltype.ObjectType)
-		if !ok {
+	inners, lts, allMut, ok := soltype.UnwrapRefs(types)
+	if !ok || !allMut {
+		return nil, false
+	}
+	objs := make([]*soltype.ObjectType, len(inners))
+	for i, inner := range inners {
+		obj, isObj := inner.(*soltype.ObjectType)
+		if !isObj {
 			return nil, false
 		}
 		if i > 0 && !sameObjectKeys(objs[0], obj) {
 			return nil, false
 		}
-		refs[i] = r
 		objs[i] = obj
 	}
 
@@ -860,10 +858,6 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 	// Reconcilable fields: unite the input lifetimes under one join lifetime and return the
 	// single mutable carrier. Uniting them only here keeps the union path from minting a
 	// dead lifetime.
-	lts := make([]soltype.Lifetime, len(refs))
-	for i, r := range refs {
-		lts[i] = r.Lt
-	}
 	return &soltype.RefType{Mut: true, Lt: c.ctx.joinLifetimes(lvl, lts), Inner: objs[0]}, true
 }
 

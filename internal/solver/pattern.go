@@ -160,22 +160,15 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // `&mut {x: …} | &{y: …}` testing for `x` binds immutable leaves and rejects a legal write.
 func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
 	u, isUnion := t.(*soltype.UnionType)
-	if !isUnion || u.Inexact || len(u.Types) == 0 {
+	if !isUnion || u.Inexact {
 		return nil, bindMode{}, false
 	}
-	inners := make([]soltype.Type, len(u.Types))
-	lts := make([]soltype.Lifetime, len(u.Types))
-	mut := true
-	for i, member := range u.Types {
-		r, isRef := member.(*soltype.RefType)
-		if !isRef || r.Lt == nil {
-			return nil, bindMode{}, false
-		}
-		inners[i], lts[i] = r.Inner, r.Lt
-		mut = mut && r.Mut
+	inners, lts, allMut, ok := soltype.UnwrapRefs(u.Types)
+	if !ok {
+		return nil, bindMode{}, false
 	}
 	borrow := bmImm
-	if mut {
+	if allMut {
 		borrow = bmMut
 	}
 	// The peel goes through the lattice's one union constructor, so a member that is itself
