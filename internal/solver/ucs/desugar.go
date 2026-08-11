@@ -60,6 +60,10 @@ func scrutineeOrigin(kind OriginKind, target ast.Expr, cause Origin) Origin {
 // rather than a whole expression so that more than one surface form can reach it.
 // The AST stores a `TryCatchExpr`'s catch clauses as []*ast.MatchCase too, so those
 // clauses can lower through this path once the solver types them.
+//
+// A `match` arm writes its narrowing annotation inside the pattern, as the `number` of
+// `x: number => x`, the same node an `if val` writes it on. The branch reads it from
+// there, so the three surface forms agree on what the annotation means.
 func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 	origin := At(OriginMatchArm, matchCase)
 	var cont Core = &BodyLeaf{Body: matchCase.Body, Arm: matchCase, Origin: origin}
@@ -77,6 +81,7 @@ func desugarMatchCase(matchCase *ast.MatchCase) *CoreBranch {
 		Pattern: matchCase.Pattern,
 		Cont:    cont,
 		Arm:     matchCase,
+		Ann:     PatternNarrowingAnn(matchCase.Pattern),
 		Origin:  branchOrigin(OriginMatchArm, matchCase.Pattern, origin),
 	}
 }
@@ -111,7 +116,7 @@ func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 			Pattern: e.Pattern,
 			Cont:    &BodyLeaf{Body: ast.BlockOrExpr{Block: &e.Cons}, Arm: e, Origin: origin},
 			Arm:     e,
-			Ann:     patternNarrowingAnn(e.Pattern),
+			Ann:     PatternNarrowingAnn(e.Pattern),
 			Origin:  branchOrigin(OriginIfVal, e.Pattern, origin),
 		}},
 		Else:   ifValElse(e, origin),
@@ -119,10 +124,10 @@ func DesugarIfVal(e *ast.IfValExpr) *CoreSplit {
 	}
 }
 
-// patternNarrowingAnn returns the narrowing annotation a pattern carries, and nil when it
+// PatternNarrowingAnn returns the narrowing annotation a pattern carries, and nil when it
 // carries none. Only a bare identifier can carry one: distributing an annotation across a
 // destructuring pattern's leaves, as `[a, b]: [number, string]` would need, is unsupported.
-func patternNarrowingAnn(p ast.Pat) ast.TypeAnn {
+func PatternNarrowingAnn(p ast.Pat) ast.TypeAnn {
 	ident, ok := p.(*ast.IdentPat)
 	if !ok {
 		return nil
@@ -194,7 +199,7 @@ func DesugarValElse(d *ast.VarDecl) (*CoreSplit, bool) {
 
 // declNarrowingAnn returns the narrowing annotation a `val … else` declaration carries,
 // and nil when it carries none. It narrows only a bare identifier, under the restriction
-// patternNarrowingAnn spells out.
+// PatternNarrowingAnn spells out.
 func declNarrowingAnn(d *ast.VarDecl) ast.TypeAnn {
 	if _, ok := d.Pattern.(*ast.IdentPat); !ok {
 		return nil

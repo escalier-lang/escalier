@@ -25,6 +25,11 @@ type coverage struct {
 	// tags holds the tag test of every branch that covers what it tests. A union member is
 	// covered when one of these names it.
 	tags []ucs.Test
+	// anns holds the resolved type of every annotation test among tags, filled in by
+	// checkCondExhaustive once it has a scope to resolve against. A value fitting one of
+	// them is covered, which is what credits the arm `x: number => x` with the `number`
+	// member of a `number | string` scrutinee.
+	anns []soltype.Type
 }
 
 // coverageWalk reads the coverage of one normalized form. root is the scrutinee the
@@ -179,7 +184,7 @@ func (w *coverageWalk) branchesAlwaysMatch(split *ucs.NormSplit) bool {
 // The inexact rule below is conservative, which is #1077. An object tag matches a value
 // carrying extra fields, and a rest-relaxed tuple tag matches a longer one, so both cover an
 // inexact scrutinee that this asks a catch-all for.
-func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype.Type) {
+func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shape soltype.Type) {
 	split, isSplit := norm.(*ucs.NormSplit)
 	if !isSplit {
 		return
@@ -188,13 +193,21 @@ func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype
 	if cov.catchAll {
 		return
 	}
+	cov.anns = c.annTypes(scope, lvl, cov.tags)
 	// A transparent alias scrutinee, an enum handle or a user `type` reference, carries the
 	// alias rather than the type it stands for. Expanding it first, the same unfold constrain
 	// performs, is what lets `match c { Color.RGB(..) => .., Color.Hex(..) => .. }` over
 	// `val c: Color` cover the variant union without a default arm.
 	carrier := c.expandAliasChain(soltype.CarrierOf(shape))
+	// An annotation admitting the whole scrutinee covers every value, exactly as an unguarded
+	// catch-all arm does. `match u { x: number | string => x }` over a `number | string` needs
+	// no arm below it. Asking about the whole carrier is what covers a scrutinee that is no
+	// union, since the per-member rule below never runs for one.
+	if c.annAdmits(carrier, cov) {
+		return
+	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
-		if !c.unionTagsExhaustive(scope, u, cov.tags) {
+		if !c.unionTagsExhaustive(scope, u, cov) {
 			c.report(&NonExhaustiveMatchError{Origin: split.Origin})
 		}
 		return
@@ -214,34 +227,77 @@ func (c *checker) checkCondExhaustive(scope *Scope, norm ucs.Norm, shape soltype
 // unionTagsExhaustive reports whether the covering tags cover a union scrutinee. An inexact
 // union carries an open tail no tag names, so it takes the catch-all the caller has already
 // ruled out. An exact one is covered when every member is.
-func (c *checker) unionTagsExhaustive(scope *Scope, u *soltype.UnionType, tags []ucs.Test) bool {
+func (c *checker) unionTagsExhaustive(scope *Scope, u *soltype.UnionType, cov coverage) bool {
 	if u.Inexact {
 		return false
 	}
 	for _, member := range u.Types {
-		if !c.memberTagged(scope, member, tags) {
+		if !c.memberTagged(scope, member, cov) {
 			return false
 		}
 	}
 	return true
 }
 
-// memberTagged reports whether some covering tag names a single union member, dispatching on
-// the member's kind. Any kind with no arm below has no tag short of a catch-all, which the
-// caller has already ruled out.
-func (c *checker) memberTagged(scope *Scope, member soltype.Type, tags []ucs.Test) bool {
+// memberTagged reports whether some covering tag names a single union member. An annotation
+// test names a type rather than a shape, so it can cover a member of any kind and is asked
+// before the dispatch. The remaining tags each name a shape, so they dispatch on the member's
+// kind. Any kind with no arm below has no tag short of a catch-all, which the caller has
+// already ruled out.
+func (c *checker) memberTagged(scope *Scope, member soltype.Type, cov coverage) bool {
+	if c.annAdmits(member, cov) {
+		return true
+	}
 	switch m := member.(type) {
 	case *soltype.LitType:
-		return c.litTagged(m, tags)
+		return c.litTagged(m, cov.tags)
 	case *soltype.NullType, *soltype.UndefinedType:
-		return atomTagged(member, tags)
+		return atomTagged(member, cov.tags)
 	case *soltype.ClassType:
-		return c.nominalTagged(scope, m, tags)
+		return c.nominalTagged(scope, m, cov.tags)
 	case *soltype.ObjectType, *soltype.TupleType:
-		return structuralTagged(member, tags)
+		return structuralTagged(member, cov.tags)
 	default:
 		return false
 	}
+}
+
+// annTypes resolves the annotation of every annotation test among the covering tags. An arm
+// such as `x: number => x` contributes one.
+//
+// Resolution runs under a discarded probe. The typing walk resolved each of these
+// annotations already, through bindNarrowedIdent, and reported whatever it could not
+// support. Resolving a second time here would repeat that diagnostic.
+func (c *checker) annTypes(scope *Scope, lvl int, tags []ucs.Test) []soltype.Type {
+	var anns []soltype.Type
+	p := c.openProbe()
+	for _, tag := range tags {
+		test, isAnn := tag.(*ucs.AnnTest)
+		if !isAnn {
+			continue
+		}
+		if t, resolved := c.resolveTypeAnn(scope, test.Ann, lvl); resolved {
+			anns = append(anns, t)
+		}
+	}
+	c.closeProbe(p, false)
+	return anns
+}
+
+// annAdmits reports whether some annotation test accepts every value of t, so the arm making
+// that test covers t. The `number` of `x: number => x` admits the `number` member of a
+// `number | string` scrutinee and no other member.
+//
+// It asks typeAdmits, the same predicate bindNarrowedIdent asks to decide whether an arm's
+// annotation is reachable at all, so one rule settles which members an annotation matches.
+// What that arm's name binds at is a separate question, answered by the annotation itself.
+func (c *checker) annAdmits(t soltype.Type, cov coverage) bool {
+	for _, ann := range cov.anns {
+		if c.typeAdmits(ann, t) {
+			return true
+		}
+	}
+	return false
 }
 
 // litTagged reports whether some covering test is a literal equal to the literal member.

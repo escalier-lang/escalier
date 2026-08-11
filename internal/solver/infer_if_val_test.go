@@ -10,9 +10,9 @@ import (
 
 // TestInferIfValAndValElse drives the refutable-binding forms through inferSource.
 // Each case either infers a binding type, asserted against want, or reports errors,
-// asserted in full against wantErrs. A type-annotated identifier pattern narrows a
-// union to one member via the union-super exists rule; subsumption at finalization
-// then drops a literal alternate such as 0 into a primitive sibling like number.
+// asserted in full against wantErrs. A type-annotated identifier pattern binds at the part
+// of the union its annotation admits. Subsumption at finalization then drops a literal
+// alternate such as 0 into a primitive sibling like number.
 func TestInferIfValAndValElse(t *testing.T) {
 	tests := []struct {
 		name string
@@ -182,17 +182,19 @@ func TestInferIfValAndValElse(t *testing.T) {
 		{
 			// A module-level val-else with a non-diverging else is a valid top-level
 			// binding: the fallback gives num a value on the no-match path.
-			name:    "val-else at module top level with a fallback binds",
-			src:     "val u: number | string = 5\nval num: number = u else { 0 }",
+			name: "val-else at module top level with a fallback binds",
+			src: `val u: number | string = 5
+				val num: number = u else { 0 }`,
 			binding: "num",
 			want:    "number",
 		},
 		{
 			// A diverging else at module top level has no enclosing function to return
 			// from, so its `return` is rejected.
-			name:     "val-else at module top level with a diverging else is rejected",
-			src:      "val u: number | string = 5\nval num: number = u else { return }",
-			wantErrs: []string{"2:28-2:34: return can only be used inside a function"},
+			name: "val-else at module top level with a diverging else is rejected",
+			src: `val u: number | string = 5
+				val num: number = u else { return }`,
+			wantErrs: []string{"2:32-2:38: return can only be used inside a function"},
 		},
 	}
 
@@ -249,15 +251,21 @@ func TestIfValAndValElseDiagnosticsNameTheirConstruct(t *testing.T) {
 		// A `val … else` names its `else`: the fallback that does not fit the annotated
 		// binding underlines the value the `else` produced.
 		"ValElseFallbackDoesNotFit": {
-			src:     "fn f(u: number | string) {\n\tval x: number = u else { \"no\" }\n\treturn x\n}",
-			want:    `2:27-2:31: cannot constrain "no" <: number`,
+			src: `fn f(u: number | string) {
+					val x: number = u else { "no" }
+					return x
+				}`,
+			want:    `2:31-2:35: cannot constrain "no" <: number`,
 			blame:   `"no"`,
 			related: []string{"number"},
 		},
 		// A name the `else` cannot see is reported against the `else`'s own reference.
 		"ValElseCannotSeeTheBinding": {
-			src:   "fn f(u: number | string) {\n\tval x: number = u else { return x }\n\treturn x\n}",
-			want:  "2:34-2:35: Unknown identifier: x",
+			src: `fn f(u: number | string) {
+					val x: number = u else { return x }
+					return x
+				}`,
+			want:  "2:38-2:39: Unknown identifier: x",
 			blame: "x",
 		},
 	}
@@ -291,7 +299,10 @@ func TestInferRefutableFormsNarrowUnions(t *testing.T) {
 		// A diverging `else` produces no value, so the declaration's leaves read only the
 		// initializer and narrowing applies to them the same way.
 		"ValElseWithADivergingElse": {
-			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { return 0 }\n\treturn x\n}",
+			src: `fn f(p: {x: number} | {y: string}) {
+					val {x} = p else { return 0 }
+					return x
+				}`,
 			want: "fn (p: {x: number} | {y: string}) -> number",
 		},
 	}
@@ -318,13 +329,19 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 		// The fallback is an object of the union's other shape, which the pattern cannot
 		// destructure.
 		"FallbackMissesAField": {
-			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { {y: 1} }\n\treturn x\n}",
-			want: "2:21-2:27: object is missing property: x",
+			src: `fn f(p: {x: number} | {y: string}) {
+					val {x} = p else { {y: 1} }
+					return x
+				}`,
+			want: "2:25-2:31: object is missing property: x",
 		},
 		// The fallback is not an object at all.
 		"FallbackIsNotAnObject": {
-			src:  "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { 5 }\n\treturn x\n}",
-			want: "2:21-2:22: cannot constrain 5 <: object",
+			src: `fn f(p: {x: number} | {y: string}) {
+					val {x} = p else { 5 }
+					return x
+				}`,
+			want: "2:25-2:26: cannot constrain 5 <: object",
 		},
 	}
 
@@ -345,10 +362,13 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 // declaration that can bind no `x` at all.
 func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t,
-		"fn f(p: {x: number} | {y: string}) {\n\tval {x}: {x: number} = p else { {y: \"s\"} }\n\treturn x\n}")
+		`fn f(p: {x: number} | {y: string}) {
+				val {x}: {x: number} = p else { {y: "s"} }
+				return x
+			}`)
 	require.Equal(t, []string{
-		"2:6-2:9: Unsupported: narrowing type annotation on a destructuring pattern",
-		"2:34-2:42: object is missing property: x",
+		"2:9-2:12: Unsupported: narrowing type annotation on a destructuring pattern",
+		"2:37-2:45: object is missing property: x",
 	}, messagesWithSpan(errs))
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
@@ -368,7 +388,10 @@ func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 // `{x}` test and takes the `else`, so the leaf is never absent at run time. What this
 // asserts is today's type rather than the intended one.
 func TestInferValElseLeavesReadTheFallback(t *testing.T) {
-	values, _, errs := inferSource(t, "fn f(p: {x: number} | {y: string}) {\n\tval {x} = p else { {x: \"s\"} }\n\treturn x\n}")
+	values, _, errs := inferSource(t, `fn f(p: {x: number} | {y: string}) {
+			val {x} = p else { {x: "s"} }
+			return x
+		}`)
 	require.Empty(t, errs)
 	require.Equal(t, `fn (p: {x: number} | {y: string}) -> number | "s" | undefined`, values["f"])
 }
@@ -386,7 +409,10 @@ func TestInferRefutableFormsBindThroughProjections(t *testing.T) {
 			want: `fn (l: {start: {x: number, y: string}}) -> [number, string]`,
 		},
 		"ValElse": {
-			src:  "fn f(l: {start: {x: number, y: string}}) {\n\tval {start: {x, y}} = l else { return [0, \"\"] }\n\treturn [x, y]\n}",
+			src: `fn f(l: {start: {x: number, y: string}}) {
+					val {start: {x, y}} = l else { return [0, ""] }
+					return [x, y]
+				}`,
 			want: `fn (l: {start: {x: number, y: string}}) -> [number, string]`,
 		},
 	}
@@ -422,12 +448,17 @@ func TestInferRefutableFormsInferTheTargetOnce(t *testing.T) {
 		want string
 	}{
 		"IfVal": {
-			src:  "fn g(s: string) { return {x: 1} }\nfn f() { return if val {x} = g(2) { x } else { 0 } }",
-			want: "2:32-2:33: cannot constrain 2 <: string",
+			src: `fn g(s: string) { return {x: 1} }
+				fn f() { return if val {x} = g(2) { x } else { 0 } }`,
+			want: "2:36-2:37: cannot constrain 2 <: string",
 		},
 		"ValElse": {
-			src:  "fn g(s: string) { return {x: 1} }\nfn f() {\n\tval {x} = g(2) else { return 0 }\n\treturn x\n}",
-			want: "3:14-3:15: cannot constrain 2 <: string",
+			src: `fn g(s: string) { return {x: 1} }
+				fn f() {
+					val {x} = g(2) else { return 0 }
+					return x
+				}`,
+			want: "3:18-3:19: cannot constrain 2 <: string",
 		},
 	}
 
@@ -453,8 +484,11 @@ func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
 			want: "1:61-1:65: Unknown identifier: nope",
 		},
 		"ValElse": {
-			src:  "fn f(u: number | string) {\n\tval n = u else { nope }\n\treturn n\n}",
-			want: "2:19-2:23: Unknown identifier: nope",
+			src: `fn f(u: number | string) {
+					val n = u else { nope }
+					return n
+				}`,
+			want: "2:23-2:27: Unknown identifier: nope",
 		},
 	}
 
@@ -463,6 +497,245 @@ func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+		})
+	}
+}
+
+// A top-level annotation on a `match` arm's pattern narrows the scrutinee, the same way the
+// annotation of an `if val x: number = u` does. The arm runs only for the values the
+// annotation admits, so the arms below it stay reachable and bind the whole scrutinee.
+func TestInferMatchArmAnnotationNarrows(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		// want is the printed type of `f`, checked when wantErrs is nil.
+		want string
+		// wantErrs, when non-nil, is the full set of expected messages.
+		wantErrs []string
+	}{
+		{
+			// The arm picks the `number` member of the union rather than asserting the whole
+			// union fits `number`, and the catch-all below it is not reported unreachable.
+			name: "an annotated arm narrows a union",
+			src: `fn f(u: number | string) {
+					return match u {
+						x: number => x,
+						_ => 0,
+					}
+				}`,
+			want: "fn (u: number | string) -> number",
+		},
+		{
+			// Two annotated arms name the two members between them, so the arms cover the
+			// union with no catch-all.
+			name: "annotated arms cover a union",
+			src: `fn f(u: number | string) {
+					return match u {
+						x: number => x,
+						y: string => y,
+					}
+				}`,
+			want: "fn (u: number | string) -> number | string",
+		},
+		{
+			// One annotated arm leaves the `string` member with no arm to run, so the arms
+			// are not exhaustive. The span runs from `match` to the closing brace.
+			name: "one annotated arm leaves a member uncovered",
+			src: `fn f(u: number | string) {
+					return match u {
+						x: number => x,
+					}
+				}`,
+			wantErrs: []string{"2:13-4:7: match is not exhaustive; add a catch-all branch"},
+		},
+		{
+			// An annotation admitting the whole scrutinee covers it outright, so no arm below
+			// is needed.
+			name: "an arm annotated with the whole union covers it",
+			src: `fn f(u: number | string) {
+					return match u {
+						x: number | string => x,
+					}
+				}`,
+			want: "fn (u: number | string) -> number | string",
+		},
+		{
+			// The same annotation one line away in an `if val`. The arm above reads it the
+			// same way, which is what makes one spelling mean one thing.
+			name: "if val narrows the same union",
+			src:  `fn f(u: number | string) { return if val x: number = u { x } else { 0 } }`,
+			want: "fn (u: number | string) -> number",
+		},
+		{
+			// The scrutinee holds no value the annotation admits, so the arm can never run and
+			// the narrowing constraint fails. Two things in the message say it is a narrowing
+			// failure rather than a failed assertion on the bound value. The direction is
+			// `number <: string`, the annotation into the scrutinee, and the span is the
+			// annotation rather than the value the arm binds.
+			name: "an annotation no member fits is rejected",
+			src: `fn f(s: string) {
+					return match s {
+						x: number => x,
+					}
+				}`,
+			wantErrs: []string{"3:10-3:16: cannot constrain number <: string"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				return
+			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// An arm below an unguarded catch-all never runs, so the walk leaves it out and
+// inferMatchArms types it separately. A top-level annotation narrows there too, so the dead
+// arm earns the one diagnostic naming it dead and no second one from its annotation.
+func TestInferUnreachableArmAnnotationStillNarrows(t *testing.T) {
+	tests := map[string]string{
+		"BelowAWildcard": `fn f(u: number | string) {
+				return match u {
+					_ => 0,
+					x: number => x,
+				}
+			}`,
+		"BelowABareIdent": `fn f(u: number | string) {
+				return match u {
+					other => 0,
+					x: number => x,
+				}
+			}`,
+	}
+	want := "4:6-4:20: this match arm is unreachable because an arm above it matches every value; drop it, or move it above that arm"
+
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, []string{want}, messagesWithSpan(errs))
+		})
+	}
+}
+
+// A narrowing annotation picks out the part of the scrutinee it admits, so an annotation
+// wider than a member is accepted rather than rejected. Every value of a `1 | 2` is a number,
+// so `x: number` matches both members and the arm runs.
+//
+// The name takes the annotated type, not the members the test let through. `x: number` binds
+// `x` at `number`, so an arm returning `x` contributes `number` to the form's type and never
+// `1 | 2`. That is the ordinary declaration rule, where `val x: number = 5` types `x` as
+// `number` rather than as `5`, and it is why the annotation reads as a declaration of the
+// binding rather than only as a test of the value.
+//
+// The three forms share bindNarrowedIdent, so each accepts and rejects the same annotations
+// and binds at the same type.
+func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
+	tests := map[string]struct {
+		src string
+		// binding is the name whose printed type is checked.
+		binding string
+		// want is that name's printed type, checked when wantErr is empty.
+		want string
+		// wantErr, when non-empty, is the one message expected.
+		wantErr string
+	}{
+		// Both members fit the annotation, so the arm runs for either and `x` is a `number`.
+		// The literal members do not reach the return type.
+		"MatchArm": {
+			src: `fn f(u: 1 | 2) {
+					return match u {
+						x: number => x,
+					}
+				}`,
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> number",
+		},
+		// The `else`'s 0 is subsumed into the `number` the consequent contributes.
+		"IfVal": {
+			src:     `fn f(u: 1 | 2) { return if val x: number = u { x } else { 0 } }`,
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> number",
+		},
+		"ValElse": {
+			src: `fn f(u: 1 | 2) {
+					val x: number = u else { return 0 }
+					return x
+				}`,
+			binding: "f",
+			want:    "fn (u: 1 | 2) -> number",
+		},
+		// `unknown` is the top of the lattice, so it admits every value of any scrutinee, and
+		// the name it binds is an `unknown`.
+		"Unknown": {
+			src: `fn f(u: number | string) {
+					return match u {
+						x: unknown => x,
+					}
+				}`,
+			binding: "f",
+			want:    "fn (u: number | string) -> unknown",
+		},
+		// Only the two literal members fit, so the first arm runs for those and the second
+		// takes the rest. Each arm's name is its own annotation.
+		"WiderThanSomeMembers": {
+			src: `fn f(u: 1 | 2 | string) {
+					return match u {
+						x: number => x,
+						s: string => s,
+					}
+				}`,
+			binding: "f",
+			want:    "fn (u: string | 1 | 2) -> number | string",
+		},
+		// A transparent alias carries the alias rather than the union it stands for, so the
+		// members are reached by expanding it first. Without that the annotation would be
+		// measured against the alias as a single shape and fit nothing.
+		"AliasedUnion": {
+			src: `type U = 1 | 2 | string
+				fn f(u: U) {
+					return match u {
+						x: number => x,
+						s: string => 0,
+					}
+				}`,
+			binding: "f",
+			want:    "fn (u: U) -> number",
+		},
+		// An annotation narrower than every member fits none of them, so the union-super
+		// exists rule decides instead. The name takes the annotation either way.
+		"NarrowerThanEveryMember": {
+			src:     `fn f(u: number | string) { return if val x: 1 = u { x } else { 0 } }`,
+			binding: "f",
+			want:    "fn (u: number | string) -> 0 | 1",
+		},
+		// No value of the scrutinee is a number and no member holds one, so neither rule
+		// accepts the annotation and the arm can never run.
+		"AdmitsNothing": {
+			src: `fn f(s: string) {
+					return match s {
+						x: number => x,
+					}
+				}`,
+			binding: "f",
+			wantErr: "3:10-3:16: cannot constrain number <: string",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.wantErr != "" {
+				require.Equal(t, []string{tt.wantErr}, messagesWithSpan(errs))
+				return
+			}
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
 }
@@ -488,7 +761,9 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 	}{
 		{
 			name: "match arm tuple leaves",
-			src:  "fn f(p: [number, string]) { return match p {\n\t[a: number, b: string] => [a, b],\n} }",
+			src: `fn f(p: [number, string]) { return match p {
+					[a: number, b: string] => [a, b],
+				} }`,
 			want: "fn (p: [number, string]) -> [number, string]",
 		},
 		{
@@ -498,7 +773,10 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 		},
 		{
 			name: "val else tuple leaves",
-			src:  "fn f(p: [number, string]) {\n\tval [a: number, b: string] = p else { return [0, \"\"] }\n\treturn [a, b]\n}",
+			src: `fn f(p: [number, string]) {
+					val [a: number, b: string] = p else { return [0, ""] }
+					return [a, b]
+				}`,
 			want: "fn (p: [number, string]) -> [number, string]",
 		},
 		{
@@ -513,7 +791,10 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 		},
 		{
 			name: "val else object shorthand leaf",
-			src:  "fn f(p: {a: number, b: string}) {\n\tval {a::number} = p else { return 0 }\n\treturn a\n}",
+			src: `fn f(p: {a: number, b: string}) {
+					val {a::number} = p else { return 0 }
+					return a
+				}`,
 			want: "fn (p: {a: number, b: string}) -> number",
 		},
 		{
@@ -532,9 +813,12 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 			wantErrs: []string{"1:44-1:53: cannot constrain number <: string"},
 		},
 		{
-			name:     "val else tuple leaf annotation must fit",
-			src:      "fn f(p: [number, string]) {\n\tval [a: string, b: string] = p else { return [\"\", \"\"] }\n\treturn [a, b]\n}",
-			wantErrs: []string{"2:7-2:16: cannot constrain number <: string"},
+			name: "val else tuple leaf annotation must fit",
+			src: `fn f(p: [number, string]) {
+					val [a: string, b: string] = p else { return ["", ""] }
+					return [a, b]
+				}`,
+			wantErrs: []string{"2:11-2:20: cannot constrain number <: string"},
 		},
 		{
 			name:     "if val object shorthand annotation must fit",

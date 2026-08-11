@@ -601,8 +601,9 @@ func TestNormalizeBareTerms(t *testing.T) {
 }
 
 // A narrowing annotation is a tag the branch tests, so the branch it sits on can fail and
-// the `else` below it stays reachable. `if val x: number = u` runs its consequent only for
-// a `u` holding a `number`.
+// whatever the surface wrote below it stays reachable. `if val x: number = u` runs its
+// consequent only for a `u` holding a `number`, and the `match` arm `x: number => x` runs
+// only for the same values. All three forms reach the one tag.
 func TestNormalizeAnnotationIsARefutableTag(t *testing.T) {
 	tests := map[string]struct {
 		core *CoreSplit
@@ -621,6 +622,15 @@ func TestNormalizeAnnotationIsARefutableTag(t *testing.T) {
 			want: `split u {
   : number => bind x = u; escape
 } default fallback { 0 }`,
+		},
+		// A `match` arm writes it inside its pattern, the node an `if val` uses. The arm
+		// below the annotated one keeps a branch of its own rather than being dropped as
+		// unreachable, which is what a catch-all arm above it would have done.
+		"Match": {
+			core: DesugarMatch(findExpr[*ast.MatchExpr](t, `match u { x: number => x, other => other }`)),
+			want: `split u {
+  : number => bind x = u; leaf x
+} default bind other = u; leaf other`,
 		},
 	}
 
