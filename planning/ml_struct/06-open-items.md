@@ -24,17 +24,28 @@ un-merged Frisch–Castagna–Benzaken decomposition (sound)? M9 conditional-typ
 `extends` checks make this divergence user-visible, so it gates trusting M9
 semantics.
 
-**Verified so far (source read done — the union-of-records half).** A negative-position
-union of ≥2 distinct-field records over-approximates to ⊤: `NormalForms.scala`'s
-`RhsNf.| (Var, FieldType)` bails to `None` on a second differently-named field, and
-`None` means Top (the authors' own comment). Scope is narrow — negative position
-only; positive-position unions and tagged unions (object tags get a *list* slot) are
-precise. **Mitigation:** a set-valued `RhsNf` record slot, or the `trialAndCommit`
-exists-rule fallback for would-widen union-supers (see caveat #4 residual #1 in
-`02-caveats-and-mitigations.md`). Pinned by the negative-position rows added to the
-PR2 corpus (#1059). **Still open:** the *arrow-intersection* half below — the
-`LhsNf` fun merge plus the `ConstraintSolver` arrow arm — which gates the M9
-conditional-type semantics.
+**VERIFIED — both halves of this source read are done.** The "Plan of attack"
+below is retained for the record, but steps 2 (source read) is complete.
+
+- **Union-of-records half.** A negative-position union of ≥2 distinct-field records
+  over-approximates to ⊤: `NormalForms.scala`'s `RhsNf.| (Var, FieldType)` bails to
+  `None` on a second differently-named field, and `None` means Top (the authors' own
+  comment). Scope is narrow — negative position only; positive-position unions and
+  tagged unions (object tags get a *list* slot) are precise. **Mitigation:** a
+  set-valued `RhsNf` record slot, or the `trialAndCommit` exists-rule fallback for
+  would-widen union-supers (caveat #4 residual #1). Pinned by the negative-position
+  rows in the PR2 corpus (#1059).
+- **Arrow-intersection half.** MLscript **merges** intersected arrows —
+  `NormalForms.scala:58` gives `FunctionType(l0|l1, r0&r1)` = `(A|B)→(C&D)` — and
+  applies the **plain arrow rule** to the merged result (`ConstraintSolver.scala:172`
+  routes to `rec`; `rec` at `:255` is contra-param/cov-return, no decomposition). So
+  worked example B *holds* in MLstruct (see [04-type-level-operators.md](04-type-level-operators.md)),
+  not "not" — the merge is exact when codomains agree (example A) but unsound when
+  they conflict (example B: `boolean & null = never`). **Decision for the port:** to
+  keep conditional-type `extends` set-theoretically sound, implement the
+  Frisch–Castagna–Benzaken arrow decomposition rather than inheriting MLstruct's
+  merge, or deliberately accept and document the non-standard result. This gates
+  PR5 (#1062) and PR10 (#1067).
 
 **Plan of attack** for the arrow-intersection half, in order of leverage:
 

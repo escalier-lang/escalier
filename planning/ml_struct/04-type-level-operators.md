@@ -92,60 +92,71 @@ exactly under adoption trigger 3 ([00-overview.md](00-overview.md)) — making
 inferred intersection-of-arrows first-class — so the feature that motivates
 MLstruct is the same feature that flips this branch.
 
-### Worked example B — where they reconverge (codomains conflict)
+### Worked example B — the merge is naive, so MLstruct diverges here too (verified)
 
 ```ts
 type Fn = ((x: number) => boolean) & ((x: string) => null)
 type Test = Fn extends (x: number | string) => boolean ? "callable" : "not"
 ```
 
-Both say **`"not"`**. The set-theoretic argument: take any `f` that is both
-`number → boolean` and `string → null`, and feed it a string — a valid `number |
-string` input. Because `f` is `string → null`, the result is `null`, which is not
-a `boolean`, so `f` does not have type `(number | string) => boolean`. A sound
-MLstruct must reject the subtyping, agreeing with TypeScript.
+- **TypeScript → `"not"`** — as in example A, no overload accepts `number | string`.
+- **Set-theoretically sound → `"not"`.** Feed a string, a valid `number | string`
+  input; `f` is `string → null`, so the result is `null`, not a `boolean`. `f` does
+  not have type `(number | string) => boolean`.
+- **MLstruct → `"callable"`** (verified against source). This is the surprising
+  case: MLstruct **diverges from both TS and the sound reading**.
 
-**How a sound system knows not to merge.** A naive reading of the normal form —
-"intersected arrows merge to `(A|B) → (C&D)`" — would give `(number | string) →
-(boolean & null)` = `(number | string) → never`, and then `… → never <: … →
-boolean` succeeds, yielding `"callable"`. That is **unsound**, so MLstruct cannot
-be doing that collapse. The actual decision uses the **arrow-decomposition rule**
-(the Frisch–Castagna–Benzaken Lemma-6.8 shape the `annoying` / `constrainDNF`
-layer implements): to decide `⋂(Aᵢ→Cᵢ) <: (E→F)`, require `E <: ⋃Aᵢ` and, for
-every subset `P'` of the overloads, either the input is still covered by the
-*other* overloads (`E <: ⋃_{i∉P'} Aᵢ`) or this group's combined codomain fits the
-target (`⋂_{i∈P'} Cᵢ <: F`). For the `string` overload:
+**Why MLstruct says `"callable"` (verified).** MLstruct merges intersected arrows
+into one arrow during normalization — `NormalForms.scala:58` intersects two
+`FunctionType`s to `FunctionType(l0 | l1, r0 & r1)` = `(A|B) → (C&D)`. So `Fn`
+becomes `(number | string) → (boolean & null)` = `(number | string) → never`. The
+solver then applies the **plain arrow rule** to the merged arrow:
+`ConstraintSolver.scala:172` routes `LhsRefined(fun) <: RhsBases(fun)` straight to
+`rec(f0, f1)`, and `rec` (line 255) does contravariant-param + covariant-return
+with no decomposition. Checking `(number | string) → never <: (number | string) →
+boolean`: params match and `never <: boolean` holds → **the subtyping succeeds.**
 
-- Is `number | string <: number` (covered by the remaining `number` overload)? No.
-- Is the string overload's codomain `null <: boolean`? No.
+**What set-theoretic soundness requires instead — and what Escalier must do for
+sound conditionals.** The Frisch–Castagna–Benzaken arrow decomposition (Lemma 6.8)
+does *not* collapse the intersection to one arrow. To decide `⋂(Aᵢ→Cᵢ) <: (E→F)`
+it requires `E <: ⋃Aᵢ` and, for every subset `P'` of the overloads, either the
+input is still covered by the *other* overloads (`E <: ⋃_{i∉P'} Aᵢ`) or that
+group's combined codomain fits the target (`⋂_{i∈P'} Cᵢ <: F`). For the `string`
+overload: `number | string <: number`? No. `null <: boolean`? No. Neither holds →
+**rejected.** MLstruct does not implement this; its merge is the naive `(A|B) →
+(C&D)`, which is why it accepts what the decomposition rejects.
 
-Neither disjunct holds, so the subtyping is rejected. The rule checks each
-overload's codomain against the target *for the inputs that overload is
-responsible for*, instead of blindly intersecting codomains.
+### The divergence zone — and where the merge is unsound
 
-### The divergence zone is narrow
+MLstruct's naive merge means it diverges from TypeScript's overload semantics on
+**both** examples. The difference between them is soundness:
 
-MLstruct and TS differ only when the set-theoretic algebra can prove *uniform*
-behavior over the queried domain that TS's syntactic overload-matching declines to
-synthesize (example A). The moment the overloads' codomains conflict on inputs in
-the queried domain (example B), even the set-theoretic reading refuses, and the
-two reconverge.
+- **Example A (codomains agree):** the merge `boolean & boolean = boolean` is
+  *exact*, so MLstruct's `"callable"` is both non-TS **and** set-theoretically
+  sound.
+- **Example B (codomains conflict):** the merge `boolean & null = never` *loses
+  information* — it replaces each overload's per-input codomain with their
+  intersection, dropping that the string branch returns `null`. So MLstruct's
+  `"callable"` is non-TS **and unsound** w.r.t. a types-as-values reading. This is
+  the concrete face of caveat #4's non-standard subtyping semantics.
 
 Example A is also where MLstruct's static overload resolution can disagree with
 Escalier's *runtime* dispatcher, which routes on concrete `typeof` / `in` tests —
 see [05-feature-interactions.md](05-feature-interactions.md) §"Function overloading"
 and [06-open-items.md](06-open-items.md) Item 3 for that codegen reconciliation.
 
-### Open verification item
+### Verified against MLscript source
 
-Both worked examples assume MLstruct's *sound* answer, which is derivable. What is
-**not** confirmed from the source reading is whether MLscript represents
-intersected arrows via a single merged `fun` slot or via the un-merged
-decomposition — and those differ exactly when codomains conflict (example B). If
-MLscript really merged to `… → (boolean & null)` and used the plain arrow rule, it
-would be unsound there. Confirm against `NormalForms.scala` / `ConstraintSolver.scala`
-before trusting M9 conditional-type semantics. This is the concrete instance of the
-caveat-#4 verification prerequisite.
+The arrow half of [06-open-items.md](06-open-items.md) Item 1 is **settled**:
+MLscript merges intersected arrows (`NormalForms.scala:58`,
+`FunctionType(l0|l1, r0&r1)`) and applies the plain arrow rule to the result
+(`ConstraintSolver.scala:172`, `:255`) — no decomposition. Consequences: example B
+holds in MLstruct (not "not"); MLstruct's arrow-intersection `<:` is
+non-set-theoretic; and **if Escalier wants sound conditional-type `extends`, the
+port must implement the FCB decomposition for arrow-intersection subtyping rather
+than inheriting MLstruct's merge** — or deliberately accept and document the
+non-standard result. The `constrainNF` implementation (PR5, #1062) and the
+type-level operators (PR10, #1067) both depend on this decision.
 
 ---
 
