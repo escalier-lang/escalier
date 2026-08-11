@@ -260,6 +260,45 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			want: nil,
 		},
 		{
+			name: "SetterParamNarrowed",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					get p(self) -> number { return 4 },
+					set p(mut self, v: number | string) {},
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					get p(self) -> number { return 4 },
+					set p(mut self, v: number) {},
+				}
+			`,
+			// A write is contravariant, so narrowing the setter's parameter breaks the
+			// inherited promise: a holder of an `Animal` may write a `string` the Dog rejects.
+			want: []string{
+				"class `Dog` redeclares inherited member `p` with type `number`, " +
+					"which is not compatible with `number | string` declared by `Animal`",
+			},
+		},
+		{
+			name: "SetterParamWidenedIsAllowed",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					get p(self) -> number { return 4 },
+					set p(mut self, v: number) {},
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					get p(self) -> number { return 4 },
+					set p(mut self, v: number | string) {},
+				}
+			`,
+			// Widening is the direction a write admits. Every value an `Animal` reference
+			// writes still fits the Dog's setter.
+			want: nil,
+		},
+		{
 			name: "OverridingOnlyTheGetterHalfDropsTheSetter",
 			src: `
 				class Animal {
@@ -343,6 +382,31 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			// An overload set reads as the intersection of its arms, so the two classes
 			// declare the same member and the order the arms are written in does not matter.
 			want: nil,
+		},
+		{
+			name: "OverloadSetWithAMutArmAfterAPlainOne",
+			src: `
+				class Animal {
+					x: number,
+					constructor(mut self) { self.x = 0 },
+					f(self, a: number) -> undefined { return undefined },
+				}
+				class Dog extends Animal {
+					x: number,
+					constructor(mut self) { self.x = 0 },
+					f(self, a: number) -> undefined { return undefined },
+					f(mut self, a: string) -> undefined { self.x = 1 },
+				}
+			`,
+			// An arm disagreeing with its siblings on receiver mutability is rejected, yet the
+			// arm still lands in the member's signature list. The override check measures the
+			// receiver across every arm, so Dog's `mut self` arm is seen whichever position it
+			// is written in.
+			want: []string{
+				"Overloaded method 'f' must use the same `self` receiver mutability in every arm.",
+				"class `Dog` redeclares inherited member `f` as a method taking `mut self`, " +
+					"but `Animal` declares it as a method",
+			},
 		},
 		{
 			name: "MethodOverriddenWithAMutReceiver",

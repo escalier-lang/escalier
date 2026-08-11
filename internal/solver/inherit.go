@@ -330,10 +330,20 @@ func isOptional(elem soltype.ObjTypeElem) bool {
 // receiverMut reports whether reaching a member needs a mutable reference to the instance.
 // A `mut self` receiver on a method, getter, or setter is what demands one. A field carries
 // no receiver, so it reads as false.
+//
+// An overload set is measured across every arm, so one `mut self` arm makes the whole member
+// demand a mutable reference. buildMemberSigs rejects a set whose arms disagree, but it
+// appends the offending arm all the same, so reading a single arm would answer by
+// declaration order on exactly the input that already disagrees.
 func receiverMut(elem soltype.ObjTypeElem) bool {
 	switch elem := elem.(type) {
 	case *soltype.MethodElem:
-		return len(elem.Signatures) > 0 && selfParamMut(elem.Signatures[0].SelfParam)
+		for _, sig := range elem.Signatures {
+			if selfParamMut(sig.SelfParam) {
+				return true
+			}
+		}
+		return false
 	case *soltype.GetterElem:
 		return selfParamMut(elem.SelfParam)
 	case *soltype.SetterElem:
