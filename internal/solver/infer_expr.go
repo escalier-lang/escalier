@@ -3167,9 +3167,8 @@ func (c *checker) typeAdmits(ann, t soltype.Type) bool {
 // typed first and never sees them.
 //
 // A non-diverging `else` supplies the value the declaration binds when the pattern did not
-// match. Where an annotation pins the binding's type, that value has to fit the annotation.
-// Otherwise joinFallbackLeaves takes it apart with the same pattern and joins each of its
-// leaves into the leaf the success path bound.
+// match. An annotation pins the binding's type, so that value has to fit it. Otherwise
+// joinFallbackLeaves takes the value apart with the same pattern and joins each leaf.
 func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	core, ok := ucs.DesugarValElse(d)
 	if !ok {
@@ -3211,37 +3210,30 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 	installEscaped(scope, w.escaped)
 }
 
-// fallbackLeaf is what the `else`'s fallback value supplies for one name a `val … else`
-// binds. It holds the type projected out of the fallback and the pattern node that named
-// the leaf.
+// fallbackLeaf is what the `else`'s fallback supplies for one name a `val … else` binds:
+// the type projected out of the fallback, and the pattern node that named the leaf.
 type fallbackLeaf struct {
 	ty   soltype.Type
 	node ast.Node
 }
 
-// joinFallbackLeaves rebinds every leaf the success path of a `val pat = init else { … }`
-// bound, to the join of that leaf with the same leaf of the fallback value. escaped is the
-// innermost scope the success path bound into, and fallback the type the `else` produced.
+// joinFallbackLeaves rebinds each leaf the success path of a `val pat = init else { … }`
+// bound, to the join of that leaf with the fallback's. escaped is the innermost scope the
+// success path bound into, and fallback the type the `else` produced.
 //
-// The join sits BELOW the projection, one var per leaf rather than one for the whole
-// declaration. `val {x} = p else { {x: "s"} }` over `p: {x: number} | {y: string}` binds
-// `x` at `number | "s"`. Joining above the projection instead would leave `{y: string}`
-// present at the read, since the fallback is a value no tag test admitted and nothing may
-// narrow a union holding it. `x` would then pick up the `undefined` that member yields for
-// a key it does not carry, a value the declaration can never bind.
+// The join sits BELOW the projection, one var per leaf. `val {x} = p else { {x: "s"} }`
+// over `p: {x: number} | {y: string}` binds `x` at `number | "s"`. Joining above it would
+// leave `{y: string}` in the union the leaf reads, since no tag test admitted the fallback
+// and nothing may narrow a union holding it, and `x` would pick up that member's
+// `undefined`.
 //
-// Walking the pattern a second time is what keeps the fallback checked against it, so
-// `val {x} = p else { {y: 1} }` still reports the missing `x`. That walk is a projection
-// rather than a binding. It resolves what the fallback supplies for each name and leaves
-// every other part of binding to the walk that already ran. See bindPurpose.
+// The second walk is a projection rather than a binding, so nothing a leaf carries is
+// applied twice. See bindPurpose. It still checks the fallback against the pattern, which
+// is what reports the missing `x` of `val {x} = p else { {y: 1} }`.
 //
-// The projection emits its requirements against a fresh var carrying the fallback rather
-// than against the fallback itself, which is what keeps such a diagnostic pointing at the
-// value the user wrote. A requirement emitted straight against the fallback is anchored to
-// the pattern leaf that asked for it, and CannotConstrainError blames a node only when it
-// lies inside the anchor. The `5` of `val {x} = p else { 5 }` lies outside the `x` of the
-// pattern, so the message would underline that `x`. Routing through the var moves the anchor
-// to the whole declaration, which the `5` does lie inside.
+// Its requirements go against a fresh var carrying the fallback rather than against the
+// fallback itself. One emitted straight against the fallback is anchored to the pattern
+// leaf, and the `5` of `val {x} = p else { 5 }` would then underline the `x`.
 func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, escaped *Scope, fallback soltype.Type) {
 	produced := c.freshAt(lvl)
 	leaves := map[string]fallbackLeaf{}
@@ -3273,9 +3265,8 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 			c.constrain(d, leaf.ty, join)
 			binding.Schemes = []TypeScheme{monoScheme(join)}
 			s.defineValue(name, binding)
-			// Recording the join replaces what the binding walk recorded, which was the leaf
-			// projected off the initializer alone. An editor then reads the type the name
-			// really binds at.
+			// The join replaces what the binding walk recorded, the leaf projected off the
+			// initializer alone, so an editor reads the type the name really binds at.
 			c.recordType(leaf.node, join)
 		}
 	}
@@ -3283,27 +3274,17 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 
 // leafFixedType returns the type a leaf's fallback has to fit when the leaf takes no join,
 // and false when the leaf joins its two sources instead. matched is what the success path
-// bound the leaf to and node is the leaf's pattern.
+// bound the leaf to, node the leaf's pattern.
 //
-// Two leaves take no join. An owned `mut` leaf is a cell the rest of the block writes
-// through, so the fallback flows into the cell's contents. Binding the name to a union of
-// that cell and a plain value would leave `x.a = 2` writing through something that is no
-// cell. A leaf carrying its own type annotation has that annotation as its type, so the
-// fallback has to fit it. `val {x::number} = p else { {x: "s"} }` reports the `"s"` rather
-// than widening `x` to `number | "s"`.
+// Two leaves take no join. An owned `mut` leaf is a cell the block writes through, so the
+// fallback flows into its contents. A union of that cell and a plain value would reject
+// `x.a = 2`. An annotated leaf already has the annotation as its type, so the fallback has
+// to fit it. `val {x::number} = p else { {x: "s"} }` reports the `"s"`.
 //
-// An UNANNOTATED leaf of a borrowed scrutinee is neither. It carries a lifetime, and what it
-// names is a place inside the initializer. The fallback is a fresh value living nowhere in
-// there, so it joins beside the borrow and the name binds a union. A write through that
-// union is rejected, which is the honest answer for a name holding a borrow on one path and
-// a temporary on the other.
-//
-// An ANNOTATED leaf of that same scrutinee is no borrow. concreteLeaf drops the shape hint
-// for every annotated leaf, and applyBindMode wraps a leaf only where that hint says the
-// value is borrowable. Such a leaf takes the annotation above, so its fallback fits the
-// annotation exactly as it would over an owned scrutinee. The one leaf the annotation branch
-// hands back a borrow for is one the annotation itself named a borrow type for, which the
-// fallback then has to fit.
+// An unannotated leaf of a borrowed scrutinee is neither. It names a place inside the
+// initializer, where the fallback's fresh value does not live, so the two join and a write
+// through the union is rejected. An annotated leaf of that same scrutinee is no borrow at
+// all, since concreteLeaf drops the shape hint applyBindMode needs to wrap one.
 func leafFixedType(matched soltype.Type, node ast.Node) (soltype.Type, bool) {
 	if ref, isRef := matched.(*soltype.RefType); isRef && ref.Mut && ref.Lt == nil {
 		return ref.Inner, true
@@ -3314,9 +3295,9 @@ func leafFixedType(matched soltype.Type, node ast.Node) (soltype.Type, bool) {
 	return nil, false
 }
 
-// leafTypeAnn returns the type annotation a pattern leaf carries, and nil for one that
-// carries none. The two leaf forms hang it off different nodes. A tuple element and an
-// object key-value's value carry it on the identifier, an object shorthand on itself.
+// leafTypeAnn returns the type annotation a pattern leaf carries, and nil for one carrying
+// none. A tuple element and an object key-value's value hang it off the identifier, an
+// object shorthand off itself.
 func leafTypeAnn(node ast.Node) ast.TypeAnn {
 	switch n := node.(type) {
 	case *ast.IdentPat:
@@ -3329,8 +3310,7 @@ func leafTypeAnn(node ast.Node) ast.TypeAnn {
 }
 
 // monoTypeOf returns the one non-generalized type a binding holds. Every leaf a pattern
-// binds is such a binding. It returns false for an overload set and for a generalized
-// scheme, neither of which a leaf produces.
+// binds is such a binding, and an overload set or a generalized scheme returns false.
 func monoTypeOf(b ValueBinding) (soltype.Type, bool) {
 	if len(b.Schemes) != 1 {
 		return nil, false
