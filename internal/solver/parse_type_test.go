@@ -141,6 +141,10 @@ func litToSoltype(t *testing.T, lit ast.Lit) soltype.Type {
 // pattern, a missing parameter or return annotation, and the type-parameter,
 // lifetime, and `throws` clauses all fail the test, mirroring how the rest of
 // this converter refuses what it cannot lower faithfully.
+//
+// An `open p` parameter fails for the same reason. soltype.FuncParam has no
+// slot for the marker, so lowering one would drop it and hand back a signature
+// narrower than the string says.
 func funcToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.FuncTypeAnn) *soltype.FuncType {
 	t.Helper()
 	require.Empty(t, ta.TypeParams, "parseType: type parameters on a fn annotation")
@@ -151,6 +155,7 @@ func funcToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.FuncTypeAn
 	for i, p := range ta.Params {
 		pat, ok := p.Pattern.(*ast.IdentPat)
 		require.True(t, ok, "parseType: unsupported parameter pattern %T", p.Pattern)
+		require.False(t, p.Open, "parseType: open parameter %s", pat.Name)
 		require.NotNil(t, p.TypeAnn, "parseType: parameter %s has no type", pat.Name)
 		params[i] = &soltype.FuncParam{
 			Pattern:  &soltype.IdentPat{Name: pat.Name},
