@@ -267,6 +267,32 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			wantErrs: []string{"2:3-2:55: " + mixedOwnershipMsg},
 		},
 		{
+			// Borrowing the value the `else` supplies for `x` is what clears the mixed-ownership
+			// report on the row above. Both halves of the leaf are then borrows. The `&` has to
+			// be written, since an owned value never borrows itself into a join.
+			//
+			// The borrowed literal outlives nothing, so its lifetime stays anonymous while the
+			// scrutinee's half carries the join of the two member lifetimes.
+			name: "val else leaf join accepts a borrowed fallback field",
+			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+  val {x: v} = p else { {x: &{a: 1}} }
+  return v
+}`,
+			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &'a {x: {a: number}} | &'b {y: string}) -> &'c {a: number} | &{a: 1}",
+		},
+		{
+			// Borrowing the whole object the `else` produced works as well as borrowing the one
+			// field. The borrow rides the fallback's binding mode down to the leaf, the same
+			// match ergonomics a borrowed scrutinee's leaves follow, so `v` binds the same type
+			// either way.
+			name: "val else leaf join accepts a borrow of the whole fallback",
+			src: `fn f(p: &{x: {a: number}} | &{y: string}) {
+  val {x: v} = p else { &{x: {a: 1}} }
+  return v
+}`,
+			want: "fn <'a: 'c, 'b: 'c, 'c>(p: &'a {x: {a: number}} | &'b {y: string}) -> &'c {a: number} | &{a: 1}",
+		},
+		{
 			// The fallback is an owned object, but the value it supplies for `x` is a borrow, so
 			// both halves of the leaf are borrows and ownership is uniform.
 			name: "val else leaf join accepts a fallback field that is a borrow",

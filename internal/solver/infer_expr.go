@@ -3246,22 +3246,6 @@ func (c *checker) inferValElse(scope *Scope, lvl int, d *ast.VarDecl) {
 type fallbackLeaf struct {
 	ty   soltype.Type
 	node ast.Node
-	// mode is the binding mode the fallback's own borrow fixed, which ty cannot show. The
-	// projection walk lowers every field into a plain variable, so a leaf of a borrowed
-	// fallback reads as owned unless the mode is consulted.
-	mode bindMode
-}
-
-// ownership returns the type the uniform-ownership check reads for the `else`'s half of this
-// leaf. A leaf the fallback supplied through a borrow reads as that borrow, so a borrowed
-// scrutinee joined with a borrowed fallback is uniform. A leaf whose projected type cannot
-// sit inside a borrow is copied rather than borrowed, and reads as itself.
-func (l fallbackLeaf) ownership() soltype.Type {
-	inner, borrowable := l.ty.(soltype.RefInner)
-	if l.mode.borrow == bmOwned || !borrowable {
-		return l.ty
-	}
-	return &soltype.RefType{Mut: l.mode.borrow == bmMut, Lt: l.mode.lt, Inner: inner}
 }
 
 // joinFallbackLeaves rebinds each leaf the success path of a `val pat = init else { … }`
@@ -3284,19 +3268,23 @@ func (l fallbackLeaf) ownership() soltype.Type {
 func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, escaped *Scope, fallback soltype.Type) {
 	produced := c.freshAt(lvl)
 	leaves := map[string]fallbackLeaf{}
-	// A borrowed fallback is peeled the same way a scrutinee is. The requirements a pattern
-	// emits are owned, so pushing the borrow itself into `produced` would read as a borrow
-	// escaping into an owned destination. The mode is what carries the borrow past the peel,
-	// and each leaf keeps it so joinLeaf can still tell a borrowed fallback from an owned one.
-	carrier, mode := c.scrutineeBinding(lvl, fallback)
-	// The carrier doubles as the shape, since it has not flowed into `produced` yet and a
-	// `...rest` leaf reads its leftover members off a shape.
-	c.projectLeaves(scope.Child(), lvl, d.Pattern, produced, carrier,
+	// The fallback doubles as the shape, since it has not flowed into `produced` yet and a
+	// `...rest` leaf reads its leftover members off a shape. It is passed unpeeled, so
+	// projectLeaves reads the borrow off it and each leaf of a borrowed fallback is itself a
+	// borrow. Peeling here instead would hand projectLeaves an owned carrier and every leaf
+	// would bind owned however the `else` was written.
+	c.projectLeaves(scope.Child(), lvl, d.Pattern, produced, fallback,
 		func(_ *Scope, name string, t soltype.Type, node ast.Node) {
-			leaves[name] = fallbackLeaf{ty: t, node: node, mode: mode}
+			leaves[name] = fallbackLeaf{ty: t, node: node}
 		})
 	// The requirements the projection emitted are upper bounds on `produced`. Pushing the
-	// carrier in only now is what checks it against them.
+	// fallback in only now is what checks it against them.
+	//
+	// A borrowed fallback is peeled first, the same way a scrutinee is. The requirements a
+	// pattern emits are owned, so pushing the borrow itself in would read as a borrow escaping
+	// into an owned destination. The borrow is not lost by the peel: the leaves above already
+	// took it off the fallback's binding mode.
+	carrier, _ := c.scrutineeBinding(lvl, fallback)
 	c.constrain(d, carrier, produced)
 	for s := escaped; s != nil && s != scope; s = s.parent {
 		for name, binding := range s.bindings() {
@@ -3337,7 +3325,7 @@ func (c *checker) joinLeaf(
 		return
 	}
 	// The two sources the name binds from have to agree on ownership.
-	c.checkUniformOwnership(d, []soltype.Type{matched, leaf.ownership()})
+	c.checkUniformOwnership(d, []soltype.Type{matched, leaf.ty})
 	join := c.joinBranches(d, lvl, ValElseBranch, []soltype.Type{matched, leaf.ty})
 	binding.Schemes = []TypeScheme{monoScheme(join)}
 	scope.defineValue(name, binding)

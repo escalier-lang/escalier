@@ -69,6 +69,15 @@ const (
 	forProjection
 )
 
+// leafMut reports whether a leaf's `mut` marker applies at this walk. A projection walk
+// answers false however the leaf was written, for two reasons. The marker's only effect on
+// an owned scrutinee is to thaw the leaf into a cell, which is a binding's business and not
+// a projection's. Against a borrowed one it reports MutLeafThroughSharedBorrowError, which
+// the binding walk over the same pattern already reported.
+func leafMut(marked bool, purpose bindPurpose) bool {
+	return marked && purpose == forBinding
+}
+
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
 // monomorphic projection of the scrutinee. Used by every body-level and
 // function-param destructuring path.
@@ -252,8 +261,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		t := scrutinee
 		if purpose == forBinding {
 			t = c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
-			t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		}
+		t = c.applyBindMode(lvl, p, leafMut(p.Mutable, purpose), t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
 		return &soltype.IdentPat{Name: p.Name}
 
@@ -340,8 +349,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				var t soltype.Type = beta
 				if purpose == forBinding {
 					t = c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
-					t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				}
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
