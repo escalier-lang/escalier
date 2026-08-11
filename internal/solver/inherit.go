@@ -94,6 +94,12 @@ func (c *checker) checkQueuedInheritedMembers() {
 // case of redeclaring an inherited field at exactly its inherited type. A name the
 // superclass chain does not carry is new rather than an override, so it is skipped.
 //
+// Telling a redeclaration from an inherited member rests on ClassDef.Body holding the
+// class's OWN declarations alone, with everything inherited reached by walking Supers. A
+// body that also carried its ancestors' members would make every inherited member look like
+// a redeclaration of itself, so the whole-body views that need inheritance have to walk the
+// chain rather than merge it in here.
+//
 // Every class body is frozen by the time this runs, so each member is compared at the type
 // member lookup will read rather than at the fresh variable a field held before the
 // constructor assigned it.
