@@ -1482,8 +1482,8 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
 	case *soltype.NegationType:
 		// Two complements are equal when their operands are, so `¬A` equals `¬A` and differs
-		// from `¬B`. A negated member is compared structurally like any other member, which is
-		// what lets a normal form's conjunct list dedup its negated members.
+		// from `¬B`. That is what lets a member list dedup a negated member the same way it
+		// dedups a plain one.
 		b, ok := b.(*soltype.NegationType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.KeyofType:

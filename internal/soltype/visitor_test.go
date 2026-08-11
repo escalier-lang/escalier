@@ -309,7 +309,7 @@ func TestAcceptUnionIdentityPreservation(t *testing.T) {
 // A complement is contravariant in its operand, so Accept walks Inner at the flipped
 // polarity. The flip composes with the one a function's parameters already get, so a
 // parameter under a negation is covariant, and a second negation flips back to where it
-// started. It is the only node that inverts — a tuple's elements stay covariant.
+// started. It is the only node that inverts, so a tuple's elements stay covariant.
 func TestAcceptNegationFlipsPolarity(t *testing.T) {
 	param := &TypeVarType{ID: 1}
 	ret := &PrimType{Prim: NumPrim}

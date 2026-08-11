@@ -33,7 +33,7 @@ func typePrec(t Type) int {
 		return precIntersection
 	case *NegationType:
 		// `¬T` leads with a prefix operator, so it binds like the `mut` borrow and `keyof`
-		// forms: tighter than `|` and `&`, looser than an atom.
+		// forms. It is tighter than `|` and `&` and looser than an atom.
 		return precPrefix
 	case *RefType:
 		return precPrefix
@@ -1012,8 +1012,8 @@ func (p *namedPrinter) printType(t Type) string {
 		// set-theoretic notation rather than a mirror of a parser form, the same choice the
 		// μ-knot arm makes.
 		//
-		// The operand prints at precPrefix, so a looser operand is parenthesized and the
-		// prefix cannot swallow what follows it: a union renders `¬(A | B)`, an intersection
+		// The operand prints at precPrefix, so a looser operand is parenthesized and the `¬`
+		// cannot swallow what follows it. A union renders `¬(A | B)`, an intersection
 		// `¬(A & B)`, and a function `¬(fn () -> number)`. An atom stays bare, as in `¬number`.
 		return "¬" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:

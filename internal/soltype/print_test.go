@@ -203,7 +203,7 @@ func TestPrintRoundTrips(t *testing.T) {
 			"¬number | string",
 		},
 		{
-			// A negated object needs no parens: the braces already delimit the operand.
+			// A negated object needs no parens. The braces already delimit the operand.
 			"negated object stays bare",
 			&NegationType{Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
 			"¬{x: number}",

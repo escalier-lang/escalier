@@ -2938,9 +2938,20 @@ func describe(t soltype.Type) string {
 		return joinDescribe(t.Types, " & ")
 	case *soltype.NegationType:
 		// A complement renders `¬T` over the nominal inner, recursing like the union and
-		// intersection arms. constrain rejects a constraint whose operand is a negation, so
-		// this arm is what names the rejected operand in that message.
-		return "¬" + describe(t.Inner)
+		// intersection arms, so a constraint naming one reads `¬number` rather than the
+		// default `?`.
+		//
+		// A union or intersection operand is parenthesized. Its `|` or `&` would otherwise
+		// bind past the `¬`, so `¬(number | string)` would render as `¬number | string` and
+		// read back as `(¬number) | string`. Every other operand renders as a single word or
+		// a delimited form. A function renders as the bare "function" and an object as
+		// "object", so neither can run on into what follows.
+		inner := describe(t.Inner)
+		switch t.Inner.(type) {
+		case *soltype.UnionType, *soltype.IntersectionType:
+			return "¬(" + inner + ")"
+		}
+		return "¬" + inner
 	case *soltype.TypeVarType:
 		return "t" + strconv.Itoa(t.ID)
 	case *soltype.SkolemType:

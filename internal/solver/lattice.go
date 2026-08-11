@@ -645,10 +645,10 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // members before its absence markers. NullType precedes UndefinedType, so
 // `T0 | number | null | undefined` is the canonical render.
 //
-// NegationType joins UnionType and IntersectionType among the lattice forms.
-// Ranking it there gives a normal form's conjuncts and disjuncts a canonical
-// order to dedup under, so `¬A` lands at one position whatever order the
-// members were minted in.
+// NegationType is ranked with UnionType and IntersectionType among the
+// lattice forms. That slot is what gives a member list holding negations a
+// canonical order to dedup under, so `¬A` sorts to one position whatever
+// order the members were minted in.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:

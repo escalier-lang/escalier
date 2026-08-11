@@ -1151,7 +1151,7 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 // gain a lower bound instead, silently inverting every constraint extruded through a
 // negation.
 //
-// constrain rejects a negated operand, so the test calls extrude directly rather than
+// constrain has no rule for a complement, so the test drives extrude directly rather than
 // going through Constrain.
 func TestExtrudeThroughNegation(t *testing.T) {
 	c := &Context{}
@@ -1180,6 +1180,42 @@ func TestExtrudeThroughNegation(t *testing.T) {
 	require.Len(t, a.UpperBounds, 1, "a parameter under a negation is extruded at Positive polarity")
 	require.Same(t, soltype.Type(fresh), a.UpperBounds[0])
 	require.Empty(t, a.LowerBounds, "the Negative wiring would have added a lower bound")
+}
+
+// TestDescribeNegation renders a complement in a diagnostic. describe is the nominal
+// renderer beside soltype.Print, so a structural operand collapses to its kind word and
+// only a union or intersection operand needs parens to stop its `|` or `&` from binding
+// past the `¬`.
+func TestDescribeNegation(t *testing.T) {
+	tests := []struct {
+		name string
+		in   soltype.Type
+		want string
+	}{
+		{"primitive operand", &soltype.NegationType{Inner: num()}, "¬number"},
+		{"double negation", &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}}, "¬¬number"},
+		{
+			"union operand is parenthesized",
+			&soltype.NegationType{Inner: &soltype.UnionType{Types: []soltype.Type{num(), str()}}},
+			"¬(number | string)",
+		},
+		{
+			"intersection operand is parenthesized",
+			&soltype.NegationType{Inner: &soltype.IntersectionType{Types: []soltype.Type{num(), str()}}},
+			"¬(number & string)",
+		},
+		{
+			// A function collapses to the bare kind word, which cannot run on, so it stays bare.
+			"function operand stays bare",
+			&soltype.NegationType{Inner: &soltype.FuncType{Ret: num()}},
+			"¬function",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, describe(tt.in))
+		})
+	}
 }
 
 // --- The coinductive seen-set's two records ---
