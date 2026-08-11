@@ -96,6 +96,8 @@ func TestInferClassOverrideCompat(t *testing.T) {
 					speak(self) -> number { return 5 },
 				}
 			`,
+			// The two returns are unrelated rather than one widening the other, which
+			// MethodWidenedReturn covers.
 			want: []string{
 				"class `Dog` redeclares inherited member `speak` with type `fn () -> number`, " +
 					"which is not compatible with `fn () -> string` declared by `Animal`",
@@ -113,6 +115,8 @@ func TestInferClassOverrideCompat(t *testing.T) {
 					eat(self, food: string) -> undefined { return undefined },
 				}
 			`,
+			// Dog's parameter is a subtype of the one it inherits, so an `Animal` reference
+			// could pass a `number` the Dog does not accept.
 			want: []string{
 				"class `Dog` redeclares inherited member `eat` with type `fn (food: string) -> undefined`, " +
 					"which is not compatible with `fn (food: number | string) -> undefined` declared by `Animal`",
@@ -130,6 +134,43 @@ func TestInferClassOverrideCompat(t *testing.T) {
 					eat(self, food: string | number) -> undefined { return undefined },
 				}
 			`,
+			// A parameter is contravariant, so a subclass may accept more than the inherited
+			// signature promises. Every call an `Animal` reference makes still fits.
+			want: nil,
+		},
+		{
+			name: "MethodWidenedReturn",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					speak(self) -> number { return 5 },
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					speak(self) -> number | string { return 5 },
+				}
+			`,
+			// A return is covariant, so widening it breaks the inherited promise: a caller
+			// holding an `Animal` reads the result as `number` and may get a `string`.
+			want: []string{
+				"class `Dog` redeclares inherited member `speak` with type `fn () -> number | string`, " +
+					"which is not compatible with `fn () -> number` declared by `Animal`",
+			},
+		},
+		{
+			name: "MethodNarrowedReturnIsAllowed",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					speak(self) -> number | string { return 5 },
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					speak(self) -> number { return 5 },
+				}
+			`,
+			// Narrowing is the direction a return admits. A caller holding an `Animal` reads
+			// the result as `number | string`, which every `number` a Dog returns fits.
 			want: nil,
 		},
 		{
