@@ -35,7 +35,7 @@ import (
 // into pre-bound binding vars instead, so it calls bindPatternWith with its own
 // emit (M4 E3).
 func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type) soltype.Pat {
-	return c.bindPatternWith(scope, lvl, pat, scrutinee, leafTypes, defineLeafMono)
+	return c.bindPatternWith(scope, lvl, pat, scrutinee, leafTypes, defineLeafMono, forBinding)
 }
 
 // leafEmit places one bound leaf: it receives the leaf's name, its projected type,
@@ -43,6 +43,31 @@ func (c *checker) bindPattern(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 // for the body-level and function-param paths. The top-level driver passes an emit
 // that constrains the leaf's type into a pre-bound binding var instead (M4 E3).
 type leafEmit func(scope *Scope, name string, t soltype.Type, node ast.Node)
+
+// bindPurpose says what one walk over a pattern is for.
+//
+// forBinding is the ordinary walk. Each leaf lands at the type the name takes, with its
+// annotation, default, and `mut` marker applied, and every node the walk visits records
+// that type for an editor to read.
+//
+// forProjection resolves the same leaf types out of the scrutinee, reports them to the
+// emit, and does nothing else. It runs over a pattern a binding walk has already walked, to
+// ask what a SECOND value supplies for each name the pattern binds. Three things follow
+// from that:
+//
+//   - No leaf extra is applied. The annotation, default, and `mut` marker shape what the
+//     name binds at, which the binding walk settled. Re-applying them would infer a
+//     default's expression a second time.
+//   - No type is recorded. The node's type is what the name binds at, not what this second
+//     value supplies for it.
+//   - Nothing is reported. Every fault in the pattern is one the binding walk already
+//     reported, so reporting again would double each message.
+type bindPurpose byte
+
+const (
+	forBinding bindPurpose = iota
+	forProjection
+)
 
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
 // monomorphic projection of the scrutinee. Used by every body-level and
@@ -96,8 +121,19 @@ func bindModeOf(scrutinee soltype.Type) bindMode {
 // bindPattern for the pattern-typing contract. The emit decides where each bound
 // leaf lands. The binding mode is derived from the scrutinee here and threaded into
 // the recursive walk so nested leaves inherit the scrutinee's borrow.
-func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
-	return c.bindPatMode(scope, lvl, pat, scrutinee, soltype.CarrierOf(scrutinee), bindModeOf(scrutinee), leafTypes, emit)
+func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
+	return c.bindPatMode(scope, lvl, pat, scrutinee, soltype.CarrierOf(scrutinee), bindModeOf(scrutinee), leafTypes, emit, purpose)
+}
+
+// projectLeaves resolves each leaf pat names out of scrutinee and reports it to found. It
+// binds nothing, records nothing, and reports nothing. See bindPurpose. A `val … else` reads
+// it to find what the `else`'s fallback value supplies for each name the declaration binds.
+//
+// concrete is the scrutinee's statically known shape. A caller whose value has not yet
+// flowed into scrutinee passes that value here, so a `...rest` leaf resolves the leftover
+// members it really has rather than an opaque `{...}`.
+func (c *checker) projectLeaves(scope *Scope, lvl int, pat ast.Pat, scrutinee, concrete soltype.Type, found leafEmit) {
+	c.bindPatMode(scope, lvl, pat, scrutinee, concrete, bindModeOf(concrete), nil, found, forProjection)
 }
 
 // bindPatMode is bindPatternWith's recursive core, carrying the binding mode the
@@ -110,17 +146,20 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 // renders as a clean `mut {…}` cell rather than a variable inside the cell. concrete
 // is nil when the scrutinee's shape is not statically known. The thaw then falls back
 // to the projection variable.
-func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	scrutinee = soltype.CarrierOf(scrutinee)
 	switch p := pat.(type) {
 	case *ast.IdentPat:
-		t := c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
-		t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
-		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit)
+		t := scrutinee
+		if purpose == forBinding {
+			t = c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
+			t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
+		}
+		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
 		return &soltype.IdentPat{Name: p.Name}
 
 	case *ast.WildcardPat:
-		c.recordType(p, scrutinee)
+		c.recordPatType(purpose, p, scrutinee)
 		return &soltype.WildcardPat{}
 
 	case *ast.LitPat:
@@ -128,12 +167,12 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// A `null` or `undefined` arm asserts the atom is an admissible value of the
 			// scrutinee, the same direction as the literal case below, and binds nothing.
 			c.constrain(p, atom, scrutinee)
-			c.recordType(p, atom)
+			c.recordPatType(purpose, p, atom)
 			return atomPat
 		}
 		lt, ok := c.litTypeOf(p.Lit)
 		if !ok {
-			c.reportUnsupported(p.Lit)
+			c.reportPatUnsupported(purpose, p.Lit)
 			return &soltype.WildcardPat{}
 		}
 		// A literal pattern asserts the literal is an admissible value of the
@@ -145,7 +184,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// check lands with E2's `match`, which this path is laid out to extend. A
 		// literal pattern binds nothing.
 		c.constrain(p, lt, scrutinee)
-		c.recordType(p, lt)
+		c.recordPatType(purpose, p, lt)
 		return &soltype.LitPat{Lit: lt.Lit}
 
 	case *ast.TuplePat:
@@ -156,7 +195,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		// bind. splitTupleRest returns any other one as recovered.
 		fixed, rest, recovered := splitTupleRest(p.Elems)
 		if len(recovered) > 0 {
-			c.reportUnsupported(recovered[0])
+			c.reportPatUnsupported(purpose, recovered[0])
 		}
 		inexact := rest != nil || len(recovered) > 0
 		// Each element sub-pattern blames its own node for the upper-bound pin, so
@@ -169,20 +208,20 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			if concreteTup != nil && i < len(concreteTup.Elems) {
 				elemConcrete = concreteTup.Elems[i]
 			}
-			subs = append(subs, c.bindPatMode(scope, lvl, e, elemTypes[i], elemConcrete, scrutineeMode, leafTypes, emit))
+			subs = append(subs, c.bindPatMode(scope, lvl, e, elemTypes[i], elemConcrete, scrutineeMode, leafTypes, emit, purpose))
 		}
 		if rest != nil {
 			// The rest's sub-pattern binds through the same walk a fixed element does, so
 			// it inherits the scrutinee's borrow and `[a, ...[b, c]]` destructures the
 			// suffix in turn.
 			suffix, suffixConcrete := c.tupleRestType(lvl, rest, scrutinee, scrutTup, concreteTup, len(fixed))
-			sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffixConcrete, scrutineeMode, leafTypes, emit)
+			sub := c.bindPatMode(scope, lvl, rest.Pattern, suffix, suffixConcrete, scrutineeMode, leafTypes, emit, purpose)
 			subs = append(subs, &soltype.RestPat{Pattern: sub})
 		}
 		for _, e := range recovered {
-			subs = append(subs, c.bindRecoveredElem(scope, lvl, e, scrutineeMode, leafTypes, emit))
+			subs = append(subs, c.bindRecoveredElem(scope, lvl, e, scrutineeMode, leafTypes, emit, purpose))
 		}
-		c.recordType(p, scrutinee)
+		c.recordPatType(purpose, p, scrutinee)
 		return &soltype.TuplePat{Elems: subs}
 
 	case *ast.ObjectPat:
@@ -199,9 +238,12 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// absent, so the requirement must not demand it.
 				beta := c.freshAt(lvl)
 				c.constrain(e, scrutinee, propReq(e.Key.Name, beta, e.Default != nil))
-				t := c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
-				t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
-				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit)
+				var t soltype.Type = beta
+				if purpose == forBinding {
+					t = c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
+					t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
+				}
+				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
 					Name:  e.Key.Name,
@@ -211,7 +253,7 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				// A default on the value sub-pattern, as in `{x: a = 0}`, likewise makes
 				// the field optional.
 				beta, betaConcrete := c.projectField(e, lvl, scrutinee, concrete, e.Key.Name, patternDefaultsField(e.Value))
-				sub := c.bindPatMode(scope, lvl, e.Value, beta, betaConcrete, scrutineeMode, leafTypes, emit)
+				sub := c.bindPatMode(scope, lvl, e.Value, beta, betaConcrete, scrutineeMode, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{Name: e.Key.Name, Value: sub})
 			case *ast.ObjRestPat:
@@ -220,11 +262,11 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				if rest == nil && i == len(p.Elems)-1 {
 					rest = e
 				} else {
-					c.reportUnsupported(elem)
+					c.reportPatUnsupported(purpose, elem)
 					recovered = append(recovered, e.Pattern)
 				}
 			default:
-				c.reportUnsupported(elem)
+				c.reportPatUnsupported(purpose, elem)
 			}
 		}
 		var restPat soltype.Pat
@@ -232,26 +274,26 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 			// The rest binds through the same walk a field does, so it inherits the
 			// scrutinee's borrow.
 			leftover, leftoverConcrete := c.objectRestType(lvl, rest, scrutinee, concrete, named)
-			restPat = c.bindPatMode(scope, lvl, rest.Pattern, leftover, leftoverConcrete, scrutineeMode, leafTypes, emit)
+			restPat = c.bindPatMode(scope, lvl, rest.Pattern, leftover, leftoverConcrete, scrutineeMode, leafTypes, emit, purpose)
 		}
 		// A reported rest still binds against a fresh variable, so a later reference to one
 		// of its leaves resolves instead of cascading into an unknown-identifier error.
 		for _, sub := range recovered {
-			c.bindPatMode(scope, lvl, sub, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+			c.bindPatMode(scope, lvl, sub, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose)
 		}
-		c.recordType(p, scrutinee)
+		c.recordPatType(purpose, p, scrutinee)
 		return &soltype.ObjectPat{Fields: fields, Rest: restPat}
 
 	case *ast.InstancePat:
-		return c.bindInstancePat(scope, lvl, p, scrutinee, concrete, scrutineeMode, leafTypes, emit)
+		return c.bindInstancePat(scope, lvl, p, scrutinee, concrete, scrutineeMode, leafTypes, emit, purpose)
 
 	case *ast.ExtractorPat:
-		return c.bindExtractorPat(scope, lvl, p, scrutinee, scrutineeMode, leafTypes, emit)
+		return c.bindExtractorPat(scope, lvl, p, scrutinee, scrutineeMode, leafTypes, emit, purpose)
 
 	default:
 		// A bare RestPat is only meaningful inside a tuple or object. Report and bind
 		// nothing.
-		c.reportUnsupported(pat)
+		c.reportPatUnsupported(purpose, pat)
 		return &soltype.WildcardPat{}
 	}
 }
@@ -377,12 +419,12 @@ func splitTupleRest(elems []ast.Pat) (fixed []ast.Pat, rest *ast.RestPat, recove
 // bindRecoveredElem binds a tuple element the walk could not place, reached only after a
 // non-trailing `...rest` was reported. A fresh variable keeps its leaves defined so a later
 // reference does not cascade. A rest is unwrapped, since bindPatMode rejects a bare one.
-func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+func (c *checker) bindRecoveredElem(scope *Scope, lvl int, e ast.Pat, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	if r, isRest := e.(*ast.RestPat); isRest {
-		sub := c.bindPatMode(scope, lvl, r.Pattern, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+		sub := c.bindPatMode(scope, lvl, r.Pattern, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose)
 		return &soltype.RestPat{Pattern: sub}
 	}
-	return c.bindPatMode(scope, lvl, e, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+	return c.bindPatMode(scope, lvl, e, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose)
 }
 
 // tupleRestType resolves what a trailing `...rest` binds: the scrutinee's elements past the
@@ -518,21 +560,21 @@ func (c *checker) restObjectShape(scrutinee, concrete soltype.Type) (*soltype.Ob
 // bindInstancePat types a class-instance pattern `Name { x, y }`: it narrows the scrutinee
 // to the named class, then binds each field sub-pattern against the projected member view.
 // A missing field yields a MissingPropertyError; a non-class name an InstancePatternNotClassError.
-func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scrutinee, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+func (c *checker) bindInstancePat(scope *Scope, lvl int, p *ast.InstancePat, scrutinee, concrete soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	// Record the pattern node's type against the scrutinee it matches, the same as the
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
-	c.recordType(p, scrutinee)
+	c.recordPatType(purpose, p, scrutinee)
 	name := ast.QualIdentToString(p.ClassName)
 	ct, ok := c.instancePatClass(scope, name)
 	if !ok {
-		c.report(&InstancePatternNotClassError{Node: p, Name: name})
+		c.reportPat(purpose, &InstancePatternNotClassError{Node: p, Name: name})
 		// Bind the inner fields against a fresh var so a later reference to a bound leaf
 		// stays defined without a second cascade error against the real scrutinee.
-		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
+		obj, _ := c.bindPatMode(scope, lvl, p.Object, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 		return &soltype.InstancePat{ClassName: name, Object: obj}
 	}
 	target, targetConcrete := c.narrowToClass(lvl, p, ct, scrutinee, concrete)
-	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit).(*soltype.ObjectPat)
+	obj, _ := c.bindPatMode(scope, lvl, p.Object, target, targetConcrete, scrutineeMode, leafTypes, emit, purpose).(*soltype.ObjectPat)
 	return &soltype.InstancePat{ClassName: ct.Name, Object: obj}
 }
 
@@ -569,25 +611,25 @@ func (c *checker) narrowToClass(
 // Binding against constructor parameters is an interim gate. The real protocol deconstructs
 // through the instance's `[Symbol.customMatcher]` method, which needs symbol-keyed members
 // soltype lacks, so it is deferred to M7 (m5-implementation-plan.md §"Nominal patterns").
-func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit) soltype.Pat {
+func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, scrutinee soltype.Type, scrutineeMode bindMode, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
 	// Record the pattern node's type against the scrutinee it matches, the same as the
 	// sibling tuple/object cases, so hover and type-at-position resolve on the pattern.
-	c.recordType(p, scrutinee)
+	c.recordPatType(purpose, p, scrutinee)
 	name := ast.QualIdentToString(p.Name)
 	ctor, ok := c.extractorCtor(scope, lvl, p.Name)
 	if !ok {
-		c.report(&ExtractorPatternNotCtorError{Node: p, Name: name})
+		c.reportPat(purpose, &ExtractorPatternNotCtorError{Node: p, Name: name})
 		// Bind each argument against a fresh var so its leaves stay defined and a later
 		// reference does not cascade into an unknown-identifier error.
 		args := make([]soltype.Pat, len(p.Args))
 		for i, a := range p.Args {
-			args[i] = c.bindPatMode(scope, lvl, a, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit)
+			args[i] = c.bindPatMode(scope, lvl, a, c.freshAt(lvl), nil, scrutineeMode, leafTypes, emit, purpose)
 		}
 		return &soltype.ExtractorPat{Name: name, Args: args}
 	}
 	params := c.narrowToExtractor(p, ctor, scrutinee)
 	if len(p.Args) != len(params) {
-		c.report(&ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
+		c.reportPat(purpose, &ExtractorPatternArityError{Node: p, Name: name, Expected: len(params), Got: len(p.Args)})
 	}
 	args := make([]soltype.Pat, len(p.Args))
 	for i, a := range p.Args {
@@ -595,7 +637,7 @@ func (c *checker) bindExtractorPat(scope *Scope, lvl int, p *ast.ExtractorPat, s
 		if i < len(params) {
 			paramType = params[i].Type
 		}
-		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit)
+		args[i] = c.bindPatMode(scope, lvl, a, paramType, paramType, scrutineeMode, leafTypes, emit, purpose)
 	}
 	return &soltype.ExtractorPat{Name: name, Args: args}
 }
@@ -961,11 +1003,37 @@ func patternDefaultsField(p ast.Pat) bool {
 // pre-pass. The default emit, defineLeafMono, defines a monomorphic projection of the
 // scrutinee in scope. The top-level driver's emit constrains t into a pre-bound
 // binding var instead.
-func (c *checker) bindLeaf(scope *Scope, name string, t soltype.Type, node ast.Node, leafTypes map[string]soltype.Type, emit leafEmit) {
+func (c *checker) bindLeaf(scope *Scope, name string, t soltype.Type, node ast.Node, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) {
 	emit(scope, name, t, node)
-	c.recordType(node, t)
+	c.recordPatType(purpose, node, t)
 	if leafTypes != nil {
 		leafTypes[name] = t
+	}
+}
+
+// reportPat reports a fault found while walking a pattern, unless the walk is a projection.
+// A projection walks a pattern the binding walk already walked, so every fault it finds is
+// one the binding walk already reported. See bindPurpose.
+func (c *checker) reportPat(purpose bindPurpose, e SolverError) {
+	if purpose == forBinding {
+		c.report(e)
+	}
+}
+
+// reportPatUnsupported is reportPat for a pattern form the walk cannot type at all.
+// reportUnsupported words that message.
+func (c *checker) reportPatUnsupported(purpose bindPurpose, n ast.Node) {
+	if purpose == forBinding {
+		c.reportUnsupported(n)
+	}
+}
+
+// recordPatType records the type a pattern node resolved to, which is what an editor reads
+// for that node. A projection records nothing, since the node's type belongs to the binding
+// walk rather than to the second value a projection is reading. See bindPurpose.
+func (c *checker) recordPatType(purpose bindPurpose, n ast.Node, t soltype.Type) {
+	if purpose == forBinding {
+		c.recordType(n, t)
 	}
 }
 

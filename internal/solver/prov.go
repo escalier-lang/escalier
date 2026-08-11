@@ -68,7 +68,7 @@ const (
 	IfValBranch                             // a fresh branch-join var from inferIfVal (the union of cons / alt)
 	TryCatchBranch                          // a fresh branch-join var from inferTryCatch (the union of the try block's value and every catch arm body)
 	CaughtThrows                            // a fresh nested throws sink from inferTryCatch (what the try block raises, before the catch arms narrow it)
-	ValElseBranch                           // a fresh branch-join var from inferValElse (the union of the matched init and a non-diverging else's fallback)
+	ValElseBranch                           // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
 	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
 	OwnedMutConstruction                    // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
 )

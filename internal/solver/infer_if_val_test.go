@@ -3,6 +3,9 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -316,11 +319,14 @@ func TestInferRefutableFormsNarrowUnions(t *testing.T) {
 	}
 }
 
-// A `val … else` whose `else` supplies a fallback binds its leaves off the initializer
-// joined with that fallback, so the fallback has to satisfy the pattern too. No tag test
-// ever admitted it, so nothing narrows the value the leaves read: narrowing to the member
-// the pattern matched would leave the fallback unchecked and the leaves reading only the
-// initializer's half.
+// A `val … else` whose `else` supplies a fallback destructures that fallback with the same
+// pattern, so a fallback the pattern cannot take apart is rejected. Each leaf of the
+// declaration reads the initializer's leaf joined with the fallback's, so a fallback that
+// binds no such leaf leaves the name with nothing to read from that path.
+//
+// Each message underlines the value the `else` produced rather than the pattern leaf that
+// could not take it apart. That is the narrowest span naming something the user can change,
+// since the pattern is what the rest of the block reads.
 func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 	tests := map[string]struct {
 		src  string
@@ -355,11 +361,11 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 }
 
 // An annotation fixes the binding's type only where it narrows a bare identifier. One on a
-// destructuring pattern is unsupported and pins nothing, so that declaration joins its
-// fallback like an unannotated one: the fallback is checked against the pattern, and the
-// leaves read it. Treating the unsupported annotation as a pin would leave the fallback
-// checked against the initializer alone, which it satisfies, and infer `x: number` off a
-// declaration that can bind no `x` at all.
+// destructuring pattern is unsupported and pins nothing, so that declaration destructures
+// its fallback like an unannotated one and reports the leaf the fallback cannot supply.
+// Treating the unsupported annotation as a pin would check the fallback against the
+// initializer alone, which it satisfies, and infer `x: number` off a declaration that can
+// bind no `x` at all.
 func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 	values, _, errs := inferSource(t,
 		`fn f(p: {x: number} | {y: string}) {
@@ -370,30 +376,209 @@ func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 		"2:9-2:12: Unsupported: narrowing type annotation on a destructuring pattern",
 		"2:37-2:45: object is missing property: x",
 	}, messagesWithSpan(errs))
-	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
+	// The fallback carries no `x`, so the only lower bound reaching the name is the one the
+	// narrowed initializer projected.
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["f"])
 }
 
-// A fallback the pattern can destructure contributes its own leaf types, so the bound name
-// reads either source rather than the initializer's alone. Three lower bounds reach `x`
-// here: `number` and `"s"` from the two sources, and `undefined`.
+// A fallback the pattern can destructure contributes its own leaf types, so each bound name
+// reads either source rather than the initializer's alone. Two lower bounds reach `x` in
+// both cases below, one per source.
 //
-// The `undefined` is constrainUnionFieldRead's doing, not the join's. Reading a property
-// off a union joins what each member yields, and `{y: string}` carries no `x`, so that
-// member contributes `undefined`. A plain `val {x} = p` over the same scrutinee infers
-// `number | undefined` for the same reason. What the join decides is only that the union is
-// still whole at the read: the fallback is a half no tag test admitted, so nothing narrows
-// `{y: string}` away the way an `if val` over the same `p` does.
-//
-// That `undefined` is wrong, and #1076 removes it. A `p` holding `{y: string}` fails the
-// `{x}` test and takes the `else`, so the leaf is never absent at run time. What this
-// asserts is today's type rather than the intended one.
+// Neither picks up an `undefined` from the scrutinee member that carries no `x`. The join
+// sits below the projection, so the tag test the pattern makes narrows the initializer
+// before any leaf reads it, and the member constrainUnionFieldRead would answer `undefined`
+// for is gone by then. A `p` holding that member fails the test and takes the `else`, so
+// the name is never absent at run time.
 func TestInferValElseLeavesReadTheFallback(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f(p: {x: number} | {y: string}) {
-			val {x} = p else { {x: "s"} }
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"OuterLevel": {
+			src: `fn f(p: {x: number} | {y: string}) {
+					val {x} = p else { {x: "s"} }
+					return x
+				}`,
+			want: `fn (p: {x: number} | {y: string}) -> number | "s"`,
+		},
+		// A nested pattern flattens into one split per tag-level and every level narrows, so
+		// the leaf below them joins the same two sources.
+		"NestedLevel": {
+			src: `fn f(p: {a: {x: number}} | {a: {y: string}}) {
+					val {a: {x}} = p else { {a: {x: "s"}} }
+					return x
+				}`,
+			want: `fn (p: {a: {x: number}} | {a: {y: string}}) -> number | "s"`,
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
+
+// The pattern of a `val … else` is walked twice, once binding off the narrowed initializer
+// and once projecting the fallback the `else` produced. The join is recorded over what the
+// binding walk left, so what an editor reads for `v` is what the name binds at rather than
+// the initializer's half alone.
+func TestInferValElseRecordsTheJoinedLeafType(t *testing.T) {
+	module := parseModule(t, `fn f(p: {x: number} | {y: string}) {
+			val {x: v} = p else { {x: "s"} }
+			return v
+		}`)
+	c := newChecker()
+	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+	require.Empty(t, c.errs)
+	leaf := findIdentPat(module, "v")
+	require.NotNil(t, leaf)
+	require.Equal(t, `number | "s"`, soltype.Print(coalesce(c.info.TypeOf(leaf), soltype.Positive)))
+}
+
+// The second walk over the pattern projects rather than binds, so a leaf's default and
+// annotation are typed once even though the pattern is walked twice. A fault inside a
+// default is reported once, and the default's expression is inferred once.
+func TestInferValElseTypesALeafDefaultOnce(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number} | {y: string}) {
+			val {x = nope} = p else { {x: 5} }
+			return x
+		}`)
+	require.Equal(t, []string{"2:13-2:17: Unknown identifier: nope"}, messagesWithSpan(errs))
+}
+
+// A `mut` leaf of an owned scrutinee is an owned-mutable cell, and the fallback flows into
+// the cell's contents rather than joining beside it. The name stays one cell, so the write
+// below it checks against the shape the cell holds.
+func TestInferValElseJoinsInsideAMutLeaf(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: {x: {a: number}} | {y: string}) {
+			val {mut x} = p else { {x: {a: 1}} }
+			x.a = 2
 			return x
 		}`)
 	require.Empty(t, errs)
-	require.Equal(t, `fn (p: {x: number} | {y: string}) -> number | "s" | undefined`, values["f"])
+	require.Equal(t, "fn (p: {x: {a: number}} | {y: string}) -> mut {a: number}", values["f"])
+}
+
+// A leaf's own type annotation fixes what the name binds at, so the fallback has to fit it
+// rather than widening the name to a union with it. The message underlines the value the
+// `else` produced.
+func TestInferValElseChecksTheFallbackAgainstALeafAnnotation(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: {x: number} | {y: string}) {
+			val {x::number} = p else { {x: "s"} }
+			return x
+		}`)
+	require.Equal(t, []string{`2:35-2:38: cannot constrain "s" <: number`}, messagesWithSpan(errs))
+	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["f"])
+}
+
+// A leaf's annotation fixes its type even where the scrutinee is a union of borrows, so the
+// fallback fits the annotation rather than widening the name beside it. Such a leaf is no
+// borrow itself. concreteLeaf drops the shape hint for an annotated leaf, and applyBindMode
+// wraps a leaf in a borrow only where that hint says the value is borrowable.
+//
+// The borrow union reports a lifetime diagnostic of its own. It belongs to the scrutinee
+// rather than to the join, and the same declaration with a diverging `else` reports it too.
+func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
+	tests := map[string]struct {
+		src      string
+		wantErrs []string
+	}{
+		"FallbackFitsTheAnnotation": {
+			src: `fn f(p: &{x: number} | &{y: string}) {
+					val {x: v: number} = p else { {x: 5} }
+					return 0
+				}`,
+			wantErrs: []string{
+				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
+			},
+		},
+		"FallbackViolatesTheAnnotation": {
+			src: `fn f(p: &{x: number} | &{y: string}) {
+					val {x: v: number} = p else { {x: "s"} }
+					return 0
+				}`,
+			wantErrs: []string{
+				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
+				`2:40-2:43: cannot constrain "s" <: number`,
+			},
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			module := parseModule(t, tt.src)
+			c := newChecker()
+			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
+			leaf := findIdentPat(module, "v")
+			require.NotNil(t, leaf)
+			// The name binds at the annotation on both paths, with no fallback member beside it.
+			require.Equal(t, "number", soltype.Print(coalesce(c.info.TypeOf(leaf), soltype.Positive)))
+		})
+	}
+}
+
+// An object `...rest` leaf reads its leftover members off the fallback's own shape, so the
+// members the pattern did not name survive the join. Both `p` and the fallback carry `z`
+// outside the keys `{x, ...rest}` names, so `rest` reads it from either source.
+func TestInferValElseJoinsAnObjectRestLeaf(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: {x: number, z: boolean} | {y: string}) {
+			val {x, ...rest} = p else { {x: 1, z: false} }
+			return rest
+		}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {y: string} | {x: number, z: boolean}) -> {z: boolean}", values["f"])
+}
+
+// A leaf's default covers the key being absent from either source, so the fallback may omit
+// it. The projection over the fallback asks for the key the same relaxed way the binding
+// walk does, so `x` reads the default rather than picking up an `undefined`.
+func TestInferValElseFallbackMayOmitADefaultedLeaf(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(p: {x?: number}) {
+			val {x = 5} = p else { {} }
+			return x
+		}`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (p: {x?: number}) -> number", values["f"])
+}
+
+// A pattern the walk cannot type reports once, not once per walk. The projection over the
+// fallback runs the same arms the binding walk did, so an ungated report would double every
+// message a pattern raises.
+func TestInferValElseReportsAPatternFaultOnce(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f(p: {x: number}) {
+			val Foo{x} = p else { {x: 1} }
+			return x
+		}`)
+	require.Equal(t, []string{
+		"2:8-2:14: `Foo` does not name a class and cannot be used as an instance pattern.",
+	}, messagesWithSpan(errs))
+}
+
+// findIdentPat returns the identifier pattern binding name, and nil when the module holds
+// none. It walks through the AST visitor rather than reaching into the block the
+// declaration sits in.
+func findIdentPat(module *ast.Module, name string) *ast.IdentPat {
+	f := &identPatFinder{name: name}
+	module.Accept(f)
+	return f.found
+}
+
+type identPatFinder struct {
+	ast.DefaultVisitor
+	name  string
+	found *ast.IdentPat
+}
+
+func (f *identPatFinder) EnterPat(p ast.Pat) bool {
+	if ip, ok := p.(*ast.IdentPat); ok && ip.Name == f.name {
+		f.found = ip
+	}
+	return true
 }
 
 // A nested pattern flattens into one split per tag-level, and each level's leaves bind off

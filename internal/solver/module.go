@@ -695,7 +695,7 @@ func (c *checker) destructurePattern(
 	emit := func(_ *Scope, name string, t soltype.Type, node ast.Node) {
 		md.leaves[name] = destructureLeaf{t: t, node: node}
 	}
-	c.bindPatternWith(scope, lvl, d.Pattern, initType, nil, emit)
+	c.bindPatternWith(scope, lvl, d.Pattern, initType, nil, emit, forBinding)
 	return md
 }
 
