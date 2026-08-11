@@ -306,10 +306,9 @@ func TestAcceptUnionIdentityPreservation(t *testing.T) {
 	require.Same(t, u, u.Accept(identityVisitor{}, Positive), "an unchanged UnionType keeps its pointer")
 }
 
-// A complement is contravariant in its operand, so Accept walks Inner at the flipped
-// polarity. The flip composes with the one a function's parameters already get, so a
-// parameter under a negation is covariant, and a second negation flips back to where it
-// started. It is the only node that inverts, so a tuple's elements stay covariant.
+// Accept walks a complement's operand at the flipped polarity, and that flip composes with
+// the one a function's parameters get. So a parameter under a negation is covariant and a
+// second negation flips back, while a tuple's elements stay covariant.
 func TestAcceptNegationFlipsPolarity(t *testing.T) {
 	param := &TypeVarType{ID: 1}
 	ret := &PrimType{Prim: NumPrim}
@@ -339,7 +338,7 @@ func TestAcceptNegationFlipsPolarity(t *testing.T) {
 }
 
 // A no-op rewrite over a nested negation keeps every pointer, the negation and the
-// function it wraps alike (copy-on-write).
+// function it wraps alike.
 func TestAcceptNegationIdentityPreservation(t *testing.T) {
 	num := &PrimType{Prim: NumPrim}
 	str := &PrimType{Prim: StrPrim}

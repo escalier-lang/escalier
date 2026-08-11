@@ -469,12 +469,10 @@ func (t *NegationType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// A complement is contravariant in its operand, since ¬Inner shrinks as Inner grows. So
-	// the operand walks at the opposite polarity, the flip acceptParams applies to a
-	// function's parameters. UnionType and IntersectionType walk their members at the
-	// current polarity, and this is the one node that inverts. Every rewriter rides on
-	// Accept, so this single flip is what gives coalesce, extrude, and freshenAbove the
-	// right variance under a negation.
+	// ¬Inner shrinks as Inner grows, so the operand walks at the flipped polarity, the flip
+	// acceptParams applies to a function's parameters. This is the only node that inverts,
+	// and every rewriter rides on Accept, so the single flip here is what gives coalesce,
+	// extrude, and freshenAbove their variance under a negation.
 	inner := cur.Inner.Accept(v, pol.Flip())
 	out := cur
 	if inner != cur.Inner {

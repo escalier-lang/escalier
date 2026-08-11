@@ -376,9 +376,8 @@ func TestEqualTypeRef(t *testing.T) {
 	}
 }
 
-// equalType compares two complements by their operands, so `¬A` equals `¬A` and differs
-// from `¬B`. A complement is also never equal to the type it negates, which is what keeps
-// a member and its negation from collapsing into one another under dedup.
+// equalType compares two complements by their operands, so `¬A` equals `¬A`, differs from
+// `¬B`, and never equals the type it negates.
 func TestEqualTypeNegation(t *testing.T) {
 	tests := []struct {
 		name string

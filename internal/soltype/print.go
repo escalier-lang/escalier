@@ -1008,13 +1008,10 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return strings.Join(parts, " & ")
 	case *NegationType:
-		// `¬T`. Escalier has no surface syntax for a complement, so this is the standard
-		// set-theoretic notation rather than a mirror of a parser form, the same choice the
-		// μ-knot arm makes.
-		//
-		// The operand prints at precPrefix, so a looser operand is parenthesized and the `¬`
-		// cannot swallow what follows it. A union renders `¬(A | B)`, an intersection
-		// `¬(A & B)`, and a function `¬(fn () -> number)`. An atom stays bare, as in `¬number`.
+		// `¬T`, the standard set-theoretic notation, since Escalier has no surface syntax for a
+		// complement to mirror. The operand prints at precPrefix, so a union renders
+		// `¬(A | B)`, an intersection `¬(A & B)`, a function `¬(fn () -> number)`, and an atom
+		// stays bare as `¬number`.
 		return "¬" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:
 		// A skolem renders under its source parameter name. It is transient to a

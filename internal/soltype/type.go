@@ -893,23 +893,18 @@ type UnionType struct {
 type IntersectionType struct{ Types []Type }
 
 // NegationType is the set-theoretic complement ¬Inner, the type admitting every value Inner
-// rejects. It stands beside UnionType and IntersectionType, which supply joins and meets,
-// and completes the three into a Boolean algebra. Every type then has a complement, `A & ¬A`
-// is `never`, and `A | ¬A` is `unknown`.
+// rejects. It stands beside UnionType and IntersectionType, which supply joins and meets, and
+// completes the three into a Boolean algebra. `A & ¬A` is `never` and `A | ¬A` is `unknown`.
 //
 // It is the one node that inverts polarity on its child, because a complement shrinks as its
-// operand grows. Accept visits Inner at the flipped polarity. Every structural rewriter
-// rides on Accept, so coalesce, extrude, and freshenAbove inherit that inversion with no
-// rule of their own.
+// operand grows. Accept visits Inner at the flipped polarity, and every structural rewriter
+// rides on Accept, so coalesce, extrude, and freshenAbove inherit that inversion.
 //
-// Nothing mints one yet. No source syntax spells a complement and constrain has no rule for
-// one, so a negation reaches the solver only once the normalization layer produces it. The
-// representation lands ahead of that so every structural pass already carries a negation
-// arm. Those passes are the visitor, LevelOf, structural equality, the canonical member
-// order, and the printer.
+// No source syntax spells a complement and constrain has no rule for one, so the
+// normalization layer is the only producer of a negation.
 //
-// It is deliberately not a RefInner. A borrow points at a value someone allocated, and a
-// complement names no such value, so `&¬T` would point at nothing.
+// It is not a RefInner. A borrow points at a value someone allocated and a complement names
+// no such value, so `&¬T` would point at nothing.
 type NegationType struct{ Inner Type }
 
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
@@ -1477,10 +1472,8 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	case *NegationType:
 		// A complement's level is its operand's, the single-child rule the KeyofType arm
-		// follows, so a `¬T` over an out-of-level variable lifts the level and the
-		// freshener/extruder prune descends to freshen that variable. Polarity does not enter
-		// here. The level prune asks how deep a variable was minted, not which side of a
-		// constraint it stands on.
+		// follows. A `¬T` over an out-of-level variable therefore lifts the level, and the
+		// freshener/extruder prune descends to freshen that variable.
 		return LevelOf(t.Inner)
 	default:
 		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType,

@@ -1139,20 +1139,16 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 	require.Equal(t, 0, retVar.Level)
 }
 
-// TestExtrudeThroughNegation pins the polarity a variable under a complement is extruded
-// at. extrude wires a fresh variable to the original through the bound direction the
-// polarity picks: an upper bound in Positive position and a lower bound in Negative. So
-// the direction the original gains is an observable readout of the polarity the walk
-// reached it at.
+// TestExtrudeThroughNegation pins the polarity a variable under a complement is extruded at.
+// extrude wires the fresh variable through the bound direction the polarity picks, an upper
+// bound in Positive position and a lower bound in Negative. The direction the original gains
+// therefore reads back the polarity the walk reached it at.
 //
-// `¬(fn (x: a) -> number)` walked from Positive flips twice. The complement flips to
-// Negative and the parameter flips back to Positive, so `a` gains an UPPER bound. Without
-// the flip in NegationType.Accept the parameter would be reached at Negative and `a` would
-// gain a lower bound instead, silently inverting every constraint extruded through a
-// negation.
+// `¬(fn (x: a) -> number)` walked from Positive flips twice, so `a` is reached at Positive
+// and gains an UPPER bound. Reaching it at Negative would wire a lower bound instead and
+// invert every constraint extruded through a negation.
 //
-// constrain has no rule for a complement, so the test drives extrude directly rather than
-// going through Constrain.
+// constrain has no rule for a complement, so the test drives extrude directly.
 func TestExtrudeThroughNegation(t *testing.T) {
 	c := &Context{}
 	a := c.freshVar(1) // level 1, so the level-0 extrusion must descend to it
@@ -1182,10 +1178,8 @@ func TestExtrudeThroughNegation(t *testing.T) {
 	require.Empty(t, a.LowerBounds, "the Negative wiring would have added a lower bound")
 }
 
-// TestDescribeNegation renders a complement in a diagnostic. describe is the nominal
-// renderer beside soltype.Print, so a structural operand collapses to its kind word and
-// only a union or intersection operand needs parens to stop its `|` or `&` from binding
-// past the `¬`.
+// TestDescribeNegation renders a complement in a diagnostic. describe collapses a structural
+// operand to its kind word, so only a union or intersection operand needs parens.
 func TestDescribeNegation(t *testing.T) {
 	tests := []struct {
 		name string

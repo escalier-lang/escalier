@@ -394,12 +394,10 @@ func TestCompareTypeKindOrder(t *testing.T) {
 	require.Less(t, compareType(parseType(t, "unknown"), v), 0, "UnknownType < TypeVarType")
 }
 
-// TestCompareTypeNegation pins the canonical order over complements. A normal form's
-// conjunct and disjunct lists dedup under this order, so `¬A` must land at one position
-// whatever order the members were minted in. Two complements order by their operands, and
-// a complement occupies a kind slot of its own beside the union and intersection forms.
-// A complement has no surface syntax, so parseType cannot author one and the operands are
-// built directly.
+// TestCompareTypeNegation pins the canonical order over complements. Two complements order
+// by their operands, and a complement occupies a kind slot of its own beside the union and
+// intersection forms. A complement has no surface syntax, so parseType cannot author one and
+// the operands are built directly.
 func TestCompareTypeNegation(t *testing.T) {
 	negNum := &soltype.NegationType{Inner: num()}
 	negStr := &soltype.NegationType{Inner: str()}
