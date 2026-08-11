@@ -174,6 +174,37 @@ func TestInferClassOverrideCompat(t *testing.T) {
 			want: nil,
 		},
 		{
+			name: "MethodOverriddenAtTheInheritedSignature",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					speak(self) -> string { return "..." },
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					speak(self) -> string { return "woof" },
+				}
+			`,
+			// The ordinary override: a new body at the signature the superclass declares.
+			want: nil,
+		},
+		{
+			name: "MethodParamWidenedAndReturnNarrowed",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+					pick(self, x: number) -> number | string { return x },
+				}
+				class Dog extends Animal {
+					constructor(mut self) {},
+					pick(self, x: number | string) -> number { return 5 },
+				}
+			`,
+			// Both admitted directions at once, which is the widest an override may move the
+			// inherited signature: it accepts more and promises more precisely.
+			want: nil,
+		},
+		{
 			name: "FieldOverriddenByAMethod",
 			src: `
 				class Animal {
