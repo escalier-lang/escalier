@@ -214,6 +214,11 @@ is that these members can't be **fused into one conjunct** (a conjunct is a meet
   **caveat #1** (blowup) concern. An untagged `{ ok: T } | { err: E }` stays a
   precise two-member DNF too, so `"ok" in r`-style branch recovery works on it
   without a discriminant. Prefer tags for blowup control, not for correctness.
-- **Verify the `RhsNf` capacity against MLscript** (residual #1, during the source
-  read in `06-open-items.md` Item 1) and implement from the POPL 2026 semantics for
-  *which* identities hold. Do the exactness-flag threading in PR7 (residual #2).
+- **The `RhsNf` capacity is verified (residual #1, done).** The source read of
+  `NormalForms.scala` confirmed the single-record-slot → ⊤ widening, so the fix is
+  now a port decision, not an investigation: give Escalier's `RhsNf` a set-valued
+  record slot, or fall back to the `trialAndCommit` exists-rule for would-widen
+  union-supers. What remains open under `06-open-items.md` Item 1 is the *separate*
+  arrow-intersection half of that read; implement from the POPL 2026 semantics for
+  *which* identities hold there. The exactness-flag threading (residual #2) is
+  PR7's work.
