@@ -1100,7 +1100,7 @@ func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, y: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An inexact-object scrutinee with an unguarded catch-all arm is exhaustive.
@@ -1188,7 +1188,7 @@ func TestInferMatchInexactUnionNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-7:5: match is not exhaustive; add branches for `number`, `string`, and a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-7:5: match is not exhaustive; add branches for `number`, `string`; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An inexact union scrutinee with an unguarded catch-all arm is exhaustive.
@@ -1235,7 +1235,7 @@ func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // A guard is typed as a boolean over the arm's bindings, so a non-boolean guard is

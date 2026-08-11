@@ -1077,10 +1077,11 @@ type NonExhaustiveMatchError struct {
 	// `Color.RGB(0, g, b)` of a `match` over `Color` names the variant but matches only when
 	// the first field is 0.
 	Refutable []soltype.Type
-	// NeedsCatchAll marks a scrutinee carrying an open tail of values no pattern names, which
-	// takes a catch-all arm on top of whatever the witnesses ask for. An inexact union sets it
-	// alongside its uncovered members, since covering each member still leaves the tail.
-	NeedsCatchAll bool
+	// OpenTail is the inexact scrutinee whose tail of unknown values only a catch-all arm
+	// reaches, and nil when the scrutinee has no such tail. The message names it so the reader
+	// can see why a catch-all is being asked for. An inexact union sets it alongside its
+	// uncovered members, since covering every member still leaves the tail.
+	OpenTail soltype.Type
 }
 
 // UnreachableMatchArmError fires when a `match` arm can never run, because an arm above it
@@ -1817,13 +1818,17 @@ func (e *NonExhaustiveMatchError) Message() string {
 }
 
 // advice renders the edit each group of witnesses calls for, as one clause per group. The
-// branches to add lead, then the guarded group, then the refutable one. An error carrying
-// nothing at all falls back to asking for a catch-all rather than trailing off after the
-// semicolon.
+// branches to add lead, then the guarded group, the refutable one, and last the open tail. An
+// error carrying nothing at all falls back to asking for a catch-all rather than trailing off
+// after the semicolon.
 func (e *NonExhaustiveMatchError) advice() string {
-	clauses := make([]string, 0, 3)
-	if branches := e.branchesToAdd(); branches != "" {
-		clauses = append(clauses, branches)
+	clauses := make([]string, 0, 4)
+	if names := witnessList(e.Unmatched); names != "" {
+		if len(e.Unmatched) == 1 {
+			clauses = append(clauses, "add a branch for "+names)
+		} else {
+			clauses = append(clauses, "add branches for "+names)
+		}
 	}
 	if names := witnessList(e.Guarded); names != "" {
 		if len(e.Guarded) == 1 {
@@ -1839,31 +1844,14 @@ func (e *NonExhaustiveMatchError) advice() string {
 			clauses = append(clauses, names+" are matched only by branches whose own patterns can fail, so add branches that match them irrefutably")
 		}
 	}
+	if e.OpenTail != nil {
+		clauses = append(clauses, "`"+soltype.Print(e.OpenTail)+
+			"` is inexact and admits values no pattern names, so add a catch-all branch")
+	}
 	if len(clauses) == 0 {
 		return "add a catch-all branch"
 	}
 	return strings.Join(clauses, "; ")
-}
-
-// branchesToAdd names the branches the user writes to cover what no arm reaches: one per
-// unmatched witness, plus a catch-all when the scrutinee also carries an open tail. It is
-// empty when there is neither, which leaves the guarded and refutable clauses to speak alone.
-func (e *NonExhaustiveMatchError) branchesToAdd() string {
-	names := witnessList(e.Unmatched)
-	if names == "" {
-		if e.NeedsCatchAll {
-			return "add a catch-all branch"
-		}
-		return ""
-	}
-	clause := "add a branch for " + names
-	if len(e.Unmatched) > 1 {
-		clause = "add branches for " + names
-	}
-	if e.NeedsCatchAll {
-		clause += ", and a catch-all branch"
-	}
-	return clause
 }
 
 // witnessList renders one group of witnesses as a backticked, comma-separated list, and the

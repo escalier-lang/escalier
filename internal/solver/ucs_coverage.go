@@ -291,7 +291,9 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 			return
 		}
 		err := uncovered.errorAt(split.Origin)
-		err.NeedsCatchAll = u.Inexact
+		if u.Inexact {
+			err.OpenTail = u
+		}
 		c.report(err)
 		return
 	}
@@ -304,7 +306,7 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	// Its shape is no witness to report alongside, since a branch naming that shape is exactly
 	// what the interim rule refuses to credit.
 	if inexact {
-		c.report(&NonExhaustiveMatchError{Origin: split.Origin, NeedsCatchAll: true})
+		c.report(&NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier})
 		return
 	}
 	if hasStructuralTag(cov.covering.tests) {

@@ -53,7 +53,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal below a field is refutable and the plain arm below it reaches only the
 		// values the scrutinee's fields describe, so the open tail stays uncovered.
@@ -66,7 +66,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal arm covers only its own value, so a union member no literal names is
 		// uncovered however many arms the form has.
@@ -462,9 +462,10 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 			`,
 			want: "match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably",
 		},
-		// An inexact scrutinee's open tail holds values no pattern names, so there is no
-		// witness to report and a catch-all is the only edit that covers it.
-		"InexactObjectHasNoWitness": {
+		// An inexact scrutinee's open tail holds values no pattern names, so a catch-all is
+		// the only edit that covers it. The message names the inexact type, which is where
+		// the tail comes from, rather than asking for the catch-all unexplained.
+		"InexactObjectNamesItsOpenTail": {
 			src: `
 				fn f(p: {x: number, ...}) {
 					return match p {
@@ -472,7 +473,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; add a catch-all branch",
+			want: "match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// An inexact union's tail takes a catch-all whatever its members, and its uncovered
 		// members each still take a branch. The message asks for both. A literal arm covers
@@ -487,7 +488,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; add branches for `number`, `string`, and a catch-all branch",
+			want: "match is not exhaustive; add branches for `number`, `string`; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// The same inexact union with every member covered. Only the tail is left, so the
 		// catch-all is the whole of the advice.
@@ -501,7 +502,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; add a catch-all branch",
+			want: "match is not exhaustive; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 	}
 
@@ -524,15 +525,20 @@ func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 	}{
 		// One unmatched witness alongside an open tail. The sources above reach this pairing
 		// only with two or more witnesses.
-		"OneUnmatchedWithCatchAll": {
-			err:  &NonExhaustiveMatchError{Unmatched: []soltype.Type{numLit(1)}, NeedsCatchAll: true},
-			want: "match is not exhaustive; add a branch for `1`, and a catch-all branch",
+		"OneUnmatchedWithOpenTail": {
+			err: &NonExhaustiveMatchError{
+				Unmatched: []soltype.Type{numLit(1)},
+				OpenTail:  &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+			},
+			want: "match is not exhaustive; add a branch for `1`; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
-		// An open tail with no unmatched witness leaves the catch-all to stand as its own
-		// clause, ahead of whatever the other groups ask for.
-		"GuardedWithCatchAll": {
-			err:  &NonExhaustiveMatchError{Guarded: []soltype.Type{numLit(1)}, NeedsCatchAll: true},
-			want: "match is not exhaustive; add a catch-all branch; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it",
+		// The open-tail clause closes the message, after whatever the named witnesses ask for.
+		"GuardedWithOpenTail": {
+			err: &NonExhaustiveMatchError{
+				Guarded:  []soltype.Type{numLit(1)},
+				OpenTail: &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+			},
+			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		"TwoRefutable": {
 			err:  &NonExhaustiveMatchError{Refutable: []soltype.Type{numLit(1), numLit(2)}},
