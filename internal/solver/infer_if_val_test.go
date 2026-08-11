@@ -480,11 +480,12 @@ func TestInferValElseChecksTheFallbackAgainstALeafAnnotation(t *testing.T) {
 // borrow itself. concreteLeaf drops the shape hint for an annotated leaf, and applyBindMode
 // wraps a leaf in a borrow only where that hint says the value is borrowable.
 //
-// The borrow union reports a lifetime diagnostic of its own. It belongs to the scrutinee
-// rather than to the join, and the same declaration with a diverging `else` reports it too.
+// The scrutinee itself checks clean. Its members are peeled per member, so the leaves project
+// out of owned members and the borrow rides the binding mode.
 func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
 	tests := map[string]struct {
-		src      string
+		src string
+		// wantErrs is the full set of expected messages, and nil means the source checks clean.
 		wantErrs []string
 	}{
 		"FallbackFitsTheAnnotation": {
@@ -492,9 +493,6 @@ func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
 					val {x: v: number} = p else { {x: 5} }
 					return 0
 				}`,
-			wantErrs: []string{
-				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
-			},
 		},
 		"FallbackViolatesTheAnnotation": {
 			src: `fn f(p: &{x: number} | &{y: string}) {
@@ -502,7 +500,6 @@ func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
 					return 0
 				}`,
 			wantErrs: []string{
-				"1:9-1:21: borrowed value object does not live long enough to satisfy object",
 				`2:40-2:43: cannot constrain "s" <: number`,
 			},
 		},

@@ -113,11 +113,7 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 		bound = initType
 	default:
 		// The binding is the matched initializer OR the non-diverging fallback.
-		res := c.freshAt(lvl)
-		c.recordProv(res, d, ValElseBranch)
-		c.constrain(d, initType, res)
-		c.constrain(d, elseT, res)
-		bound = res
+		bound = c.joinBranches(d, lvl, ValElseBranch, []soltype.Type{initType, elseT})
 	}
 	c.recordType(ip, bound)
 	return bound, &ast.NodeProvenance{Node: d}, true

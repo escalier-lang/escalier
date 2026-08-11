@@ -107,6 +107,9 @@ const (
 // borrow with a real lifetime is a reference. An owned-mutable cell has a nil lifetime
 // and is an owned value. Its leaves move out and take their own declared mutability
 // rather than projecting a borrow.
+//
+// A union whose members are all borrows carries no outermost borrow to read, so it takes
+// peelBorrowUnion instead. Callers reach both through scrutineeBinding.
 func bindModeOf(scrutinee soltype.Type) bindMode {
 	if r, ok := scrutinee.(*soltype.RefType); ok && r.Lt != nil {
 		if r.Mut {
@@ -117,12 +120,95 @@ func bindModeOf(scrutinee soltype.Type) bindMode {
 	return bindMode{borrow: bmOwned}
 }
 
+// scrutineeBinding splits a scrutinee into the two things a pattern walk needs from it:
+// the carrier its leaves project out of, and the mode they bind through. The carrier
+// never holds the borrow, since the mode records it instead.
+//
+// A single `&{…}` is peeled by CarrierOf and read by bindModeOf. A union of borrows has
+// no outermost borrow for either to see, so peelBorrowUnion peels it per member. Every
+// other scrutinee keeps CarrierOf's answer and binds owned.
+func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Type, bindMode) {
+	carrier := soltype.CarrierOf(scrutinee)
+	if inner, mode, ok := c.peelBorrowUnion(lvl, carrier); ok {
+		return inner, mode
+	}
+	return carrier, bindModeOf(scrutinee)
+}
+
+// peelBorrowUnion peels a union whose every member is a borrow into the union of the
+// members' carriers, plus the mode a leaf of that union binds through. So
+// `&'a {x: number} | &'b {y: string}` peels to `{x: number} | {y: string}`, and a leaf
+// projects out of an owned member while the borrow rides the mode exactly as it does for
+// a single `&{…}` scrutinee. Without the peel a leaf projects out of `&'a {x: number}`
+// itself, and the owned requirement that projection emits reads as a borrow escaping into
+// an owned destination.
+//
+// ok is false for every other type. A union holding one non-borrow member has no single
+// borrow to lift out, and an owned-mutable `mut {…}` cell carries no lifetime, so its
+// leaves move out rather than projecting a borrow.
+//
+// The mode is mutable only when every member is, since a leaf reached through an
+// immutable member cannot be written. Its lifetime is the join of the members', which
+// joinLifetimes bounds below by each, so a leaf outlives none of the members it may have
+// been projected from.
+func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion || len(u.Types) == 0 {
+		return nil, bindMode{}, false
+	}
+	inners := make([]soltype.Type, len(u.Types))
+	lts := make([]soltype.Lifetime, len(u.Types))
+	mut := true
+	for i, member := range u.Types {
+		r, isRef := member.(*soltype.RefType)
+		if !isRef || r.Lt == nil {
+			return nil, bindMode{}, false
+		}
+		inners[i], lts[i] = r.Inner, r.Lt
+		mut = mut && r.Mut
+	}
+	borrow := bmImm
+	if mut {
+		borrow = bmMut
+	}
+	// The peeled union keeps the original's open tail. An inexact union's tail member may
+	// itself be a borrow the listed members do not name, and dropping the tail would narrow
+	// the scrutinee to the members that happen to be written out.
+	peeled := &soltype.UnionType{Types: inners, Inexact: u.Inexact}
+	return peeled, bindMode{borrow: borrow, lt: c.joinLifetimes(lvl, lts)}, true
+}
+
+// joinLifetimes returns the one lifetime that outlives no member of lts. Several distinct
+// lifetimes unite under a fresh join variable bounded below by each, which is what lets a
+// value drawn from any of them carry a single lifetime. lts must not be empty.
+//
+// A set that already names one lifetime returns it unchanged, so the common
+// `&'a A | &'a B` needs no join variable.
+func (c *checker) joinLifetimes(lvl int, lts []soltype.Lifetime) soltype.Lifetime {
+	shared := true
+	for _, lt := range lts[1:] {
+		if !soltype.ContainsLifetime(lts[:1], lt) {
+			shared = false
+			break
+		}
+	}
+	if shared {
+		return lts[0]
+	}
+	joinLt := c.ctx.freshJoinLifetime(lvl)
+	for _, lt := range lts {
+		c.ctx.constrainLt(lt, joinLt)
+	}
+	return joinLt
+}
+
 // bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
 // bindPattern for the pattern-typing contract. The emit decides where each bound
 // leaf lands. The binding mode is derived from the scrutinee here and threaded into
 // the recursive walk so nested leaves inherit the scrutinee's borrow.
 func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
-	return c.bindPatMode(scope, lvl, pat, scrutinee, soltype.CarrierOf(scrutinee), bindModeOf(scrutinee), leafTypes, emit, purpose)
+	carrier, mode := c.scrutineeBinding(lvl, scrutinee)
+	return c.bindPatMode(scope, lvl, pat, carrier, carrier, mode, leafTypes, emit, purpose)
 }
 
 // projectLeaves resolves each leaf pat names out of scrutinee and reports it to found. It
@@ -133,7 +219,8 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 // flowed into scrutinee passes that value here, so a `...rest` leaf resolves the leftover
 // members it really has rather than an opaque `{...}`.
 func (c *checker) projectLeaves(scope *Scope, lvl int, pat ast.Pat, scrutinee, concrete soltype.Type, found leafEmit) {
-	c.bindPatMode(scope, lvl, pat, scrutinee, concrete, bindModeOf(concrete), nil, found, forProjection)
+	shape, mode := c.scrutineeBinding(lvl, concrete)
+	c.bindPatMode(scope, lvl, pat, scrutinee, shape, mode, nil, found, forProjection)
 }
 
 // bindPatMode is bindPatternWith's recursive core, carrying the binding mode the
