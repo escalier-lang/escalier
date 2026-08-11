@@ -864,7 +864,7 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 	for i, r := range refs {
 		lts[i] = r.Lt
 	}
-	return &soltype.RefType{Mut: true, Lt: c.joinLifetimes(lvl, lts), Inner: objs[0]}, true
+	return &soltype.RefType{Mut: true, Lt: c.ctx.joinLifetimes(lvl, lts), Inner: objs[0]}, true
 }
 
 // constrainEscape constrains every borrow lifetime reachable in t to outlive

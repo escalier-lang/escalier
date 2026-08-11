@@ -186,31 +186,7 @@ func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMo
 	// No Context, so subsumption does not run. It trials one member against another under a
 	// probe and drops the subtype, which would change the member set narrowing reads.
 	peeled := newUnion(nil, inners, false)
-	return peeled, bindMode{borrow: borrow, lt: c.joinLifetimes(lvl, lts)}, true
-}
-
-// joinLifetimes returns one lifetime that every member of lts outlives, so a value drawn
-// from any of them may carry it. Several distinct lifetimes unite under a fresh join
-// variable holding each of them as a lower bound. lts must not be empty.
-//
-// Where lts names one lifetime already, that lifetime is returned unchanged and the common
-// `&'a A | &'a B` mints no join variable.
-func (c *checker) joinLifetimes(lvl int, lts []soltype.Lifetime) soltype.Lifetime {
-	shared := true
-	for _, lt := range lts[1:] {
-		if !soltype.ContainsLifetime(lts[:1], lt) {
-			shared = false
-			break
-		}
-	}
-	if shared {
-		return lts[0]
-	}
-	joinLt := c.ctx.freshJoinLifetime(lvl)
-	for _, lt := range lts {
-		c.ctx.constrainLt(lt, joinLt)
-	}
-	return joinLt
+	return peeled, bindMode{borrow: borrow, lt: c.ctx.joinLifetimes(lvl, lts)}, true
 }
 
 // bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
