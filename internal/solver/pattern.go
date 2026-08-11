@@ -145,7 +145,9 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 //
 // ok is false for every other type. A union holding one non-borrow member has no single
 // borrow to lift out, and an owned-mutable `mut {…}` cell carries no lifetime, so its
-// leaves move out rather than projecting a borrow.
+// leaves move out rather than projecting a borrow. An INEXACT union is refused too: only
+// its listed members are there to inspect, so its open tail may hold an owned member the
+// peel would wrongly claim as a borrow.
 //
 // The mode is mutable only when every member is, since a leaf reached through an
 // immutable member cannot be written. Its lifetime is the join of the members', which
@@ -153,7 +155,7 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // been projected from.
 func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
 	u, isUnion := t.(*soltype.UnionType)
-	if !isUnion || len(u.Types) == 0 {
+	if !isUnion || u.Inexact || len(u.Types) == 0 {
 		return nil, bindMode{}, false
 	}
 	inners := make([]soltype.Type, len(u.Types))
@@ -171,10 +173,14 @@ func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMo
 	if mut {
 		borrow = bmMut
 	}
-	// The peeled union keeps the original's open tail. An inexact union's tail member may
-	// itself be a borrow the listed members do not name, and dropping the tail would narrow
-	// the scrutinee to the members that happen to be written out.
-	peeled := &soltype.UnionType{Types: inners, Inexact: u.Inexact}
+	// The peel goes through the lattice's one union constructor, so a member that is itself
+	// a union is flattened into the result. Building the node by hand would nest it, and
+	// narrowing reads only a union's top-level members, so `&({a} | {b}) | &{c}` would
+	// destructure as though `{a}` and `{b}` were not there.
+	//
+	// No Context, so subsumption does not run. It trials one member against another under a
+	// probe and drops the subtype, which would change the member set narrowing reads.
+	peeled := newUnion(nil, inners, false)
 	return peeled, bindMode{borrow: borrow, lt: c.joinLifetimes(lvl, lts)}, true
 }
 
@@ -446,7 +452,7 @@ func (c *checker) projectTuple(
 	// a nested level the scrutinee is the parent's element variable, so only the threaded
 	// concrete still carries the element shape a borrowed leaf must inspect to decide
 	// whether to borrow.
-	concreteTup, _ = c.groundedTuple(concrete)
+	concreteTup = c.concreteTupleShape(concrete)
 	// When the scrutinee is a concrete tuple, pin each αi's upper bound to the matching
 	// element. The requirement above gives αi the element only as a lower bound, which
 	// cannot reject a refutable literal sub-pattern of the wrong kind. The upper bound makes
@@ -547,6 +553,47 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 		return nil, false
 	}
 	return c.groundedTuple(groundedCarrier(scrutinee))
+}
+
+// concreteTupleShape resolves the statically known tuple a destructured leaf reads its
+// element out of, and nil for a type that fixes no element. A tuple grounds through
+// groundedTuple. A union of tuples grounds to the elementwise union of theirs, which is the
+// shape a leaf reads when narrowing left the scrutinee as several members. So a `[a, b]`
+// over `&[{p: number}, string] | &[{q: number}, string]` reads its first element as
+// `{p: number} | {q: number}` and borrows it, rather than reading no shape and moving it out.
+//
+// The members must agree on arity, since one element position has to name one type. An
+// inexact member, or an inexact union whose open tail names no elements at all, fixes no
+// arity either.
+func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
+	if tup, ok := c.groundedTuple(t); ok {
+		return tup
+	}
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion || u.Inexact || len(u.Types) == 0 {
+		return nil
+	}
+	members := make([]*soltype.TupleType, len(u.Types))
+	for i, member := range u.Types {
+		tup, ok := c.groundedTuple(member)
+		if !ok || tup.Inexact {
+			return nil
+		}
+		if i > 0 && len(tup.Elems) != len(members[0].Elems) {
+			return nil
+		}
+		members[i] = tup
+	}
+	elems := make([]soltype.Type, len(members[0].Elems))
+	for i := range elems {
+		at := make([]soltype.Type, len(members))
+		for j, m := range members {
+			at[j] = m.Elems[i]
+		}
+		// No Context, so subsumption does not run. See peelBorrowUnion.
+		elems[i] = newUnion(nil, at, false)
+	}
+	return &soltype.TupleType{Elems: elems}
 }
 
 // groundedTuple splices every `...P` spread into position so elements can be read by index,
@@ -1070,10 +1117,32 @@ func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) solty
 // so it resolves a field even at a nested level where the scrutinee is a projection
 // variable. It is the object-pattern analogue of indexing a concrete tuple's elements.
 func fieldConcrete(t soltype.Type, name string) soltype.Type {
-	if o, ok := t.(*soltype.ObjectType); ok {
-		if prop, found := o.Prop(name); found {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		if prop, found := t.Prop(name); found {
 			return prop.Type
 		}
+	case *soltype.UnionType:
+		// A union of objects knows the field's shape as the union of what each member holds
+		// there. Reading it is what lets a leaf of a scrutinee that narrowing left as several
+		// members still decide whether to borrow. An inexact union's open tail may carry the
+		// field at any type, so its shape is not known and the switch falls through to nil.
+		if t.Inexact {
+			return nil
+		}
+		fields := make([]soltype.Type, len(t.Types))
+		for i, member := range t.Types {
+			field := fieldConcrete(member, name)
+			if field == nil {
+				return nil
+			}
+			fields[i] = field
+		}
+		if len(fields) == 0 {
+			return nil
+		}
+		// No Context, so subsumption does not run. See peelBorrowUnion.
+		return newUnion(nil, fields, false)
 	}
 	return nil
 }

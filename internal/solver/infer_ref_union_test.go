@@ -198,6 +198,18 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 			want: "fn (p: &mut {x: {a: number}} | &mut {y: string}) -> 0",
 		},
 		{
+			// A write through a leaf that several surviving members reach is accepted too, since
+			// the leaf carries the mutable mode rather than being moved out immutable.
+			name: "mut leaf of several surviving members is writable",
+			src: `fn f(p: &mut {x: {a: number}} | &mut {x: {a: number}, y: string}) {
+  if val {x: v} = p {
+    v.a = 2
+  }
+  return 0
+}`,
+			want: "fn (p: &mut {x: {a: number}} | &mut {x: {a: number}, y: string}) -> 0",
+		},
+		{
 			// A leaf reached through an immutable member cannot be written, so the write is
 			// rejected rather than silently going through the mutable member.
 			name: "immutable borrow union leaves reject a write",
@@ -304,6 +316,37 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
   return 0
 }`,
 			want: "&mut {a: number}",
+		},
+		{
+			// Both members carry `x`, so the object test narrows nothing away and the leaf reads
+			// a union. Deciding whether to borrow needs that union's field shape, which is the
+			// union of what each member holds at `x`.
+			name: "a leaf of several surviving members stays borrowed",
+			src: `fn f(p: &{x: {a: number}} | &{x: {b: string}}) {
+  val {x: v} = p else { return 0 }
+  return 0
+}`,
+			want: "&({a: number} | {b: string})",
+		},
+		{
+			// A member that is itself a union flattens into the peeled union, so narrowing sees
+			// its members rather than one nested node it cannot look inside.
+			name: "a union member flattens into the peel",
+			src: `fn f(p: &({x: {a: number}} | {x: {b: number}}) | &{x: {c: number}}) {
+  val {x: v} = p else { return 0 }
+  return 0
+}`,
+			want: "&({a: number} | {b: number} | {c: number})",
+		},
+		{
+			// A tuple element takes the same elementwise read an object field does, so an element
+			// of several surviving members is borrowed rather than moved out.
+			name: "a tuple element of several surviving members stays borrowed",
+			src: `fn f(p: &[{a: number}, string] | &[{b: number}, string]) {
+  val [v, s] = p else { return 0 }
+  return 0
+}`,
+			want: "&({a: number} | {b: number})",
 		},
 		{
 			// An owned-mutable `mut {…}` cell carries no lifetime, so it is a value rather than
