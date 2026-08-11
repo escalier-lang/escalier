@@ -1061,8 +1061,27 @@ type CannotAssignToImmutableError struct {
 // the surface construct the message speaks about and the node it blames, so the wording
 // follows the form the user wrote rather than assuming a `match`. The error self-blames that
 // whole construct through Span and carries no related node.
+//
+// The three lists below hold the witnesses: the types the construct leaves uncovered, grouped
+// by the edit that would cover each one. NeedsCatchAll is a fourth thing the message can ask
+// for, independent of them. A scrutinee can leave named members uncovered, carry an open tail
+// of unknown values, or both.
 type NonExhaustiveMatchError struct {
 	Origin ucs.Origin
+	// Unmatched holds the values no arm's pattern names.
+	Unmatched []soltype.Type
+	// Guarded holds the values named only by arms whose guard can fail. Such an arm covers
+	// nothing on its own, since a false condition falls through to the arms below it.
+	Guarded []soltype.Type
+	// Refutable holds the values named only by arms nesting a sub-pattern that can fail. The
+	// `Color.RGB(0, g, b)` of a `match` over `Color` names the variant but matches only when
+	// the first field is 0.
+	Refutable []soltype.Type
+	// OpenTail is the inexact scrutinee whose tail of unknown values only a catch-all arm
+	// reaches, and nil when the scrutinee has no such tail. The message names it so the reader
+	// can see why a catch-all is being asked for. An inexact union sets it alongside its
+	// uncovered members, since covering every member still leaves the tail.
+	OpenTail soltype.Type
 }
 
 // UnreachableMatchArmError fires when a `match` arm can never run, because an arm above it
@@ -1791,11 +1810,72 @@ func (e *NonExhaustiveMatchError) Span() ast.Span {
 }
 func (e *NonExhaustiveMatchError) Related() []ast.Span { return nil }
 
-// Message names the surface construct the uncovered split lowered from. Only a `match`
-// reports this today. An `if val` and a `val … else` each write an `else` path, so no value
-// falls through either one.
+// Message names the surface construct the uncovered split lowered from, then the edit that
+// would cover what escapes. Only a `match` reports this today. An `if val` and a `val … else`
+// each write an `else` path, so no value falls through either one.
 func (e *NonExhaustiveMatchError) Message() string {
-	return constructName(e.Origin.Kind) + " is not exhaustive; add a catch-all branch"
+	return constructName(e.Origin.Kind) + " is not exhaustive; " + e.advice()
+}
+
+// advice renders the edit each group of witnesses calls for, as one clause per group. The
+// branches to add lead, then the guarded group, the refutable one, and last the open tail. An
+// error carrying nothing at all falls back to asking for a catch-all rather than trailing off
+// after the semicolon.
+func (e *NonExhaustiveMatchError) advice() string {
+	clauses := make([]string, 0, 4)
+	if names := witnessList(e.Unmatched); names != "" {
+		if len(e.Unmatched) == 1 {
+			clauses = append(clauses, "add a branch for "+names)
+		} else {
+			clauses = append(clauses, "add branches for "+names)
+		}
+	}
+	if names := witnessList(e.Guarded); names != "" {
+		if len(e.Guarded) == 1 {
+			clauses = append(clauses, names+" is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it")
+		} else {
+			clauses = append(clauses, names+" are matched only by guarded branches, whose guards can fail, so add unguarded branches for them")
+		}
+	}
+	if names := witnessList(e.Refutable); names != "" {
+		if len(e.Refutable) == 1 {
+			clauses = append(clauses, names+" is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably")
+		} else {
+			clauses = append(clauses, names+" are matched only by branches whose own patterns can fail, so add branches that match them irrefutably")
+		}
+	}
+	if e.OpenTail != nil {
+		clauses = append(clauses, "`"+soltype.Print(e.OpenTail)+
+			"` is inexact and admits values no pattern names, so add a catch-all branch")
+	}
+	if len(clauses) == 0 {
+		return "add a catch-all branch"
+	}
+	return strings.Join(clauses, "; ")
+}
+
+// witnessList renders one group of witnesses as a backticked, comma-separated list, and the
+// empty string for an empty group so a caller can drop the clause.
+func witnessList(types []soltype.Type) string {
+	if len(types) == 0 {
+		return ""
+	}
+	names := make([]string, len(types))
+	for i, t := range types {
+		names[i] = witnessString(t)
+	}
+	return quoteJoin(names, "`")
+}
+
+// witnessString renders one uncovered value as the thing a covering arm would name. A
+// generic enum variant drops its type arguments, so a `MyOption<number>` scrutinee missing
+// its empty case reads `MyOption.None` rather than `MyOption.None<number>`. The arm writes
+// the bare variant, and the arguments belong to the value it destructures.
+func witnessString(t soltype.Type) string {
+	if ct, isClass := t.(*soltype.ClassType); isClass && ct.Variant && len(ct.TypeArgs) > 0 {
+		return soltype.Print(&soltype.ClassType{Name: ct.Name, Final: ct.Final, Variant: true})
+	}
+	return soltype.Print(t)
 }
 
 // constructName renders an origin kind as the phrase a message uses to name the surface

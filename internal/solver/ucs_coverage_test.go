@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/escalier-lang/escalier/internal/solver/ucs"
 	"github.com/stretchr/testify/require"
 )
@@ -13,8 +14,9 @@ import (
 // split, and a nested pattern becomes a split of its own. The verdict has to come out the
 // same as reading the arms would give.
 //
-// The messages a non-exhaustive form reports are pinned in full by the pattern suites and by
-// TestMatchDiagnosticsNameTheMatch in ucs_walk_test.go.
+// The messages a non-exhaustive form reports are pinned in full by the pattern suites, by
+// TestMatchDiagnosticsNameTheMatch in ucs_walk_test.go, and by
+// TestNonExhaustiveMessageNamesWhatEscapes below.
 
 // A guarded arm whose pattern makes no test becomes the split's default tail and takes every
 // branch below it with it, leaving the top-level split with no branch of its own. The arms
@@ -51,7 +53,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal below a field is refutable and the plain arm below it reaches only the
 		// values the scrutinee's fields describe, so the open tail stays uncovered.
@@ -64,7 +66,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal arm covers only its own value, so a union member no literal names is
 		// uncovered however many arms the form has.
@@ -77,7 +79,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; add a branch for `3`",
 		},
 	}
 
@@ -173,7 +175,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:12-7:6: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+		require.Equal(t, "3:12-7:6: match is not exhaustive; `{b: string}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it", msgWithSpan(errs[0]))
 	})
 
 	// The same shape on the nominal path. `Color.RGB(0, g, b)` matches only when the first
@@ -194,7 +196,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "7:12-11:6: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+		require.Equal(t, "7:12-11:6: match is not exhaustive; `Color.RGB` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(errs[0]))
 	})
 }
 
@@ -274,7 +276,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 			`,
 		},
 		// A guarded arm covers nothing, since a false condition falls past it. The annotation
-		// it tests does not change that.
+		// it tests does not change that, though it does name the member the message reports.
 		"GuardedAnnotatedArm": {
 			src: `
 				fn f(u: number | string, b: boolean) {
@@ -284,7 +286,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 					}
 				}
 			`,
-			wantErrs: []string{"3:13-6:7: match is not exhaustive; add a catch-all branch"},
+			wantErrs: []string{"3:13-6:7: match is not exhaustive; `number` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it"},
 		},
 		// An annotation naming no type resolves to nothing, so the arm credits no member. The
 		// walk reports the missing type once, and this check resolves the annotation again
@@ -299,7 +301,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 			`,
 			wantErrs: []string{
 				"4:10-4:14: cannot find type `Nope`",
-				"3:13-5:7: match is not exhaustive; add a catch-all branch",
+				"3:13-5:7: match is not exhaustive; add branches for `number`, `string`",
 			},
 		},
 	}
@@ -308,6 +310,253 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+		})
+	}
+}
+
+// The message names what escapes and the edit that would cover it, rather than always asking
+// for a catch-all. Each row leaves a value uncovered for a different reason, and the readings
+// the coverage walk takes of a branch are what tell those reasons apart.
+func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// No branch names the second member, so the message asks for one matching its shape.
+		"UnionMemberNoArmNames": {
+			src: `
+				fn f(p: {x: number} | {y: string}) {
+					return match p {
+						{x} => x
+					}
+				}
+			`,
+			want: "match is not exhaustive; add a branch for `{y: string}`",
+		},
+		// Two members escape at once, so both are named in source order.
+		"SeveralUnionMembers": {
+			src: `
+				fn f(p: {x: number} | {y: string} | {z: boolean}) {
+					return match p {
+						{x} => x
+					}
+				}
+			`,
+			want: "match is not exhaustive; add branches for `{y: string}`, `{z: boolean}`",
+		},
+		// The arm's shape covers the whole exact scrutinee, and only its guard lets a value
+		// fall through, so the fix is an unguarded branch rather than a catch-all.
+		"GuardedArmOverExactObject": {
+			src: `
+				fn f(p: {x: number}, b: boolean) {
+					return match p {
+						{x} if b => x
+					}
+				}
+			`,
+			want: "match is not exhaustive; `{x: number}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it",
+		},
+		// One member is named by a guarded arm and the other by nothing, so the message
+		// carries a clause for each.
+		"GuardedMemberAlongsideAnUnnamedOne": {
+			src: `
+				fn f(p: {x: number} | {y: string}, b: boolean) {
+					return match p {
+						{x} if b => 0
+					}
+				}
+			`,
+			want: "match is not exhaustive; add a branch for `{y: string}`; `{x: number}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it",
+		},
+		// A catch-all arm names every value, so a guard on it is the only reason any member
+		// falls through and every member takes the guarded wording.
+		"GuardedCatchAllOverUnion": {
+			src: `
+				fn f(p: {x: number} | {y: string}, b: boolean) {
+					return match p {
+						q if b => 0
+					}
+				}
+			`,
+			want: "match is not exhaustive; `{x: number}`, `{y: string}` are matched only by guarded branches, whose guards can fail, so add unguarded branches for them",
+		},
+		// `{x: 1}` names the scrutinee's shape but matches only when the field is 1, so the
+		// fix is a branch binding that shape irrefutably.
+		"RefutableSubPattern": {
+			src: `
+				fn f(p: {x: number}) {
+					return match p {
+						{x: 1} => 10
+					}
+				}
+			`,
+			want: "match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably",
+		},
+		// An enum's witness is the variant an arm has to name.
+		"EnumVariant": {
+			src: `
+				enum Color {
+					RGB(r: number, g: number, b: number),
+					Hex(code: string),
+				}
+				fn f(c: Color) {
+					return match c {
+						Color.RGB(r, g, b) => r
+					}
+				}
+			`,
+			want: "match is not exhaustive; add a branch for `Color.Hex`",
+		},
+		// A generic enum's variant renders without the type arguments the instance carries,
+		// since `MyOption.None` is what the missing arm writes.
+		"GenericEnumVariant": {
+			src: `
+				enum MyOption<T> {
+					Some(value: T),
+					None,
+				}
+				fn f(o: MyOption<number>) {
+					return match o {
+						MyOption.Some(value) => value
+					}
+				}
+			`,
+			want: "match is not exhaustive; add a branch for `MyOption.None`",
+		},
+		// A member no shape tag can name is still named, since an annotated arm such as
+		// `n: number => n` covers whichever member its type admits.
+		"PrimitiveMember": {
+			src: `
+				fn f(x: number | string) {
+					return match x {
+						1 => 1
+					}
+				}
+			`,
+			want: "match is not exhaustive; add branches for `number`, `string`",
+		},
+		// A transparent alias member is uncovered whatever shape the arms name, since the
+		// coverage rules read the member rather than the type it stands for. An annotated arm
+		// `c: C => 2` is what covers it, so the alias name is the witness to report.
+		"AliasUnionMember": {
+			src: `
+				type C = {y: string}
+				fn f(p: {x: number} | C) {
+					return match p {
+						{x} => 1
+					}
+				}
+			`,
+			want: "match is not exhaustive; add a branch for `C`",
+		},
+		// A structural scrutinee's witness is the shape behind its annotation, so a covering
+		// pattern's fields are visible where an alias name would hide them.
+		"AliasStructuralScrutinee": {
+			src: `
+				type P = {x: number}
+				fn f(p: P) {
+					return match p {
+						{x: 1} => 10
+					}
+				}
+			`,
+			want: "match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably",
+		},
+		// An inexact scrutinee's open tail holds values no pattern names, so a catch-all is
+		// the only edit that covers it. The message names the inexact type, which is where
+		// the tail comes from, rather than asking for the catch-all unexplained.
+		"InexactObjectNamesItsOpenTail": {
+			src: `
+				fn f(p: {x: number, ...}) {
+					return match p {
+						{x} => x
+					}
+				}
+			`,
+			want: "match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+		},
+		// An inexact union's tail takes a catch-all whatever its members, and its uncovered
+		// members each still take a branch. The message asks for both. A literal arm covers
+		// only its own value, so neither `number` nor `string` is covered here.
+		"InexactUnionNamesMembersAndCatchAll": {
+			src: `
+				fn f(b: boolean) {
+					val x: number | string | ... = if b { 1 } else { "b" }
+					return match x {
+						1 => 1,
+						"b" => 2
+					}
+				}
+			`,
+			want: "match is not exhaustive; add branches for `number`, `string`; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+		},
+		// The same inexact union with every member covered. Only the tail is left, so the
+		// catch-all is the whole of the advice.
+		"InexactUnionWithEveryMemberCovered": {
+			src: `
+				fn f(b: boolean) {
+					val x: number | string | ... = if b { 1 } else { "b" }
+					return match x {
+						n: number => 1,
+						s: string => 2
+					}
+				}
+			`,
+			want: "match is not exhaustive; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// Every clause of the message has a singular and a plural form, and the catch-all clause
+// combines with each of them. The sources above reach only some of those pairings, so these
+// rows build the error directly and pin the rest.
+func TestNonExhaustiveMessagePluralForms(t *testing.T) {
+	tests := map[string]struct {
+		err  *NonExhaustiveMatchError
+		want string
+	}{
+		// One unmatched witness alongside an open tail. The sources above reach this pairing
+		// only with two or more witnesses.
+		"OneUnmatchedWithOpenTail": {
+			err: &NonExhaustiveMatchError{
+				Unmatched: []soltype.Type{numLit(1)},
+				OpenTail:  &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+			},
+			want: "match is not exhaustive; add a branch for `1`; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+		},
+		// The open-tail clause closes the message, after whatever the named witnesses ask for.
+		"GuardedWithOpenTail": {
+			err: &NonExhaustiveMatchError{
+				Guarded:  []soltype.Type{numLit(1)},
+				OpenTail: &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+			},
+			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+		},
+		"TwoRefutable": {
+			err:  &NonExhaustiveMatchError{Refutable: []soltype.Type{numLit(1), numLit(2)}},
+			want: "match is not exhaustive; `1`, `2` are matched only by branches whose own patterns can fail, so add branches that match them irrefutably",
+		},
+		"OneOfEach": {
+			err: &NonExhaustiveMatchError{
+				Unmatched: []soltype.Type{numLit(1)},
+				Guarded:   []soltype.Type{numLit(2)},
+				Refutable: []soltype.Type{numLit(3)},
+			},
+			want: "match is not exhaustive; add a branch for `1`; `2` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `3` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, tt.want, tt.err.Message())
 		})
 	}
 }

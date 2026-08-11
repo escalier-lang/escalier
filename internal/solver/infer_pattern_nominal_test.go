@@ -249,7 +249,9 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 // catch-all and binds each variant's fields; leaving a variant uncovered is non-exhaustive;
 // a catch-all covers the remaining variants; and an extractor arm with a refutable literal
 // argument such as `Color.RGB(0, g, b)`, which matches only when the first field is 0, does
-// not cover its variant, so the match is non-exhaustive.
+// not cover its variant, so the match is non-exhaustive. The two failing rows differ in what
+// the message asks for. A variant no arm names takes a new branch, while one named by a
+// refutable argument takes a branch binding it irrefutably.
 func TestInferMatchEnumExhaustiveness(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -265,7 +267,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 		{
 			name:    "MissingVariant",
 			arms:    "Color.RGB(r, g, b) => r",
-			wantErr: "7:11-9:5: match is not exhaustive; add a catch-all branch",
+			wantErr: "7:11-9:5: match is not exhaustive; add a branch for `Color.Hex`",
 		},
 		{
 			name:    "CatchAllCoversRemainingVariants",
@@ -275,7 +277,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 		{
 			name:    "RefutableArgDoesNotCover",
 			arms:    "Color.RGB(0, g, b) => g,\n\t\t\t\tColor.Hex(code) => 0",
-			wantErr: "7:11-10:5: match is not exhaustive; add a catch-all branch",
+			wantErr: "7:11-10:5: match is not exhaustive; `Color.RGB` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably",
 		},
 	}
 	for _, tt := range tests {
@@ -342,7 +344,7 @@ func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
 		{
 			name:    "MissingMemberIsNonExhaustive",
 			arms:    "Dog(name) => name",
-			wantErr: "6:11-8:5: match is not exhaustive; add a catch-all branch",
+			wantErr: "6:11-8:5: match is not exhaustive; add a branch for `Cat`",
 		},
 	}
 	for _, tt := range tests {
@@ -385,7 +387,7 @@ func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "5:11-7:5: match is not exhaustive; add a branch for `{y: 2}`", msgWithSpan(errs[0]))
 }
 
 // A union mixing a structural-object member with a non-object member, `"a" | {x: number}`,
@@ -402,7 +404,7 @@ func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"a\"`", msgWithSpan(errs[0]))
 }
 
 // A match over a structural-object union such as `{x: number} | {y: string}` with an object
@@ -435,7 +437,7 @@ func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-6:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-6:5: match is not exhaustive; add a branch for `{z: boolean}`", msgWithSpan(errs[0]))
 }
 
 // Match-arm narrowing routes each tuple pattern to the union members of its fixed arity, so

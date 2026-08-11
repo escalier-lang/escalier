@@ -724,14 +724,15 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 		},
 		{
 			// One annotated arm leaves the `string` member with no arm to run, so the arms
-			// are not exhaustive. The span runs from `match` to the closing brace.
+			// are not exhaustive and the message names that member. The span runs from
+			// `match` to the closing brace.
 			name: "one annotated arm leaves a member uncovered",
 			src: `fn f(u: number | string) {
 					return match u {
 						x: number => x,
 					}
 				}`,
-			wantErrs: []string{"2:13-4:7: match is not exhaustive; add a catch-all branch"},
+			wantErrs: []string{"2:13-4:7: match is not exhaustive; add a branch for `string`"},
 		},
 		{
 			// An annotation admitting the whole scrutinee covers it outright, so no arm below

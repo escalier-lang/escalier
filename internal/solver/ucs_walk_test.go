@@ -23,8 +23,8 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 		want string
 	}{
 		// An inexact scrutinee carries an open tail of unknown values, so it takes a
-		// catch-all arm. The wording asks for a branch, which is what a `match` is
-		// written out of.
+		// catch-all arm, and the message says which type's tail that is. The wording asks
+		// for a branch, which is what a `match` is written out of.
 		"NonExhaustive": {
 			src: `
 				fn f(p: {x: number, ...}) {
@@ -33,7 +33,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// A guarded arm can always fail its guard, so it covers nothing and the same
 		// wording applies.
@@ -45,10 +45,10 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
 		},
 		// An exact union takes an arm per member. The uncovered member leaves the match
-		// non-exhaustive, and the message still names the `match`.
+		// non-exhaustive, and the message names the `match` as well as that member.
 		"UnionMemberUncovered": {
 			src: `
 				fn f(p: {x: number} | {y: string}) {
@@ -57,7 +57,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; add a branch for `{y: string}`",
 		},
 	}
 
