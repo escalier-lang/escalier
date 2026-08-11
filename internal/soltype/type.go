@@ -892,6 +892,24 @@ type UnionType struct {
 }
 type IntersectionType struct{ Types []Type }
 
+// NegationType is the set-theoretic complement ¬Inner, the value that inhabits every type
+// Inner does not. It joins UnionType and IntersectionType as a lattice former and completes
+// them into a Boolean algebra, where every type has a complement and `A & ¬A` is `never`.
+//
+// It is the one former that inverts polarity on its child, because a complement shrinks as
+// its operand grows. Accept visits Inner at the flipped polarity, so coalesce, extrude, and
+// freshenAbove inherit that inversion without a rule of their own.
+//
+// Nothing mints one yet. No source syntax spells a complement, and constrain rejects a
+// constraint whose operand is one, so a negation reaches the solver only once the
+// normalization layer produces it. The representation lands ahead of that so the structural
+// passes — the visitor, LevelOf, structural equality, the canonical member order, and the
+// printer — already carry it.
+//
+// It is deliberately not a RefInner. A borrow is over a value someone allocated, and a
+// complement names no such value, so `&¬T` has no meaning to give it.
+type NegationType struct{ Inner Type }
+
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
 // from never (⊥) and unknown (⊤). Unlike those two, which are coalesced-OUTPUT
 // only ("appear only as coalesced output, never as constrain inputs", above),
@@ -1300,6 +1318,7 @@ func (*NeverType) isType()           {}
 func (*UnknownType) isType()         {}
 func (*UnionType) isType()           {}
 func (*IntersectionType) isType()    {}
+func (*NegationType) isType()        {}
 func (*ErrorType) isType()           {}
 func (*ClassType) isType()           {}
 func (*AliasType) isType()           {}
@@ -1454,6 +1473,13 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
+	case *NegationType:
+		// A complement's level is its operand's, the single-child rule the KeyofType arm
+		// follows, so a `¬T` over an out-of-level variable lifts the level and the
+		// freshener/extruder prune descends to freshen that variable. Polarity does not enter
+		// here; the level prune asks how deep a variable was minted, not which side of a
+		// constraint it stands on.
+		return LevelOf(t.Inner)
 	default:
 		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType,
 		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a

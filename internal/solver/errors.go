@@ -2936,6 +2936,11 @@ func describe(t soltype.Type) string {
 		return s
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
+	case *soltype.NegationType:
+		// A complement renders `¬T` over the nominal inner, recursing like the union and
+		// intersection arms. constrain rejects a constraint whose operand is a negation, so
+		// this arm is what names the rejected operand in that message.
+		return "¬" + describe(t.Inner)
 	case *soltype.TypeVarType:
 		return "t" + strconv.Itoa(t.ID)
 	case *soltype.SkolemType:

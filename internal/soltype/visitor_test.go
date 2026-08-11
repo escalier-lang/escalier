@@ -306,6 +306,65 @@ func TestAcceptUnionIdentityPreservation(t *testing.T) {
 	require.Same(t, u, u.Accept(identityVisitor{}, Positive), "an unchanged UnionType keeps its pointer")
 }
 
+// A complement is contravariant in its operand, so Accept walks Inner at the flipped
+// polarity. The flip composes with the one a function's parameters already get, so a
+// parameter under a negation is covariant, and a second negation flips back to where it
+// started. It is the only node that inverts — a tuple's elements stay covariant.
+func TestAcceptNegationFlipsPolarity(t *testing.T) {
+	param := &TypeVarType{ID: 1}
+	ret := &PrimType{Prim: NumPrim}
+	atom := &PrimType{Prim: StrPrim}
+
+	// [¬(fn (x: param) -> ret), ¬¬atom], walked from Positive. A tuple element is
+	// covariant, so each negation is entered at the root polarity.
+	fn := &FuncType{
+		Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: param}},
+		Ret:    ret,
+	}
+	negFn := &NegationType{Inner: fn}
+	innerNeg := &NegationType{Inner: atom}
+	outerNeg := &NegationType{Inner: innerNeg}
+	root := &TupleType{Elems: []Type{negFn, outerNeg}}
+
+	r := &recorder{seen: map[Type]Polarity{}}
+	root.Accept(r, Positive)
+
+	require.Equal(t, Positive, r.seen[negFn], "a tuple element keeps the root polarity")
+	require.Equal(t, Negative, r.seen[fn], "a negation's operand is contravariant")
+	require.Equal(t, Positive, r.seen[param], "a parameter under a negation flips back")
+	require.Equal(t, Negative, r.seen[ret], "the return of a negated fn stays flipped")
+	require.Equal(t, Positive, r.seen[outerNeg], "the second tuple element keeps the root polarity")
+	require.Equal(t, Negative, r.seen[innerNeg], "the inner negation is contravariant")
+	require.Equal(t, Positive, r.seen[atom], "two negations flip back to the outer polarity")
+}
+
+// A no-op rewrite over a nested negation keeps every pointer, the negation and the
+// function it wraps alike (copy-on-write).
+func TestAcceptNegationIdentityPreservation(t *testing.T) {
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+	fn := &FuncType{
+		Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: num}},
+		Ret:    str,
+	}
+	neg := &NegationType{Inner: fn}
+	got := neg.Accept(identityVisitor{}, Positive)
+	require.Same(t, neg, got, "an unchanged NegationType keeps its pointer")
+	require.Same(t, fn, got.(*NegationType).Inner, "so does the operand it wraps")
+}
+
+// Rewriting the operand rebuilds the NegationType around the replacement.
+func TestAcceptNegationCopyOnWrite(t *testing.T) {
+	str := &PrimType{Prim: StrPrim}
+	a := &TypeVarType{ID: 1}
+	neg := &NegationType{Inner: a}
+
+	got := neg.Accept(&replaceVar{target: a, repl: str}, Positive).(*NegationType)
+
+	require.NotSame(t, neg, got, "a changed operand forces a new NegationType")
+	require.Same(t, str, got.Inner, "the operand took the replacement")
+}
+
 // An unchanged inexact ObjectType keeps its pointer (copy-on-write): a no-op
 // rewrite allocates nothing.
 func TestAcceptObjectIdentityPreservation(t *testing.T) {

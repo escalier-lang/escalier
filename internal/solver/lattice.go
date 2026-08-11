@@ -480,6 +480,10 @@ func compareSameKind(a, b soltype.Type) int {
 			return c
 		}
 		return compareTypeSlice(a.Types, b.Types)
+	case *soltype.NegationType:
+		// Two complements order by their operands, so the order over negated members mirrors
+		// the order over the members themselves and `¬number` precedes `¬string`.
+		return compareType(a.Inner, b.(*soltype.NegationType).Inner)
 	}
 	return 0
 }
@@ -640,6 +644,11 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 // NullType and UndefinedType. A union renders its parameters and data
 // members before its absence markers. NullType precedes UndefinedType, so
 // `T0 | number | null | undefined` is the canonical render.
+//
+// NegationType joins UnionType and IntersectionType among the lattice forms.
+// Ranking it there gives a normal form's conjuncts and disjuncts a canonical
+// order to dedup under, so `¬A` lands at one position whatever order the
+// members were minted in.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {
 	case *soltype.NeverType:
@@ -672,10 +681,12 @@ func typeKindOrder(t soltype.Type) int {
 		return 13
 	case *soltype.IntersectionType:
 		return 14
-	case *soltype.NullType:
+	case *soltype.NegationType:
 		return 15
-	case *soltype.UndefinedType:
+	case *soltype.NullType:
 		return 16
+	case *soltype.UndefinedType:
+		return 17
 	}
-	return 17
+	return 18
 }

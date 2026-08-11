@@ -175,6 +175,40 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},
 
+		// Complements. Escalier has no surface syntax for one, so `¬T` is the standard
+		// set-theoretic notation. The operand prints at precPrefix, so a union,
+		// intersection, or function operand is parenthesized and an atom stays bare.
+		{"negated primitive", &NegationType{Inner: numP()}, "¬number"},
+		{"double negation", &NegationType{Inner: &NegationType{Inner: numP()}}, "¬¬number"},
+		{
+			"negated union parenthesizes its operand",
+			&NegationType{Inner: &UnionType{Types: []Type{numP(), strP()}}},
+			"¬(number | string)",
+		},
+		{
+			"negated intersection parenthesizes its operand",
+			&NegationType{Inner: &IntersectionType{Types: []Type{numP(), strP()}}},
+			"¬(number & string)",
+		},
+		{
+			"negated function parenthesizes its operand",
+			&NegationType{Inner: &FuncType{Params: []*FuncParam{identP("x", numP())}, Ret: strP()}},
+			"¬(fn (x: number) -> string)",
+		},
+		{
+			// A negation binds tighter than `|`, so as a union member it stays bare and
+			// the `¬` covers only its own operand.
+			"negation inside a union stays bare",
+			&UnionType{Types: []Type{&NegationType{Inner: numP()}, strP()}},
+			"¬number | string",
+		},
+		{
+			// A negated object needs no parens: the braces already delimit the operand.
+			"negated object stays bare",
+			&NegationType{Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: numP()}}}},
+			"¬{x: number}",
+		},
+
 		// Promises (M3). A rejecting promise renders its Err as a second argument
 		// (M9 PR10c); a nil or `never` Err is the non-rejecting shorthand and renders
 		// the one-argument form, the same suppression the throws clause gets.
