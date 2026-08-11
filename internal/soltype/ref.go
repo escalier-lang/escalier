@@ -22,6 +22,35 @@ func UnwrapRef(t Type) (inner Type, mut bool, lt Lifetime) {
 	return t, false, nil
 }
 
+// UnwrapRefs is the N-ary UnwrapRef, for a caller asking whether one borrow can stand in
+// for a whole set of them. It peels each type into its carrier and lifetime, and reports
+// whether every one of them is mutable.
+//
+// ok is false unless EVERY type is a borrow carrying a lifetime. A plain value is not one,
+// and neither is an owned-mutable `mut {…}` cell, whose nil lifetime makes it a value
+// rather than a borrow. An empty set names no borrow either, so it is false as well.
+//
+// allMut is the conjunction rather than a rejection, since callers differ on what a mixed
+// set means. A join of returned borrows needs every input mutable and gives up otherwise,
+// while a destructured union binds immutable leaves.
+func UnwrapRefs(types []Type) (inners []Type, lts []Lifetime, allMut bool, ok bool) {
+	if len(types) == 0 {
+		return nil, nil, false, false
+	}
+	inners = make([]Type, len(types))
+	lts = make([]Lifetime, len(types))
+	allMut = true
+	for i, t := range types {
+		r, isRef := t.(*RefType)
+		if !isRef || r.Lt == nil {
+			return nil, nil, false, false
+		}
+		inners[i], lts[i] = r.Inner, r.Lt
+		allMut = allMut && r.Mut
+	}
+	return inners, lts, allMut, true
+}
+
 // CarrierOf peels any RefType down to the value it wraps, returning t unchanged
 // when it is not a borrow. Member access and pattern matching look through a borrow
 // to its carrier.

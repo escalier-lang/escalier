@@ -120,17 +120,24 @@ type pathBinder struct {
 // `match`, `if val`, or `val … else`.
 func (c *checker) newPathBinder(lvl int, blame ast.Node, root *ucs.Scrutinee, rootType soltype.Type) *pathBinder {
 	b := &pathBinder{c: c, lvl: lvl, blame: blame, views: map[*ucs.Scrutinee]scrutineeView{}}
-	carrier := soltype.CarrierOf(rootType)
+	carrier, mode := c.scrutineeBinding(lvl, rootType)
 	// Snapshot the scrutinee's union structure before any branch binds. A literal test
 	// adds its literal as a lower bound on the scrutinee variable, so grounding again
 	// under a later branch would read that literal back as an extra union member and
 	// narrow against a member the user never wrote. inferMatch takes the same snapshot
 	// for the same reason.
 	shape := groundedCarrier(carrier)
+	// A root whose type is still an inference variable hides its union structure until the
+	// snapshot resolves it, so a union of borrows is peeled off the snapshot rather than off
+	// the variable. Both the bind target and the mode come from the peel, since a leaf must
+	// project out of an owned member and reach its borrow through the mode.
+	if inner, borrowed, ok := c.peelBorrowUnion(lvl, shape); ok {
+		carrier, shape, mode = inner, inner, borrowed
+	}
 	b.views[root] = scrutineeView{
 		ty:       carrier,
 		concrete: carrier,
-		mode:     bindModeOf(rootType),
+		mode:     mode,
 		shape:    shape,
 	}
 	return b

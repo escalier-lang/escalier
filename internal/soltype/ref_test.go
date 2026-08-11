@@ -44,6 +44,78 @@ func TestUnwrapRef(t *testing.T) {
 	})
 }
 
+// UnwrapRefs answers for a whole set at once, so every rejection is a case where one
+// borrow cannot stand in for all of them. Only a borrow carrying a lifetime counts, which
+// is what separates a real borrow from an owned-mutable cell.
+func TestUnwrapRefs(t *testing.T) {
+	objX := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
+	objY := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "y", Type: &PrimType{Prim: StrPrim}}}}
+	ltA, ltB := &LifetimeVar{ID: 1}, &LifetimeVar{ID: 2}
+	borrow := func(mut bool, lt Lifetime, inner RefInner) Type {
+		return &RefType{Mut: mut, Lt: lt, Inner: inner}
+	}
+
+	tests := []struct {
+		name   string
+		types  []Type
+		want   []Type
+		wantLt []Lifetime
+		allMut bool
+		ok     bool
+	}{
+		{
+			name:   "immutable borrows peel to their carriers",
+			types:  []Type{borrow(false, ltA, objX), borrow(false, ltB, objY)},
+			want:   []Type{objX, objY},
+			wantLt: []Lifetime{ltA, ltB},
+		},
+		{
+			name:   "every member mutable reports allMut",
+			types:  []Type{borrow(true, ltA, objX), borrow(true, ltB, objY)},
+			want:   []Type{objX, objY},
+			wantLt: []Lifetime{ltA, ltB},
+			allMut: true,
+		},
+		{
+			// One immutable member is enough to make the set immutable, since a leaf reached
+			// through that member cannot be written.
+			name:   "one immutable member clears allMut",
+			types:  []Type{borrow(true, ltA, objX), borrow(false, ltB, objY)},
+			want:   []Type{objX, objY},
+			wantLt: []Lifetime{ltA, ltB},
+		},
+		{
+			name:  "a plain value is not a borrow",
+			types: []Type{borrow(false, ltA, objX), objY},
+		},
+		{
+			// An owned-mutable `mut {…}` cell carries no lifetime, so it is a value.
+			name:  "an owned-mutable cell is not a borrow",
+			types: []Type{borrow(false, ltA, objX), borrow(true, nil, objY)},
+		},
+		{
+			name:  "an empty set names no borrow",
+			types: []Type{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			inners, lts, allMut, ok := UnwrapRefs(tt.types)
+			if tt.want == nil {
+				require.False(t, ok)
+				require.Nil(t, inners)
+				require.Nil(t, lts)
+				require.False(t, allMut)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, tt.want, inners)
+			require.Equal(t, tt.wantLt, lts)
+			require.Equal(t, tt.allMut, allMut)
+		})
+	}
+}
+
 func TestCarrierOf(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: &PrimType{Prim: NumPrim}}}}
 

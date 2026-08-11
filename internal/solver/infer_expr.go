@@ -671,13 +671,29 @@ func (c *checker) joinReturnPoints(node ast.Node, lvl int, collected []soltype.T
 			return joined
 		}
 		c.checkUniformOwnership(node, collected)
-		joinVar := c.freshAt(lvl)
-		c.recordProv(joinVar, node, ReturnJoin)
-		for _, rt := range collected {
-			c.constrain(node, rt, joinVar)
-		}
-		return joinVar
+		return c.joinBranches(node, lvl, ReturnJoin, collected)
 	}
+}
+
+// joinBranches unites the values several paths of one form produce into a single type. It
+// mints a fresh variable, records prov on it under kind, and constrains each branch into it
+// in source order, so the rendered union follows the source.
+//
+// Whether the branches agree on ownership is the caller's check to run, because the types
+// that answer for ownership are not always the types being joined. A `val … else` joins the
+// plain variable its projection walk lowered each leaf into, and that variable cannot show a
+// borrow the fallback's binding mode carries.
+//
+// A form that hands its join variable to a walk cannot use this at all, because the walk
+// needs the variable before the branch types exist. inferIfElse, inferIfVal, inferMatch, and
+// inferTryCatch each mint their own and check ownership once the walk returns.
+func (c *checker) joinBranches(node ast.Node, lvl int, kind ASTOriginKind, branches []soltype.Type) soltype.Type {
+	joinVar := c.freshAt(lvl)
+	c.recordProv(joinVar, node, kind)
+	for _, b := range branches {
+		c.constrain(node, b, joinVar)
+	}
+	return joinVar
 }
 
 // collectBranchOwnership sets sawBorrowed for a borrow and sawOwned for an owned
@@ -707,14 +723,29 @@ func collectBranchOwnership(t soltype.Type, sawOwned, sawBorrowed *bool) {
 // checkUniformOwnership reports a MixedOwnershipError against node when the branches a
 // join is about to union are some owned and some borrowed. Each branch is coalesced
 // first so an inference variable resolves to the shape that flowed into it.
+//
+// A node reports the fault once. A `val … else` runs a separate join per leaf its pattern
+// binds, and every one of those joins blames the whole declaration, so a pattern with two
+// mixed leaves would otherwise underline the declaration twice.
 func (c *checker) checkUniformOwnership(node ast.Node, branches []soltype.Type) {
 	sawOwned, sawBorrowed := false, false
 	for _, b := range branches {
 		collectBranchOwnership(coalesce(b, soltype.Positive), &sawOwned, &sawBorrowed)
 	}
-	if sawOwned && sawBorrowed {
-		c.report(&MixedOwnershipError{Node: node})
+	if !sawOwned || !sawBorrowed || c.reportedMixedOwnership(node) {
+		return
 	}
+	c.report(&MixedOwnershipError{Node: node})
+}
+
+// reportedMixedOwnership reports whether node already carries a MixedOwnershipError.
+func (c *checker) reportedMixedOwnership(node ast.Node) bool {
+	for _, e := range c.errs {
+		if prev, ok := e.(*MixedOwnershipError); ok && prev.Node == node {
+			return true
+		}
+	}
+	return false
 }
 
 // constrainReturnAgainstAnnotation constrains a function body's joined return type
@@ -775,21 +806,19 @@ func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
 // To write, narrow to one branch with
 // `if val r2: mut {x: number} = r` and write through the fresh mutable view.
 func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (soltype.Type, bool) {
-	refs := make([]*soltype.RefType, len(types))
-	objs := make([]*soltype.ObjectType, len(types))
-	for i, t := range types {
-		r, ok := t.(*soltype.RefType)
-		if !ok || !r.Mut || r.Lt == nil {
-			return nil, false
-		}
-		obj, ok := r.Inner.(*soltype.ObjectType)
-		if !ok {
+	inners, lts, allMut, ok := soltype.UnwrapRefs(types)
+	if !ok || !allMut {
+		return nil, false
+	}
+	objs := make([]*soltype.ObjectType, len(inners))
+	for i, inner := range inners {
+		obj, isObj := inner.(*soltype.ObjectType)
+		if !isObj {
 			return nil, false
 		}
 		if i > 0 && !sameObjectKeys(objs[0], obj) {
 			return nil, false
 		}
-		refs[i] = r
 		objs[i] = obj
 	}
 
@@ -826,14 +855,10 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 		// stay sound.
 		return newUnion(nil, types, false), true
 	}
-	// Reconcilable fields: unite the input lifetimes under one fresh join lifetime,
-	// bounded below by each, and return the single mutable carrier. Allocating the
-	// join lifetime only here keeps the union path from minting a dead lifetime.
-	joinLt := c.ctx.freshJoinLifetime(lvl)
-	for _, r := range refs {
-		c.ctx.constrainLt(r.Lt, joinLt)
-	}
-	return &soltype.RefType{Mut: true, Lt: joinLt, Inner: objs[0]}, true
+	// Reconcilable fields: unite the input lifetimes under one join lifetime and return the
+	// single mutable carrier. Uniting them only here keeps the union path from minting a
+	// dead lifetime.
+	return &soltype.RefType{Mut: true, Lt: c.ctx.joinLifetimes(lvl, lts), Inner: objs[0]}, true
 }
 
 // constrainEscape constrains every borrow lifetime reachable in t to outlive
@@ -3238,14 +3263,23 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 	produced := c.freshAt(lvl)
 	leaves := map[string]fallbackLeaf{}
 	// The fallback doubles as the shape, since it has not flowed into `produced` yet and a
-	// `...rest` leaf reads its leftover members off a shape.
-	c.projectLeaves(scope.Child(), lvl, d.Pattern, produced, soltype.CarrierOf(fallback),
+	// `...rest` leaf reads its leftover members off a shape. It is passed unpeeled, so
+	// projectLeaves reads the borrow off it and each leaf of a borrowed fallback is itself a
+	// borrow. Peeling here instead would hand projectLeaves an owned carrier and every leaf
+	// would bind owned however the `else` was written.
+	c.projectLeaves(scope.Child(), lvl, d.Pattern, produced, fallback,
 		func(_ *Scope, name string, t soltype.Type, node ast.Node) {
 			leaves[name] = fallbackLeaf{ty: t, node: node}
 		})
 	// The requirements the projection emitted are upper bounds on `produced`. Pushing the
 	// fallback in only now is what checks it against them.
-	c.constrain(d, fallback, produced)
+	//
+	// A borrowed fallback is peeled first, the same way a scrutinee is. The requirements a
+	// pattern emits are owned, so pushing the borrow itself in would read as a borrow escaping
+	// into an owned destination. The borrow is not lost by the peel: the leaves above already
+	// took it off the fallback's binding mode.
+	carrier, _ := c.scrutineeBinding(lvl, fallback)
+	c.constrain(d, carrier, produced)
 	for s := escaped; s != nil && s != scope; s = s.parent {
 		for name, binding := range s.bindings() {
 			if leaf, projected := leaves[name]; projected {
@@ -3262,6 +3296,17 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 //
 // A leaf whose type is already settled takes no join, and the fallback flows into that type
 // instead. leafFixedType decides which leaves those are.
+//
+// The two halves have to agree on ownership, so a leaf of a borrowed scrutinee joined with
+// an owned fallback reports MixedOwnershipError at the declaration. Without that check the
+// name binds a union of a borrow and a plain value, and the author meets the mismatch only at
+// a later write through it.
+//
+// The join does not route through joinBorrows the way joinReturnPoints does. joinBorrows
+// applies only where every input is a mutable borrow of a grounded object, and the fallback's
+// leaf is always the raw variable projectLeaves lowered the field into. That walk projects
+// rather than binds, so it never reaches applyBindMode and never wraps a leaf in a borrow.
+// Two borrowed leaves therefore stay un-joined, as `&'c {a: number} | &'d {a: number}`.
 func (c *checker) joinLeaf(
 	scope *Scope, lvl int, d *ast.VarDecl, name string, binding ValueBinding, leaf fallbackLeaf,
 ) {
@@ -3273,10 +3318,9 @@ func (c *checker) joinLeaf(
 		c.constrain(d, leaf.ty, fixed)
 		return
 	}
-	join := c.freshAt(lvl)
-	c.recordProv(join, d, ValElseBranch)
-	c.constrain(d, matched, join)
-	c.constrain(d, leaf.ty, join)
+	// The two sources the name binds from have to agree on ownership.
+	c.checkUniformOwnership(d, []soltype.Type{matched, leaf.ty})
+	join := c.joinBranches(d, lvl, ValElseBranch, []soltype.Type{matched, leaf.ty})
 	binding.Schemes = []TypeScheme{monoScheme(join)}
 	scope.defineValue(name, binding)
 	// The join replaces what the binding walk recorded, the leaf projected off the
@@ -3779,6 +3823,12 @@ func tuplePatArity(p *ast.TuplePat) (fixed int, hasRest bool) {
 //
 // The reachable arms of a `match` narrow through condWalk instead, which reads the same rule
 // off the IR's tag tests rather than off the source pattern.
+//
+// A union whose members are borrows needs no peel here. objectMemberHasKeys and
+// tupleMemberFitsArity each look through a member's borrow, so narrowing picks the right
+// members, and what it returns still names them as borrows. bindPattern peels the result,
+// through CarrierOf when narrowing kept one member and through peelBorrowUnion when it kept
+// several.
 func narrowArmScrutinee(shape, scrutinee soltype.Type, pat ast.Pat) soltype.Type {
 	switch pat.(type) {
 	case *ast.ObjectPat, *ast.TuplePat:

@@ -278,6 +278,31 @@ func (c *Context) freshJoinLifetime(level int) *soltype.LifetimeVar {
 	return lv
 }
 
+// joinLifetimes returns one lifetime that every member of lts outlives, so a value drawn
+// from any of them may carry it. Several distinct lifetimes unite under a fresh join
+// variable holding each of them as a lower bound, which is the join site freshJoinLifetime
+// exists to serve. lts must not be empty.
+//
+// Where lts names one lifetime already, that lifetime is returned unchanged and the common
+// `&'a A | &'a B` mints no join variable.
+func (c *Context) joinLifetimes(level int, lts []soltype.Lifetime) soltype.Lifetime {
+	shared := true
+	for _, lt := range lts[1:] {
+		if !soltype.ContainsLifetime(lts[:1], lt) {
+			shared = false
+			break
+		}
+	}
+	if shared {
+		return lts[0]
+	}
+	joinLt := c.freshJoinLifetime(level)
+	for _, lt := range lts {
+		c.constrainLt(lt, joinLt)
+	}
+	return joinLt
+}
+
 // addLowerLtBound appends lt to v's lower bounds, journaling the mutation in the
 // active probe first so a discarded trial truncates it away. This (and
 // addUpperLtBound) is the ONLY sanctioned way to extend a lifetime bound list —

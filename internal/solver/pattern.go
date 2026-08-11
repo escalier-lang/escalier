@@ -69,6 +69,15 @@ const (
 	forProjection
 )
 
+// leafMut reports whether a leaf's `mut` marker applies at this walk. A projection walk
+// answers false however the leaf was written, for two reasons. The marker's only effect on
+// an owned scrutinee is to thaw the leaf into a cell, which is a binding's business and not
+// a projection's. Against a borrowed one it reports MutLeafThroughSharedBorrowError, which
+// the binding walk over the same pattern already reported.
+func leafMut(marked bool, purpose bindPurpose) bool {
+	return marked && purpose == forBinding
+}
+
 // defineLeafMono is the default leaf-placement strategy: it defines the leaf as a
 // monomorphic projection of the scrutinee. Used by every body-level and
 // function-param destructuring path.
@@ -107,6 +116,9 @@ const (
 // borrow with a real lifetime is a reference. An owned-mutable cell has a nil lifetime
 // and is an owned value. Its leaves move out and take their own declared mutability
 // rather than projecting a borrow.
+//
+// A union whose members are all borrows carries no outermost borrow to read, so it takes
+// peelBorrowUnion instead. Callers reach both through scrutineeBinding.
 func bindModeOf(scrutinee soltype.Type) bindMode {
 	if r, ok := scrutinee.(*soltype.RefType); ok && r.Lt != nil {
 		if r.Mut {
@@ -117,12 +129,66 @@ func bindModeOf(scrutinee soltype.Type) bindMode {
 	return bindMode{borrow: bmOwned}
 }
 
+// scrutineeBinding splits a scrutinee into the two things a pattern walk needs from it:
+// the carrier its leaves project out of, and the mode they bind through. The carrier
+// never holds the borrow, since the mode records it instead.
+//
+// A single `&{…}` is peeled by CarrierOf and read by bindModeOf. A union of borrows has
+// no outermost borrow for either to see, so peelBorrowUnion peels it per member. Every
+// other scrutinee keeps CarrierOf's answer and binds owned.
+func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Type, bindMode) {
+	carrier := soltype.CarrierOf(scrutinee)
+	if inner, mode, ok := c.peelBorrowUnion(lvl, carrier); ok {
+		return inner, mode
+	}
+	return carrier, bindModeOf(scrutinee)
+}
+
+// peelBorrowUnion peels a union whose every member is a borrow into the union of the
+// members' carriers, plus the mode a leaf of that union binds through. So
+// `&'a {x: number} | &'b {y: string}` peels to `{x: number} | {y: string}`, and a leaf
+// projects out of an owned member while the borrow rides the mode.
+//
+// ok is false for every other type, including a union holding one non-borrow member, an
+// owned-mutable `mut {…}` cell, and an INEXACT union whose unlisted tail may be owned.
+//
+// The mode is mutable only when every member is, since a leaf reached through an immutable
+// member cannot be written. Its lifetime is the members' join.
+//
+// TODO(#1087): narrow the mode along with the members. It is fixed here, at the whole
+// scrutinee, before any branch's tag test drops members from it, so a branch of
+// `&mut {x: …} | &{y: …}` testing for `x` binds immutable leaves and rejects a legal write.
+func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion || u.Inexact {
+		return nil, bindMode{}, false
+	}
+	inners, lts, allMut, ok := soltype.UnwrapRefs(u.Types)
+	if !ok {
+		return nil, bindMode{}, false
+	}
+	borrow := bmImm
+	if allMut {
+		borrow = bmMut
+	}
+	// The peel goes through the lattice's one union constructor, so a member that is itself
+	// a union is flattened into the result. Building the node by hand would nest it, and
+	// narrowing reads only a union's top-level members, so `&({a} | {b}) | &{c}` would
+	// destructure as though `{a}` and `{b}` were not there.
+	//
+	// No Context, so subsumption does not run. It trials one member against another under a
+	// probe and drops the subtype, which would change the member set narrowing reads.
+	peeled := newUnion(nil, inners, false)
+	return peeled, bindMode{borrow: borrow, lt: c.ctx.joinLifetimes(lvl, lts)}, true
+}
+
 // bindPatternWith is bindPattern parameterized by the leaf-placement strategy. See
 // bindPattern for the pattern-typing contract. The emit decides where each bound
 // leaf lands. The binding mode is derived from the scrutinee here and threaded into
 // the recursive walk so nested leaves inherit the scrutinee's borrow.
 func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee soltype.Type, leafTypes map[string]soltype.Type, emit leafEmit, purpose bindPurpose) soltype.Pat {
-	return c.bindPatMode(scope, lvl, pat, scrutinee, soltype.CarrierOf(scrutinee), bindModeOf(scrutinee), leafTypes, emit, purpose)
+	carrier, mode := c.scrutineeBinding(lvl, scrutinee)
+	return c.bindPatMode(scope, lvl, pat, carrier, carrier, mode, leafTypes, emit, purpose)
 }
 
 // projectLeaves resolves each leaf pat names out of scrutinee and reports it to found. It
@@ -133,7 +199,8 @@ func (c *checker) bindPatternWith(scope *Scope, lvl int, pat ast.Pat, scrutinee 
 // flowed into scrutinee passes that value here, so a `...rest` leaf resolves the leftover
 // members it really has rather than an opaque `{...}`.
 func (c *checker) projectLeaves(scope *Scope, lvl int, pat ast.Pat, scrutinee, concrete soltype.Type, found leafEmit) {
-	c.bindPatMode(scope, lvl, pat, scrutinee, concrete, bindModeOf(concrete), nil, found, forProjection)
+	shape, mode := c.scrutineeBinding(lvl, concrete)
+	c.bindPatMode(scope, lvl, pat, scrutinee, shape, mode, nil, found, forProjection)
 }
 
 // bindPatMode is bindPatternWith's recursive core, carrying the binding mode the
@@ -153,8 +220,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 		t := scrutinee
 		if purpose == forBinding {
 			t = c.applyLeafExtras(scope, lvl, p, scrutinee, p.TypeAnn, p.Default)
-			t = c.applyBindMode(lvl, p, p.Mutable, t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		}
+		t = c.applyBindMode(lvl, p, leafMut(p.Mutable, purpose), t, c.concreteLeaf(concrete, p.TypeAnn), scrutineeMode)
 		c.bindLeaf(scope, p.Name, t, p, leafTypes, emit, purpose)
 		return &soltype.IdentPat{Name: p.Name}
 
@@ -241,8 +308,8 @@ func (c *checker) bindPatMode(scope *Scope, lvl int, pat ast.Pat, scrutinee solt
 				var t soltype.Type = beta
 				if purpose == forBinding {
 					t = c.applyLeafExtras(scope, lvl, e, beta, e.TypeAnn, e.Default)
-					t = c.applyBindMode(lvl, e, e.Mutable, t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				}
+				t = c.applyBindMode(lvl, e, leafMut(e.Mutable, purpose), t, c.concreteLeaf(fieldConcrete(concrete, e.Key.Name), e.TypeAnn), scrutineeMode)
 				c.bindLeaf(scope, e.Key.Name, t, e, leafTypes, emit, purpose)
 				named.Add(e.Key.Name)
 				fields = append(fields, &soltype.ObjectPatField{
@@ -359,7 +426,7 @@ func (c *checker) projectTuple(
 	// a nested level the scrutinee is the parent's element variable, so only the threaded
 	// concrete still carries the element shape a borrowed leaf must inspect to decide
 	// whether to borrow.
-	concreteTup, _ = c.groundedTuple(concrete)
+	concreteTup = c.concreteTupleShape(concrete)
 	// When the scrutinee is a concrete tuple, pin each αi's upper bound to the matching
 	// element. The requirement above gives αi the element only as a lower bound, which
 	// cannot reject a refutable literal sub-pattern of the wrong kind. The upper bound makes
@@ -460,6 +527,46 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 		return nil, false
 	}
 	return c.groundedTuple(groundedCarrier(scrutinee))
+}
+
+// concreteTupleShape resolves the statically known tuple a destructured leaf reads its
+// element out of, and nil for a type that fixes no element. It is the tuple twin of
+// fieldConcrete's union arm: a tuple grounds through groundedTuple, and a union of tuples
+// grounds to the elementwise union of theirs. So `[a, b]` over
+// `&[{p: number}, string] | &[{q: number}, string]` reads its first element as
+// `{p: number} | {q: number}` and borrows it rather than moving it out.
+//
+// The members must agree on arity, since one element position has to name one type. An
+// inexact member or union fixes no arity at all.
+func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
+	if tup, ok := c.groundedTuple(t); ok {
+		return tup
+	}
+	u, isUnion := t.(*soltype.UnionType)
+	if !isUnion || u.Inexact || len(u.Types) == 0 {
+		return nil
+	}
+	members := make([]*soltype.TupleType, len(u.Types))
+	for i, member := range u.Types {
+		tup, ok := c.groundedTuple(member)
+		if !ok || tup.Inexact {
+			return nil
+		}
+		if i > 0 && len(tup.Elems) != len(members[0].Elems) {
+			return nil
+		}
+		members[i] = tup
+	}
+	elems := make([]soltype.Type, len(members[0].Elems))
+	for i := range elems {
+		at := make([]soltype.Type, len(members))
+		for j, m := range members {
+			at[j] = m.Elems[i]
+		}
+		// No Context, so subsumption does not run. See peelBorrowUnion.
+		elems[i] = newUnion(nil, at, false)
+	}
+	return &soltype.TupleType{Elems: elems}
 }
 
 // groundedTuple splices every `...P` spread into position so elements can be read by index,
@@ -983,10 +1090,32 @@ func (c *checker) concreteLeaf(concrete soltype.Type, typeAnn ast.TypeAnn) solty
 // so it resolves a field even at a nested level where the scrutinee is a projection
 // variable. It is the object-pattern analogue of indexing a concrete tuple's elements.
 func fieldConcrete(t soltype.Type, name string) soltype.Type {
-	if o, ok := t.(*soltype.ObjectType); ok {
-		if prop, found := o.Prop(name); found {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		if prop, found := t.Prop(name); found {
 			return prop.Type
 		}
+	case *soltype.UnionType:
+		// A union of objects knows the field's shape as the union of what each member holds
+		// there. Reading it is what lets a leaf still decide whether to borrow when narrowing
+		// left the scrutinee as several members. An inexact union's open tail may carry the
+		// field at any type, so its shape is not known and the read answers nil.
+		if t.Inexact {
+			return nil
+		}
+		fields := make([]soltype.Type, len(t.Types))
+		for i, member := range t.Types {
+			field := fieldConcrete(member, name)
+			if field == nil {
+				return nil
+			}
+			fields[i] = field
+		}
+		if len(fields) == 0 {
+			return nil
+		}
+		// No Context, so subsumption does not run. See peelBorrowUnion.
+		return newUnion(nil, fields, false)
 	}
 	return nil
 }
