@@ -83,9 +83,11 @@ type Test = Fn extends (x: number | string) => boolean ? "callable" : "not"
   MLstruct's algebra captures this; the `extends` succeeds.
 
 The branch flips. This is also where `infer` diverges: `F extends (x: infer A) =>
-any ? A : never` over `Fn` yields `number` in TS (it picks the last overload's
+any ? A : never` over `Fn` yields `string` in TS (it picks the last overload's
 parameter) but `number | string` under MLstruct's set-theoretic reading. So
-`Parameters<Fn>` and `ReturnType<Fn>` change too. The case becomes reachable
+`Parameters<Fn>` changes too — this example demonstrates *parameter*-inference
+divergence only; `ReturnType<Fn>` stays `boolean` under both readings, since both
+codomains are `boolean` and `boolean & boolean = boolean`. The case becomes reachable
 exactly under adoption trigger 3 ([00-overview.md](00-overview.md)) — making
 inferred intersection-of-arrows first-class — so the feature that motivates
 MLstruct is the same feature that flips this branch.
