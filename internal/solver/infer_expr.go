@@ -3248,28 +3248,40 @@ func (c *checker) joinFallbackLeaves(scope *Scope, lvl int, d *ast.VarDecl, esca
 	c.constrain(d, fallback, produced)
 	for s := escaped; s != nil && s != scope; s = s.parent {
 		for name, binding := range s.bindings() {
-			leaf, projected := leaves[name]
-			matched, mono := monoTypeOf(binding)
-			if !projected || !mono {
-				continue
+			if leaf, projected := leaves[name]; projected {
+				c.joinLeaf(s, lvl, d, name, binding, leaf)
 			}
-			if fixed, ok := leafFixedType(matched, leaf.node); ok {
-				// The name's type is already settled. The fallback flows into it rather than
-				// widening it, and the binding stays as the success path left it.
-				c.constrain(d, leaf.ty, fixed)
-				continue
-			}
-			join := c.freshAt(lvl)
-			c.recordProv(join, d, ValElseBranch)
-			c.constrain(d, matched, join)
-			c.constrain(d, leaf.ty, join)
-			binding.Schemes = []TypeScheme{monoScheme(join)}
-			s.defineValue(name, binding)
-			// The join replaces what the binding walk recorded, the leaf projected off the
-			// initializer alone, so an editor reads the type the name really binds at.
-			c.recordType(leaf.node, join)
 		}
 	}
+}
+
+// joinLeaf folds what the fallback supplies for one name into what the success path bound
+// it to. binding is that success-path binding and leaf the fallback's projection. scope is
+// where the name was bound, which is where a rebind lands. Every constraint is anchored to
+// d, the whole declaration.
+//
+// A leaf whose type is already settled takes no join, and the fallback flows into that type
+// instead. leafFixedType decides which leaves those are.
+func (c *checker) joinLeaf(
+	scope *Scope, lvl int, d *ast.VarDecl, name string, binding ValueBinding, leaf fallbackLeaf,
+) {
+	matched, mono := monoTypeOf(binding)
+	if !mono {
+		return
+	}
+	if fixed, ok := leafFixedType(matched, leaf.node); ok {
+		c.constrain(d, leaf.ty, fixed)
+		return
+	}
+	join := c.freshAt(lvl)
+	c.recordProv(join, d, ValElseBranch)
+	c.constrain(d, matched, join)
+	c.constrain(d, leaf.ty, join)
+	binding.Schemes = []TypeScheme{monoScheme(join)}
+	scope.defineValue(name, binding)
+	// The join replaces what the binding walk recorded, the leaf projected off the
+	// initializer alone, so an editor reads the type the name really binds at.
+	c.recordType(leaf.node, join)
 }
 
 // leafFixedType returns the type a leaf's fallback has to fit when the leaf takes no join,
