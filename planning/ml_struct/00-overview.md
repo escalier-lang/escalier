@@ -104,10 +104,13 @@ TypeScript-like language.
 Escalier has designed this away. Per
 [`../simple_sub/02-design-notes.md`](../simple_sub/02-design-notes.md) §"Settled
 decisions" #8 and restated across the milestones, **narrowing introduces a new
-binding rather than re-typing an existing variable**. `if let r2: mut {x: number}
+binding rather than re-typing an existing variable**. `if val r2: mut {x: number}
 = r` binds a fresh view whose narrowed type is *named in the pattern*, so the
 checker never computes `T ∩ ¬U` for an else-branch. M6's permissive mut-borrow
-join is explicit that "Escalier has no runtime-type flow narrowing."
+join is explicit that "Escalier has no runtime-type flow narrowing." This is now
+concrete: `match`, `if val`, and `val … else` desugar through the UCS IR in
+[`../../internal/solver/ucs/`](../../internal/solver/ucs/) and bind fresh
+variables rather than flow-retyping — the mechanism these docs assume.
 
 The consequence: the headline feature MLstruct exists to deliver, Escalier's
 narrowing design does not need. What remains as genuine motivation is the
