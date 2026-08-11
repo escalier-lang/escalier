@@ -1,164 +1,79 @@
-# 06 — Open verification items & next steps
+# 06 — Verified findings (pre-adoption source verification)
 
-Three items must be discharged **before** committing to MLstruct adoption. All are
-flagged inline where they arise ([02-caveats-and-mitigations.md](02-caveats-and-mitigations.md)
-§4, [04-type-level-operators.md](04-type-level-operators.md) coupling point 2,
-[05-feature-interactions.md](05-feature-interactions.md) §Lifetimes and
-§"Function overloading"); this doc collects them with a concrete plan of attack so
-they aren't lost. The actual investigation is deferred — this records *how* to
-action each when the time comes.
-
-Most of each can be done **before any post-M12 code exists**: the output is an
-artifact the future implementation PR tests against (a conformance oracle, a stated
-invariant), not a code change waiting on the implementation.
+The pre-adoption verification items from earlier drafts have been **discharged** —
+the MLscript source reads and the Escalier codegen read are done. This doc is now
+the **record of what was verified**. Each residual *decision* those findings imply
+is tracked in the PR issue that owns the work (see the map at the end); this doc no
+longer holds open questions.
 
 ---
 
-## Item 1 — Verify arrow-intersection normalization against MLscript
+## Finding 1 — Negative-position record-union widens to ⊤ (verified)
 
-**The question.** Does MLscript represent an intersection of arrows
-(`(number => boolean) & (string => null)`) via a single merged `fun` slot
-`(A|B) => (C&D)` plus a plain arrow rule (which would be **unsound** — see
-[04-type-level-operators.md](04-type-level-operators.md) example B), or via the
-un-merged Frisch–Castagna–Benzaken decomposition (sound)? M9 conditional-type
-`extends` checks make this divergence user-visible, so it gates trusting M9
-semantics.
+A **supertype** union of ≥2 distinct-field records over-approximates to ⊤. In
+`NormalForms.scala`, `RhsNf.| (Var, FieldType)` bails to `None` on a second
+differently-named field (`case _: RhsField | _: RhsBases => N`), and `None` means
+Top (the authors' own comment: "it's the same as Top"). Scope is narrow — negative
+position only: positive-position unions are precise multi-member DNFs, and tagged
+unions are precise because object tags get a *list* slot (`RhsBases.prims`) while
+records get a single one.
 
-**VERIFIED — both halves of this source read are done.** The "Plan of attack"
-below is retained for the record, but steps 2 (source read) is complete.
+**Residual decision:** either give Escalier's `RhsNf` a set-valued record slot
+(precise), or route would-widen union-supers through the retained `trialAndCommit`
+exists-rule instead of `constrainNF` (sound — trials each member). Regression rows
+are in the PR2 corpus (#1059). Owned by **PR3 (#1060)** (the `RhsNf` shape) and
+**PR5 (#1062)** (the routing).
 
-- **Union-of-records half.** A negative-position union of ≥2 distinct-field records
-  over-approximates to ⊤: `NormalForms.scala`'s `RhsNf.| (Var, FieldType)` bails to
-  `None` on a second differently-named field, and `None` means Top (the authors' own
-  comment). Scope is narrow — negative position only; positive-position unions and
-  tagged unions (object tags get a *list* slot) are precise. **Mitigation:** a
-  set-valued `RhsNf` record slot, or the `trialAndCommit` exists-rule fallback for
-  would-widen union-supers (caveat #4 residual #1). Pinned by the negative-position
-  rows in the PR2 corpus (#1059).
-- **Arrow-intersection half.** MLscript **merges** intersected arrows —
-  `NormalForms.scala:58` gives `FunctionType(l0|l1, r0&r1)` = `(A|B)→(C&D)` — and
-  applies the **plain arrow rule** to the merged result (`ConstraintSolver.scala:172`
-  routes to `rec`; `rec` at `:255` is contra-param/cov-return, no decomposition). So
-  worked example B *holds* in MLstruct (see [04-type-level-operators.md](04-type-level-operators.md)),
-  not "not" — the merge is exact when codomains agree (example A) but unsound when
-  they conflict (example B: `boolean & null = never`). **Decision for the port:** to
-  keep conditional-type `extends` set-theoretically sound, implement the
-  Frisch–Castagna–Benzaken arrow decomposition rather than inheriting MLstruct's
-  merge, or deliberately accept and document the non-standard result. This gates
-  PR5 (#1062) and PR10 (#1067).
+## Finding 2 — Arrow intersections are merged naively, not decomposed (verified)
 
-**Plan of attack** for the arrow-intersection half, in order of leverage:
+MLscript merges intersected arrows during normalization — `NormalForms.scala:58`
+gives `FunctionType(l0|l1, r0&r1)` = `(A|B)→(C&D)` — and applies the **plain arrow
+rule** to the merged result (`ConstraintSolver.scala:172` routes to `rec`; `rec` at
+`:255` is contra-param/cov-return, no decomposition). So the merge is exact when
+codomains agree (worked example A) but **unsound** when they conflict (example B:
+`boolean & null = never`): example B *holds* in MLstruct, diverging from both TS and
+the set-theoretic reading — see [04-type-level-operators.md](04-type-level-operators.md).
 
-1. **Derive the sound spec first** (no tooling needed). Build an Escalier-owned
-   **conformance table** of arrow-intersection subtyping cases — each row is
-   `(intersection type, target arrow, sound verdict)` derived by hand from the FCB
-   arrow decomposition. Seed it with the corners: same domain / different codomain,
-   different domain / same codomain (the diverging example A), different / different
-   (the reconverging example B), overlapping domains, nested arrows, and an arm with
-   a free type variable. This is the test oracle the normal-forms PR will assert
-   against.
-2. **Source-read MLscript** (GitHub raw is reachable). Read two things and record
-   the answer:
-   - `NormalForms.scala` — does `LhsNf` hold one *merged* `fun` or a *set* of
-     function atoms, and if merged, the exact `&`-formula.
-   - `ConstraintSolver.scala` — the function-vs-function arm in `annoying`'s base
-     case: does it re-decompose, or trust a merged single arrow? This alone settles
-     the soundness question.
-3. **Empirically confirm** (needs a Scala toolchain — local or CI). Translate the
-   table's key rows into `.mls` snippets that force each subtyping judgment, run via
-   `sbt` or the web REPL, record accept / reject.
+**Residual decision:** to keep conditional-type `extends` set-theoretically sound,
+implement the Frisch–Castagna–Benzaken arrow decomposition rather than inheriting
+MLstruct's merge — or deliberately accept and document the non-standard result.
+Owned by the subtyping core — **PR5 (#1062)** (the arrow-vs-arrow decision) and
+**PR3 (#1060)** (whether `LhsNf` merges arrows or keeps a set for decomposition) —
+and surfaced to users through conditional types in **PR10 (#1067)**.
 
-**Deliverable.** The conformance table with three columns — sound verdict (step 1),
-MLscript's observed verdict (steps 2–3), divergence/decision note. Where MLscript
-diverges from sound, **Escalier follows the sound column** and documents the
-choice. Lands as a conformance fixture / appendix, feeding the future PR's tests —
-the "conformance corpus" pattern the `simple_sub` design notes already use.
+## Finding 3 — The overload dispatcher consumes per-arm annotations (verified)
+
+`internal/codegen/builder.go`'s `buildOverloadedFunc` sorts arms by specificity
+(param count, then type) and `buildTypeGuard` emits `typeof` / `instanceof` /
+`Array.isArray` guards from **each arm's written parameter annotations** — the
+artifact trigger 3's inference win removes. So relaxing the overload-annotation rule
+must be scoped, and static resolution must pick the same arm the dispatcher routes
+to (example A is where the two can disagree).
+
+**Residual decision:** the annotation-obligation scope plus the static-vs-runtime
+agreement test. Owned by **PR11 (#1068)**.
+
+## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
+
+`RefType.Accept` does not walk the lifetime, and `RefType` is already handled in the
+`rec`-layer structural switch (bypassing the lattice block). So `¬(mut 'a T)` has no
+sound lifetime and is forbidden by construction, while `mut 'a ¬T` (negation *inside*
+the inner) is fine.
+
+**Residual work:** enforce the panic + tests (`no NegationType over a RefType; refs
+bypass constrainNF`). Owned by **PR8 (#1065)**.
 
 ---
 
-## Item 2 — Record and enforce the `¬Ref` exclusion invariant
+## Owning-PR map
 
-**The reframing.** This is not "get a polarity flip right" — it is "**keep the
-borrow wrapper out of the Boolean algebra by construction**." That is principled,
-not expedient: the outlives lattice is not Boolean, so a negated borrow wrapper
-`¬(mut 'a T)` has no well-defined lifetime. Forbid it rather than handle it.
-
-**Already half-true in the code.** `RefType` is handled in the structural `switch`
-(the `rec` layer) of `constrain.go`, **not** in the M6 PR2 pre-switch lattice
-block — refs already bypass union/intersection decomposition today. Two cases must
-stay distinct:
-
-- `¬(mut 'a T)` — negating the **wrapper** — is the **forbidden** case (no sound
-  lifetime).
-- `mut 'a ¬T` — a ref whose **inner** is a negation — is **fine**: the inner is
-  pure type sort (`RefInner` already admits `UnionType`/`IntersectionType`) and
-  normalizes normally while the wrapper stays opaque.
-
-**Plan of attack.**
-
-1. **Decide now: exclude, don't handle.** State in the plan that a `RefType` is a
-   `rec`-layer atom that never enters `constrainNF` and is never wrapped by
-   `NegationType`; its inner still normalizes as ordinary type-sort structure.
-2. **Enforce by construction.** When `normal.go`'s negation builder (`DNF.mk`'s
-   `NegType` case / the `NegationType` smart constructor) is handed a `RefType`
-   operand, panic/error — fail loud, matching the `AsProperty` / "missed kind fails
-   loud" convention. Preserve the existing early-return routing so refs never reach
-   the normalization layer.
-3. **Specify the invariant + tests now; land enforcement with the implementation.**
-   Invariant: *no `NegationType` over a `RefType`; refs bypass `constrainNF`.* Test
-   list: every borrow-narrowing path stays in `rec` or errors; `mut 'a ¬T` is
-   accepted and normalizes its inner. The panic/test code is the only part that
-   waits for the post-M12 normal-forms layer.
-
-**Outcome.** The watch-item stops being a subtle soundness obligation and becomes a
-one-line well-formedness invariant enforced at a single construction site — and
-binding-based narrowing means nothing legitimate wants `¬Ref` anyway.
-
----
-
-## Item 3 — Reconcile overload codegen with first-class arrow intersections
-
-**The question.** Adoption trigger 3 makes inferred intersection-of-arrows
-first-class, which lets an un-annotated overloaded `fn` in a recursive group become
-inferable ([05-feature-interactions.md](05-feature-interactions.md) §"Function
-overloading"). But the inference win does not reach codegen: `buildOverloadedFunc`
-(`internal/codegen/builder.go`) emits a runtime dispatcher from **each arm's
-written parameter annotations**, and MLstruct removes exactly the artifact the
-dispatcher consumes. Two sub-problems must be settled before adoption relaxes the
-overload annotation rule.
-
-**Plan of attack.**
-
-1. **Confirm the static/runtime dispatch agreement (soundness-adjacent).** Static
-   overload resolution must select the same arm the generated dispatcher routes to
-   at runtime. MLstruct resolves via the non-standard Boolean-algebra `<:` (caveat #4)
-   while the dispatcher runs concrete `typeof` / `in` / `instanceof` tests — and
-   [04-type-level-operators.md](04-type-level-operators.md) worked example A is a
-   case where they disagree. Extend the Item 1 conformance table with
-   overload-resolution rows that pin which arm each side picks, and treat any
-   divergence as a codegen-soundness bug, not a display quirk.
-2. **Decide the annotation-obligation scope (design).** The safe scope is:
-   relax trigger 3 for *inference and display* only, and keep the per-arm parameter
-   annotation obligation wherever a dispatcher is generated — i.e. for *implemented*
-   overloads (declare-only / `.d.ts` arms emit no dispatcher and take the freedom
-   harmlessly). The alternative is to restrict inferred arm domains to a
-   mutually-distinguishable, runtime-checkable sublanguage. Write the chosen rule
-   into the plan so M3's overload-annotation requirement is relaxed deliberately,
-   not by accident.
-
-**Deliverable.** Overload-resolution rows in the conformance table (feeding solver
-tests) plus a stated annotation-obligation rule scoped to codegen. Depends on Item
-1's table and caveat #4's MLscript verification.
-
----
-
-## Status
-
-| Item | Can do now | Waits for implementation |
+| Verified finding | Residual decision / work | Owner(s) |
 |---|---|---|
-| 1 — arrow-intersection verification | Sound conformance table (step 1); MLscript source read (step 2) | Empirical `.mls` run (step 3, needs Scala); wiring the table into solver tests |
-| 2 — `¬Ref` exclusion invariant | Decide exclude-vs-handle; write the invariant + test list into the plan | Construction-site panic + tests in `normal.go` |
-| 3 — overload codegen reconciliation | Overload-resolution conformance rows; decide the annotation-obligation scope | Relaxing M3's overload-annotation rule; dispatcher-vs-static agreement tests |
+| 1 — record-union ⊤-widening | set-valued `RhsNf` vs exists-rule fallback | PR3 #1060 / PR5 #1062 |
+| 2 — naive arrow merge | FCB decomposition vs accept non-standard `<:` | PR5 #1062, PR3 #1060, PR10 #1067 |
+| 3 — dispatcher needs annotations | annotation-scope + static/runtime agreement | PR11 #1068 |
+| 4 — `¬Ref` guard | construction-site panic + tests | PR8 #1065 |
+| (all) regression oracle | negative-position record + arrow-intersection rows | PR2 #1059 |
 
-None is started — investigation is deferred. This doc is the record so the next
-planning session can pick them up.
+The investigation is complete; the decisions above live in their owning PR issues.
+This doc stays as the source-grounded record of what those decisions rest on.
