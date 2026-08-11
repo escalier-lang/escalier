@@ -176,13 +176,23 @@ is that these members can't be **fused into one conjunct** (a conjunct is a meet
 
 **The two residual concerns that are real** (and far narrower than "lossy unions"):
 
-1. **A narrow, unverified representation question — negative position only.** A
-   disjunct's `RhsNf` (a negative-position union of atoms) may hold at most one
-   *structural record* atom, in which case a **supertype** `sub <: ({x: int} | {y:
-   int})` of two distinct single-field records might not pack into one disjunct.
-   This is the single thing to confirm in MLscript's `NormalForms.scala` — it is
-   record-specific and negative-position-only, not a general union loss. Feeds
-   [06-open-items.md](06-open-items.md) Item 1's source read.
+1. **A representation limit — CONFIRMED, negative position only.** A disjunct's
+   `RhsNf` holds at most one *structural record* atom, so a **supertype** `sub <:
+   ({x: int} | {y: int})` of two distinct single-field records over-approximates to
+   ⊤. Verified in MLscript's `NormalForms.scala`: the `RhsNf.| (Var, FieldType)`
+   operation bails to `None` on a second differently-named field
+   (`case _: RhsField | _: RhsBases => N`), and `None` means Top by the authors'
+   own comment ("can't merge a record and a function or a tuple -> it's the same as
+   Top"). Positive position is unaffected — a *subtype* union stays a precise
+   multi-member DNF (`Conjunct.tryMergeUnion` keeps incompatible conjuncts
+   separate) — and **tagged unions are unaffected**, since object tags get a *list*
+   slot (`RhsBases.prims`) while records get a single one. **Mitigation for the
+   port** (Escalier controls normalization, so it need not inherit this): either
+   give Escalier's `RhsNf` a set-valued record slot (fully precise), or route a
+   would-widen union-super through the retained `trialAndCommit` exists-rule
+   instead of `constrainNF` (sound — it trials each member and rejects `number <:
+   ({x:int}|{y:int})` correctly — and free since PR5 keeps the helper). Pinned by
+   the negative-position rows in the PR2 corpus (#1059).
 2. **Inexact unions need the exactness flag threaded — real work.** Escalier's
    `UnionType.Inexact` (`A | B | ...`, "at least these, with an open unknown
    tail") is **not native** to MLstruct's Boolean algebra, where `unknown` is just

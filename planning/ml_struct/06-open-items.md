@@ -24,7 +24,19 @@ un-merged Frisch–Castagna–Benzaken decomposition (sound)? M9 conditional-typ
 `extends` checks make this divergence user-visible, so it gates trusting M9
 semantics.
 
-**Plan of attack**, in order of leverage:
+**Verified so far (source read done — the union-of-records half).** A negative-position
+union of ≥2 distinct-field records over-approximates to ⊤: `NormalForms.scala`'s
+`RhsNf.| (Var, FieldType)` bails to `None` on a second differently-named field, and
+`None` means Top (the authors' own comment). Scope is narrow — negative position
+only; positive-position unions and tagged unions (object tags get a *list* slot) are
+precise. **Mitigation:** a set-valued `RhsNf` record slot, or the `trialAndCommit`
+exists-rule fallback for would-widen union-supers (see caveat #4 residual #1 in
+`02-caveats-and-mitigations.md`). Pinned by the negative-position rows added to the
+PR2 corpus (#1059). **Still open:** the *arrow-intersection* half below — the
+`LhsNf` fun merge plus the `ConstraintSolver` arrow arm — which gates the M9
+conditional-type semantics.
+
+**Plan of attack** for the arrow-intersection half, in order of leverage:
 
 1. **Derive the sound spec first** (no tooling needed). Build an Escalier-owned
    **conformance table** of arrow-intersection subtyping cases — each row is
