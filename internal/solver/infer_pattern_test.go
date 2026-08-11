@@ -1174,7 +1174,9 @@ func TestInferMatchExactUnionGuardedArmNoPhantomMember(t *testing.T) {
 
 // An inexact union scrutinee carries an open tail of unknown values, so covering
 // every listed member is not enough — only an unguarded catch-all makes it
-// exhaustive. The scrutinee is annotated inexact through a binding.
+// exhaustive. The scrutinee is annotated inexact through a binding. The message
+// names the uncovered members alongside the catch-all, since each still takes a
+// branch of its own.
 func TestInferMatchInexactUnionNeedsCatchAll(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
@@ -1186,7 +1188,7 @@ func TestInferMatchInexactUnionNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-7:5: match is not exhaustive; add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-7:5: match is not exhaustive; add branches for `number`, `string`, and a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An inexact union scrutinee with an unguarded catch-all arm is exhaustive.

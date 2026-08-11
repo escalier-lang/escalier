@@ -1063,9 +1063,9 @@ type CannotAssignToImmutableError struct {
 // whole construct through Span and carries no related node.
 //
 // The three lists below hold the witnesses: the types the construct leaves uncovered, grouped
-// by the edit that would cover each one. They are empty together when the scrutinee offers no
-// such type to name. An open tail of unknown values is the case that offers none, and the
-// message then asks for a catch-all.
+// by the edit that would cover each one. NeedsCatchAll is a fourth thing the message can ask
+// for, independent of them. A scrutinee can leave named members uncovered, carry an open tail
+// of unknown values, or both.
 type NonExhaustiveMatchError struct {
 	Origin ucs.Origin
 	// Unmatched holds the values no arm's pattern names.
@@ -1077,6 +1077,10 @@ type NonExhaustiveMatchError struct {
 	// `Color.RGB(0, g, b)` of a `match` over `Color` names the variant but matches only when
 	// the first field is 0.
 	Refutable []soltype.Type
+	// NeedsCatchAll marks a scrutinee carrying an open tail of values no pattern names, which
+	// takes a catch-all arm on top of whatever the witnesses ask for. An inexact union sets it
+	// alongside its uncovered members, since covering each member still leaves the tail.
+	NeedsCatchAll bool
 }
 
 // UnreachableMatchArmError fires when a `match` arm can never run, because an arm above it
@@ -1812,17 +1816,14 @@ func (e *NonExhaustiveMatchError) Message() string {
 	return constructName(e.Origin.Kind) + " is not exhaustive; " + e.advice()
 }
 
-// advice renders the edit each group of witnesses calls for, as one clause per group. A
-// scrutinee with no witness to name has an open tail of values no pattern reaches, so the
-// only edit that covers it is a catch-all arm.
+// advice renders the edit each group of witnesses calls for, as one clause per group. The
+// branches to add lead, then the guarded group, then the refutable one. An error carrying
+// nothing at all falls back to asking for a catch-all rather than trailing off after the
+// semicolon.
 func (e *NonExhaustiveMatchError) advice() string {
 	clauses := make([]string, 0, 3)
-	if names := witnessList(e.Unmatched); names != "" {
-		if len(e.Unmatched) == 1 {
-			clauses = append(clauses, "add a branch for "+names)
-		} else {
-			clauses = append(clauses, "add branches for "+names)
-		}
+	if branches := e.branchesToAdd(); branches != "" {
+		clauses = append(clauses, branches)
 	}
 	if names := witnessList(e.Guarded); names != "" {
 		if len(e.Guarded) == 1 {
@@ -1842,6 +1843,27 @@ func (e *NonExhaustiveMatchError) advice() string {
 		return "add a catch-all branch"
 	}
 	return strings.Join(clauses, "; ")
+}
+
+// branchesToAdd names the branches the user writes to cover what no arm reaches: one per
+// unmatched witness, plus a catch-all when the scrutinee also carries an open tail. It is
+// empty when there is neither, which leaves the guarded and refutable clauses to speak alone.
+func (e *NonExhaustiveMatchError) branchesToAdd() string {
+	names := witnessList(e.Unmatched)
+	if names == "" {
+		if e.NeedsCatchAll {
+			return "add a catch-all branch"
+		}
+		return ""
+	}
+	clause := "add a branch for " + names
+	if len(e.Unmatched) > 1 {
+		clause = "add branches for " + names
+	}
+	if e.NeedsCatchAll {
+		clause += ", and a catch-all branch"
+	}
+	return clause
 }
 
 // witnessList renders one group of witnesses as a backticked, comma-separated list, and the

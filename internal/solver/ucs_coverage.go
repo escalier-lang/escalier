@@ -20,11 +20,14 @@ import (
 // The check also collects witnesses. A witness is a type the form leaves uncovered, which a
 // message names so it can ask for the branch that would cover it. A union scrutinee's
 // witnesses are the members no branch covers. An exact object or tuple scrutinee has one
-// witness, the whole scrutinee. An open tail yields none at all, since the values it holds are
-// the ones no pattern names, and the message asks for a catch-all instead. Every witness is a
-// type some arm can name, if only by annotation: `n: number => n` covers a member no shape tag
-// reaches. Phase 2's residual is that witness set directly, and it reaches nested patterns the
-// tag-level rules here cannot.
+// witness, the whole scrutinee. Every witness is a type some arm can name, if only by
+// annotation: `n: number => n` covers a member no shape tag reaches.
+//
+// An open tail is reported apart from the witnesses, since a catch-all is the only arm that
+// reaches it. An inexact union carries both, so its message asks for a branch per uncovered
+// member and a catch-all on top. An inexact object or tuple carries only the tail. Phase 2's
+// residual is that witness set directly, and it reaches nested patterns the tag-level rules
+// here cannot.
 
 // coverage is what the check reads off one normalized form. Its three tag groups partition the
 // branches of the root scrutinee. A branch lands in one of them by whether it covers the
@@ -280,15 +283,16 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 		return
 	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
-		// An inexact union carries an open tail no tag names, so it takes the catch-all the
-		// check has already ruled out, and no member of it is the value that escapes.
-		if u.Inexact {
-			c.report(&NonExhaustiveMatchError{Origin: split.Origin})
+		uncovered := c.uncoveredMembers(scope, u, cov)
+		// An inexact union carries an open tail no tag names, so it needs a catch-all whatever
+		// its members. The members it does name are still worth reporting, since each one takes
+		// a branch of its own that the catch-all would otherwise swallow.
+		if uncovered.empty() && !u.Inexact {
 			return
 		}
-		if uncovered := c.uncoveredMembers(scope, u, cov); !uncovered.empty() {
-			c.report(uncovered.errorAt(split.Origin))
-		}
+		err := uncovered.errorAt(split.Origin)
+		err.NeedsCatchAll = u.Inexact
+		c.report(err)
 		return
 	}
 	inexact, isStructural := structuralInexact(carrier)
@@ -297,8 +301,10 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	}
 	// An exact object or tuple is covered by a branch that destructures its shape. An inexact
 	// one carries an open tail of values no such branch can see, so only a catch-all covers it.
+	// Its shape is no witness to report alongside, since a branch naming that shape is exactly
+	// what the interim rule refuses to credit.
 	if inexact {
-		c.report(&NonExhaustiveMatchError{Origin: split.Origin})
+		c.report(&NonExhaustiveMatchError{Origin: split.Origin, NeedsCatchAll: true})
 		return
 	}
 	if hasStructuralTag(cov.covering.tests) {

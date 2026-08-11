@@ -474,14 +474,30 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 			`,
 			want: "match is not exhaustive; add a catch-all branch",
 		},
-		// An inexact union's tail is uncovered the same way, whatever its members.
-		"InexactUnionHasNoWitness": {
+		// An inexact union's tail takes a catch-all whatever its members, and its uncovered
+		// members each still take a branch. The message asks for both. A literal arm covers
+		// only its own value, so neither `number` nor `string` is covered here.
+		"InexactUnionNamesMembersAndCatchAll": {
 			src: `
 				fn f(b: boolean) {
 					val x: number | string | ... = if b { 1 } else { "b" }
 					return match x {
 						1 => 1,
 						"b" => 2
+					}
+				}
+			`,
+			want: "match is not exhaustive; add branches for `number`, `string`, and a catch-all branch",
+		},
+		// The same inexact union with every member covered. Only the tail is left, so the
+		// catch-all is the whole of the advice.
+		"InexactUnionWithEveryMemberCovered": {
+			src: `
+				fn f(b: boolean) {
+					val x: number | string | ... = if b { 1 } else { "b" }
+					return match x {
+						n: number => 1,
+						s: string => 2
 					}
 				}
 			`,
@@ -498,14 +514,26 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 	}
 }
 
-// Every clause of the message has a singular and a plural form. The sources above reach only
-// the singular form of the refutable clause, so these rows build the error directly and pin
-// the rest.
+// Every clause of the message has a singular and a plural form, and the catch-all clause
+// combines with each of them. The sources above reach only some of those pairings, so these
+// rows build the error directly and pin the rest.
 func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 	tests := map[string]struct {
 		err  *NonExhaustiveMatchError
 		want string
 	}{
+		// One unmatched witness alongside an open tail. The sources above reach this pairing
+		// only with two or more witnesses.
+		"OneUnmatchedWithCatchAll": {
+			err:  &NonExhaustiveMatchError{Unmatched: []soltype.Type{numLit(1)}, NeedsCatchAll: true},
+			want: "match is not exhaustive; add a branch for `1`, and a catch-all branch",
+		},
+		// An open tail with no unmatched witness leaves the catch-all to stand as its own
+		// clause, ahead of whatever the other groups ask for.
+		"GuardedWithCatchAll": {
+			err:  &NonExhaustiveMatchError{Guarded: []soltype.Type{numLit(1)}, NeedsCatchAll: true},
+			want: "match is not exhaustive; add a catch-all branch; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it",
+		},
 		"TwoRefutable": {
 			err:  &NonExhaustiveMatchError{Refutable: []soltype.Type{numLit(1), numLit(2)}},
 			want: "match is not exhaustive; `1`, `2` are matched only by branches whose own patterns can fail, so add branches that match them irrefutably",
