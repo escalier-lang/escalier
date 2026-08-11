@@ -57,8 +57,8 @@ users porting TS code will assume the former.
 
 `T extends U ? X : Y` decides its branch by asking the subtyping decider whether
 `T <: U`. That decider is now MLstruct's Boolean-algebra relation, which
-deliberately diverges from the naive set-theoretic model and has the lossy-union
-behavior (see [02-caveats-and-mitigations.md](02-caveats-and-mitigations.md) §4).
+deliberately diverges from the naive set-theoretic model
+(see [02-caveats-and-mitigations.md](02-caveats-and-mitigations.md) §4).
 Conditional types are precisely where users **observe subtyping reflectively**, so
 any place MLstruct's `<:` differs from a TS-faithful `<:` becomes a visible,
 surprising conditional-type result. Caveat #4 is not only an internal-precision

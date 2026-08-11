@@ -180,7 +180,7 @@ not reach codegen.**
   2. Normalization fuses arms, so the lattice type is body-agnostic; the syntactic
      arm→body map must be kept as side metadata regardless.
   3. Static resolution must select the same arm the dispatcher routes to. MLstruct
-     resolves via the lossy Boolean-algebra `<:` (caveat #4) while the dispatcher
+     resolves via the non-standard Boolean-algebra `<:` (caveat #4) while the dispatcher
      runs a concrete `typeof` test; worked example A is where they disagree.
   4. Negated / union arm domains are silently un-dispatchable — `buildTypeGuard`
      emits `true`, so the first arm in sort order swallows the call rather than the

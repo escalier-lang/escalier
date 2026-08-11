@@ -108,7 +108,7 @@ overload annotation rule.
 
 1. **Confirm the static/runtime dispatch agreement (soundness-adjacent).** Static
    overload resolution must select the same arm the generated dispatcher routes to
-   at runtime. MLstruct resolves via the lossy Boolean-algebra `<:` (caveat #4)
+   at runtime. MLstruct resolves via the non-standard Boolean-algebra `<:` (caveat #4)
    while the dispatcher runs concrete `typeof` / `in` / `instanceof` tests — and
    [04-type-level-operators.md](04-type-level-operators.md) worked example A is a
    case where they disagree. Extend the Item 1 conformance table with

@@ -3,8 +3,9 @@
 The four caveats raised while evaluating MLstruct, each with a concrete example
 and a mitigation grounded in machinery the `solver/` package already has or the
 `simple_sub/` plan already schedules. Caveats are ordered by how much they should
-weigh on the adoption decision: #1 and #2 are the real costs, #4 is the one to
-*verify* before committing, and #3 is downgraded to a minor task.
+weigh on the adoption decision: #1 and #2 are the real costs; #4's non-standard
+subtyping semantics are real, but its original "lossy unions" framing was
+overstated and is corrected below; #3 is downgraded to a minor task.
 
 ---
 
@@ -150,48 +151,59 @@ well-formedness check."
 
 ---
 
-## Caveat 4 — Non-standard semantics / lossy unions (verify before committing)
+## Caveat 4 — Non-standard subtyping semantics (the "lossy unions" framing was overstated)
 
-**The problem.** MLstruct proves its own subtyping algebra, which is *not* the
-naive "types as sets of values" model, and its normal-form representation
-over-approximates some unions of structurally-disjoint shapes. Reading MLscript's
-`tryMergeUnion`, a union like `{x: int} | {y: int}` or `(A -> B) | {x: C}` cannot
-be packed losslessly into one normal-form conjunct, so it is kept as separate
-members or over-approximated toward the top of that part of the lattice rather
-than as a precise two-member union.
+**The real part.** MLstruct proves its *own* subtyping algebra — deliberately
+**not** the naive "types as sets of values" model — and the POPL 2026 follow-up
+notes it validates some identities a set-theoretic reading would not. This matters
+wherever users **observe `<:` reflectively**, above all in M9 conditional-type
+`extends` checks: see [04-type-level-operators.md](04-type-level-operators.md)
+coupling point 2 and worked examples A/B, where a conditional's branch can flip
+relative to a TS-faithful `<:`. That divergence is genuine and is the part of this
+caveat worth carrying.
 
-**Concrete example, and why it matters for Escalier.** TypeScript-style
-discriminated unions of *untagged* records —
+**What was overstated: unions are NOT lossy.** An earlier draft claimed a union of
+structurally-disjoint members — `{x: int} | {y: int}`, `(A -> B) | {x: C}` —
+"over-approximates toward ⊤." That is wrong for the normal representation. In
+positive position such a union is a **precise multi-member DNF**
+(`[Conjunct({x:int}), Conjunct({y:int})]`); in negative position it is a single
+**disjunct** (a union of atoms). `tryMergeUnion` is an *optimization* that fuses
+conjuncts when it can and **keeps them separate otherwise** — and "kept separate"
+is exactly precise. A merge that *bails* does not widen anything; the "→ ⊤"
+reading conflated an optimization's no-op with a soundness loss. All that is true
+is that these members can't be **fused into one conjunct** (a conjunct is a meet)
+— but they don't need to be; the multi-member form is exact.
 
-```
-type Result = { ok: T } | { err: E }
-```
+**The two residual concerns that are real** (and far narrower than "lossy unions"):
 
-— depend on the two members staying distinct so a check like `"ok" in r` can
-recover the branch. If the union is over-approximated, that precision is lost.
+1. **A narrow, unverified representation question — negative position only.** A
+   disjunct's `RhsNf` (a negative-position union of atoms) may hold at most one
+   *structural record* atom, in which case a **supertype** `sub <: ({x: int} | {y:
+   int})` of two distinct single-field records might not pack into one disjunct.
+   This is the single thing to confirm in MLscript's `NormalForms.scala` — it is
+   record-specific and negative-position-only, not a general union loss. Feeds
+   [06-open-items.md](06-open-items.md) Item 1's source read.
+2. **Inexact unions need the exactness flag threaded — real work.** Escalier's
+   `UnionType.Inexact` (`A | B | ...`, "at least these, with an open unknown
+   tail") is **not native** to MLstruct's Boolean algebra, where `unknown` is just
+   ⊤. DNF/CNF can carry it, but only by threading the `Inexact` flag through
+   normalization, where it is a property of the *whole* union node and must survive
+   member merge / dedup / reorder / distribution. This is PR7's remit (#1064) and
+   belongs with the exactness thread, not with a "lossy union" worry.
 
 **Mitigations.**
 
-- **Verify the exact behavior against MLscript before committing.** The
-  "over-approximates to ⊤" reading comes from the reference implementation's
-  `tryMergeUnion`, *not* from the paper's formal rules. This is the single fact to
-  confirm against MLscript (and the POPL 2026 follow-up's cleaner semantics)
-  during the backtracking RFC, because it directly bounds how well TypeScript-style
-  discriminated unions translate. Treat it as an open verification item, not a
-  settled limitation.
-- **Tagged unions survive, and Escalier already leans on tags.** A discriminant —
-  a literal field or a class tag — keeps members provably disjoint, which is
-  exactly the nominal/literal disjointness M5 and M6 provide. Escalier's
-  exhaustive `match` story is already built on the exactness flag and on
-  class/enum tags (`simple_sub` M4–M6), so the idiomatic tagged form
-  (`{ tag: "ok", .. } | { tag: "err", .. }`) is unaffected.
-- **Keep un-mergeable union members separate rather than collapsing.**
-  `solver/lattice.go`'s `newUnion` already flattens, prunes, and `subsumeMembers`
-  but otherwise **keeps distinct members as distinct** — it does not force a merge
-  to a single node. Preserving that "don't merge what can't merge losslessly"
-  discipline in the normal-forms layer is what keeps untagged record unions as
-  precise as the representation allows.
-- **Implement from the POPL 2026 semantics.** The follow-up's semantic soundness
-  proof and cleaner decision procedure are the reference for *which* identities
-  hold, so the non-standard corners are documented and intentional rather than
-  surprises inherited from the implementation.
+- **Keep un-mergeable members separate — this is precision-preserving, not a
+  compromise.** `solver/lattice.go`'s `newUnion` already flattens, prunes, and
+  `subsumeMembers` but keeps distinct members distinct. Carry that discipline into
+  the normal-forms layer; a positive union that can't fuse simply stays
+  multi-member, which is exact.
+- **Tags keep the DNF *small*, not *precise*.** The idiomatic tagged form
+  (`{ tag: "ok", .. } | { tag: "err", .. }`) does not buy precision — a
+  multi-member DNF already has it — it keeps the conjunct count down, which is a
+  **caveat #1** (blowup) concern. An untagged `{ ok: T } | { err: E }` stays a
+  precise two-member DNF too, so `"ok" in r`-style branch recovery works on it
+  without a discriminant. Prefer tags for blowup control, not for correctness.
+- **Verify the `RhsNf` capacity against MLscript** (residual #1, during the source
+  read in `06-open-items.md` Item 1) and implement from the POPL 2026 semantics for
+  *which* identities hold. Do the exactness-flag threading in PR7 (residual #2).
