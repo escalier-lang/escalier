@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 	"strings"
 
@@ -398,15 +399,7 @@ func disjunctOr(a, b Disjunct) (Disjunct, bool) {
 // conjunct that survived canonicalization unchanged keeps the slice it arrived
 // with.
 func pooled(a, b []soltype.Type) []soltype.Type {
-	out := make([]soltype.Type, 0, len(a)+len(b))
-	out = append(out, a...)
-	out = append(out, b...)
-	return out
-}
-
-// copyAtoms is pooled over a single list, for the same reason.
-func copyAtoms(atoms []soltype.Type) []soltype.Type {
-	return append([]soltype.Type(nil), atoms...)
+	return slices.Concat(a, b)
 }
 
 // dedupAtoms orders an atom list canonically and drops the duplicates that pooling
@@ -490,12 +483,15 @@ func canonicalConjuncts(conjuncts []Conjunct) []Conjunct {
 	return dedupSorted(normalized, equalConjunct)
 }
 
-// normalizeConjunct puts a conjunct's two pooled structural parts in order.
+// normalizeConjunct puts a conjunct's two pooled structural parts in order. Each
+// list is cloned first, since dedupAtoms sorts in place and a conjunct that came
+// through canonicalization unchanged still shares its slice with the normal form
+// it arrived from.
 func normalizeConjunct(a Conjunct) Conjunct {
 	return Conjunct{
-		Lnf:   LhsNf{Atoms: dedupAtoms(copyAtoms(a.Lnf.Atoms))},
+		Lnf:   LhsNf{Atoms: dedupAtoms(slices.Clone(a.Lnf.Atoms))},
 		Vars:  a.Vars,
-		Rnf:   RhsNf{Atoms: dedupAtoms(copyAtoms(a.Rnf.Atoms))},
+		Rnf:   RhsNf{Atoms: dedupAtoms(slices.Clone(a.Rnf.Atoms))},
 		NVars: a.NVars,
 	}
 }
@@ -513,9 +509,9 @@ func canonicalDisjuncts(disjuncts []Disjunct) []Disjunct {
 // normalizeDisjunct is the dual of normalizeConjunct.
 func normalizeDisjunct(a Disjunct) Disjunct {
 	return Disjunct{
-		Rnf:   RhsNf{Atoms: dedupAtoms(copyAtoms(a.Rnf.Atoms))},
+		Rnf:   RhsNf{Atoms: dedupAtoms(slices.Clone(a.Rnf.Atoms))},
 		Vars:  a.Vars,
-		Lnf:   LhsNf{Atoms: dedupAtoms(copyAtoms(a.Lnf.Atoms))},
+		Lnf:   LhsNf{Atoms: dedupAtoms(slices.Clone(a.Lnf.Atoms))},
 		NVars: a.NVars,
 	}
 }
