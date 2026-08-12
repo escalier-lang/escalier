@@ -7,9 +7,8 @@ import (
 )
 
 // memberHalf is one direction of access to a named member: the read `a.f` performs, or the
-// write `a.f = …` performs. An override is checked one half at a time, because a class
-// splits the two across separate members whenever it declares a getter/setter pair, and a
-// `readonly` field carries the read alone.
+// write `a.f = …` performs. An override is checked one half at a time, since a getter/setter
+// pair splits the two across separate members and a `readonly` field carries the read alone.
 type memberHalf int
 
 const (
@@ -20,12 +19,10 @@ const (
 // subtypeGoal is one obligation a redeclared member owes the member it overrides. An access
 // half contributes one goal for the value it carries and one for what reaching it may raise.
 //
-// sub and super are the two operands constrain is called with. A write obligation is
-// contravariant, so there the inherited member's type is the sub operand. shownSub and
-// shownSuper are the same two types held the other way, subclass first, which is the order a
-// diagnostic names them in. position says which of a member's types they are, so the message
-// can distinguish a rejected value type from a rejected `throws`. subElem is the redeclared
-// member the diagnostic is blamed on, and owner the ancestor declaring the inherited one.
+// sub and super are constrain's operands, so a contravariant write obligation holds the
+// inherited type as sub. shownSub and shownSuper are that pair in declaration order, subclass
+// first, which is how a diagnostic names them. position distinguishes a rejected value type
+// from a rejected `throws`. owner is the ancestor declaring the inherited member.
 type subtypeGoal struct {
 	sub, super           soltype.Type
 	shownSub, shownSuper soltype.Type
@@ -34,17 +31,16 @@ type subtypeGoal struct {
 	owner                *soltype.ClassType
 }
 
-// memberBlameKey names one instance member of a class declaration, so a diagnostic about
-// that member can be blamed on the source it was written at. A getter and a setter may
-// share a name, so the setter half is keyed apart from every other kind.
+// memberBlameKey names one instance member of a class declaration, so a diagnostic can be
+// blamed on the source it was written at. A getter and a setter may share a name, so the
+// setter half is keyed apart from every other kind.
 type memberBlameKey struct {
 	name   string
 	setter bool
 }
 
-// pendingOverrideCheck is one subclass waiting to have its members checked against the
-// ones they override. def and self are the class's registered definition and nominal
-// handle, and decl the declaration a diagnostic is blamed on.
+// pendingOverrideCheck is one subclass waiting to have its members checked against the ones
+// they override.
 type pendingOverrideCheck struct {
 	def  *ClassDef
 	self *soltype.ClassType
@@ -55,12 +51,11 @@ type pendingOverrideCheck struct {
 // checked once every class the module declares is inferred.
 //
 // The check cannot run inside inferClassDecl. A class's superclass edge and body are filled
-// in at the class's VALUE key, while an `extends` clause registers a dependency on the
-// superclass's TYPE key alone. A subclass's value key is therefore free to be inferred
-// before its superclass's. Given `class Dog extends Pet` and `class Pet extends Animal`, the
-// driver reaches Dog while Pet still carries no superclass edge and no members. Running
-// every queued check after the last component removes that hazard, since by then each
-// ancestor's edge and body are final.
+// in at its VALUE key, while an `extends` clause registers a dependency on the superclass's
+// TYPE key alone, so a subclass's value key is free to be inferred first. Given `class Dog
+// extends Pet` and `class Pet extends Animal`, the driver reaches Dog while Pet still carries
+// no edge and no members. Running the queue after the last component removes that hazard,
+// since by then every ancestor is final.
 func (c *checker) queueInheritedMemberCheck(def *ClassDef, self *soltype.ClassType, decl *ast.ClassDecl) {
 	if def.Body == nil || len(def.Supers) == 0 {
 		return
@@ -81,28 +76,17 @@ func (c *checker) checkQueuedInheritedMembers() {
 // checkInheritedMembers checks every member a class declares against the same-named member
 // its superclass chain declares, and reports the ones an instance of the class cannot stand
 // in for. The nominal subtype rule decides `Dog <: Animal` on the declared `extends` edge
-// alone, so without this check a subclass can contradict its own superclass edge:
+// alone, so this is what stops a subclass contradicting that edge. IncompatibleOverrideError
+// spells out the case it catches. A name the chain does not carry is new rather than an
+// override, so it is skipped.
 //
-//	class Animal { pos: {x: number}, … }
-//	class Dog extends Animal { pos: {x: number, y: number}, … }
+// Telling a redeclaration from an inherited member rests on ClassDef.Body holding the class's
+// OWN declarations, with everything inherited reached by walking Supers. A body carrying its
+// ancestors' members too would make each inherited member look like a redeclaration of
+// itself, so the whole-body views that need inheritance walk the chain instead.
 //
-// Reading `pos` off a `Dog` through an `Animal`-typed binding would then hand out a
-// `{x: number, y: number}` typed as `{x: number}`, which exactness makes a real mismatch
-// rather than a widening.
-//
-// A member the class declares at a compatible type reports nothing. That covers the common
-// case of redeclaring an inherited field at exactly its inherited type. A name the
-// superclass chain does not carry is new rather than an override, so it is skipped.
-//
-// Telling a redeclaration from an inherited member rests on ClassDef.Body holding the
-// class's OWN declarations alone, with everything inherited reached by walking Supers. A
-// body that also carried its ancestors' members would make every inherited member look like
-// a redeclaration of itself, so the whole-body views that need inheritance have to walk the
-// chain rather than merge it in here.
-//
-// Every class body is frozen by the time this runs, so each member is compared at the type
-// member lookup will read rather than at the fresh variable a field held before the
-// constructor assigned it.
+// Every class body is frozen by the time this runs, so a member is compared at the type
+// lookup will read rather than at the variable a field held before the constructor ran.
 func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, decl *ast.ClassDecl) {
 	if def.Body == nil || len(def.Supers) == 0 {
 		return
@@ -121,23 +105,18 @@ func (c *checker) checkInheritedMembers(def *ClassDef, self *soltype.ClassType, 
 }
 
 // checkOverriddenName checks one name the class declares against the same name on its
-// superclass chain, and reports at most one diagnostic for it.
+// superclass chain, reporting at most one diagnostic for it.
 //
-// Each access half is checked on its own. The superclass chain fixes what an instance of
-// the class must still support, so a half the chain does not expose leaves nothing to keep
-// and is skipped. A half it does expose has to survive the redeclaration in two ways:
+// Each access half is checked on its own. A half the chain does not expose leaves nothing to
+// keep, so it is skipped. A half it does expose has to survive the redeclaration twice over:
 //
-//  1. The class has to keep offering that half at all. A redeclaration shadows the
-//     inherited member rather than merging with it, so `class Dog extends Animal { readonly
-//     pos: … }` over a writable `Animal.pos` leaves an `Animal`-typed reference able to
-//     write a field a `Dog` refuses. The same goes for a subclass that redeclares one half
-//     of an inherited getter/setter pair and drops the other.
-//  2. The type it offers has to fit. A read is covariant and a write contravariant, the
-//     ordinary override rule.
+//  1. The class has to keep offering it. A redeclaration shadows the inherited member rather
+//     than merging with it, so a `readonly` field over a writable one, or one half of an
+//     inherited accessor pair, drops an access the superclass view still performs.
+//  2. The type it offers has to fit, covariantly for a read and contravariantly for a write.
 //
-// The two are checked in that order, over both halves, so a member whose form disagrees is
-// reported as a form mismatch rather than through whichever type comparison the mismatch
-// happens to fail first.
+// Every form check runs before any type comparison, so a member whose form disagrees is
+// reported as a form mismatch rather than through whichever comparison it happens to fail.
 func (c *checker) checkOverriddenName(
 	def *ClassDef,
 	self *soltype.ClassType,
@@ -192,11 +171,9 @@ func (c *checker) checkOverriddenName(
 
 // halfGoals returns the subtype obligations a redeclared member owes the inherited member
 // serving the same access half. A read is covariant in the value it yields and a write
-// contravariant in the value it accepts. What reaching either raises is covariant in both
-// cases, since a `throws` flows out to the caller whether it came from a read or a write.
-//
-// Each goal carries the redeclared member it came from and the ancestor declaring the
-// inherited one, so a rejection is rendered against the half that produced it.
+// contravariant in the value it accepts. What reaching either raises is covariant either way,
+// since a `throws` flows out to the caller. Each goal carries the members it came from, so a
+// rejection is rendered against the half that produced it.
 func halfGoals(subElem, superElem soltype.ObjTypeElem, half memberHalf, owner *soltype.ClassType) []subtypeGoal {
 	value := subtypeGoal{
 		shownSub: halfType(subElem, half), shownSuper: halfType(superElem, half),
@@ -215,13 +192,12 @@ func halfGoals(subElem, superElem soltype.ObjTypeElem, half memberHalf, owner *s
 }
 
 // inheritedHalf finds the member on def's superclass chain that serves one access half of
-// name, projected to the arguments sub writes. It returns that member and the ancestor
-// instance declaring it, or inherited=false when no ancestor offers the half.
+// name, projected to the arguments sub writes, along with the ancestor declaring it.
 //
 // Each `extends` edge is re-expressed at sub's arguments through substituteSuperArgs before
-// the walk descends into it, so `class Dog<T> extends Animal<T>` compares its own members
-// against an Animal whose `T` is Dog's `T`. visited holds the ancestor names already
-// reached, bounding the walk on a cyclic hierarchy the same way constrainNominalWalk does.
+// the walk descends into it, so `class Dog<T> extends Animal<T>` compares against an Animal
+// whose `T` is Dog's `T`. The visited set bounds the walk on a cyclic hierarchy, the way
+// constrainNominalWalk does.
 func (c *checker) inheritedHalf(
 	def *ClassDef,
 	sub *soltype.ClassType,
@@ -258,10 +234,9 @@ func (c *checker) inheritedHalfWalk(
 	return nil, nil, false
 }
 
-// declaredHalf returns the member of obj that serves one access half of name. An accessor
-// declared for that half wins over a field or method sharing the name. That is the same
-// tie-break ObjectType.ReadMember and WriteMember apply. found is false when no member named
-// name serves the half.
+// declaredHalf returns the member of obj that serves one access half of name, or found=false
+// when none does. An accessor declared for that half wins over a field or method sharing the
+// name, the same tie-break ObjectType.ReadMember and WriteMember apply.
 func declaredHalf(obj *soltype.ObjectType, name string, half memberHalf) (soltype.ObjTypeElem, bool) {
 	var found soltype.ObjTypeElem
 	for _, elem := range obj.Elems {
@@ -279,8 +254,8 @@ func declaredHalf(obj *soltype.ObjectType, name string, half memberHalf) (soltyp
 }
 
 // servesHalf reports whether a member provides one access half. A field provides the read
-// always and the write unless it is `readonly`. A method and a getter provide the read
-// alone, and a setter the write alone.
+// always and the write unless it is `readonly`. A method and a getter provide the read alone,
+// and a setter the write alone.
 func servesHalf(elem soltype.ObjTypeElem, half memberHalf) bool {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
@@ -292,8 +267,7 @@ func servesHalf(elem soltype.ObjTypeElem, half memberHalf) bool {
 	case *soltype.SetterElem:
 		return half == writeHalf
 	}
-	// An index signature, a spread, or a constructor is not a named instance member an
-	// `extends` edge can override.
+	// An index signature, a spread, and a constructor are not members an override can name.
 	return false
 }
 
@@ -307,13 +281,12 @@ func isAccessor(elem soltype.ObjTypeElem) bool {
 }
 
 // formWeakens reports whether a redeclared member promises less, or demands more, than the
-// inherited one in a way no subtype obligation covers. Two cases reach it.
+// inherited one in a way no subtype obligation covers:
 //
-//   - The redeclared member is an optional field and the inherited one is not. The
-//     superclass view reads the member as always present, while the subclass may omit it.
-//   - The redeclared member takes a `mut self` receiver and the inherited one takes a plain
-//     `self`. The inherited member is reachable from an immutable superclass reference, and
-//     the redeclared one is not.
+//   - it is an optional field where the inherited one is required, so it may be absent while
+//     the superclass view reads it as always present;
+//   - it takes a `mut self` receiver where the inherited one takes a plain `self`, so an
+//     immutable superclass reference can no longer reach it.
 func formWeakens(subElem, superElem soltype.ObjTypeElem) bool {
 	if isOptional(subElem) && !isOptional(superElem) {
 		return true
@@ -327,14 +300,13 @@ func isOptional(elem soltype.ObjTypeElem) bool {
 	return ok && prop.Optional
 }
 
-// receiverMut reports whether reaching a member needs a mutable reference to the instance.
-// A `mut self` receiver on a method, getter, or setter is what demands one. A field carries
-// no receiver, so it reads as false.
+// receiverMut reports whether reaching a member needs a mutable reference to the instance. A
+// `mut self` receiver on a method, getter, or setter demands one, and a field carries no
+// receiver at all.
 //
-// An overload set is measured across every arm, so one `mut self` arm makes the whole member
-// demand a mutable reference. buildMemberSigs rejects a set whose arms disagree, but it
-// appends the offending arm all the same, so reading a single arm would answer by
-// declaration order on exactly the input that already disagrees.
+// One `mut self` arm makes a whole overload set demand a mutable reference. buildMemberSigs
+// rejects a set whose arms disagree but appends the offending arm anyway, so reading a single
+// arm would answer by declaration order on exactly the input that already disagrees.
 func receiverMut(elem soltype.ObjTypeElem) bool {
 	switch elem := elem.(type) {
 	case *soltype.MethodElem:
@@ -354,7 +326,7 @@ func receiverMut(elem soltype.ObjTypeElem) bool {
 
 // halfType returns the type one access half of a member carries: the value a read yields or
 // the value a write accepts. A method's read yields its signature with the receiver dropped,
-// which is the callable value `a.f` evaluates to.
+// the callable value `a.f` evaluates to.
 func halfType(elem soltype.ObjTypeElem, half memberHalf) soltype.Type {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
@@ -370,9 +342,8 @@ func halfType(elem soltype.ObjTypeElem, half memberHalf) soltype.Type {
 			return callableView(elem.Signatures[0])
 		default:
 			// An overload set reads as the intersection of its arms, matching what
-			// memberReadContribution hands a caller. Comparing the intersections rather than
-			// arm against arm is what keeps the check independent of the order the arms are
-			// written in.
+			// memberReadContribution hands a caller. Comparing intersections rather than arm
+			// against arm keeps the check independent of the order the arms are written in.
 			arms := make([]soltype.Type, len(elem.Signatures))
 			for i, sig := range elem.Signatures {
 				arms[i] = callableView(sig)
@@ -383,8 +354,8 @@ func halfType(elem soltype.ObjTypeElem, half memberHalf) soltype.Type {
 	return &soltype.ErrorType{}
 }
 
-// elemThrows returns the type reaching a member may raise. Only an accessor carries one, so
-// a field and a method read as `never`, which any `throws` position admits.
+// elemThrows returns the type reaching a member may raise. Only an accessor carries one, so a
+// field and a method read as `never`, which any `throws` position admits.
 func elemThrows(elem soltype.ObjTypeElem) soltype.Type {
 	switch elem := elem.(type) {
 	case *soltype.GetterElem:
@@ -395,9 +366,9 @@ func elemThrows(elem soltype.ObjTypeElem) soltype.Type {
 	return &soltype.NeverType{}
 }
 
-// memberForm names the form a member takes, so a diagnostic about two members whose forms
-// disagree can say what each one is. A field's form spells out its `readonly` and optional
-// modifiers, since dropping either is one of the disagreements the check reports.
+// memberForm names the form a member takes, so a diagnostic about two disagreeing members can
+// say what each one is. A field's form spells out its `readonly` and optional modifiers, since
+// dropping either is one of the disagreements reported.
 func memberForm(elem soltype.ObjTypeElem) string {
 	switch elem := elem.(type) {
 	case *soltype.PropertyElem:
@@ -421,8 +392,8 @@ func memberForm(elem soltype.ObjTypeElem) string {
 	return "a member"
 }
 
-// mutReceiverForm appends the receiver to a member's form when reaching it needs a mutable
-// reference, so a diagnostic about two members that differ only there says which is which.
+// mutReceiverForm names the receiver when reaching a member needs a mutable reference, so two
+// members differing only there do not render alike.
 func mutReceiverForm(base string, elem soltype.ObjTypeElem) string {
 	if receiverMut(elem) {
 		return base + " taking `mut self`"
@@ -430,10 +401,9 @@ func mutReceiverForm(base string, elem soltype.ObjTypeElem) string {
 	return base
 }
 
-// firstNamed returns the first member of obj called name, the member a diagnostic falls
-// back to naming when the class offers no member for the half under discussion. The caller
-// reaches it only for a name obj carries, so the nil return is unreachable in practice and
-// renders as the generic form.
+// firstNamed returns the first member of obj called name, which a diagnostic falls back to
+// naming when the class offers none for the half under discussion. Callers reach it only for a
+// name obj carries, so the nil return is unreachable and renders as the generic form.
 func firstNamed(obj *soltype.ObjectType, name string) soltype.ObjTypeElem {
 	for _, elem := range obj.Elems {
 		if soltype.ObjElemName(elem) == name {
@@ -443,10 +413,9 @@ func firstNamed(obj *soltype.ObjectType, name string) soltype.ObjTypeElem {
 	return nil
 }
 
-// overrideBlame returns the source node an override diagnostic points at: the declaration
-// of the member under discussion, falling back to the other half's declaration when the
-// class offers no member for that half. It returns nil when the class declares the name in
-// neither form, which leaves the diagnostic on the class declaration's own span.
+// overrideBlame returns the source node an override diagnostic points at, the declaration of
+// the member under discussion. It falls back to the other half's declaration, and then to nil,
+// which leaves the diagnostic on the zero span.
 func overrideBlame(blame map[memberBlameKey]ast.Node, name string, elem soltype.ObjTypeElem) ast.Node {
 	_, isSetter := elem.(*soltype.SetterElem)
 	if node, ok := blame[memberBlameKey{name: name, setter: isSetter}]; ok {
@@ -455,9 +424,9 @@ func overrideBlame(blame map[memberBlameKey]ast.Node, name string, elem soltype.
 	return blame[memberBlameKey{name: name, setter: !isSetter}]
 }
 
-// instanceMemberNodes maps each instance member a class declaration writes to the source
-// node that declares it, so an override diagnostic points at the member rather than at the
-// whole class. A static member is left out, since `extends` relates instances.
+// instanceMemberNodes maps each instance member a class declaration writes to the node that
+// declares it, so an override diagnostic points at the member rather than the whole class. A
+// static member is left out, since `extends` relates instances.
 func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 	nodes := map[memberBlameKey]ast.Node{}
 	for _, elem := range decl.Body {
@@ -483,21 +452,20 @@ func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 	return nodes
 }
 
-// skolemizeClassParams returns a substitution replacing a class's own type-parameter
-// variables with fresh skolems, or nil for a non-generic class. An override obligation
-// checked through it has to hold for every instantiation of the class rather than being
-// satisfied by recording a bound on the parameter. For
+// skolemizeClassParams returns a substitution replacing a class's own type-parameter variables
+// with fresh skolems, or nil for a non-generic class. An obligation checked through it has to
+// hold for every instantiation rather than being satisfied by recording a bound. Given
 //
 //	class Box<T> { value: T, … }
 //	class StrBox<T> extends Box<T> { value: string, … }
 //
 // the obligation is `string <: T`. Against the bare parameter variable that records `string`
-// as a lower bound of `T` and reports nothing. Against a skolem it is rejected, which is
-// what a `StrBox<number>` read through `Box<number>` needs it to be.
+// as a lower bound and reports nothing. Against a skolem it is rejected, which is what a
+// `StrBox<number>` read through `Box<number>` needs.
 //
 // Each parameter's declared constraint becomes its skolem's upper bound, seeded through the
-// same substitution so a bound naming a sibling parameter reaches that sibling's skolem.
-// This mirrors what skolemizeFuncBinder does for a function's own binder.
+// same substitution so a bound naming a sibling reaches that sibling's skolem. This mirrors
+// skolemizeFuncBinder.
 func (c *Context) skolemizeClassParams(def *ClassDef) *typeSubst {
 	if len(def.TypeParams) == 0 {
 		return nil
