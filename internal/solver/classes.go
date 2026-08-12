@@ -648,6 +648,10 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 	if !ok || def.EdgesPending {
 		return nil, false, false
 	}
+	// One walked set is shared by the whole walk rather than kept per path. Supers holds
+	// at most one edge, so a class is reachable by a single path and no branch can shut
+	// another out of one. A hierarchy admitting several nominal edges would have to
+	// record the walk per path to keep that true.
 	settled := true
 	for _, superType := range def.Supers {
 		found, reaches, superSettled := c.ancestorInstanceWalk(substituteSuperArgs(def, ct, superType), name, walked)

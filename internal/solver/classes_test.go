@@ -408,10 +408,21 @@ func nominalGraph() *Context {
 		MutVariance: []Variance{Covariant},
 		Supers:      []*soltype.ClassType{genericCls("Reader", wrapperVar)},
 	})
+	// Held carries borrowed data, so its instances differ by lifetime argument rather than
+	// by type argument.
+	c.registerClass("Held", &ClassDef{
+		LifetimeParams: []*soltype.LifetimeParam{{Name: "a", Var: &soltype.LifetimeVar{ID: 410, Level: 1}}},
+	})
 	c.registerClass("NumReader", &ClassDef{
 		Supers: []*soltype.ClassType{genericCls("Reader", num())},
 	})
 	return c
+}
+
+// borrowing builds an instance handle for a class that holds borrowed data, carrying one
+// lifetime argument and no type arguments.
+func borrowing(name string, lt soltype.Lifetime) *soltype.ClassType {
+	return &soltype.ClassType{Name: name, LifetimeArgs: []soltype.Lifetime{lt}}
 }
 
 // genericCls builds an instance handle for a generic class at the given arguments.
@@ -424,6 +435,9 @@ func genericCls(name string, args ...soltype.Type) *soltype.ClassType {
 // the intersection keeps both tags as separate atoms.
 func TestGlbClass(t *testing.T) {
 	numOrStr := &soltype.UnionType{Types: []soltype.Type{num(), str()}}
+	// One lifetime shared by two tags, so the pair differs from the two-distinct-lifetimes
+	// row only in which lifetime each argument names.
+	sharedLt := &soltype.LifetimeVar{ID: 402, Level: 1}
 
 	tests := []struct {
 		name string
@@ -494,6 +508,17 @@ func TestGlbClass(t *testing.T) {
 			name: "two tags disagreeing on exactness stay separate",
 			a:    cls("Point", true), b: cls("Point", false),
 			want: "",
+		},
+		{
+			name: "two tags disagreeing on a lifetime argument stay separate",
+			a:    borrowing("Held", &soltype.LifetimeVar{ID: 400, Level: 1}),
+			b:    borrowing("Held", &soltype.LifetimeVar{ID: 401, Level: 1}),
+			want: "",
+		},
+		{
+			name: "two tags sharing a lifetime argument fuse",
+			a:    borrowing("Held", sharedLt), b: borrowing("Held", sharedLt),
+			want: "Held<'l402>",
 		},
 		{
 			name: "a covariant position meets its two arguments",
