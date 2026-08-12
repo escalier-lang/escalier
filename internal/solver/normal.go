@@ -52,14 +52,14 @@ import (
 //
 // # What a later PR adds
 //
-// The merge table covers the primitives, the literals, and the two absence
-// markers. Records, tuples, and arrows are still kept apart atom by atom, and two
-// whole conjuncts are never fused into one.
+// Arrows are still kept apart atom by atom, and two whole conjuncts are never
+// fused into one.
 //
-// The nominal meet is a stub: glbClass only fuses two tags naming one class, and
-// keeps unrelated ones separate. PR4 (#1061) wires it to the M5 declared-subtype
-// graph so unrelated classes collapse the conjunct to `never` before any
-// structural work — the combinatorial fast path caveat 1 relies on. TODO(#1061).
+// Exactness-driven merges are deferred. An atom's `Inexact` flag rides through
+// every merge here, and two atoms whose flags disagree are kept separate rather
+// than fused under a guess. PR7 (#1064) decides the exact cases, such as two exact
+// records with differing required fields meeting to `never`. TODO(#1064). The
+// nominal meet is still the glbClass stub. TODO(#1061).
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -538,6 +538,14 @@ func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 		return fused, true
 	}
 	switch a := a.(type) {
+	case *soltype.ObjectType:
+		if b, ok := b.(*soltype.ObjectType); ok {
+			return c.meetObjects(a, b)
+		}
+	case *soltype.TupleType:
+		if b, ok := b.(*soltype.TupleType); ok {
+			return c.meetTuples(a, b)
+		}
 	case *soltype.ClassType:
 		if b, ok := b.(*soltype.ClassType); ok {
 			return c.glbClass(a, b)
@@ -557,6 +565,16 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	}
 	if fused, ok := joinValueAtoms(a, b); ok {
 		return fused, true
+	}
+	switch a := a.(type) {
+	case *soltype.ObjectType:
+		if b, ok := b.(*soltype.ObjectType); ok {
+			return c.joinObjects(a, b)
+		}
+	case *soltype.TupleType:
+		if b, ok := b.(*soltype.TupleType); ok {
+			return c.joinTuples(a, b)
+		}
 	}
 	// Two function atoms never fuse under a union. Neither `(A -> C) | (B -> C)` nor
 	// `(A -> C) | (A -> D)` has a single arrow that denotes it: a value of
@@ -677,6 +695,239 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	return nil, false
 }
 
+// meetObjects fuses two object atoms field by field, or keeps them apart when no
+// single object denotes their meet. Keeping two atoms is just as precise and costs
+// only the extra atom, so the fusion is an optimization rather than an obligation.
+//
+// Two INEXACT objects always fuse. Each denotes the values carrying its own fields
+// plus anything else, so their meet is the values carrying both field sets plus
+// anything else, and that is what the merged object denotes.
+//
+// Two EXACT objects fuse when they name the same fields. Neither admits a field
+// its type does not name, so the meet only narrows the fields they share.
+//
+// Two EXACT objects naming DIFFERENT fields are kept apart. Their meet is really
+// `never`, since an exact object carries only the fields its type names and no
+// value satisfies two such objects at once. Settling that is PR7's
+// exactness-aware merge. TODO(#1064). Two objects whose `Inexact` flags disagree
+// are kept apart for the same reason.
+//
+// A field one side requires and the other makes optional is required on the meet,
+// since a value has to satisfy both objects, so `{x: A} & {x?: B}` is `{x: A & B}`.
+func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
+	if a.Inexact != b.Inexact {
+		return nil, false
+	}
+	pa, ok := plainProps(a)
+	if !ok {
+		return nil, false
+	}
+	pb, ok := plainProps(b)
+	if !ok {
+		return nil, false
+	}
+	if !a.Inexact && !sameFieldNames(pa, pb) {
+		return nil, false
+	}
+	elems := make([]soltype.ObjTypeElem, 0, len(pa)+len(pb))
+	for _, p := range pa {
+		q, shared := propNamed(pb, p.Name)
+		if !shared {
+			elems = append(elems, p)
+			continue
+		}
+		// A readonly field and a writable one constrain what a holder may do rather
+		// than which values inhabit the type, and no rule says which marker the fused
+		// field should carry, so the two atoms stay separate.
+		if p.Readonly != q.Readonly {
+			return nil, false
+		}
+		// A field either side requires is required on the meet, since a value has to
+		// satisfy both.
+		elems = append(elems, &soltype.PropertyElem{
+			Name:     p.Name,
+			Type:     c.meetTypes(p.Type, q.Type),
+			Optional: p.Optional && q.Optional,
+			Readonly: p.Readonly,
+		})
+	}
+	for _, q := range pb {
+		if _, shared := propNamed(pa, q.Name); !shared {
+			elems = append(elems, q)
+		}
+	}
+	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
+}
+
+// joinObjects fuses two object atoms under a union. One object denotes their union
+// only when the two carry the same field names and differ in AT MOST ONE field.
+// `{x: A, y: C} | {x: B, y: C}` is `{x: A | B, y: C}`, since a value of the merged
+// record has an x drawn from A or from B and is therefore a value of one member.
+//
+// A field is optional on the join when either side made it optional, so
+// `{x: A} | {x?: B}` is `{x?: A | B}`. Such a value either carries no x, or
+// carries one drawn from A or from B.
+//
+// Two differing fields break the fusion. `{x: A, y: C} | {x: B, y: D}` is not
+// `{x: A | B, y: C | D}`, which would also admit a record pairing an x from A with
+// a y from D, a record neither member admits. A marker difference spends the same
+// budget, so `{x: A, y: C} | {x?: A, y: D}` keeps both atoms rather than fusing to
+// a record that admits an absent x beside a y drawn from C. Differing field names
+// break the fusion too, which is why `{x: number} | {y: number}` keeps both.
+func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
+	if a.Inexact != b.Inexact {
+		return nil, false
+	}
+	pa, ok := plainProps(a)
+	if !ok {
+		return nil, false
+	}
+	pb, ok := plainProps(b)
+	if !ok {
+		return nil, false
+	}
+	if !sameFieldNames(pa, pb) {
+		return nil, false
+	}
+	elems := make([]soltype.ObjTypeElem, 0, len(pa))
+	widened := 0
+	for _, p := range pa {
+		q, _ := propNamed(pb, p.Name)
+		// Readonly stays a bail, for the reason meetObjects gives.
+		if p.Readonly != q.Readonly {
+			return nil, false
+		}
+		if p.Optional == q.Optional && equalType(p.Type, q.Type) {
+			elems = append(elems, p)
+			continue
+		}
+		widened++
+		if widened > 1 {
+			return nil, false
+		}
+		elems = append(elems, &soltype.PropertyElem{
+			Name:     p.Name,
+			Type:     c.joinTypes(p.Type, q.Type),
+			Optional: p.Optional || q.Optional,
+			Readonly: p.Readonly,
+		})
+	}
+	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
+}
+
+// meetTuples fuses two tuple atoms position by position.
+//
+// Two tuples of the same length meet at each position. Two INEXACT tuples of
+// different lengths meet as well. `[A, ...]` denotes the tuples of length at least
+// one whose first element is an A, so meeting it with `[A', B', ...]` gives the
+// tuples of length at least two whose first element is in `A & A'` and whose
+// second is a B'. That is `[A & A', B', ...]`, which is the longer length, the
+// shared prefix narrowed, and the longer tuple's remaining positions carried over.
+//
+// Two EXACT tuples of different lengths are kept apart. An exact tuple is
+// fixed-length, so no value is both and their meet is really `never`. Settling
+// that is PR7's exactness-aware merge, and keeping two atoms is sound meanwhile.
+// TODO(#1064). Two tuples whose open markers disagree are kept apart for the same
+// reason.
+func (c *Context) meetTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
+	if !comparableTuples(a, b) {
+		return nil, false
+	}
+	if len(a.Elems) != len(b.Elems) && !a.Inexact {
+		return nil, false
+	}
+	long, short := a, b
+	if len(b.Elems) > len(a.Elems) {
+		long, short = b, a
+	}
+	elems := make([]soltype.Type, len(long.Elems))
+	for i := range long.Elems {
+		if i < len(short.Elems) {
+			elems[i] = c.meetTypes(short.Elems[i], long.Elems[i])
+			continue
+		}
+		// A position only the longer tuple names is unconstrained by the shorter one,
+		// whose open tail admits anything there.
+		elems[i] = long.Elems[i]
+	}
+	return &soltype.TupleType{Elems: elems, Inexact: a.Inexact}, true
+}
+
+// joinTuples fuses two tuple atoms under a union. One tuple denotes their union
+// only when the two have the same length and differ in at most one position, since
+// widening two positions at once would admit a tuple pairing one member's element
+// with the other member's.
+//
+// Tuples of different lengths are kept apart. No single tuple denotes
+// `[A, ...] | [A', B', ...]`, since `[A | A', ...]` would admit a one-element
+// tuple whose element came from A', which neither member admits. There is one
+// case that would fuse, a shared prefix matching position for position, where the
+// longer tuple is a subtype of the shorter and the union is the shorter one.
+// Recognizing it is a later refinement, not something the union rule needs.
+func (c *Context) joinTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
+	if !comparableTuples(a, b) || len(a.Elems) != len(b.Elems) {
+		return nil, false
+	}
+	elems := make([]soltype.Type, len(a.Elems))
+	widened := 0
+	for i := range a.Elems {
+		if equalType(a.Elems[i], b.Elems[i]) {
+			elems[i] = a.Elems[i]
+			continue
+		}
+		widened++
+		if widened > 1 {
+			return nil, false
+		}
+		elems[i] = c.joinTypes(a.Elems[i], b.Elems[i])
+	}
+	return &soltype.TupleType{Elems: elems, Inexact: a.Inexact}, true
+}
+
+// comparableTuples reports whether two tuple atoms can be lined up position for
+// position at all. A `...P` spread element rules the pair out, since the element
+// list is not yet the tuple's real positions and pairing them up would compare a
+// spread against an ordinary element. Open markers that disagree rule it out too,
+// since one tuple is fixed-length and the other is not.
+//
+// Length is not checked here, because the meet and the join differ on it. Each
+// applies its own length rule.
+func comparableTuples(a, b *soltype.TupleType) bool {
+	if a.Inexact != b.Inexact {
+		return false
+	}
+	return !hasSpreadElem(a.Elems) && !hasSpreadElem(b.Elems)
+}
+
+func hasSpreadElem(elems []soltype.Type) bool {
+	for _, e := range elems {
+		if _, ok := e.(*soltype.RestSpreadType); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// meetTypes is the meet a structural merge writes into a fused atom, such as the
+// codomain of two fused arrows or the type of a field two records share. It
+// normalizes the meet rather than building a bare intersection node, so a merge
+// produces the same form the surrounding normal form is in. `number` met with
+// `string` therefore reaches the fused atom as `never`, not as `number & string`.
+//
+// The recursion terminates because the operands are proper sub-parts of the two
+// atoms being merged, and the kinds that could recur without shrinking — a μ-knot
+// and a borrow — are opaque atoms that no merge takes apart. The polarity passed
+// is Positive because normalization reads the same at either one.
+func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
+	return c.mkDNF(newIntersection(nil, []soltype.Type{a, b}), soltype.Positive).toType()
+}
+
+// joinTypes is the join twin of meetTypes, the one a fused arrow's domain and a
+// widened record field are written from.
+func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
+	return c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
+}
+
 // glbClass is the nominal meet of two class tags, the slot LhsNf.Base reads. It
 // fuses two tags naming one class and keeps unrelated ones separate.
 //
@@ -689,6 +940,68 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 		return a, true
 	}
 	return nil, false
+}
+
+// plainProps returns an object's members as properties, and ok is false when the
+// object carries any other member kind, which keeps that object an unfused atom.
+// The two reasons for refusing differ.
+//
+// A spread or a mapped member makes the object an unreduced residual whose real
+// member list is not known yet, so there is nothing to fuse field by field until
+// the evaluator settles it. See soltype.HasResidualElem. Refusing those two is
+// required, not a choice.
+//
+// A method, an accessor, and a constructor could fuse under a rule of their own,
+// since each carries a FuncType that could meet the way meetFuncs meets an arrow
+// atom. No such rule exists, and none is needed: an unfused atom denotes the meet
+// or the join just as precisely, so writing one would only shrink the normal form.
+// TODO(#1103).
+func plainProps(o *soltype.ObjectType) ([]*soltype.PropertyElem, bool) {
+	props := make([]*soltype.PropertyElem, 0, len(o.Elems))
+	for _, e := range o.Elems {
+		p, ok := e.(*soltype.PropertyElem)
+		if !ok {
+			return nil, false
+		}
+		props = append(props, p)
+	}
+	return props, true
+}
+
+// sortedByName orders a fused object's members by field name. A fused object is
+// the only one this file builds, and its member order would otherwise follow the
+// order the two operands happened to reach the merge in, so `{x, ...} & {y, ...}`
+// and `{y, ...} & {x, ...}` would render differently. Sorting makes the normal
+// form read the same however the merge got there. An object no merge touched
+// keeps the member order it was written with, since nothing rebuilds it.
+func sortedByName(elems []soltype.ObjTypeElem) []soltype.ObjTypeElem {
+	sort.SliceStable(elems, func(i, j int) bool {
+		return soltype.ObjElemName(elems[i]) < soltype.ObjElemName(elems[j])
+	})
+	return elems
+}
+
+func propNamed(props []*soltype.PropertyElem, name string) (*soltype.PropertyElem, bool) {
+	for _, p := range props {
+		if p.Name == name {
+			return p, true
+		}
+	}
+	return nil, false
+}
+
+// sameFieldNames reports whether two property lists name the same fields. Order is
+// irrelevant, since an object's element order is presentation only.
+func sameFieldNames(a, b []*soltype.PropertyElem) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, p := range a {
+		if _, ok := propNamed(b, p.Name); !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // --- Canonicalizing the conjunct and disjunct lists ---
