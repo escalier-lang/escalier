@@ -739,16 +739,26 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			decision := c.constrainNF(sub, super, seen, mutCtx)
+			// An inexact union's open tail has no atom to stand for it, so normalizing one
+			// hands back the union itself and no member is ever weighed. The decision runs
+			// on the named members alone, and the tail below catches what they miss.
+			named := super
+			if supU.Inexact {
+				named = newUnion(nil, supU.Types, false)
+			}
+			decision := c.constrainNF(sub, named, seen, mutCtx)
 			if !hasHardError(decision.errs) {
 				// The decision carries any warning a nested trial emitted. Propagate it so a
 				// nested ambiguous union is not silently swallowed.
 				diags := decision.errs
 				// A committed bare type-variable member pins that var to sub. Tag it so a
 				// later constraint that forces an incompatible bound onto the var can name
-				// the union choice that pinned it.
-				if v, ok := decision.committed.(*soltype.TypeVarType); ok {
-					c.tagUnionCommit(v, supU)
+				// the union choice that pinned it. The tag is about a member the user wrote,
+				// so a variable the decision reached by some other route does not earn one.
+				if member, ok := writtenMember(supU, decision.committed); ok {
+					if v, isVar := member.(*soltype.TypeVarType); isVar {
+						c.tagUnionCommit(v, supU)
+					}
 				}
 				// When another member would also match while binding an inference variable,
 				// the committed choice is ambiguous. Warn at the union so the user can
@@ -1416,12 +1426,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 
-// ambiguousAlternate returns a union member, other than the committed one, that would also
-// match sub while binding an inference variable, or nil when none does. For `5 <: (T | number)`
-// number commits but T would also match by pinning to 5, so T is returned. Each candidate is
-// trialled under a throwaway probe, so the peek records no bound. A union with no bare
-// type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
-// all-concrete union super such as an enum value flowing into its variant union.
+// ambiguousAlternate returns a union member, other than the one the decision committed to,
+// that would also match sub while binding an inference variable, or nil when none does. For
+// `5 <: (T | number)` number commits but T would also match by pinning to 5, so T is
+// returned. Each candidate is trialled under a throwaway probe, so the peek records no bound.
+// A union with no bare type-variable member cannot bind ambiguously, so the scan is skipped,
+// sparing the common all-concrete union super such as an enum value flowing into its variant
+// union.
 func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, committed soltype.Type, seen *seenPairs, mutCtx bool) soltype.Type {
 	hasVar := false
 	for _, m := range u.Types {
@@ -1430,11 +1441,11 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, com
 			break
 		}
 	}
-	if !hasVar {
+	if !hasVar || committed == nil {
 		return nil
 	}
 	for _, j := range specificityOrder(u.Types) {
-		if committed != nil && equalType(u.Types[j], committed) {
+		if c.partOfCommitted(u.Types[j], committed) {
 			continue
 		}
 		if ok, mutated := c.trialMutatesBounds(sub, u.Types[j], seen, mutCtx); ok && mutated {
@@ -1442,6 +1453,41 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, com
 		}
 	}
 	return nil
+}
+
+// partOfCommitted reports whether the union member m is part of what the decision committed
+// to rather than an alternative to it. The decision runs on normalized atoms, so it may
+// commit to one atom that several members fused into, and each of those members sits below
+// that atom. Naming one of them as the alternative to the atom it helped build would report
+// an ambiguity where no choice was ever made.
+//
+// A bare type variable is exempt. It sits below anything at all, since the trial records an
+// upper bound rather than deciding a shape, so subsumption says nothing about whether it is
+// an alternative. Those are the members the warning exists to name.
+func (c *Context) partOfCommitted(m, committed soltype.Type) bool {
+	if equalType(m, committed) {
+		return true
+	}
+	if _, isVar := m.(*soltype.TypeVarType); isVar {
+		return false
+	}
+	return !hasHardError(c.trialUnderProbe(m, committed))
+}
+
+// writtenMember returns the member of u the decision committed to, and reports whether the
+// committed type is a member at all. It is not when the decision settled on an atom several
+// members fused into, since no single member was picked then. A nil committed type reaches
+// here from a decision no trial settled, such as one every candidate satisfied vacuously.
+func writtenMember(u *soltype.UnionType, committed soltype.Type) (soltype.Type, bool) {
+	if committed == nil {
+		return nil, false
+	}
+	for _, m := range u.Types {
+		if equalType(m, committed) {
+			return m, true
+		}
+	}
+	return nil, false
 }
 
 // breadcrumbUnionCommit stamps each CannotConstrainError in errs with v's union-trial origin

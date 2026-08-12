@@ -159,6 +159,69 @@ func TestConstrainArrowDecompositionRestrictions(t *testing.T) {
 	}, Messages(c.Constrain(sub, super)))
 }
 
+// TestConstrainRecursiveListThroughNormalForm covers a recursive type whose body
+// is a union, the shape a list builder with a base case infers. See
+// recursive_test.go for the source that produces it.
+//
+//	μX.({head: number, tail: undefined} | {head: number, tail: X})
+//
+// Deciding two of them terminates only if each unfolding reaches a pair of knots
+// the solver is already comparing, so the comparison closes on the knots rather
+// than on what a fusion rebuilt around them.
+func TestConstrainRecursiveListThroughNormalForm(t *testing.T) {
+	list := func(id int, name string) soltype.Type {
+		return muKnot(id, name, func(ref *soltype.RecursiveVarType) soltype.Type {
+			return newUnion(nil, []soltype.Type{
+				exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
+				exactObj(propElem("head", num()), propElem("tail", ref)),
+			}, false)
+		})
+	}
+	require.Empty(t, Messages((&Context{}).Constrain(list(0, "X0"), list(4, "X1"))))
+	require.Empty(t, Messages((&Context{}).Constrain(list(4, "X1"), list(0, "X0"))))
+}
+
+// TestConstrainInexactUnionSuperWeighsNamedMembers pins that an inexact union's
+// named members are weighed before its open tail absorbs anything. The tail has
+// no atom to stand for it, so the union is one atom and the members would
+// otherwise never be reached. A member that matches has to bind what it binds:
+// here the matching member's property type is an inference variable, and it picks
+// up the subtype's property as a lower bound.
+func TestConstrainInexactUnionSuperWeighsNamedMembers(t *testing.T) {
+	c := &Context{}
+	prop := c.freshVar(0)
+	super := &soltype.UnionType{
+		Types:   []soltype.Type{exactObj(propElem("x", prop)), str()},
+		Inexact: true,
+	}
+
+	require.Empty(t, Messages(c.Constrain(exactObj(propElem("x", numLit(5))), super)))
+	require.Len(t, prop.LowerBounds, 1)
+	require.Equal(t, "5", soltype.Print(coalesce(prop, soltype.Positive)))
+}
+
+// TestConstrainUnionCommitOnAFusedAtom covers the ambiguity warning when the
+// decision commits to an atom several members fused into. The two object members
+// below fuse to `{x: number | string}`, so no member was picked over the other and
+// neither is an alternative to the atom it helped build. The bare variable member
+// is one, since it would also match by binding, so the warning names it.
+func TestConstrainUnionCommitOnAFusedAtom(t *testing.T) {
+	c := &Context{}
+	catchAll := c.freshVar(0)
+	super := newUnion(nil, []soltype.Type{
+		exactObj(propElem("x", num())),
+		exactObj(propElem("x", str())),
+		catchAll,
+	}, false).(*soltype.UnionType)
+
+	errs := c.Constrain(exactObj(propElem("x", numLit(5))), super)
+	require.Equal(t, []string{
+		"ambiguous match against t0 | object | object: committed object, " +
+			"but t0 would also match; annotate to disambiguate",
+	}, Messages(errs))
+	require.False(t, hasHardError(errs))
+}
+
 // TestConstrainNegationThroughRecursiveUnion covers termination. The knot below
 // carries a complement inside a union, so comparing two of them re-asks the same
 // pair on every unfolding. The coinductive cache closes that pair, which is what

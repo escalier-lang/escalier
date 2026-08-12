@@ -181,7 +181,7 @@ func (c *Context) decideMeetJoin(
 	}
 	// No single pair holds. An intersection of arrows can still be below an arrow
 	// through the arms taken together, which is what decideArrows weighs.
-	if target, ok := c.decideArrows(subCands, superCands, seen, mutCtx); ok {
+	if target, ok := c.decideArrows(subCands, superCands, seen); ok {
 		return nfDecision{committed: target}
 	}
 	// The last pair's diagnostics are the ones a caller that reports the
@@ -231,7 +231,7 @@ const maxDecomposedArms = 6
 // arrow's domain is a product of positions rather than one type, and covering a
 // product needs the union of the arms' whole domains rather than a union per
 // position, so those keep the pair trial's answer.
-func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPairs, mutCtx bool) (soltype.Type, bool) {
+func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPairs) (soltype.Type, bool) {
 	arms := decomposableArrows(subCands)
 	if len(arms) < 2 || len(arms) > maxDecomposedArms {
 		return nil, false
@@ -243,7 +243,7 @@ func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPa
 		}
 		p := newProbe(c, c.probe)
 		c.probe = p
-		settled := c.arrowLegsHold(arms, target, seen, mutCtx)
+		settled := c.arrowLegsHold(arms, target, seen)
 		c.probe = p.parent
 		if settled {
 			p.Commit()
@@ -257,10 +257,15 @@ func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPa
 // arrowLegsHold runs the two legs of the decomposition decideArrows documents and
 // reports whether both hold. The caller keeps the bounds the legs recorded only
 // when they do.
-func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncType, seen *seenPairs, mutCtx bool) bool {
+//
+// Every leg compares a domain against a domain or a codomain against a codomain,
+// so each runs with the deep-mut context cleared, exactly as the arrow rule in the
+// structural switch clears it. A function carries its own annotation context, so a
+// borrow reaching one of its parameters does not make that parameter invariant.
+func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncType, seen *seenPairs) bool {
 	domain := target.Params[0].Type
 	// Leg 1. Every input the target accepts is accepted by some arm.
-	if hasHardError(c.constrain(domain, joinDomains(arms, allArms(arms)), seen.Clone(), mutCtx)) {
+	if hasHardError(c.constrain(domain, joinDomains(arms, allArms(arms)), seen.Clone(), false)) {
 		return false
 	}
 	// Leg 2, over every group of arms. A group is a bit set over arms, so counting
@@ -273,7 +278,7 @@ func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncTy
 		if !hasHardError(c.trialUnderProbeSeen(domain, outside, seen.Clone())) {
 			continue
 		}
-		if hasHardError(c.constrain(meetCodomains(arms, group), target.Ret, seen.Clone(), mutCtx)) {
+		if hasHardError(c.constrain(meetCodomains(arms, group), target.Ret, seen.Clone(), false)) {
 			return false
 		}
 	}
