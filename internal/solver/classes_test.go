@@ -382,6 +382,11 @@ func nominalGraph() *Context {
 	// A class extending itself is not something the checker builds. Registering one here
 	// pins that the walk stops on a cyclic edge instead of recurring forever.
 	c.registerClass("Loop", &ClassDef{Supers: []*soltype.ClassType{cls("Loop", false)}})
+	// Pending is the shell the SCC pre-pass registers for a class in a mutually recursive
+	// component, before its `extends` clause is resolved. BelowPending sits under it, so a
+	// walk from there runs into the unresolved edge one step up.
+	c.registerClass("Pending", &ClassDef{EdgesPending: true})
+	c.registerClass("BelowPending", &ClassDef{Supers: []*soltype.ClassType{cls("Pending", false)}})
 
 	generic := func(name string, immut, mut Variance, id int) {
 		c.registerClass(name, &ClassDef{
@@ -463,6 +468,16 @@ func TestGlbClass(t *testing.T) {
 		{
 			name: "an unregistered class settles nothing",
 			a:    cls("Point", false), b: cls("Unregistered", false),
+			want: "",
+		},
+		{
+			name: "a class whose edges are still pending settles nothing",
+			a:    cls("Pending", false), b: cls("Vec", false),
+			want: "",
+		},
+		{
+			name: "a pending class along the walk settles nothing for the class below it",
+			a:    cls("BelowPending", false), b: cls("Vec", false),
 			want: "",
 		},
 		{
