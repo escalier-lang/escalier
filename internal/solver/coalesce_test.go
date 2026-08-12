@@ -376,6 +376,58 @@ func TestEqualTypeRef(t *testing.T) {
 	}
 }
 
+// equalType compares two complements by their operands, so `¬A` equals `¬A`, differs from
+// `¬B`, and never equals the type it negates.
+func TestEqualTypeNegation(t *testing.T) {
+	tests := []struct {
+		name string
+		a, b soltype.Type
+		want bool
+	}{
+		{
+			name: "same operand",
+			a:    &soltype.NegationType{Inner: num()},
+			b:    &soltype.NegationType{Inner: num()},
+			want: true,
+		},
+		{
+			name: "operand differs",
+			a:    &soltype.NegationType{Inner: num()},
+			b:    &soltype.NegationType{Inner: str()},
+			want: false,
+		},
+		{
+			name: "structural operands compare structurally",
+			a:    &soltype.NegationType{Inner: exactObj(propElem("x", num()))},
+			b:    &soltype.NegationType{Inner: exactObj(propElem("x", num()))},
+			want: true,
+		},
+		{
+			name: "negation is not its bare operand",
+			a:    &soltype.NegationType{Inner: num()},
+			b:    num(),
+			want: false,
+		},
+		{
+			name: "double negation is not a single one",
+			a:    &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}},
+			b:    &soltype.NegationType{Inner: num()},
+			want: false,
+		},
+		{
+			name: "double negations over the same operand are equal",
+			a:    &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}},
+			b:    &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}},
+			want: true,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, equalType(tt.a, tt.b))
+		})
+	}
+}
+
 // equalType on a ClassType is nominal: it compares the qualified Name and the Final
 // exactness flag, then the type arguments positionally. Two instances of different
 // classes, or of the same class with different arguments or exactness, are not equal.

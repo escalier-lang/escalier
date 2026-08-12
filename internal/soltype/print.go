@@ -31,6 +31,10 @@ func typePrec(t Type) int {
 		return precUnion
 	case *IntersectionType:
 		return precIntersection
+	case *NegationType:
+		// `¬T` leads with a prefix operator, so it binds like the `mut` borrow and `keyof`
+		// forms. It is tighter than `|` and `&` and looser than an atom.
+		return precPrefix
 	case *RefType:
 		return precPrefix
 	case *KeyofType:
@@ -589,6 +593,8 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, m := range t.Types {
 				walk(m)
 			}
+		case *NegationType:
+			walk(t.Inner)
 		}
 	}
 	walk(t)
@@ -1001,6 +1007,12 @@ func (p *namedPrinter) printType(t Type) string {
 			parts[i] = p.printTypeMinPrec(m, precIntersection)
 		}
 		return strings.Join(parts, " & ")
+	case *NegationType:
+		// `¬T`, the standard set-theoretic notation, since Escalier has no surface syntax for a
+		// complement to mirror. The operand prints at precPrefix, so a union renders
+		// `¬(A | B)`, an intersection `¬(A & B)`, a function `¬(fn () -> number)`, and an atom
+		// stays bare as `¬number`.
+		return "¬" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:
 		// A skolem renders under its source parameter name. It is transient to a
 		// checking-mode pass and does not survive into a displayed type, so this arm is

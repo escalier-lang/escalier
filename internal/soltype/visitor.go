@@ -463,6 +463,24 @@ func (t *IntersectionType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *NegationType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// ¬Inner shrinks as Inner grows, so the operand walks at the flipped polarity, the flip
+	// acceptParams applies to a function's parameters. This is the only node that inverts,
+	// and every rewriter rides on Accept, so the single flip here is what gives coalesce,
+	// extrude, and freshenAbove their variance under a negation.
+	inner := cur.Inner.Accept(v, pol.Flip())
+	out := cur
+	if inner != cur.Inner {
+		out = &NegationType{Inner: inner}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

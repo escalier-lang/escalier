@@ -1480,6 +1480,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
 		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
+	case *soltype.NegationType:
+		// Two complements are equal when their operands are, so `¬A` equals `¬A` and differs
+		// from `¬B`. That is what lets a member list dedup a negated member the same way it
+		// dedups a plain one.
+		b, ok := b.(*soltype.NegationType)
+		return ok && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.KeyofType:
 		// Two inert `keyof` residuals are equal when they carry the same exactness over
 		// equal operands. This compares the residual structurally without reducing it,

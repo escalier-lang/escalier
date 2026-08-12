@@ -1139,6 +1139,79 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 	require.Equal(t, 0, retVar.Level)
 }
 
+// TestExtrudeThroughNegation pins the polarity a variable under a complement is extruded at.
+// extrude wires the fresh variable through the bound direction the polarity picks, an upper
+// bound in Positive position and a lower bound in Negative. The direction the original gains
+// therefore reads back the polarity the walk reached it at.
+//
+// `¬(fn (x: a) -> number)` walked from Positive flips twice, so `a` is reached at Positive
+// and gains an UPPER bound. Reaching it at Negative would wire a lower bound instead and
+// invert every constraint extruded through a negation.
+//
+// constrain has no rule for a complement, so the test drives extrude directly.
+func TestExtrudeThroughNegation(t *testing.T) {
+	c := &Context{}
+	a := c.freshVar(1) // level 1, so the level-0 extrusion must descend to it
+	fn := &soltype.FuncType{
+		Params: []*soltype.FuncParam{identParam("x", a)},
+		Ret:    num(),
+	}
+	neg := &soltype.NegationType{Inner: fn}
+
+	got := c.extrude(neg, soltype.Positive, 0, map[extrudeKey]*soltype.TypeVarType{})
+
+	// The rewritten type keeps its shape: a complement over a function whose parameter is
+	// the fresh level-0 variable.
+	gotNeg, ok := got.(*soltype.NegationType)
+	require.True(t, ok, "extrude rebuilds the complement rather than peeling it")
+	gotFn, ok := gotNeg.Inner.(*soltype.FuncType)
+	require.True(t, ok, "the operand is still the function")
+	fresh, ok := gotFn.Params[0].Type.(*soltype.TypeVarType)
+	require.True(t, ok, "the parameter extruded to a variable")
+	require.NotSame(t, a, fresh, "the original level-1 variable did not leak in")
+	require.Equal(t, 0, fresh.Level, "it was copied down to the extrusion level")
+
+	// The Positive wiring: the original gains the fresh variable as an UPPER bound and no
+	// lower bound at all.
+	require.Len(t, a.UpperBounds, 1, "a parameter under a negation is extruded at Positive polarity")
+	require.Same(t, soltype.Type(fresh), a.UpperBounds[0])
+	require.Empty(t, a.LowerBounds, "the Negative wiring would have added a lower bound")
+}
+
+// TestDescribeNegation renders a complement in a diagnostic. describe collapses a structural
+// operand to its kind word, so only a union or intersection operand needs parens.
+func TestDescribeNegation(t *testing.T) {
+	tests := []struct {
+		name string
+		in   soltype.Type
+		want string
+	}{
+		{"primitive operand", &soltype.NegationType{Inner: num()}, "¬number"},
+		{"double negation", &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}}, "¬¬number"},
+		{
+			"union operand is parenthesized",
+			&soltype.NegationType{Inner: &soltype.UnionType{Types: []soltype.Type{num(), str()}}},
+			"¬(number | string)",
+		},
+		{
+			"intersection operand is parenthesized",
+			&soltype.NegationType{Inner: &soltype.IntersectionType{Types: []soltype.Type{num(), str()}}},
+			"¬(number & string)",
+		},
+		{
+			// A function collapses to the bare kind word, which cannot run on, so it stays bare.
+			"function operand stays bare",
+			&soltype.NegationType{Inner: &soltype.FuncType{Ret: num()}},
+			"¬function",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, describe(tt.in))
+		})
+	}
+}
+
 // --- The coinductive seen-set's two records ---
 
 // nestedRecursiveObj builds the cyclic object type `{p: pt, next: {q: <the outer object>}}` and

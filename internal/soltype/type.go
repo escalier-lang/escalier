@@ -892,6 +892,21 @@ type UnionType struct {
 }
 type IntersectionType struct{ Types []Type }
 
+// NegationType is the set-theoretic complement ¬Inner, the type admitting every value Inner
+// rejects. It stands beside UnionType and IntersectionType, which supply joins and meets, and
+// completes the three into a Boolean algebra. `A & ¬A` is `never` and `A | ¬A` is `unknown`.
+//
+// It is the one node that inverts polarity on its child, because a complement shrinks as its
+// operand grows. Accept visits Inner at the flipped polarity, and every structural rewriter
+// rides on Accept, so coalesce, extrude, and freshenAbove inherit that inversion.
+//
+// No source syntax spells a complement and constrain has no rule for one, so the
+// normalization layer is the only producer of a negation.
+//
+// It is not a RefInner. A borrow points at a value someone allocated and a complement names
+// no such value, so `&¬T` would point at nothing.
+type NegationType struct{ Inner Type }
+
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
 // from never (⊥) and unknown (⊤). Unlike those two, which are coalesced-OUTPUT
 // only ("appear only as coalesced output, never as constrain inputs", above),
@@ -1300,6 +1315,7 @@ func (*NeverType) isType()           {}
 func (*UnknownType) isType()         {}
 func (*UnionType) isType()           {}
 func (*IntersectionType) isType()    {}
+func (*NegationType) isType()        {}
 func (*ErrorType) isType()           {}
 func (*ClassType) isType()           {}
 func (*AliasType) isType()           {}
@@ -1454,6 +1470,11 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
+	case *NegationType:
+		// A complement's level is its operand's, the single-child rule the KeyofType arm
+		// follows. A `¬T` over an out-of-level variable therefore lifts the level, and the
+		// freshener/extruder prune descends to freshen that variable.
+		return LevelOf(t.Inner)
 	default:
 		// PrimType, LitType, NullType, UndefinedType, NeverType, UnknownType,
 		// ErrorType, InferType, MappedKeyType, RecursiveVarType: childless leaves. ErrorType is a

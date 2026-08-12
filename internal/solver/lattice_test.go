@@ -370,6 +370,8 @@ func TestCompareTypeConsistentWithEqual(t *testing.T) {
 		// equalType treats objects as equal up to property order; the
 		// comparator must agree.
 		{"objects equal up to order", parseType(t, "{a: number, b: string}"), parseType(t, "{b: string, a: number}")},
+		// A complement has no surface syntax to parse, so its operands are built directly.
+		{"negations over one operand", &soltype.NegationType{Inner: num()}, &soltype.NegationType{Inner: num()}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -390,6 +392,42 @@ func TestCompareTypeKindOrder(t *testing.T) {
 	require.Less(t, compareType(parseType(t, "number"), parseType(t, "1")), 0, "PrimType < LitType")
 	require.Less(t, compareType(parseType(t, "never"), v), 0, "NeverType < TypeVarType")
 	require.Less(t, compareType(parseType(t, "unknown"), v), 0, "UnknownType < TypeVarType")
+}
+
+// TestCompareTypeNegation pins the canonical order over complements. Two complements order
+// by their operands, and a complement occupies a kind slot of its own beside the union and
+// intersection forms. A complement has no surface syntax, so parseType cannot author one and
+// the operands are built directly.
+func TestCompareTypeNegation(t *testing.T) {
+	negNum := &soltype.NegationType{Inner: num()}
+	negStr := &soltype.NegationType{Inner: str()}
+	inter := &soltype.IntersectionType{Types: []soltype.Type{num(), str()}}
+
+	// Two complements order by their operands, so the order over negated members mirrors
+	// the order over the members themselves.
+	require.Less(t, compareType(num(), str()), 0, "precondition: number < string")
+	require.Less(t, compareType(negNum, negStr), 0, "¬number < ¬string")
+
+	// The kind slot sits after the union and intersection forms and before the absence
+	// markers, so a mixed list renders its data members before `null` and `undefined`.
+	require.Less(t, compareType(inter, negNum), 0, "IntersectionType < NegationType")
+	require.Less(t, compareType(negNum, parseType(t, "null")), 0, "NegationType < NullType")
+	require.Less(t, compareType(parseType(t, "null"), parseType(t, "undefined")), 0,
+		"NullType < UndefinedType still holds with the negation slot inserted")
+
+	// The order is total over a mixed list: two different starting permutations sort to
+	// the same sequence.
+	forward := []soltype.Type{num(), negStr, inter, negNum, parseType(t, "null")}
+	reverse := []soltype.Type{parseType(t, "null"), negNum, inter, negStr, num()}
+	sortTypes(forward)
+	sortTypes(reverse)
+	require.Equal(t, len(forward), len(reverse))
+	for i := range forward {
+		require.True(t, equalType(forward[i], reverse[i]),
+			"position %d: %s vs %s", i, soltype.Print(forward[i]), soltype.Print(reverse[i]))
+	}
+	require.True(t, equalType(negNum, forward[2]), "¬number sorts after the intersection")
+	require.True(t, equalType(negStr, forward[3]), "¬string sorts after ¬number")
 }
 
 // TestCompareTypeDistinctRefsWithUnnamedLifetimes pins the structural

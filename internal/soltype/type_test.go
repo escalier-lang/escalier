@@ -131,6 +131,32 @@ func TestLevelOf(t *testing.T) {
 			ty:   &RefType{Mut: true, Inner: &ObjectType{Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: num}}}},
 			want: 0,
 		},
+		{
+			// A complement carries no variable of its own, so its level is its operand's.
+			// Negating a type does not move the variable it holds to another level.
+			name: "negation: level of its operand",
+			ty:   &NegationType{Inner: v5},
+			want: 5,
+		},
+		{
+			name: "negation over a concrete operand is level 0",
+			ty:   &NegationType{Inner: num},
+			want: 0,
+		},
+		{
+			// Two negations reach the same operand, so the level is unchanged by the depth.
+			name: "double negation: level of its operand",
+			ty:   &NegationType{Inner: &NegationType{Inner: v2}},
+			want: 2,
+		},
+		{
+			name: "negation over a function: max over the signature",
+			ty: &NegationType{Inner: &FuncType{
+				Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: v2}},
+				Ret:    v5,
+			}},
+			want: 5,
+		},
 	}
 
 	for _, tt := range tests {

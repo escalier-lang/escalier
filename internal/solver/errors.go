@@ -2936,6 +2936,18 @@ func describe(t soltype.Type) string {
 		return s
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
+	case *soltype.NegationType:
+		// A complement renders `¬T` over the nominal inner, recursing like the union and
+		// intersection arms. A union or intersection operand is parenthesized, since its `|`
+		// or `&` would otherwise bind past the `¬` and `¬number | string` reads back as
+		// `(¬number) | string`. Every other operand renders as one word or a delimited form,
+		// so none can run on. Giving describe the precedence data Print already has is #1092.
+		inner := describe(t.Inner)
+		switch t.Inner.(type) {
+		case *soltype.UnionType, *soltype.IntersectionType:
+			return "¬(" + inner + ")"
+		}
+		return "¬" + inner
 	case *soltype.TypeVarType:
 		return "t" + strconv.Itoa(t.ID)
 	case *soltype.SkolemType:
