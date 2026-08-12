@@ -44,6 +44,9 @@ func normCNF(c *Context, ty soltype.Type) string {
 // annotation the result renders under. A row whose want repeats its in is a
 // round-trip: normalization left the type alone. A row whose want differs records
 // a normalization the module performs.
+//
+// A row that also appears in TestCNFRoundTrip is not a copy of it. See that test's
+// comment for why one annotation exercises different code in the two forms.
 func TestDNFRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
@@ -140,6 +143,51 @@ func TestDNFRoundTrip(t *testing.T) {
 			in:   "({x: number} | {y: number}) & {z: number}",
 			want: "{x: number} & {z: number} | {y: number} & {z: number}",
 		},
+		{
+			name: "a primitive absorbs a literal of its own family",
+			in:   "5 | number",
+			want: "number",
+		},
+		{
+			name: "the same holds for the boolean family",
+			in:   "true | boolean",
+			want: "boolean",
+		},
+		{
+			name: "two records differing in one field widen that field",
+			in:   "{x: number, y: boolean} | {x: string, y: boolean}",
+			want: "{x: number | string, y: boolean}",
+		},
+		{
+			name: "two records differing in two fields keep both atoms",
+			in:   "{x: number, y: boolean} | {x: string, y: null}",
+			want: "{x: number, y: boolean} | {x: string, y: null}",
+		},
+		{
+			name: "a field optional on either side is optional on the join",
+			in:   "{x: number} | {x?: number}",
+			want: "{x?: number}",
+		},
+		{
+			name: "a marker difference spends the same budget a type difference does",
+			in:   "{x: number, y: boolean} | {x?: number, y: null}",
+			want: "{x: number, y: boolean} | {x?: number, y: null}",
+		},
+		{
+			name: "two tuples differing in one position widen that position",
+			in:   "[number, boolean] | [string, boolean]",
+			want: "[number | string, boolean]",
+		},
+		{
+			name: "two tuples differing in two positions keep both atoms",
+			in:   "[number, boolean] | [string, null]",
+			want: "[number, boolean] | [string, null]",
+		},
+		{
+			name: "two tuples of different lengths keep both atoms",
+			in:   "[number] | [number, boolean]",
+			want: "[number] | [number, boolean]",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,6 +200,14 @@ func TestDNFRoundTrip(t *testing.T) {
 // TestCNFRoundTrip is the conjunctive twin of TestDNFRoundTrip. The two forms
 // denote the same type, so a row here states the same annotation the DNF row
 // states, rendered as an intersection of joins rather than a union of meets.
+//
+// Stating one annotation in both tables is not redundant, because the two forms
+// reach the answer by different code. `5 | number` is ONE disjunct holding two
+// atoms in its Rnf, so joinAtoms absorbs the literal. The same annotation in DNF is
+// TWO conjuncts of one atom each, where absorbing the literal instead takes the
+// whole-conjunct fusion canonicalConjuncts runs. `number & string` is the mirror
+// image, two disjuncts here against one conjunct of two atoms there. So a row
+// stated in only one table leaves the other form's path untested.
 func TestCNFRoundTrip(t *testing.T) {
 	tests := []struct {
 		name string
@@ -217,6 +273,11 @@ func TestCNFRoundTrip(t *testing.T) {
 			name: "the same holds when both are inexact, since the join needs one length",
 			in:   "[number, ...] | [number, boolean, ...]",
 			want: "[number, ...] | [number, boolean, ...]",
+		},
+		{
+			name: "two disjoint primitives meet to the bottom of the lattice",
+			in:   "number & string",
+			want: "never",
 		},
 	}
 	for _, tt := range tests {
@@ -301,6 +362,15 @@ func TestNegationRoundTrip(t *testing.T) {
 				})
 			},
 			want: "¬{x: number | string, y: boolean}",
+		},
+		{
+			// No value is both a number and a string, so every value fails to be at
+			// least one of them.
+			name: "a union of two complements whose operands are disjoint is the top",
+			in: func(t *testing.T) soltype.Type {
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")}, false)
+			},
+			want: "unknown",
 		},
 	}
 	for _, tt := range tests {
@@ -726,17 +796,48 @@ func TestFuncMerge(t *testing.T) {
 	}
 }
 
+// TestCNFFusesDisjuncts covers the two rules tryMergeInter applies. Its dual,
+// tryMergeUnion over a DNF, is covered by the record and tuple rows of
+// TestDNFRoundTrip.
+func TestCNFFusesDisjuncts(t *testing.T) {
+	t.Run("disjuncts agreeing on their negated part meet their positive parts", func(t *testing.T) {
+		c := &Context{}
+		// (number | string) & (number | boolean). The two disjuncts differ in one
+		// atom, string against boolean, and those meet to `never`, which is the
+		// identity of the union the atom sits in, so the position drops.
+		in := newIntersection(nil, []soltype.Type{
+			newUnion(nil, parseTypes(t, "number", "string"), false),
+			newUnion(nil, parseTypes(t, "number", "boolean"), false),
+		})
+		require.Equal(t, "number", normCNF(c, in))
+	})
+
+	t.Run("disjuncts agreeing on their positive part join their negated parts", func(t *testing.T) {
+		c := &Context{}
+		// (¬{x} | number) & (¬({x} & {y}) | number). The first disjunct's negated
+		// part is the narrower of the two, since ¬{x} implies ¬({x} & {y}), so it
+		// stands for both.
+		x := parseType(t, "{x: number}")
+		y := parseType(t, "{y: number}")
+		in := newIntersection(nil, []soltype.Type{
+			newUnion(nil, []soltype.Type{not(x), parseType(t, "number")}, false),
+			newUnion(nil, []soltype.Type{not(newIntersection(nil, []soltype.Type{x, y})), parseType(t, "number")}, false),
+		})
+		require.Equal(t, "number | ¬{x: number}", normCNF(c, in))
+	})
+}
+
 // TestCanonicalOrderIsPermutationStable builds one type from its members in every
 // order and asserts each order reaches the same normal form. The members are
 // assembled into raw lattice nodes rather than through newUnion and
 // newIntersection, so the smart constructors' own sorting cannot be what makes the
 // orders agree.
 //
-// The arrow row is the one with teeth. Its members admit two DIFFERENT exact
-// fusions, and taking either one rules the other out: the two number-domain arms
-// fuse by meeting their codomains, and the two boolean-codomain arms fuse by
-// joining their domains. Scanning in canonical order is what settles which fusion
-// a given member SET reaches.
+// The last three rows are the ones with teeth. Their members admit two DIFFERENT
+// exact fusions, and taking either one rules the other out. The three arrows fuse
+// either their two number-domain arms, meeting the codomains, or their two
+// boolean-codomain arms, joining the domains. Scanning in canonical order is what
+// settles which fusion a given member SET reaches.
 func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 	tests := []struct {
 		name string
@@ -761,6 +862,32 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 			name:    "an intersection of inexact records, which fuses into one",
 			members: []string{"{y: number, ...}", "{x: number, ...}", "{z: number, ...}"},
 			want:    "{x: number, y: number, z: number, ...}",
+		},
+		{
+			name:    "a union mixing primitives and a literal one of them absorbs",
+			members: []string{"5", "string", "number"},
+			union:   true,
+			want:    "number | string",
+		},
+		{
+			name: "a union of records where two different fusions compete",
+			members: []string{
+				"{x: number, y: boolean}",
+				"{x: string, y: boolean}",
+				"{x: number, y: null}",
+			},
+			union: true,
+			want:  "{x: number, y: boolean | null} | {x: string, y: boolean}",
+		},
+		{
+			name: "a union of tuples where two different fusions compete",
+			members: []string{
+				"[number, boolean]",
+				"[string, boolean]",
+				"[number, null]",
+			},
+			union: true,
+			want:  "[number, boolean | null] | [string, boolean]",
 		},
 		{
 			name: "an intersection of arrows where two different fusions compete",

@@ -60,9 +60,10 @@ import (
 //
 // # What a later PR adds
 //
-// Two whole conjuncts are never fused into one. The nominal meet is still the
-// glbClass stub (TODO(#1061)) and the exactness-driven merges are still deferred
-// (TODO(#1064)).
+// Normalizing an atom's CHILDREN — pushing a negation buried in a function's
+// return or a record's field down as well — lands next. The nominal meet is still
+// the glbClass stub (TODO(#1061)) and the exactness-driven merges are still
+// deferred (TODO(#1064)).
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -312,10 +313,12 @@ func (a Disjunct) neg() Conjunct {
 // dnfOr unions two DNFs. A union of unions is one longer union, so the conjunct
 // lists simply concatenate.
 //
-// Nothing is ordered here, and neither does dnfAnd below. The mkDNF arms pool
-// every member first and call canonicalConjuncts once over the whole pool, so
-// ordering and deduping see the complete list. Pooling is associative, so folding
-// these binary operations left to right reaches the same pool as any other
+// Nothing is fused or ordered here, and neither does dnfAnd below. Fusing commits
+// to one of several exact fusions and rules the others out, so fusing before every
+// member of a union or intersection has been pooled would make the result depend
+// on the order the members were written in. The mkDNF arms therefore pool first
+// and call canonicalConjuncts once over the whole pool. Pooling is associative, so
+// folding these binary operations left to right reaches the same pool as any other
 // bracketing.
 func dnfOr(a, b DNF) DNF {
 	out := make([]Conjunct, 0, len(a.Conjuncts)+len(b.Conjuncts))
@@ -486,6 +489,15 @@ func replacePair(atoms []soltype.Type, i, j int, fused soltype.Type) []soltype.T
 	return append(atoms, fused)
 }
 
+// withoutIndex returns a copy of atoms with element i removed. It copies because
+// the caller's slice may be shared with another normal form.
+func withoutIndex(atoms []soltype.Type, i int) []soltype.Type {
+	out := make([]soltype.Type, 0, len(atoms)-1)
+	out = append(out, atoms[:i]...)
+	out = append(out, atoms[i+1:]...)
+	return out
+}
+
 // sortAtoms orders an atom list in place, canonically.
 //
 // It orders by compareAtom rather than by compareType, because compareType has no
@@ -513,13 +525,13 @@ func compareAtom(a, b soltype.Type) int {
 }
 
 // equalAtomLists reports whether two atom lists hold the same atoms in the same
-// positions. Both are sorted, so this is the equality equalConjunct tests.
+// positions. Both are sorted, so this is the equality the merges test.
 //
 // It compares with equalType rather than by checking compareAtoms for a zero.
 // compareType returns zero both for equal types and for two types it has no
-// structural arm to tell apart, such as two different class tags, so deduping on a
-// zero would treat a conjunct negating `Point` and one negating `Line` as the same
-// conjunct and delete one of them.
+// structural arm to tell apart, such as two different class tags, so a merge
+// keying off a zero would treat `¬Point` and `¬Line` as the same negated part and
+// drop one of them.
 func equalAtomLists(a, b []soltype.Type) bool {
 	if len(a) != len(b) {
 		return false
@@ -1106,12 +1118,12 @@ func sameFieldNames(a, b []*soltype.PropertyElem) bool {
 	return true
 }
 
-// --- Canonicalizing the conjunct and disjunct lists ---
+// --- Merging whole conjuncts and disjuncts ---
 
-// canonicalConjuncts fuses each conjunct's atoms, then orders and dedups the
-// conjuncts. The result depends on the SET of conjuncts and not on the order they
-// arrived in, so two normal forms of one type agree member for member. That is
-// what lets a caller compare normal forms directly.
+// canonicalConjuncts fuses the conjuncts of a DNF where fusing is exact, then
+// orders and dedups what is left. The result depends on the SET of conjuncts and
+// not on the order they arrived in, so two normal forms of one type agree
+// member for member. That is what lets a caller compare normal forms directly.
 func (c *Context) canonicalConjuncts(conjuncts []Conjunct) []Conjunct {
 	fused := make([]Conjunct, 0, len(conjuncts))
 	for _, conj := range conjuncts {
@@ -1119,8 +1131,8 @@ func (c *Context) canonicalConjuncts(conjuncts []Conjunct) []Conjunct {
 			fused = append(fused, normalized)
 		}
 	}
-	sortConjuncts(fused)
-	return dedupSorted(fused, equalConjunct)
+	merged := mergeAll(fused, c.tryMergeUnion, compareConjunct)
+	return dedupSorted(merged, equalConjunct)
 }
 
 // normalizeConjunct fuses a conjunct's two pooled structural parts. ok is false
@@ -1147,8 +1159,8 @@ func (c *Context) canonicalDisjuncts(disjuncts []Disjunct) []Disjunct {
 			fused = append(fused, normalized)
 		}
 	}
-	sortDisjuncts(fused)
-	return dedupSorted(fused, equalDisjunct)
+	merged := mergeAll(fused, c.tryMergeInter, compareDisjunct)
+	return dedupSorted(merged, equalDisjunct)
 }
 
 // normalizeDisjunct is the dual of normalizeConjunct. ok is false when the
@@ -1163,12 +1175,47 @@ func (c *Context) normalizeDisjunct(a Disjunct) (Disjunct, bool) {
 	return Disjunct{Rnf: RhsNf{Atoms: rnf}, Vars: a.Vars, Lnf: LhsNf{Atoms: lnf}, NVars: a.NVars}, true
 }
 
-func sortConjuncts(items []Conjunct) {
-	sort.SliceStable(items, func(i, j int) bool { return compareConjunct(items[i], items[j]) < 0 })
+// mergeAll repeatedly fuses pairs of members until no pair fuses, and returns the
+// result in canonical order. It sorts once, and mergePass keeps the list sorted
+// from there, so which pair fuses is decided by the order the members sort in
+// rather than by the order they arrived in — the same reason fuseAtoms sorts
+// between fusions. Each fusion shortens the list, so the loop runs at most
+// len(items) times.
+//
+// items is sorted in place, so a caller that still needs the input order must pass
+// a copy.
+func mergeAll[T any](items []T, try func(a, b T) (T, bool), cmp func(a, b T) int) []T {
+	slices.SortStableFunc(items, cmp)
+	for {
+		fused, changed := mergePass(items, try, cmp)
+		if !changed {
+			return fused
+		}
+		items = fused
+	}
 }
 
-func sortDisjuncts(items []Disjunct) {
-	sort.SliceStable(items, func(i, j int) bool { return compareDisjunct(items[i], items[j]) < 0 })
+// mergePass fuses the first pair of members that fuses and returns the shortened
+// list. It reports whether it fused anything.
+//
+// The two members it consumed are dropped and the fused one is placed where cmp
+// puts it, so a sorted list comes back sorted and mergeAll sorts only once.
+//
+// It works in place, on the same terms mergeAll states.
+func mergePass[T any](items []T, try func(a, b T) (T, bool), cmp func(a, b T) int) ([]T, bool) {
+	for i := 0; i < len(items); i++ {
+		for j := i + 1; j < len(items); j++ {
+			fused, ok := try(items[i], items[j])
+			if !ok {
+				continue
+			}
+			// The higher index goes first so the lower one stays valid.
+			rest := slices.Delete(slices.Delete(items, j, j+1), i, i+1)
+			at, _ := slices.BinarySearchFunc(rest, fused, cmp)
+			return slices.Insert(rest, at, fused), true
+		}
+	}
+	return items, false
 }
 
 // dedupSorted drops members equal to the one before them under equal. The input
@@ -1205,6 +1252,73 @@ func equalDisjunct(a, b Disjunct) bool {
 		a.Vars.Equals(b.Vars) && a.NVars.Equals(b.NVars)
 }
 
+// tryMergeUnion fuses two conjuncts of a DNF into one when the fusion is exact,
+// and reports false to keep them separate. Keeping them separate is precise: a
+// two-conjunct DNF already denotes their union.
+//
+// Both variable sets must agree, since a conjunct's variables are opaque and
+// nothing can be said about the union of two conjuncts that constrain different
+// ones. That leaves the two structural parts, and the fusion works when one of
+// them agrees too, so the union reduces to combining the other:
+//
+//	(L ∩ X) ∪ (L' ∩ X)  is  (L ∪ L') ∩ X          when the negated parts agree
+//	(X ∩ ¬R) ∪ (X ∩ ¬R') is  X ∩ ¬(R ∩ R')        when the positive parts agree
+//
+// So the positive parts combine under a union and the negated ones under an
+// intersection, which is the flip De Morgan's law puts on the negated side.
+// combineAtoms does the combining and bails when it is not exact.
+//
+// This is the seam caveat 4 names. `{x: number} | {y: number}` fuses under
+// neither rule, since the two records neither absorb one another nor join into a
+// single record, so the DNF keeps two conjuncts and stays precise.
+func (c *Context) tryMergeUnion(a, b Conjunct) (Conjunct, bool) {
+	if !a.Vars.Equals(b.Vars) || !a.NVars.Equals(b.NVars) {
+		return Conjunct{}, false
+	}
+	if equalAtomLists(a.Rnf.Atoms, b.Rnf.Atoms) {
+		atoms, ok := c.combineAtoms(a.Lnf.Atoms, b.Lnf.Atoms, meetOfAtoms)
+		if !ok {
+			return Conjunct{}, false
+		}
+		return Conjunct{Lnf: LhsNf{Atoms: atoms}, Vars: a.Vars, Rnf: a.Rnf, NVars: a.NVars}, true
+	}
+	if equalAtomLists(a.Lnf.Atoms, b.Lnf.Atoms) {
+		atoms, ok := c.combineAtoms(a.Rnf.Atoms, b.Rnf.Atoms, joinOfAtoms)
+		if !ok {
+			return Conjunct{}, false
+		}
+		return Conjunct{Lnf: a.Lnf, Vars: a.Vars, Rnf: RhsNf{Atoms: atoms}, NVars: a.NVars}, true
+	}
+	return Conjunct{}, false
+}
+
+// tryMergeInter fuses two disjuncts of a CNF into one when the fusion is exact,
+// the dual of tryMergeUnion. The two disjuncts are combined under an intersection
+// this time, so the roles swap:
+//
+//	(R ∪ X) ∩ (R' ∪ X)   is  (R ∩ R') ∪ X         when the negated parts agree
+//	(X ∪ ¬L) ∩ (X ∪ ¬L') is  X ∪ ¬(L ∪ L')        when the positive parts agree
+func (c *Context) tryMergeInter(a, b Disjunct) (Disjunct, bool) {
+	if !a.Vars.Equals(b.Vars) || !a.NVars.Equals(b.NVars) {
+		return Disjunct{}, false
+	}
+	if equalAtomLists(a.Lnf.Atoms, b.Lnf.Atoms) {
+		atoms, ok := c.combineAtoms(a.Rnf.Atoms, b.Rnf.Atoms, joinOfAtoms)
+		if !ok {
+			return Disjunct{}, false
+		}
+		return Disjunct{Rnf: RhsNf{Atoms: atoms}, Vars: a.Vars, Lnf: a.Lnf, NVars: a.NVars}, true
+	}
+	if equalAtomLists(a.Rnf.Atoms, b.Rnf.Atoms) {
+		atoms, ok := c.combineAtoms(a.Lnf.Atoms, b.Lnf.Atoms, meetOfAtoms)
+		if !ok {
+			return Disjunct{}, false
+		}
+		return Disjunct{Rnf: a.Rnf, Vars: a.Vars, Lnf: LhsNf{Atoms: atoms}, NVars: a.NVars}, true
+	}
+	return Disjunct{}, false
+}
+
 // atomRole says how a list of atoms is read: meetOfAtoms for a list standing for
 // the intersection of its atoms, which is what LhsNf holds, and joinOfAtoms for
 // one standing for their union, which is what RhsNf holds.
@@ -1214,6 +1328,95 @@ const (
 	meetOfAtoms atomRole = iota
 	joinOfAtoms
 )
+
+// combineAtoms combines the two atom lists tryMergeUnion or tryMergeInter is left
+// with. It combines them in the direction OPPOSITE to how the atoms within one
+// list are read: two meetOfAtoms lists are unioned and two joinOfAtoms lists are
+// intersected. That is what the two rules in tryMergeUnion's comment ask for, and
+// tryMergeInter reaches the same two shapes with the roles swapped. ok is false
+// when no exact combination exists, which keeps the conjuncts or disjuncts apart.
+//
+// Two shapes combine.
+//
+//  1. One list's atoms are a subset of the other's. Adding an atom to a
+//     meetOfAtoms list narrows what it denotes and adding one to a joinOfAtoms
+//     list widens it, so in both readings the SUBSET list is the one that already
+//     denotes the combination. `A ∪ (A ∩ B)` is A, and `A ∩ (A ∪ B)` is A.
+//  2. The lists differ in exactly one atom, and that pair combines exactly. The
+//     pair combines in the opposite direction to the lists' own reading, so a
+//     meetOfAtoms pair joins and a joinOfAtoms pair meets.
+func (c *Context) combineAtoms(a, b []soltype.Type, role atomRole) ([]soltype.Type, bool) {
+	if atomsSubset(a, b) {
+		return a, true
+	}
+	if atomsSubset(b, a) {
+		return b, true
+	}
+	if len(a) != len(b) {
+		return nil, false
+	}
+	// Both lists are sorted, so a differing atom shows up as a position where they
+	// disagree. More than one such position means the lists differ in more than one
+	// atom, which no single combined atom can express.
+	diff := -1
+	for i := range a {
+		if equalType(a[i], b[i]) {
+			continue
+		}
+		if diff >= 0 {
+			return nil, false
+		}
+		diff = i
+	}
+	if diff < 0 {
+		return a, true
+	}
+	if role == meetOfAtoms {
+		fused, ok := c.joinAtoms(a[diff], b[diff])
+		if !ok {
+			return nil, false
+		}
+		return replaceAtom(a, diff, fused), true
+	}
+	fused, ok := c.meetAtoms(a[diff], b[diff])
+	if !ok {
+		return nil, false
+	}
+	if _, isNever := fused.(*soltype.NeverType); isNever {
+		// The combined atom is uninhabited, and `never` is the identity of the union
+		// the atom sits in, so the position drops rather than being replaced. This is
+		// what collapses `¬number | ¬string` to `unknown`: the two conjuncts agree on
+		// their positive parts, their negated parts meet to `never`, and a conjunct
+		// negating `never` admits every value.
+		return withoutIndex(a, diff), true
+	}
+	return replaceAtom(a, diff, fused), true
+}
+
+// replaceAtom returns a copy of atoms with position i replaced and the result
+// reordered, since the combined atom may sort elsewhere than the one it replaced.
+func replaceAtom(atoms []soltype.Type, i int, atom soltype.Type) []soltype.Type {
+	out := append([]soltype.Type(nil), atoms...)
+	out[i] = atom
+	sortAtoms(out)
+	return out
+}
+
+func atomsSubset(a, b []soltype.Type) bool {
+	for _, x := range a {
+		found := false
+		for _, y := range b {
+			if equalType(x, y) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
+}
 
 // --- Canonical ordering ---
 
