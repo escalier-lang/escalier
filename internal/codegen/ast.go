@@ -984,22 +984,28 @@ func (d *NamespaceDecl) SetSpan(span *Span) { d.span = span }
 func (d *NamespaceDecl) Source() ast.Node   { return d.source }
 
 type ClassDecl struct {
-	Name    *Identifier
-	Body    []ClassElem // fields, methods, etc.
-	export  bool
-	declare bool
-	span    *Span
-	source  ast.Node
+	Name *Identifier
+	// SuperClass is the value the `extends` clause names, or nil for a class that extends
+	// nothing. It is an expression rather than a name because JS extends an arbitrary
+	// constructor expression. The builder fills it with an identifier naming the
+	// superclass's emitted binding.
+	SuperClass Expr
+	Body       []ClassElem // fields, methods, etc.
+	export     bool
+	declare    bool
+	span       *Span
+	source     ast.Node
 }
 
-func NewClassDecl(name *Identifier, body []ClassElem, export, declare bool, source ast.Node) *ClassDecl {
+func NewClassDecl(name *Identifier, superClass Expr, body []ClassElem, export, declare bool, source ast.Node) *ClassDecl {
 	return &ClassDecl{
-		Name:    name,
-		Body:    body,
-		export:  export,
-		declare: declare,
-		source:  source,
-		span:    nil,
+		Name:       name,
+		SuperClass: superClass,
+		Body:       body,
+		export:     export,
+		declare:    declare,
+		source:     source,
+		span:       nil,
 	}
 }
 

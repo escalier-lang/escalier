@@ -1,0 +1,20 @@
+class Base {
+    tag: string,
+    constructor(mut self) {
+        self.tag = "root"
+    },
+    who(self) -> string {
+        return "root base"
+    },
+}
+
+val nsDerived = geo.NsDerived()
+val utilDerived = util.UtilDerived()
+val qualifiedDerived = util.QualifiedDerived()
+
+val nsWho = nsDerived.who()
+val utilWho = utilDerived.who()
+val qualifiedWho = qualifiedDerived.who()
+
+val nsTag = nsDerived.tag
+val utilTag = utilDerived.tag

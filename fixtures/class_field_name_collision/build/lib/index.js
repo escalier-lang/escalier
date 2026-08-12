@@ -4,12 +4,14 @@ export class A {
     this.x = x;
   }
 }
-export class B {
+export class B extends A {
   constructor() {
+    super();
   }
 }
-export class C {
+export class C extends B {
   constructor() {
+    super();
   }
 }
 export const c = new C();

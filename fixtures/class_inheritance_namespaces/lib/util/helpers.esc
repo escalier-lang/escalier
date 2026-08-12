@@ -1,0 +1,6 @@
+class UtilDerived extends Base {
+    constructor(mut self) {},
+}
+class QualifiedDerived extends geo.Base {
+    constructor(mut self) {},
+}

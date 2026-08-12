@@ -995,6 +995,10 @@ func (p *Printer) PrintDecl(decl Decl) {
 	case *ClassDecl:
 		p.print("class ")
 		p.print(d.Name.Name)
+		if d.SuperClass != nil {
+			p.print(" extends ")
+			p.PrintExpr(d.SuperClass)
+		}
 		p.print(" {")
 		p.indent++
 

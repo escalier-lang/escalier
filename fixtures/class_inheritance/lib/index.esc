@@ -1,0 +1,28 @@
+class Animal {
+    name: string,
+    constructor(mut self, name: string) {
+        self.name = name
+    },
+    speak(self) -> string {
+        return "..."
+    },
+    describe(self) -> string {
+        return self.speak()
+    },
+}
+
+class Dog extends Animal {
+    breed: string,
+    constructor(mut self, name: string, breed: string) {
+        self.name = name
+        self.breed = breed
+    },
+    speak(self) -> string {
+        return "woof"
+    },
+}
+
+val d = Dog("rex", "lab")
+val heard = d.speak()
+val described = d.describe()
+val named = d.name
