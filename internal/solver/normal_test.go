@@ -66,9 +66,44 @@ func TestDNFRoundTrip(t *testing.T) {
 			want: "{x: number} & {y: number}",
 		},
 		{
-			name: "two inexact records keep both atoms",
+			name: "two inexact records merge field-wise",
 			in:   "{x: number, ...} & {y: number, ...}",
-			want: "{x: number, ...} & {y: number, ...}",
+			want: "{x: number, y: number, ...}",
+		},
+		{
+			name: "two exact records over one field narrow that field",
+			in:   "{x: number | string} & {x: string | boolean}",
+			want: "{x: string}",
+		},
+		{
+			name: "a field either side requires is required on the meet",
+			in:   "{x: number} & {x?: number}",
+			want: "{x: number}",
+		},
+		{
+			name: "two tuples of one length meet element-wise",
+			in:   "[number, number | string] & [number, string]",
+			want: "[number, string]",
+		},
+		{
+			name: "two inexact tuples of different lengths meet at the longer length",
+			in:   "[number, ...] & [number, boolean, ...]",
+			want: "[number, boolean, ...]",
+		},
+		{
+			name: "the shared prefix of such a meet narrows",
+			in:   "[number | string, ...] & [string, boolean, ...]",
+			want: "[string, boolean, ...]",
+		},
+		{
+			name: "two exact tuples of different lengths keep both atoms",
+			in:   "[number] & [number, boolean]",
+			want: "[number] & [number, boolean]",
+		},
+		{
+			name: "two tuples whose open markers disagree keep both atoms",
+			in:   "[number, ...] & [number, boolean]",
+			want: "[number, boolean] & [number, ...]",
 		},
 		{
 			name: "two disjoint primitives meet to the bottom of the lattice",
@@ -148,6 +183,41 @@ func TestCNFRoundTrip(t *testing.T) {
 			in:   "true | boolean",
 			want: "boolean",
 		},
+		{
+			name: "two records differing in one field widen that field",
+			in:   "{x: number, y: boolean} | {x: string, y: boolean}",
+			want: "{x: number | string, y: boolean}",
+		},
+		{
+			name: "two records differing in two fields keep both atoms",
+			in:   "{x: number, y: boolean} | {x: string, y: null}",
+			want: "{x: number, y: boolean} | {x: string, y: null}",
+		},
+		{
+			name: "a field optional on either side is optional on the join",
+			in:   "{x: number} | {x?: number}",
+			want: "{x?: number}",
+		},
+		{
+			name: "a marker difference spends the same budget a type difference does",
+			in:   "{x: number, y: boolean} | {x?: number, y: null}",
+			want: "{x: number, y: boolean} | {x?: number, y: null}",
+		},
+		{
+			name: "two tuples differing in one position widen that position",
+			in:   "[number, boolean] | [string, boolean]",
+			want: "[number | string, boolean]",
+		},
+		{
+			name: "two tuples of different lengths keep both atoms",
+			in:   "[number] | [number, boolean]",
+			want: "[number] | [number, boolean]",
+		},
+		{
+			name: "the same holds when both are inexact, since the join needs one length",
+			in:   "[number, ...] | [number, boolean, ...]",
+			want: "[number, ...] | [number, boolean, ...]",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -220,6 +290,18 @@ func TestNegationRoundTrip(t *testing.T) {
 			},
 			want: "¬boolean",
 		},
+		{
+			// The join rules reach records too, so the field the two disagree on is
+			// widened rather than the atoms being kept apart.
+			name: "two complemented records fuse inside the negated part",
+			in: func(t *testing.T) soltype.Type {
+				return newIntersection(nil, []soltype.Type{
+					notSrc(t, "{x: number, y: boolean}"),
+					notSrc(t, "{x: string, y: boolean}"),
+				})
+			},
+			want: "¬{x: number | string, y: boolean}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -265,6 +347,18 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "5")}, false)
 			},
 			want: "¬5",
+		},
+		{
+			// The meet rules reach records too, so the two open records merge
+			// field-wise inside the negated part.
+			name: "two complemented records fuse inside the negated part",
+			in: func(t *testing.T) soltype.Type {
+				return newUnion(nil, []soltype.Type{
+					notSrc(t, "{x: number, ...}"),
+					notSrc(t, "{y: number, ...}"),
+				}, false)
+			},
+			want: "¬{x: number, y: number, ...}",
 		},
 		{
 			// No value is both a number and a string, so every value fails to be at
@@ -594,6 +688,11 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 			name:    "an intersection of records",
 			members: []string{"{y: number}", "{x: number}", "{z: number}"},
 			want:    "{x: number} & {y: number} & {z: number}",
+		},
+		{
+			name:    "an intersection of inexact records, which fuses into one",
+			members: []string{"{y: number, ...}", "{x: number, ...}", "{z: number, ...}"},
+			want:    "{x: number, y: number, z: number, ...}",
 		},
 	}
 	for _, tt := range tests {
