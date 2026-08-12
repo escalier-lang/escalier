@@ -1676,8 +1676,11 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 			expectedDeps: map[BindingKey][]BindingKey{
 				TypeBindingKey("Animal"):  {},
 				ValueBindingKey("Animal"): {},
-				TypeBindingKey("Dog"):     {TypeBindingKey("Animal")},
-				ValueBindingKey("Dog"):    {TypeBindingKey("Animal")},
+				// An `extends` clause depends on both of the superclass's keys. The type key
+				// orders its identity, and the value key orders the body a subclass reads the
+				// members it inherits from.
+				TypeBindingKey("Dog"):  {TypeBindingKey("Animal"), ValueBindingKey("Animal")},
+				ValueBindingKey("Dog"): {TypeBindingKey("Animal"), ValueBindingKey("Animal")},
 			},
 		},
 		"Class_ExtendsAcrossNamespaces": {
@@ -1698,8 +1701,14 @@ func TestBuildDepGraphV2_ClassExtends(t *testing.T) {
 				},
 			},
 			expectedDeps: map[BindingKey][]BindingKey{
-				TypeBindingKey("AppEntity"):      {TypeBindingKey("models.Entity")},
-				ValueBindingKey("AppEntity"):     {TypeBindingKey("models.Entity")},
+				TypeBindingKey("AppEntity"): {
+					TypeBindingKey("models.Entity"),
+					ValueBindingKey("models.Entity"),
+				},
+				ValueBindingKey("AppEntity"): {
+					TypeBindingKey("models.Entity"),
+					ValueBindingKey("models.Entity"),
+				},
 				TypeBindingKey("models.Entity"):  {},
 				ValueBindingKey("models.Entity"): {},
 			},

@@ -951,8 +951,9 @@ func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
 // generic in `D` and `Dog("bone")` recovers `Dog<"bone">` rather than a non-generic
 // `Dog<never>`. The inherited field read projects through the edge to the same argument.
 //
-// The constructor writes Dog's own field, not the inherited one: a subclass constructor
-// that initializes an inherited field needs `super(...)` forwarding, which is deferred.
+// The constructor writes Dog's own field. It could assign the inherited one too, since
+// `self` carries the whole chain, but definite assignment covers only a class's own fields,
+// so leaving it out is not an error.
 func TestInferClassGenericSubGenericSuper(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		class Animal<A> {

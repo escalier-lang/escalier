@@ -77,7 +77,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.recordType(decl.Name, self)
 
 	// Resolve the declared extends edge and implements interfaces so C1 can walk and
-	// check them; B1 records them only.
+	// check them. A subclass's value key depends on its superclass's, so by the time this
+	// runs every ancestor has its own edge and its own body recorded, and the whole chain is
+	// walkable from here.
 	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
 	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
 	def.EdgesPending = false
@@ -95,7 +97,11 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
 	c.checkMethodRecursionAnnotations(decl)
-	c.inferMemberBodies(declScope, lvl, body, pending)
+	// A member body walks against the `self` view rather than the class's own body, so an
+	// inherited member is reachable through `self`. Phase 1 has appended every own member by
+	// now, so the view is complete, and it shares each own element pointer so phase 2's
+	// signature installs and field refinements still land on the registered body.
+	c.inferMemberBodies(declScope, lvl, c.ctx.selfView(self, body), pending)
 	ctorType := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh

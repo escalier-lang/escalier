@@ -227,7 +227,7 @@ func (c *checker) inheritedHalfWalk(
 			continue
 		}
 		if member, found := declaredHalf(superDef.Body, name, half); found {
-			return c.projectClassMember(superDef, superInstance, member), superInstance, true
+			return projectClassMember(superDef, superInstance, member), superInstance, true
 		}
 		if member, owner, found := c.inheritedHalfWalk(superDef, superInstance, name, half, visited); found {
 			return member, owner, true
