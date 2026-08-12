@@ -58,12 +58,17 @@ import (
 //     makes every subtype pass against a supertype union of two records. A list
 //     keeps `{x: number} | {y: number}` precise in supertype position.
 //
-// # What a later PR adds
+// # What is deliberately left to a later PR
 //
-// Normalizing an atom's CHILDREN — pushing a negation buried in a function's
-// return or a record's field down as well — lands next. The nominal meet is still
-// the glbClass stub (TODO(#1061)) and the exactness-driven merges are still
-// deferred (TODO(#1064)).
+//   - The nominal meet of two class tags. glbClass only fuses identical tags and
+//     keeps unrelated ones separate; PR4 (#1061) wires it to the M5
+//     declared-subtype graph so unrelated classes collapse the conjunct to `never`.
+//   - Exactness-driven merges. An atom's `Inexact` flag rides through every merge
+//     here, and two atoms whose flags disagree are kept separate rather than
+//     fused under a guess. PR7 (#1064) decides the exact cases, such as two exact
+//     objects with differing required fields meeting to `never`.
+//   - Ref atoms. A RefType is an opaque atom that normalization never takes apart.
+//     PR8 (#1065) owns the lifetime split and the guard rejecting `¬(mut 'a T)`.
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -129,14 +134,13 @@ func (l LhsNf) Base() (*soltype.ClassType, bool) {
 // mkDNF pushes t into disjunctive normal form at polarity pol. It normalizes the
 // BOOLEAN structure only: a union, an intersection, a negation, and a type
 // variable are taken apart, and every other node becomes one structural atom with
-// its children untouched.
+// its children untouched. mkDeepDNF normalizes those children too.
 //
 // pol is the position t occupies. A negation flips it before normalizing its
 // operand, so the polarity stays accurate all the way down, but no arm below reads
 // it for anything else. The shallow form is therefore the same at either polarity.
-// pol is threaded so that a later pass can normalize an atom's children at the
-// polarity they really occupy, which is where the parameters of a function and the
-// operand of a negation part company.
+// pol earns its place in mkDeepDNF, which threads it into the children so a
+// function's parameters normalize at the polarity they really occupy.
 func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 	switch t := t.(type) {
 	case *soltype.NeverType:
@@ -208,6 +212,62 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 	default:
 		return cnfAtom(t)
 	}
+}
+
+// mkDeepDNF pushes t into disjunctive normal form and normalizes every position
+// INSIDE its structural atoms as well, so a negation buried in a function's return
+// or an object's field is pushed down rather than left as a surface node. This is
+// the form constraint solving consumes. PR5 (#1062) calls it on both operands.
+func (c *Context) mkDeepDNF(t soltype.Type, pol soltype.Polarity) DNF {
+	return c.mkDNF(c.normalizeDeep(t, pol), pol)
+}
+
+// mkDeepCNF is the conjunctive twin of mkDeepDNF.
+func (c *Context) mkDeepCNF(t soltype.Type, pol soltype.Polarity) CNF {
+	return c.mkCNF(c.normalizeDeep(t, pol), pol)
+}
+
+// normalizeDeep rewrites every node of t into normal form and back, bottom-up, so
+// the result is a surface type whose every position is normalized. It rides the
+// soltype rewriting visitor, which visits a function's parameters and a
+// negation's operand at the flipped polarity, so each position normalizes at the
+// polarity it occupies.
+func (c *Context) normalizeDeep(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return t.Accept(&deepNormalizer{ctx: c}, pol)
+}
+
+// deepNormalizer is the rewriting visitor behind normalizeDeep. ExitType fires
+// bottom-up, after a node's children are already normalized, so normalizing the
+// node itself only has to settle the Boolean structure at that one level.
+type deepNormalizer struct{ ctx *Context }
+
+// EnterType takes over the walk for a borrow, and leaves every other node to the
+// ordinary bottom-up rebuild.
+//
+// A borrow needs its own arm because RefType.Accept PEELS the wrapper when the
+// rewritten inner is not a type a borrow can point at, which is right for
+// coalescing but wrong here: normalizing the inner of `mut (number | 5)` gives
+// `number`, and peeling would hand back a bare `number` that has lost the `mut`.
+// So the inner is normalized here and the result is kept only when it is still
+// borrowable. Otherwise the borrow stands as written, which keeps the wrapper the
+// header promises normalization never takes apart.
+func (n *deepNormalizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	ref, isRef := t.(*soltype.RefType)
+	if !isRef {
+		return soltype.EnterResult{Type: nil, SkipChildren: false}
+	}
+	inner, borrowable := ref.Inner.Accept(n, pol).(soltype.RefInner)
+	if !borrowable {
+		return soltype.EnterResult{Type: ref, SkipChildren: true}
+	}
+	return soltype.EnterResult{
+		Type:         &soltype.RefType{Mut: ref.Mut, Lt: ref.Lt, Inner: inner},
+		SkipChildren: true,
+	}
+}
+
+func (n *deepNormalizer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	return n.ctx.mkDNF(t, pol).toType()
 }
 
 // dnfTop is `unknown` as a DNF: one conjunct with nothing in it, since an empty
@@ -1031,7 +1091,7 @@ func equalParamTypes(a, b *soltype.FuncType) bool {
 // The recursion terminates because the operands are proper sub-parts of the two
 // atoms being merged, and the kinds that could recur without shrinking — a μ-knot
 // and a borrow — are opaque atoms that no merge takes apart. The polarity passed
-// is Positive because normalization reads the same at either one.
+// is Positive because a shallow normalization reads the same at either one.
 func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
 	return c.mkDNF(newIntersection(nil, []soltype.Type{a, b}), soltype.Positive).toType()
 }
