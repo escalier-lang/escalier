@@ -113,9 +113,30 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self) { self.base = 1 },
 				}
 			`,
-			// Reaching Base from Leaf needs Mid's own `extends` edge to be resolved before
-			// Leaf's body runs, which is why the edge is bound in the type-key pre-pass
-			// rather than at the class's value key.
+			// Reaching Base from Leaf needs Mid's own edge and body recorded before Leaf's
+			// body runs, which is what the dependency from a subclass's value key to its
+			// superclass's orders.
+			want: nil,
+		},
+		{
+			name: "InheritedFieldSurvivesValueKeyPressure",
+			src: `
+				class Animal {
+					name: string,
+					constructor(mut self, name: string) { self.name = name },
+					m(self) -> number { return n },
+				}
+				class Dog extends Animal {
+					constructor(mut self, name: string) { self.name = name },
+				}
+				fn g(x: Dog) -> number { return 1 }
+				val d = Dog("rex")
+				val n = g(d)
+			`,
+			// The surrounding declarations pull Dog's value key ahead of Animal's unless the
+			// `extends` clause depends on the superclass's value key, which is where the
+			// inherited members land. Without that edge `self.name` reports a missing
+			// property here, while the same two classes on their own check clean.
 			want: nil,
 		},
 		{

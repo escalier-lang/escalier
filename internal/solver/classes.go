@@ -347,7 +347,7 @@ func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 		return nil, false
 	}
 	own := c.projectOwnElems(def, ct)
-	inherited := c.inheritedElems(ct)
+	inherited := c.inheritedElems(def, ct)
 	if len(inherited) == 0 {
 		return &soltype.ObjectType{Elems: own, Inexact: !ct.Final}, true
 	}
@@ -358,8 +358,8 @@ func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 }
 
 // projectOwnElems returns the members a class declares itself, projected to ct's arguments.
-// The returned slice is the registry's own when nothing needed substituting, so a caller
-// that appends to it has to copy first.
+// A non-generic class needs no substitution, so the returned slice is then the registry's
+// own. A caller that appends to the result has to copy it first.
 func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltype.ObjTypeElem {
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return def.Body.Elems
@@ -371,7 +371,7 @@ func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltyp
 		// projects to an ObjectType; a different kind means the substitution corrupted
 		// the body. Fail loudly rather than return the unsubstituted body, matching the
 		// AsProperty discipline.
-		panic(fmt.Sprintf("projectClassBody: %s projected to non-ObjectType %T", ct.Name, projected))
+		panic(fmt.Sprintf("projectOwnElems: %s projected to non-ObjectType %T", ct.Name, projected))
 	}
 	return obj.Elems
 }
@@ -382,13 +382,11 @@ func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltyp
 // resolution projectedClassMember performs for a single access.
 //
 // Shadowing is by name rather than by member kind, so a subclass declaring only the getter
-// of an inherited getter/setter pair shadows the setter too. That keeps the whole-body view
-// agreeing with a single access, which stops at the first class carrying the name, and it is
-// what checkInheritedMembers reports when the dropped half was one the superclass view still
-// reaches.
-func (c *Context) inheritedElems(ct *soltype.ClassType) []soltype.ObjTypeElem {
-	def, ok := c.classDef(ct.Name)
-	if !ok || def.Body == nil || len(def.Supers) == 0 {
+// of an inherited getter/setter pair shadows the setter too. That keeps this view agreeing
+// with a single access, which stops at the first class carrying the name. Dropping a half
+// the superclass view still reaches is what checkInheritedMembers reports.
+func (c *Context) inheritedElems(def *ClassDef, ct *soltype.ClassType) []soltype.ObjTypeElem {
+	if len(def.Supers) == 0 {
 		return nil
 	}
 	taken := set.NewSet[string]()
@@ -408,7 +406,11 @@ func (c *Context) inheritedElems(ct *soltype.ClassType) []soltype.ObjTypeElem {
 // refine the very field variable the class body reads. An inherited member is projected
 // instead, since the chain reaches it at whatever arguments the `extends` clause writes.
 func (c *Context) selfView(self *soltype.ClassType, body *soltype.ObjectType) *soltype.ObjectType {
-	inherited := c.inheritedElems(self)
+	def, ok := c.classDef(self.Name)
+	if !ok {
+		return body
+	}
+	inherited := c.inheritedElems(def, self)
 	if len(inherited) == 0 {
 		return body
 	}

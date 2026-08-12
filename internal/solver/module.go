@@ -284,12 +284,6 @@ func (c *checker) inferComponent(
 	for i, decl := range classDecls {
 		c.preBindClassTypeParams(scope, inner, decl, classNamespaces[i])
 	}
-	// Resolve each `extends` edge once every class in the component has its parameters bound,
-	// so an edge written at a sibling's parameter resolves and the whole superclass chain is
-	// walkable before any body runs.
-	for i, decl := range classDecls {
-		c.preBindClassSupers(inner, decl, classNamespaces[i])
-	}
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
 	for _, sh := range enumShells {

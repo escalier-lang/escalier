@@ -138,8 +138,13 @@ func TestClassDeclDependencies(t *testing.T) {
 			// Find dependencies
 			deps := FindDeclDependencies(lastKey, depGraph)
 
-			// Convert dependency BindingKeys to names
+			// Convert dependency BindingKeys to names, one entry per declaration rather
+			// than per key. A class contributes both a type and a value key, and an
+			// `extends` clause depends on both, so the same declaration is reached twice.
+			// This test is about which declarations a class depends on;
+			// TestBuildDepGraphV2_ClassExtends covers the keys themselves.
 			var depNames []string
+			seen := map[ast.Decl]bool{}
 			for iter := deps.Iter(); iter.Next(); {
 				depKey := iter.Key()
 				depDecls := depGraph.GetDecls(depKey)
@@ -147,6 +152,10 @@ func TestClassDeclDependencies(t *testing.T) {
 					continue
 				}
 				depDecl := depDecls[0]
+				if seen[depDecl] {
+					continue
+				}
+				seen[depDecl] = true
 				switch d := depDecl.(type) {
 				case *ast.VarDecl:
 					if identPat, ok := d.Pattern.(*ast.IdentPat); ok {

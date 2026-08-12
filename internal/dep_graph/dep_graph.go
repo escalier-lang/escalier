@@ -382,6 +382,32 @@ func (v *DependencyVisitor) addTypeDependency(typeName string) bool {
 	return false
 }
 
+// addSuperclassValueDependency records a dependency on the value key of the class an
+// `extends` clause names, resolving the name the same way addTypeDependency resolves the
+// type key: the current namespace first, then the global one.
+//
+// The type key alone orders the superclass's identity, which is all the edge itself needs.
+// A subclass body needs more than the identity. It reads the members it inherits, and those
+// are recorded on the superclass's ClassDef only when the superclass's body is inferred at
+// its value key. Without this edge a subclass body can be inferred first and see a
+// superclass that declares nothing.
+func (v *DependencyVisitor) addSuperclassValueDependency(typeName string) {
+	if v.isLocalTypeBinding(typeName) {
+		return
+	}
+	if v.CurrentNamespace != "" {
+		key := ValueBindingKey(v.CurrentNamespace + "." + typeName)
+		if v.Graph.HasBinding(key) {
+			v.Dependencies.Insert(key)
+			return
+		}
+	}
+	key := ValueBindingKey(typeName)
+	if v.Graph.HasBinding(key) {
+		v.Dependencies.Insert(key)
+	}
+}
+
 // EnterStmt handles statements that introduce new scopes
 func (v *DependencyVisitor) EnterStmt(stmt ast.Stmt) bool {
 	switch s := stmt.(type) {
@@ -897,9 +923,13 @@ func FindDeclDependencies(key BindingKey, graph *DepGraph) btree.Set[BindingKey]
 		case *ast.ClassDecl:
 			visitor.processTypeParams(d.TypeParams)
 
-			// Visit extends clause
+			// Visit extends clause. The superclass's VALUE key is recorded alongside
+			// the type key its reference yields, because a subclass body reads the
+			// members it inherits and those land on the superclass only when the
+			// superclass's own body is inferred, which happens at its value key.
 			if d.Extends != nil {
 				d.Extends.Accept(visitor)
+				visitor.addSuperclassValueDependency(ast.QualIdentToString(d.Extends.Name))
 			}
 
 			// Visit implements clauses so the dep graph knows the class
