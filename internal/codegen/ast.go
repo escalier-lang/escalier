@@ -987,7 +987,8 @@ type ClassDecl struct {
 	Name *Identifier
 	// SuperClass is the value the `extends` clause names, or nil for a class that extends
 	// nothing. It is an expression rather than a name because JS extends an arbitrary
-	// constructor expression, and a class binding is reached by its emitted name.
+	// constructor expression. The builder fills it with an identifier naming the
+	// superclass's emitted binding.
 	SuperClass Expr
 	Body       []ClassElem // fields, methods, etc.
 	export     bool

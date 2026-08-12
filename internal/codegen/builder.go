@@ -808,7 +808,9 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		// constructor JS from that element directly.
 		var superClass Expr
 		if d.Extends != nil {
-			superClass = NewIdentExpr(b.superClassName(d.Extends, nsName), "", d.Extends)
+			if name, ok := b.superClassName(d.Extends, nsName); ok {
+				superClass = NewIdentExpr(name, "", d.Extends)
+			}
 		}
 		classElems, classStmts := b.buildClassElems(d.Body, superClass != nil)
 		allStmts = slices.Concat(allStmts, classStmts)
@@ -2158,24 +2160,32 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 	return outParams, outParamStmts
 }
 
-// superClassName returns the emitted JS name of the class an `extends` clause refers to.
+// superClassName returns the emitted JS name of the class an `extends` clause refers to, and
+// whether the clause should be emitted at all.
+//
 // A declaration's own name is emitted with each dot of its namespace-qualified name mangled
 // to a double underscore, so `class Color` inside namespace `MyEnum` becomes `MyEnum__Color`,
-// and a reference has to be mangled the same way to reach it.
+// and a reference has to be mangled the same way to reach it. The written name is resolved
+// the enclosing namespace first and then the root, which is what makes a bare `extends
+// Animal` inside a namespace reach the namespace's own Animal where there is one.
 //
-// The written name is resolved the way the dep graph resolved it when it ordered the two
-// declarations, the enclosing namespace first and then the root. That is what makes a bare
-// `extends Animal` inside a namespace reach the namespace's own Animal when there is one and
-// the root's otherwise, matching the class the checker checked against.
-func (b *Builder) superClassName(ref *ast.TypeRefTypeAnn, nsName string) string {
+// Resolution goes through the VALUE binding, because `class B extends A` evaluates A as an
+// expression and reaches the constructor the class's value binding holds. A name the module
+// declares as a type and not as a value therefore names nothing at runtime, so ok is false
+// and the clause is dropped rather than emitted as a reference that fails at module load. A
+// name the module declares neither way is left alone, since it is reaching outside the
+// module and this graph says nothing about it.
+func (b *Builder) superClassName(ref *ast.TypeRefTypeAnn, nsName string) (string, bool) {
 	name := ast.QualIdentToString(ref.Name)
-	if nsName != "" && b.depGraph != nil {
-		qualified := nsName + "." + name
-		if b.depGraph.HasBinding(dep_graph.TypeBindingKey(qualified)) {
-			name = qualified
+	if b.depGraph != nil {
+		if nsName != "" && b.depGraph.HasBinding(dep_graph.ValueBindingKey(nsName+"."+name)) {
+			name = nsName + "." + name
+		} else if !b.depGraph.HasBinding(dep_graph.ValueBindingKey(name)) &&
+			b.depGraph.HasBinding(dep_graph.TypeBindingKey(name)) {
+			return "", false
 		}
 	}
-	return strings.ReplaceAll(name, ".", "__")
+	return strings.ReplaceAll(name, ".", "__"), true
 }
 
 // buildClassElems converts a class body to its JS elements. derived says the class carries an
@@ -2324,9 +2334,13 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			}
 			// JS rejects any use of `this` in a derived constructor before `super()` runs, and
 			// every instance field is assigned through `this`, so the call has to lead the
-			// body. It passes no arguments: a subclass constructor assigns each field it
-			// inherits itself, and escalier-lang/escalier#678 is what will let it forward
-			// arguments to the superclass instead.
+			// body.
+			//
+			// It passes no arguments, because there is no syntax yet for a subclass to say
+			// what its superclass should receive. That leaves the superclass constructor
+			// running with every parameter `undefined`, so one that reads a parameter rather
+			// than just storing it throws. escalier-lang/escalier#678 is what will let a
+			// subclass forward arguments and make this call carry them.
 			var prelude []Stmt
 			if derived {
 				prelude = []Stmt{&ExprStmt{
