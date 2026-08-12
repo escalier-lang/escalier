@@ -30,6 +30,16 @@ import (
 // `Rnf ∪ (⋃Vars) ∪ ¬Lnf ∪ (⋃¬NVars)`. Negating one produces the other by
 // permuting those four fields, which is De Morgan's law with no traversal.
 //
+// # Merge or keep separate
+//
+// LhsNf is an intersection of structural atoms and RhsNf is a union of them. When
+// two atoms of the same kind land in one of those lists, the list tries to fuse
+// them into a single atom and KEEPS THEM SEPARATE when no fusion is exact. Keeping
+// members separate loses nothing: a two-member list is already the precise meet or
+// join. Fusing where the fusion is inexact is what would lose precision, so the
+// merge is an optimization that bails rather than a step that must succeed. This
+// is caveat 4 in planning/ml_struct/02-caveats-and-mitigations.md.
+//
 // # A list of atoms per side, not one slot per kind
 //
 // MLscript gives LhsNf and RhsNf one slot per structural kind, which loses
@@ -42,12 +52,14 @@ import (
 //
 // # What a later PR adds
 //
-// Atoms accumulate in their lists. Two equal atoms dedup, and two atoms of one
-// kind that are not equal are both kept. Nothing is merged structurally yet, so
-// `number ∩ string` stays two atoms rather than collapsing to `never`, and two
-// inexact records stay two atoms rather than merging field-wise. The merge table
-// and the rule for fusing whole conjuncts land next, and finding 2 — keeping
-// intersected arrows apart rather than fusing them unsoundly — is settled there.
+// The merge table covers the primitives, the literals, and the two absence
+// markers. Records, tuples, and arrows are still kept apart atom by atom, and two
+// whole conjuncts are never fused into one.
+//
+// The nominal meet is a stub: glbClass only fuses two tags naming one class, and
+// keeps unrelated ones separate. PR4 (#1061) wires it to the M5 declared-subtype
+// graph so unrelated classes collapse the conjunct to `never` before any
+// structural work — the combinatorial fast path caveat 1 relies on. TODO(#1061).
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -79,7 +91,8 @@ type Disjunct struct {
 
 // LhsNf is a normalized INTERSECTION of structural atoms, the positive part of a
 // Conjunct and the negated part of a Disjunct. Atoms is canonically ordered by
-// sortAtoms and holds no two equal atoms. An empty Atoms is `unknown`.
+// sortAtoms and holds at most one atom per structural kind that fused; kinds that
+// could not fuse exactly keep one atom each. An empty Atoms is `unknown`.
 type LhsNf struct{ Atoms []soltype.Type }
 
 // RhsNf is a normalized UNION of structural atoms, the dual of LhsNf. It is the
@@ -88,9 +101,9 @@ type LhsNf struct{ Atoms []soltype.Type }
 type RhsNf struct{ Atoms []soltype.Type }
 
 // Base returns the single nominal class tag the intersection carries, and reports
-// whether it carries exactly one. This is the slot the nominal meet will write to:
-// once PR4 (#1061) supplies it, two related tags fuse into one and two unrelated
-// ones make the conjunct `never`, so a well-formed conjunct holds at most one tag
+// whether it carries exactly one. This is the slot the nominal meet writes to:
+// once PR4 (#1061) lands, glbClass fuses two related tags into one and collapses
+// two unrelated ones to `never`, so a well-formed conjunct holds at most one tag
 // and this accessor is total on it.
 func (l LhsNf) Base() (*soltype.ClassType, bool) {
 	var found *soltype.ClassType
@@ -139,20 +152,20 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		for _, m := range t.Types {
 			out = dnfOr(out, c.mkDNF(m, pol))
 		}
-		return DNF{Conjuncts: canonicalConjuncts(out.Conjuncts)}
+		return DNF{Conjuncts: c.canonicalConjuncts(out.Conjuncts)}
 	case *soltype.IntersectionType:
 		out := dnfTop()
 		for _, m := range t.Types {
 			out = dnfAnd(out, c.mkDNF(m, pol))
 		}
-		return DNF{Conjuncts: canonicalConjuncts(out.Conjuncts)}
+		return DNF{Conjuncts: c.canonicalConjuncts(out.Conjuncts)}
 	case *soltype.NegationType:
 		// ¬T at pol is the complement of T at the flipped polarity, and the complement
 		// of an intersection of joins is a union of meets. So normalize the operand to a
 		// CNF and negate each disjunct into a conjunct. Negating permutes fields without
 		// consulting the merges, so the result is canonicalized afterwards.
 		negated := c.mkCNF(t.Inner, pol.Flip()).neg()
-		return DNF{Conjuncts: canonicalConjuncts(negated.Conjuncts)}
+		return DNF{Conjuncts: c.canonicalConjuncts(negated.Conjuncts)}
 	case *soltype.TypeVarType:
 		return DNF{Conjuncts: []Conjunct{newConjunct().withVar(t)}}
 	default:
@@ -172,7 +185,7 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		for _, m := range t.Types {
 			out = cnfAnd(out, c.mkCNF(m, pol))
 		}
-		return CNF{Disjuncts: canonicalDisjuncts(out.Disjuncts)}
+		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.UnionType:
 		if t.Inexact {
 			// The open tail has no atom to stand for it; see the mkDNF arm.
@@ -182,10 +195,10 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		for _, m := range t.Types {
 			out = cnfOr(out, c.mkCNF(m, pol))
 		}
-		return CNF{Disjuncts: canonicalDisjuncts(out.Disjuncts)}
+		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
 		negated := c.mkDNF(t.Inner, pol.Flip()).neg()
-		return CNF{Disjuncts: canonicalDisjuncts(negated.Disjuncts)}
+		return CNF{Disjuncts: c.canonicalDisjuncts(negated.Disjuncts)}
 	case *soltype.TypeVarType:
 		return CNF{Disjuncts: []Disjunct{newDisjunct().withVar(t)}}
 	default:
@@ -349,8 +362,9 @@ func cnfOr(a, b CNF) CNF {
 // `¬(R₁ ∪ R₂)`, and the two variable sets union. ok is false when a variable is
 // held both positively and negatively.
 //
-// The pooled structural parts are put in order later, by normalizeConjunct, once
-// every atom in the surrounding union or intersection is in the pool.
+// Whether the pooled structural parts are inhabited is settled later, by
+// normalizeConjunct, so that every atom in the surrounding union or intersection
+// is in the pool before any pair of them fuses.
 func conjunctAnd(a, b Conjunct) (Conjunct, bool) {
 	vars := a.Vars.Union(b.Vars)
 	nvars := a.NVars.Union(b.NVars)
@@ -394,32 +408,72 @@ func disjunctOr(a, b Disjunct) (Disjunct, bool) {
 
 // --- The structural parts ---
 
-// pooled concatenates two atom lists into a fresh slice, so ordering the result
+// pooled concatenates two atom lists into a fresh slice, so fusing the result
 // leaves both inputs alone. Two normal forms often share an atom list, since a
-// conjunct that survived canonicalization unchanged keeps the slice it arrived
-// with.
+// conjunct that survived a merge unchanged keeps the slice it arrived with.
 func pooled(a, b []soltype.Type) []soltype.Type {
 	return slices.Concat(a, b)
 }
 
-// dedupAtoms orders an atom list canonically and drops the duplicates that pooling
-// two lists can produce, so `number ∩ number` holds one atom rather than two.
+// fuseAtoms fuses pairs of atoms until no pair fuses, which is the
+// keep-un-mergeable-members-separate discipline: an atom that fuses with nothing
+// simply stays in the list. role says whether the list stands for the meet of its
+// atoms or their join, which picks meetAtoms or joinAtoms as the fusion. ok is
+// false when a meet turns out to be uninhabited.
 //
-// Dropping a duplicate is the only combining an atom list does at this stage. Two
-// atoms of one kind that are not equal are both kept, which costs nothing: a
-// two-atom list is already the precise meet or join of its atoms.
-func dedupAtoms(atoms []soltype.Type) []soltype.Type {
+// The list is sorted before the scan and again after each fusion, so the pair
+// chosen is decided by canonical order rather than by the order the atoms arrived
+// in.
+//
+// Each fusion shortens the list, so the loop runs at most len(atoms) times.
+func (c *Context) fuseAtoms(atoms []soltype.Type, role atomRole) ([]soltype.Type, bool) {
 	sortAtoms(atoms)
-	if len(atoms) < 2 {
-		return atoms
+	for {
+		fused, i, j := c.firstFusablePair(atoms, role)
+		if fused == nil {
+			return atoms, true
+		}
+		if _, isNever := fused.(*soltype.NeverType); isNever {
+			// Only a meet reaches this. `never` is the identity of the join a
+			// joinOfAtoms list stands for, and joinAtoms never produces one anyway.
+			return nil, false
+		}
+		atoms = replacePair(atoms, i, j, fused)
+		sortAtoms(atoms)
 	}
-	out := atoms[:1]
-	for _, atom := range atoms[1:] {
-		if !equalType(out[len(out)-1], atom) {
-			out = append(out, atom)
+}
+
+// firstFusablePair returns the fusion of the first pair of atoms that fuses,
+// together with the two positions it replaces. The returned type is nil when no
+// pair fuses.
+func (c *Context) firstFusablePair(atoms []soltype.Type, role atomRole) (soltype.Type, int, int) {
+	for i := range atoms {
+		for j := i + 1; j < len(atoms); j++ {
+			var fused soltype.Type
+			var ok bool
+			if role == meetOfAtoms {
+				fused, ok = c.meetAtoms(atoms[i], atoms[j])
+			} else {
+				fused, ok = c.joinAtoms(atoms[i], atoms[j])
+			}
+			if ok {
+				return fused, i, j
+			}
 		}
 	}
-	return out
+	return nil, 0, 0
+}
+
+// replacePair drops positions i and j and appends the fused atom. i must be less
+// than j, and the higher of the two is deleted first so the lower stays valid.
+//
+// It works in place rather than copying. fuseAtoms is its only caller and always
+// owns the slice it passes, since every entry point clones before handing one
+// over, and fuseAtoms already sorts that slice in place.
+func replacePair(atoms []soltype.Type, i, j int, fused soltype.Type) []soltype.Type {
+	atoms = slices.Delete(atoms, j, j+1)
+	atoms = slices.Delete(atoms, i, i+1)
+	return append(atoms, fused)
 }
 
 // sortAtoms orders an atom list in place, canonically.
@@ -468,52 +522,230 @@ func equalAtomLists(a, b []soltype.Type) bool {
 	return true
 }
 
-// --- Canonicalizing the conjunct and disjunct lists ---
+// --- Atom merges ---
 
-// canonicalConjuncts orders and dedups the conjuncts of a DNF. The result depends
-// on the SET of conjuncts and not on the order they arrived in, so two normal
-// forms of one type agree member for member. That is what lets a caller compare
-// normal forms directly.
-func canonicalConjuncts(conjuncts []Conjunct) []Conjunct {
-	normalized := make([]Conjunct, 0, len(conjuncts))
-	for _, conj := range conjuncts {
-		normalized = append(normalized, normalizeConjunct(conj))
+// meetAtoms fuses two atoms of an intersection into one. ok is false when no exact
+// fusion exists, which tells the caller to keep both atoms. A returned `never`
+// means the two atoms are disjoint, so the enclosing conjunct is uninhabited.
+//
+// The kinds not named below never fuse. That costs nothing: a two-atom list is
+// already the precise meet, and only the atom count grows.
+func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	if equalType(a, b) {
+		return a, true
 	}
-	sortConjuncts(normalized)
-	return dedupSorted(normalized, equalConjunct)
+	if fused, ok := meetValueAtoms(a, b); ok {
+		return fused, true
+	}
+	switch a := a.(type) {
+	case *soltype.ClassType:
+		if b, ok := b.(*soltype.ClassType); ok {
+			return c.glbClass(a, b)
+		}
+	}
+	return nil, false
 }
 
-// normalizeConjunct puts a conjunct's two pooled structural parts in order. Each
-// list is cloned first, since dedupAtoms sorts in place and a conjunct that came
-// through canonicalization unchanged still shares its slice with the normal form
-// it arrived from.
-func normalizeConjunct(a Conjunct) Conjunct {
-	return Conjunct{
-		Lnf:   LhsNf{Atoms: dedupAtoms(slices.Clone(a.Lnf.Atoms))},
-		Vars:  a.Vars,
-		Rnf:   RhsNf{Atoms: dedupAtoms(slices.Clone(a.Rnf.Atoms))},
-		NVars: a.NVars,
+// joinAtoms fuses two atoms of a union into one, the dual of meetAtoms. ok is
+// false when no exact fusion exists, which keeps both atoms. This is where
+// `{x: number} | {y: number}` stays two members: two records with different field
+// names have no single record that stands for their union, so the merge bails and
+// the union keeps both.
+func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	if equalType(a, b) {
+		return a, true
 	}
+	if fused, ok := joinValueAtoms(a, b); ok {
+		return fused, true
+	}
+	// Two function atoms never fuse under a union. Neither `(A -> C) | (B -> C)` nor
+	// `(A -> C) | (A -> D)` has a single arrow that denotes it: a value of
+	// `A -> (C | D)` may return a C on one input and a D on another, which no member
+	// of the union permits.
+	return nil, false
+}
+
+// valueFamily is a set of runtime values no value outside it belongs to. Two
+// atoms drawn from different families are disjoint, so their meet is `never`.
+// The families cover the primitives and the two absence markers, the kinds whose
+// disjointness the solver already decides elsewhere. Objects, tuples, functions,
+// and class instances are deliberately absent: they are disjoint from a primitive
+// too, but claiming that here would go beyond what this PR needs, and keeping two
+// such atoms separate is precise anyway.
+type valueFamily int
+
+const (
+	notValueAtom valueFamily = iota
+	numberFamily
+	stringFamily
+	booleanFamily
+	nullFamily
+	undefinedFamily
+)
+
+// valueFamilyOf returns the family t draws its values from, and notValueAtom for
+// a kind the families do not cover.
+func valueFamilyOf(t soltype.Type) valueFamily {
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		return primFamily(t.Prim)
+	case *soltype.LitType:
+		return litFamily(t.Lit)
+	case *soltype.NullType:
+		return nullFamily
+	case *soltype.UndefinedType:
+		return undefinedFamily
+	}
+	return notValueAtom
+}
+
+func primFamily(p soltype.Prim) valueFamily {
+	switch p {
+	case soltype.NumPrim:
+		return numberFamily
+	case soltype.StrPrim:
+		return stringFamily
+	case soltype.BoolPrim:
+		return booleanFamily
+	}
+	return notValueAtom
+}
+
+func litFamily(l soltype.Lit) valueFamily {
+	switch l.(type) {
+	case *soltype.NumLit:
+		return numberFamily
+	case *soltype.StrLit:
+		return stringFamily
+	case *soltype.BoolLit:
+		return booleanFamily
+	}
+	return notValueAtom
+}
+
+// meetValueAtoms fuses two atoms drawn from the value families. Different
+// families are disjoint, so the meet is `never`. Within one family a literal is
+// narrower than its primitive, so the literal wins, and two distinct atoms of the
+// family are disjoint.
+//
+// Equal atoms are answered here as well as by meetAtoms, which reaches them
+// first. The overlap is deliberate. Without it `"hello"` met with `"hello"` would
+// fall to the last rule and collapse to `never`, so the function would be right
+// only for a caller that filters equal atoms out beforehand.
+func meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fa, fb := valueFamilyOf(a), valueFamilyOf(b)
+	if fa == notValueAtom || fb == notValueAtom {
+		return nil, false
+	}
+	if fa != fb {
+		return &soltype.NeverType{}, true
+	}
+	if equalType(a, b) {
+		return a, true
+	}
+	if _, ok := a.(*soltype.PrimType); ok {
+		return b, true
+	}
+	if _, ok := b.(*soltype.PrimType); ok {
+		return a, true
+	}
+	// Two distinct atoms of one family, such as `5` and `6`.
+	return &soltype.NeverType{}, true
+}
+
+// joinValueAtoms fuses two atoms drawn from the value families under a union. A
+// primitive absorbs a literal of its own family, so `5 | number` is `number`.
+// Anything else keeps both atoms, which is already precise.
+//
+// Equal atoms are answered here too, for the reason meetValueAtoms gives. Without
+// it two equal literals would read as un-fusable and stay two atoms, which is
+// sound but needlessly imprecise.
+func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fa, fb := valueFamilyOf(a), valueFamilyOf(b)
+	if fa == notValueAtom || fb == notValueAtom || fa != fb {
+		return nil, false
+	}
+	if equalType(a, b) {
+		return a, true
+	}
+	if _, ok := a.(*soltype.PrimType); ok {
+		return a, true
+	}
+	if _, ok := b.(*soltype.PrimType); ok {
+		return b, true
+	}
+	return nil, false
+}
+
+// glbClass is the nominal meet of two class tags, the slot LhsNf.Base reads. It
+// fuses two tags naming one class and keeps unrelated ones separate.
+//
+// TODO(#1061): PR4 replaces this with the M5 declared-subtype graph. Two related
+// classes then fuse to the lower of the two, and two unrelated ones return `never`
+// so the enclosing conjunct is dropped before any structural work — the
+// combinatorial fast path caveat 1 relies on.
+func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
+	if equalType(a, b) {
+		return a, true
+	}
+	return nil, false
+}
+
+// --- Canonicalizing the conjunct and disjunct lists ---
+
+// canonicalConjuncts fuses each conjunct's atoms, then orders and dedups the
+// conjuncts. The result depends on the SET of conjuncts and not on the order they
+// arrived in, so two normal forms of one type agree member for member. That is
+// what lets a caller compare normal forms directly.
+func (c *Context) canonicalConjuncts(conjuncts []Conjunct) []Conjunct {
+	fused := make([]Conjunct, 0, len(conjuncts))
+	for _, conj := range conjuncts {
+		if normalized, ok := c.normalizeConjunct(conj); ok {
+			fused = append(fused, normalized)
+		}
+	}
+	sortConjuncts(fused)
+	return dedupSorted(fused, equalConjunct)
+}
+
+// normalizeConjunct fuses a conjunct's two pooled structural parts. ok is false
+// when the positive part turns out to be uninhabited, which drops the conjunct
+// from its DNF.
+//
+// Each list is cloned first, since fuseAtoms sorts in place and a conjunct that
+// came through canonicalization unchanged still shares its slice with the normal
+// form it arrived from.
+func (c *Context) normalizeConjunct(a Conjunct) (Conjunct, bool) {
+	lnf, inhabited := c.fuseAtoms(slices.Clone(a.Lnf.Atoms), meetOfAtoms)
+	if !inhabited {
+		return Conjunct{}, false
+	}
+	rnf, _ := c.fuseAtoms(slices.Clone(a.Rnf.Atoms), joinOfAtoms)
+	return Conjunct{Lnf: LhsNf{Atoms: lnf}, Vars: a.Vars, Rnf: RhsNf{Atoms: rnf}, NVars: a.NVars}, true
 }
 
 // canonicalDisjuncts is the dual of canonicalConjuncts over a CNF.
-func canonicalDisjuncts(disjuncts []Disjunct) []Disjunct {
-	normalized := make([]Disjunct, 0, len(disjuncts))
+func (c *Context) canonicalDisjuncts(disjuncts []Disjunct) []Disjunct {
+	fused := make([]Disjunct, 0, len(disjuncts))
 	for _, disj := range disjuncts {
-		normalized = append(normalized, normalizeDisjunct(disj))
+		if normalized, ok := c.normalizeDisjunct(disj); ok {
+			fused = append(fused, normalized)
+		}
 	}
-	sortDisjuncts(normalized)
-	return dedupSorted(normalized, equalDisjunct)
+	sortDisjuncts(fused)
+	return dedupSorted(fused, equalDisjunct)
 }
 
-// normalizeDisjunct is the dual of normalizeConjunct.
-func normalizeDisjunct(a Disjunct) Disjunct {
-	return Disjunct{
-		Rnf:   RhsNf{Atoms: dedupAtoms(slices.Clone(a.Rnf.Atoms))},
-		Vars:  a.Vars,
-		Lnf:   LhsNf{Atoms: dedupAtoms(slices.Clone(a.Lnf.Atoms))},
-		NVars: a.NVars,
+// normalizeDisjunct is the dual of normalizeConjunct. ok is false when the
+// disjunct's NEGATED part turns out to be uninhabited, since negating `never`
+// admits every value, which drops the disjunct from its CNF.
+func (c *Context) normalizeDisjunct(a Disjunct) (Disjunct, bool) {
+	lnf, inhabited := c.fuseAtoms(slices.Clone(a.Lnf.Atoms), meetOfAtoms)
+	if !inhabited {
+		return Disjunct{}, false
 	}
+	rnf, _ := c.fuseAtoms(slices.Clone(a.Rnf.Atoms), joinOfAtoms)
+	return Disjunct{Rnf: RhsNf{Atoms: rnf}, Vars: a.Vars, Lnf: LhsNf{Atoms: lnf}, NVars: a.NVars}, true
 }
 
 func sortConjuncts(items []Conjunct) {
@@ -557,6 +789,16 @@ func equalDisjunct(a, b Disjunct) bool {
 		equalAtomLists(a.Rnf.Atoms, b.Rnf.Atoms) &&
 		a.Vars.Equals(b.Vars) && a.NVars.Equals(b.NVars)
 }
+
+// atomRole says how a list of atoms is read: meetOfAtoms for a list standing for
+// the intersection of its atoms, which is what LhsNf holds, and joinOfAtoms for
+// one standing for their union, which is what RhsNf holds.
+type atomRole int
+
+const (
+	meetOfAtoms atomRole = iota
+	joinOfAtoms
+)
 
 // --- Canonical ordering ---
 

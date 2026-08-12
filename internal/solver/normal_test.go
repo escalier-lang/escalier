@@ -71,9 +71,24 @@ func TestDNFRoundTrip(t *testing.T) {
 			want: "{x: number, ...} & {y: number, ...}",
 		},
 		{
-			name: "two primitives keep both atoms",
+			name: "two disjoint primitives meet to the bottom of the lattice",
 			in:   "number & string",
-			want: "number & string",
+			want: "never",
+		},
+		{
+			name: "a primitive narrows to a literal of its own family",
+			in:   "number & 5",
+			want: "5",
+		},
+		{
+			name: "the same narrowing holds for the string family",
+			in:   `string & "hello"`,
+			want: `"hello"`,
+		},
+		{
+			name: "two literals of one family are disjoint",
+			in:   "true & false",
+			want: "never",
 		},
 		{
 			name: "a repeated member of an intersection dedups",
@@ -117,6 +132,21 @@ func TestCNFRoundTrip(t *testing.T) {
 			name: "a union distributes over an intersection",
 			in:   "({x: number} & {y: number}) | {z: number}",
 			want: "({x: number} | {z: number}) & ({y: number} | {z: number})",
+		},
+		{
+			name: "a primitive absorbs a literal of its own family",
+			in:   "5 | number",
+			want: "number",
+		},
+		{
+			name: "the same holds for the string family",
+			in:   `string | "hello"`,
+			want: "string",
+		},
+		{
+			name: "the same holds for the boolean family",
+			in:   "true | boolean",
+			want: "boolean",
 		},
 	}
 	for _, tt := range tests {
@@ -173,6 +203,23 @@ func TestNegationRoundTrip(t *testing.T) {
 			},
 			want: "{x: number, ...} & ¬{y: number}",
 		},
+		{
+			// The two atoms sit in Rnf, which the conjunct reads under a union, so
+			// they fuse by the JOIN rules even though the surface type is a meet.
+			// ¬5 & ¬number is ¬(5 | number), and the literal is absorbed.
+			name: "two complements of one family absorb inside the negated part",
+			in: func(t *testing.T) soltype.Type {
+				return newIntersection(nil, []soltype.Type{notSrc(t, "5"), notSrc(t, "number")})
+			},
+			want: "¬number",
+		},
+		{
+			name: "the same holds for the boolean family",
+			in: func(t *testing.T) soltype.Type {
+				return newIntersection(nil, []soltype.Type{notSrc(t, "true"), notSrc(t, "boolean")})
+			},
+			want: "¬boolean",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -208,6 +255,27 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 				return newUnion(nil, []soltype.Type{parseType(t, "number"), notSrc(t, "{x: number}")}, false)
 			},
 			want: "number | ¬{x: number}",
+		},
+		{
+			// The dual of the DNF row: the two atoms sit in Lnf, which the disjunct
+			// reads under an intersection, so they fuse by the MEET rules even though
+			// the surface type is a join. ¬number | ¬5 is ¬(number & 5).
+			name: "two complements of one family narrow inside the negated part",
+			in: func(t *testing.T) soltype.Type {
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "5")}, false)
+			},
+			want: "¬5",
+		},
+		{
+			// No value is both a number and a string, so every value fails to be at
+			// least one of them. The negated part meets to `never`, whose complement
+			// is the identity of the intersection the disjuncts sit in, so the
+			// disjunct drops and an empty CNF is the top.
+			name: "a disjunct whose negated part is uninhabited drops",
+			in: func(t *testing.T) soltype.Type {
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")}, false)
+			},
+			want: "unknown",
 		},
 	}
 	for _, tt := range tests {
@@ -311,6 +379,42 @@ func TestDeMorganOverAnInexactUnion(t *testing.T) {
 	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
 }
 
+// TestValueAtomsAnswerEqualAtoms checks the value-family merges on their own,
+// rather than through the module's entry points.
+//
+// meetAtoms and joinAtoms answer equal atoms before either of these runs, so the
+// case is unreachable in normal use. It is pinned anyway because getting it wrong
+// is silent and severe: without the equality rule, `"hello"` met with `"hello"`
+// reads as two distinct literals of one family and collapses to `never`.
+func TestValueAtomsAnswerEqualAtoms(t *testing.T) {
+	tests := []struct {
+		name string
+		// atom mints the value afresh on each call, so a case compares two separate
+		// allocations carrying one value — what a merge sees when the same type
+		// reaches it down two routes.
+		atom func() soltype.Type
+	}{
+		{name: "a string literal", atom: func() soltype.Type { return strLit("hello") }},
+		{name: "a number literal", atom: func() soltype.Type { return numLit(5) }},
+		{name: "a primitive", atom: func() soltype.Type { return str() }},
+		{name: "null", atom: func() soltype.Type { return &soltype.NullType{} }},
+		{name: "undefined", atom: func() soltype.Type { return &soltype.UndefinedType{} }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			a, b := tt.atom(), tt.atom()
+
+			met, ok := meetValueAtoms(a, b)
+			require.True(t, ok, "an atom met with itself fuses")
+			require.True(t, equalType(a, met), "met to %s", soltype.Print(met))
+
+			joined, ok := joinValueAtoms(a, b)
+			require.True(t, ok, "an atom joined with itself fuses")
+			require.True(t, equalType(a, joined), "joined to %s", soltype.Print(joined))
+		})
+	}
+}
+
 // TestUnionKeepsUnmergeableRecords is the caveat-4 regression guard. Two records
 // with different field names have no single record that denotes their union, so
 // both normal forms keep two members rather than widening. MLscript's RhsNf holds
@@ -400,8 +504,8 @@ func TestBaseReadsTheSingleClassTag(t *testing.T) {
 	require.True(t, ok)
 	require.Same(t, point, base)
 
-	// Two tags naming one class are equal, so they dedup and the conjunct still has
-	// a single base.
+	// Two tags naming one class fuse through glbClass, so the conjunct still has a
+	// single base.
 	same := c.mkDNF(newIntersection(nil, []soltype.Type{point, classTag("Point")}), soltype.Positive)
 	require.Len(t, same.Conjuncts, 1)
 	require.Len(t, same.Conjuncts[0].Lnf.Atoms, 1)
