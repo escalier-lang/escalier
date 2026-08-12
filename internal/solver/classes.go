@@ -459,6 +459,219 @@ func substituteSuperArgs(def *ClassDef, sub, superType *soltype.ClassType) *solt
 	return superType
 }
 
+// --- The nominal meet ---
+
+// glbClass is the greatest lower bound of two class tags, the nominal meet the
+// normal form's LhsNf reads through Base. It answers one of three ways.
+//
+//  1. The two tags name one class. The meet is that class at the per-position meet
+//     of their type arguments, which meetClassArgs computes.
+//  2. One tag's class reaches the other's through the declared `extends` graph. The
+//     meet is the lower of the two, since every instance of the lower one already
+//     carries the higher one's tag.
+//  3. No declared edge relates the two classes. No value carries both tags, so the
+//     meet is `never` and the conjunct holding them is dropped. This is the fast
+//     path caveat 1 in planning/ml_struct/02-caveats-and-mitigations.md names: an
+//     intersection of unrelated classes is settled here and never reaches
+//     structural work.
+//
+// ok is false when none of the three settles the pair, which keeps the two tags as
+// separate atoms in the intersection. That loses no precision, since a two-atom
+// list already denotes the meet exactly.
+//
+// This is a pure query. It reads the class registry and records nothing, which is
+// what separates it from constrainNominal, the rule that decides the same declared
+// graph by emitting bounds. Normalization rewrites a type rather than solving a
+// constraint, so it has no goal to record a bound against.
+func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
+	if a.Name == b.Name {
+		if met, ok := c.meetClassArgs(a, b); ok {
+			return met, true
+		}
+		return nil, false
+	}
+	// An unregistered class has no edges to read. Its relationship to the other tag is
+	// unknown rather than absent, so the pair is kept separate instead of collapsing.
+	if _, ok := c.classDef(a.Name); !ok {
+		return nil, false
+	}
+	if _, ok := c.classDef(b.Name); !ok {
+		return nil, false
+	}
+	if c.nominalSubtype(a, b) {
+		return a, true
+	}
+	if c.nominalSubtype(b, a) {
+		return b, true
+	}
+	if !c.classesRelated(a.Name, b.Name) {
+		return &soltype.NeverType{}, true
+	}
+	// The graph relates the two classes without putting either instance below the
+	// other. A declared `implements` edge and a type argument the superclass rules out
+	// both land here.
+	return nil, false
+}
+
+// nominalSubtype reports whether the class instance sub is below super, following
+// the declared `extends` graph and checking the type arguments sub carries at
+// super's class. It is the pure twin of constrainNominal, which decides the same
+// relation by emitting constraints. The nominal meet asks this one instead,
+// because normalizing a type may not record a bound.
+//
+// The argument check goes through meetClassArgs: sub is below super exactly when
+// meeting sub's projection at super's class with super leaves that projection
+// unchanged. A covariant position therefore accepts a narrower argument, `Sub<5>`
+// below `Super<number>` when `class Sub<T> extends Super<T>`, and an invariant one
+// demands the arguments match.
+func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
+	up, ok := c.ancestorInstance(sub, super.Name)
+	if !ok {
+		return false
+	}
+	met, ok := c.meetClassArgs(up, super)
+	return ok && equalType(met, up)
+}
+
+// meetClassArgs meets two instances of ONE class position by position, dispatching
+// each position by the variance the class registry records for it. ok is false when
+// a position admits no exact meet, which keeps the two tags separate.
+//
+// The variance read is the MUTABLE-view vector, the stricter of the two. A normal
+// form carries no borrow around the tag to say whether a write can reach a
+// position, so the meet takes the vector that admits one. A position a write
+// reaches is invariant there, so it fuses only when the two arguments match, where
+// the immutable view would have met them.
+//
+// The exactness and enum-variant flags must agree. Both are read off the
+// declaration, so two tags naming one class carry the same pair, and a
+// disagreement means one of them was built by hand. Fusing two tags whose
+// exactness differs is left to the exactness-aware merge, #1064.
+func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bool) {
+	if a.Final != b.Final || a.Variant != b.Variant || len(a.TypeArgs) != len(b.TypeArgs) {
+		return nil, false
+	}
+	if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, &alphaCtx{}) {
+		return nil, false
+	}
+	// A missing def leaves every position invariant, which varianceAt already yields for
+	// a nil receiver. Two tags naming one unregistered class then fuse only when their
+	// arguments match, the conservative reading.
+	def, _ := c.classDef(a.Name)
+	args := make([]soltype.Type, len(a.TypeArgs))
+	same := true
+	for i := range a.TypeArgs {
+		argA, argB := a.TypeArgs[i], b.TypeArgs[i]
+		switch def.varianceAt(i, true) {
+		case Covariant:
+			// `C<A> & C<B>` is `C<A & B>` when the position is covariant: an instance below
+			// both reads the position at both types, so it reads it at their meet.
+			args[i] = c.meetTypes(argA, argB)
+		case Contravariant:
+			// The dual. An instance below both accepts a write of either type at the
+			// position, so it accepts their join.
+			args[i] = c.joinTypes(argA, argB)
+		case Bivariant:
+			// A phantom parameter appears nowhere in the body, so the two arguments say
+			// nothing about the instances and either one stands for the meet.
+			args[i] = argA
+		default: // Invariant
+			if !equalType(argA, argB) {
+				return nil, false
+			}
+			args[i] = argA
+		}
+		same = same && equalType(args[i], argA)
+	}
+	if same {
+		// Every position met to the argument a already carries, so a IS the meet. Handing
+		// back the same handle keeps the atom the normal form arrived with.
+		return a, true
+	}
+	return &soltype.ClassType{
+		Name:         a.Name,
+		TypeArgs:     args,
+		LifetimeArgs: a.LifetimeArgs,
+		Lt:           a.Lt,
+		Final:        a.Final,
+		Variant:      a.Variant,
+	}, true
+}
+
+// ancestorInstance returns the instance of the class named `name` that ct denotes,
+// substituting ct's arguments into each declared `extends` edge along the way, so
+// `class B<T> extends A<T>` asked for A at B<5> yields A<5>. ct itself is returned
+// when it already names that class. ok is false when ct's class does not reach the
+// name.
+//
+// The walk follows the same edges and substitution constrainNominalWalk does, and
+// is keyed by class name so a cyclic `extends` chain terminates.
+func (c *Context) ancestorInstance(ct *soltype.ClassType, name string) (*soltype.ClassType, bool) {
+	return c.ancestorInstanceWalk(ct, name, set.NewSet[string]())
+}
+
+func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walked set.Set[string]) (*soltype.ClassType, bool) {
+	if ct.Name == name {
+		return ct, true
+	}
+	if walked.Contains(ct.Name) {
+		return nil, false
+	}
+	walked.Add(ct.Name)
+	def, ok := c.classDef(ct.Name)
+	if !ok {
+		return nil, false
+	}
+	for _, superType := range def.Supers {
+		if found, ok := c.ancestorInstanceWalk(substituteSuperArgs(def, ct, superType), name, walked); ok {
+			return found, true
+		}
+	}
+	return nil, false
+}
+
+// classesRelated reports whether the declared graph connects the two class names in
+// either direction. Only a pair it separates meets to `never`.
+//
+// It follows `implements` edges as well as `extends`, which is wider than the
+// nominal subtype walk. A class that implements an interface is not a nominal
+// subtype of it, so the meet cannot fuse the pair to the class. An instance of that
+// class is still meant to stand for the interface, so calling the two tags disjoint
+// would be wrong, and the meet keeps them as separate atoms instead.
+//
+// Separating an unrelated pair is sound because a class declares at most one
+// superclass. Two classes neither of which reaches the other therefore have no
+// common subclass, so no value carries both tags.
+func (c *Context) classesRelated(a, b string) bool {
+	return c.declaredReaches(a, b, set.NewSet[string]()) ||
+		c.declaredReaches(b, a, set.NewSet[string]())
+}
+
+func (c *Context) declaredReaches(from, to string, walked set.Set[string]) bool {
+	if from == to {
+		return true
+	}
+	if walked.Contains(from) {
+		return false
+	}
+	walked.Add(from)
+	def, ok := c.classDef(from)
+	if !ok {
+		return false
+	}
+	for _, super := range def.Supers {
+		if c.declaredReaches(super.Name, to, walked) {
+			return true
+		}
+	}
+	for _, iface := range def.Implements {
+		if c.declaredReaches(iface.Name, to, walked) {
+			return true
+		}
+	}
+	return false
+}
+
 // projectedMember resolves a member access against a class instance by looking the
 // member up on the class body — walking the declared `extends` chain for a member the
 // class inherits rather than declares — and projecting just that member to the instance's

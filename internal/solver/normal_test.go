@@ -654,11 +654,12 @@ func TestVariablesStayInTheirSlots(t *testing.T) {
 	require.Equal(t, "unknown", normCNF(c, either))
 }
 
-// TestBaseReadsTheSingleClassTag covers the slot PR4 (#1061) wires the nominal
-// meet to. One tag in a conjunct is the base; two unrelated tags are both kept, so
-// the conjunct has no single base until that PR lands.
+// TestBaseReadsTheSingleClassTag covers the slot the nominal meet writes to. One
+// tag in a conjunct is the base, and the meet leaves at most one there.
 func TestBaseReadsTheSingleClassTag(t *testing.T) {
 	c := &Context{}
+	c.registerClass("Point", &ClassDef{})
+	c.registerClass("Line", &ClassDef{})
 	point := classTag("Point")
 	line := classTag("Line")
 
@@ -674,13 +675,11 @@ func TestBaseReadsTheSingleClassTag(t *testing.T) {
 	require.Len(t, same.Conjuncts, 1)
 	require.Len(t, same.Conjuncts[0].Lnf.Atoms, 1)
 
-	// TODO(#1061): once PR4 supplies the nominal glb, two unrelated tags collapse
-	// the conjunct to `never` and this DNF is empty.
+	// No declared edge relates Point to Line, so no value carries both tags and the
+	// conjunct is dropped from the DNF.
 	unrelated := c.mkDNF(newIntersection(nil, []soltype.Type{point, line}), soltype.Positive)
-	require.Len(t, unrelated.Conjuncts, 1)
-	require.Len(t, unrelated.Conjuncts[0].Lnf.Atoms, 2)
-	_, ok = unrelated.Conjuncts[0].Lnf.Base()
-	require.False(t, ok)
+	require.Empty(t, unrelated.Conjuncts)
+	require.Equal(t, "never", normDNF(c, newIntersection(nil, []soltype.Type{point, line})))
 }
 
 // classTag is a bare nominal handle, the smallest ClassType a normal form can

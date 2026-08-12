@@ -349,7 +349,254 @@ func TestProjectClassBodyDoesNotMutateRegistry(t *testing.T) {
 
 	proj, ok := c.projectClassBody(&soltype.ClassType{Name: "Phantom", TypeArgs: []soltype.Type{num()}})
 	require.True(t, ok)
-	require.NotSame(t, body, proj)  // a fresh wrapper, not the shared registry Body
-	require.True(t, proj.Inexact)   // the non-final instance projects an inexact view
-	require.False(t, body.Inexact)  // the registry Body stays exact — never mutated
+	require.NotSame(t, body, proj) // a fresh wrapper, not the shared registry Body
+	require.True(t, proj.Inexact)  // the non-final instance projects an inexact view
+	require.False(t, body.Inexact) // the registry Body stays exact — never mutated
+}
+
+// nominalGraph registers the class hierarchy the nominal-meet cases share.
+//
+//	Shape          Vec     Printable                Loop ──┐
+//	├── Point                  ▲                     ▲     │
+//	│   └── Pixel              └── implemented by Doc └─────┘
+//	└── Line
+//
+// It also registers one generic class per variance — covariant Reader, mutable-view
+// invariant Box, contravariant Consumer, invariant Cell, bivariant Ghost — plus two
+// classes extending a generic one: `Wrapper<T> extends Reader<T>`, which substitutes
+// its own argument into the edge, and `NumReader extends Reader<number>`, which fixes
+// the argument at the declaration.
+func nominalGraph() *Context {
+	c := &Context{}
+	for _, name := range []string{"Shape", "Vec", "Printable"} {
+		c.registerClass(name, &ClassDef{})
+	}
+	c.registerClass("Point", &ClassDef{Supers: []*soltype.ClassType{cls("Shape", false)}})
+	c.registerClass("Pixel", &ClassDef{Supers: []*soltype.ClassType{cls("Point", false)}})
+	c.registerClass("Line", &ClassDef{Supers: []*soltype.ClassType{cls("Shape", false)}})
+	c.registerClass("Doc", &ClassDef{Implements: []*soltype.ClassType{cls("Printable", false)}})
+	// A class extending itself is not something the checker builds. Registering one here
+	// pins that the walk stops on a cyclic edge instead of recurring forever.
+	c.registerClass("Loop", &ClassDef{Supers: []*soltype.ClassType{cls("Loop", false)}})
+
+	generic := func(name string, immut, mut Variance, id int) {
+		c.registerClass(name, &ClassDef{
+			TypeParams:  []*soltype.TypeParam{{Name: "T", Var: &soltype.TypeVarType{ID: id}}},
+			Variance:    []Variance{immut},
+			MutVariance: []Variance{mut},
+		})
+	}
+	generic("Reader", Covariant, Covariant, 300)
+	generic("Box", Covariant, Invariant, 301)
+	generic("Consumer", Contravariant, Contravariant, 302)
+	generic("Cell", Invariant, Invariant, 303)
+	generic("Ghost", Bivariant, Bivariant, 304)
+
+	wrapperVar := &soltype.TypeVarType{ID: 305}
+	c.registerClass("Wrapper", &ClassDef{
+		TypeParams:  []*soltype.TypeParam{{Name: "T", Var: wrapperVar}},
+		Variance:    []Variance{Covariant},
+		MutVariance: []Variance{Covariant},
+		Supers:      []*soltype.ClassType{generics("Reader", wrapperVar)},
+	})
+	c.registerClass("NumReader", &ClassDef{
+		Supers: []*soltype.ClassType{generics("Reader", num())},
+	})
+	return c
+}
+
+// generics builds an instance handle for a generic class at the given arguments.
+func generics(name string, args ...soltype.Type) *soltype.ClassType {
+	return &soltype.ClassType{Name: name, TypeArgs: args}
+}
+
+// TestGlbClass covers the nominal meet of two class tags. want is the annotation the
+// fused tag renders under, and an empty want says the pair admits no exact fusion, so
+// the intersection keeps both tags as separate atoms.
+func TestGlbClass(t *testing.T) {
+	numOrStr := &soltype.UnionType{Types: []soltype.Type{num(), str()}}
+
+	tests := []struct {
+		name string
+		a, b *soltype.ClassType
+		want string
+	}{
+		{
+			name: "one class met with itself is that class",
+			a:    cls("Point", false), b: cls("Point", false),
+			want: "Point",
+		},
+		{
+			name: "a subclass met with its superclass is the subclass",
+			a:    cls("Point", false), b: cls("Shape", false),
+			want: "Point",
+		},
+		{
+			name: "the superclass may be written first",
+			a:    cls("Shape", false), b: cls("Point", false),
+			want: "Point",
+		},
+		{
+			name: "a subclass two edges down still reaches",
+			a:    cls("Pixel", false), b: cls("Shape", false),
+			want: "Pixel",
+		},
+		{
+			name: "two unrelated classes have no common instance",
+			a:    cls("Point", false), b: cls("Vec", false),
+			want: "never",
+		},
+		{
+			name: "two siblings under one superclass are unrelated to each other",
+			a:    cls("Point", false), b: cls("Line", false),
+			want: "never",
+		},
+		{
+			name: "a cyclic extends edge terminates and reports no relation",
+			a:    cls("Loop", false), b: cls("Vec", false),
+			want: "never",
+		},
+		{
+			name: "an unregistered class settles nothing",
+			a:    cls("Point", false), b: cls("Unregistered", false),
+			want: "",
+		},
+		{
+			name: "an implemented interface is related but not above the class",
+			a:    cls("Doc", false), b: cls("Printable", false),
+			want: "",
+		},
+		{
+			name: "two tags disagreeing on exactness stay separate",
+			a:    cls("Point", true), b: cls("Point", false),
+			want: "",
+		},
+		{
+			name: "a covariant position meets its two arguments",
+			a:    generics("Reader", num()), b: generics("Reader", numOrStr),
+			want: "Reader<number>",
+		},
+		{
+			name: "a covariant position may meet to never",
+			a:    generics("Reader", num()), b: generics("Reader", str()),
+			want: "Reader<never>",
+		},
+		{
+			name: "a contravariant position joins its two arguments",
+			a:    generics("Consumer", num()), b: generics("Consumer", str()),
+			want: "Consumer<number | string>",
+		},
+		{
+			name: "an invariant position fuses only equal arguments",
+			a:    generics("Cell", num()), b: generics("Cell", num()),
+			want: "Cell<number>",
+		},
+		{
+			name: "an invariant position with differing arguments stays separate",
+			a:    generics("Cell", num()), b: generics("Cell", str()),
+			want: "",
+		},
+		{
+			name: "a bivariant position imposes nothing on its arguments",
+			a:    generics("Ghost", num()), b: generics("Ghost", str()),
+			want: "Ghost<number>",
+		},
+		{
+			name: "a position a write reaches is dispatched as invariant",
+			a:    generics("Box", num()), b: generics("Box", numOrStr),
+			want: "",
+		},
+		{
+			name: "an inherited argument is substituted along the edge",
+			a:    generics("Wrapper", numLit(5)), b: generics("Reader", num()),
+			want: "Wrapper<5>",
+		},
+		{
+			name: "an inherited argument the superclass rules out stays separate",
+			a:    generics("Wrapper", str()), b: generics("Reader", num()),
+			want: "",
+		},
+		{
+			name: "an edge declared at a fixed argument reaches its superclass",
+			a:    cls("NumReader", false), b: generics("Reader", numOrStr),
+			want: "NumReader",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			met, ok := nominalGraph().glbClass(test.a, test.b)
+			if test.want == "" {
+				require.False(t, ok)
+				require.Nil(t, met)
+				return
+			}
+			require.True(t, ok)
+			require.Equal(t, test.want, soltype.Print(met))
+		})
+	}
+}
+
+// TestGlbClassInNormalForm covers what the meet's three answers do to the conjunct
+// holding the tags, which is the reason the meet exists.
+func TestGlbClassInNormalForm(t *testing.T) {
+	c := nominalGraph()
+	meet := func(members ...soltype.Type) soltype.Type {
+		return newIntersection(nil, members)
+	}
+
+	t.Run("unrelated tags drop the conjunct before any structural work", func(t *testing.T) {
+		require.Equal(t, "never", normDNF(c, meet(cls("Point", false), cls("Vec", false))))
+	})
+
+	t.Run("a subclass absorbs its superclass tag", func(t *testing.T) {
+		require.Equal(t, "Pixel", normDNF(c, meet(cls("Pixel", false), cls("Shape", false))))
+	})
+
+	t.Run("a tag and a structural atom fill both slots of one conjunct", func(t *testing.T) {
+		mixed := meet(cls("Point", false), parseType(t, "fn (x: number) -> string"))
+		d := c.mkDNF(mixed, soltype.Positive)
+		require.Len(t, d.Conjuncts, 1)
+		require.Len(t, d.Conjuncts[0].Lnf.Atoms, 2)
+		base, ok := d.Conjuncts[0].Lnf.Base()
+		require.True(t, ok)
+		require.Equal(t, "Point", soltype.Print(base))
+		require.Equal(t, "(fn (x: number) -> string) & Point", soltype.Print(d.toType()))
+	})
+
+	t.Run("an unrelated tag drops one member of a union and keeps the rest", func(t *testing.T) {
+		either := newUnion(nil, []soltype.Type{
+			meet(cls("Point", false), cls("Vec", false)),
+			cls("Line", false),
+		}, false)
+		require.Equal(t, "Line", normDNF(c, either))
+	})
+}
+
+// TestNominalSubtype covers the pure subtype query the nominal meet asks, which
+// decides the same declared graph constrainNominal does without recording a bound.
+func TestNominalSubtype(t *testing.T) {
+	c := nominalGraph()
+
+	tests := []struct {
+		name       string
+		sub, super *soltype.ClassType
+		want       bool
+	}{
+		{name: "a class is below itself", sub: cls("Point", false), super: cls("Point", false), want: true},
+		{name: "a subclass is below its superclass", sub: cls("Point", false), super: cls("Shape", false), want: true},
+		{name: "a superclass is not below its subclass", sub: cls("Shape", false), super: cls("Point", false), want: false},
+		{name: "two edges still reach", sub: cls("Pixel", false), super: cls("Shape", false), want: true},
+		{name: "siblings are unrelated", sub: cls("Point", false), super: cls("Line", false), want: false},
+		{name: "an implemented interface is not a nominal supertype", sub: cls("Doc", false), super: cls("Printable", false), want: false},
+		{name: "a covariant argument may narrow", sub: generics("Reader", numLit(5)), super: generics("Reader", num()), want: true},
+		{name: "a covariant argument may not widen", sub: generics("Reader", num()), super: generics("Reader", numLit(5)), want: false},
+		{name: "an inherited argument is checked at the superclass", sub: generics("Wrapper", numLit(5)), super: generics("Reader", num()), want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			require.Equal(t, test.want, c.nominalSubtype(test.sub, test.super))
+		})
+	}
 }

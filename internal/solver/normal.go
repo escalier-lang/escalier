@@ -60,9 +60,6 @@ import (
 //
 // # What is deliberately left to a later PR
 //
-//   - The nominal meet of two class tags. glbClass only fuses identical tags and
-//     keeps unrelated ones separate; PR4 (#1061) wires it to the M5
-//     declared-subtype graph so unrelated classes collapse the conjunct to `never`.
 //   - Exactness-driven merges. An atom's `Inexact` flag rides through every merge
 //     here, and two atoms whose flags disagree are kept separate rather than
 //     fused under a guess. PR7 (#1064) decides the exact cases, such as two exact
@@ -110,10 +107,11 @@ type LhsNf struct{ Atoms []soltype.Type }
 type RhsNf struct{ Atoms []soltype.Type }
 
 // Base returns the single nominal class tag the intersection carries, and reports
-// whether it carries exactly one. This is the slot the nominal meet writes to:
-// once PR4 (#1061) lands, glbClass fuses two related tags into one and collapses
-// two unrelated ones to `never`, so a well-formed conjunct holds at most one tag
-// and this accessor is total on it.
+// whether it carries exactly one. This is the slot the nominal meet writes to.
+// glbClass fuses two related tags into one and collapses two unrelated ones to
+// `never`, so the only intersection reaching this accessor with two tags left is
+// one whose classes the declared graph relates without ordering, such as a class
+// met with an interface it implements.
 func (l LhsNf) Base() (*soltype.ClassType, bool) {
 	var found *soltype.ClassType
 	for _, atom := range l.Atoms {
@@ -1100,20 +1098,6 @@ func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
 // widened record field are written from.
 func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
 	return c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
-}
-
-// glbClass is the nominal meet of two class tags, the slot LhsNf.Base reads. It
-// fuses two tags naming one class and keeps unrelated ones separate.
-//
-// TODO(#1061): PR4 replaces this with the M5 declared-subtype graph. Two related
-// classes then fuse to the lower of the two, and two unrelated ones return `never`
-// so the enclosing conjunct is dropped before any structural work — the
-// combinatorial fast path caveat 1 relies on.
-func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
-	if equalType(a, b) {
-		return a, true
-	}
-	return nil, false
 }
 
 // plainProps returns an object's members as properties, and ok is false when the
