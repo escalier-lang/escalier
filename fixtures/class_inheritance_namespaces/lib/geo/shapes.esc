@@ -1,0 +1,12 @@
+class Base {
+    tag: string,
+    constructor(mut self) {
+        self.tag = "geo"
+    },
+    who(self) -> string {
+        return "geo base"
+    },
+}
+class NsDerived extends Base {
+    constructor(mut self) {},
+}

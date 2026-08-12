@@ -1,0 +1,46 @@
+const geo = {};
+const util = {};
+export class geo__Base {
+  constructor() {
+    this.tag = "geo";
+  }
+  who() {
+    return "geo base";
+  }
+}
+geo.Base = geo__Base;
+export class Base {
+  constructor() {
+    this.tag = "root";
+  }
+  who() {
+    return "root base";
+  }
+}
+export class geo__NsDerived extends geo__Base {
+  constructor() {
+    super();
+  }
+}
+geo.NsDerived = geo__NsDerived;
+export const nsDerived = new geo.NsDerived();
+export const nsTag = nsDerived.tag;
+export const nsWho = nsDerived.who();
+export class util__QualifiedDerived extends geo__Base {
+  constructor() {
+    super();
+  }
+}
+util.QualifiedDerived = util__QualifiedDerived;
+export const qualifiedDerived = new util.QualifiedDerived();
+export const qualifiedWho = qualifiedDerived.who();
+export class util__UtilDerived extends Base {
+  constructor() {
+    super();
+  }
+}
+util.UtilDerived = util__UtilDerived;
+export const utilDerived = new util.UtilDerived();
+export const utilTag = utilDerived.tag;
+export const utilWho = utilDerived.who();
+//# sourceMappingURL=./index.js.map
