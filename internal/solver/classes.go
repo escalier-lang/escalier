@@ -56,11 +56,9 @@ type ClassDef struct {
 	Implements []*soltype.ClassType
 
 	// EdgesPending marks a def the SCC pre-pass registered as a bare identity, before the
-	// declaration's `extends` and `implements` clauses were resolved. Supers and Implements
-	// are empty on such a def because they have not been read yet, not because the class
-	// declares none. A reader concluding from an empty Supers that a class has no
-	// superclass must check this first. inferClassDecl clears it when it fills both fields
-	// in, and a def built anywhere else carries its edges from the start.
+	// declaration's `extends` and `implements` clauses resolved. Supers and Implements are
+	// empty on such a def for want of reading, not for want of a declaration, so a reader
+	// concluding a class has no superclass must check this first. inferClassDecl clears it.
 	EdgesPending bool
 
 	// Body is the instance member view a class projects: one element per field,
@@ -469,31 +467,24 @@ func substituteSuperArgs(def *ClassDef, sub, superType *soltype.ClassType) *solt
 
 // --- The nominal meet ---
 
-// glbClass is the greatest lower bound of two class tags, the nominal meet the
-// normal form's LhsNf reads through Base. It answers one of three ways.
+// glbClass is the greatest lower bound of two class tags, the nominal meet LhsNf
+// reads through Base. It settles three ways.
 //
-//  1. The two tags name one class. The meet is that class at the per-position meet
-//     of their type arguments, which meetClassArgs computes.
-//  2. One tag's class reaches the other's through the declared `extends` graph. The
-//     meet is the lower of the two, since every instance of the lower one already
-//     carries the higher one's tag.
-//  3. Neither class reaches the other in a graph both walks read to the end. No
-//     value carries both tags, so the meet is `never` and the conjunct holding them
-//     is dropped. This is the fast path caveat 1 in
-//     planning/ml_struct/02-caveats-and-mitigations.md names: an intersection of
-//     unrelated classes is settled here and never reaches structural work. Calling
-//     such a pair disjoint is sound because a class declares at most one
-//     superclass, so two classes neither of which reaches the other have no common
+//  1. Two tags of one class meet position by position, through meetClassArgs.
+//  2. Two tags the declared `extends` graph orders meet to the lower one, since
+//     every instance of that one already carries the other's tag.
+//  3. Two tags neither of which reaches the other meet to `never`, dropping the
+//     conjunct. This is the fast path from caveat 1 in
+//     planning/ml_struct/02-caveats-and-mitigations.md: an intersection of
+//     unrelated classes is settled here rather than in structural work. It is sound
+//     because a class declares at most one superclass, so such a pair has no common
 //     subclass.
 //
-// ok is false when none of the three settles the pair, which keeps the two tags as
-// separate atoms in the intersection. That loses no precision, since a two-atom
-// list already denotes the meet exactly.
+// ok is false when none of the three applies, which keeps both tags as atoms and
+// loses nothing, since a two-atom list already denotes the meet exactly.
 //
-// This is a pure query. It reads the class registry and records nothing, which is
-// what separates it from constrainNominal, the rule that decides the same declared
-// graph by emitting bounds. Normalization rewrites a type rather than solving a
-// constraint, so it has no goal to record a bound against.
+// It reads the registry and records nothing, unlike constrainNominal, which decides
+// the same graph by emitting bounds.
 func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 	if a.Name == b.Name {
 		if met, ok := c.meetClassArgs(a, b); ok {
@@ -512,26 +503,22 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 	if !aReaches && !bReaches && aSettled && bSettled {
 		return &soltype.NeverType{}, true
 	}
-	// The two tags stay separate atoms for one of two reasons. Either one class reaches
-	// the other while the instance below carries a type argument the one above rules
-	// out, or a walk ran into a graph that is still being built. Meeting
+	// Either one class reaches the other while the instance below carries an argument
+	// the one above rules out, or a walk ran into a graph still being built. Meeting
 	// `Wrapper<string>` with `Reader<number>` under `class Wrapper<T> extends Reader<T>`
-	// is the first case. Neither tag is below the other, and `Wrapper<never>` is below
-	// both, so the pair is not disjoint either.
+	// is the first: `Wrapper<never>` is below both, so the pair is not disjoint either.
 	return nil, false
 }
 
 // nominalSubtype reports whether the class instance sub is below super, following
-// the declared `extends` graph and checking the type arguments sub carries at
-// super's class. It is the pure twin of constrainNominal, which decides the same
-// relation by emitting constraints. The nominal meet asks this one instead,
-// because normalizing a type may not record a bound.
+// the declared `extends` graph and checking sub's arguments at super's class. It is
+// the pure twin of constrainNominal, which decides the same relation by emitting
+// bounds.
 //
-// Where the two differ is which variance vector the arguments dispatch by. This one
-// always reads the mutable view, so it rejects a pair constrainNominal accepts
-// outside a mutable borrow, such as `Box<5> <: Box<number>` for a Box covariant to
-// a reader and invariant to a writer. The direction of the difference is what makes
-// it safe. A rejection here keeps two atoms the meet would otherwise have fused.
+// It always dispatches arguments by the mutable-view variance, so it rejects pairs
+// constrainNominal accepts outside a mutable borrow, such as `Box<5> <: Box<number>`
+// for a Box covariant to a reader and invariant to a writer. That direction is the
+// safe one, since a rejection only leaves two atoms unfused.
 func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
 	up, reaches, _ := c.ancestorInstance(sub, super.Name)
 	return reaches && c.instanceBelow(up, super)
@@ -539,28 +526,22 @@ func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
 
 // instanceBelow reports whether up is below super, where both name ONE class and up
 // is what ancestorInstance projected. Meeting the two leaves up unchanged exactly
-// when up is the lower of the two, since the meet of a type with something above it
-// is that type. A covariant position therefore accepts a narrower argument, `Sub<5>`
-// below `Sub<number>`, and an invariant position demands that the two match.
+// when up is the lower, since a type met with something above it is itself.
 func (c *Context) instanceBelow(up, super *soltype.ClassType) bool {
 	met, ok := c.meetClassArgs(up, super)
 	return ok && equalType(met, up)
 }
 
 // meetClassArgs meets two instances of ONE class, position by position, dispatching
-// each position by the variance the class registry records for it. ok is false when
-// a position admits no exact meet, which keeps the two tags separate.
+// each by the variance the registry records for it. ok is false when a position
+// admits no exact meet, which keeps the two tags separate.
 //
-// The variance read is the MUTABLE-view vector, the stricter of the two. A normal
-// form carries no borrow around the tag to say whether a write can reach a
-// position, so the meet takes the vector that admits one. A position a write
-// reaches is invariant there, so it fuses only when the two arguments match. The
-// immutable view would have met them instead.
+// The vector read is the MUTABLE view, the stricter of the two. A normal form
+// carries no borrow around the tag to say whether a write can reach a position, so
+// the meet assumes one can, which pins a writable position to matching arguments.
 //
-// The exactness and enum-variant flags must agree. Both are read off the
-// declaration, so two tags naming one class carry the same pair, and a
-// disagreement means one of them was built by hand. Fusing two tags whose
-// exactness differs is left to the exactness-aware merge, #1064.
+// The exactness and enum-variant flags must agree, since both are read off the
+// declaration. Fusing two tags whose exactness differs is left to #1064.
 func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bool) {
 	if a.Final != b.Final || a.Variant != b.Variant || len(a.TypeArgs) != len(b.TypeArgs) {
 		return nil, false
@@ -568,9 +549,8 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 	if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, &alphaCtx{}) {
 		return nil, false
 	}
-	// varianceAt yields Invariant for a nil receiver, so every position of an
-	// unregistered class is invariant. Two tags naming one then fuse only when their
-	// arguments match, the conservative reading.
+	// varianceAt reads Invariant off a nil def, so two tags of an unregistered class
+	// fuse only on matching arguments.
 	def, _ := c.classDef(a.Name)
 	args := make([]soltype.Type, len(a.TypeArgs))
 	same := true
@@ -578,16 +558,13 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 		argA, argB := a.TypeArgs[i], b.TypeArgs[i]
 		switch def.varianceAt(i, true) {
 		case Covariant:
-			// `C<A> & C<B>` is `C<A & B>` when the position is covariant: an instance below
-			// both reads the position at both types, so it reads it at their meet.
+			// An instance below both reads the position at both types, so at their meet.
 			args[i] = c.meetTypes(argA, argB)
 		case Contravariant:
-			// The dual. An instance below both accepts a write of either type at the
-			// position, so it accepts their join.
+			// The dual. Such an instance accepts a write of either type, so of their join.
 			args[i] = c.joinTypes(argA, argB)
 		case Bivariant:
-			// A phantom parameter appears nowhere in the body, so the two arguments say
-			// nothing about the instances and either one stands for the meet.
+			// A phantom parameter says nothing about the instances, so either argument does.
 			args[i] = argA
 		default: // Invariant
 			if !equalType(argA, argB) {
@@ -598,8 +575,7 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 		same = same && equalType(args[i], argA)
 	}
 	if same {
-		// Every position met to the argument a already carries, so a IS the meet. Handing
-		// back the same handle keeps the atom the normal form arrived with.
+		// Every position met to a's own argument, so a IS the meet.
 		return a, true
 	}
 	return &soltype.ClassType{
@@ -616,20 +592,16 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 // class named `name`. It returns three things.
 //
 //   - up is the instance of that class ct denotes, with ct's arguments substituted
-//     into each edge along the way, so `class B<T> extends A<T>` asked for A at B<5>
-//     yields A<5>. ct itself is returned when it already names the class.
+//     into each edge, so `class B<T> extends A<T>` asked for A at B<5> yields A<5>.
 //   - reaches says whether the class was found, which is when up is meaningful.
 //   - settled says whether the walk read a finished graph. It is false when the walk
-//     stopped at a class the registry does not hold, or at one whose declared edges
-//     have not been resolved yet. A false reaches may then mean only that the edge
-//     leading there has not been read yet, so a caller must not take it for "cannot
-//     reach".
+//     stopped at an unregistered class or at one whose edges are unresolved, so a
+//     false reaches must not be taken for "cannot reach".
 //
 // The edges are `extends` alone, the same ones constrainNominalWalk follows, so the
-// meet decides the subtype relation the solver decides rather than a wider one. An
-// `implements` clause is a conformance assertion the nominal walk skips, so a class
-// implementing an interface is not below it. The walk is keyed by class name, so a
-// cyclic `extends` chain terminates.
+// meet decides the solver's subtype relation rather than a wider one. An
+// `implements` clause is a conformance assertion the walk skips. The walk is keyed
+// by class name, so a cyclic chain terminates.
 func (c *Context) ancestorInstance(ct *soltype.ClassType, name string) (up *soltype.ClassType, reaches, settled bool) {
 	return c.ancestorInstanceWalk(ct, name, set.NewSet[string]())
 }
@@ -639,8 +611,7 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 		return ct, true, true
 	}
 	if walked.Contains(ct.Name) {
-		// An enclosing call is already walking this class. Whatever its edges reach, and
-		// whether they are resolved, is that call's answer to report.
+		// An enclosing call is walking this class already, so its answer covers these edges.
 		return nil, false, true
 	}
 	walked.Add(ct.Name)
@@ -648,10 +619,9 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 	if !ok || def.EdgesPending {
 		return nil, false, false
 	}
-	// One walked set is shared by the whole walk rather than kept per path. Supers holds
-	// at most one edge, so a class is reachable by a single path and no branch can shut
-	// another out of one. A hierarchy admitting several nominal edges would have to
-	// record the walk per path to keep that true.
+	// One walked set is shared across the walk rather than kept per path. Supers holds at
+	// most one edge, so a class is reachable by a single path and no branch can shut
+	// another out of one. Several nominal edges would need the walk recorded per path.
 	settled := true
 	for _, superType := range def.Supers {
 		found, reaches, superSettled := c.ancestorInstanceWalk(substituteSuperArgs(def, ct, superType), name, walked)
