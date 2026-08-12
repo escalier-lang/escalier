@@ -134,12 +134,14 @@ func (c *checker) checkOverriddenName(
 		if !declared || formWeakens(subHalf, superHalf) {
 			// The class either does not offer this half at all, or offers it on terms the
 			// inherited member does not impose. No type comparison applies to that, so name
-			// the two forms instead.
+			// the two forms instead. The form is read off whichever member the class declares
+			// under this name, since the half under discussion may have no member at all.
+			own, _ := def.Body.Member(name)
 			c.report(&OverrideFormMismatchError{
 				Member:     name,
 				Class:      self.Name,
 				SuperClass: owner.Name,
-				Form:       memberForm(firstNamed(def.Body, name)),
+				Form:       memberForm(own),
 				SuperForm:  memberForm(superHalf),
 				Node:       overrideBlame(blame, name, subHalf),
 			})
@@ -336,20 +338,7 @@ func halfType(elem soltype.ObjTypeElem, half memberHalf) soltype.Type {
 	case *soltype.SetterElem:
 		return elem.Param
 	case *soltype.MethodElem:
-		switch len(elem.Signatures) {
-		case 0:
-		case 1:
-			return callableView(elem.Signatures[0])
-		default:
-			// An overload set reads as the intersection of its arms, matching what
-			// memberReadContribution hands a caller. Comparing intersections rather than arm
-			// against arm keeps the check independent of the order the arms are written in.
-			arms := make([]soltype.Type, len(elem.Signatures))
-			for i, sig := range elem.Signatures {
-				arms[i] = callableView(sig)
-			}
-			return &soltype.IntersectionType{Types: arms}
-		}
+		return methodReadType(elem)
 	}
 	return &soltype.ErrorType{}
 }
@@ -401,18 +390,6 @@ func mutReceiverForm(base string, elem soltype.ObjTypeElem) string {
 	return base
 }
 
-// firstNamed returns the first member of obj called name, which a diagnostic falls back to
-// naming when the class offers none for the half under discussion. Callers reach it only for a
-// name obj carries, so the nil return is unreachable and renders as the generic form.
-func firstNamed(obj *soltype.ObjectType, name string) soltype.ObjTypeElem {
-	for _, elem := range obj.Elems {
-		if soltype.ObjElemName(elem) == name {
-			return elem
-		}
-	}
-	return nil
-}
-
 // overrideBlame returns the source node an override diagnostic points at, the declaration of
 // the member under discussion. It falls back to the other half's declaration, and then to nil,
 // which leaves the diagnostic on the zero span.
@@ -452,9 +429,10 @@ func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 	return nodes
 }
 
-// skolemizeClassParams returns a substitution replacing a class's own type-parameter variables
-// with fresh skolems, or nil for a non-generic class. An obligation checked through it has to
-// hold for every instantiation rather than being satisfied by recording a bound. Given
+// skolemizeClassParams returns skolemizeParams over a class's own type parameters, or nil for
+// a non-generic class so the result can be applied through typeSubst.apply either way. An
+// obligation checked through it has to hold for every instantiation rather than being
+// satisfied by recording a bound. Given
 //
 //	class Box<T> { value: T, … }
 //	class StrBox<T> extends Box<T> { value: string, … }
@@ -462,28 +440,9 @@ func instanceMemberNodes(decl *ast.ClassDecl) map[memberBlameKey]ast.Node {
 // the obligation is `string <: T`. Against the bare parameter variable that records `string`
 // as a lower bound and reports nothing. Against a skolem it is rejected, which is what a
 // `StrBox<number>` read through `Box<number>` needs.
-//
-// Each parameter's declared constraint becomes its skolem's upper bound, seeded through the
-// same substitution so a bound naming a sibling reaches that sibling's skolem. This mirrors
-// skolemizeFuncBinder.
 func (c *Context) skolemizeClassParams(def *ClassDef) *typeSubst {
 	if len(def.TypeParams) == 0 {
 		return nil
 	}
-	sks := make([]*soltype.SkolemType, len(def.TypeParams))
-	args := make([]soltype.Type, len(def.TypeParams))
-	for i, tp := range def.TypeParams {
-		sks[i] = c.freshSkolem(tp.Name)
-		args[i] = sks[i]
-	}
-	subst := newTypeSubst(def.TypeParams, args, nil, nil)
-	for i, tp := range def.TypeParams {
-		// resolveTypeParams records at most one upper bound per parameter, itself an
-		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole
-		// declared constraint.
-		if len(tp.Var.UpperBounds) > 0 {
-			sks[i].Upper = tp.Var.UpperBounds[0].Accept(subst, soltype.Positive)
-		}
-	}
-	return subst
+	return c.skolemizeParams(def.TypeParams)
 }

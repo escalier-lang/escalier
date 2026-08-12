@@ -1588,18 +1588,7 @@ func memberReadContribution(obj *soltype.ObjectType, name string) (read soltype.
 	case *soltype.GetterElem:
 		return m.Type, true, false
 	case *soltype.MethodElem:
-		switch len(m.Signatures) {
-		case 0:
-			return &soltype.ErrorType{}, true, false
-		case 1:
-			return callableView(m.Signatures[0]), true, false
-		default:
-			arms := make([]soltype.Type, len(m.Signatures))
-			for i, sig := range m.Signatures {
-				arms[i] = callableView(sig)
-			}
-			return &soltype.IntersectionType{Types: arms}, true, false
-		}
+		return methodReadType(m), true, false
 	case *soltype.SetterElem:
 		return nil, false, true
 	}
@@ -1698,6 +1687,25 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 }
 
+// methodReadType returns the value a read of a method member yields. A single signature reads
+// as its callable view, and an overload set as the intersection of its arms, so a caller must
+// satisfy every arm. Comparing intersections rather than arm against arm is what keeps a
+// comparison independent of the order the arms are written in. A member whose signature list
+// never landed reads as the error sentinel.
+func methodReadType(elem *soltype.MethodElem) soltype.Type {
+	switch len(elem.Signatures) {
+	case 0:
+		return &soltype.ErrorType{}
+	case 1:
+		return callableView(elem.Signatures[0])
+	}
+	arms := make([]soltype.Type, len(elem.Signatures))
+	for i, sig := range elem.Signatures {
+		arms[i] = callableView(sig)
+	}
+	return &soltype.IntersectionType{Types: arms}
+}
+
 // callableView returns a method signature as the callable value a member read yields:
 // the signature with its receiver dropped, since a method value binds no `self`. It is
 // the subtyping counterpart of memberValue's method projection.
@@ -1719,19 +1727,31 @@ func isNeverType(t soltype.Type) bool {
 }
 
 // skolemizeFuncBinder replaces ft's own type parameters with fresh skolems, so a term checked
-// against ft as a supertype must satisfy it for every instantiation. Each parameter's declared
-// bound becomes its skolem's Upper, seeded first so a bound naming a sibling reaches it. For
-// example `<T>(x: T) -> T` becomes `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) {
-// return 5 }` fails but a polymorphic identity satisfies.
+// against ft as a supertype must satisfy it for every instantiation. `<T>(x: T) -> T` becomes
+// `(x: sk) -> sk` for a fresh skolem sk, which `fn (x) { return 5 }` fails but a polymorphic
+// identity satisfies.
 func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
-	sks := make([]*soltype.SkolemType, len(ft.TypeParams))
-	args := make([]soltype.Type, len(ft.TypeParams))
-	for i, tp := range ft.TypeParams {
+	return substFuncBinder(ft, c.skolemizeParams(ft.TypeParams))
+}
+
+// skolemizeParams mints one fresh skolem per parameter and returns the substitution replacing
+// each parameter's variable with its own. A skolem is opaque and no constraint can bind it, so
+// whatever is checked through the result has to hold for every instantiation. An empty
+// parameter list yields an empty substitution rather than nil, so a caller can apply the
+// result unconditionally.
+//
+// Each parameter's declared constraint becomes its skolem's upper bound, seeded through the
+// same substitution so a bound naming a sibling reaches that sibling's skolem. A function's
+// own binder and a class's own parameters are skolemized alike.
+func (c *Context) skolemizeParams(params []*soltype.TypeParam) *typeSubst {
+	sks := make([]*soltype.SkolemType, len(params))
+	args := make([]soltype.Type, len(params))
+	for i, tp := range params {
 		sks[i] = c.freshSkolem(tp.Name)
 		args[i] = sks[i]
 	}
-	sub := newTypeSubst(ft.TypeParams, args, nil, nil)
-	for i, tp := range ft.TypeParams {
+	sub := newTypeSubst(params, args, nil, nil)
+	for i, tp := range params {
 		// resolveTypeParams records at most one upper bound per parameter, itself an
 		// IntersectionType for a `<T: A & B>` bound, so the first bound is the whole declared
 		// constraint.
@@ -1739,7 +1759,7 @@ func (c *Context) skolemizeFuncBinder(ft *soltype.FuncType) *soltype.FuncType {
 			sks[i].Upper = tp.Var.UpperBounds[0].Accept(sub, soltype.Positive)
 		}
 	}
-	return substFuncBinder(ft, sub)
+	return sub
 }
 
 // instantiateFuncBinder replaces ft's own type parameters with fresh inference vars at lvl, so
