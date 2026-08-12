@@ -203,7 +203,7 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				}
 			`,
 			// A subclass may leave an inherited field unassigned. Requiring it needs
-			// `super(…)` to delegate to, which is escalier-lang/escalier#1094.
+			// `super(…)` to delegate to, which is escalier-lang/escalier#1095.
 			want: nil,
 		},
 	}
