@@ -1148,7 +1148,8 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 // and gains an UPPER bound. Reaching it at Negative would wire a lower bound instead and
 // invert every constraint extruded through a negation.
 //
-// constrain has no rule for a complement, so the test drives extrude directly.
+// constrain decides a complement by normalizing it rather than by rewriting it, so the test
+// drives extrude directly.
 func TestExtrudeThroughNegation(t *testing.T) {
 	c := &Context{}
 	a := c.freshVar(1) // level 1, so the level-0 extrusion must descend to it

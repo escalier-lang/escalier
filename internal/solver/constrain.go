@@ -715,40 +715,47 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 	}
 
-	// sub <: (A | B) ⟹ sub <: A OR sub <: B. Trial each member under a probe in
-	// specificityOrder, which ranks a variable below every concrete, so a concrete member
-	// is tried before a bare TypeVar member. A var member is therefore a last-resort
-	// catch-all, not a speculative first pin. `5 <: (T | number)` commits `number` and
-	// never touches T. `"hi" <: (T | number)` finds no concrete match and falls through to
-	// `"hi" <: T`, recording "hi" as T's lower bound. This two-pass exists rule settles the
-	// M7 union-super open question. It mirrors the IntersectionType-sub arm below, which
-	// trials its members through the same specificityOrder, so the union-super and
-	// intersection-sub exists rules share one ordering rather than diverging on whether a
-	// var member is trialled.
+	// A complement on either side is decided by the normal-form layer, which is the
+	// only rule that reads one. Moving `¬T` across the `<:` turns it into an ordinary
+	// meet or join, so `5 <: ¬string` holds through `5 ∩ string` being uninhabited
+	// while `5 <: ¬number` fails. A variable operand falls through to the var arms
+	// instead, so `α <: ¬T` records the whole complement as one upper bound and keeps
+	// it on the coalesced binding.
+	if isNegation(sub) || isNegation(super) {
+		_, subIsVar := sub.(*soltype.TypeVarType)
+		_, superIsVar := super.(*soltype.TypeVarType)
+		if !subIsVar && !superIsVar {
+			return c.constrainNF(sub, super, seen, mutCtx).errs
+		}
+	}
+
+	// sub <: (A | B) ⟹ the normal-form layer decides it. Normalizing the union fuses
+	// the members a single atom denotes, so the decision runs on those atoms rather
+	// than on what the source wrote, and a choice among several atoms is trialled in
+	// specificityOrder. That order ranks a variable below every concrete, so a
+	// concrete atom is tried before a bare TypeVar member and a var member is a
+	// last-resort catch-all rather than a speculative first pin. `5 <: (T | number)`
+	// commits `number` and never touches T. `"hi" <: (T | number)` finds no concrete
+	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			order := specificityOrder(supU.Types)
-			committed, winIdx, winErrs, _ := c.trialAndCommit(order, func(idx int) []SolverError {
-				// A cloned seen keeps each member's coinductive cache independent, so a
-				// failed member's entries can't wrongly short-circuit a later member.
-				return c.constrain(sub, supU.Types[idx], seen.Clone(), mutCtx)
-			})
-			if committed {
-				// winErrs carries any warning the winning member's own nested trial emitted.
-				// Propagate it so a nested ambiguous union is not silently swallowed.
-				diags := winErrs
+			decision := c.constrainNF(sub, super, seen, mutCtx)
+			if !hasHardError(decision.errs) {
+				// The decision carries any warning a nested trial emitted. Propagate it so a
+				// nested ambiguous union is not silently swallowed.
+				diags := decision.errs
 				// A committed bare type-variable member pins that var to sub. Tag it so a
 				// later constraint that forces an incompatible bound onto the var can name
 				// the union choice that pinned it.
-				if v, ok := supU.Types[winIdx].(*soltype.TypeVarType); ok {
+				if v, ok := decision.committed.(*soltype.TypeVarType); ok {
 					c.tagUnionCommit(v, supU)
 				}
 				// When another member would also match while binding an inference variable,
 				// the committed choice is ambiguous. Warn at the union so the user can
 				// annotate rather than depend on specificity order.
-				if alt := c.ambiguousAlternate(sub, supU, order, winIdx, seen, mutCtx); alt != nil {
+				if alt := c.ambiguousAlternate(sub, supU, decision.committed, seen, mutCtx); alt != nil {
 					diags = append(diags, &AmbiguousUnionCommitWarning{
-						Union: supU, Committed: supU.Types[winIdx], Alternate: alt,
+						Union: supU, Committed: decision.committed, Alternate: alt,
 					})
 				}
 				return diags
@@ -760,8 +767,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				// into a closed super because that open tail can't be absorbed.
 				return nil
 			}
-			// Every branch failed, the var members included. Promote a BorrowEscapeError
-			// when sub's peeled inner still satisfies the union; else emit the generic error.
+			// No candidate holds, the var members included, and the decomposition's own
+			// diagnostics are dropped for one that names the union the user wrote. Promote
+			// a BorrowEscapeError when sub's peeled inner still satisfies the union; else
+			// emit the generic error.
 			if ref, ok := sub.(*soltype.RefType); ok && ref.Lt != nil {
 				if !hasHardError(c.trialUnderProbe(ref.Inner, super)) {
 					return []SolverError{&BorrowEscapeError{Sub: ref, Super: super}}
@@ -1332,14 +1341,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 		}
 	case *soltype.IntersectionType:
-		// (A & B) <: super ⟹ A <: super OR B <: super. Trial each member in
-		// specificity order under a probe; the first success commits. Stays in
-		// the structural switch (not the pre-switch block) because the switch
-		// already dispatches on sub, so a lattice sub is matched by its own case
-		// here without needing a pre-switch interception. When super is a
-		// TypeVar, fall through to the superVar arm so the whole intersection is
-		// recorded as one lower bound rather than committing to one arm and
-		// discarding the rest. Two callers reach this:
+		// (A & B) <: super ⟹ the normal-form layer decides it. Normalizing the
+		// intersection fuses the members a single atom denotes, which is what
+		// decides an arrow intersection: `((x: number) -> boolean) & ((x: string)
+		// -> boolean)` fuses to `(x: number | string) -> boolean` and then meets
+		// that target by the ordinary arrow rule, where trialling each written arm
+		// on its own rejects it. Stays in the structural switch rather than the
+		// pre-switch block because the switch already dispatches on sub, so a
+		// lattice sub is matched by its own case here without needing a pre-switch
+		// interception. When super is a TypeVar, fall through to the superVar arm
+		// so the whole intersection is recorded as one lower bound rather than
+		// committing to one arm and discarding the rest. Two callers reach this:
 		//
 		//   - Overload synthesis. inferIdent builds an intersection out of an
 		//     overloaded value's arms so a let-bound overload called through the
@@ -1351,19 +1363,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		//     types, so a non-function intersection trials its more-specific
 		//     members first; incomparable members keep declaration order.
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar && len(sub.Types) > 0 {
-			committed, _, winErrs, trialErrs := c.trialAndCommit(specificityOrder(sub.Types), func(idx int) []SolverError {
-				// A cloned seen keeps each arm's coinductive cache independent, so a failed
-				// arm's entries can't wrongly short-circuit a later arm to success.
-				return c.constrain(sub.Types[idx], super, seen.Clone(), mutCtx)
-			})
-			if committed {
-				// winErrs carries any warning the winning arm's nested trial emitted.
-				return winErrs
-			}
-			if len(trialErrs) > 0 {
-				return trialErrs[len(trialErrs)-1] // no arm matched: surface the last arm's failure
-			}
-			return nil
+			// The decision carries any warning a nested trial emitted, and on failure the
+			// diagnostics of the last atom pair it tried.
+			return c.constrainNF(sub, super, seen, mutCtx).errs
 		}
 	}
 
@@ -1420,7 +1422,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 // trialled under a throwaway probe, so the peek records no bound. A union with no bare
 // type-variable member cannot bind ambiguously, so the scan is skipped, sparing the common
 // all-concrete union super such as an enum value flowing into its variant union.
-func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, order []int, winIdx int, seen *seenPairs, mutCtx bool) soltype.Type {
+func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, committed soltype.Type, seen *seenPairs, mutCtx bool) soltype.Type {
 	hasVar := false
 	for _, m := range u.Types {
 		if _, ok := m.(*soltype.TypeVarType); ok {
@@ -1431,8 +1433,8 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, ord
 	if !hasVar {
 		return nil
 	}
-	for _, j := range order {
-		if j == winIdx {
+	for _, j := range specificityOrder(u.Types) {
+		if committed != nil && equalType(u.Types[j], committed) {
 			continue
 		}
 		if ok, mutated := c.trialMutatesBounds(sub, u.Types[j], seen, mutCtx); ok && mutated {
