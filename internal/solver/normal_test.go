@@ -664,11 +664,79 @@ func TestNominalAtomsStayDistinct(t *testing.T) {
 	})
 }
 
+// TestFuncMerge pins which intersected function atoms fuse into one arrow and
+// which stay apart. The two fusing cases are exact. Keeping the rest apart is the
+// shape decision that lets PR5 (#1062) apply the Frisch-Castagna-Benzaken arrow
+// decomposition rather than inheriting MLscript's unsound merge —
+// planning/ml_struct/06-open-items.md finding 2.
+func TestFuncMerge(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{
+			name: "shared codomain: the domains join",
+			in:   "(fn (x: number) -> boolean) & (fn (x: string) -> boolean)",
+			want: "fn (x: number | string) -> boolean",
+		},
+		{
+			name: "shared domain: the codomains meet",
+			in:   "(fn (x: number) -> number | string) & (fn (x: number) -> string | boolean)",
+			want: "fn (x: number) -> string",
+		},
+		{
+			name: "shared domain, disjoint codomains: the meet is uninhabited",
+			in:   "(fn (x: number) -> number) & (fn (x: number) -> string)",
+			want: "fn (x: number) -> never",
+		},
+		{
+			name: "no shared domain or codomain: both arms are kept",
+			in:   "(fn (x: number) -> boolean) & (fn (x: string) -> null)",
+			want: "(fn (x: number) -> boolean) & (fn (x: string) -> null)",
+		},
+		{
+			name: "a shared codomain over two parameters is not fused position by position",
+			in: "(fn (x: number, y: number) -> boolean) & " +
+				"(fn (x: string, y: string) -> boolean)",
+			want: "(fn (x: number, y: number) -> boolean) & (fn (x: string, y: string) -> boolean)",
+		},
+		{
+			name: "a shared domain over two parameters still meets the codomains",
+			in: "(fn (x: number, y: string) -> number | string) & " +
+				"(fn (x: number, y: string) -> string | boolean)",
+			want: "fn (x: number, y: string) -> string",
+		},
+		{
+			name: "arms differing in the trailing open marker are kept apart",
+			in:   "(fn (x: number) -> boolean) & (fn (x: string, ...) -> boolean)",
+			want: "(fn (x: number) -> boolean) & (fn (x: string, ...) -> boolean)",
+		},
+		{
+			name: "a union of two arrows keeps both, since no single arrow denotes it",
+			in:   "(fn (x: number) -> boolean) | (fn (x: number) -> null)",
+			want: "(fn (x: number) -> boolean) | (fn (x: number) -> null)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			require.Equal(t, tt.want, normDNF(c, parseType(t, tt.in)))
+		})
+	}
+}
+
 // TestCanonicalOrderIsPermutationStable builds one type from its members in every
 // order and asserts each order reaches the same normal form. The members are
 // assembled into raw lattice nodes rather than through newUnion and
 // newIntersection, so the smart constructors' own sorting cannot be what makes the
 // orders agree.
+//
+// The arrow row is the one with teeth. Its members admit two DIFFERENT exact
+// fusions, and taking either one rules the other out: the two number-domain arms
+// fuse by meeting their codomains, and the two boolean-codomain arms fuse by
+// joining their domains. Scanning in canonical order is what settles which fusion
+// a given member SET reaches.
 func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 	tests := []struct {
 		name string
@@ -693,6 +761,15 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 			name:    "an intersection of inexact records, which fuses into one",
 			members: []string{"{y: number, ...}", "{x: number, ...}", "{z: number, ...}"},
 			want:    "{x: number, y: number, z: number, ...}",
+		},
+		{
+			name: "an intersection of arrows where two different fusions compete",
+			members: []string{
+				"fn (x: number) -> string",
+				"fn (x: number) -> boolean",
+				"fn (x: string) -> boolean",
+			},
+			want: "(fn (x: number) -> never) & (fn (x: string) -> boolean)",
 		},
 	}
 	for _, tt := range tests {

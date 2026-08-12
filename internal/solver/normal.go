@@ -40,26 +40,29 @@ import (
 // merge is an optimization that bails rather than a step that must succeed. This
 // is caveat 4 in planning/ml_struct/02-caveats-and-mitigations.md.
 //
-// # A list of atoms per side, not one slot per kind
+// # Two shape decisions this file owns
 //
-// MLscript gives LhsNf and RhsNf one slot per structural kind, which loses
-// precision in two places — see planning/ml_struct/06-open-items.md findings 1 and
-// 2. This port holds a LIST per side instead, so neither loss is inherited.
+// MLscript's normal form is lossy in two places, both a consequence of holding one
+// slot per structural kind. This port holds a LIST per side instead, so neither
+// loss is inherited. See planning/ml_struct/06-open-items.md findings 1 and 2.
 //
-// Finding 1 pays off immediately. A supertype union of two differently-named
-// records stays precise here, where MLscript widens the disjunct to `unknown` on
-// meeting the second field name and makes every subtype pass against it.
+//  1. LhsNf keeps intersected function atoms SEPARATE when they cannot fuse
+//     exactly. MLscript fuses every pair to `(l0 | l1) -> (r0 & r1)`, which is
+//     unsound when the codomains conflict. Keeping the arms apart is what lets
+//     PR5 (#1062) decide an arrow intersection by the Frisch-Castagna-Benzaken
+//     decomposition, the set-theoretically sound rule the conformance corpus in
+//     constrain_nf_test.go states verdicts against. meetFuncs still performs the
+//     fusion for the two cases where it is exact.
+//  2. RhsNf holds a LIST of record atoms. MLscript holds one, and widens a
+//     disjunct to `unknown` on meeting a second differently-named field, which
+//     makes every subtype pass against a supertype union of two records. A list
+//     keeps `{x: number} | {y: number}` precise in supertype position.
 //
 // # What a later PR adds
 //
-// Arrows are still kept apart atom by atom, and two whole conjuncts are never
-// fused into one.
-//
-// Exactness-driven merges are deferred. An atom's `Inexact` flag rides through
-// every merge here, and two atoms whose flags disagree are kept separate rather
-// than fused under a guess. PR7 (#1064) decides the exact cases, such as two exact
-// records with differing required fields meeting to `never`. TODO(#1064). The
-// nominal meet is still the glbClass stub. TODO(#1061).
+// Two whole conjuncts are never fused into one. The nominal meet is still the
+// glbClass stub (TODO(#1061)) and the exactness-driven merges are still deferred
+// (TODO(#1064)).
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -423,7 +426,14 @@ func pooled(a, b []soltype.Type) []soltype.Type {
 //
 // The list is sorted before the scan and again after each fusion, so the pair
 // chosen is decided by canonical order rather than by the order the atoms arrived
-// in.
+// in. That ordering carries weight once a kind admits more than one exact fusion
+// of the same atoms, since taking one rules out the others. The arrows of
+// `(number -> string) & (number -> boolean) & (string -> boolean)` fuse either by
+// the shared domain of the first two, meeting their codomains, or by the shared
+// codomain of the last two, joining their domains. The two results are equal types
+// written differently. Scanning in canonical order settles which one a given SET
+// of atoms reaches, so permuting the source members cannot change the normal form.
+// TestCanonicalOrderIsPermutationStable runs that intersection in every order.
 //
 // Each fusion shortens the list, so the loop runs at most len(atoms) times.
 func (c *Context) fuseAtoms(atoms []soltype.Type, role atomRole) ([]soltype.Type, bool) {
@@ -545,6 +555,10 @@ func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	case *soltype.TupleType:
 		if b, ok := b.(*soltype.TupleType); ok {
 			return c.meetTuples(a, b)
+		}
+	case *soltype.FuncType:
+		if b, ok := b.(*soltype.FuncType); ok {
+			return c.meetFuncs(a, b)
 		}
 	case *soltype.ClassType:
 		if b, ok := b.(*soltype.ClassType); ok {
@@ -906,6 +920,94 @@ func hasSpreadElem(elems []soltype.Type) bool {
 		}
 	}
 	return false
+}
+
+// meetFuncs fuses two function atoms into one arrow, but only for the two cases
+// where a single arrow denotes the intersection exactly.
+//
+//   - The domains agree: `(A -> C) & (A -> D)` is `A -> (C & D)`.
+//   - The codomains agree and there is one parameter: `(A -> C) & (B -> C)` is
+//     `(A | B) -> C`.
+//
+// Any other pair keeps both atoms, which is decision 1 in this file's header and
+// where this port departs from MLscript.
+//
+// The one-parameter restriction is load-bearing. Unioning each position
+// independently would fuse `(number, number) -> C` and `(string, string) -> C`
+// into a claim that the value accepts a number paired with a string.
+func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
+	if !fusableFuncs(a, b) {
+		return nil, false
+	}
+	if equalParamTypes(a, b) {
+		return &soltype.FuncType{
+			SelfParam:      nil,
+			Params:         a.Params,
+			Ret:            c.meetTypes(a.Ret, b.Ret),
+			Throws:         a.Throws,
+			Inexact:        a.Inexact,
+			TypeParams:     nil,
+			LifetimeParams: nil,
+		}, true
+	}
+	if len(a.Params) == 1 && equalType(a.Ret, b.Ret) {
+		param := a.Params[0]
+		fused := &soltype.FuncParam{
+			Pattern:  param.Pattern,
+			Type:     c.joinTypes(param.Type, b.Params[0].Type),
+			Optional: param.Optional,
+			Rest:     param.Rest,
+		}
+		return &soltype.FuncType{
+			SelfParam:      nil,
+			Params:         []*soltype.FuncParam{fused},
+			Ret:            a.Ret,
+			Throws:         a.Throws,
+			Inexact:        a.Inexact,
+			TypeParams:     nil,
+			LifetimeParams: nil,
+		}, true
+	}
+	return nil, false
+}
+
+// fusableFuncs reports whether two function atoms are alike enough for meetFuncs
+// to build one arrow from them. Everything a fused arrow does not recompute must
+// already agree: the arity, the per-parameter markers, the trailing `...`, and what
+// a call may raise. A receiver or a quantifier rules the pair out, since one arrow
+// cannot say which receiver it takes or how the two binder lists correspond.
+//
+// Demanding equal raises is conservative. `(A -> C throws E) & (A -> C throws F)`
+// really raises `E & F`, but that merge belongs with PR9's throws threading.
+// TODO(#1066).
+func fusableFuncs(a, b *soltype.FuncType) bool {
+	if a.SelfParam != nil || b.SelfParam != nil {
+		return false
+	}
+	if len(a.TypeParams) > 0 || len(b.TypeParams) > 0 {
+		return false
+	}
+	if len(a.LifetimeParams) > 0 || len(b.LifetimeParams) > 0 {
+		return false
+	}
+	if a.Inexact != b.Inexact || len(a.Params) != len(b.Params) {
+		return false
+	}
+	for i := range a.Params {
+		if a.Params[i].Optional != b.Params[i].Optional || a.Params[i].Rest != b.Params[i].Rest {
+			return false
+		}
+	}
+	return equalType(a.ThrowsOrNever(), b.ThrowsOrNever())
+}
+
+func equalParamTypes(a, b *soltype.FuncType) bool {
+	for i := range a.Params {
+		if !equalType(a.Params[i].Type, b.Params[i].Type) {
+			return false
+		}
+	}
+	return true
 }
 
 // meetTypes is the meet a structural merge writes into a fused atom, such as the
