@@ -80,6 +80,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// check them; B1 records them only.
 	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
 	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
+	def.EdgesPending = false
 
 	// Two-phase member walk (B3). Phase 1 appends a signature element for every field,
 	// method, getter, and setter to the instance or static body before any body is
@@ -255,6 +256,10 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 		Arity:  arityOfParamDecls(decl.TypeParams),
 		Body:   &soltype.ObjectType{},
 		Static: &soltype.ObjectType{},
+		// The `extends` and `implements` clauses resolve in the second phase, so until then
+		// the two edge lists are empty for want of reading rather than for want of a
+		// declaration.
+		EdgesPending: true,
 	}
 	c.ctx.registerClass(qname, def)
 	// Register the type binding under the qualified name so a cross-namespace reference
