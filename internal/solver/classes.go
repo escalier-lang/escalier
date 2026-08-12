@@ -469,9 +469,9 @@ func substituteSuperArgs(def *ClassDef, sub, superType *soltype.ClassType) *solt
 //  2. One tag's class reaches the other's through the declared `extends` graph. The
 //     meet is the lower of the two, since every instance of the lower one already
 //     carries the higher one's tag.
-//  3. No declared edge relates the two classes. No value carries both tags, so the
-//     meet is `never` and the conjunct holding them is dropped. This is the fast
-//     path caveat 1 in planning/ml_struct/02-caveats-and-mitigations.md names: an
+//  3. Neither class reaches the other. No value carries both tags, so the meet is
+//     `never` and the conjunct holding them is dropped. This is the fast path
+//     caveat 1 in planning/ml_struct/02-caveats-and-mitigations.md names: an
 //     intersection of unrelated classes is settled here and never reaches
 //     structural work.
 //
@@ -504,12 +504,13 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 	if c.nominalSubtype(b, a) {
 		return b, true
 	}
-	if !c.classesRelated(a.Name, b.Name) {
+	if !c.classReaches(a.Name, b.Name) && !c.classReaches(b.Name, a.Name) {
 		return &soltype.NeverType{}, true
 	}
-	// The graph relates the two classes without putting either instance below the
-	// other. A declared `implements` edge and a type argument the superclass rules out
-	// both land here.
+	// One class reaches the other, but the instance below carries a type argument the
+	// one above rules out. Take `class Wrapper<T> extends Reader<T>` and meet
+	// `Wrapper<string>` with `Reader<number>`. Neither tag is below the other, and
+	// `Wrapper<never>` is below both, so the pair is not disjoint either.
 	return nil, false
 }
 
@@ -519,11 +520,11 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 // relation by emitting constraints. The nominal meet asks this one instead,
 // because normalizing a type may not record a bound.
 //
-// The argument check goes through meetClassArgs: sub is below super exactly when
-// meeting sub's projection at super's class with super leaves that projection
-// unchanged. A covariant position therefore accepts a narrower argument, `Sub<5>`
-// below `Super<number>` when `class Sub<T> extends Super<T>`, and an invariant one
-// demands the arguments match.
+// The argument check goes through meetClassArgs, which leaves sub's projection at
+// super's class unchanged exactly when sub is below super. A covariant position
+// therefore accepts a narrower argument. `Sub<5>` is below `Super<number>` when
+// `class Sub<T> extends Super<T>`. An invariant position demands that the two
+// arguments match.
 func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
 	up, ok := c.ancestorInstance(sub, super.Name)
 	if !ok {
@@ -533,15 +534,15 @@ func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
 	return ok && equalType(met, up)
 }
 
-// meetClassArgs meets two instances of ONE class position by position, dispatching
+// meetClassArgs meets two instances of ONE class, position by position, dispatching
 // each position by the variance the class registry records for it. ok is false when
 // a position admits no exact meet, which keeps the two tags separate.
 //
 // The variance read is the MUTABLE-view vector, the stricter of the two. A normal
 // form carries no borrow around the tag to say whether a write can reach a
 // position, so the meet takes the vector that admits one. A position a write
-// reaches is invariant there, so it fuses only when the two arguments match, where
-// the immutable view would have met them.
+// reaches is invariant there, so it fuses only when the two arguments match. The
+// immutable view would have met them instead.
 //
 // The exactness and enum-variant flags must agree. Both are read off the
 // declaration, so two tags naming one class carry the same pair, and a
@@ -554,8 +555,8 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 	if !sameLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs, &alphaCtx{}) {
 		return nil, false
 	}
-	// A missing def leaves every position invariant, which varianceAt already yields for
-	// a nil receiver. Two tags naming one unregistered class then fuse only when their
+	// varianceAt yields Invariant for a nil receiver, so every position of an
+	// unregistered class is invariant. Two tags naming one then fuse only when their
 	// arguments match, the conservative reading.
 	def, _ := c.classDef(a.Name)
 	args := make([]soltype.Type, len(a.TypeArgs))
@@ -630,24 +631,25 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 	return nil, false
 }
 
-// classesRelated reports whether the declared graph connects the two class names in
-// either direction. Only a pair it separates meets to `never`.
+// classReaches reports whether the class named from is at or below the one named
+// to in the declared `extends` graph. ancestorInstance answers the same question by
+// returning the instance itself. This one serves a caller with no arguments to
+// substitute.
 //
-// It follows `implements` edges as well as `extends`, which is wider than the
-// nominal subtype walk. A class that implements an interface is not a nominal
-// subtype of it, so the meet cannot fuse the pair to the class. An instance of that
-// class is still meant to stand for the interface, so calling the two tags disjoint
-// would be wrong, and the meet keeps them as separate atoms instead.
+// The edges are `extends` alone, the same ones constrainNominalWalk follows, so the
+// meet decides the subtype relation the solver decides rather than a wider one. An
+// `implements` clause is a conformance assertion the nominal walk skips. A class
+// implementing an interface is therefore not below it, and the two tags are
+// disjoint the way any other unordered pair is.
 //
-// Separating an unrelated pair is sound because a class declares at most one
-// superclass. Two classes neither of which reaches the other therefore have no
+// Calling an unreachable pair disjoint is sound because a class declares at most
+// one superclass. Two classes neither of which reaches the other therefore have no
 // common subclass, so no value carries both tags.
-func (c *Context) classesRelated(a, b string) bool {
-	return c.declaredReaches(a, b, set.NewSet[string]()) ||
-		c.declaredReaches(b, a, set.NewSet[string]())
+func (c *Context) classReaches(from, to string) bool {
+	return c.classReachesWalk(from, to, set.NewSet[string]())
 }
 
-func (c *Context) declaredReaches(from, to string, walked set.Set[string]) bool {
+func (c *Context) classReachesWalk(from, to string, walked set.Set[string]) bool {
 	if from == to {
 		return true
 	}
@@ -660,12 +662,7 @@ func (c *Context) declaredReaches(from, to string, walked set.Set[string]) bool 
 		return false
 	}
 	for _, super := range def.Supers {
-		if c.declaredReaches(super.Name, to, walked) {
-			return true
-		}
-	}
-	for _, iface := range def.Implements {
-		if c.declaredReaches(iface.Name, to, walked) {
+		if c.classReachesWalk(super.Name, to, walked) {
 			return true
 		}
 	}

@@ -356,16 +356,17 @@ func TestProjectClassBodyDoesNotMutateRegistry(t *testing.T) {
 
 // nominalGraph registers the class hierarchy the nominal-meet cases share.
 //
-//	Shape          Vec     Printable                Loop ──┐
-//	├── Point                  ▲                     ▲     │
-//	│   └── Pixel              └── implemented by Doc └─────┘
-//	└── Line
+//	Shape           Vec     Printable      Loop ──┐
+//	├── Point                   ▲           ▲     │
+//	│   └── Pixel               │           └─────┘
+//	├── Line                    │
+//	└── Doc ── implements ──────┘
 //
-// It also registers one generic class per variance — covariant Reader, mutable-view
-// invariant Box, contravariant Consumer, invariant Cell, bivariant Ghost — plus two
-// classes extending a generic one: `Wrapper<T> extends Reader<T>`, which substitutes
-// its own argument into the edge, and `NumReader extends Reader<number>`, which fixes
-// the argument at the declaration.
+// It also registers one generic class per variance: covariant Reader, mutable-view
+// invariant Box, contravariant Consumer, invariant Cell, and bivariant Ghost. Two
+// further classes extend a generic one. `Wrapper<T> extends Reader<T>` substitutes
+// its own argument into the edge, and `NumReader extends Reader<number>` fixes the
+// argument at the declaration.
 func nominalGraph() *Context {
 	c := &Context{}
 	for _, name := range []string{"Shape", "Vec", "Printable"} {
@@ -374,7 +375,10 @@ func nominalGraph() *Context {
 	c.registerClass("Point", &ClassDef{Supers: []*soltype.ClassType{cls("Shape", false)}})
 	c.registerClass("Pixel", &ClassDef{Supers: []*soltype.ClassType{cls("Point", false)}})
 	c.registerClass("Line", &ClassDef{Supers: []*soltype.ClassType{cls("Shape", false)}})
-	c.registerClass("Doc", &ClassDef{Implements: []*soltype.ClassType{cls("Printable", false)}})
+	c.registerClass("Doc", &ClassDef{
+		Supers:     []*soltype.ClassType{cls("Shape", false)},
+		Implements: []*soltype.ClassType{cls("Printable", false)},
+	})
 	// A class extending itself is not something the checker builds. Registering one here
 	// pins that the walk stops on a cyclic edge instead of recurring forever.
 	c.registerClass("Loop", &ClassDef{Supers: []*soltype.ClassType{cls("Loop", false)}})
@@ -397,16 +401,16 @@ func nominalGraph() *Context {
 		TypeParams:  []*soltype.TypeParam{{Name: "T", Var: wrapperVar}},
 		Variance:    []Variance{Covariant},
 		MutVariance: []Variance{Covariant},
-		Supers:      []*soltype.ClassType{generics("Reader", wrapperVar)},
+		Supers:      []*soltype.ClassType{genericCls("Reader", wrapperVar)},
 	})
 	c.registerClass("NumReader", &ClassDef{
-		Supers: []*soltype.ClassType{generics("Reader", num())},
+		Supers: []*soltype.ClassType{genericCls("Reader", num())},
 	})
 	return c
 }
 
-// generics builds an instance handle for a generic class at the given arguments.
-func generics(name string, args ...soltype.Type) *soltype.ClassType {
+// genericCls builds an instance handle for a generic class at the given arguments.
+func genericCls(name string, args ...soltype.Type) *soltype.ClassType {
 	return &soltype.ClassType{Name: name, TypeArgs: args}
 }
 
@@ -462,9 +466,14 @@ func TestGlbClass(t *testing.T) {
 			want: "",
 		},
 		{
-			name: "an implemented interface is related but not above the class",
+			name: "an implemented interface is not above the class that implements it",
 			a:    cls("Doc", false), b: cls("Printable", false),
-			want: "",
+			want: "never",
+		},
+		{
+			name: "an interface is unordered against the superclass of an implementor",
+			a:    cls("Shape", false), b: cls("Printable", false),
+			want: "never",
 		},
 		{
 			name: "two tags disagreeing on exactness stay separate",
@@ -473,52 +482,52 @@ func TestGlbClass(t *testing.T) {
 		},
 		{
 			name: "a covariant position meets its two arguments",
-			a:    generics("Reader", num()), b: generics("Reader", numOrStr),
+			a:    genericCls("Reader", num()), b: genericCls("Reader", numOrStr),
 			want: "Reader<number>",
 		},
 		{
 			name: "a covariant position may meet to never",
-			a:    generics("Reader", num()), b: generics("Reader", str()),
+			a:    genericCls("Reader", num()), b: genericCls("Reader", str()),
 			want: "Reader<never>",
 		},
 		{
 			name: "a contravariant position joins its two arguments",
-			a:    generics("Consumer", num()), b: generics("Consumer", str()),
+			a:    genericCls("Consumer", num()), b: genericCls("Consumer", str()),
 			want: "Consumer<number | string>",
 		},
 		{
 			name: "an invariant position fuses only equal arguments",
-			a:    generics("Cell", num()), b: generics("Cell", num()),
+			a:    genericCls("Cell", num()), b: genericCls("Cell", num()),
 			want: "Cell<number>",
 		},
 		{
 			name: "an invariant position with differing arguments stays separate",
-			a:    generics("Cell", num()), b: generics("Cell", str()),
+			a:    genericCls("Cell", num()), b: genericCls("Cell", str()),
 			want: "",
 		},
 		{
 			name: "a bivariant position imposes nothing on its arguments",
-			a:    generics("Ghost", num()), b: generics("Ghost", str()),
+			a:    genericCls("Ghost", num()), b: genericCls("Ghost", str()),
 			want: "Ghost<number>",
 		},
 		{
 			name: "a position a write reaches is dispatched as invariant",
-			a:    generics("Box", num()), b: generics("Box", numOrStr),
+			a:    genericCls("Box", num()), b: genericCls("Box", numOrStr),
 			want: "",
 		},
 		{
 			name: "an inherited argument is substituted along the edge",
-			a:    generics("Wrapper", numLit(5)), b: generics("Reader", num()),
+			a:    genericCls("Wrapper", numLit(5)), b: genericCls("Reader", num()),
 			want: "Wrapper<5>",
 		},
 		{
 			name: "an inherited argument the superclass rules out stays separate",
-			a:    generics("Wrapper", str()), b: generics("Reader", num()),
+			a:    genericCls("Wrapper", str()), b: genericCls("Reader", num()),
 			want: "",
 		},
 		{
 			name: "an edge declared at a fixed argument reaches its superclass",
-			a:    cls("NumReader", false), b: generics("Reader", numOrStr),
+			a:    cls("NumReader", false), b: genericCls("Reader", numOrStr),
 			want: "NumReader",
 		},
 	}
@@ -564,6 +573,15 @@ func TestGlbClassInNormalForm(t *testing.T) {
 		require.Equal(t, "(fn (x: number) -> string) & Point", soltype.Print(d.toType()))
 	})
 
+	t.Run("two tags of one class survive when no argument stands for the meet", func(t *testing.T) {
+		conflicting := meet(genericCls("Cell", num()), genericCls("Cell", str()))
+		d := c.mkDNF(conflicting, soltype.Positive)
+		require.Len(t, d.Conjuncts, 1)
+		require.Len(t, d.Conjuncts[0].Lnf.Atoms, 2)
+		_, ok := d.Conjuncts[0].Lnf.Base()
+		require.False(t, ok)
+	})
+
 	t.Run("an unrelated tag drops one member of a union and keeps the rest", func(t *testing.T) {
 		either := newUnion(nil, []soltype.Type{
 			meet(cls("Point", false), cls("Vec", false)),
@@ -589,9 +607,10 @@ func TestNominalSubtype(t *testing.T) {
 		{name: "two edges still reach", sub: cls("Pixel", false), super: cls("Shape", false), want: true},
 		{name: "siblings are unrelated", sub: cls("Point", false), super: cls("Line", false), want: false},
 		{name: "an implemented interface is not a nominal supertype", sub: cls("Doc", false), super: cls("Printable", false), want: false},
-		{name: "a covariant argument may narrow", sub: generics("Reader", numLit(5)), super: generics("Reader", num()), want: true},
-		{name: "a covariant argument may not widen", sub: generics("Reader", num()), super: generics("Reader", numLit(5)), want: false},
-		{name: "an inherited argument is checked at the superclass", sub: generics("Wrapper", numLit(5)), super: generics("Reader", num()), want: true},
+		{name: "an implementor is still below its superclass", sub: cls("Doc", false), super: cls("Shape", false), want: true},
+		{name: "a covariant argument may narrow", sub: genericCls("Reader", numLit(5)), super: genericCls("Reader", num()), want: true},
+		{name: "a covariant argument may not widen", sub: genericCls("Reader", num()), super: genericCls("Reader", numLit(5)), want: false},
+		{name: "an inherited argument is checked at the superclass", sub: genericCls("Wrapper", numLit(5)), super: genericCls("Reader", num()), want: true},
 	}
 
 	for _, test := range tests {

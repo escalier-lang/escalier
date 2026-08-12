@@ -108,10 +108,11 @@ type RhsNf struct{ Atoms []soltype.Type }
 
 // Base returns the single nominal class tag the intersection carries, and reports
 // whether it carries exactly one. This is the slot the nominal meet writes to.
-// glbClass fuses two related tags into one and collapses two unrelated ones to
-// `never`, so the only intersection reaching this accessor with two tags left is
-// one whose classes the declared graph relates without ordering, such as a class
-// met with an interface it implements.
+// glbClass fuses two ordered tags into one and collapses two unordered ones to
+// `never`, so an intersection that still holds two tags here is one glbClass found
+// no exact fusion for. `Cell<number> & Cell<string>` at an invariant position is
+// such a pair. The two tags name one class, and neither argument stands for the
+// meet.
 func (l LhsNf) Base() (*soltype.ClassType, bool) {
 	var found *soltype.ClassType
 	for _, atom := range l.Atoms {
