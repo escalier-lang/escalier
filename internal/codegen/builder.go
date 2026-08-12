@@ -806,7 +806,11 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		// Every class has at most one in-body ConstructorElem (user-written
 		// or synthesized in Phase 2.7). buildClassElems emits the
 		// constructor JS from that element directly.
-		classElems, classStmts := b.buildClassElems(d.Body)
+		var superClass Expr
+		if d.Extends != nil {
+			superClass = NewIdentExpr(b.superClassName(d.Extends, nsName), "", d.Extends)
+		}
+		classElems, classStmts := b.buildClassElems(d.Body, superClass != nil)
 		allStmts = slices.Concat(allStmts, classStmts)
 
 		classDecl := &ClassDecl{
@@ -815,11 +819,12 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				span:   nil,
 				source: d.Name,
 			},
-			Body:    classElems,
-			export:  b.isModule,
-			declare: d.Declare(),
-			span:    nil,
-			source:  d,
+			SuperClass: superClass,
+			Body:       classElems,
+			export:     b.isModule,
+			declare:    d.Declare(),
+			span:       nil,
+			source:     d,
 		}
 		stmt := &DeclStmt{
 			Decl:   classDecl,
@@ -2153,7 +2158,29 @@ func (b *Builder) buildParams(inParams []*ast.Param) ([]*Param, []Stmt) {
 	return outParams, outParamStmts
 }
 
-func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt) {
+// superClassName returns the emitted JS name of the class an `extends` clause refers to.
+// A declaration's own name is emitted with each dot of its namespace-qualified name mangled
+// to a double underscore, so `class Color` inside namespace `MyEnum` becomes `MyEnum__Color`,
+// and a reference has to be mangled the same way to reach it.
+//
+// The written name is resolved the way the dep graph resolved it when it ordered the two
+// declarations, the enclosing namespace first and then the root. That is what makes a bare
+// `extends Animal` inside a namespace reach the namespace's own Animal when there is one and
+// the root's otherwise, matching the class the checker checked against.
+func (b *Builder) superClassName(ref *ast.TypeRefTypeAnn, nsName string) string {
+	name := ast.QualIdentToString(ref.Name)
+	if nsName != "" && b.depGraph != nil {
+		qualified := nsName + "." + name
+		if b.depGraph.HasBinding(dep_graph.TypeBindingKey(qualified)) {
+			name = qualified
+		}
+	}
+	return strings.ReplaceAll(name, ".", "__")
+}
+
+// buildClassElems converts a class body to its JS elements. derived says the class carries an
+// `extends` clause, which makes its constructor emit a leading `super()`.
+func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]ClassElem, []Stmt) {
 	var outElems []ClassElem
 	var allStmts []Stmt
 
@@ -2295,10 +2322,23 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem) ([]ClassElem, []Stmt)
 				bodyStmts = b.buildStmts(e.Fn.Body.Stmts)
 				b.inBlockScope = prevInBlockScope
 			}
+			// JS rejects any use of `this` in a derived constructor before `super()` runs, and
+			// every instance field is assigned through `this`, so the call has to lead the
+			// body. It passes no arguments: a subclass constructor assigns each field it
+			// inherits itself, and escalier-lang/escalier#678 is what will let it forward
+			// arguments to the superclass instead.
+			var prelude []Stmt
+			if derived {
+				prelude = []Stmt{&ExprStmt{
+					Expr:   NewCallExpr(NewIdentExpr("super", "", e), nil, false, e),
+					span:   nil,
+					source: e,
+				}}
+			}
 			constructorMethod := NewMethodElem(
 				NewIdentExpr("constructor", "", e),
 				params,
-				slices.Concat(paramStmts, bodyStmts),
+				slices.Concat(prelude, paramStmts, bodyStmts),
 				MethodElemOptions{},
 				e,
 			)
