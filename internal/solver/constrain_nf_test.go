@@ -1,0 +1,356 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// --- The conformance oracle for normal-form subtyping ---
+//
+// The two tables below, nfArrowCorpus and nfRecordCorpus, state for each
+// subtyping case the verdict that is sound under a types-as-values reading. In
+// that reading a type denotes the set of values that inhabit it, and
+// `sub <: super` is true exactly when every value of sub is a value of super.
+// Every verdict here is derived by hand from that reading. None is read off an
+// implementation, neither Escalier's nor MLscript's. That is what makes the
+// table an oracle. It measures the normal-form solver against truth rather than
+// against a guess.
+//
+// Two shapes are pinned, both drawn from planning/ml_struct/.
+//
+//  1. Arrow rows — an intersection of function types against a single function
+//     type. This is where a "merge the arms into one arrow" reading diverges from
+//     the sound answer, and it becomes user-visible through conditional-type
+//     `extends`.
+//  2. Negative-position record-union rows — an ordinary type against a union of
+//     records used as the supertype. MLstruct's normal form over-approximates
+//     that supertype to `unknown`. These rows state the sound answers, so a port
+//     that inherited the widening fails them.
+//
+// # The arrow decomposition
+//
+// The sound verdict for an arrow row comes from the Frisch-Castagna-Benzaken
+// decomposition, which does not collapse the intersection to one arrow. To decide
+// `⋂ᵢ (Aᵢ → Cᵢ) <: (E → F)`, both of these must hold.
+//
+//  1. The target domain is covered: `E <: ⋃ᵢ Aᵢ`. No input the target accepts may
+//     fall outside every arm's domain.
+//  2. For every subset P of the arms, either the inputs are still covered without
+//     P — `E <: ⋃_{i∉P} Aᵢ` — or the arms in P return something the target
+//     tolerates, `⋂_{i∈P} Cᵢ <: F`.
+//
+// Leg 2 reads concretely as follows. A value that has all of the arm types
+// returns, on a given input, something in the codomain of every arm whose domain
+// accepts that input. So the subtyping fails exactly when some group of arms is
+// the only cover for part of E while their combined codomain escapes F.
+//
+// # The record-union widening
+//
+// A supertype union of two records with different field names has no single
+// record that stands for it. MLscript's `RhsNf` holds one record slot, so
+// `NormalForms.scala` bails on the second field and treats the whole disjunct as
+// `unknown` — see planning/ml_struct/06-open-items.md finding 1. Under that
+// widening every sub passes. The rows below that must fail are therefore the
+// regression guard, since a port inheriting the widening answers "holds" on them.
+//
+// What triggers the bail is the second field being differently named. The last
+// two rows vary exactly that. Their members share the field name `tag` and differ
+// only in its literal type, which isolates differing field names as the cause
+// rather than a record union in supertype position as such.
+
+// nfVerdict is a subtyping answer. nfUnobserved is the zero value so a row that
+// nobody has run against MLscript reads as blank rather than as "fails".
+type nfVerdict int
+
+const (
+	nfUnobserved nfVerdict = iota
+	nfHolds
+	nfFails
+)
+
+func (v nfVerdict) String() string {
+	switch v {
+	case nfHolds:
+		return "holds"
+	case nfFails:
+		return "fails"
+	}
+	return "unobserved"
+}
+
+// nfRow is one case of the corpus.
+type nfRow struct {
+	// name says which shape the row pins and titles its subtest.
+	name string
+	// sub and super are Escalier type annotations. They parse under one shared
+	// environment, so a name listed in tvars means the same variable in both.
+	sub, super string
+	// tvars names the free type variables the row's annotations reference. The
+	// runner mints one fresh variable per name.
+	tvars []string
+	// sound is the oracle: the verdict a types-as-values reading gives, derived by
+	// hand. Later work is measured against this column, not against the column
+	// below it.
+	sound nfVerdict
+	// why records the step that produces sound — which leg of the arrow
+	// decomposition decides the row, or which part of the record-union reasoning.
+	why string
+	// mlscript is what MLscript answers. A row settled by the source reads in
+	// planning/ml_struct/06-open-items.md carries that answer and cites the
+	// finding in why; the rest stay nfUnobserved until the case is run against
+	// hkust-taco/mlstruct. Where the two columns disagree, sound wins and the
+	// divergence is documented — see caveat 4 in
+	// planning/ml_struct/02-caveats-and-mitigations.md.
+	mlscript nfVerdict
+	// wantErrs is the full set of diagnostics the solver reports for the row, nil
+	// when it reports none. It is empty exactly when sound is nfHolds, a
+	// consistency the runner checks so the two columns cannot drift apart. A
+	// message here says what a user sees. It need not name the step why gives,
+	// because a row can reach the right verdict by another route.
+	wantErrs []string
+	// needsNF marks a row whose sound verdict the solver cannot yet reach. The
+	// union-super and intersection-sub rules trial each member whole under a
+	// probe, so they settle a row only when one member alone settles it. A row
+	// that needs the arms weighed together waits for the normal-form layer. Such
+	// a row parses and then skips, so its annotations stay checked meanwhile.
+	needsNF bool
+}
+
+// nfArrowCorpus holds the arrow-intersection rows. Worked examples A and B come
+// from planning/ml_struct/04-type-level-operators.md.
+var nfArrowCorpus = []nfRow{
+	{
+		name:  "example A: distinct domains, shared codomain",
+		sub:   "(fn (x: number) -> boolean) & (fn (x: string) -> boolean)",
+		super: "fn (x: number | string) -> boolean",
+		sound: nfHolds,
+		why: "leg 1 holds since number | string is exactly the union of the two arm domains. Every " +
+			"group of arms returns a boolean, so leg 2 holds through its codomain half",
+		mlscript: nfHolds,
+		needsNF:  true,
+	},
+	{
+		name:  "example B: distinct domains, conflicting codomains",
+		sub:   "(fn (x: number) -> boolean) & (fn (x: string) -> null)",
+		super: "fn (x: number | string) -> boolean",
+		sound: nfFails,
+		why: "leg 2 fails for the group holding the string arm alone: a string input is covered by " +
+			"no other arm, and that arm's codomain null is not a boolean. MLscript merges the arms " +
+			"to (number | string) -> (boolean & null) = (number | string) -> `never` and accepts, " +
+			"diverging from the sound answer (06-open-items.md finding 2)",
+		mlscript: nfHolds,
+		wantErrs: []string{
+			"cannot constrain number <: string",
+			"cannot constrain null <: boolean",
+		},
+	},
+	{
+		name:  "shared domain, distinct codomains: the target takes their meet",
+		sub:   "(fn (x: number) -> number | string) & (fn (x: number) -> string | boolean)",
+		super: "fn (x: number) -> string",
+		sound: nfHolds,
+		why: "the (A -> B) & (A -> C) <: A -> (B & C) shape. Only the group holding both arms is " +
+			"uncovered, and its combined codomain (number | string) & (string | boolean) is string, " +
+			"which the target accepts",
+		needsNF: true,
+	},
+	{
+		name:  "shared domain, distinct codomains: the target misses their meet",
+		sub:   "(fn (x: number) -> number) & (fn (x: number) -> number | string)",
+		super: "fn (x: number) -> string",
+		sound: nfFails,
+		why: "the meet of the codomains is number, so a number input can yield a number where the " +
+			"target promises a string. Leg 2 fails for the group holding both arms",
+		wantErrs: []string{"cannot constrain number <: string"},
+	},
+	{
+		name:  "shared domain, disjoint codomains: the meet is uninhabited",
+		sub:   "(fn (x: number) -> number) & (fn (x: number) -> string)",
+		super: "fn (x: number) -> boolean",
+		sound: nfHolds,
+		why: "the verdict is vacuous, and it is the corner an implementation is most likely to get " +
+			"wrong. A value with both arm types would return both a number and a string on any " +
+			"number input, and no value is both, so such a value never returns on a number input. " +
+			"Its combined codomain is `never`, and `never` <: boolean, so leg 2 holds for the group " +
+			"holding both arms",
+		needsNF: true,
+	},
+	{
+		name:  "overlapping domains, shared codomain",
+		sub:   "(fn (x: number | string) -> boolean) & (fn (x: boolean) -> boolean)",
+		super: "fn (x: number | boolean) -> boolean",
+		sound: nfHolds,
+		why: "leg 1 holds since number | boolean sits inside number | string | boolean, and every " +
+			"group returns a boolean, so leg 2 holds through its codomain half. The overlap on " +
+			"number changes nothing, since covering an input twice is not a conflict",
+		needsNF: true,
+	},
+	{
+		name:  "overlapping domains, one codomain escapes",
+		sub:   "(fn (x: number | string) -> boolean) & (fn (x: boolean) -> number)",
+		super: "fn (x: number | boolean) -> boolean",
+		sound: nfFails,
+		why: "leg 2 fails for the group holding the boolean arm alone: a boolean input is covered " +
+			"by no other arm, and that arm returns a number",
+		wantErrs: []string{"cannot constrain boolean <: number | string"},
+	},
+	{
+		name:  "the target domain is not covered",
+		sub:   "(fn (x: number) -> boolean) & (fn (x: string) -> boolean)",
+		super: "fn (x: number | boolean) -> boolean",
+		sound: nfFails,
+		why: "leg 1 fails: a boolean input is outside both arm domains, so no arm says what the " +
+			"value does with it. This is the leg that distinguishes the row from example A",
+		wantErrs: []string{
+			"cannot constrain number <: string",
+			"cannot constrain boolean <: string",
+		},
+	},
+	{
+		name:  "nested arrows: the intersection sits in the codomain",
+		sub:   "fn (x: number) -> ((fn (y: number) -> boolean) & (fn (y: string) -> boolean))",
+		super: "fn (x: number) -> (fn (y: number | string) -> boolean)",
+		sound: nfHolds,
+		why: "the codomains are compared covariantly, and that comparison is example A, so the " +
+			"decomposition has to run underneath an ordinary arrow rule rather than only at the top",
+		needsNF: true,
+	},
+	{
+		name: "nested arrows: the arms take functions",
+		sub: "(fn (f: fn (x: number) -> number) -> boolean) & " +
+			"(fn (f: fn (x: string) -> string) -> boolean)",
+		super: "fn (f: (fn (x: number) -> number) | (fn (x: string) -> string)) -> boolean",
+		sound: nfHolds,
+		why: "example A one level up, with function types as the domains. Leg 1 holds since the " +
+			"target domain is the union of the two arm domains, and every group returns a boolean",
+		needsNF: true,
+	},
+	{
+		name:  "an arm's codomain is a free type variable",
+		sub:   "(fn (x: number) -> T) & (fn (x: string) -> T)",
+		super: "fn (x: number | string) -> T",
+		tvars: []string{"T"},
+		sound: nfHolds,
+		why: "example A with T for boolean. The verdict does not depend on what T is, since the " +
+			"domains cover number | string and every group's combined codomain is T & T = T",
+		needsNF: true,
+	},
+}
+
+// nfRecordCorpus holds the negative-position record-union rows. Each one uses a
+// union of records as the supertype, the position where MLscript's normal form
+// widens to `unknown`.
+var nfRecordCorpus = []nfRow{
+	{
+		name:     "a member of the union",
+		sub:      "{x: number}",
+		super:    "{x: number} | {y: number}",
+		sound:    nfHolds,
+		why:      "sanity: the sub is one of the union's members, so the union works at all",
+		mlscript: nfHolds,
+	},
+	{
+		name:  "a primitive against the union",
+		sub:   "number",
+		super: "{x: number} | {y: number}",
+		sound: nfFails,
+		why: "a number is not a record, so it inhabits neither member. This is the regression " +
+			"guard. Under the widening the supertype becomes `unknown` and the row answers " +
+			`"holds" (06-open-items.md finding 1)`,
+		mlscript: nfHolds,
+		wantErrs: []string{"cannot constrain number <: object | object"},
+	},
+	{
+		name:  "the empty record against the union",
+		sub:   "{}",
+		super: "{x: number} | {y: number}",
+		sound: nfFails,
+		why: "the empty record has neither x nor y, so it satisfies neither member. It is the " +
+			"closest miss a record can be, which is why it is worth pinning next to the primitive",
+		mlscript: nfHolds,
+		wantErrs: []string{"cannot constrain object <: object | object"},
+	},
+	{
+		name:     "an unrelated field against the union",
+		sub:      "{z: number}",
+		super:    "{x: number} | {y: number}",
+		sound:    nfFails,
+		why:      "control: a record shaped like the members but named differently satisfies neither",
+		mlscript: nfHolds,
+		wantErrs: []string{"cannot constrain object <: object | object"},
+	},
+	{
+		name:  "a matching tag against the tagged union",
+		sub:   `{tag: "a"}`,
+		super: `{tag: "a"} | {tag: "b"}`,
+		sound: nfHolds,
+		why: "the sub is the first member. The union's members share the field name `tag`, so the " +
+			"row differs from the ones above only in what the widening reacts to",
+	},
+	{
+		name:     "an unmatched tag against the tagged union",
+		sub:      `{tag: "c"}`,
+		super:    `{tag: "a"} | {tag: "b"}`,
+		sound:    nfFails,
+		why:      `"c" is neither "a" nor "b", so the sub inhabits neither member`,
+		wantErrs: []string{"cannot constrain object <: object | object"},
+	},
+}
+
+// TestConstrainNFArrowCorpus runs the arrow-intersection rows.
+func TestConstrainNFArrowCorpus(t *testing.T) {
+	runNFCorpus(t, nfArrowCorpus)
+}
+
+// TestConstrainNFRecordCorpus runs the negative-position record-union rows.
+func TestConstrainNFRecordCorpus(t *testing.T) {
+	runNFCorpus(t, nfRecordCorpus)
+}
+
+// runNFCorpus checks each row against the solver. It parses both operands first,
+// so a row waiting on the normal-form layer still has its annotations validated,
+// then asserts the diagnostics the row records. A row where MLscript is known to
+// disagree with the oracle logs the disagreement, so a verbose run reads as the
+// divergence roster caveat 4 asks the port to document.
+func runNFCorpus(t *testing.T, corpus []nfRow) {
+	t.Helper()
+	for _, tt := range corpus {
+		t.Run(tt.name, func(t *testing.T) {
+			// A row states an oracle verdict. Leaving sound at its zero value would
+			// otherwise read as nfFails below and join the corpus green without ever
+			// having been derived.
+			require.NotEqual(t, nfUnobserved, tt.sound, "a row states a sound verdict")
+
+			c := &Context{}
+			env := make(map[string]soltype.Type, len(tt.tvars))
+			for _, name := range tt.tvars {
+				env[name] = c.freshVar(0)
+			}
+			sub := parseTypeIn(t, env, tt.sub)
+			super := parseTypeIn(t, env, tt.super)
+
+			t.Logf("sound: %s — %s", tt.sound, tt.why)
+			if tt.mlscript != nfUnobserved && tt.mlscript != tt.sound {
+				t.Logf("MLscript answers %s here; the port follows the sound column", tt.mlscript)
+			}
+			if tt.needsNF {
+				// Nothing runs, so there are no diagnostics to have recorded. Whoever
+				// removes the skip fills wantErrs from what the solver then reports.
+				require.Empty(t, tt.wantErrs, "a row waiting on the normal-form layer records no diagnostics")
+				t.Skip("enabled by PR5 #1062")
+			}
+
+			// The two columns state the same thing about a row that runs, so a row
+			// that reports errors while claiming to hold is a table mistake rather
+			// than a solver result worth reporting.
+			if tt.sound == nfHolds {
+				require.Empty(t, tt.wantErrs, "a row that holds records no diagnostics")
+			} else {
+				require.NotEmpty(t, tt.wantErrs, "a row that fails records the diagnostics it produces")
+			}
+			require.Equal(t, tt.wantErrs, Messages(c.Constrain(sub, super)))
+		})
+	}
+}
