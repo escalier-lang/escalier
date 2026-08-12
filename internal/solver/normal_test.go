@@ -916,6 +916,102 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 	}
 }
 
+// TestMkDeepNormalizesChildren contrasts the shallow form with the deep one. The
+// shallow form settles the Boolean structure at the top level and leaves an atom's
+// children alone; the deep form normalizes every position, including the
+// contravariant ones a function's parameters sit in.
+func TestMkDeepNormalizesChildren(t *testing.T) {
+	tests := []struct {
+		name string
+		// build assembles the input around a doubly-complemented sub-part, the
+		// simplest thing normalization removes.
+		build func(t *testing.T) soltype.Type
+		// shallow is the form mkDNF reaches, which leaves the sub-part untouched.
+		shallow string
+		// deep is the form mkDeepDNF reaches.
+		deep string
+	}{
+		{
+			name: "a complement in a return type",
+			build: func(t *testing.T) soltype.Type {
+				return &soltype.FuncType{
+					SelfParam: nil,
+					Params:    []*soltype.FuncParam{identParam("x", num())},
+					Ret:       not(notSrc(t, "string")),
+					Throws:    nil, Inexact: false, TypeParams: nil, LifetimeParams: nil,
+				}
+			},
+			shallow: "fn (x: number) -> ¬¬string",
+			deep:    "fn (x: number) -> string",
+		},
+		{
+			name: "a complement in a parameter, which sits at the flipped polarity",
+			build: func(t *testing.T) soltype.Type {
+				return &soltype.FuncType{
+					SelfParam: nil,
+					Params:    []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: not(notSrc(t, "number")), Optional: false, Rest: false}},
+					Ret:       str(),
+					Throws:    nil, Inexact: false, TypeParams: nil, LifetimeParams: nil,
+				}
+			},
+			shallow: "fn (x: ¬¬number) -> string",
+			deep:    "fn (x: number) -> string",
+		},
+		{
+			name: "an uninhabited meet in a field",
+			build: func(t *testing.T) soltype.Type {
+				return exactObj(propElem("x", newIntersection(nil, parseTypes(t, "number", "string"))))
+			},
+			shallow: "{x: number & string}",
+			deep:    "{x: never}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			in := tt.build(t)
+			require.Equal(t, tt.shallow, normDNF(c, in))
+			require.Equal(t, tt.deep, soltype.Print(c.mkDeepDNF(in, soltype.Positive).toType()))
+			require.Equal(t, tt.deep, soltype.Print(c.mkDeepCNF(in, soltype.Negative).toType()))
+		})
+	}
+}
+
+// TestDeepNormalizeKeepsBorrows pins that normalizing a borrow's inner never
+// costs the borrow its wrapper. soltype's visitor peels a `mut` whose rewritten
+// inner is not borrowable, which is right for coalescing and would silently drop
+// mutability here.
+func TestDeepNormalizeKeepsBorrows(t *testing.T) {
+	tests := []struct {
+		name string
+		// build assembles the borrow, since `mut` over a union has no annotation
+		// form the test parser accepts alongside the members these rows need.
+		build func(t *testing.T) soltype.Type
+		want  string
+	}{
+		{
+			name: "an inner that normalizes to a borrowable type is rewritten",
+			build: func(t *testing.T) soltype.Type {
+				return mutRef(newUnion(nil, parseTypes(t, "{x: number, ...}", "{y: number, ...}"), false).(soltype.RefInner))
+			},
+			want: "mut ({x: number, ...} | {y: number, ...})",
+		},
+		{
+			name: "an inner that normalizes to a bare primitive keeps the borrow as written",
+			build: func(t *testing.T) soltype.Type {
+				return mutRef(newUnion(nil, parseTypes(t, "number", "5"), false).(soltype.RefInner))
+			},
+			want: "mut (number | 5)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			require.Equal(t, tt.want, soltype.Print(c.mkDeepDNF(tt.build(t), soltype.Positive).toType()))
+		})
+	}
+}
+
 // permutations returns every ordering of items. The member lists are three long,
 // so the six orderings are cheap to run in full.
 func permutations(items []string) [][]string {
