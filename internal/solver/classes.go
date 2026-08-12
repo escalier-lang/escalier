@@ -512,12 +512,12 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 	if !aReaches && !bReaches && aSettled && bSettled {
 		return &soltype.NeverType{}, true
 	}
-	// The two tags are left as separate atoms for one of two reasons. Either one class
-	// reaches the other but the instance below carries a type argument the one above
-	// rules out, or a walk read a graph that is still being built. Meeting
-	// `Wrapper<string>` with `Reader<number>`, where `class Wrapper<T> extends
-	// Reader<T>`, is the first: neither tag is below the other, and `Wrapper<never>` is
-	// below both, so the pair is not disjoint either.
+	// The two tags stay separate atoms for one of two reasons. Either one class reaches
+	// the other while the instance below carries a type argument the one above rules
+	// out, or a walk ran into a graph that is still being built. Meeting
+	// `Wrapper<string>` with `Reader<number>` under `class Wrapper<T> extends Reader<T>`
+	// is the first case. Neither tag is below the other, and `Wrapper<never>` is below
+	// both, so the pair is not disjoint either.
 	return nil, false
 }
 
@@ -531,7 +531,7 @@ func (c *Context) glbClass(a, b *soltype.ClassType) (soltype.Type, bool) {
 // always reads the mutable view, so it rejects a pair constrainNominal accepts
 // outside a mutable borrow, such as `Box<5> <: Box<number>` for a Box covariant to
 // a reader and invariant to a writer. The direction of the difference is what makes
-// it safe: a rejection here keeps two atoms the meet would otherwise have fused.
+// it safe. A rejection here keeps two atoms the meet would otherwise have fused.
 func (c *Context) nominalSubtype(sub, super *soltype.ClassType) bool {
 	up, reaches, _ := c.ancestorInstance(sub, super.Name)
 	return reaches && c.instanceBelow(up, super)
@@ -621,8 +621,8 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 //   - reaches says whether the class was found, which is when up is meaningful.
 //   - settled says whether the walk read a finished graph. It is false when the walk
 //     stopped at a class the registry does not hold, or at one whose declared edges
-//     have not been resolved yet. A reaches of false may then mean only that the edge
-//     leading there is missing so far, so a caller must not read it as "cannot
+//     have not been resolved yet. A false reaches may then mean only that the edge
+//     leading there has not been read yet, so a caller must not take it for "cannot
 //     reach".
 //
 // The edges are `extends` alone, the same ones constrainNominalWalk follows, so the
@@ -639,8 +639,8 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 		return ct, true, true
 	}
 	if walked.Contains(ct.Name) {
-		// An enclosing call is walking this class already, so whatever its edges reach and
-		// whether they are resolved is that call's answer to give.
+		// An enclosing call is already walking this class. Whatever its edges reach, and
+		// whether they are resolved, is that call's answer to report.
 		return nil, false, true
 	}
 	walked.Add(ct.Name)
