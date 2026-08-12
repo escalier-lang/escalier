@@ -346,15 +346,27 @@ func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 	if !ok || def.Body == nil {
 		return nil, false
 	}
-	own := c.projectOwnElems(def, ct)
+	obj := c.withInherited(def, ct, &soltype.ObjectType{Elems: c.projectOwnElems(def, ct)})
+	obj.Inexact = !ct.Final
+	return obj, true
+}
+
+// withInherited returns own extended with the members ct inherits and does not shadow, or
+// own itself when the chain contributes nothing. It is the shared tail of the two whole-body
+// views, which differ only in what they hand it: projectClassBody passes the class's own
+// members projected to an instance's arguments, and selfView passes them unprojected.
+//
+// The result aliases own whenever nothing is inherited, so a caller that goes on to set a
+// field on it has to pass an object it owns.
+func (c *Context) withInherited(def *ClassDef, ct *soltype.ClassType, own *soltype.ObjectType) *soltype.ObjectType {
 	inherited := c.inheritedElems(def, ct)
 	if len(inherited) == 0 {
-		return &soltype.ObjectType{Elems: own, Inexact: !ct.Final}, true
+		return own
 	}
-	elems := make([]soltype.ObjTypeElem, 0, len(own)+len(inherited))
-	elems = append(elems, own...)
+	elems := make([]soltype.ObjTypeElem, 0, len(own.Elems)+len(inherited))
+	elems = append(elems, own.Elems...)
 	elems = append(elems, inherited...)
-	return &soltype.ObjectType{Elems: elems, Inexact: !ct.Final}, true
+	return &soltype.ObjectType{Elems: elems}
 }
 
 // projectOwnElems returns the members a class declares itself, projected to ct's arguments.
@@ -416,14 +428,7 @@ func (c *Context) selfView(self *soltype.ClassType, body *soltype.ObjectType) *s
 	if !ok {
 		return body
 	}
-	inherited := c.inheritedElems(def, self)
-	if len(inherited) == 0 {
-		return body
-	}
-	elems := make([]soltype.ObjTypeElem, 0, len(body.Elems)+len(inherited))
-	elems = append(elems, body.Elems...)
-	elems = append(elems, inherited...)
-	return &soltype.ObjectType{Elems: elems}
+	return c.withInherited(def, self, body)
 }
 
 // chainElems walks ct's superclass edges, collecting each member whose name taken does not
