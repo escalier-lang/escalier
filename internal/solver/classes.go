@@ -331,28 +331,40 @@ func (v *varianceVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 
 func (v *varianceVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
-// projectClassBody returns the instance member view of a class instance: the
-// registered Body with each class type parameter replaced by the instance's
-// corresponding type argument and each lifetime parameter by its lifetime argument.
-// It returns ok=false when the class is unregistered so the caller can recover. The
-// class-vs-object constrain rule reads the whole projected body; a single member access
-// projects just that member through projectClassMember, so it pays only for the member
-// it reads rather than rebuilding every member.
+// projectClassBody returns the whole instance member view of a class instance: everything
+// the class declares, followed by everything it inherits and does not shadow, each with the
+// declaring class's type parameters replaced by the arguments that class is reached at. It
+// returns ok=false when the class is unregistered so the caller can recover. A single member
+// access goes through projectedClassMember instead, so it pays only for the member it reads.
 //
-// The projected body's Inexact flag follows the instance's Final: a final class is
-// exact, its member set closed, while a non-final class is inexact, since a subclass may
-// widen it (exact-types §2.6). The returned ObjectType is always a fresh wrapper so the
-// shared registry Body keeps its own flag.
+// The projected body's Inexact flag follows the instance's Final: a final class is exact,
+// its member set closed, while a non-final class is inexact, since a subclass may widen it
+// (exact-types §2.6). The returned ObjectType is always a fresh wrapper so the shared
+// registry Body keeps its own flag.
 func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, bool) {
 	def, ok := c.classDef(ct.Name)
 	if !ok || def.Body == nil {
 		return nil, false
 	}
-	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
-		return &soltype.ObjectType{Elems: def.Body.Elems, Inexact: !ct.Final}, true
+	own := c.projectOwnElems(def, ct)
+	inherited := c.inheritedElems(ct)
+	if len(inherited) == 0 {
+		return &soltype.ObjectType{Elems: own, Inexact: !ct.Final}, true
 	}
-	subst := newClassSubst(def, ct)
-	projected := def.Body.Accept(subst, soltype.Positive)
+	elems := make([]soltype.ObjTypeElem, 0, len(own)+len(inherited))
+	elems = append(elems, own...)
+	elems = append(elems, inherited...)
+	return &soltype.ObjectType{Elems: elems, Inexact: !ct.Final}, true
+}
+
+// projectOwnElems returns the members a class declares itself, projected to ct's arguments.
+// The returned slice is the registry's own when nothing needed substituting, so a caller
+// that appends to it has to copy first.
+func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltype.ObjTypeElem {
+	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
+		return def.Body.Elems
+	}
+	projected := def.Body.Accept(newClassSubst(def, ct), soltype.Positive)
 	obj, ok := projected.(*soltype.ObjectType)
 	if !ok {
 		// Substitution replaces only vars and lifetimes, so an ObjectType body always
@@ -361,11 +373,85 @@ func (c *Context) projectClassBody(ct *soltype.ClassType) (*soltype.ObjectType, 
 		// AsProperty discipline.
 		panic(fmt.Sprintf("projectClassBody: %s projected to non-ObjectType %T", ct.Name, projected))
 	}
-	// Accept returns def.Body's own ObjectType when the body holds none of the
-	// substituted vars, so setting Inexact on obj directly would mutate the shared
-	// registry Body. Wrap the projected elements in a fresh ObjectType and set exactness
-	// on the copy, matching the non-generic path above.
-	return &soltype.ObjectType{Elems: obj.Elems, Inexact: !ct.Final}, true
+	return obj.Elems
+}
+
+// inheritedElems returns the members an instance of ct carries through its `extends` chain
+// and does not declare itself, each projected to the arguments its declaring class is
+// reached at. A name ct declares shadows every same-named member above it, the same
+// resolution projectedClassMember performs for a single access.
+//
+// Shadowing is by name rather than by member kind, so a subclass declaring only the getter
+// of an inherited getter/setter pair shadows the setter too. That keeps the whole-body view
+// agreeing with a single access, which stops at the first class carrying the name, and it is
+// what checkInheritedMembers reports when the dropped half was one the superclass view still
+// reaches.
+func (c *Context) inheritedElems(ct *soltype.ClassType) []soltype.ObjTypeElem {
+	def, ok := c.classDef(ct.Name)
+	if !ok || def.Body == nil || len(def.Supers) == 0 {
+		return nil
+	}
+	taken := set.NewSet[string]()
+	addElemNames(taken, def.Body)
+	visited := set.NewSet[string]()
+	visited.Add(ct.Name)
+	return c.chainElems(def, ct, taken, visited)
+}
+
+// selfView returns the object `self` binds to inside a member or constructor body: the
+// class's own members followed by the ones it inherits and does not shadow. A class with no
+// superclass gets its own body back, so nothing is copied for the common case.
+//
+// The class's own members are shared by pointer, not projected. `self` is an instance at the
+// class's own arguments, so a member naming `T` keeps `T` symbolic and resolves to the same
+// variable the enclosing member sees. Sharing is also what lets a write such as `self.x = v`
+// refine the very field variable the class body reads. An inherited member is projected
+// instead, since the chain reaches it at whatever arguments the `extends` clause writes.
+func (c *Context) selfView(self *soltype.ClassType, body *soltype.ObjectType) *soltype.ObjectType {
+	inherited := c.inheritedElems(self)
+	if len(inherited) == 0 {
+		return body
+	}
+	elems := make([]soltype.ObjTypeElem, 0, len(body.Elems)+len(inherited))
+	elems = append(elems, body.Elems...)
+	elems = append(elems, inherited...)
+	return &soltype.ObjectType{Elems: elems}
+}
+
+// chainElems walks ct's superclass edges, collecting each member whose name taken does not
+// already carry and marking that name taken for the classes further up. visited holds the
+// class names already reached, bounding the walk on a cyclic hierarchy the way
+// constrainNominalWalk does.
+func (c *Context) chainElems(def *ClassDef, ct *soltype.ClassType, taken, visited set.Set[string]) []soltype.ObjTypeElem {
+	var out []soltype.ObjTypeElem
+	for _, superType := range def.Supers {
+		super := substituteSuperArgs(def, ct, superType)
+		if visited.Contains(super.Name) {
+			continue
+		}
+		visited.Add(super.Name)
+		superDef, ok := c.classDef(super.Name)
+		if !ok || superDef.Body == nil {
+			continue
+		}
+		for _, elem := range superDef.Body.Elems {
+			if !taken.Contains(soltype.ObjElemName(elem)) {
+				out = append(out, projectClassMember(superDef, super, elem))
+			}
+		}
+		// Marked after the loop rather than inside it, so a class declaring both halves of an
+		// accessor pair contributes both instead of shadowing its own second half.
+		addElemNames(taken, superDef.Body)
+		out = append(out, c.chainElems(superDef, super, taken, visited)...)
+	}
+	return out
+}
+
+// addElemNames adds the name of every member of obj to names.
+func addElemNames(names set.Set[string], obj *soltype.ObjectType) {
+	for _, elem := range obj.Elems {
+		names.Add(soltype.ObjElemName(elem))
+	}
 }
 
 // classPair keys the nominal subtype walk's seen-set by the (sub, super) class NAMES,
@@ -567,7 +653,7 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, looku
 	// unprojected body and project only the one accessed, rather than rebuilding the
 	// whole body per access.
 	if member, found := lookup(def.Body, name); found {
-		return c.projectClassMember(def, ct, member), true
+		return projectClassMember(def, ct, member), true
 	}
 	if visited.Contains(ct.Name) {
 		return nil, false
@@ -634,7 +720,7 @@ func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, ca
 // member unchanged. It runs the same typeSubst walk projectClassBody runs over the
 // whole body, through the shared per-member entry point, so a member reads exactly as it
 // would there.
-func (c *checker) projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
+func projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return member
 	}

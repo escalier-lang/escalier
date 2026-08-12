@@ -65,12 +65,16 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 
 	ctorScope := scope.Child()
 	// A constructor's `self` is always owned-mutable so its body can assign fields,
-	// regardless of the class's default mutability.
-	c.bindSelf(ctorScope, &ast.MethodReceiver{Mut: true}, body)
+	// regardless of the class's default mutability. It binds the `self` view, so a subclass
+	// constructor can assign a field it inherits.
+	c.bindSelf(ctorScope, &ast.MethodReceiver{Mut: true}, c.ctx.selfView(self, body))
 
 	// A constructor carries no type parameters of its own, since the class owns them,
 	// so generic resolution stays off here, matching the method path.
 	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false)
+	// Definite assignment runs over the class's OWN fields. An inherited field is left out,
+	// since a subclass has no `super(…)` to delegate its initialization to and would
+	// otherwise have to re-assign every field its ancestors declare.
 	c.checkConstructorInit(body, ctor)
 	// A constructor returns a fresh instance, not the `undefined` its statement body falls
 	// off to, so override the inferred return with the instance type.

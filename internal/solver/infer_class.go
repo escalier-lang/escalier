@@ -77,8 +77,12 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.recordType(decl.Name, self)
 
 	// Resolve the declared extends edge and implements interfaces so C1 can walk and
-	// check them; B1 records them only.
-	def.Supers = c.resolveClassSupers(declScope, lvl, decl)
+	// check them. The module pre-pass resolves the edge for every class it saw, so that the
+	// whole superclass chain is walkable before any body runs; only a class it never saw,
+	// which means a script class, resolves its own here.
+	if sh, ok := c.classShells[decl]; !ok || !sh.supersBound {
+		def.Supers = c.resolveClassSupers(declScope, lvl, decl)
+	}
 	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
 
 	// Two-phase member walk (B3). Phase 1 appends a signature element for every field,
@@ -94,7 +98,11 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
 	c.checkMethodRecursionAnnotations(decl)
-	c.inferMemberBodies(declScope, lvl, body, pending)
+	// A member body walks against the `self` view rather than the class's own body, so an
+	// inherited member is reachable through `self`. Phase 1 has appended every own member by
+	// now, so the view is complete, and it shares each own element pointer so phase 2's
+	// signature installs and field refinements still land on the registered body.
+	c.inferMemberBodies(declScope, lvl, c.ctx.selfView(self, body), pending)
 	ctorType := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
@@ -322,6 +330,36 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
 		def.TypeParams = typeParams
 	}
+}
+
+// preBindClassSupers resolves a class's `extends` edge onto its ClassDef. The module SCC
+// pre-pass runs it over every class in a type-key component once preBindClassTypeParams has
+// bound every one of their parameter lists, so an edge written at a sibling's parameter, as
+// `class Dog<D> extends Animal<D>` writes, resolves against a bound sibling.
+//
+// Resolving here rather than at the class's value key is what makes the whole superclass
+// chain walkable before any body runs. An `extends` clause is a dependency on the
+// superclass's TYPE key alone, so at value-key time a superclass may have no edge of its own
+// recorded yet. `class Leaf extends Mid` and `class Mid extends Base` would then reach Leaf
+// while Mid still looks like a root, and the members Leaf inherits from Base would be
+// missing from the `self` its constructor writes through.
+func (c *checker) preBindClassSupers(lvl int, decl *ast.ClassDecl, ns string) {
+	sh, ok := c.classShells[decl]
+	if !ok {
+		return
+	}
+	def, ok := c.ctx.classDef(qualifyClassName(ns, decl))
+	if !ok {
+		return
+	}
+	prevNS := c.classNamespace
+	c.classNamespace = ns
+	defer func() { c.classNamespace = prevNS }()
+
+	quiet := c.errorWindow()
+	def.Supers = c.resolveClassSupers(sh.declScope, lvl, decl)
+	sh.supersBound = true
+	sh.paramsClean = sh.paramsClean && quiet()
 }
 
 // qualifyClassName returns a class's dep_graph-qualified name — the namespace joined
