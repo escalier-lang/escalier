@@ -405,6 +405,12 @@ func (c *Context) inheritedElems(def *ClassDef, ct *soltype.ClassType) []soltype
 // variable the enclosing member sees. Sharing is also what lets a write such as `self.x = v`
 // refine the very field variable the class body reads. An inherited member is projected
 // instead, since the chain reaches it at whatever arguments the `extends` clause writes.
+//
+// Collecting the chain up front is what keeps this cheap. It runs twice per class
+// declaration, once for the member bodies and once for the constructor, so a single walk
+// covers every `self.x` in all of them. Walking per access would repeat it for each one, and
+// a constructor alone usually touches most of the fields. The wider view does make each
+// field lookup scan a few more elements, which costs less than repeating the walk.
 func (c *Context) selfView(self *soltype.ClassType, body *soltype.ObjectType) *soltype.ObjectType {
 	def, ok := c.classDef(self.Name)
 	if !ok {
