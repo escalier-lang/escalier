@@ -988,6 +988,16 @@ func newTypeSubst(typeParams []*soltype.TypeParam, typeArgs []soltype.Type, life
 	return s
 }
 
+// apply rewrites t through s, returning t unchanged when s is nil. A nil substitution is
+// what a caller with nothing to rewrite passes, so the call site stays a plain expression
+// rather than a branch.
+func (s *typeSubst) apply(t soltype.Type) soltype.Type {
+	if s == nil {
+		return t
+	}
+	return t.Accept(s, soltype.Positive)
+}
+
 // newClassSubst builds the substitution for one class instance. ct is that instance's
 // type, such as Box<5>, so its TypeArgs and LifetimeArgs are the concrete arguments each
 // of def's parameter vars maps to.

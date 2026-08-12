@@ -126,6 +126,12 @@ type checker struct {
 	// than minting a second, unrelated set of parameter vars. A script class has no pre-pass,
 	// so it is absent here and inferClassDecl resolves its own.
 	classShells map[*ast.ClassDecl]*classShell
+
+	// pendingOverrides holds every class carrying an `extends` edge, each waiting to have
+	// the members it declares checked against the ones they override. The check is queued
+	// rather than run inside inferClassDecl because a subclass can be inferred before its
+	// superclass. queueInheritedMemberCheck spells that ordering out.
+	pendingOverrides []pendingOverrideCheck
 }
 
 // classShell carries the state preBindClassTypeParams resolved for one class declaration.

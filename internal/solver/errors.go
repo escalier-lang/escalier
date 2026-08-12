@@ -473,6 +473,54 @@ type TypeParamNotProducibleError struct {
 	Node  ast.Node
 }
 
+// IncompatibleOverrideError fires when a class redeclares a member its superclass chain
+// already declares, at a type an instance of the class cannot stand in for. The nominal
+// subtype rule decides `Dog <: Animal` on the declared `extends` edge alone, so a subclass
+// that gives an inherited field an unrelated type would otherwise contradict its own edge.
+// Given `class Animal { pos: {x: number} }` and `class Dog extends Animal { pos: {x:
+// number, y: number} }`, reading `pos` off a `Dog` through an `Animal`-typed binding hands
+// out a `{x: number, y: number}` typed as `{x: number}`.
+//
+// Member is the member's name, Class the subclass that redeclares it, and SuperClass the
+// ancestor that declares the member being overridden. SubType and SuperType are the two
+// types the override rule compared, subclass first. Position says which of a member's types
+// those are. It is "type" for the value the member carries and "throws type" for what
+// reaching the member may raise. Node is the redeclaring member's source.
+type IncompatibleOverrideError struct {
+	Member     string
+	Class      string
+	SuperClass string
+	Position   string
+	SubType    soltype.Type
+	SuperType  soltype.Type
+	Node       ast.Node
+}
+
+// OverrideFormMismatchError fires when a class redeclares an inherited member in a form the
+// inherited one does not admit. No subtype obligation covers any of these, so each is
+// rejected by naming the two forms:
+//
+//   - the two members are different kinds, such as a method where the superclass declares a
+//     field;
+//   - an inherited writable field is redeclared `readonly`, while the superclass view still
+//     writes through it;
+//   - an inherited required field is redeclared optional, while the superclass view still
+//     reads it as present;
+//   - an inherited member callable through a plain `self` is redeclared with a `mut self`
+//     receiver, which an immutable superclass reference cannot reach.
+//
+// Member is the member's name, Class the subclass, SuperClass the ancestor that declares the
+// member being overridden, and Form and SuperForm the two forms as the message spells them.
+// Node is the redeclaring member's source.
+type OverrideFormMismatchError struct {
+	Member     string
+	Class      string
+	SuperClass string
+	Form       string
+	SuperForm  string
+	Node       ast.Node
+}
+
 func (*CannotConstrainError) isSolverError()         {}
 func (*MutFieldError) isSolverError()                {}
 func (*ReadonlyFieldError) isSolverError()           {}
@@ -504,6 +552,8 @@ func (*NonClassSuperError) isSolverError()           {}
 func (*CannotExtendFinalClassError) isSolverError()  {}
 func (*VarianceMismatchError) isSolverError()        {}
 func (*TypeParamNotProducibleError) isSolverError()  {}
+func (*IncompatibleOverrideError) isSolverError()    {}
+func (*OverrideFormMismatchError) isSolverError()    {}
 
 // --- Per-operand blame (§3.5): each constraint kind follows its operands through
 // Prov on demand, falling back to its own site (where it keeps one) ---
@@ -673,6 +723,14 @@ func (e *VarianceMismatchError) Related() []ast.Span { return nil }
 
 func (e *TypeParamNotProducibleError) Span() ast.Span      { return e.Node.Span() }
 func (e *TypeParamNotProducibleError) Related() []ast.Span { return nil }
+
+// Both override diagnostics blame the redeclaring member's source, degrading to the zero
+// span when the class declares the name in a form that carries no node of its own.
+func (e *IncompatibleOverrideError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *IncompatibleOverrideError) Related() []ast.Span { return nil }
+
+func (e *OverrideFormMismatchError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *OverrideFormMismatchError) Related() []ast.Span { return nil }
 
 // spanOf blames op's own source node when that node lies *within* the constraint
 // site, and the site itself otherwise (or when op has no entry). The containment
@@ -2620,6 +2678,16 @@ func (e *VarianceMismatchError) Message() string {
 func (e *TypeParamNotProducibleError) Message() string {
 	return fmt.Sprintf("the body forces type parameter `%s` to `%s`, so it cannot stand for an arbitrary type",
 		e.Name, describe(e.Floor))
+}
+
+func (e *IncompatibleOverrideError) Message() string {
+	return fmt.Sprintf("class `%s` redeclares inherited member `%s` with %s `%s`, which is not compatible with `%s` declared by `%s`",
+		e.Class, e.Member, e.Position, soltype.Print(e.SubType), soltype.Print(e.SuperType), e.SuperClass)
+}
+
+func (e *OverrideFormMismatchError) Message() string {
+	return fmt.Sprintf("class `%s` redeclares inherited member `%s` as %s, but `%s` declares it as %s",
+		e.Class, e.Member, e.Form, e.SuperClass, e.SuperForm)
 }
 
 // describeBorrowInner renders the pointee of a borrow for a diagnostic. An immutable
