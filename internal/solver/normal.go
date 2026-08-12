@@ -346,13 +346,19 @@ func cnfOr(a, b CNF) CNF {
 // conjunctAnd intersects two conjuncts. The positive structural parts pool as one
 // intersection, the negated ones pool as one union, since `¬R₁ ∩ ¬R₂` is
 // `¬(R₁ ∪ R₂)`, and the two variable sets union. ok is false when a variable is
-// held both positively and negatively, which makes the meet `v ∩ ¬v`.
+// held both positively and negatively.
 //
 // The pooled structural parts are put in order later, by normalizeConjunct, once
 // every atom in the surrounding union or intersection is in the pool.
 func conjunctAnd(a, b Conjunct) (Conjunct, bool) {
 	vars := a.Vars.Union(b.Vars)
 	nvars := a.NVars.Union(b.NVars)
+	// The same variable held both ways makes the conjunct `v ∩ ¬v`, which no value
+	// inhabits under any instantiation, so no bound has to be consulted. Dropping
+	// the conjunct rather than reporting an error is right because `never` is the
+	// identity of the union its DNF is. The two sets are keyed by pointer, so this
+	// fires only on one variable held both ways, never on two distinct variables
+	// that solving later makes equal.
 	if vars.Intersection(nvars).Len() > 0 {
 		return Conjunct{}, false
 	}
@@ -365,11 +371,15 @@ func conjunctAnd(a, b Conjunct) (Conjunct, bool) {
 }
 
 // disjunctOr unions two disjuncts, the dual of conjunctAnd. ok is false when a
-// variable is held both positively and negatively, since `v ∪ ¬v` admits every
-// value and `unknown` is the identity of the intersection the disjuncts sit in.
+// variable is held both positively and negatively.
 func disjunctOr(a, b Disjunct) (Disjunct, bool) {
 	vars := a.Vars.Union(b.Vars)
 	nvars := a.NVars.Union(b.NVars)
+	// The dual of the conjunct case. The same variable held both ways makes the
+	// disjunct `v ∪ ¬v`, which every value inhabits under any instantiation, and it
+	// is dropped because `unknown` is the identity of the intersection its CNF is.
+	// The pointer keying is the same, so two distinct variables that solving later
+	// makes equal do not fire this.
 	if vars.Intersection(nvars).Len() > 0 {
 		return Disjunct{}, false
 	}
