@@ -276,6 +276,41 @@ func TestDeMorgan(t *testing.T) {
 	}
 }
 
+// TestDeMorganOverAnInexactUnion pins the one shape the law above does not cover.
+//
+// An inexact union `A | B | ...` denotes A, B, and an open tail of unknown
+// content, so complementing it excludes that tail too:
+//
+//	¬(A | B | ...)  is  ¬A ∩ ¬B ∩ ¬tail
+//
+// which is strictly narrower than `¬A & ¬B`. The two are therefore different
+// types, and no flag on the intersection would make them agree. Inexactness on a
+// union WIDENS it by an unknown member, and the complement of that is a
+// NARROWING by an unknown set — something an intersection has no slot for.
+// IntersectionType carries no exactness marker at all, since exactness is a
+// property of the result rather than of the meet.
+//
+// So the complement keeps the whole union as one negated atom, tail and all,
+// rather than distributing over its members and silently dropping the tail.
+// Threading the marker through normalization is PR7's remit (#1064).
+func TestDeMorganOverAnInexactUnion(t *testing.T) {
+	c := &Context{}
+	a, b := parseType(t, "{x: number}"), parseType(t, "{y: number}")
+	meetOfComplements := normDNF(c, newIntersection(nil, []soltype.Type{not(a), not(b)}))
+	require.Equal(t, "¬({x: number} | {y: number})", meetOfComplements)
+
+	// The exact union obeys the law, which is what TestDeMorgan states over its
+	// record row. Repeating it here is what makes the rows below a statement about
+	// the marker rather than about the members.
+	closed := newUnion(nil, []soltype.Type{a, b}, false)
+	require.Equal(t, meetOfComplements, normDNF(c, not(closed)))
+
+	// The inexact union does not, and its complement still carries the tail.
+	open := newUnion(nil, []soltype.Type{a, b}, true)
+	require.Equal(t, "¬({x: number} | {y: number} | ...)", normDNF(c, not(open)))
+	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
+}
+
 // TestUnionKeepsUnmergeableRecords is the caveat-4 regression guard. Two records
 // with different field names have no single record that denotes their union, so
 // both normal forms keep two members rather than widening. MLscript's RhsNf holds
