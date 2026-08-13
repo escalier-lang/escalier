@@ -56,14 +56,10 @@ import (
 // normal form produced, so the fusions above have already collapsed the cases a
 // member-by-member search decides wrongly.
 
-// nfDecision is what one constrainNF call derived.
-//
-// committed names the supertype-side atoms and variables the trials settled on,
-// one per implied goal that needed a choice. It is empty when no trial ran or when
-// the decision failed. The union-super rule reads it to report an ambiguous commit
-// and to record that a bare variable member was pinned by a union choice. A
-// decision that settled several goals holds one entry each, since each goal chose
-// on its own.
+// nfDecision is what one constrainNF call derived. committed holds the
+// supertype-side candidate each implied goal settled on, one entry per goal that
+// had a choice to make, and the union-super rule reads it to name an ambiguous or
+// variable-pinning commit.
 type nfDecision struct {
 	errs      []SolverError
 	committed []soltype.Type
@@ -72,9 +68,9 @@ type nfDecision struct {
 // constrainNF decides `sub <: super` through the normal forms of both operands.
 //
 // The whole derivation runs under one probe, so a constraint that fails records no
-// bound. Callers depend on that. The union-super rule reports one union-level
-// diagnostic in place of whatever the decomposition produced, and a bound recorded
-// on the way to that failure would outlive the derivation that justified it.
+// bound. Callers depend on that: the union-super rule replaces the decomposition's
+// diagnostics with one of its own, and a bound recorded on the way to that failure
+// would outlive the derivation that justified it.
 func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx bool) nfDecision {
 	lhs := c.mkDeepDNF(sub, soltype.Positive)
 	rhs := c.mkDeepCNF(super, soltype.Negative)
@@ -103,12 +99,10 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 }
 
 // constrainImplied decides one conjunct of the subtype's DNF against one disjunct
-// of the supertype's CNF, the goal this file's header calls an implied goal. It
-// moves both negated parts across the `<:` and hands the resulting meet and join
-// to decideMeetJoin.
-//
-// sub and super are the operands constrainNF was called with. They name the
-// failure when the goal has no pair to trial at all.
+// of the supertype's CNF, the implied goal this file's header describes. It moves
+// both negated parts across the `<:` and hands the resulting meet and join to
+// decideMeetJoin. sub and super are the operands constrainNF was called with, and
+// name the failure when the goal has no pair to trial at all.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -143,34 +137,24 @@ func (c *Context) constrainImplied(
 }
 
 // decideMeetJoin decides `⋂subCands <: ⋃superCands`, where each candidate is an
-// atom or a type variable.
+// atom or a type variable. It proves the goal by finding one subtype candidate
+// below one supertype candidate, since `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for
+// any such pair, and trials the pairs in specificity order so a bare variable is
+// only ever a last resort. Each trial recurses into the ordinary structural rules.
 //
-// It proves the goal by finding one subtype candidate that is below one supertype
-// candidate, since `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for any such pair. The
-// pairs are trialled in specificity order, so a concrete candidate is tried
-// before a bare type variable and a variable is only ever a last resort. Each
-// trial recurses into the ordinary structural rules, which is where a class tag
-// meets its parent and an arrow meets an arrow.
+// Three things follow from deciding by one pair.
 //
-// Looking for one pair is sound but incomplete. A meet can be below a join
-// through its parts taken together, which no pair states. `{x: number} & {y:
-// number} <: {x: number, y: number}` is such a goal: neither record alone carries
-// both fields, so no pair holds and the goal is rejected. Two exact records meet
-// to `never` once #1064 lands, which settles that one.
-//
-// A pair that repeats the constraint constrainNF was called with, against an
-// inexact union, is skipped. An inexact union is one atom, since its open tail has
-// no atom to stand for it, so normalizing `boolean <: (number | string | ...)`
-// hands back the pair it started from. Trialling that pair would ask the question
-// the caller is already deciding and never reach a smaller one. Only that shape
-// repeats: every other supertype is taken apart into atoms smaller than itself.
-//
-// A variable on the supertype side picks up the whole meet as a lower bound, which
-// is stronger than the goal asks for. `¬T <: number` becomes `unknown <: number ∪ T`
-// and settles by recording `unknown` under T, where `¬number` under T is the
-// weakest bound that would do. The stronger bound is sound, and a variable is only
-// ever reached after every concrete candidate failed, so the imprecision is
-// confined to a goal nothing else settles.
+//   - It is incomplete. A meet can be below a join through its parts taken
+//     together, which no pair states, so `{x: number} & {y: number} <: {x: number,
+//     y: number}` is rejected. #1064's exact-record merge settles that one.
+//   - A pair repeating the caller's own question against an inexact union is
+//     skipped. Such a union is one atom, so normalizing `boolean <: (number |
+//     string | ...)` hands back the pair it started from and no smaller question
+//     is ever reached. Every other supertype comes apart into smaller atoms.
+//   - A variable on the supertype side picks up the whole meet as a lower bound,
+//     which is stronger than the goal asks for. `¬T <: number` records `unknown`
+//     under T where `¬number` would do. That is sound, and a variable is reached
+//     only after every concrete candidate failed.
 func (c *Context) decideMeetJoin(
 	subCands, superCands []soltype.Type, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -202,47 +186,25 @@ func (c *Context) decideMeetJoin(
 }
 
 // maxDecomposedArms caps how many arrow atoms decideArrows weighs. It tries every
-// group of arms, so the work doubles with each further arm. Six arms is 63 groups,
-// past which the decomposition costs more than the constraints it settles. An
-// intersection of more arrows than that is decided by the pair trial alone, which
-// is sound and only ever rejects what the decomposition would have accepted.
+// group of arms, so the work doubles with each further arm, and six arms is
+// already 63 groups. An intersection of more arrows is left to the pair trial,
+// which is sound and only rejects what the decomposition would have accepted.
 const maxDecomposedArms = 6
 
 // decideArrows decides `⋂arms <: target` when the subtype side holds several arrow
-// atoms that no fusion merged into one. It returns the target it settled on and
-// reports whether it settled the goal at all.
+// atoms that no fusion merged into one, by the Frisch-Castagna-Benzaken
+// decomposition. It returns the target it settled on and reports whether it
+// settled the goal at all. arrowLegsHold states the two legs, and the corpus
+// header in constrain_nf_test.go derives them.
 //
-// The rule is the Frisch-Castagna-Benzaken decomposition, which weighs the arms
-// together instead of collapsing them to one arrow. Writing the arms `Aᵢ -> Cᵢ`
-// and the target `E -> F`, both legs must hold:
+// It runs after decideMeetJoin's pair trial found no single arm below the target.
+// Both rules are sound, so which runs first decides the bounds a variable in the
+// target picks up rather than the verdict.
 //
-//  1. The target's domain is covered: `E <: ⋃ᵢ Aᵢ`. No input the target accepts
-//     may fall outside every arm's domain, since no arm says what the value does
-//     with such an input.
-//  2. For every group P of arms, either the inputs are still covered without P —
-//     `E <: ⋃_{i∉P} Aᵢ` — or the arms in P return something the target tolerates,
-//     `⋂_{i∈P} Cᵢ <: F`. A value carrying every arm type returns, on a given
-//     input, something in the codomain of every arm whose domain accepts that
-//     input. So the goal fails exactly when some group is the only cover for part
-//     of E while its combined codomain escapes F.
-//
-// `((x: number) -> boolean) & ((x: string) -> null) <: (x: number | string) ->
-// (boolean | null)` holds under this rule: each arm alone returns something the
-// target tolerates, and the group holding both returns `boolean & null`, which no
-// value inhabits. Checking the arms one at a time rejects it, since neither arm
-// alone accepts both a number and a string.
-//
-// It runs after decideMeetJoin's pair trial found no single arm below the target,
-// so a goal one arm already settles never reaches it. Both rules are sound, so
-// which runs first decides the bounds a variable in the target picks up rather
-// than the verdict.
-//
-// The decomposition is restricted to plain one-parameter arrows: the arms and the
-// target must agree on what a call may raise, and none may carry a receiver, a
-// quantifier, an optional or rest parameter, or a trailing `...`. A multi-parameter
-// arrow's domain is a product of positions rather than one type, and covering a
-// product needs the union of the arms' whole domains rather than a union per
-// position, so those keep the pair trial's answer.
+// Only plain one-parameter arrows are weighed, the shape decomposableArrow admits.
+// A multi-parameter arrow's domain is a product of positions rather than one type,
+// and covering a product needs the union of the arms' whole domains rather than a
+// union per position.
 func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPairs) (soltype.Type, bool) {
 	arms := decomposableArrows(subCands)
 	if len(arms) < 2 || len(arms) > maxDecomposedArms {
@@ -266,14 +228,20 @@ func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPa
 	return nil, false
 }
 
-// arrowLegsHold runs the two legs of the decomposition decideArrows documents and
-// reports whether both hold. The caller keeps the bounds the legs recorded only
-// when they do.
+// arrowLegsHold reports whether both legs of the decomposition hold for arms
+// `Aᵢ -> Cᵢ` against target `E -> F`. The caller keeps the bounds they recorded
+// only when they do.
 //
-// Every leg compares a domain against a domain or a codomain against a codomain,
-// so each runs with the deep-mut context cleared, exactly as the arrow rule in the
-// structural switch clears it. A function carries its own annotation context, so a
-// borrow reaching one of its parameters does not make that parameter invariant.
+//  1. The target's domain is covered, `E <: ⋃ᵢ Aᵢ`, since no arm says what the
+//     value does with an input outside every arm's domain.
+//  2. For every group P of arms, either the arms outside P still cover the inputs,
+//     `E <: ⋃_{i∉P} Aᵢ`, or P returns something the target tolerates,
+//     `⋂_{i∈P} Cᵢ <: F`. A value carrying every arm type returns, on a given
+//     input, something in the codomain of every arm that accepts it.
+//
+// Every leg compares domain against domain or codomain against codomain, so each
+// runs with the deep-mut context cleared, as the arrow rule in the structural
+// switch clears it. A function carries its own annotation context.
 func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncType, seen *seenPairs) bool {
 	domain := target.Params[0].Type
 	// Leg 1. Every input the target accepts is accepted by some arm.
@@ -302,8 +270,8 @@ func allArms(arms []*soltype.FuncType) int {
 	return 1<<len(arms) - 1
 }
 
-// joinDomains is the union of the domains of the arms in group, and `never` when
-// the group is empty, since an empty union covers no input at all.
+// joinDomains is the union of the domains of the arms in group, and `never` for an
+// empty group, since an empty union covers no input.
 func joinDomains(arms []*soltype.FuncType, group int) soltype.Type {
 	parts := make([]soltype.Type, 0, len(arms))
 	for i, arm := range arms {
@@ -326,9 +294,8 @@ func meetCodomains(arms []*soltype.FuncType, group int) soltype.Type {
 	return newIntersection(nil, parts)
 }
 
-// decomposableArrows returns the atoms of a meet the decomposition can weigh,
-// dropping every other atom. Dropping is sound: a meet is below each of its parts,
-// so a decision reached from the arrows alone holds for the whole meet.
+// decomposableArrows returns the atoms of a meet the decomposition can weigh and
+// drops the rest, which is sound because a meet is below each of its parts.
 func decomposableArrows(atoms []soltype.Type) []*soltype.FuncType {
 	arrows := make([]*soltype.FuncType, 0, len(atoms))
 	for _, atom := range atoms {
@@ -339,8 +306,9 @@ func decomposableArrows(atoms []soltype.Type) []*soltype.FuncType {
 	return arrows
 }
 
-// decomposableArrow reports whether one arrow has the plain shape the
-// decomposition is restricted to, spelled out in decideArrows.
+// decomposableArrow reports whether one arrow is plain enough to decompose: one
+// parameter, no receiver, no quantifier, and no optional, rest, or `...` marker.
+// Everything a leg does not compare has to be absent, since no leg would see it.
 func decomposableArrow(f *soltype.FuncType) bool {
 	if f.SelfParam != nil || len(f.TypeParams) > 0 || len(f.LifetimeParams) > 0 || f.Inexact {
 		return false
@@ -351,9 +319,9 @@ func decomposableArrow(f *soltype.FuncType) bool {
 	return !f.Params[0].Optional && !f.Params[0].Rest
 }
 
-// sameRaises reports whether every arm raises what the target raises. The
-// decomposition reasons about the domains and the codomains alone, so a call that
-// could raise something the target does not name has to be ruled out here.
+// sameRaises reports whether every arm raises what the target raises. The legs
+// compare domains and codomains alone, so an arm that could raise something the
+// target does not name is ruled out here.
 func sameRaises(arms []*soltype.FuncType, target *soltype.FuncType) bool {
 	for _, arm := range arms {
 		if !equalType(arm.ThrowsOrNever(), target.ThrowsOrNever()) {
@@ -366,14 +334,11 @@ func sameRaises(arms []*soltype.FuncType, target *soltype.FuncType) bool {
 // nfPair is one candidate pair decideMeetJoin trials.
 type nfPair struct{ sub, super soltype.Type }
 
-// orderedPairs lists the pairs to trial, supertype candidate first and subtype
-// candidate second, each in specificity order. Ordering the supertype candidates
-// outermost keeps the choice among union members the one a reader sees first, and
-// it is the order the rule this layer replaces used.
-//
-// origSub and origSuper are the constraint the caller is deciding. The pair that
-// repeats it against an inexact union is dropped, for the reason decideMeetJoin
-// gives.
+// orderedPairs lists the pairs to trial, each side in specificity order and the
+// supertype candidates outermost, so the choice among union members is the one a
+// reader sees first. origSub and origSuper are the constraint the caller is
+// deciding; the pair repeating it against an inexact union is dropped, for the
+// reason decideMeetJoin gives.
 func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
@@ -398,15 +363,15 @@ func varsAsTypes(vars set.Set[*soltype.TypeVarType]) []soltype.Type {
 	return out
 }
 
-// isNegation reports whether t is a complement, the node whose presence on either
-// side of a constraint routes the constraint through the normal-form layer.
+// isNegation reports whether t is a complement, the node that routes a constraint
+// through the normal-form layer from either side.
 func isNegation(t soltype.Type) bool {
 	_, ok := t.(*soltype.NegationType)
 	return ok
 }
 
 // isInexactUnion reports whether t is a union with an open tail, the one supertype
-// normalization hands back whole instead of taking apart.
+// normalization hands back whole.
 func isInexactUnion(t soltype.Type) bool {
 	u, ok := t.(*soltype.UnionType)
 	return ok && u.Inexact
