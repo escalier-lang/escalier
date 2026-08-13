@@ -723,6 +723,26 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		"ClassWithSuperCall": {
+			input: `
+				class Dog extends Animal {
+					name: string,
+					constructor(mut self, name: string, tag: string) {
+						super(name)
+						self.name = tag
+					},
+				}
+			`,
+		},
+		"ClassWithSuperCallNoArgs": {
+			input: `
+				class Dog extends Animal {
+					constructor(mut self) {
+						super()
+					},
+				}
+			`,
+		},
 		"ClassWithExtendsAndInBodyConstructor": {
 			input: `
 				class Dog extends Animal {

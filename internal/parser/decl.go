@@ -543,16 +543,6 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 			}
 		}
 		token = p.lexer.peek()
-
-		// Parse optional super constructor args after extends
-		if token.Type == OpenParen {
-			p.lexer.consume()
-			// For now, we parse and discard the super constructor args
-			// TODO(#262): store these args in the AST if needed for validation or codegen
-			_ = parseDelimSeq(p, CloseParen, Comma, p.expr)
-			p.expect(CloseParen, AlwaysConsume)
-			token = p.lexer.peek()
-		}
 	}
 
 	// Parse optional implements clause

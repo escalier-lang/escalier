@@ -252,6 +252,16 @@ func (c *Checker) inferExpr(ctx Context, expr ast.Expr) (type_system.Type, []Err
 		// from cascading `<: never` through every downstream use.
 		exprType = type_system.NewErrorType(nil)
 		errors = []Error{&BorrowUnsupportedError{span: expr.Span()}}
+	case *ast.SuperCallExpr:
+		// A super call runs the superclass constructor and yields no value. Whether one is
+		// required, appears once, and receives arguments the superclass accepts is checked in
+		// internal/solver; this arm exists so the expression carries a type here rather than
+		// reporting itself unimplemented.
+		for _, arg := range expr.Args {
+			_, argErrors := c.inferExpr(ctx, arg)
+			errors = append(errors, argErrors...)
+		}
+		exprType = type_system.NewUndefinedType(nil)
 	case *ast.CallExpr:
 		exprType, errors = c.inferCallExpr(ctx, expr)
 	case *ast.MemberExpr:

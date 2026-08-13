@@ -34,6 +34,10 @@ func (node *CallExpr) Span() Span             { return node.span }
 func (node *CallExpr) InferredType() Type     { return node.inferredType }
 func (node *CallExpr) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *SuperCallExpr) Span() Span             { return node.span }
+func (node *SuperCallExpr) InferredType() Type     { return node.inferredType }
+func (node *SuperCallExpr) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *IndexExpr) Span() Span             { return node.span }
 func (node *IndexExpr) InferredType() Type     { return node.inferredType }
 func (node *IndexExpr) SetInferredType(t Type) { node.inferredType = t }

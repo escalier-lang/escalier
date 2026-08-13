@@ -78,6 +78,7 @@ var keywords = map[string]TokenType{
 	"readonly":   Readonly,
 	"new":        New,
 	"extends":    Extends,
+	"super":      Super,
 	"implements": Implements,
 	"is":         Is,
 	"asserts":    Asserts,
