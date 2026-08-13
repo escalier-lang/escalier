@@ -1,6 +1,6 @@
-const geo = {};
-const util = {};
-export class geo__Base {
+export const geo = {};
+export const util = {};
+class geo__Base {
   constructor() {
     this.tag = "geo";
   }
@@ -17,7 +17,7 @@ export class Base {
     return "root base";
   }
 }
-export class geo__NsDerived extends geo__Base {
+class geo__NsDerived extends geo__Base {
   constructor() {
     super();
   }
@@ -26,7 +26,7 @@ geo.NsDerived = geo__NsDerived;
 export const nsDerived = new geo.NsDerived();
 export const nsTag = nsDerived.tag;
 export const nsWho = nsDerived.who();
-export class util__QualifiedDerived extends geo__Base {
+class util__QualifiedDerived extends geo__Base {
   constructor() {
     super();
   }
@@ -34,7 +34,7 @@ export class util__QualifiedDerived extends geo__Base {
 util.QualifiedDerived = util__QualifiedDerived;
 export const qualifiedDerived = new util.QualifiedDerived();
 export const qualifiedWho = qualifiedDerived.who();
-export class util__UtilDerived extends Base {
+class util__UtilDerived extends Base {
   constructor() {
     super();
   }

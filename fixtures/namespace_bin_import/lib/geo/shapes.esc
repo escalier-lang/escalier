@@ -1,0 +1,12 @@
+class Point {
+    x: number,
+    y: number,
+    constructor(mut self, x: number, y: number) {
+        self.x = x
+        self.y = y
+    },
+}
+
+fn makeOrigin() -> Point {
+    return Point(0, 0)
+}

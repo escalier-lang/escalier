@@ -1,8 +1,8 @@
-const constants = {};
-const geometry = {};
-export const constants__PI = 3.14159;
+export const constants = {};
+export const geometry = {};
+const constants__PI = 3.14159;
 constants.PI = constants__PI;
-export function geometry__circleArea(temp1) {
+function geometry__circleArea(temp1) {
   const r = temp1;
   return constants.PI * r * r;
 }

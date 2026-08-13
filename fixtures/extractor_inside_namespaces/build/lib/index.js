@@ -1,6 +1,6 @@
 import { InvokeCustomMatcherOrThrow } from "@escalier/runtime";
-const MyEnum = {};
-export class MyEnum__Color {
+export const MyEnum = {};
+class MyEnum__Color {
   constructor(temp1, temp2, temp3) {
     const r = temp1;
     const g = temp2;
@@ -15,7 +15,7 @@ export class MyEnum__Color {
   }
 }
 MyEnum.Color = MyEnum__Color;
-export class MyEnum__MyEvent {
+class MyEnum__MyEvent {
   constructor(temp5) {
     const kind = temp5;
     this.kind = kind;

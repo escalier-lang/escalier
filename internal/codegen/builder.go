@@ -259,6 +259,23 @@ func fullyQualifyName(name, nsName string) string {
 	return strings.ReplaceAll(nsName, ".", "__") + "__" + name
 }
 
+// exportDecl reports whether a top-level declaration gets an `export` keyword. nsName is the
+// namespace the declaration is written in, and inBlockScope says it sits inside a function
+// body or other block rather than at the top level of the module.
+//
+// A declaration inside a namespace is not exported under its own name. fullyQualifyName
+// mangles that name, so `class Base` in namespace `geo` is emitted as `geo__Base`. No such
+// spelling appears in the source, and exporting it would put a name the author never wrote in
+// the module's public surface. It could also collide with a root-level declaration spelled the
+// same way.
+//
+// Consumers reach the declaration through the namespace object, which buildNamespaceHierarchy
+// exports. `geo.Base` is imported as `import { geo }` and read as `geo.Base`. That is what the
+// `.d.ts` declares for the namespace and what a bin script's generated import expects.
+func (b *Builder) exportDecl(nsName string, inBlockScope bool) bool {
+	return b.isModule && !inBlockScope && nsName == ""
+}
+
 // TODO: return a pattern instead of passing in the VariableKind
 func (b *Builder) buildPattern(
 	p ast.Pat,
@@ -632,7 +649,11 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 }
 
 // buildNamespaceHierarchy generates statements to create a namespace hierarchy
-// For "foo.bar.baz", it generates: const foo = {}; foo.bar = {}; foo.bar.baz = {};
+// For "foo.bar.baz", it generates: export const foo = {}; foo.bar = {}; foo.bar.baz = {};
+//
+// Only the outermost object carries `export`. It is the module's single export for everything
+// in the namespace, and the nested levels are reachable as properties on it. See exportDecl
+// for why namespace members are not exported individually.
 func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces set.Set[string]) []Stmt {
 	if namespace == "" {
 		return []Stmt{}
@@ -652,7 +673,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces se
 		definedNamespaces.Add(currentNS)
 
 		if i == 1 {
-			// First level: const foo = {};
+			// First level: export const foo = {};
 			pattern := NewIdentPat(parts[0], nil, nil)
 			init := NewObjectExpr([]ObjExprElem{}, nil)
 
@@ -666,7 +687,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces se
 					},
 				},
 				declare: false,
-				export:  false,
+				export:  b.isModule,
 				span:    nil,
 				source:  nil,
 			}
@@ -743,8 +764,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		// Ignore checks returned by buildPattern
-		// Only export if we're in module mode AND not inside a block scope
-		export := b.isModule && !b.inBlockScope
+		export := b.exportDecl(nsName, b.inBlockScope)
 		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
@@ -788,7 +808,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			Body:       bodyStmts,
 			TypeAnn:    nil,
 			declare:    decl.Declare(),
-			export:     b.isModule && !prevInBlockScope,
+			export:     b.exportDecl(nsName, prevInBlockScope),
 			async:      d.Async,
 			generator:  d.Gen || containsYield(d.Body.Stmts),
 			span:       nil,
@@ -823,7 +843,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			},
 			SuperClass: superClass,
 			Body:       classElems,
-			export:     b.isModule,
+			export:     b.exportDecl(nsName, b.inBlockScope),
 			declare:    d.Declare(),
 			span:       nil,
 			source:     d,
@@ -854,7 +874,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				},
 			},
 			declare: false,
-			export:  b.isModule,
+			export:  b.exportDecl(nsName, b.inBlockScope),
 			span:    nil,
 			source:  d,
 		}
@@ -1217,7 +1237,7 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		Body:       []Stmt{dispatchStmt},
 		TypeAnn:    nil,
 		declare:    false,
-		export:     b.isModule,
+		export:     b.exportDecl(nsName, b.inBlockScope),
 		async:      isAsync,
 		generator:  isGenerator,
 		span:       nil,

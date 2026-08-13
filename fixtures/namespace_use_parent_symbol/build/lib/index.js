@@ -1,2 +1,2 @@
-const web_assembly = {};
+export const web_assembly = {};
 //# sourceMappingURL=./index.js.map
