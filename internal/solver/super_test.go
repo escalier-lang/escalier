@@ -196,6 +196,43 @@ func TestInferSuperCall(t *testing.T) {
 			},
 		},
 		{
+			name: "SelfMentionedInTheArguments",
+			src: `
+				class Animal {
+					name: string,
+					constructor(mut self, name: string) { self.name = name },
+				}
+				class Dog extends Animal {
+					tag: string,
+					constructor(mut self) { super(self.tag) },
+				}
+			`,
+			// The arguments run before the superclass constructor does, so a mention of
+			// `self` inside them is still a mention before the call.
+			want: []string{
+				"`super(…)` must run before `self` is used, " +
+					"since the inherited members do not exist until it does.",
+				"Field 'tag' is not initialized on every path through the constructor.",
+				"Field 'self.tag' is read before it has been initialized.",
+			},
+		},
+		{
+			name: "SuperclassNameShadowedByAParameter",
+			src: `
+				class Animal {
+					name: string,
+					constructor(mut self, name: string) { self.name = name },
+				}
+				class Dog extends Animal {
+					constructor(mut self, Animal: number) { super(5) },
+				}
+			`,
+			// The superclass's value binding is read from the scope `Dog` is declared in, so
+			// the parameter shadowing `Animal` inside the constructor does not hide the
+			// signature and leave the argument unchecked.
+			want: []string{"cannot constrain 5 <: string"},
+		},
+		{
 			name: "ClassWithoutASuperclass",
 			src: `
 				class Animal {

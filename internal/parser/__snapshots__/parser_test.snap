@@ -6076,3 +6076,61 @@
     span: 2:5-8:6,
 }
 ---
+
+[TestClassDeclarations/ClassWithNegatedSuperCall - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: 2:11-2:14,
+        },
+        Extends: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Animal",
+                span: 2:23-2:29,
+            },
+            span: 2:23-2:29,
+        },
+        Body: []ast.ClassElem{
+            &ast.ConstructorElem{
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 3:18-3:26,
+                                },
+                            },
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ExprStmt{
+                                Expr: &ast.UnaryExpr{
+                                    Op: 1,
+                                    Arg: &ast.SuperCallExpr{
+                                        span: 4:8-4:15,
+                                    },
+                                    span: 4:7-4:15,
+                                },
+                                span: 4:7-4:15,
+                            },
+                        },
+                        Span: 3:28-5:7,
+                    },
+                    span: 3:6-5:7,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 3:18-3:26,
+                },
+                Span_: 3:6-5:7,
+            },
+        },
+        span: 2:5-6:6,
+    },
+    span: 2:5-6:6,
+}
+---

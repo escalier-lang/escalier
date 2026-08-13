@@ -743,6 +743,19 @@ func TestClassDeclarations(t *testing.T) {
 				}
 			`,
 		},
+		// A unary prefix on a super call parses as a UnaryExpr wrapping the SuperCallExpr,
+		// the same nesting any other primary expression gets. The snapshot pins that the
+		// prefix survives rather than being dropped. The expression is rejected downstream,
+		// since the call yields no value to negate.
+		"ClassWithNegatedSuperCall": {
+			input: `
+				class Dog extends Animal {
+					constructor(mut self) {
+						-super()
+					},
+				}
+			`,
+		},
 		"ClassWithExtendsAndInBodyConstructor": {
 			input: `
 				class Dog extends Animal {

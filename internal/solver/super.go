@@ -9,9 +9,12 @@ import (
 
 // superCtx is what a `super(…)` call needs while a constructor body is walked. super is the
 // class whose constructor the call runs, nil when the enclosing class declares no
-// superclass. A nil superCtx means the walk is not inside a constructor at all.
+// superclass. declScope is the scope the enclosing class is declared in, which is where the
+// superclass's value binding is read from. A nil superCtx means the walk is not inside a
+// constructor at all.
 type superCtx struct {
-	super *soltype.ClassType
+	super     *soltype.ClassType
+	declScope *Scope
 }
 
 // inferSuperCall types a `super(…)` call. The call runs the superclass constructor and
@@ -37,7 +40,7 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 	case c.superCtx.super == nil:
 		c.report(&SuperWithoutSuperclassError{Node: e})
 	default:
-		if ctor, ok := c.superConstructor(scope, lvl, c.superCtx.super); ok {
+		if ctor, ok := c.superConstructor(lvl, c.superCtx); ok {
 			c.constrain(e, ctor, &soltype.FuncType{Params: args, Ret: c.superCtx.super})
 		}
 	}
@@ -48,8 +51,15 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 // the class's value binding, which is the object `Animal(…)` calls through. It returns
 // ok=false when the binding is absent or carries no constructor, which leaves the arguments
 // unchecked rather than reported against a signature that was never found.
-func (c *checker) superConstructor(scope *Scope, lvl int, super *soltype.ClassType) (*soltype.FuncType, bool) {
-	binding, found := scope.GetValue(super.Name)
+//
+// The name is looked up in the scope the subclass is declared in, not the constructor's own
+// scope. A parameter named after the superclass would shadow the class binding there, and the
+// arguments would go unchecked against a signature the lookup never found.
+func (c *checker) superConstructor(lvl int, ctx *superCtx) (*soltype.FuncType, bool) {
+	if ctx.declScope == nil {
+		return nil, false
+	}
+	binding, found := ctx.declScope.GetValue(ctx.super.Name)
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
 	}
@@ -68,8 +78,7 @@ func (c *checker) superConstructor(scope *Scope, lvl int, super *soltype.ClassTy
 // constructor has run". Nothing else is tracked, so the one id is the whole domain.
 const superVarID = liveness.VarID(1)
 
-// checkSuperCalls reports the rules a constructor body as a whole has to satisfy, once the
-// body has been walked.
+// checkSuperCalls reports the rules a constructor body as a whole has to satisfy.
 //
 // A subclass constructor must run its superclass's exactly once on every path, before it
 // touches `self`. Until it has, the members the class inherits do not exist, so a read sees

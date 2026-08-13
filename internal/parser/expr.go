@@ -500,7 +500,10 @@ func (p *Parser) primaryExpr() ast.Expr {
 		case Throw:
 			return p.throwExpr()
 		case Super:
-			return p.superCallExpr(token)
+			// Assigned rather than returned so the call falls through to exprSuffix and the
+			// unary-prefix wrapping below. Returning here dropped a collected prefix on the
+			// floor, so `-super()` parsed as a bare `super()` with no diagnostic.
+			expr = p.superCallExpr(token)
 		case LessThan:
 			return p.jsxElementOrFragment()
 		case

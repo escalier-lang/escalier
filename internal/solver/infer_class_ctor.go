@@ -74,7 +74,9 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	// a context, so a stray `super(…)` there is reported against the missing edge rather than
 	// as a call outside a constructor.
 	prevSuper := c.superCtx
-	superCtx := &superCtx{}
+	// scope, not ctorScope: the superclass's value binding is read from where the subclass is
+	// declared, so a constructor parameter cannot shadow it.
+	superCtx := &superCtx{declScope: scope}
 	if def, ok := c.ctx.classDef(self.Name); ok && len(def.Supers) > 0 {
 		superCtx.super = def.Supers[0]
 	}
