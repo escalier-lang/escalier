@@ -314,8 +314,8 @@ func (c *checker) openProbe() *Probe {
 //
 // This is the single path for the speculative candidate trials a subtyping decision runs,
 // so the probe push-and-pop discipline lives in one place. Its caller is the normal-form
-// layer's decideMeetJoin, which trials the candidate pairs a meet against a join leaves to
-// choose between. Each trial body owns its own coinductive seen clone, since only the caller
+// layer's constrainImplied, which trials the candidate pairs a meet against a join leaves
+// to choose between. Each trial body owns its own coinductive seen clone, since only the caller
 // holds the constraint key.
 func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (committed bool, winIdx int, winErrs []SolverError, trialErrs [][]SolverError) {
 	for _, idx := range order {

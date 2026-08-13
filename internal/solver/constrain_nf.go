@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -45,13 +47,13 @@ import (
 //     subtype side.
 //
 // The two variable sets move the same way. What is left is a meet of atoms and
-// variables against a join of atoms and variables, which decideMeetJoin settles.
+// variables against a join of atoms and variables, which constrainImplied settles.
 //
 // # Where a choice still remains
 //
 // A meet of two atoms that did not fuse, or a join of two that did not, leaves a
 // genuine choice: `{x: number} | {y: number}` is not one record, so nothing says
-// which side a given subtype has to satisfy. decideMeetJoin trials the pairs in
+// which side a given subtype has to satisfy. constrainImplied trials the pairs in
 // specificity order for exactly that residue. Every trial runs over atoms the
 // normal form produced, so the fusions above have already collapsed the cases a
 // member-by-member search decides wrongly.
@@ -100,9 +102,28 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 
 // constrainImplied decides one conjunct of the subtype's DNF against one disjunct
 // of the supertype's CNF, the implied goal this file's header describes. It moves
-// both negated parts across the `<:` and hands the resulting meet and join to
-// decideMeetJoin. sub and super are the operands constrainNF was called with, and
-// name the failure when the goal has no pair to trial at all.
+// both negated parts across the `<:`, which leaves `⋂subCands <: ⋃superCands` over
+// atoms and variables, and proves that by finding one subtype candidate below one
+// supertype candidate, since `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for any such
+// pair. The pairs are trialled in specificity order, so a bare variable is only
+// ever a last resort, and each trial recurses into the ordinary structural rules.
+//
+// sub and super are the operands constrainNF was called with, and name the failure
+// when the goal has no pair to trial at all.
+//
+// Three things follow from deciding by one pair.
+//
+//   - It is incomplete. A meet can be below a join through its parts taken
+//     together, which no pair states, so `{x: number} & {y: number} <: {x: number,
+//     y: number}` is rejected. #1064's exact-record merge settles that one.
+//   - A pair repeating the caller's own question against an inexact union is
+//     skipped. Such a union is one atom, so normalizing `boolean <: (number |
+//     string | ...)` hands back the pair it started from and no smaller question
+//     is ever reached. Every other supertype comes apart into smaller atoms.
+//   - A variable on the supertype side picks up the whole meet as a lower bound,
+//     which is stronger than the goal asks for. `¬T <: number` records `unknown`
+//     under T where `¬number` would do. That is sound, and a variable is reached
+//     only after every concrete candidate failed.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -122,42 +143,16 @@ func (c *Context) constrainImplied(
 	// A variable is opaque, so it joins the side it sits on as one more candidate
 	// rather than being taken apart. A variable negated on one side stands on the
 	// other, by the same two rewrites the negated structural parts follow.
-	subCands := append(meet, varsAsTypes(conj.Vars)...)
-	subCands = append(subCands, varsAsTypes(disj.NVars)...)
-	superCands := append(join, varsAsTypes(disj.Vars)...)
-	superCands = append(superCands, varsAsTypes(conj.NVars)...)
+	subCands := slices.Concat(meet, varsAsTypes(conj.Vars), varsAsTypes(disj.NVars))
+	superCands := slices.Concat(join, varsAsTypes(disj.Vars), varsAsTypes(conj.NVars))
 
 	if len(subCands) == 0 {
 		// An empty meet is `unknown`, the top of the lattice. Naming it explicitly
-		// gives the decision below something to constrain, and `unknown <: T` still
-		// records a bound when the supertype side is a variable.
+		// gives the trial something to constrain, and `unknown <: T` still records a
+		// bound when the supertype side is a variable.
 		subCands = []soltype.Type{&soltype.UnknownType{}}
 	}
-	return c.decideMeetJoin(subCands, superCands, sub, super, seen, mutCtx)
-}
 
-// decideMeetJoin decides `⋂subCands <: ⋃superCands`, where each candidate is an
-// atom or a type variable. It proves the goal by finding one subtype candidate
-// below one supertype candidate, since `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for
-// any such pair, and trials the pairs in specificity order so a bare variable is
-// only ever a last resort. Each trial recurses into the ordinary structural rules.
-//
-// Three things follow from deciding by one pair.
-//
-//   - It is incomplete. A meet can be below a join through its parts taken
-//     together, which no pair states, so `{x: number} & {y: number} <: {x: number,
-//     y: number}` is rejected. #1064's exact-record merge settles that one.
-//   - A pair repeating the caller's own question against an inexact union is
-//     skipped. Such a union is one atom, so normalizing `boolean <: (number |
-//     string | ...)` hands back the pair it started from and no smaller question
-//     is ever reached. Every other supertype comes apart into smaller atoms.
-//   - A variable on the supertype side picks up the whole meet as a lower bound,
-//     which is stronger than the goal asks for. `¬T <: number` records `unknown`
-//     under T where `¬number` would do. That is sound, and a variable is reached
-//     only after every concrete candidate failed.
-func (c *Context) decideMeetJoin(
-	subCands, superCands []soltype.Type, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
-) nfDecision {
 	pairs := orderedPairs(subCands, superCands, sub, super)
 	if len(pairs) == 0 {
 		return nfDecision{errs: []SolverError{&CannotConstrainError{Sub: sub, Super: super}}}
@@ -197,7 +192,7 @@ const maxDecomposedArms = 6
 // settled the goal at all. arrowLegsHold states the two legs, and the corpus
 // header in constrain_nf_test.go derives them.
 //
-// It runs after decideMeetJoin's pair trial found no single arm below the target.
+// It runs after constrainImplied's pair trial found no single arm below the target.
 // Both rules are sound, so which runs first decides the bounds a variable in the
 // target picks up rather than the verdict.
 //
@@ -331,14 +326,14 @@ func sameRaises(arms []*soltype.FuncType, target *soltype.FuncType) bool {
 	return true
 }
 
-// nfPair is one candidate pair decideMeetJoin trials.
+// nfPair is one candidate pair constrainImplied trials.
 type nfPair struct{ sub, super soltype.Type }
 
 // orderedPairs lists the pairs to trial, each side in specificity order and the
 // supertype candidates outermost, so the choice among union members is the one a
 // reader sees first. origSub and origSuper are the constraint the caller is
 // deciding; the pair repeating it against an inexact union is dropped, for the
-// reason decideMeetJoin gives.
+// reason constrainImplied gives.
 func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
