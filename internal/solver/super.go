@@ -2,16 +2,16 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // superCtx is what a `super(…)` call needs while a constructor body is walked. super is the
 // class whose constructor the call runs, nil when the enclosing class declares no
-// superclass. calls collects every super call the body wrote, in walk order, so the rules
-// that are about the body as a whole can be checked once the walk finishes.
+// superclass. A nil superCtx means the walk is not inside a constructor at all.
 type superCtx struct {
 	super *soltype.ClassType
-	calls []*ast.SuperCallExpr
 }
 
 // inferSuperCall types a `super(…)` call. The call runs the superclass constructor and
@@ -37,7 +37,6 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 	case c.superCtx.super == nil:
 		c.report(&SuperWithoutSuperclassError{Node: e})
 	default:
-		c.superCtx.calls = append(c.superCtx.calls, e)
 		if ctor, ok := c.superConstructor(scope, lvl, c.superCtx.super); ok {
 			c.constrain(e, ctor, &soltype.FuncType{Params: args, Ret: c.superCtx.super})
 		}
@@ -65,87 +64,135 @@ func (c *checker) superConstructor(scope *Scope, lvl int, super *soltype.ClassTy
 	return ctor.Fn, true
 }
 
+// superVarID is the synthetic binding the move dataflow tracks in place of "the superclass
+// constructor has run". Nothing else is tracked, so the one id is the whole domain.
+const superVarID = liveness.VarID(1)
+
 // checkSuperCalls reports the rules a constructor body as a whole has to satisfy, once the
-// body has been walked and every `super(…)` in it recorded.
+// body has been walked.
 //
-// A subclass constructor must run its superclass's exactly once, before it touches `self`.
-// Until it has, the members the class inherits do not exist, so a read sees nothing and a
-// write lands on an object the superclass constructor may overwrite. JS enforces the same
-// order at runtime by rejecting `this` before `super()`.
+// A subclass constructor must run its superclass's exactly once on every path, before it
+// touches `self`. Until it has, the members the class inherits do not exist, so a read sees
+// nothing and a write lands on an object the superclass constructor may overwrite. JS
+// enforces the same order at runtime by rejecting `this` before `super()`.
 //
-// The dominance rule is approximated by source position: the call has to be a statement of
-// the constructor body itself, written before the first mention of `self`. A call nested
-// inside an `if` reaches only some paths, so requiring the top level is what makes one
-// written call mean one call on every path. This rejects a body that calls its superclass
-// differently per branch, which is legal JS; splitting the arguments before the call covers
-// the same ground.
+// "Every path" and "before" are decided by the same forward move-state dataflow that
+// checkConstructorInit uses for definite assignment, over the same CFG. A `super(…)` is
+// modeled as a move of one synthetic binding, so at any program point its state answers the
+// question the rules ask:
+//
+//   - Moved means every reaching path called it. That is what the exit needs, and what a
+//     mention of `self` needs.
+//   - NotMoved means no reaching path called it. That is what a call site needs.
+//   - MaybeMoved means some paths called it and others did not, which fails both.
+//
+// Branches therefore work the way JS allows: a call in each arm of an `if`/`else` leaves the
+// join Moved and is accepted, while a call in an `if` alone leaves it MaybeMoved.
+//
+// A throwing path is exempt, the way it is for definite assignment. It never finishes
+// constructing an instance, so it marks the call made rather than lowering the state at the
+// exit join.
 func (c *checker) checkSuperCalls(ctx *superCtx, ctor *ast.ConstructorElem) {
-	if ctx.super == nil {
+	if ctx.super == nil || ctor.Fn == nil || ctor.Fn.Body == nil {
 		return
 	}
-	if len(ctx.calls) == 0 {
-		c.report(&MissingSuperCallError{Class: ctx.super.Name, Node: ctor})
-		return
-	}
-	if len(ctx.calls) > 1 {
-		c.report(&MultipleSuperCallsError{Node: ctx.calls[1]})
-		return
-	}
-	call := ctx.calls[0]
-	if !isTopLevelStmt(ctor.Fn.Body, call) {
-		c.report(&NestedSuperCallError{Node: call})
-		return
-	}
-	if selfUse, found := firstSelfUse(ctor.Fn.Body); found && before(selfUse.Start, call.Span().Start) {
-		c.report(&SuperCallAfterSelfError{Node: call, Self: selfUse})
-	}
-}
 
-// before reports whether a comes earlier in the source than b.
-func before(a, b ast.Location) bool {
-	if a.Line != b.Line {
-		return a.Line < b.Line
-	}
-	return a.Column < b.Column
-}
-
-// isTopLevelStmt reports whether call is written as a statement of body itself rather than
-// nested inside one of its statements.
-func isTopLevelStmt(body *ast.Block, call *ast.SuperCallExpr) bool {
-	if body == nil {
-		return false
-	}
-	for _, stmt := range body.Stmts {
-		if exprStmt, ok := stmt.(*ast.ExprStmt); ok && exprStmt.Expr == ast.Expr(call) {
-			return true
+	cfg := liveness.BuildCFG(*ctor.Fn.Body)
+	col := &superCollector{gens: map[liveness.StmtRef]set.Set[liveness.VarID]{}}
+	// Walk each CFG block's statements. The builder has already flattened control flow into
+	// blocks, so the per-statement scan attributes every call and every mention of `self` to
+	// the right program point without re-deriving the branch structure.
+	for _, block := range cfg.Blocks {
+		for idx, stmt := range block.Stmts {
+			col.currentRef = liveness.StmtRef{BlockID: block.ID, StmtIdx: idx}
+			stmt.Accept(col)
 		}
 	}
-	return false
+	info := liveness.AnalyzeMoves(cfg, col.gens)
+
+	// StmtIdx -1 reads the exit block's entry state, the join over every predecessor.
+	exitRef := liveness.StmtRef{BlockID: cfg.Exit.ID, StmtIdx: -1}
+	switch info.StateBefore(exitRef, superVarID) {
+	case liveness.NotMoved:
+		// No path calls it. Every mention of `self` in the body is downstream of that one
+		// fact, so reporting them too would bury it.
+		c.report(&MissingSuperCallError{Class: ctx.super.Name, Node: ctor})
+		return
+	case liveness.MaybeMoved:
+		c.report(&ConditionalSuperCallError{Class: ctx.super.Name, Node: ctor})
+	}
+
+	// A call some path reaches with the superclass constructor already run is a second call
+	// on that path.
+	for _, call := range col.calls {
+		if info.StateBefore(call.ref, superVarID) != liveness.NotMoved {
+			c.report(&MultipleSuperCallsError{Node: call.node})
+		}
+	}
+
+	for _, use := range col.selfUses {
+		if info.StateBefore(use.ref, superVarID) != liveness.Moved {
+			c.report(&SuperCallAfterSelfError{Node: use.node})
+		}
+	}
 }
 
-// firstSelfUse returns the span of the earliest `self` the constructor body mentions.
-func firstSelfUse(body *ast.Block) (ast.Span, bool) {
-	if body == nil {
-		return ast.Span{}, false
-	}
-	finder := &selfUseFinder{}
-	for _, stmt := range body.Stmts {
-		stmt.Accept(finder)
-	}
-	return finder.span, finder.found
+// superSite is one `super(…)` call or one mention of `self` the collector recorded: the CFG
+// point it sits at and the node to blame.
+type superSite struct {
+	ref  liveness.StmtRef
+	node ast.Node
 }
 
-// selfUseFinder records the earliest `self` identifier the walk reaches.
-type selfUseFinder struct {
+// superCollector walks a constructor body statement by statement, recording each `super(…)`
+// as a "gen" of the synthetic binding at the current program point and each mention of
+// `self` as a use. currentRef is set by the driver before each statement, so a call or
+// mention nested in that statement's expression is attributed to it.
+type superCollector struct {
 	ast.DefaultVisitor
-	span  ast.Span
-	found bool
+	currentRef liveness.StmtRef
+	gens       map[liveness.StmtRef]set.Set[liveness.VarID]
+	calls      []superSite
+	selfUses   []superSite
 }
 
-func (v *selfUseFinder) EnterExpr(e ast.Expr) bool {
-	if ident, ok := e.(*ast.IdentExpr); ok && ident.Name == "self" {
-		if !v.found || before(e.Span().Start, v.span.Start) {
-			v.span, v.found = e.Span(), true
+// gen records that the superclass constructor has run as of the current statement.
+func (col *superCollector) gen() {
+	at := col.gens[col.currentRef]
+	if at == nil {
+		at = set.NewSet[liveness.VarID]()
+		col.gens[col.currentRef] = at
+	}
+	at.Add(superVarID)
+}
+
+func (col *superCollector) EnterExpr(e ast.Expr) bool {
+	switch e := e.(type) {
+	case *ast.FuncExpr:
+		// A nested closure has its own body and CFG, and its `self` does not run in the
+		// constructor's straight-line flow, so do not descend into it.
+		return false
+	case *ast.SuperCallExpr:
+		// The arguments run before the superclass constructor does, so scan them for
+		// mentions of `self` first, then mark the call made.
+		for _, arg := range e.Args {
+			arg.Accept(col)
+		}
+		col.calls = append(col.calls, superSite{ref: col.currentRef, node: e})
+		col.gen()
+		return false
+	case *ast.ThrowExpr:
+		// A throwing path never completes construction, so it is exempt: mark the call made
+		// so the throw does not lower the state at the exit join. The thrown value is still
+		// scanned, since it runs before the throw.
+		col.gen()
+		if e.Arg != nil {
+			e.Arg.Accept(col)
+		}
+		return false
+	case *ast.IdentExpr:
+		if e.Name == "self" {
+			col.selfUses = append(col.selfUses, superSite{ref: col.currentRef, node: e})
 		}
 	}
 	return true

@@ -3080,28 +3080,29 @@ type MissingSuperCallError struct {
 	Node  ast.Node
 }
 
-// MultipleSuperCallsError fires on the second `super(…)` in one constructor body. The
-// superclass constructor runs once per instance. Node is the surplus call.
+// MultipleSuperCallsError fires on a `super(…)` that some path reaches with the superclass
+// constructor already run. The superclass constructor runs once per instance. Node is the
+// surplus call.
 type MultipleSuperCallsError struct{ Node ast.Node }
 
-// NestedSuperCallError fires on a `super(…)` written inside a nested statement rather than
-// as a statement of the constructor body. Only a call at the top level runs on every path
-// through the constructor. Node is the call.
-type NestedSuperCallError struct{ Node ast.Node }
-
-// SuperCallAfterSelfError fires when a constructor mentions `self` before running its
-// superclass's constructor, so it reads or writes members that do not exist yet. Node is the
-// call and Self the span of the earlier mention.
-type SuperCallAfterSelfError struct {
-	Node ast.Node
-	Self ast.Span
+// ConditionalSuperCallError fires when a constructor calls `super(…)` on some paths through
+// its body but not all, such as a call in an `if` with no `else`. Class is the superclass and
+// Node the constructor.
+type ConditionalSuperCallError struct {
+	Class string
+	Node  ast.Node
 }
+
+// SuperCallAfterSelfError fires when a constructor mentions `self` at a point some reaching
+// path has not yet run its superclass's constructor, so it reads or writes members that may
+// not exist. Node is the mention of `self`.
+type SuperCallAfterSelfError struct{ Node ast.Node }
 
 func (*SuperOutsideConstructorError) isSolverError() {}
 func (*SuperWithoutSuperclassError) isSolverError()  {}
 func (*MissingSuperCallError) isSolverError()        {}
 func (*MultipleSuperCallsError) isSolverError()      {}
-func (*NestedSuperCallError) isSolverError()         {}
+func (*ConditionalSuperCallError) isSolverError()    {}
 func (*SuperCallAfterSelfError) isSolverError()      {}
 
 func (e *SuperOutsideConstructorError) Span() ast.Span      { return spanOfNode(e.Node) }
@@ -3112,10 +3113,10 @@ func (e *MissingSuperCallError) Span() ast.Span             { return spanOfNode(
 func (e *MissingSuperCallError) Related() []ast.Span        { return nil }
 func (e *MultipleSuperCallsError) Span() ast.Span           { return spanOfNode(e.Node) }
 func (e *MultipleSuperCallsError) Related() []ast.Span      { return nil }
-func (e *NestedSuperCallError) Span() ast.Span              { return spanOfNode(e.Node) }
-func (e *NestedSuperCallError) Related() []ast.Span         { return nil }
+func (e *ConditionalSuperCallError) Span() ast.Span         { return spanOfNode(e.Node) }
+func (e *ConditionalSuperCallError) Related() []ast.Span    { return nil }
 func (e *SuperCallAfterSelfError) Span() ast.Span           { return spanOfNode(e.Node) }
-func (e *SuperCallAfterSelfError) Related() []ast.Span      { return []ast.Span{e.Self} }
+func (e *SuperCallAfterSelfError) Related() []ast.Span      { return nil }
 
 func (*SuperOutsideConstructorError) Message() string {
 	return "`super(…)` may only be called inside a constructor."
@@ -3133,8 +3134,8 @@ func (*MultipleSuperCallsError) Message() string {
 	return "`super(…)` may only be called once per constructor."
 }
 
-func (*NestedSuperCallError) Message() string {
-	return "`super(…)` must be a statement of the constructor body, so that it runs on every path through it."
+func (e *ConditionalSuperCallError) Message() string {
+	return fmt.Sprintf("`super(…)` runs on only some paths through this constructor; the members inherited from `%s` do not exist on the others.", e.Class)
 }
 
 func (*SuperCallAfterSelfError) Message() string {

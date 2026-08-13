@@ -14,7 +14,7 @@ class Animal {
 class Dog extends Animal {
     breed: string,
     constructor(mut self, name: string, breed: string) {
-        self.name = name
+        super(name)
         self.breed = breed
     },
     speak(self) -> string {
@@ -22,7 +22,22 @@ class Dog extends Animal {
     },
 }
 
+class Puppy extends Animal {
+    constructor(mut self, named: boolean) {
+        if named {
+            super("rex")
+        } else {
+            super("stray")
+        }
+    },
+    speak(self) -> string {
+        return "yip"
+    },
+}
+
 val d = Dog("rex", "lab")
 val heard = d.speak()
 val described = d.describe()
 val named = d.name
+val p = Puppy(true)
+val yipped = p.speak()

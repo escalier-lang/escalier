@@ -73,7 +73,51 @@ func TestInferSuperCall(t *testing.T) {
 			want: []string{"`super(…)` may only be called once per constructor."},
 		},
 		{
-			name: "NestedInAConditional",
+			name: "OnceInEachBranch",
+			src: `
+				class Animal {
+					legs: number,
+					constructor(mut self, legs: number) { self.legs = legs },
+				}
+				class Dog extends Animal {
+					constructor(mut self, big: boolean) {
+						if big {
+							super(8)
+						} else {
+							super(4)
+						}
+					},
+				}
+			`,
+			// Both arms call it, so every path through the body calls it exactly once. This
+			// is what a syntactic "one call, written at the top level" rule would reject.
+			want: nil,
+		},
+		{
+			name: "SelfUsedAfterBothBranchesCall",
+			src: `
+				class Animal {
+					legs: number,
+					constructor(mut self, legs: number) { self.legs = legs },
+				}
+				class Dog extends Animal {
+					breed: string,
+					constructor(mut self, big: boolean, breed: string) {
+						if big {
+							super(8)
+						} else {
+							super(4)
+						}
+						self.breed = breed
+					},
+				}
+			`,
+			// The write to `self` sits after the join, where the call has run on every
+			// reaching path.
+			want: nil,
+		},
+		{
+			name: "OnlyInTheIfBranch",
 			src: `
 				class Animal {
 					constructor(mut self) {},
@@ -86,12 +130,50 @@ func TestInferSuperCall(t *testing.T) {
 					},
 				}
 			`,
-			// One call written inside an `if` reaches only some paths, so requiring the top
-			// level is what makes one written call mean one call on every path.
+			// Falling through the `if` reaches the end of the constructor without calling it.
 			want: []string{
-				"`super(…)` must be a statement of the constructor body, " +
-					"so that it runs on every path through it.",
+				"`super(…)` runs on only some paths through this constructor; " +
+					"the members inherited from `Animal` do not exist on the others.",
 			},
+		},
+		{
+			name: "OnceInABranchAndOnceAfterIt",
+			src: `
+				class Animal {
+					constructor(mut self) {},
+				}
+				class Dog extends Animal {
+					constructor(mut self, early: boolean) {
+						if early {
+							super()
+						}
+						super()
+					},
+				}
+			`,
+			// The second call runs twice on the `early` path, even though neither call is
+			// written twice.
+			want: []string{"`super(…)` may only be called once per constructor."},
+		},
+		{
+			name: "SkippedOnAThrowingPath",
+			src: `
+				class Animal {
+					legs: number,
+					constructor(mut self, legs: number) { self.legs = legs },
+				}
+				class Dog extends Animal {
+					constructor(mut self, bad: boolean) throws string {
+						if bad {
+							throw "no"
+						}
+						super(4)
+					},
+				}
+			`,
+			// A path that throws never finishes constructing an instance, so it does not
+			// have to call the superclass constructor first.
+			want: nil,
 		},
 		{
 			name: "CalledAfterSelfIsUsed",
