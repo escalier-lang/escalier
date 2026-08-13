@@ -1,0 +1,8 @@
+// References from outside `geo`, to one exported member and one unexported one.
+// The exported member is a property on the `geo` object and is read as `geo.pub`.
+// The unexported member is not on that object, so it is read through the mangled
+// name the namespace member is declared under.
+export val callPub = geo.pub()
+export val callPriv = geo.priv()
+export val readPubVal = geo.pubVal
+export val readPrivVal = geo.privVal
