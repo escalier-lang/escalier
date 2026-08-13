@@ -56,7 +56,7 @@ func (p *nsProjection) empty() bool {
 
 // keys returns the names the namespace contributes to the wrapper, sorted so the generated
 // file is stable across builds. Members and non-empty child namespaces share one name space,
-// matching how the internal bundle puts both on the same namespace object, so a name that is
+// matching how the internal bundle puts both on the same namespace object. A name that is
 // both appears once.
 func (p *nsProjection) keys() []string {
 	keys := p.members.Clone()
@@ -72,7 +72,7 @@ func (p *nsProjection) keys() []string {
 
 // entry renders one name the namespace contributes. path locates the namespace itself, so the
 // `pub` member of namespace `geo` is reached by path ["geo"] and name "pub". A member reads
-// straight out of the internal bundle, which the wrapper binds to alias, and a nested namespace
+// straight out of the internal bundle, which the wrapper binds to alias. A nested namespace
 // becomes an object literal.
 //
 // A member wins over a child namespace spelled the same way, matching the internal bundle,
@@ -194,8 +194,8 @@ func wrapperAlias(declared []string) string {
 // Overloaded functions and merged interfaces put several declarations under one key.
 //
 // An ambient declaration names something the runtime already provides, and the internal
-// bundle emits no definition for it, so there is nothing for the wrapper to forward. The same
-// goes for a declaration the bundle does not bind under the name the wrapper would name it by.
+// bundle emits no definition for it, so there is nothing for the wrapper to forward. A
+// declaration the bundle binds under some other name is skipped for the same reason.
 // Forwarding a name the bundle does not export is a link error that keeps the whole entry
 // point from loading, not just that one binding.
 func exportedBinding(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey) bool {

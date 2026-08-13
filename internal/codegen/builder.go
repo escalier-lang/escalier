@@ -229,9 +229,9 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 }
 
 // bindsUnderExpectedName reports whether the declaration leaves its bindings where the rest of
-// codegen looks for them. A root declaration is expected as an export of the module, and a
-// namespace member as a mangled name, so `val PI = 3.14` in namespace `constants` is emitted
-// as `const constants__PI = 3.14;`.
+// codegen looks for them. A root declaration is expected as an export of the module. A
+// namespace member is expected under a mangled name, so `val PI = 3.14` in namespace
+// `constants` is emitted as `const constants__PI = 3.14;`.
 //
 // Two VarDecl forms land elsewhere. A declaration whose initializer throws introduces no
 // binding at all. `val pat = init else { … }` binds through buildPatternCondition, which names

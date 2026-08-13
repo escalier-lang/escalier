@@ -142,10 +142,10 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 		return err
 	}
 
-	// Write .d.ts file. A module with no definitions gets no file at all, because
-	// TypeScript reads a sibling .d.ts in place of the .js it sits next to, and an empty
-	// one would describe the module as exporting nothing. Removing it also clears one
-	// left by an earlier build, which this command does not otherwise clean.
+	// Write .d.ts file. TypeScript reads a sibling .d.ts in place of the .js it sits
+	// next to, so an empty one would describe the module as exporting nothing. A module
+	// with no definitions gets no file at all. Removing the file also clears one left by
+	// an earlier build, which this command does not otherwise clean.
 	if output.DTS == "" {
 		if err := os.Remove(filepath.Join("build", moduleName+".d.ts")); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("failed to remove stale .d.ts file")
