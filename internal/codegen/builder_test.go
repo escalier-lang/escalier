@@ -507,7 +507,8 @@ func TestBuildDecls(t *testing.T) {
 				},
 			},
 			expected: `export const foo = {};
-const foo__x = 42;`,
+const foo__x = 42;
+foo.x = foo__x;`,
 		},
 		"Multiple_Decls_Same_Namespace": {
 			sources: []*ast.Source{
@@ -527,7 +528,9 @@ function math__double(temp1) {
   const n = temp1;
   return n * 2;
 }
-const math__x = 42;`,
+math.double = math__double;
+const math__x = 42;
+math.x = math__x;`,
 		},
 		"Multiple_Decls_Different_Namespaces": {
 			sources: []*ast.Source{
@@ -545,7 +548,9 @@ const math__x = 42;`,
 			expected: `export const math = {};
 export const strings = {};
 const math__PI = 3.14159;
-const strings__message = "hello";`,
+math.PI = math__PI;
+const strings__message = "hello";
+strings.message = strings__message;`,
 		},
 		"Nested_Namespaces": {
 			sources: []*ast.Source{
@@ -565,7 +570,9 @@ constants.math = {};
 export const utils = {};
 utils.math = {};
 const constants__math__PI = 3.14;
-const utils__math__add = 42;`,
+constants.math.PI = constants__math__PI;
+const utils__math__add = 42;
+utils.math.add = utils__math__add;`,
 		},
 		"Mixed_Namespace_Levels": {
 			sources: []*ast.Source{
@@ -590,10 +597,12 @@ constants.app = {};
 export const utils = {};
 export const config = {debug: true};
 const constants__app__VERSION = "1.0.0";
+constants.app.VERSION = constants__app__VERSION;
 function utils__log(temp1) {
   const msg = temp1;
   console.log(msg);
-}`,
+}
+utils.log = utils__log;`,
 		},
 		"Function_With_Complex_Namespace": {
 			sources: []*ast.Source{
@@ -609,7 +618,8 @@ services.data.processing = {};
 function services__data__processing__processData(temp1) {
   const input = temp1;
   return input;
-}`,
+}
+services.data.processing.processData = services__data__processing__processData;`,
 		},
 		"Variable_Destructuring_With_Namespace": {
 			sources: []*ast.Source{
@@ -620,7 +630,9 @@ function services__data__processing__processData(temp1) {
 				},
 			},
 			expected: `export const coords = {};
-const {coords__x, coords__y} = getPoint();`,
+const {coords__x, coords__y} = getPoint();
+coords.x = coords__x;
+coords.y = coords__y;`,
 		},
 		"Multiple_Declarations_Overlapping_Namespaces": {
 			sources: []*ast.Source{
@@ -647,8 +659,11 @@ function models__user__createUser(temp1) {
   const name = temp1;
   return {name};
 }
+models.user.createUser = models__user__createUser;
 const models__user__defaults__defaultUser = null;
-const models__user__user = {name: "Alice"};`,
+models.user.defaults.defaultUser = models__user__defaults__defaultUser;
+const models__user__user = {name: "Alice"};
+models.user.user = models__user__user;`,
 		},
 		"Type_Declaration_Skip": {
 			sources: []*ast.Source{
@@ -665,7 +680,8 @@ const models__user__user = {name: "Alice"};`,
 			},
 			expected: `export const data = {};
 export const types = {};
-const data__admin = {name: "admin", age: 30};`,
+const data__admin = {name: "admin", age: 30};
+data.admin = data__admin;`,
 		},
 		"Var_Declaration_With_Namespace": {
 			sources: []*ast.Source{
@@ -684,7 +700,9 @@ const data__admin = {name: "admin", age: 30};`,
 state.app = {};
 state.ui = {};
 let state__app__counter = 0;
-let state__ui__isEnabled = true;`,
+state.app.counter = state__app__counter;
+let state__ui__isEnabled = true;
+state.ui.isEnabled = state__ui__isEnabled;`,
 		},
 	}
 
@@ -1307,7 +1325,9 @@ func TestBuildDecls_WithDependencies(t *testing.T) {
 			},
 			expected: `export const math = {};
 const math__base = 10;
-const math__derived = math__base * 2;`,
+math.base = math__base;
+const math__derived = math__base * 2;
+math.derived = math__derived;`,
 		},
 		"Cross_Namespace_Dependencies": {
 			sources: []*ast.Source{
@@ -1325,10 +1345,12 @@ const math__derived = math__base * 2;`,
 			expected: `export const constants = {};
 export const geometry = {};
 const constants__PI = 3.14159;
+constants.PI = constants__PI;
 function geometry__circleArea(temp1) {
   const r = temp1;
   return constants__PI * r * r;
-}`,
+}
+geometry.circleArea = geometry__circleArea;`,
 		},
 		"Complex_Dependency_Chain": {
 			sources: []*ast.Source{
@@ -1351,11 +1373,14 @@ function geometry__circleArea(temp1) {
 			expected: `export const app = {};
 app.utils = {};
 const app__config = {multiplier: 2};
+app.config = app__config;
 const app__utils__factor = app__config.multiplier;
+app.utils.factor = app__utils__factor;
 function app__utils__calculate(temp1) {
   const x = temp1;
   return x * app__utils__factor;
-}`,
+}
+app.utils.calculate = app__utils__calculate;`,
 		},
 	}
 
@@ -1429,7 +1454,8 @@ company.project = {};
 company.project.module = {};
 company.project.module.submodule = {};
 company.project.module.submodule.utils = {};
-const company__project__module__submodule__utils__constant = "deep";`,
+const company__project__module__submodule__utils__constant = "deep";
+company.project.module.submodule.utils.constant = company__project__module__submodule__utils__constant;`,
 		},
 	}
 

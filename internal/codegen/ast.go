@@ -1015,23 +1015,44 @@ func (d *ClassDecl) Span() *Span        { return d.span }
 func (d *ClassDecl) SetSpan(span *Span) { d.span = span }
 func (d *ClassDecl) Source() ast.Node   { return d.source }
 
+// ImportDecl is either a named import or a namespace import, depending on which
+// of Specifiers and NamespaceAlias is set. Exactly one of the two carries the
+// binding names the statement introduces.
 type ImportDecl struct {
 	Specifiers []string // Named imports, e.g., ["InvokeCustomMatcherOrThrow"]
-	Path       string   // The module path, e.g., "escalier/runtime"
-	export     bool
-	declare    bool
-	span       *Span
-	source     ast.Node
+	// NamespaceAlias names the single binding a namespace import introduces, so
+	// "internal" prints as `import * as internal from "./internal.js";`. It is
+	// empty for a named import.
+	NamespaceAlias string
+	Path           string // The module path, e.g., "escalier/runtime"
+	export         bool
+	declare        bool
+	span           *Span
+	source         ast.Node
 }
 
 func NewImportDecl(specifiers []string, path string, source ast.Node) *ImportDecl {
 	return &ImportDecl{
-		Specifiers: specifiers,
-		Path:       path,
-		export:     false,
-		declare:    false,
-		source:     source,
-		span:       nil,
+		Specifiers:     specifiers,
+		NamespaceAlias: "",
+		Path:           path,
+		export:         false,
+		declare:        false,
+		source:         source,
+		span:           nil,
+	}
+}
+
+// NewNamespaceImportDecl builds `import * as <alias> from "<path>";`.
+func NewNamespaceImportDecl(alias, path string, source ast.Node) *ImportDecl {
+	return &ImportDecl{
+		Specifiers:     nil,
+		NamespaceAlias: alias,
+		Path:           path,
+		export:         false,
+		declare:        false,
+		source:         source,
+		span:           nil,
 	}
 }
 

@@ -1,9 +1,4 @@
-export function bar(temp1) {
-  const [a, b, c] = temp1;
-  return c;
-}
-export const foo = function (temp2) {
-  const [a, b, c] = temp2;
-  return c;
-};
+import * as internal from "./internal.js";
+export const bar = internal.bar;
+export const foo = internal.foo;
 //# sourceMappingURL=./index.js.map

@@ -1012,14 +1012,20 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.NewLine()
 		p.print("}")
 	case *ImportDecl:
-		p.print("import { ")
-		for i, spec := range d.Specifiers {
-			if i > 0 {
-				p.print(", ")
+		if d.NamespaceAlias != "" {
+			p.print("import * as ")
+			p.print(d.NamespaceAlias)
+		} else {
+			p.print("import { ")
+			for i, spec := range d.Specifiers {
+				if i > 0 {
+					p.print(", ")
+				}
+				p.print(spec)
 			}
-			p.print(spec)
+			p.print(" }")
 		}
-		p.print(" } from \"")
+		p.print(" from \"")
 		p.print(d.Path)
 		p.print("\";")
 	}

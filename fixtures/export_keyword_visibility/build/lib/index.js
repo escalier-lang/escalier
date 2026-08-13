@@ -1,18 +1,8 @@
-export const geo = {};
-function geo__priv() {
-  return 2;
-}
-export const callPriv = geo__priv();
-function geo__pub() {
-  return 1;
-}
-geo.pub = geo__pub;
-export const callPub = geo.pub();
-const geo__privVal = 20;
-const geo__pubVal = 10;
-geo.pubVal = geo__pubVal;
-export const readPrivVal = geo__privVal;
-export const readPubVal = geo.pubVal;
-export const rootPriv = 2;
-export const rootPub = 1;
+import * as internal from "./internal.js";
+export const callPriv = internal.callPriv;
+export const callPub = internal.callPub;
+export const geo = {inner: {deepPub: internal.geo.inner.deepPub}, pub: internal.geo.pub, pubVal: internal.geo.pubVal};
+export const readPrivVal = internal.readPrivVal;
+export const readPubVal = internal.readPubVal;
+export const rootPub = internal.rootPub;
 //# sourceMappingURL=./index.js.map

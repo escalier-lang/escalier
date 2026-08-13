@@ -1,5 +1,6 @@
 // Root-level declarations, one with the `export` keyword and one without.
-// The .d.ts writer reads the keyword and marks only `rootPub` as exported.
-// The JS emitter does not read it and exports both.
+// The internal bundle exports both, so a bin script reaches either one. The
+// public wrapper re-exports only `rootPub`, and the .d.ts marks only `rootPub`
+// as exported.
 export val rootPub = 1
 val rootPriv = 2

@@ -1,6 +1,3 @@
-export function add(temp1, temp2) {
-  const a = temp1;
-  const b = temp2;
-  return a + b;
-}
+import * as internal from "./internal.js";
+export const add = internal.add;
 //# sourceMappingURL=./index.js.map

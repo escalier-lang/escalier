@@ -10,3 +10,9 @@ declare namespace geo {
   const privVal: 20;
   export const pubVal: 10;
 }
+declare namespace geo {
+  namespace inner {
+    const deepPriv: 200;
+    export const deepPub: 100;
+  }
+}

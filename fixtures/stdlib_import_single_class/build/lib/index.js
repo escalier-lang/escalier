@@ -1,3 +1,4 @@
-export const arr = new Array(5);
-export const isArr = Array.isArray(0);
+import * as internal from "./internal.js";
+export const arr = internal.arr;
+export const isArr = internal.isArr;
 //# sourceMappingURL=./index.js.map

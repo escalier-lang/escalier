@@ -159,13 +159,15 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 			//   coords.x = coords__x
 			//   coords.y = coords__y
 			//
-			// A member the source did not mark `export` is left off the namespace object. The
-			// object is the module's export for the namespace, so a property on it is reachable
-			// by any consumer. Code elsewhere in the module still reaches the member, because
-			// unexportedNsMember rewrites a reference such as `constants.PI` to the mangled
-			// name `constants__PI`.
+			// Every member reaches its namespace object, whether or not the source marked it
+			// `export`. This module is the package's internal bundle, and a bin script imports
+			// it to reach members the package keeps to itself. BuildPublicWrapper projects each
+			// namespace object down to its exported members for external consumers.
+			// An ambient declaration binds a name the runtime already provides, and
+			// buildDeclWithNamespace emits nothing for it, so there is no mangled name to
+			// assign from.
 			bindingName := key.Name()
-			if strings.Contains(bindingName, ".") && decl.Export() {
+			if strings.Contains(bindingName, ".") && !decl.Declare() {
 				parts := strings.Split(bindingName, ".")
 				dunderName := strings.Join(parts, "__")
 
