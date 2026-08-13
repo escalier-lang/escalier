@@ -26,6 +26,7 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				class Dog extends Animal {
 					breed: string,
 					constructor(mut self, name: string, breed: string) {
+						super(name)
 						self.name = name
 						self.breed = breed
 					},
@@ -41,7 +42,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self, name: string) { self.name = name },
 				}
 				class Dog extends Animal {
-					constructor(mut self, name: string) { self.name = name },
+					constructor(mut self, name: string) {
+						super(name)
+						self.name = name
+					},
 					rename(mut self, name: string) -> undefined { self.name = name },
 					read(self) -> string { return self.name },
 				}
@@ -57,7 +61,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) { self.breed = breed },
+					constructor(mut self, breed: string) {
+						super("rex")
+						self.breed = breed
+					},
 				}
 				fn f(a: Animal) {
 					return match a {
@@ -76,7 +83,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) { self.breed = breed },
+					constructor(mut self, breed: string) {
+						super("rex")
+						self.breed = breed
+					},
 				}
 				fn g(d: Dog) -> {name: string, ...} { return d }
 			`,
@@ -90,10 +100,13 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self) { self.base = 0 },
 				}
 				class Mid extends Base {
-					constructor(mut self) {},
+					constructor(mut self) { super() },
 				}
 				class Leaf extends Mid {
-					constructor(mut self) { self.base = 1 },
+					constructor(mut self) {
+						super()
+						self.base = 1
+					},
 				}
 				fn h(l: Leaf) -> {base: number, ...} { return l }
 			`,
@@ -107,10 +120,13 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self) { self.base = 0 },
 				}
 				class Mid extends Base {
-					constructor(mut self) {},
+					constructor(mut self) { super() },
 				}
 				class Leaf extends Mid {
-					constructor(mut self) { self.base = 1 },
+					constructor(mut self) {
+						super()
+						self.base = 1
+					},
 				}
 			`,
 			// Reaching Base from Leaf needs Mid's own edge and body recorded before Leaf's
@@ -127,7 +143,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					m(self) -> number { return n },
 				}
 				class Dog extends Animal {
-					constructor(mut self, name: string) { self.name = name },
+					constructor(mut self, name: string) {
+						super(name)
+						self.name = name
+					},
 				}
 				fn g(x: Dog) -> number { return 1 }
 				val d = Dog("rex")
@@ -147,7 +166,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self, food: A) { self.food = food },
 				}
 				class Dog extends Animal<string> {
-					constructor(mut self) { self.food = "bone" },
+					constructor(mut self) {
+						super("bone")
+						self.food = "bone"
+					},
 				}
 			`,
 			// `Animal<A>`'s `food` reaches Dog through `extends Animal<string>`, so the
@@ -162,7 +184,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 					constructor(mut self, food: A) { self.food = food },
 				}
 				class Dog extends Animal<string> {
-					constructor(mut self) { self.food = 5 },
+					constructor(mut self) {
+						super("bone")
+						self.food = 5
+					},
 				}
 			`,
 			// A `mut self` field write is invariant, so a rejected one reports both
@@ -182,7 +207,10 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				}
 				class Dog extends Animal {
 					name: string,
-					constructor(mut self, name: string) { self.name = name },
+					constructor(mut self, name: string) {
+						super(name)
+						self.name = name
+					},
 				}
 				fn g(d: Dog) -> {name: string, ...} { return d }
 			`,
@@ -199,11 +227,14 @@ func TestInferClassInheritedWholeBody(t *testing.T) {
 				}
 				class Dog extends Animal {
 					breed: string,
-					constructor(mut self, breed: string) { self.breed = breed },
+					constructor(mut self, breed: string) {
+						super("rex")
+						self.breed = breed
+					},
 				}
 			`,
-			// A subclass may leave an inherited field unassigned. Requiring it needs
-			// `super(…)` to delegate to, which is escalier-lang/escalier#1095.
+			// Definite assignment covers a class's own fields, so Dog assigns `breed` and
+			// leaves `name` to the superclass constructor its `super(…)` delegates to.
 			want: nil,
 		},
 	}

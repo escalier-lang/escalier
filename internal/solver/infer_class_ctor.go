@@ -85,8 +85,8 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	c.superCtx = prevSuper
 	c.checkSuperCalls(superCtx, ctor)
 	// Definite assignment runs over the class's OWN fields. An inherited field is left out,
-	// since a subclass has no `super(…)` to delegate its initialization to and would
-	// otherwise have to re-assign every field its ancestors declare.
+	// since the `super(…)` call delegates its initialization to the superclass constructor
+	// rather than making the subclass re-assign every field its ancestors declare.
 	c.checkConstructorInit(body, ctor)
 	// A constructor returns a fresh instance, not the `undefined` its statement body falls
 	// off to, so override the inferred return with the instance type.

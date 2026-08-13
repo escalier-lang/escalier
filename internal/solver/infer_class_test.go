@@ -348,7 +348,7 @@ func TestInferClassNominalSubtype(t *testing.T) {
 	// base declares A, a subclass B, an unrelated Other, and a bounded Box<T: A>.
 	const base = `
 		class A { x: number, constructor(mut self) { self.x = 0 } }
-		class B extends A { constructor(mut self) {} }
+		class B extends A { constructor(mut self) { super() } }
 		class Other { y: number, constructor(mut self) { self.y = 0 } }
 		class Box<T: A> { value: T }
 	`
@@ -497,7 +497,7 @@ func TestInferClassExtendFinal(t *testing.T) {
 	t.Run("extending a non-final class is allowed", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
 			class A { x: number, constructor(mut self) { self.x = 0 } }
-			class B extends A { constructor(mut self) {} }
+			class B extends A { constructor(mut self) { super() } }
 		`)
 		require.Empty(t, errs)
 	})
@@ -867,7 +867,7 @@ func TestInferClassInheritedMemberAccess(t *testing.T) {
 			speak(self) -> string { return "..." },
 		}
 		class Dog extends Animal {
-			constructor(mut self) {}
+			constructor(mut self) { super("rex") }
 		}
 		val d = Dog()
 		val n = d.name
@@ -889,10 +889,10 @@ func TestInferClassInheritedMemberAccessMultiLevel(t *testing.T) {
 			base: number,
 		}
 		class Mid extends Base {
-			constructor(mut self) {}
+			constructor(mut self) { super(0) }
 		}
 		class Leaf extends Mid {
-			constructor(mut self) {}
+			constructor(mut self) { super() }
 		}
 		val leaf = Leaf()
 		val got = leaf.base
@@ -931,10 +931,10 @@ func TestInferClassInheritedMemberAccessCollidingVal(t *testing.T) {
 			x: number,
 		}
 		class B extends A {
-			constructor(mut self) {}
+			constructor(mut self) { super(0) }
 		}
 		class C extends B {
-			constructor(mut self) {}
+			constructor(mut self) { super() }
 		}
 		val c = C()
 		val x = c.x
@@ -961,7 +961,10 @@ func TestInferClassGenericSubGenericSuper(t *testing.T) {
 		}
 		class Dog<D> extends Animal<D> {
 			tag: D,
-			constructor(mut self, tag: D) { self.tag = tag }
+			constructor(mut self, tag: D) {
+				super(tag)
+				self.tag = tag
+			}
 		}
 		val d = Dog("bone")
 		val f = d.food
@@ -984,7 +987,7 @@ func TestInferClassNonGenericSubGenericSuper(t *testing.T) {
 			food: A,
 		}
 		class Dog extends Animal<string> {
-			constructor(mut self) {}
+			constructor(mut self) { super("bone") }
 		}
 		val d = Dog()
 		val f = d.food
@@ -1322,7 +1325,10 @@ func TestInferClassMutVariance(t *testing.T) {
 			}
 			class Dog extends Animal {
 				breed: string,
-				constructor(mut self, breed: string) { self.breed = breed },
+				constructor(mut self, breed: string) {
+					super({x: 0})
+					self.breed = breed
+				},
 			}
 			fn reset(a: mut Animal) { a.pos = {x: 0} }
 			fn resetDog(d: mut Dog) { reset(d) }
@@ -1340,7 +1346,10 @@ func TestInferClassMutVariance(t *testing.T) {
 			}
 			class Dog extends Animal {
 				breed: string,
-				constructor(mut self, name: string, breed: string) { self.breed = breed },
+				constructor(mut self, name: string, breed: string) {
+					super(name)
+					self.breed = breed
+				},
 			}
 			fn describe(a: Animal) -> string { return a.name }
 			fn describeDog(d: Dog) -> string { return describe(d) }
@@ -1525,7 +1534,7 @@ func TestInferClassErrors(t *testing.T) {
 			src: `
 				class Animal<A> { food: A }
 				class Dog extends Animal<Bogus> {
-					constructor(mut self) {}
+					constructor(mut self) { super(5) }
 				}
 			`,
 			want: "cannot find type `Bogus`",

@@ -18,8 +18,14 @@ type superCtx struct {
 // yields no value of its own, so it infers `undefined` whatever else it reports.
 //
 // The arguments are checked by constraining the superclass constructor against a call shape
-// built from them, which is how an ordinary call is checked, so arity and per-argument
-// mismatches surface as the diagnostics a direct call to the superclass would give.
+// built from them, so a per-argument mismatch reads like the one a direct call to the
+// superclass gives. A wrong argument count reports the arity of the two signatures instead
+// of the too-few lint, which fires only on a direct call.
+//
+// The call shape returns the superclass instance the `extends` clause names, arguments and
+// all, which is what fixes the superclass's type parameters at the arguments the edge
+// declares. Under `class Dog extends Animal<string>`, `super(5)` then reports `5` against
+// `string` rather than resolving `Animal<A>`'s `A` to `5` and checking clean.
 func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) soltype.Type {
 	args := make([]*soltype.FuncParam, len(e.Args))
 	for i, arg := range e.Args {
@@ -33,7 +39,7 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 	default:
 		c.superCtx.calls = append(c.superCtx.calls, e)
 		if ctor, ok := c.superConstructor(scope, lvl, c.superCtx.super); ok {
-			c.constrain(e, ctor, &soltype.FuncType{Params: args, Ret: c.freshAt(lvl)})
+			c.constrain(e, ctor, &soltype.FuncType{Params: args, Ret: c.superCtx.super})
 		}
 	}
 	return &soltype.UndefinedType{}

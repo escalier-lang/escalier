@@ -302,7 +302,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 			name: "inherited setter resolves through a subclass instance",
 			src: `
 				class C { v: number, set x(mut self, n: number) { self.v = n } }
-				class D extends C { constructor(mut self) { } }
+				class D extends C { constructor(mut self) { super(0) } }
 				fn f(d: mut D) { d.x = 5 }
 			`,
 		},
