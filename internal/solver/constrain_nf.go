@@ -134,8 +134,12 @@ func (c *Context) constrainImplied(
 	meet, inhabited := c.fuseAtoms(pooled(conj.Lnf.Atoms, disj.Lnf.Atoms), meetOfAtoms)
 	if !inhabited {
 		// No value inhabits the subtype side, so the goal holds however the supertype
-		// side reads. `5 <: ¬number` reaches this: the negated `number` moves to the
-		// subtype side, and `5 ∩ number` is `never`.
+		// side reads. `5 <: ¬string` reaches this: the complement moves `string` to the
+		// subtype side as a positive atom, and `5 ∩ string` is `never`, since a literal
+		// and a primitive of another family are disjoint.
+		//
+		// `5 <: ¬number` does not reach it. That meet is `5 ∩ number`, which is `5`, so
+		// the goal goes on to the trial below and fails there against an empty join.
 		return nfDecision{}
 	}
 	join, _ := c.fuseAtoms(pooled(conj.Rnf.Atoms, disj.Rnf.Atoms), joinOfAtoms)
