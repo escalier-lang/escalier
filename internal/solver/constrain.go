@@ -739,14 +739,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			// An inexact union's open tail has no atom to stand for it, so normalizing one
-			// hands back the union itself and no member is ever weighed. The decision runs
-			// on the named members alone, and the tail below catches what they miss.
-			named := super
-			if supU.Inexact {
-				named = newUnion(nil, supU.Types, false)
-			}
-			decision := c.constrainNF(sub, named, seen, mutCtx)
+			decision := c.constrainNF(sub, namedMembers(supU), seen, mutCtx)
 			if !hasHardError(decision.errs) {
 				// The decision carries any warning a nested trial emitted. Propagate it so a
 				// nested ambiguous union is not silently swallowed.
@@ -755,18 +748,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				// later constraint that forces an incompatible bound onto the var can name
 				// the union choice that pinned it. The tag is about a member the user wrote,
 				// so a variable the decision reached by some other route does not earn one.
-				if member, ok := writtenMember(supU, decision.committed); ok {
-					if v, isVar := member.(*soltype.TypeVarType); isVar {
-						c.tagUnionCommit(v, supU)
+				for _, committed := range decision.committed {
+					if member, ok := writtenMember(supU, committed); ok {
+						if v, isVar := member.(*soltype.TypeVarType); isVar {
+							c.tagUnionCommit(v, supU)
+						}
 					}
 				}
 				// When another member would also match while binding an inference variable,
 				// the committed choice is ambiguous. Warn at the union so the user can
-				// annotate rather than depend on specificity order.
-				if alt := c.ambiguousAlternate(sub, supU, decision.committed, seen, mutCtx); alt != nil {
-					diags = append(diags, &AmbiguousUnionCommitWarning{
-						Union: supU, Committed: decision.committed, Alternate: alt,
-					})
+				// annotate rather than depend on specificity order. A decision that had to
+				// choose more than once made no single choice to call ambiguous.
+				if len(decision.committed) == 1 {
+					if alt := c.ambiguousAlternate(sub, supU, decision.committed[0], seen, mutCtx); alt != nil {
+						diags = append(diags, &AmbiguousUnionCommitWarning{
+							Union: supU, Committed: decision.committed[0], Alternate: alt,
+						})
+					}
 				}
 				return diags
 			}
@@ -1472,6 +1470,20 @@ func (c *Context) partOfCommitted(m, committed soltype.Type) bool {
 		return false
 	}
 	return !hasHardError(c.trialUnderProbe(m, committed))
+}
+
+// namedMembers is the union the normal-form layer decides a union super against: the same
+// union with no open tail. An open tail has no atom to stand for it, so normalizing a union
+// that carries one hands the layer that union back whole and no member is ever weighed. The
+// members are spliced out of any nested union first, since a nested open tail would put the
+// flag straight back. The union-super rule catches through the tail what the members miss,
+// so dropping the tail here decides nothing the rule does not go on to answer.
+func namedMembers(u *soltype.UnionType) soltype.Type {
+	if !u.Inexact {
+		return u
+	}
+	flat, _ := flattenUnion(u.Types, false)
+	return newUnion(nil, flat, false)
 }
 
 // writtenMember returns the member of u the decision committed to, and reports whether the

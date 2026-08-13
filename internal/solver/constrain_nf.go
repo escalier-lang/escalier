@@ -58,13 +58,15 @@ import (
 
 // nfDecision is what one constrainNF call derived.
 //
-// committed names the supertype-side atom or variable a trial settled on, and is
-// nil when no trial ran or when every trial failed. The union-super rule reads it
-// to report an ambiguous commit and to record that a bare variable member was
-// pinned by a union choice.
+// committed names the supertype-side atoms and variables the trials settled on,
+// one per implied goal that needed a choice. It is empty when no trial ran or when
+// the decision failed. The union-super rule reads it to report an ambiguous commit
+// and to record that a bare variable member was pinned by a union choice. A
+// decision that settled several goals holds one entry each, since each goal chose
+// on its own.
 type nfDecision struct {
 	errs      []SolverError
-	committed soltype.Type
+	committed []soltype.Type
 }
 
 // constrainNF decides `sub <: super` through the normal forms of both operands.
@@ -82,21 +84,23 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 	p := newProbe(c, c.probe)
 	c.probe = p
 	var out nfDecision
+	// Every implied goal has to hold, so the first one that fails settles the whole
+	// constraint. Stopping there keeps a failure from reporting the same diagnostic
+	// once per goal, which two conjuncts failing the same way would otherwise do.
 	for _, conj := range lhs.Conjuncts {
 		for _, disj := range rhs.Disjuncts {
 			implied := c.constrainImplied(conj, disj, sub, super, seen, mutCtx)
 			out.errs = append(out.errs, implied.errs...)
-			if implied.committed != nil {
-				out.committed = implied.committed
+			out.committed = append(out.committed, implied.committed...)
+			if hasHardError(implied.errs) {
+				c.probe = p.parent
+				p.Discard()
+				return nfDecision{errs: out.errs}
 			}
 		}
 	}
 	c.probe = p.parent
-	if hasHardError(out.errs) {
-		p.Discard()
-	} else {
-		p.Commit()
-	}
+	p.Commit()
 	return out
 }
 
@@ -155,11 +159,19 @@ func (c *Context) constrainImplied(
 // number}` finds no single pair and is rejected, which is what the rule it
 // replaces answered too.
 //
-// A pair repeating the constraint constrainNF was called with is skipped. An
-// inexact union is one atom, since its open tail has no atom to stand for it, so
-// normalizing `boolean <: (number | string | ...)` hands back the pair it started
-// from. Trialling that pair would ask the question the caller is already
-// deciding and never reach a smaller one.
+// A pair that repeats the constraint constrainNF was called with, against an
+// inexact union, is skipped. An inexact union is one atom, since its open tail has
+// no atom to stand for it, so normalizing `boolean <: (number | string | ...)`
+// hands back the pair it started from. Trialling that pair would ask the question
+// the caller is already deciding and never reach a smaller one. Only that shape
+// repeats: every other supertype is taken apart into atoms smaller than itself.
+//
+// A variable on the supertype side picks up the whole meet as a lower bound, which
+// is stronger than the goal asks for. `¬T <: number` becomes `unknown <: number ∪ T`
+// and settles by recording `unknown` under T, where `¬number` under T is the
+// weakest bound that would do. The stronger bound is sound, and a variable is only
+// ever reached after every concrete candidate failed, so the imprecision is
+// confined to a goal nothing else settles.
 func (c *Context) decideMeetJoin(
 	subCands, superCands []soltype.Type, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -177,12 +189,12 @@ func (c *Context) decideMeetJoin(
 		return c.constrain(pairs[idx].sub, pairs[idx].super, seen.Clone(), mutCtx)
 	})
 	if committed {
-		return nfDecision{errs: winErrs, committed: pairs[winIdx].super}
+		return nfDecision{errs: winErrs, committed: []soltype.Type{pairs[winIdx].super}}
 	}
 	// No single pair holds. An intersection of arrows can still be below an arrow
 	// through the arms taken together, which is what decideArrows weighs.
 	if target, ok := c.decideArrows(subCands, superCands, seen); ok {
-		return nfDecision{committed: target}
+		return nfDecision{committed: []soltype.Type{target}}
 	}
 	// The last pair's diagnostics are the ones a caller that reports the
 	// decomposition surfaces; the union-super rule replaces them with one
@@ -360,13 +372,14 @@ type nfPair struct{ sub, super soltype.Type }
 // it is the order the rule this layer replaces used.
 //
 // origSub and origSuper are the constraint the caller is deciding. The pair that
-// repeats it is dropped, for the reason decideMeetJoin gives.
+// repeats it against an inexact union is dropped, for the reason decideMeetJoin
+// gives.
 func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
 		for _, i := range subOrder {
-			if equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
+			if isInexactUnion(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
 				continue
 			}
 			pairs = append(pairs, nfPair{sub: subCands[i], super: superCands[j]})
@@ -390,4 +403,11 @@ func varsAsTypes(vars set.Set[*soltype.TypeVarType]) []soltype.Type {
 func isNegation(t soltype.Type) bool {
 	_, ok := t.(*soltype.NegationType)
 	return ok
+}
+
+// isInexactUnion reports whether t is a union with an open tail, the one supertype
+// normalization hands back whole instead of taking apart.
+func isInexactUnion(t soltype.Type) bool {
+	u, ok := t.(*soltype.UnionType)
+	return ok && u.Inexact
 }

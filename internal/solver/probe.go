@@ -312,10 +312,11 @@ func (c *checker) openProbe() *Probe {
 // report the last trial's diagnostics. The union-super rule, for example, promotes a
 // uniform BorrowEscapeError when every trial reports one.
 //
-// This is the single path for the speculative member trials the lattice arms run. Both
-// constrain's IntersectionType-sub exists rule and its UnionType-super exists rule route
-// through it, so the probe push-and-pop discipline lives in one place. Each trial body
-// owns its own coinductive seen clone, since only the caller holds the constraint key.
+// This is the single path for the speculative candidate trials a subtyping decision runs,
+// so the probe push-and-pop discipline lives in one place. Its caller is the normal-form
+// layer's decideMeetJoin, which trials the candidate pairs a meet against a join leaves to
+// choose between. Each trial body owns its own coinductive seen clone, since only the caller
+// holds the constraint key.
 func (c *Context) trialAndCommit(order []int, trial func(idx int) []SolverError) (committed bool, winIdx int, winErrs []SolverError, trialErrs [][]SolverError) {
 	for _, idx := range order {
 		p := newProbe(c, c.probe)

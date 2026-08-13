@@ -183,21 +183,68 @@ func TestConstrainRecursiveListThroughNormalForm(t *testing.T) {
 
 // TestConstrainInexactUnionSuperWeighsNamedMembers pins that an inexact union's
 // named members are weighed before its open tail absorbs anything. The tail has
-// no atom to stand for it, so the union is one atom and the members would
-// otherwise never be reached. A member that matches has to bind what it binds:
-// here the matching member's property type is an inference variable, and it picks
-// up the subtype's property as a lower bound.
+// no atom to stand for it, so such a union is one atom and the members would
+// otherwise never be reached, leaving the constraint accepted through the tail
+// with nothing recorded.
+//
+// A member that matches has to bind what it binds. Each row's matching member is
+// `{x: T}` for a fresh T, so a row that weighed it records the subtype's property
+// as T's lower bound and T coalesces to `5`.
 func TestConstrainInexactUnionSuperWeighsNamedMembers(t *testing.T) {
-	c := &Context{}
-	prop := c.freshVar(0)
-	super := &soltype.UnionType{
-		Types:   []soltype.Type{exactObj(propElem("x", prop)), str()},
-		Inexact: true,
+	tests := []struct {
+		name string
+		// rest names the members beside `{x: T}`, and open says whether the union
+		// itself carries the tail.
+		rest []soltype.Type
+		open bool
+	}{
+		{
+			name: "beside another member",
+			rest: []soltype.Type{str()},
+			open: true,
+		},
+		{
+			// The union collapses to the one member, which is the member to weigh.
+			name: "the only member",
+			open: true,
+		},
+		{
+			// The tail rides on a member rather than on the union. Splicing the members
+			// out of the nested union is what keeps the outer one from inheriting it.
+			name: "the tail rides a nested union member",
+			rest: []soltype.Type{&soltype.UnionType{Types: []soltype.Type{str(), boolT()}, Inexact: true}},
+		},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			prop := c.freshVar(0)
+			members := append([]soltype.Type{exactObj(propElem("x", prop))}, tt.rest...)
+			super := &soltype.UnionType{Types: members, Inexact: tt.open}
 
-	require.Empty(t, Messages(c.Constrain(exactObj(propElem("x", numLit(5))), super)))
-	require.Len(t, prop.LowerBounds, 1)
-	require.Equal(t, "5", soltype.Print(coalesce(prop, soltype.Positive)))
+			require.Empty(t, Messages(c.Constrain(exactObj(propElem("x", numLit(5))), super)))
+			require.Len(t, prop.LowerBounds, 1)
+			require.Equal(t, "5", soltype.Print(coalesce(prop, soltype.Positive)))
+		})
+	}
+}
+
+// TestConstrainReportsOneDiagnosticPerFailure pins that a failure is reported
+// once. The subtype below normalizes to two conjuncts, `{a: number, c: number}`
+// and `{b: number, c: number}`, and each fails against `string` the same way. The
+// constraint is settled by the first goal that fails, so the diagnostic does not
+// repeat per goal.
+func TestConstrainReportsOneDiagnosticPerFailure(t *testing.T) {
+	c := &Context{}
+	sub := &soltype.IntersectionType{Types: []soltype.Type{
+		newUnion(nil, []soltype.Type{
+			inexactObj(propElem("a", num())),
+			inexactObj(propElem("b", num())),
+		}, false),
+		inexactObj(propElem("c", num())),
+	}}
+
+	require.Equal(t, []string{"cannot constrain object <: string"}, Messages(c.Constrain(sub, str())))
 }
 
 // TestConstrainUnionCommitOnAFusedAtom covers the ambiguity warning when the
