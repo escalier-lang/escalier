@@ -84,10 +84,12 @@ func TestConstrainNegation(t *testing.T) {
 			super: &soltype.UnionType{Types: []soltype.Type{num(), negate(num())}},
 		},
 		{
-			// An object really is disjoint from a primitive, so the sound answer holds. The
-			// meet of two atoms is only known uninhabited for the primitives, the literals,
-			// `null`, and `undefined`, so this pair keeps both atoms and the goal is
-			// rejected. Widening that disjointness is #1063's simplifier.
+			// No object is a number, so a types-as-values reading answers "holds" here.
+			// The solver rejects it instead. Two atoms are known to meet at `never` only
+			// when both are drawn from the primitives, the literals, `null`, or
+			// `undefined`, so an object met with `number` keeps both atoms and the
+			// subtype side reads as inhabited. Widening that disjointness is #1063's
+			// simplifier.
 			name:     "an object against the complement of a primitive",
 			sub:      exactObj(propElem("x", num())),
 			super:    negate(num()),

@@ -71,12 +71,10 @@ type nfDecision struct {
 
 // constrainNF decides `sub <: super` through the normal forms of both operands.
 //
-// The whole derivation runs under one probe, so a constraint that fails records
-// no bound. That is the discipline the member-by-member trials it replaces
-// followed, and callers depend on it: the union-super rule reports one
-// union-level diagnostic in place of whatever the decomposition produced, and a
-// bound recorded on the way to that failure would outlive the derivation that
-// justified it.
+// The whole derivation runs under one probe, so a constraint that fails records no
+// bound. Callers depend on that. The union-super rule reports one union-level
+// diagnostic in place of whatever the decomposition produced, and a bound recorded
+// on the way to that failure would outlive the derivation that justified it.
 func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx bool) nfDecision {
 	lhs := c.mkDeepDNF(sub, soltype.Positive)
 	rhs := c.mkDeepCNF(super, soltype.Negative)
@@ -154,10 +152,11 @@ func (c *Context) constrainImplied(
 // trial recurses into the ordinary structural rules, which is where a class tag
 // meets its parent and an arrow meets an arrow.
 //
-// Looking for one pair is sound but incomplete. Two exact records meet to `never`
-// once #1064 lands, and until then `{x: number} & {y: number} <: {x: number, y:
-// number}` finds no single pair and is rejected, which is what the rule it
-// replaces answered too.
+// Looking for one pair is sound but incomplete. A meet can be below a join
+// through its parts taken together, which no pair states. `{x: number} & {y:
+// number} <: {x: number, y: number}` is such a goal: neither record alone carries
+// both fields, so no pair holds and the goal is rejected. Two exact records meet
+// to `never` once #1064 lands, which settles that one.
 //
 // A pair that repeats the constraint constrainNF was called with, against an
 // inexact union, is skipped. An inexact union is one atom, since its open tail has
@@ -233,9 +232,10 @@ const maxDecomposedArms = 6
 // value inhabits. Checking the arms one at a time rejects it, since neither arm
 // alone accepts both a number and a string.
 //
-// It runs only after the pair trial in decideMeetJoin found no single arm below
-// the target, so it can only add acceptances. Both rules are sound, so the order
-// decides which bounds a variable in the target picks up, not the verdict.
+// It runs after decideMeetJoin's pair trial found no single arm below the target,
+// so a goal one arm already settles never reaches it. Both rules are sound, so
+// which runs first decides the bounds a variable in the target picks up rather
+// than the verdict.
 //
 // The decomposition is restricted to plain one-parameter arrows: the arms and the
 // target must agree on what a call may raise, and none may carry a receiver, a
