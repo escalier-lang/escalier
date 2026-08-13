@@ -280,16 +280,16 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		// The public wrapper re-exports the internal bundle rather than holding a second copy
 		// of the code, so a class has one definition and `instanceof` agrees across both entry
 		// points.
+		//
+		// Every statement in it is generated, so it carries no source map. A package that
+		// exports nothing needs no public entry point either, and the empty JS keeps the
+		// file off disk.
 		wrapperMod := codegen.BuildPublicWrapper(depGraph, internalFile)
-		printer = codegen.NewPrinter()
-		wrapperJS := printer.PrintModule(wrapperMod)
-
-		// Every statement in the wrapper is generated, so its source map carries no
-		// mappings. Passing no sources keeps it from repeating the contents of every
-		// source file that the internal bundle's map already carries.
-		wrapperFile := "./index.js"
-		wrapperSourceMap := codegen.GenerateSourceMap(nil, wrapperMod, wrapperFile)
-		wrapperJS += "//# sourceMappingURL=" + wrapperFile + ".map\n"
+		wrapperJS := ""
+		if len(wrapperMod.Stmts) > 0 {
+			printer = codegen.NewPrinter()
+			wrapperJS = printer.PrintModule(wrapperMod)
+		}
 
 		printer = codegen.NewPrinter()
 		dtsOutput := printer.PrintModule(dtsMod)
@@ -306,7 +306,7 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		// marked it `export`, matching what the wrapper forwards.
 		output.CompUnits["lib/index"] = CompUnitOutput{
 			JS:        wrapperJS,
-			SourceMap: wrapperSourceMap,
+			SourceMap: "",
 			DTS:       dtsOutput,
 		}
 	}

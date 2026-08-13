@@ -112,9 +112,20 @@ func formatTypeError(err checker.Error, source *ast.Source) string {
 	return message.String()
 }
 
-// writeOutputFile writes content to a file in the build directory with the given extension
+// writeOutputFile writes content to a file in the build directory with the given extension.
+// Empty content means the module has nothing of that kind to say, so the file is removed
+// rather than written. That also clears one left by an earlier build, which this command does
+// not otherwise clean.
 func writeOutputFile(stderr io.Writer, moduleName, extension, content string) error {
 	filePath := filepath.Join("build", moduleName+extension)
+
+	if content == "" {
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove stale %s file", extension)
+		}
+		return nil
+	}
+
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create %s file", extension)
@@ -129,7 +140,10 @@ func writeOutputFile(stderr io.Writer, moduleName, extension, content string) er
 	return nil
 }
 
-// writeModuleOutputs writes all module outputs (JS, DTS, sourcemap) to the build directory
+// writeModuleOutputs writes all module outputs (JS, DTS, sourcemap) to the build directory.
+// A package that exports nothing gets no public entry point, and a module with no definitions
+// gets no .d.ts. TypeScript reads a sibling .d.ts in place of the .js it sits next to, so an
+// empty one would describe the module as exporting nothing.
 func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.CompUnitOutput) error {
 	// Create directory structure
 	dir := filepath.Join("build", filepath.Dir(moduleName))
@@ -142,15 +156,8 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 		return err
 	}
 
-	// Write .d.ts file. TypeScript reads a sibling .d.ts in place of the .js it sits
-	// next to, so an empty one would describe the module as exporting nothing. A module
-	// with no definitions gets no file at all. Removing the file also clears one left by
-	// an earlier build, which this command does not otherwise clean.
-	if output.DTS == "" {
-		if err := os.Remove(filepath.Join("build", moduleName+".d.ts")); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("failed to remove stale .d.ts file")
-		}
-	} else if err := writeOutputFile(stderr, moduleName, ".d.ts", output.DTS); err != nil {
+	// Write .d.ts file
+	if err := writeOutputFile(stderr, moduleName, ".d.ts", output.DTS); err != nil {
 		return err
 	}
 

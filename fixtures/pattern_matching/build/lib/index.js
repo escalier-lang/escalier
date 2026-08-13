@@ -1,2 +1,1 @@
 export { boolMatch, extendedPoint, getterMatch, guardMatch, literalMatch, literalPatternMatch, longTuple, mixedMatch, mixedNominalStructural, multiCase, nestedMatch, nestedValue, objectMatch, objectRename, objectRestMatch, objectValue, partialMatch, refMatch, sharedFieldSameType, sharedFieldsMatch, structuralUnionMatch, tupleMatch, tupleRestMatch, tupleValue, variableMatch } from "./internal.js";
-//# sourceMappingURL=./index.js.map

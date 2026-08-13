@@ -1,2 +1,1 @@
 export { basicTryCatch, blockBody, catchAllFirst, guardedBinding, guardedIdent, guardedRefutable, guardedWildcard, mixedReturn, multipleCases, nestedTryCatch, objectPattern, patternBinding, safeDivide, tryCatchWithThrow, withGuard } from "./internal.js";
-//# sourceMappingURL=./index.js.map
