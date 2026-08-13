@@ -228,6 +228,27 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	}
 }
 
+// bindsUnderExpectedName reports whether the declaration leaves its bindings where the rest of
+// codegen looks for them. A root declaration is expected as an export of the module, and a
+// namespace member as a mangled name, so `val PI = 3.14` in namespace `constants` is emitted
+// as `const constants__PI = 3.14;`.
+//
+// Two VarDecl forms land elsewhere. A declaration whose initializer throws introduces no
+// binding at all. `val pat = init else { … }` binds through buildPatternCondition, which names
+// the bindings as the source spells them and marks none of them `export`. Neither leaves
+// anything for the namespace object to read or for the public wrapper to forward.
+func bindsUnderExpectedName(decl ast.Decl) bool {
+	varDecl, ok := decl.(*ast.VarDecl)
+	if !ok {
+		return true
+	}
+	if varDecl.Else != nil {
+		return false
+	}
+	_, throws := varDecl.Init.(*ast.ThrowExpr)
+	return !throws
+}
+
 // nsMemberAssignment puts a namespace member on its namespace object, so the member `PI` of
 // namespace `constants` becomes `constants.PI = constants__PI;`. source is the declaration the
 // statement is attributed to in the source map. A root-level binding needs no such assignment,
@@ -239,7 +260,7 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 // exported members for external consumers.
 func (b *Builder) nsMemberAssignment(key dep_graph.BindingKey, source ast.Decl) []Stmt {
 	bindingName := key.Name()
-	if !strings.Contains(bindingName, ".") {
+	if !strings.Contains(bindingName, ".") || !bindsUnderExpectedName(source) {
 		return nil
 	}
 

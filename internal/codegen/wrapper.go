@@ -194,10 +194,13 @@ func wrapperAlias(declared []string) string {
 // Overloaded functions and merged interfaces put several declarations under one key.
 //
 // An ambient declaration names something the runtime already provides, and the internal
-// bundle emits no definition for it, so there is nothing for the wrapper to forward.
+// bundle emits no definition for it, so there is nothing for the wrapper to forward. The same
+// goes for a declaration the bundle does not bind under the name the wrapper would name it by.
+// Forwarding a name the bundle does not export is a link error that keeps the whole entry
+// point from loading, not just that one binding.
 func exportedBinding(depGraph *dep_graph.DepGraph, key dep_graph.BindingKey) bool {
 	for _, decl := range depGraph.GetDecls(key) {
-		if decl.Export() && !decl.Declare() {
+		if decl.Export() && !decl.Declare() && bindsUnderExpectedName(decl) {
 			return true
 		}
 	}

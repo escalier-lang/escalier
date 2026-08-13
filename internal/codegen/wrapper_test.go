@@ -123,6 +123,22 @@ export const internal = {thing: internal_.internal.thing};`,
 export { internal } from "./internal.js";
 export const geo = {pub: internal.geo.pub};`,
 		},
+		// The internal bundle emits `throw "nope";` and binds nothing, so forwarding
+		// `boom` would be a link error that keeps the whole entry point from loading.
+		"ThrowInitializer": {
+			sources: []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: "export val boom = throw \"nope\"\nexport val pub = 1"},
+			},
+			expected: `export { pub } from "./internal.js";`,
+		},
+		// `val pat = init else { … }` binds through buildPatternCondition, which marks
+		// none of its bindings `export`, so there is nothing to forward.
+		"ElseInitializer": {
+			sources: []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: "declare val obj: {a?: number}\nexport val a = obj.a else { 0 }\nexport val pub = 1"},
+			},
+			expected: `export { pub } from "./internal.js";`,
+		},
 		"Class": {
 			sources: []*ast.Source{
 				{ID: 0, Path: "geo/shapes.esc", Contents: "export class Point {\n    x: number,\n    constructor(mut self, x: number) {\n        self.x = x\n    },\n}"},

@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/member_access.esc"],"sourcesContent":["\ntype FooBar = \n  | {kind: \"foo\", id: number, foo: string}\n  | {kind: \"bar\", id: number, bar: boolean}\ndeclare val fb: FooBar\nval kind = fb.kind\nval id = fb.id\nval foo = fb.foo\nval bar = fb.bar\n"],"names":[],"mappings":""}
+{"version":3,"file":"./index.js","sources":[],"sourcesContent":[],"names":[],"mappings":""}

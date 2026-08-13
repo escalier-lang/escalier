@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/destructuring.esc"],"sourcesContent":["type Tuple = [number, string, boolean]\nexport val foo = fn ([a, b, c]: Tuple) -\u003e boolean {\n    return c\n}\nexport fn bar([a, b, c]: Tuple) -\u003e boolean {\n    return c\n}\n"],"names":[],"mappings":""}
+{"version":3,"file":"./index.js","sources":[],"sourcesContent":[],"names":[],"mappings":""}

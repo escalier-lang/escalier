@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["val foo = \"foo\"\nval bar = \"bar\"\nval obj = {\n    [foo]: 42:number,\n    [bar]: \"hello\":string,\n}\n\nval a = obj[foo]\nval b = obj[bar]\n"],"names":[],"mappings":""}
+{"version":3,"file":"./index.js","sources":[],"sourcesContent":[],"names":[],"mappings":""}

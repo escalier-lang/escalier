@@ -284,8 +284,11 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		printer = codegen.NewPrinter()
 		wrapperJS := printer.PrintModule(wrapperMod)
 
+		// Every statement in the wrapper is generated, so its source map carries no
+		// mappings. Passing no sources keeps it from repeating the contents of every
+		// source file that the internal bundle's map already carries.
 		wrapperFile := "./index.js"
-		wrapperSourceMap := codegen.GenerateSourceMap(sources, wrapperMod, wrapperFile)
+		wrapperSourceMap := codegen.GenerateSourceMap(nil, wrapperMod, wrapperFile)
 		wrapperJS += "//# sourceMappingURL=" + wrapperFile + ".map\n"
 
 		printer = codegen.NewPrinter()
@@ -298,8 +301,9 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 			SourceMap: internalSourceMap,
 			DTS:       "",
 		}
-		// The .d.ts describes the public wrapper, which is what `main` in package.json
-		// points at.
+		// The .d.ts sits beside the public entry point, which is what `main` in
+		// package.json points at. It marks a declaration as exported when the source
+		// marked it `export`, matching what the wrapper forwards.
 		output.CompUnits["lib/index"] = CompUnitOutput{
 			JS:        wrapperJS,
 			SourceMap: wrapperSourceMap,

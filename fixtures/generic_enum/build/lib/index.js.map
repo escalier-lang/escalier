@@ -1,1 +1,1 @@
-{"version":3,"file":"./index.js","sources":["../../lib/generic_enum.esc"],"sourcesContent":["enum MyOption\u003cT\u003e {\n    Some(value: T),\n    None(),\n}\ndeclare val option: MyOption\u003cnumber\u003e\nval result = match option {\n    MyOption.Some(value) =\u003e value,\n    MyOption.None() =\u003e 0,\n}\n"],"names":[],"mappings":""}
+{"version":3,"file":"./index.js","sources":[],"sourcesContent":[],"names":[],"mappings":""}

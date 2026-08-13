@@ -699,6 +699,41 @@ declare fn double(s: string) -> string`,
 			},
 			expected: `export const math = {};`,
 		},
+		// A declaration whose initializer throws binds nothing, so there is no mangled
+		// name to put on the namespace object.
+		"Throw_Initializer_With_Namespace": {
+			sources: []*ast.Source{
+				{
+					ID:       0,
+					Path:     "math/boom.esc",
+					Contents: `val boom = throw "nope"`,
+				},
+			},
+			expected: `export const math = {};
+throw "nope";`,
+		},
+		// `val pat = init else { … }` binds the names the source spells rather than the
+		// mangled ones, so the namespace object has nothing to read.
+		"Else_Initializer_With_Namespace": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "math/fallback.esc",
+					Contents: `val src = {a: 1}
+val a = src.a else { 0 }`,
+				},
+			},
+			expected: `export const math = {};
+const math__src = {a: 1};
+math.src = math__src;
+let temp1;
+temp1 = math__src.a;
+if (true) {
+} else {
+  temp1 = 0;
+}
+const a = temp1;`,
+		},
 		"Type_Declaration_Skip": {
 			sources: []*ast.Source{
 				{
