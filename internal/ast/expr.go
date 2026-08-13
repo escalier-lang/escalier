@@ -29,6 +29,7 @@ func (*LiteralExpr) isExpr()           {}
 func (*IdentExpr) isExpr()             {}
 func (*FuncExpr) isExpr()              {}
 func (*CallExpr) isExpr()              {}
+func (*SuperCallExpr) isExpr()         {}
 func (*IndexExpr) isExpr()             {}
 func (*MemberExpr) isExpr()            {}
 func (*TupleExpr) isExpr()             {}
@@ -499,6 +500,33 @@ func (e *CallExpr) ResolvedThrows() Type { return e.resolvedThrows }
 // sentinel (not nil) to mark "resolved but non-throwing" so that
 // readers can distinguish that case from "unresolved".
 func (e *CallExpr) SetResolvedThrows(t Type) { e.resolvedThrows = t }
+
+// SuperCallExpr is a `super(...)` written in a subclass constructor body. It runs the
+// superclass constructor with the arguments given, so the members the subclass inherits
+// exist before its own body reads or writes them.
+//
+// A super call is its own node rather than a CallExpr over a `super` callee, because `super`
+// names no value on its own. The only other place JS admits the word is `super.method(…)`,
+// which Escalier does not parse yet, so there is nothing for a standalone `super` expression
+// to mean.
+type SuperCallExpr struct {
+	Args         []Expr
+	span         Span
+	inferredType Type
+}
+
+func NewSuperCall(args []Expr, span Span) *SuperCallExpr {
+	return &SuperCallExpr{Args: args, span: span, inferredType: nil}
+}
+
+func (e *SuperCallExpr) Accept(v Visitor) {
+	if v.EnterExpr(e) {
+		for _, arg := range e.Args {
+			arg.Accept(v)
+		}
+	}
+	v.ExitExpr(e)
+}
 
 func (e *CallExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {

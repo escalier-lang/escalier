@@ -69,12 +69,26 @@ func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.Class
 	// constructor can assign a field it inherits.
 	c.bindSelf(ctorScope, &ast.MethodReceiver{Mut: true}, c.ctx.selfView(self, body))
 
+	// Collect the body's `super(…)` calls while it is walked, so the rules about the body as
+	// a whole can be checked once every call is known. A class with no superclass still gets
+	// a context, so a stray `super(…)` there is reported against the missing edge rather than
+	// as a call outside a constructor.
+	prevSuper := c.superCtx
+	// scope, not ctorScope: the superclass's value binding is read from where the subclass is
+	// declared, so a constructor parameter cannot shadow it.
+	superCtx := &superCtx{declScope: scope}
+	if def, ok := c.ctx.classDef(self.Name); ok && len(def.Supers) > 0 {
+		superCtx.super = def.Supers[0]
+	}
+	c.superCtx = superCtx
 	// A constructor carries no type parameters of its own, since the class owns them,
 	// so generic resolution stays off here, matching the method path.
 	ft := c.inferFunc(ctorScope, lvl, bodySig, ctor.Fn.Body, ctor, false)
+	c.superCtx = prevSuper
+	c.checkSuperCalls(superCtx, ctor)
 	// Definite assignment runs over the class's OWN fields. An inherited field is left out,
-	// since a subclass has no `super(…)` to delegate its initialization to and would
-	// otherwise have to re-assign every field its ancestors declare.
+	// since the `super(…)` call delegates its initialization to the superclass constructor
+	// rather than making the subclass re-assign every field its ancestors declare.
 	c.checkConstructorInit(body, ctor)
 	// A constructor returns a fresh instance, not the `undefined` its statement body falls
 	// off to, so override the inferred return with the instance type.

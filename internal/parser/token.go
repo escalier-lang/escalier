@@ -111,6 +111,10 @@ const (
 	Void
 	Override
 	Final // 'final' class modifier
+	// Super is appended rather than placed near the other class keywords because the lexer
+	// snapshots record a token's numeric value, so inserting mid-enum renumbers every token
+	// after it.
+	Super
 )
 
 type Token struct {

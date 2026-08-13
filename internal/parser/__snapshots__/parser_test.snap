@@ -5912,3 +5912,225 @@
     },
 }
 ---
+
+[TestClassDeclarations/ClassWithSuperCallNoArgs - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: 2:11-2:14,
+        },
+        Extends: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Animal",
+                span: 2:23-2:29,
+            },
+            span: 2:23-2:29,
+        },
+        Body: []ast.ClassElem{
+            &ast.ConstructorElem{
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 3:18-3:26,
+                                },
+                            },
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ExprStmt{
+                                Expr: &ast.SuperCallExpr{
+                                    span: 4:7-4:14,
+                                },
+                                span: 4:7-4:14,
+                            },
+                        },
+                        Span: 3:28-5:7,
+                    },
+                    span: 3:6-5:7,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 3:18-3:26,
+                },
+                Span_: 3:6-5:7,
+            },
+        },
+        span: 2:5-6:6,
+    },
+    span: 2:5-6:6,
+}
+---
+
+[TestClassDeclarations/ClassWithSuperCall - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: 2:11-2:14,
+        },
+        Extends: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Animal",
+                span: 2:23-2:29,
+            },
+            span: 2:23-2:29,
+        },
+        Body: []ast.ClassElem{
+            &ast.FieldElem{
+                Name: &ast.IdentExpr{
+                    Name: "name",
+                    span: 3:6-3:10,
+                },
+                Type: &ast.StringTypeAnn{
+                    span: 3:12-3:18,
+                },
+                Span_: 3:6-3:18,
+            },
+            &ast.ConstructorElem{
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 4:18-4:26,
+                                },
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "name",
+                                    span: 4:28-4:32,
+                                },
+                                TypeAnn: &ast.StringTypeAnn{
+                                    span: 4:34-4:40,
+                                },
+                            },
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "tag",
+                                    span: 4:42-4:45,
+                                },
+                                TypeAnn: &ast.StringTypeAnn{
+                                    span: 4:47-4:53,
+                                },
+                            },
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ExprStmt{
+                                Expr: &ast.SuperCallExpr{
+                                    Args: []ast.Expr{
+                                        &ast.IdentExpr{
+                                            Name: "name",
+                                            span: 5:13-5:17,
+                                        },
+                                    },
+                                    span: 5:7-5:18,
+                                },
+                                span: 5:7-5:18,
+                            },
+                            &ast.ExprStmt{
+                                Expr: &ast.BinaryExpr{
+                                    Left: &ast.MemberExpr{
+                                        Object: &ast.IdentExpr{
+                                            Name: "self",
+                                            span: 6:7-6:11,
+                                        },
+                                        Prop: &ast.Ident{
+                                            Name: "name",
+                                            span: 6:12-6:16,
+                                        },
+                                        span: 6:7-6:16,
+                                    },
+                                    Op: "=",
+                                    Right: &ast.IdentExpr{
+                                        Name: "tag",
+                                        span: 6:19-6:22,
+                                    },
+                                    span: 6:7-6:22,
+                                },
+                                span: 6:7-6:22,
+                            },
+                        },
+                        Span: 4:55-7:7,
+                    },
+                    span: 4:6-7:7,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 4:18-4:26,
+                },
+                Span_: 4:6-7:7,
+            },
+        },
+        span: 2:5-8:6,
+    },
+    span: 2:5-8:6,
+}
+---
+
+[TestClassDeclarations/ClassWithNegatedSuperCall - 1]
+&ast.DeclStmt{
+    Decl: &ast.ClassDecl{
+        Name: &ast.Ident{
+            Name: "Dog",
+            span: 2:11-2:14,
+        },
+        Extends: &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "Animal",
+                span: 2:23-2:29,
+            },
+            span: 2:23-2:29,
+        },
+        Body: []ast.ClassElem{
+            &ast.ConstructorElem{
+                Fn: &ast.FuncExpr{
+                    FuncSig: ast.FuncSig{
+                        Params: []*ast.Param{
+                            &ast.Param{
+                                Pattern: &ast.IdentPat{
+                                    Name: "self",
+                                    Mutable: true,
+                                    span: 3:18-3:26,
+                                },
+                            },
+                        },
+                    },
+                    Body: &ast.Block{
+                        Stmts: []ast.Stmt{
+                            &ast.ExprStmt{
+                                Expr: &ast.UnaryExpr{
+                                    Op: 1,
+                                    Arg: &ast.SuperCallExpr{
+                                        span: 4:8-4:15,
+                                    },
+                                    span: 4:7-4:15,
+                                },
+                                span: 4:7-4:15,
+                            },
+                        },
+                        Span: 3:28-5:7,
+                    },
+                    span: 3:6-5:7,
+                },
+                Receiver: &ast.MethodReceiver{
+                    Mut: true,
+                    Span_: 3:18-3:26,
+                },
+                Span_: 3:6-5:7,
+            },
+        },
+        span: 2:5-6:6,
+    },
+    span: 2:5-6:6,
+}
+---

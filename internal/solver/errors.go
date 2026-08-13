@@ -3061,3 +3061,83 @@ func primOf(lit soltype.Lit) soltype.Prim {
 	}
 	panic(fmt.Sprintf("primOf: unhandled Lit %T", lit))
 }
+
+// SuperOutsideConstructorError fires on a `super(…)` written outside a constructor body.
+// The call runs the superclass constructor, which only makes sense while an instance is
+// being constructed. Node is the call.
+type SuperOutsideConstructorError struct{ Node ast.Node }
+
+// SuperWithoutSuperclassError fires on a `super(…)` in the constructor of a class that
+// declares no `extends` clause, so there is no superclass constructor to run. Node is the
+// call.
+type SuperWithoutSuperclassError struct{ Node ast.Node }
+
+// MissingSuperCallError fires when a subclass constructor never runs its superclass's. The
+// members the class inherits do not exist until it does. Class is the superclass and Node
+// the constructor.
+type MissingSuperCallError struct {
+	Class string
+	Node  ast.Node
+}
+
+// MultipleSuperCallsError fires on a `super(…)` that some path reaches with the superclass
+// constructor already run. The superclass constructor runs once per instance. Node is the
+// surplus call.
+type MultipleSuperCallsError struct{ Node ast.Node }
+
+// ConditionalSuperCallError fires when a constructor calls `super(…)` on some paths through
+// its body but not all, such as a call in an `if` with no `else`. Class is the superclass and
+// Node the constructor.
+type ConditionalSuperCallError struct {
+	Class string
+	Node  ast.Node
+}
+
+// SuperCallAfterSelfError fires when a constructor mentions `self` at a point some reaching
+// path has not yet run its superclass's constructor, so it reads or writes members that may
+// not exist. Node is the mention of `self`.
+type SuperCallAfterSelfError struct{ Node ast.Node }
+
+func (*SuperOutsideConstructorError) isSolverError() {}
+func (*SuperWithoutSuperclassError) isSolverError()  {}
+func (*MissingSuperCallError) isSolverError()        {}
+func (*MultipleSuperCallsError) isSolverError()      {}
+func (*ConditionalSuperCallError) isSolverError()    {}
+func (*SuperCallAfterSelfError) isSolverError()      {}
+
+func (e *SuperOutsideConstructorError) Span() ast.Span      { return spanOfNode(e.Node) }
+func (e *SuperOutsideConstructorError) Related() []ast.Span { return nil }
+func (e *SuperWithoutSuperclassError) Span() ast.Span       { return spanOfNode(e.Node) }
+func (e *SuperWithoutSuperclassError) Related() []ast.Span  { return nil }
+func (e *MissingSuperCallError) Span() ast.Span             { return spanOfNode(e.Node) }
+func (e *MissingSuperCallError) Related() []ast.Span        { return nil }
+func (e *MultipleSuperCallsError) Span() ast.Span           { return spanOfNode(e.Node) }
+func (e *MultipleSuperCallsError) Related() []ast.Span      { return nil }
+func (e *ConditionalSuperCallError) Span() ast.Span         { return spanOfNode(e.Node) }
+func (e *ConditionalSuperCallError) Related() []ast.Span    { return nil }
+func (e *SuperCallAfterSelfError) Span() ast.Span           { return spanOfNode(e.Node) }
+func (e *SuperCallAfterSelfError) Related() []ast.Span      { return nil }
+
+func (*SuperOutsideConstructorError) Message() string {
+	return "`super(…)` may only be called inside a constructor."
+}
+
+func (*SuperWithoutSuperclassError) Message() string {
+	return "`super(…)` needs a superclass to call; this class declares no `extends` clause."
+}
+
+func (e *MissingSuperCallError) Message() string {
+	return fmt.Sprintf("A subclass constructor must call `super(…)`; the members inherited from `%s` do not exist until it does.", e.Class)
+}
+
+func (*MultipleSuperCallsError) Message() string {
+	return "`super(…)` may only be called once per constructor."
+}
+
+func (e *ConditionalSuperCallError) Message() string {
+	return fmt.Sprintf("`super(…)` runs on only some paths through this constructor; the members inherited from `%s` do not exist on the others.", e.Class)
+}
+
+func (*SuperCallAfterSelfError) Message() string {
+	return "`super(…)` must run before `self` is used, since the inherited members do not exist until it does."
+}

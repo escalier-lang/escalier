@@ -1428,6 +1428,9 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			namespaceStr = b.depGraph.GetNamespaceString(expr.Namespace)
 		}
 		return NewIdentExpr(expr.Name, namespaceStr, expr), []Stmt{}
+	case *ast.SuperCallExpr:
+		argsExprs, argsStmts := b.buildExprs(expr.Args)
+		return NewCallExpr(NewIdentExpr("super", "", expr), argsExprs, false, expr), argsStmts
 	case *ast.CallExpr:
 		calleeExpr, calleeStmts := b.buildExpr(expr.Callee, expr)
 		argsExprs, argsStmts := b.buildExprs(expr.Args)
@@ -2188,8 +2191,36 @@ func (b *Builder) superClassName(ref *ast.TypeRefTypeAnn, nsName string) (string
 	return strings.ReplaceAll(name, ".", "__"), true
 }
 
+// hasSuperCall reports whether a constructor body writes a `super(…)` call of its own. A body
+// that does carries the call already, at the position it was written, so the synthesized one
+// is left out rather than running the superclass constructor a second time.
+func hasSuperCall(body *ast.Block) bool {
+	if body == nil {
+		return false
+	}
+	finder := &superCallFinder{}
+	for _, stmt := range body.Stmts {
+		stmt.Accept(finder)
+	}
+	return finder.found
+}
+
+// superCallFinder records whether the walk reached a `super(…)` call.
+type superCallFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (v *superCallFinder) EnterExpr(e ast.Expr) bool {
+	if _, ok := e.(*ast.SuperCallExpr); ok {
+		v.found = true
+	}
+	return !v.found
+}
+
 // buildClassElems converts a class body to its JS elements. derived says the class carries an
-// `extends` clause, which makes its constructor emit a leading `super()`.
+// `extends` clause, which makes its constructor emit a leading `super()` unless the body
+// writes one itself.
 func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]ClassElem, []Stmt) {
 	var outElems []ClassElem
 	var allStmts []Stmt
@@ -2342,7 +2373,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// than just storing it throws. escalier-lang/escalier#678 is what will let a
 			// subclass forward arguments and make this call carry them.
 			var prelude []Stmt
-			if derived {
+			if derived && !hasSuperCall(e.Fn.Body) {
 				prelude = []Stmt{&ExprStmt{
 					Expr:   NewCallExpr(NewIdentExpr("super", "", e), nil, false, e),
 					span:   nil,

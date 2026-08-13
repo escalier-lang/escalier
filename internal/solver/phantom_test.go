@@ -289,11 +289,14 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 			src:  `class Hold<T> { put(self, v: T) -> number { return 1 } }`,
 		},
 		{
-			// So is a superclass type argument.
+			// So is a superclass type argument. `Base`'s field is optional so that its
+			// synthesized constructor takes no required argument, which lets `Sub` delegate
+			// with a bare `super()` and leaves the `extends` clause as the only place `T`
+			// occurs in `Sub`.
 			name: "ClassSuperWritesTheParameter",
 			src: `
-				class Base<T> { x: T }
-				class Sub<T> extends Base<T> { constructor(mut self) {} }
+				class Base<T> { x?: T }
+				class Sub<T> extends Base<T> { constructor(mut self) { super() } }
 			`,
 		},
 		{

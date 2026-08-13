@@ -499,6 +499,11 @@ func (p *Parser) primaryExpr() ast.Expr {
 			return p.tryExpr()
 		case Throw:
 			return p.throwExpr()
+		case Super:
+			// Assigned rather than returned so the call falls through to exprSuffix and the
+			// unary-prefix wrapping below. Returning here dropped a collected prefix on the
+			// floor, so `-super()` parsed as a bare `super()` with no diagnostic.
+			expr = p.superCallExpr(token)
 		case LessThan:
 			return p.jsxElementOrFragment()
 		case
@@ -1229,4 +1234,23 @@ func (p *Parser) throwExpr() ast.Expr {
 
 	span := ast.Span{Start: start, End: arg.Span().End, SourceID: p.lexer.source.ID}
 	return ast.NewThrow(arg, span)
+}
+
+// superCallExpr parses `super(<args>)`, the call that runs the superclass constructor. The
+// `super` token has already been peeked and is consumed here.
+//
+// The argument list is required. `super` names no value on its own, so a bare `super` is
+// reported rather than parsed as an expression, and recovery yields a call with no arguments
+// so the rest of the constructor body still parses.
+func (p *Parser) superCallExpr(token *Token) ast.Expr {
+	p.lexer.consume()
+	if p.lexer.peek().Type != OpenParen {
+		next := p.lexer.peek()
+		p.reportError(ast.MergeSpans(token.Span, next.Span), "Expected '(' after 'super'")
+		return ast.NewSuperCall(nil, token.Span)
+	}
+	p.lexer.consume()
+	args := parseDelimSeq(p, CloseParen, Comma, p.expr)
+	end := p.expect(CloseParen, AlwaysConsume)
+	return ast.NewSuperCall(args, ast.NewSpan(token.Span.Start, end, p.lexer.source.ID))
 }

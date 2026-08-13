@@ -773,6 +773,8 @@ func (p *Printer) printExpr(expr ast.Expr) {
 		p.printFuncExpr(e)
 	case *ast.CallExpr:
 		p.printCallExpr(e)
+	case *ast.SuperCallExpr:
+		p.printSuperCallExpr(e)
 	case *ast.IndexExpr:
 		p.printIndexExpr(e)
 	case *ast.MemberExpr:
@@ -2143,4 +2145,16 @@ func PrintModule(module *ast.Module, opts Options) (string, error) {
 func PrintModuleToWriter(module *ast.Module, writer io.Writer, opts Options) error {
 	printer := NewPrinter(writer, opts)
 	return printer.PrintModule(module)
+}
+
+// printSuperCallExpr prints `super(<args>)`, the call that runs the superclass constructor.
+func (p *Printer) printSuperCallExpr(e *ast.SuperCallExpr) {
+	p.writeString("super(")
+	for i, arg := range e.Args {
+		if i > 0 {
+			p.writeString(", ")
+		}
+		p.printExpr(arg)
+	}
+	p.writeString(")")
 }

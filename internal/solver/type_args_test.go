@@ -465,7 +465,7 @@ func TestClassArityAcrossRemainingRefForms(t *testing.T) {
 		{name: "Extends", src: `
 			class Box<T> { value: T }
 			class Wrapper extends Box {
-				constructor(mut self) {},
+				constructor(mut self) { super(0) },
 			}
 		`},
 		{name: "Implements", src: `
@@ -614,10 +614,15 @@ func TestClassTypeArgBounds(t *testing.T) {
 		},
 		{
 			name: "ExtendsEdgeChecked",
+			// `v` is optional so that `Box`'s synthesized constructor takes no required
+			// argument. `Sub` then delegates with a bare `super()`, and the bound violation
+			// on the edge is the only thing reported. A super argument would report a second
+			// time, since no value fits both the `number` the edge names and the `string` the
+			// bound demands.
 			src: `
-				class Box<T: string> { v: T }
+				class Box<T: string> { v?: T }
 				class Sub extends Box<number> {
-					constructor(mut self) {},
+					constructor(mut self) { super() },
 				}
 			`,
 			want: []string{"cannot constrain number <: string"},
