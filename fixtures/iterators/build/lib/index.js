@@ -1,7 +1,2 @@
-import * as internal from "./internal.js";
-export const charCount = internal.charCount;
-export const spreadArray = internal.spreadArray;
-export const spreadString = internal.spreadString;
-export const sumArray = internal.sumArray;
-export const sumPairs = internal.sumPairs;
+export { charCount, spreadArray, spreadString, sumArray, sumPairs } from "./internal.js";
 //# sourceMappingURL=./index.js.map

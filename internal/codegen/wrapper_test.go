@@ -20,14 +20,21 @@ func TestBuildPublicWrapper(t *testing.T) {
 			sources: []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: "export val pub = 1\nval priv = 2"},
 			},
-			expected: `import * as internal from "./internal.js";
-export const pub = internal.pub;`,
+			expected: `export { pub } from "./internal.js";`,
 		},
 		"NothingExported": {
 			sources: []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: "val priv = 2"},
 			},
 			expected: "",
+		},
+		// A mutable root binding is forwarded rather than copied, so a consumer sees
+		// whatever the internal bundle last assigned to it.
+		"MutableRootDeclaration": {
+			sources: []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: "export var counter = 0"},
+			},
+			expected: `export { counter } from "./internal.js";`,
 		},
 		"NamespaceMembers": {
 			sources: []*ast.Source{
@@ -41,8 +48,7 @@ export const geo = {pub: internal.geo.pub};`,
 				{ID: 0, Path: "geo/shapes.esc", Contents: "val priv = 2"},
 				{ID: 1, Path: "main.esc", Contents: "export val pub = 1"},
 			},
-			expected: `import * as internal from "./internal.js";
-export const pub = internal.pub;`,
+			expected: `export { pub } from "./internal.js";`,
 		},
 		"NestedNamespaces": {
 			sources: []*ast.Source{
@@ -69,25 +75,22 @@ export const app = {utils: {trim: internal.app.utils.trim}};`,
 				{ID: 0, Path: "app/utils/text.esc", Contents: "val trim = 2"},
 				{ID: 1, Path: "main.esc", Contents: "export val pub = 1"},
 			},
-			expected: `import * as internal from "./internal.js";
-export const pub = internal.pub;`,
+			expected: `export { pub } from "./internal.js";`,
 		},
 		// The internal bundle emits no definition for an ambient declaration, so there
-		// is nothing for the wrapper to read out of it.
+		// is nothing for the wrapper to forward.
 		"AmbientDeclaration": {
 			sources: []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: "export declare val ambient: number\nexport val pub = 1"},
 			},
-			expected: `import * as internal from "./internal.js";
-export const pub = internal.pub;`,
+			expected: `export { pub } from "./internal.js";`,
 		},
 		// A type alias has no runtime value, so it never reaches the wrapper.
 		"TypeAlias": {
 			sources: []*ast.Source{
 				{ID: 0, Path: "main.esc", Contents: "export type Pub = number\nexport val pub = 1"},
 			},
-			expected: `import * as internal from "./internal.js";
-export const pub = internal.pub;`,
+			expected: `export { pub } from "./internal.js";`,
 		},
 		// `app.utils` names both a member of `app` and a namespace nested in it. The
 		// member wins, matching the internal bundle, where `app.utils = app__utils`
@@ -99,6 +102,26 @@ export const pub = internal.pub;`,
 			},
 			expected: `import * as internal from "./internal.js";
 export const app = {utils: internal.app.utils};`,
+		},
+		// A namespace named `internal` would shadow the binding the wrapper reads the
+		// internal bundle through, so the alias moves out of its way.
+		"NamespaceNamedInternal": {
+			sources: []*ast.Source{
+				{ID: 0, Path: "internal/thing.esc", Contents: "export val thing = 1"},
+			},
+			expected: `import * as internal_ from "./internal.js";
+export const internal = {thing: internal_.internal.thing};`,
+		},
+		// A forwarded root declaration binds nothing locally, so it cannot collide with
+		// the alias and the alias stays `internal`.
+		"RootDeclarationNamedInternal": {
+			sources: []*ast.Source{
+				{ID: 0, Path: "main.esc", Contents: "export val internal = 1"},
+				{ID: 1, Path: "geo/shapes.esc", Contents: "export val pub = 2"},
+			},
+			expected: `import * as internal from "./internal.js";
+export { internal } from "./internal.js";
+export const geo = {pub: internal.geo.pub};`,
 		},
 		"Class": {
 			sources: []*ast.Source{

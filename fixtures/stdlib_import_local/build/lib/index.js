@@ -1,3 +1,2 @@
-import * as internal from "./internal.js";
-export const pi = internal.pi;
+export { pi } from "./internal.js";
 //# sourceMappingURL=./index.js.map

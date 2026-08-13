@@ -1,4 +1,2 @@
-import * as internal from "./internal.js";
-export const add = internal.add;
-export const x = internal.x;
+export { add, x } from "./internal.js";
 //# sourceMappingURL=./index.js.map

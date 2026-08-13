@@ -142,9 +142,13 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 		return err
 	}
 
-	// Write .d.ts file
-	if err := writeOutputFile(stderr, moduleName, ".d.ts", output.DTS); err != nil {
-		return err
+	// Write .d.ts file. A module with no definitions gets no file at all, because
+	// TypeScript reads a sibling .d.ts in place of the .js it sits next to, and an empty
+	// one would describe the module as exporting nothing.
+	if output.DTS != "" {
+		if err := writeOutputFile(stderr, moduleName, ".d.ts", output.DTS); err != nil {
+			return err
+		}
 	}
 
 	// Write sourcemap file

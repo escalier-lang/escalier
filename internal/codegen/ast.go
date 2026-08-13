@@ -556,6 +556,7 @@ func (*InterfaceDecl) isDecl() {}
 func (*NamespaceDecl) isDecl() {}
 func (*ClassDecl) isDecl()     {}
 func (*ImportDecl) isDecl()    {}
+func (*ReExportDecl) isDecl()  {}
 
 type VariableKind int
 
@@ -1061,6 +1062,34 @@ func (d *ImportDecl) Declare() bool      { return d.declare }
 func (d *ImportDecl) Span() *Span        { return d.span }
 func (d *ImportDecl) SetSpan(span *Span) { d.span = span }
 func (d *ImportDecl) Source() ast.Node   { return d.source }
+
+// ReExportDecl forwards names from another module, printing as
+// `export { a, b } from "./internal.js";`. The names it forwards stay live bindings, so a
+// consumer reading one sees whatever the other module last assigned to it.
+type ReExportDecl struct {
+	Specifiers []string // The names to forward, e.g., ["rootPub"]
+	Path       string   // The module path, e.g., "./internal.js"
+	span       *Span
+	source     ast.Node
+}
+
+func NewReExportDecl(specifiers []string, path string, source ast.Node) *ReExportDecl {
+	return &ReExportDecl{
+		Specifiers: specifiers,
+		Path:       path,
+		source:     source,
+		span:       nil,
+	}
+}
+
+// Export reports false because the statement prints its own `export` keyword. PrintDecl
+// prepends the keyword for a declaration that carries a name of its own, and a forwarding
+// statement declares nothing.
+func (d *ReExportDecl) Export() bool       { return false }
+func (d *ReExportDecl) Declare() bool      { return false }
+func (d *ReExportDecl) Span() *Span        { return d.span }
+func (d *ReExportDecl) SetSpan(span *Span) { d.span = span }
+func (d *ReExportDecl) Source() ast.Node   { return d.source }
 
 //sumtype:decl
 type ClassElem interface {

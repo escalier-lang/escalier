@@ -1,4 +1,2 @@
-import * as internal from "./internal.js";
-export const obj1 = internal.obj1;
-export const obj4 = internal.obj4;
+export { obj1, obj4 } from "./internal.js";
 //# sourceMappingURL=./index.js.map

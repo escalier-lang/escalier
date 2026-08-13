@@ -135,7 +135,13 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 
 				if allFuncs && len(funcDecls) > 0 {
 					// Build overloaded function dispatch
-					stmts = slices.Concat(stmts, b.buildOverloadedFunc(funcDecls, nsName))
+					dispatchStmts := b.buildOverloadedFunc(funcDecls, nsName)
+					stmts = slices.Concat(stmts, dispatchStmts)
+					// An overload set with no implemented overload emits no dispatch
+					// function, so there is no mangled name to assign from.
+					if len(dispatchStmts) > 0 {
+						stmts = slices.Concat(stmts, b.nsMemberAssignment(key, funcDecls[0]))
+					}
 					continue
 				}
 
@@ -153,37 +159,17 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 				stmts = slices.Concat(stmts, b.buildDeclWithNamespace(decl, nsName))
 			}
 
-			// Handle namespace assignment for namespaced bindings
-			// This needs to happen for EVERY binding, even if the declaration was already processed
-			// For example, with `val {x, y} = getPoint()` in namespace "coords", we need both:
+			// The assignment happens for EVERY binding, even when the declaration was
+			// already processed. For example, with `val {x, y} = getPoint()` in namespace
+			// "coords", we need both:
 			//   coords.x = coords__x
 			//   coords.y = coords__y
 			//
-			// Every member reaches its namespace object, whether or not the source marked it
-			// `export`. This module is the package's internal bundle, and a bin script imports
-			// it to reach members the package keeps to itself. BuildPublicWrapper projects each
-			// namespace object down to its exported members for external consumers.
 			// An ambient declaration binds a name the runtime already provides, and
 			// buildDeclWithNamespace emits nothing for it, so there is no mangled name to
 			// assign from.
-			bindingName := key.Name()
-			if strings.Contains(bindingName, ".") && !decl.Declare() {
-				parts := strings.Split(bindingName, ".")
-				dunderName := strings.Join(parts, "__")
-
-				// Create assignment: namespace.member = dunderName
-				assignExpr := NewBinaryExpr(
-					NewIdentExpr(bindingName, "", nil),
-					Assign,
-					NewIdentExpr(dunderName, "", nil),
-					nil,
-				)
-
-				stmts = append(stmts, &ExprStmt{
-					Expr:   assignExpr,
-					span:   nil,
-					source: decl,
-				})
+			if !decl.Declare() {
+				stmts = slices.Concat(stmts, b.nsMemberAssignment(key, decl))
 			}
 		}
 	}
@@ -240,6 +226,36 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 	return &Module{
 		Stmts: stmts,
 	}
+}
+
+// nsMemberAssignment puts a namespace member on its namespace object, so the member `PI` of
+// namespace `constants` becomes `constants.PI = constants__PI;`. source is the declaration the
+// statement is attributed to in the source map. A root-level binding needs no such assignment,
+// so nothing is emitted for one.
+//
+// Every member reaches its namespace object, whether or not the source marked it `export`.
+// This module is the package's internal bundle, and a bin script imports it to reach members
+// the package keeps to itself. BuildPublicWrapper projects each namespace object down to its
+// exported members for external consumers.
+func (b *Builder) nsMemberAssignment(key dep_graph.BindingKey, source ast.Decl) []Stmt {
+	bindingName := key.Name()
+	if !strings.Contains(bindingName, ".") {
+		return nil
+	}
+
+	dunderName := strings.ReplaceAll(bindingName, ".", "__")
+	assignExpr := NewBinaryExpr(
+		NewIdentExpr(bindingName, "", nil),
+		Assign,
+		NewIdentExpr(dunderName, "", nil),
+		nil,
+	)
+
+	return []Stmt{&ExprStmt{
+		Expr:   assignExpr,
+		span:   nil,
+		source: source,
+	}}
 }
 
 // buildNamespaceStatements generates statements to create namespace objects

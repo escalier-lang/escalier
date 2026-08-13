@@ -1028,6 +1028,17 @@ func (p *Printer) PrintDecl(decl Decl) {
 		p.print(" from \"")
 		p.print(d.Path)
 		p.print("\";")
+	case *ReExportDecl:
+		p.print("export { ")
+		for i, spec := range d.Specifiers {
+			if i > 0 {
+				p.print(", ")
+			}
+			p.print(spec)
+		}
+		p.print(" } from \"")
+		p.print(d.Path)
+		p.print("\";")
 	}
 
 	end := p.location

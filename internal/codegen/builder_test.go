@@ -665,6 +665,40 @@ models.user.defaults.defaultUser = models__user__defaults__defaultUser;
 const models__user__user = {name: "Alice"};
 models.user.user = models__user__user;`,
 		},
+		"Overloaded_Function_With_Namespace": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "math/double.esc",
+					Contents: `fn double(n: number) -> number { return n * 2 }
+fn double(s: string) -> string { return s ++ s }`,
+				},
+			},
+			expected: `export const math = {};
+function math__double(param0) {
+  if (typeof param0 === "number") {
+    const n = param0;
+    return n * 2;
+  } else if (typeof param0 === "string") {
+    const s = param0;
+    return s + s;
+  } else throw new TypeError("No overload matches the provided arguments for function 'double'");
+}
+math.double = math__double;`,
+		},
+		// An overload set with no implemented overload emits no dispatch function, so
+		// there is no mangled name to put on the namespace object.
+		"Ambient_Overloaded_Function_With_Namespace": {
+			sources: []*ast.Source{
+				{
+					ID:   0,
+					Path: "math/double.esc",
+					Contents: `declare fn double(n: number) -> number
+declare fn double(s: string) -> string`,
+				},
+			},
+			expected: `export const math = {};`,
+		},
 		"Type_Declaration_Skip": {
 			sources: []*ast.Source{
 				{

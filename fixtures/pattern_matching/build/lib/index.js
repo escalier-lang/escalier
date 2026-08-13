@@ -1,27 +1,2 @@
-import * as internal from "./internal.js";
-export const boolMatch = internal.boolMatch;
-export const extendedPoint = internal.extendedPoint;
-export const getterMatch = internal.getterMatch;
-export const guardMatch = internal.guardMatch;
-export const literalMatch = internal.literalMatch;
-export const literalPatternMatch = internal.literalPatternMatch;
-export const longTuple = internal.longTuple;
-export const mixedMatch = internal.mixedMatch;
-export const mixedNominalStructural = internal.mixedNominalStructural;
-export const multiCase = internal.multiCase;
-export const nestedMatch = internal.nestedMatch;
-export const nestedValue = internal.nestedValue;
-export const objectMatch = internal.objectMatch;
-export const objectRename = internal.objectRename;
-export const objectRestMatch = internal.objectRestMatch;
-export const objectValue = internal.objectValue;
-export const partialMatch = internal.partialMatch;
-export const refMatch = internal.refMatch;
-export const sharedFieldSameType = internal.sharedFieldSameType;
-export const sharedFieldsMatch = internal.sharedFieldsMatch;
-export const structuralUnionMatch = internal.structuralUnionMatch;
-export const tupleMatch = internal.tupleMatch;
-export const tupleRestMatch = internal.tupleRestMatch;
-export const tupleValue = internal.tupleValue;
-export const variableMatch = internal.variableMatch;
+export { boolMatch, extendedPoint, getterMatch, guardMatch, literalMatch, literalPatternMatch, longTuple, mixedMatch, mixedNominalStructural, multiCase, nestedMatch, nestedValue, objectMatch, objectRename, objectRestMatch, objectValue, partialMatch, refMatch, sharedFieldSameType, sharedFieldsMatch, structuralUnionMatch, tupleMatch, tupleRestMatch, tupleValue, variableMatch } from "./internal.js";
 //# sourceMappingURL=./index.js.map
