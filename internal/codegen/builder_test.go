@@ -506,9 +506,8 @@ func TestBuildDecls(t *testing.T) {
 					Contents: "val x = 42",
 				},
 			},
-			expected: `const foo = {};
-export const foo__x = 42;
-foo.x = foo__x;`,
+			expected: `export const foo = {};
+const foo__x = 42;`,
 		},
 		"Multiple_Decls_Same_Namespace": {
 			sources: []*ast.Source{
@@ -523,14 +522,12 @@ foo.x = foo__x;`,
 					Contents: "fn double(n) { return n * 2 }",
 				},
 			},
-			expected: `const math = {};
-export function math__double(temp1) {
+			expected: `export const math = {};
+function math__double(temp1) {
   const n = temp1;
   return n * 2;
 }
-math.double = math__double;
-export const math__x = 42;
-math.x = math__x;`,
+const math__x = 42;`,
 		},
 		"Multiple_Decls_Different_Namespaces": {
 			sources: []*ast.Source{
@@ -545,12 +542,10 @@ math.x = math__x;`,
 					Contents: "val message = \"hello\"",
 				},
 			},
-			expected: `const math = {};
-const strings = {};
-export const math__PI = 3.14159;
-math.PI = math__PI;
-export const strings__message = "hello";
-strings.message = strings__message;`,
+			expected: `export const math = {};
+export const strings = {};
+const math__PI = 3.14159;
+const strings__message = "hello";`,
 		},
 		"Nested_Namespaces": {
 			sources: []*ast.Source{
@@ -565,14 +560,12 @@ strings.message = strings__message;`,
 					Contents: "val PI = 3.14",
 				},
 			},
-			expected: `const constants = {};
+			expected: `export const constants = {};
 constants.math = {};
-const utils = {};
+export const utils = {};
 utils.math = {};
-export const constants__math__PI = 3.14;
-constants.math.PI = constants__math__PI;
-export const utils__math__add = 42;
-utils.math.add = utils__math__add;`,
+const constants__math__PI = 3.14;
+const utils__math__add = 42;`,
 		},
 		"Mixed_Namespace_Levels": {
 			sources: []*ast.Source{
@@ -592,17 +585,15 @@ utils.math.add = utils__math__add;`,
 					Contents: "val VERSION = \"1.0.0\"",
 				},
 			},
-			expected: `const constants = {};
+			expected: `export const constants = {};
 constants.app = {};
-const utils = {};
+export const utils = {};
 export const config = {debug: true};
-export const constants__app__VERSION = "1.0.0";
-constants.app.VERSION = constants__app__VERSION;
-export function utils__log(temp1) {
+const constants__app__VERSION = "1.0.0";
+function utils__log(temp1) {
   const msg = temp1;
   console.log(msg);
-}
-utils.log = utils__log;`,
+}`,
 		},
 		"Function_With_Complex_Namespace": {
 			sources: []*ast.Source{
@@ -612,14 +603,13 @@ utils.log = utils__log;`,
 					Contents: "fn processData(input) { return input }",
 				},
 			},
-			expected: `const services = {};
+			expected: `export const services = {};
 services.data = {};
 services.data.processing = {};
-export function services__data__processing__processData(temp1) {
+function services__data__processing__processData(temp1) {
   const input = temp1;
   return input;
-}
-services.data.processing.processData = services__data__processing__processData;`,
+}`,
 		},
 		"Variable_Destructuring_With_Namespace": {
 			sources: []*ast.Source{
@@ -629,10 +619,8 @@ services.data.processing.processData = services__data__processing__processData;`
 					Contents: "val {x, y} = getPoint()",
 				},
 			},
-			expected: `const coords = {};
-export const {coords__x, coords__y} = getPoint();
-coords.x = coords__x;
-coords.y = coords__y;`,
+			expected: `export const coords = {};
+const {coords__x, coords__y} = getPoint();`,
 		},
 		"Multiple_Declarations_Overlapping_Namespaces": {
 			sources: []*ast.Source{
@@ -652,18 +640,15 @@ coords.y = coords__y;`,
 					Contents: "val defaultUser = null",
 				},
 			},
-			expected: `const models = {};
+			expected: `export const models = {};
 models.user = {};
 models.user.defaults = {};
-export function models__user__createUser(temp1) {
+function models__user__createUser(temp1) {
   const name = temp1;
   return {name};
 }
-models.user.createUser = models__user__createUser;
-export const models__user__defaults__defaultUser = null;
-models.user.defaults.defaultUser = models__user__defaults__defaultUser;
-export const models__user__user = {name: "Alice"};
-models.user.user = models__user__user;`,
+const models__user__defaults__defaultUser = null;
+const models__user__user = {name: "Alice"};`,
 		},
 		"Type_Declaration_Skip": {
 			sources: []*ast.Source{
@@ -678,10 +663,9 @@ models.user.user = models__user__user;`,
 					Contents: "val admin = {name: \"admin\", age: 30}",
 				},
 			},
-			expected: `const data = {};
-const types = {};
-export const data__admin = {name: "admin", age: 30};
-data.admin = data__admin;`,
+			expected: `export const data = {};
+export const types = {};
+const data__admin = {name: "admin", age: 30};`,
 		},
 		"Var_Declaration_With_Namespace": {
 			sources: []*ast.Source{
@@ -696,13 +680,11 @@ data.admin = data__admin;`,
 					Contents: "var isEnabled = true",
 				},
 			},
-			expected: `const state = {};
+			expected: `export const state = {};
 state.app = {};
 state.ui = {};
-export let state__app__counter = 0;
-state.app.counter = state__app__counter;
-export let state__ui__isEnabled = true;
-state.ui.isEnabled = state__ui__isEnabled;`,
+let state__app__counter = 0;
+let state__ui__isEnabled = true;`,
 		},
 	}
 
@@ -1323,11 +1305,9 @@ func TestBuildDecls_WithDependencies(t *testing.T) {
 					Contents: "val derived = base * 2",
 				},
 			},
-			expected: `const math = {};
-export const math__base = 10;
-math.base = math__base;
-export const math__derived = math__base * 2;
-math.derived = math__derived;`,
+			expected: `export const math = {};
+const math__base = 10;
+const math__derived = math__base * 2;`,
 		},
 		"Cross_Namespace_Dependencies": {
 			sources: []*ast.Source{
@@ -1342,15 +1322,13 @@ math.derived = math__derived;`,
 					Contents: "fn circleArea(r) { return constants.PI * r * r }",
 				},
 			},
-			expected: `const constants = {};
-const geometry = {};
-export const constants__PI = 3.14159;
-constants.PI = constants__PI;
-export function geometry__circleArea(temp1) {
+			expected: `export const constants = {};
+export const geometry = {};
+const constants__PI = 3.14159;
+function geometry__circleArea(temp1) {
   const r = temp1;
-  return constants.PI * r * r;
-}
-geometry.circleArea = geometry__circleArea;`,
+  return constants__PI * r * r;
+}`,
 		},
 		"Complex_Dependency_Chain": {
 			sources: []*ast.Source{
@@ -1370,17 +1348,14 @@ geometry.circleArea = geometry__circleArea;`,
 					Contents: "fn calculate(x) { return x * app.utils.factor }",
 				},
 			},
-			expected: `const app = {};
+			expected: `export const app = {};
 app.utils = {};
-export const app__config = {multiplier: 2};
-app.config = app__config;
-export const app__utils__factor = app.config.multiplier;
-app.utils.factor = app__utils__factor;
-export function app__utils__calculate(temp1) {
+const app__config = {multiplier: 2};
+const app__utils__factor = app__config.multiplier;
+function app__utils__calculate(temp1) {
   const x = temp1;
-  return x * app.utils.factor;
-}
-app.utils.calculate = app__utils__calculate;`,
+  return x * app__utils__factor;
+}`,
 		},
 	}
 
@@ -1438,8 +1413,8 @@ func TestBuildDecls_EdgeCases(t *testing.T) {
 					Contents: "type Config = {debug: boolean}",
 				},
 			},
-			expected: `const app = {};
-const models = {};`,
+			expected: `export const app = {};
+export const models = {};`,
 		},
 		"Deep_Namespace_Hierarchy": {
 			sources: []*ast.Source{
@@ -1449,13 +1424,12 @@ const models = {};`,
 					Contents: "val constant = \"deep\"",
 				},
 			},
-			expected: `const company = {};
+			expected: `export const company = {};
 company.project = {};
 company.project.module = {};
 company.project.module.submodule = {};
 company.project.module.submodule.utils = {};
-export const company__project__module__submodule__utils__constant = "deep";
-company.project.module.submodule.utils.constant = company__project__module__submodule__utils__constant;`,
+const company__project__module__submodule__utils__constant = "deep";`,
 		},
 	}
 

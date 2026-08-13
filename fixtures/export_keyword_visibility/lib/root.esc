@@ -1,0 +1,5 @@
+// Root-level declarations, one with the `export` keyword and one without.
+// The .d.ts writer reads the keyword and marks only `rootPub` as exported.
+// The JS emitter does not read it and exports both.
+export val rootPub = 1
+val rootPriv = 2

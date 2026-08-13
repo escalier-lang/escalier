@@ -1,0 +1,14 @@
+// A bin script consumes both of these, so they carry the `export` keyword and
+// reach the emitted `geo` object as properties.
+export class Point {
+    x: number,
+    y: number,
+    constructor(mut self, x: number, y: number) {
+        self.x = x
+        self.y = y
+    },
+}
+
+export fn makeOrigin() -> Point {
+    return Point(0, 0)
+}

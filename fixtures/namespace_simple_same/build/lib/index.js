@@ -1,6 +1,4 @@
-const math = {};
-export const math__base = 10;
-math.base = math__base;
-export const math__derived = math__base * 2;
-math.derived = math__derived;
+export const math = {};
+const math__base = 10;
+const math__derived = math__base * 2;
 //# sourceMappingURL=./index.js.map

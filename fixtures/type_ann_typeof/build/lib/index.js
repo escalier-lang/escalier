@@ -1,6 +1,5 @@
-const shapes = {};
-export const shapes__unitCircle = {center: {x: 0, y: 0}, radius: 1};
-shapes.unitCircle = shapes__unitCircle;
+export const shapes = {};
+const shapes__unitCircle = {center: {x: 0, y: 0}, radius: 1};
 export const p1 = {x: 5, y: 10};
 export const q1 = {x: 5, y: 10};
 export const cx = 0;

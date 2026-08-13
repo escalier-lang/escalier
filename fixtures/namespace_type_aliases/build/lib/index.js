@@ -1,7 +1,5 @@
-const bar = {};
-const foo = {};
-export const bar__foo = 5;
-bar.foo = bar__foo;
-export const foo__bar = "hello";
-foo.bar = foo__bar;
+export const bar = {};
+export const foo = {};
+const bar__foo = 5;
+const foo__bar = "hello";
 //# sourceMappingURL=./index.js.map

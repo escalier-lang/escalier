@@ -1,0 +1,15 @@
+// The same pair inside a namespace, for values and functions alike.
+// The .d.ts writer marks only the `export`ed members as exported. The JS
+// emitter assigns every member to the `geo` namespace object, so `geo.priv`
+// and `geo.privVal` are reachable at runtime even though the types say they
+// are not.
+export fn pub() -> number {
+    return 1
+}
+
+fn priv() -> number {
+    return 2
+}
+
+export val pubVal = 10
+val privVal = 20

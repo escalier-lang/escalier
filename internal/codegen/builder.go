@@ -158,8 +158,14 @@ func (b *Builder) BuildTopLevelDecls(depGraph *dep_graph.DepGraph) *Module {
 			// For example, with `val {x, y} = getPoint()` in namespace "coords", we need both:
 			//   coords.x = coords__x
 			//   coords.y = coords__y
+			//
+			// A member the source did not mark `export` is left off the namespace object. The
+			// object is the module's export for the namespace, so a property on it is reachable
+			// by any consumer. Code elsewhere in the module still reaches the member, because
+			// unexportedNsMember rewrites a reference such as `constants.PI` to the mangled
+			// name `constants__PI`.
 			bindingName := key.Name()
-			if strings.Contains(bindingName, ".") {
+			if strings.Contains(bindingName, ".") && decl.Export() {
 				parts := strings.Split(bindingName, ".")
 				dunderName := strings.Join(parts, "__")
 
@@ -257,6 +263,102 @@ func fullyQualifyName(name, nsName string) string {
 		return name
 	}
 	return strings.ReplaceAll(nsName, ".", "__") + "__" + name
+}
+
+// memberChainSegments flattens a dotted reference such as `app.config.multiplier` into the
+// segments ["app", "config", "multiplier"]. ok is false when the chain is rooted in something
+// other than a plain identifier, or when any link is an optional-chaining `?.`, because
+// neither form can name a namespace member.
+func memberChainSegments(expr *ast.MemberExpr) ([]string, bool) {
+	var segments []string
+
+	var walk func(e ast.Expr) bool
+	walk = func(e ast.Expr) bool {
+		switch e := e.(type) {
+		case *ast.IdentExpr:
+			segments = append(segments, e.Name)
+			return true
+		case *ast.MemberExpr:
+			if e.OptChain || e.Prop == nil {
+				return false
+			}
+			if !walk(e.Object) {
+				return false
+			}
+			segments = append(segments, e.Prop.Name)
+			return true
+		default:
+			return false
+		}
+	}
+
+	if !walk(expr) {
+		return nil, false
+	}
+	return segments, true
+}
+
+// unexportedNsMember matches a dotted reference against the namespace members the module keeps
+// to itself, and reports the mangled name to emit in place of the property access.
+//
+// segments comes from memberChainSegments. The longest prefix of it that names a value binding
+// in the dep graph is the member being referenced, and the rest are ordinary property accesses
+// on that member's value. In `app.config.multiplier` the binding is `app.config` and
+// `multiplier` is a field of the object it holds, so the prefix length returned is 2.
+//
+// A prefix shorter than two segments is a root-level binding rather than a namespace member,
+// and those stay reachable under their own name, so matching starts at two. ok is false when no
+// prefix names a binding, and when the binding it names is exported. An exported member is a
+// property on the namespace object, so a reference to it needs no rewriting.
+func (b *Builder) unexportedNsMember(segments []string) (name string, prefixLen int, ok bool) {
+	if b.depGraph == nil {
+		return "", 0, false
+	}
+
+	for n := len(segments); n >= 2; n-- {
+		decls := b.depGraph.GetDecls(dep_graph.ValueBindingKey(strings.Join(segments[:n], ".")))
+		if len(decls) == 0 {
+			continue
+		}
+		for _, decl := range decls {
+			if decl.Export() {
+				return "", 0, false
+			}
+		}
+		return strings.Join(segments[:n], "__"), n, true
+	}
+
+	return "", 0, false
+}
+
+// nsValueRef returns the emitted name for a dotted reference to a value, such as the
+// `MyEnum.Color` an `instanceof` check or a custom matcher call names. A reference to an
+// unexported namespace member becomes the mangled name, so `MyEnum.Color` is emitted as
+// `MyEnum__Color`. Every other name is returned unchanged.
+func (b *Builder) nsValueRef(name string) string {
+	segments := strings.Split(name, ".")
+	mangled, prefixLen, ok := b.unexportedNsMember(segments)
+	if !ok {
+		return name
+	}
+	return strings.Join(append([]string{mangled}, segments[prefixLen:]...), ".")
+}
+
+// exportDecl reports whether a top-level declaration gets an `export` keyword. nsName is the
+// namespace the declaration is written in, and inBlockScope says it sits inside a function
+// body or other block rather than at the top level of the module.
+//
+// A declaration inside a namespace is not exported under its own name. fullyQualifyName
+// mangles that name, so `class Base` in namespace `geo` is emitted as `geo__Base`. No such
+// spelling appears in the source, and exporting it would put a name the author never wrote in
+// the module's public surface. It could also collide with a root-level declaration spelled the
+// same way.
+//
+// Consumers reach the declaration through the namespace object, which buildNamespaceHierarchy
+// exports. `geo.Base` is imported as `import { geo }` and read as `geo.Base`. That is what the
+// `.d.ts` declares for the namespace and what a bin script's generated import expects.
+func (b *Builder) exportDecl(nsName string, inBlockScope bool) bool {
+	return b.isModule && !inBlockScope && nsName == ""
 }
 
 // TODO: return a pattern instead of passing in the VariableKind
@@ -400,7 +502,7 @@ func (b *Builder) buildPattern(
 				tempVarPats = append(tempVarPats, tempVarPat)
 				tempVars = append(tempVars, tempVar)
 			}
-			extractor := NewIdentExpr(ast.QualIdentToString(p.Name), "", p)
+			extractor := NewIdentExpr(b.nsValueRef(ast.QualIdentToString(p.Name)), "", p)
 			subject := target
 			receiver := NewIdentExpr("undefined", "", nil)
 
@@ -632,7 +734,11 @@ func (b *Builder) BuildScript(mod *ast.Script) *Module {
 }
 
 // buildNamespaceHierarchy generates statements to create a namespace hierarchy
-// For "foo.bar.baz", it generates: const foo = {}; foo.bar = {}; foo.bar.baz = {};
+// For "foo.bar.baz", it generates: export const foo = {}; foo.bar = {}; foo.bar.baz = {};
+//
+// Only the outermost object carries `export`. It is the module's single export for everything
+// in the namespace, and the nested levels are reachable as properties on it. See exportDecl
+// for why namespace members are not exported individually.
 func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces set.Set[string]) []Stmt {
 	if namespace == "" {
 		return []Stmt{}
@@ -652,7 +758,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces se
 		definedNamespaces.Add(currentNS)
 
 		if i == 1 {
-			// First level: const foo = {};
+			// First level: export const foo = {};
 			pattern := NewIdentPat(parts[0], nil, nil)
 			init := NewObjectExpr([]ObjExprElem{}, nil)
 
@@ -666,7 +772,7 @@ func (b *Builder) buildNamespaceHierarchy(namespace string, definedNamespaces se
 					},
 				},
 				declare: false,
-				export:  false,
+				export:  b.isModule,
 				span:    nil,
 				source:  nil,
 			}
@@ -743,8 +849,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 		}
 
 		// Ignore checks returned by buildPattern
-		// Only export if we're in module mode AND not inside a block scope
-		export := b.isModule && !b.inBlockScope
+		export := b.exportDecl(nsName, b.inBlockScope)
 		_, patStmts := b.buildPattern(d.Pattern, initExpr, export, d.Kind, nsName)
 		return slices.Concat(initStmts, patStmts)
 	case *ast.FuncDecl:
@@ -788,7 +893,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			Body:       bodyStmts,
 			TypeAnn:    nil,
 			declare:    decl.Declare(),
-			export:     b.isModule && !prevInBlockScope,
+			export:     b.exportDecl(nsName, prevInBlockScope),
 			async:      d.Async,
 			generator:  d.Gen || containsYield(d.Body.Stmts),
 			span:       nil,
@@ -823,7 +928,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 			},
 			SuperClass: superClass,
 			Body:       classElems,
-			export:     b.isModule,
+			export:     b.exportDecl(nsName, b.inBlockScope),
 			declare:    d.Declare(),
 			span:       nil,
 			source:     d,
@@ -854,7 +959,7 @@ func (b *Builder) buildDeclWithNamespace(decl ast.Decl, nsName string) []Stmt {
 				},
 			},
 			declare: false,
-			export:  b.isModule,
+			export:  b.exportDecl(nsName, b.inBlockScope),
 			span:    nil,
 			source:  d,
 		}
@@ -1217,7 +1322,7 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		Body:       []Stmt{dispatchStmt},
 		TypeAnn:    nil,
 		declare:    false,
-		export:     b.isModule,
+		export:     b.exportDecl(nsName, b.inBlockScope),
 		async:      isAsync,
 		generator:  isGenerator,
 		span:       nil,
@@ -1470,6 +1575,20 @@ func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
 			// receiver-binding / temp-var logic below.
 			return buildDottedJSExpr(jsExpr, expr), []Stmt{}
 		}
+		// `constants.PI` reaches an unexported member of namespace `constants`, which is left
+		// off the `constants` object, so the reference is emitted as the mangled name
+		// `constants__PI` instead. Segments past the member itself stay property accesses, so
+		// `app.config.multiplier` becomes `app__config.multiplier`.
+		if segments, ok := memberChainSegments(expr); ok {
+			if name, prefixLen, ok := b.unexportedNsMember(segments); ok {
+				var target Expr = NewIdentExpr(name, "", expr)
+				for _, segment := range segments[prefixLen:] {
+					target = NewMemberExpr(target, NewIdentifier(segment, nil), false, expr)
+				}
+				return target, []Stmt{}
+			}
+		}
+
 		objExpr, objStmts := b.buildExpr(expr.Object, expr)
 		propExpr := buildIdent(expr.Prop)
 
@@ -2844,7 +2963,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		instanceofCheck := NewBinaryExpr(
 			targetExpr,
 			InstanceOf,
-			NewIdentExpr(ast.QualIdentToString(pat.ClassName), "", pat),
+			NewIdentExpr(b.nsValueRef(ast.QualIdentToString(pat.ClassName)), "", pat),
 			pat,
 		)
 		conditions = append(conditions, instanceofCheck)
@@ -2874,7 +2993,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		instanceofCheck := NewBinaryExpr(
 			targetExpr,
 			InstanceOf,
-			NewIdentExpr(ast.QualIdentToString(pat.Name), "", pat),
+			NewIdentExpr(b.nsValueRef(ast.QualIdentToString(pat.Name)), "", pat),
 			pat,
 		)
 		conditions = append(conditions, instanceofCheck)
@@ -2904,7 +3023,7 @@ func (b *Builder) buildPatternCondition(pattern ast.Pat, targetExpr Expr) (Expr,
 		}
 
 		// Call the custom matcher: InvokeCustomMatcherOrThrow(extractor, subject, undefined)
-		extractor := NewIdentExpr(ast.QualIdentToString(pat.Name), "", pat)
+		extractor := NewIdentExpr(b.nsValueRef(ast.QualIdentToString(pat.Name)), "", pat)
 		receiver := NewIdentExpr("undefined", "", nil)
 
 		call := NewCallExpr(
