@@ -529,6 +529,32 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 			`,
 			want: "fn () -> undefined",
 		},
+		{
+			// Expanding repeats through a union whose own members are aliases, so an alias
+			// nested inside another reaches the arms as its underlying members.
+			name: "ANestedAliasIsCovered",
+			src: `
+				type Inner = "a" | "b"
+				type Outer = Inner | "c"
+				fn a() throws Outer { throw "a" }
+				fn f() { try { a() } catch { "a" => 0, "b" => 1, "c" => 2 } }
+			`,
+			want: "fn () -> undefined",
+		},
+		{
+			// Partial coverage of a nested alias rethrows only the members left over. Without
+			// the repeated expansion the whole of `Inner` would be weighed as one member,
+			// which no arm covers, so the clause would carry `Inner` and name the `"a"` the
+			// arm did catch.
+			name: "OnlyTheUncoveredMemberOfANestedAliasIsRethrown",
+			src: `
+				type Inner = "a" | "b"
+				type Outer = Inner | "c"
+				fn a() throws Outer { throw "a" }
+				fn f() throws _ { try { a() } catch { "a" => 0, "c" => 2 } }
+			`,
+			want: `fn () -> undefined throws "b"`,
+		},
 	})
 	runThrowsErrCases(t, []throwsErrCase{
 		{

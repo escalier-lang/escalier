@@ -3597,13 +3597,7 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 	if u, isUnion := caught.(*soltype.UnionType); isUnion {
 		uncovered := make([]soltype.Type, 0, len(u.Types))
 		for _, m := range u.Types {
-			// A transparent alias member, an enum handle or a `type` reference, carries the
-			// alias rather than the type it stands for. The difference is decided against the
-			// alias handle, which no arm's type is a supertype of, so an unexpanded alias
-			// reads as uncovered however many arms name its members, and
-			// `type Err = "a" | "b"` would behave unlike the union spelled inline.
-			// checkCondExhaustive expands for the same reason.
-			for _, part := range unionParts(c.expandAliasChain(m)) {
+			for _, part := range c.caughtMembers(m) {
 				if c.memberCaught(scope, part, handled, e.Catch) {
 					continue
 				}
@@ -3642,6 +3636,48 @@ func (c *checker) expandAliasChain(t soltype.Type) soltype.Type {
 		seen.Add(at.Name)
 		t = c.ctx.expandAlias(at)
 	}
+}
+
+// caughtMembers returns the members one member of the caught union stands for, each weighed
+// against the catch arms on its own. A transparent alias, an enum handle or a `type`
+// reference, carries the alias rather than the type it names, so it is expanded, and a union
+// it expands to is taken apart member by member. The expansion repeats through both, since an
+// alias may name a union whose own members are aliases.
+//
+//	type Inner = "a" | "b"
+//	type Outer = Inner | "c"
+//
+// `Outer` yields `"a"`, `"b"`, and `"c"`. Stopping one level in would weigh the whole of
+// `Inner` against the arms, so an arm naming `"a"` alone would leave `Inner` uncovered and
+// rethrow `"b"` under the alias's name together with the `"a"` the arm did catch. Expanding
+// also keeps an aliased error type behaving like the union spelled inline, which is why
+// checkCondExhaustive expands as well.
+//
+// A member that is neither an alias nor a union is returned as it is.
+func (c *checker) caughtMembers(t soltype.Type) []soltype.Type {
+	return c.appendCaughtMembers(nil, t, set.NewSet[string]())
+}
+
+// appendCaughtMembers is caughtMembers' walk, accumulating into out. seen holds the alias
+// names already expanded, so a self-referential alias such as `type A = A | "x"` contributes
+// `"x"` once and stops rather than expanding forever. The set is shared across the whole walk,
+// which is sound because the result is a union: a name reached twice contributes the same
+// members both times.
+func (c *checker) appendCaughtMembers(out []soltype.Type, t soltype.Type, seen set.Set[string]) []soltype.Type {
+	switch t := t.(type) {
+	case *soltype.AliasType:
+		if seen.Contains(t.Name) {
+			return out
+		}
+		seen.Add(t.Name)
+		return c.appendCaughtMembers(out, c.ctx.expandAlias(t), seen)
+	case *soltype.UnionType:
+		for _, m := range t.Types {
+			out = c.appendCaughtMembers(out, m, seen)
+		}
+		return out
+	}
+	return append(out, t)
 }
 
 // unionParts returns a union's members, or the type itself as a one-element slice. It lets a
