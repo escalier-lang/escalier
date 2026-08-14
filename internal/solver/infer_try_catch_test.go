@@ -359,6 +359,103 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 	})
 }
 
+// What escapes a `try` is the set difference `caught & ¬handled`, where handled is the type
+// the arms catch. Taking a difference rather than matching each member against each pattern
+// by name is what lets an arm subtract more than the one type it spells: an arm naming a base
+// class catches every value of a subclass, so a subclass member is subtracted too.
+func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
+	// base declares a root error class, a subclass of it, and an unrelated class, so a case
+	// can vary which of the three an arm names.
+	const base = `
+		class AppError { code: number, constructor(mut self) { self.code = 0 } }
+		class ParseError extends AppError { constructor(mut self) { super() } }
+		class OtherError { tag: string, constructor(mut self) { self.tag = "" } }
+	`
+	runThrowsCases(t, []throwsCase{
+		{
+			// The block raises the subclass, and the arm names the base class. Every
+			// ParseError is an AppError, so nothing is left over and the enclosing function
+			// needs no clause.
+			name: "ABaseClassArmSubtractsASubclassMember",
+			src: base + `
+				fn a() throws ParseError { throw ParseError() }
+				fn f() { try { a() } catch { AppError{code} => code } }
+			`,
+			want: "fn () -> undefined",
+		},
+		{
+			// The reverse does not subtract. An AppError need not be a ParseError, so the
+			// member survives the difference and reaches the clause.
+			name: "ASubclassArmLeavesTheBaseClassMember",
+			src: base + `
+				fn a() throws AppError { throw AppError() }
+				fn f() throws _ { try { a() } catch { ParseError{code} => code } }
+			`,
+			want: "fn () -> undefined throws AppError",
+		},
+		{
+			// One arm subtracts both members it covers, and the member outside the class
+			// hierarchy is rethrown on its own.
+			name: "ABaseClassArmLeavesAnUnrelatedMember",
+			src: base + `
+				fn a(c: boolean) throws ParseError | OtherError {
+					if c { throw ParseError() } else { throw OtherError() }
+				}
+				fn f(c: boolean) throws _ { try { a(c) } catch { AppError{code} => code } }
+			`,
+			want: "fn (c: boolean) -> undefined throws OtherError",
+		},
+	})
+}
+
+// The difference subtracts a member only when deciding it settles nothing about a type
+// variable. A generic class arm is where that bites: subtracting a member against `Base<T>`,
+// for T the class's own parameter, would have to choose what T stands for, so the difference
+// declines and the member survives it.
+//
+// An arm naming the member's own class still catches it, since comparing class names needs no
+// choice of type argument. What the difference alone would have caught, and the name rule
+// cannot, is a SUBCLASS member under a base-class arm. That pair is the fidelity boundary: it
+// is rethrown, where the same pair over non-generic classes is subtracted.
+func TestInferTryCatchIsConservativeOverGenericClasses(t *testing.T) {
+	// base declares a generic root error class and a generic subclass of it, so a case can
+	// vary whether the arm names the member's own class or its base.
+	const base = `
+		class Failure<T> {
+			payload: T,
+			constructor(mut self, payload: T) { self.payload = payload }
+		}
+		class Timeout<T> extends Failure<T> {
+			constructor(mut self, payload: T) { super(payload) }
+		}
+	`
+	runThrowsCases(t, []throwsCase{
+		{
+			// The arm names the member's own class. The name rule catches it whatever the
+			// type argument is, so nothing escapes and the function needs no clause.
+			name: "AnArmNamingTheMembersOwnGenericClassCatchesIt",
+			src: base + `
+				fn a() throws Failure<number> { throw Failure(0) }
+				fn f() { try { a() } catch { Failure{payload} => 0 } }
+			`,
+			want: "fn () -> undefined",
+		},
+		{
+			// The arm names the member's base class, which only the difference could read,
+			// and the difference declines because subtracting would pin the base class's own
+			// parameter. The member is rethrown even though every Timeout<number> is a
+			// Failure<number>. Over the non-generic pair of
+			// TestInferTryCatchSubtractsThroughSubtyping the same shape is subtracted.
+			name: "ABaseClassArmDoesNotSubtractAGenericSubclassMember",
+			src: base + `
+				fn a() throws Timeout<number> { throw Timeout(0) }
+				fn f() throws _ { try { a() } catch { Failure{payload} => 0 } }
+			`,
+			want: "fn () -> undefined throws Timeout<number>",
+		},
+	})
+}
+
 // The form's value is the join of the try block's tail value and each non-diverging arm
 // body, the same branch join `match` builds from its arms.
 func TestInferTryCatchValue(t *testing.T) {
@@ -397,9 +494,9 @@ func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
 
 // Coverage is decided against the type an alias stands for, not against the alias handle. A
 // transparent alias, an enum handle or a user `type` reference, carries the alias rather than
-// its underlying union, and unionMemberCovered has no arm for one. Without expanding first, an
-// aliased error type would read as uncovered however many arms name its members, so naming a
-// union would behave unlike spelling it inline.
+// its underlying union, and no arm's type is a supertype of the handle. Without expanding
+// first, an aliased error type would read as uncovered however many arms name its members, so
+// naming a union would behave unlike spelling it inline.
 func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{

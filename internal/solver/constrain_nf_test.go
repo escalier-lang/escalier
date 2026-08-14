@@ -32,19 +32,26 @@ import (
 // # The arrow decomposition
 //
 // The sound verdict for an arrow row comes from the Frisch-Castagna-Benzaken
-// decomposition, which does not collapse the intersection to one arrow. To decide
-// `⋂ᵢ (Aᵢ → Cᵢ) <: (E → F)`, both of these must hold.
+// decomposition, which does not collapse the intersection to one arrow. An arrow
+// has two outputs, the value it returns and the exception it raises, so a row is
+// written `Aᵢ → Cᵢ raises Gᵢ` and the target `E → F raises H`. To decide
+// `⋂ᵢ (Aᵢ → Cᵢ raises Gᵢ) <: (E → F raises H)`, both of these must hold.
 //
 //  1. The target domain is covered: `E <: ⋃ᵢ Aᵢ`. No input the target accepts may
 //     fall outside every arm's domain.
 //  2. For every subset P of the arms, either the inputs are still covered without
-//     P — `E <: ⋃_{i∉P} Aᵢ` — or the arms in P return something the target
-//     tolerates, `⋂_{i∈P} Cᵢ <: F`.
+//     P — `E <: ⋃_{i∉P} Aᵢ` — or the arms in P produce outputs the target
+//     tolerates, both `⋂_{i∈P} Cᵢ <: F` and `⋂_{i∈P} Gᵢ <: H`.
 //
 // Leg 2 reads concretely as follows. A value that has all of the arm types
-// returns, on a given input, something in the codomain of every arm whose domain
-// accepts that input. So the subtyping fails exactly when some group of arms is
-// the only cover for part of E while their combined codomain escapes F.
+// answers a given input the way every arm whose domain accepts that input does, so
+// it returns something in each of their codomains and raises something each of
+// their clauses admits. The subtyping therefore fails exactly when some group of
+// arms is the only cover for part of E while their combined codomain escapes F or
+// their combined clause escapes H.
+//
+// A row that writes no `throws` clause raises `never`, so its raises half of leg 2
+// is `never <: never` and the row is decided by its codomain half alone.
 //
 // # The record-union widening
 //
@@ -73,6 +80,9 @@ import (
 // The two tagged rows stay unobserved. Their members share the field name `tag`,
 // and a same-named second field is not what makes the widening bail, so neither
 // finding settles them. Filling those two needs a run.
+//
+// Every row carrying a `throws` clause stays unobserved as well. MLscript has no
+// such clause, so it cannot state the row at all and no finding settles it.
 //
 // Two rows disagree with the oracle under those rules, and each says so in its
 // why. Both are cases where the merged codomain collapses to `never` and the
@@ -261,6 +271,73 @@ var nfArrowCorpus = []nfRow{
 		why: "example A with T for boolean. The verdict does not depend on what T is, since the " +
 			"domains cover number | string and every group's combined codomain is T & T = T",
 		mlscript: nfHolds,
+	},
+	{
+		name: "shared codomain and raises: the target widens the clause",
+		sub: `(fn (x: number) -> boolean throws "a") & ` +
+			`(fn (x: string) -> boolean throws "a")`,
+		super: `fn (x: number | string) -> boolean throws "a" | "b"`,
+		sound: nfHolds,
+		why: `example A with a clause on every arrow. The arms agree on both outputs, so they ` +
+			`fuse to the one arrow fn (x: number | string) -> boolean throws "a", and the ` +
+			`fused clause is compared covariantly against the target's wider one`,
+	},
+	{
+		name:  "the reverse direction: the target narrows the clause",
+		sub:   `fn (x: number | string) -> boolean throws "a" | "b"`,
+		super: `fn (x: number | string) -> boolean throws "a"`,
+		sound: nfFails,
+		why: `the mirror of the row above, and the one that pins the direction. A call may raise ` +
+			`"b", which the target's clause does not admit, so the covariant comparison of the ` +
+			`two clauses fails`,
+		wantErrs: []string{`cannot constrain "b" <: "a"`},
+	},
+	{
+		name: "distinct domains, distinct raises: the target unions both clauses",
+		sub: `(fn (x: number) -> boolean throws "a") & ` +
+			`(fn (x: string) -> boolean throws "b")`,
+		super: `fn (x: number | string) -> boolean throws "a" | "b"`,
+		sound: nfHolds,
+		why: `the arms disagree on what they raise, so no single arrow denotes their meet and the ` +
+			`decomposition decides the row. Leg 1 holds since the arm domains cover ` +
+			`number | string. Leg 2 holds for each group: the number arm alone raises "a", the ` +
+			`string arm alone raises "b", and the group holding both raises "a" & "b", which no ` +
+			`value inhabits`,
+	},
+	{
+		name: "distinct domains: one arm's clause escapes the target",
+		sub: `(fn (x: number) -> boolean throws "a") & ` +
+			`(fn (x: string) -> boolean throws "b")`,
+		super: `fn (x: number | string) -> boolean throws "a"`,
+		sound: nfFails,
+		why: `leg 2 fails for the group holding the string arm alone: a string input is covered by ` +
+			`no other arm, and that arm raises "b", which the target's clause does not admit. ` +
+			`This is the raises half of the leg that example B fails through its codomain half`,
+		wantErrs: []string{
+			"cannot constrain number <: string",
+			`cannot constrain "b" <: "a"`,
+		},
+	},
+	{
+		name: "shared domain, distinct raises: the target takes their meet",
+		sub: `(fn (x: number) -> boolean throws "a" | "b") & ` +
+			`(fn (x: number) -> boolean throws "b" | "c")`,
+		super: `fn (x: number) -> boolean throws "b"`,
+		sound: nfHolds,
+		why: `the raises twin of the shared-domain codomain row. A value with both arm types raises ` +
+			`only what both clauses admit, so a call raises ("a" | "b") & ("b" | "c"), which is ` +
+			`"b", and the target accepts it`,
+	},
+	{
+		name: "shared domain, disjoint raises: the combined clause is uninhabited",
+		sub: `(fn (x: number) -> boolean throws "a") & ` +
+			`(fn (x: number) -> boolean throws "b")`,
+		super: "fn (x: number) -> boolean",
+		sound: nfHolds,
+		why: `the verdict is vacuous, the raises twin of the disjoint-codomains row. A value with ` +
+			`both arm types would have to raise both "a" and "b" on any number input, and no value ` +
+			`is both, so such a value never raises on a number input. Its combined clause is ` +
+			"`never`, which the target's unwritten clause admits",
 	},
 }
 

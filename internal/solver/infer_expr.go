@@ -3575,14 +3575,21 @@ func (c *checker) caughtType(collected soltype.Type) soltype.Type {
 // rethrowUnhandled sends the part of the caught union no arm covers into the enclosing
 // throws sink. A value matching no arm is re-raised at runtime, so uncovered members draw a
 // rethrow rather than the non-exhaustiveness error the equivalent `match` would draw.
-// Coverage comes from ast.HasUnguardedCatchAll and unionMemberCovered, so it agrees with
-// checkCondExhaustive, and a guarded arm can fail its guard and covers nothing. Only the
-// MEMBERS are rethrown: every throws type is open already, and only `unknown` could carry
-// the tail, so adding it would erase the named types the clause had.
+//
+// What escapes is the set difference `caught ∩ ¬handled`, where handled is the type the arms
+// catch. The difference is taken one member at a time, which is exact because meeting a
+// complement distributes over a union: `(A | B) ∩ ¬H` is `(A ∩ ¬H) | (B ∩ ¬H)`. A member
+// survives when the meet still holds a value, which memberCaught decides.
+//
+// A guarded arm can fail its guard, so it catches nothing and contributes nothing to handled.
+// An unguarded catch-all catches every value and is answered before the difference is taken.
+// Only the MEMBERS are rethrown: every throws type is open already, and only `unknown` could
+// carry the tail, so adding it would erase the named types the clause had.
 func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
 	if ast.HasUnguardedCatchAll(e.Catch) {
 		return
 	}
+	handled := c.armsCatchType(scope, e.Catch)
 	// A non-union `caught` carries no named member to rethrow. It is `unknown`, the bare
 	// open tail caughtType renders for a block that raises nothing known, or the ErrorType
 	// recovery placeholder. Neither leaves anything for the enclosing clause to record.
@@ -3591,14 +3598,16 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 		uncovered := make([]soltype.Type, 0, len(u.Types))
 		for _, m := range u.Types {
 			// A transparent alias member, an enum handle or a `type` reference, carries the
-			// alias rather than the type it stands for. unionMemberCovered has no arm for
-			// one, so an unexpanded alias reads as uncovered however many arms name its
-			// members, and `type Err = "a" | "b"` would behave unlike the union spelled
-			// inline. checkCondExhaustive expands for the same reason.
+			// alias rather than the type it stands for. The difference is decided against the
+			// alias handle, which no arm's type is a supertype of, so an unexpanded alias
+			// reads as uncovered however many arms name its members, and
+			// `type Err = "a" | "b"` would behave unlike the union spelled inline.
+			// checkCondExhaustive expands for the same reason.
 			for _, part := range unionParts(c.expandAliasChain(m)) {
-				if !c.unionMemberCovered(scope, part, e.Catch) {
-					uncovered = append(uncovered, part)
+				if c.memberCaught(scope, part, handled, e.Catch) {
+					continue
 				}
+				uncovered = append(uncovered, part)
 			}
 		}
 		rethrown = newUnion(c.ctx, uncovered, false)
@@ -3644,65 +3653,151 @@ func unionParts(t soltype.Type) []soltype.Type {
 	return []soltype.Type{t}
 }
 
-// unionMemberCovered reports whether some unguarded arm covers a single union member,
-// dispatching on the member's kind. A literal member needs an equal literal pattern, a
-// `null` or `undefined` member an arm spelling that same word, a nominal member an
-// instance or extractor pattern naming its class, and a structural object or tuple
-// member an irrefutable pattern of its shape. Any other member kind has no covering
-// pattern short of a catch-all, which the caller has already checked.
-func (c *checker) unionMemberCovered(scope *Scope, member soltype.Type, arms []*ast.MatchCase) bool {
-	switch m := member.(type) {
-	case *soltype.LitType:
-		return c.litMemberCovered(m, arms)
-	case *soltype.NullType, *soltype.UndefinedType:
-		return atomMemberCovered(member, arms)
-	case *soltype.ClassType:
-		return c.nominalMemberCovered(scope, m, arms)
-	case *soltype.ObjectType, *soltype.TupleType:
-		return structuralMemberCovered(member, arms)
-	default:
-		return false
-	}
+// memberCaught reports whether the catch arms catch every value of one member of the caught
+// type, which is what keeps that member out of the rethrow. Three rules answer it, and the
+// member is caught when any of them does.
+//
+//  1. The set difference. handled is the type the arms catch, so the member is caught when
+//     `member ∩ ¬handled` holds no value. This is the primary rule, and it is the one that
+//     reads through subtyping: an arm naming a base class catches a subclass member, which
+//     comparing class names cannot see.
+//  2. The nominal name rule. A class arm catches every instance of the class it names,
+//     whatever type arguments that instance carries, and rule 1 declines the member when
+//     deciding it would pin a type argument. `catch { Err{x} => … }` therefore still catches
+//     an `Err<number>` member through this rule.
+//  3. The structural shape rule. An object or tuple pattern admits every value of a shape
+//     rather than of a type, so it has no entry in handled at all and structuralMemberCovered
+//     reads the shape against the member.
+//
+// Each rule only ever catches more, so a member no rule answers is rethrown. That is the safe
+// direction. A clause naming a type the block cannot raise is still checked against the
+// enclosing clause, where a clause silent about one the block can raise would let an exception
+// escape unnamed.
+func (c *checker) memberCaught(scope *Scope, member, handled soltype.Type, arms []*ast.MatchCase) bool {
+	return c.memberSubtracted(member, handled) ||
+		c.nominalMemberCovered(scope, member, arms) ||
+		structuralMemberCovered(member, arms)
 }
 
-// nominalMemberCovered reports whether some unguarded arm covers a nominal union member.
-// An instance or extractor pattern covers the member when it names the member's class and
+// nominalMemberCovered reports whether some unguarded arm names the class of a nominal
+// member. An instance or extractor pattern covers the member when it names that class and
 // every sub-pattern is irrefutable, so `Color.RGB(r, g, b)` covers `Color.RGB` but
-// `Color.RGB(1, g, b)`, which matches only when the first field is 1, does not.
-func (c *checker) nominalMemberCovered(scope *Scope, member *soltype.ClassType, arms []*ast.MatchCase) bool {
+// `Color.RGB(1, g, b)`, which matches only when the first field is 1, does not. A member of
+// any other kind is never covered here.
+//
+// The class names are compared rather than the class types, so the rule holds whatever type
+// arguments either side carries. That is what it adds over the set difference, which declines
+// a member whose subtraction would pin a type argument.
+func (c *checker) nominalMemberCovered(scope *Scope, member soltype.Type, arms []*ast.MatchCase) bool {
+	ct, isClass := member.(*soltype.ClassType)
+	if !isClass {
+		return false
+	}
 	for _, arm := range arms {
 		if arm.Guard != nil {
 			continue
 		}
-		if c.nominalArmCovers(scope, arm.Pattern, member) {
+		named, ok := c.armCatchType(scope, arm.Pattern)
+		if !ok {
+			continue
+		}
+		if armClass, isClass := named.(*soltype.ClassType); isClass && armClass.Name == ct.Name {
 			return true
 		}
 	}
 	return false
 }
 
-// nominalArmCovers reports whether an arm's pattern irrefutably matches every value of a
-// nominal member. The pattern must name the member's class through the type sort and carry
-// only irrefutable sub-patterns.
-func (c *checker) nominalArmCovers(scope *Scope, p ast.Pat, member *soltype.ClassType) bool {
+// armsCatchType returns the type the unguarded catch arms catch, as one union. It is the
+// `handled` side of the difference rethrowUnhandled takes, so a member of the caught type
+// escapes rule 1 of memberCaught exactly when this type does not cover it.
+//
+// A guarded arm is skipped. Its guard can fail, so no value is caught on the strength of the
+// arm's pattern alone. A pattern armCatchType cannot name contributes nothing, which makes
+// the difference subtract less and the rethrow name more than what actually escapes.
+func (c *checker) armsCatchType(scope *Scope, arms []*ast.MatchCase) soltype.Type {
+	parts := make([]soltype.Type, 0, len(arms))
+	for _, arm := range arms {
+		if arm.Guard != nil {
+			continue
+		}
+		if caught, ok := c.armCatchType(scope, arm.Pattern); ok {
+			parts = append(parts, caught)
+		}
+	}
+	return newUnion(c.ctx, parts, false)
+}
+
+// armCatchType returns the type one arm's pattern catches, and reports whether the pattern
+// names a type at all.
+//
+//   - A wildcard or identifier binds every value, so it catches `unknown`.
+//   - A literal pattern catches that literal's type, and the `null` and `undefined`
+//     spellings catch those two atoms.
+//   - An instance or extractor pattern catches the class it names, provided its
+//     sub-patterns all bind unconditionally. `Color.RGB(r, g, b)` catches `Color.RGB`, but
+//     `Color.RGB(0, g, b)` matches only when the first field is 0 and names no type.
+//
+// An object or tuple pattern reports false. It admits every value of a shape rather than of
+// a type, and objectMemberHasKeys and tupleMemberFitsArity are what read that shape against a
+// member, including through a borrow. structuralMemberCovered applies them, and the UCS IR's
+// own tests apply the same two, so a written pattern and its IR test cannot disagree about
+// which members a branch reaches. Rule 3 of memberCaught is where such a pattern is weighed.
+func (c *checker) armCatchType(scope *Scope, p ast.Pat) (soltype.Type, bool) {
 	switch pat := p.(type) {
+	case *ast.WildcardPat, *ast.IdentPat:
+		return &soltype.UnknownType{}, true
+	case *ast.LitPat:
+		if atom, _, isAtom := atomLitOf(pat.Lit); isAtom {
+			return atom, true
+		}
+		if lt, ok := c.litTypeOf(pat.Lit); ok {
+			return lt, true
+		}
 	case *ast.InstancePat:
 		ct, ok := c.instancePatClass(scope, ast.QualIdentToString(pat.ClassName))
-		return ok && ct.Name == member.Name && irrefutablePat(pat.Object)
+		if ok && irrefutablePat(pat.Object) {
+			return ct, true
+		}
 	case *ast.ExtractorPat:
 		ct, ok := c.resolveQualClassType(scope, pat.Name)
-		if !ok || ct.Name != member.Name {
+		if ok && allIrrefutable(pat.Args) {
+			return ct, true
+		}
+	}
+	return nil, false
+}
+
+// allIrrefutable reports whether every one of pats binds unconditionally, so a pattern built
+// from them matches every value of a compatible type.
+func allIrrefutable(pats []ast.Pat) bool {
+	for _, p := range pats {
+		if !irrefutablePat(p) {
 			return false
 		}
-		for _, arg := range pat.Args {
-			if !irrefutablePat(arg) {
-				return false
-			}
-		}
-		return true
-	default:
-		return false
 	}
+	return true
+}
+
+// memberSubtracted reports whether handled leaves nothing of one caught member, which is
+// what removes that member from the rethrow. The question it asks is whether the meet
+// `member ∩ ¬handled` holds a value, and the complement is what states that question to the
+// solver. The normal-form layer moves `¬handled` to the supertype side, so the trial runs as
+// `member <: handled` over fused atoms.
+//
+// A member is subtracted only when the trial records no bound, which is the fidelity boundary
+// of the difference. A trial that records one settled the member by choosing an instantiation
+// for a type variable rather than by finding the member covered outright, and the probe then
+// rolls that choice back. `Sub<number> ∩ ¬Base<T>` is such a trial when the arm names the
+// generic class `Base` and `T` is its own parameter. Declining it keeps the member, so the
+// difference under-subtracts where an arm's type is abstract and never over-subtracts.
+// memberCaught's rules 2 and 3 are what recover the cases this declines.
+func (c *checker) memberSubtracted(member, handled soltype.Type) bool {
+	// The intersection is built with a nil Context so its subsumption never calls constrain,
+	// the same reason capturedBound builds its result that way.
+	remainder := newIntersection(nil, []soltype.Type{member, &soltype.NegationType{Inner: handled}})
+	empty, mutated := c.ctx.trialMutatesBounds(remainder, &soltype.NeverType{}, newSeenPairs(), false)
+	return empty && !mutated
 }
 
 // structuralMemberCovered reports whether some unguarded arm's object or tuple pattern
@@ -3886,45 +3981,6 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 	// read each field before the tail widens it. Binding against bare `unknown` would leave
 	// nothing to destructure.
 	return &soltype.UnionType{Types: kept, Inexact: u.Inexact}, true
-}
-
-// litMemberCovered reports whether some unguarded arm is a literal pattern equal to
-// the given literal union member. The caller has already excluded an unguarded
-// catch-all, which would otherwise cover the member too.
-func (c *checker) litMemberCovered(member *soltype.LitType, arms []*ast.MatchCase) bool {
-	for _, arm := range arms {
-		if arm.Guard != nil {
-			continue
-		}
-		armLit, ok := arm.Pattern.(*ast.LitPat)
-		if !ok {
-			continue
-		}
-		if lt, ok := c.litTypeOf(armLit.Lit); ok && member.Equal(lt) {
-			return true
-		}
-	}
-	return false
-}
-
-// atomMemberCovered reports whether some unguarded arm is a `null` or `undefined` pattern
-// matching the given union member, which is one of those two atoms. It is the atom twin of
-// litMemberCovered, and the caller has likewise already excluded an unguarded catch-all.
-// equalType decides the match, since neither atom carries a value to compare.
-func atomMemberCovered(member soltype.Type, arms []*ast.MatchCase) bool {
-	for _, arm := range arms {
-		if arm.Guard != nil {
-			continue
-		}
-		armLit, ok := arm.Pattern.(*ast.LitPat)
-		if !ok {
-			continue
-		}
-		if atom, _, isAtom := atomLitOf(armLit.Lit); isAtom && equalType(atom, member) {
-			return true
-		}
-	}
-	return false
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether

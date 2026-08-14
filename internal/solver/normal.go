@@ -1213,9 +1213,10 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // meetFuncs fuses two function atoms into one arrow, but only for the two cases
 // where a single arrow denotes the intersection exactly.
 //
-//   - The domains agree: `(A -> C) & (A -> D)` is `A -> (C & D)`.
-//   - The codomains agree and there is one parameter: `(A -> C) & (B -> C)` is
-//     `(A | B) -> C`.
+//   - The domains agree: `(A -> C throws E) & (A -> D throws F)` is
+//     `A -> (C & D) throws (E & F)`.
+//   - The codomains and the raises agree and there is one parameter:
+//     `(A -> C throws E) & (B -> C throws E)` is `(A | B) -> C throws E`.
 //
 // Any other pair keeps both atoms, which is decision 1 in this file's header and
 // where this port departs from MLscript.
@@ -1223,6 +1224,14 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // The one-parameter restriction is load-bearing. Unioning each position
 // independently would fuse `(number, number) -> C` and `(string, string) -> C`
 // into a claim that the value accepts a number paired with a string.
+//
+// The second case demands equal raises where the first meets them. A value
+// carrying both arrow types raises, on a given input, only what every arm that
+// accepts that input admits. Under agreeing domains every input reaches both arms,
+// so the meet of the two clauses is what a call raises. Under differing domains
+// only the arm that accepts the input constrains it, so an input in `A` but outside
+// `B` raises `E` rather than `E & F`. One clause cannot state both, so the pair is
+// kept as two atoms instead.
 //
 // The fused arrow is inexact when either side is. An arrow's marker says the value
 // tolerates every argument count from its arity up. A value satisfying both arrows
@@ -1236,13 +1245,13 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 			SelfParam:      nil,
 			Params:         a.Params,
 			Ret:            c.meetTypes(a.Ret, b.Ret),
-			Throws:         a.Throws,
+			Throws:         c.meetThrows(a, b),
 			Inexact:        a.Inexact || b.Inexact,
 			TypeParams:     nil,
 			LifetimeParams: nil,
 		}, true
 	}
-	if len(a.Params) == 1 && equalType(a.Ret, b.Ret) {
+	if len(a.Params) == 1 && equalType(a.Ret, b.Ret) && sameThrows(a, b) {
 		param := a.Params[0]
 		fused := &soltype.FuncParam{
 			Pattern:  param.Pattern,
@@ -1265,14 +1274,13 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 
 // fusableFuncs reports whether two function atoms are alike enough for meetFuncs
 // to build one arrow from them. Everything a fused arrow does not recompute must
-// already agree: the arity, the per-parameter markers, and what a call may raise. A
-// receiver or a quantifier rules the pair out, since one arrow cannot say which
-// receiver it takes or how the two binder lists correspond. The trailing `...` is
-// recomputed rather than required to agree, so it is not checked here.
+// already agree: the arity and the per-parameter markers. A receiver or a quantifier
+// rules the pair out, since one arrow cannot say which receiver it takes or how the
+// two binder lists correspond. The trailing `...` is recomputed rather than required
+// to agree, so it is not checked here.
 //
-// Demanding equal raises is conservative. `(A -> C throws E) & (A -> C throws F)`
-// really raises `E & F`, but that merge belongs with PR9's throws threading.
-// TODO(#1066).
+// The raises are not checked here. meetFuncs recomputes them in its first case and
+// requires them equal in its second, so each case states its own rule.
 func fusableFuncs(a, b *soltype.FuncType) bool {
 	if a.SelfParam != nil || b.SelfParam != nil {
 		return false
@@ -1291,7 +1299,28 @@ func fusableFuncs(a, b *soltype.FuncType) bool {
 			return false
 		}
 	}
+	return true
+}
+
+// sameThrows reports whether two arrows raise the same type. The nil shorthand for
+// `never` is resolved first, so `fn () -> C` and `fn () -> C throws never` compare
+// equal.
+func sameThrows(a, b *soltype.FuncType) bool {
 	return equalType(a.ThrowsOrNever(), b.ThrowsOrNever())
+}
+
+// meetThrows returns what a call to the arrow meetFuncs fuses may raise. The
+// clauses meet, the way the codomains do, since `throws` is a covariant output
+// position like the return type.
+//
+// An unwritten clause is kept unwritten when both arrows agree, so fusing two
+// non-throwing arrows yields a third whose Throws stays nil rather than an explicit
+// `never` the printer would have to suppress.
+func (c *Context) meetThrows(a, b *soltype.FuncType) soltype.Type {
+	if sameThrows(a, b) {
+		return a.Throws
+	}
+	return c.meetTypes(a.ThrowsOrNever(), b.ThrowsOrNever())
 }
 
 func equalParamTypes(a, b *soltype.FuncType) bool {

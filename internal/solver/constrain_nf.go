@@ -213,7 +213,7 @@ func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPa
 	}
 	for _, cand := range superCands {
 		target, ok := cand.(*soltype.FuncType)
-		if !ok || !decomposableArrow(target) || !sameRaises(arms, target) {
+		if !ok || !decomposableArrow(target) {
 			continue
 		}
 		p := newProbe(c, c.probe)
@@ -236,13 +236,17 @@ func (c *Context) decideArrows(subCands, superCands []soltype.Type, seen *seenPa
 //  1. The target's domain is covered, `E <: ⋃ᵢ Aᵢ`, since no arm says what the
 //     value does with an input outside every arm's domain.
 //  2. For every group P of arms, either the arms outside P still cover the inputs,
-//     `E <: ⋃_{i∉P} Aᵢ`, or P returns something the target tolerates,
-//     `⋂_{i∈P} Cᵢ <: F`. A value carrying every arm type returns, on a given
-//     input, something in the codomain of every arm that accepts it.
+//     `E <: ⋃_{i∉P} Aᵢ`, or P produces outputs the target tolerates. A value
+//     carrying every arm type answers a given input the way every arm that accepts
+//     it does, so both of the arrow's outputs are checked over the group:
+//     `⋂_{i∈P} Cᵢ <: F` for the codomains and `⋂_{i∈P} Eᵢ <: G` for the raises.
+//     `throws` is a covariant output alongside the return type, so it rides the
+//     leg the codomain rides.
 //
-// Every leg compares domain against domain or codomain against codomain, so each
-// runs with the deep-mut context cleared, as the arrow rule in the structural
-// switch clears it. A function carries its own annotation context.
+// Every leg compares like against like. A domain is weighed against a domain, a
+// codomain against a codomain, and a clause against a clause. Each therefore runs
+// with the deep-mut context cleared, as the arrow rule in the structural switch
+// clears it. A function carries its own annotation context.
 func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncType, seen *seenPairs) bool {
 	domain := target.Params[0].Type
 	// Leg 1. Every input the target accepts is accepted by some arm.
@@ -260,6 +264,9 @@ func (c *Context) arrowLegsHold(arms []*soltype.FuncType, target *soltype.FuncTy
 			continue
 		}
 		if hasHardError(c.constrain(meetCodomains(arms, group), target.Ret, seen.Clone(), false)) {
+			return false
+		}
+		if hasHardError(c.constrain(meetRaises(arms, group), target.ThrowsOrNever(), seen.Clone(), false)) {
 			return false
 		}
 	}
@@ -295,6 +302,19 @@ func meetCodomains(arms []*soltype.FuncType, group int) soltype.Type {
 	return newIntersection(nil, parts)
 }
 
+// meetRaises is the intersection of the raises of the arms in group, what a value
+// carrying every arm type may raise on an input only this group accepts. It is the
+// throws twin of meetCodomains.
+func meetRaises(arms []*soltype.FuncType, group int) soltype.Type {
+	parts := make([]soltype.Type, 0, len(arms))
+	for i, arm := range arms {
+		if group&(1<<i) != 0 {
+			parts = append(parts, arm.ThrowsOrNever())
+		}
+	}
+	return newIntersection(nil, parts)
+}
+
 // decomposableArrows returns the atoms of a meet the decomposition can weigh and
 // drops the rest, which is sound because a meet is a subtype of each of its parts.
 func decomposableArrows(atoms []soltype.Type) []*soltype.FuncType {
@@ -318,18 +338,6 @@ func decomposableArrow(f *soltype.FuncType) bool {
 		return false
 	}
 	return !f.Params[0].Optional && !f.Params[0].Rest
-}
-
-// sameRaises reports whether every arm raises what the target raises. The legs
-// compare domains and codomains alone, so an arm that could raise something the
-// target does not name is ruled out here.
-func sameRaises(arms []*soltype.FuncType, target *soltype.FuncType) bool {
-	for _, arm := range arms {
-		if !equalType(arm.ThrowsOrNever(), target.ThrowsOrNever()) {
-			return false
-		}
-	}
-	return true
 }
 
 // nfPair is one candidate pair constrainImplied trials.

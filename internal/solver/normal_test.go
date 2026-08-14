@@ -910,6 +910,34 @@ func TestFuncMerge(t *testing.T) {
 			in:   "(fn (x: number) -> boolean) | (fn (x: number) -> null)",
 			want: "(fn (x: number) -> boolean) | (fn (x: number) -> null)",
 		},
+		{
+			name: "shared domain: the raises meet alongside the codomains",
+			in: `(fn (x: number) -> boolean throws "a" | "b") & ` +
+				`(fn (x: number) -> boolean throws "b" | "c")`,
+			want: `fn (x: number) -> boolean throws "b"`,
+		},
+		{
+			name: "shared domain, disjoint raises: the fused arrow raises nothing",
+			in:   `(fn (x: number) -> boolean throws "a") & (fn (x: number) -> boolean throws "b")`,
+			want: "fn (x: number) -> boolean",
+		},
+		{
+			name: "shared domain, one arm non-throwing: the fused arrow raises nothing",
+			in:   `(fn (x: number) -> boolean throws "a") & (fn (x: number) -> boolean)`,
+			want: "fn (x: number) -> boolean",
+		},
+		{
+			name: "shared codomain and raises: the domains join and the clause is kept",
+			in: `(fn (x: number) -> boolean throws "a") & ` +
+				`(fn (x: string) -> boolean throws "a")`,
+			want: `fn (x: number | string) -> boolean throws "a"`,
+		},
+		{
+			name: "shared codomain but differing raises: both arms are kept",
+			in: `(fn (x: number) -> boolean throws "a") & ` +
+				`(fn (x: string) -> boolean throws "b")`,
+			want: `(fn (x: number) -> boolean throws "a") & (fn (x: string) -> boolean throws "b")`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
