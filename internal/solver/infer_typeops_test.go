@@ -2850,7 +2850,7 @@ func TestInferMappedTypeReduction(t *testing.T) {
 		},
 		{
 			// A single-key operand emits a single-field object; `keyof` collapsed its union to the
-			// lone literal, which mappedKeyMembers reads as one key.
+			// lone literal, which unionMembers reads as one key.
 			name: "SingleKey",
 			src: `
 				type One = {only: number}

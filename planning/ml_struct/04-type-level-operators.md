@@ -51,6 +51,28 @@ set difference. The two diverge in corner cases. Choose per operator whether it
 means "TS distributive conditional" or "native `& ¬`," and document it, because
 users porting TS code will assume the former.
 
+### The decision: the filter where it runs, the difference where it does not
+
+Escalier takes both readings, split by whether the filter has an operand it can
+filter:
+
+- A **ground** operand reduces through the distributive conditional, so ported TS
+  code keeps its meaning. `Exclude<string, "a">` is `string`.
+- An operand that does **not** ground — a type variable, or an operator over one —
+  reduces to the meet. `Exclude<T, string>` is `T & ¬string`, and
+  `NonNullable<T>` is `T & ¬(null | undefined)`.
+
+The two readings agree whenever every member of the operand is either wholly
+inside the excluded type or disjoint from it, and diverge otherwise. The divergent
+case is reachable only where the filter produced nothing at all, since a ground
+operand never takes the second path. `Omit`'s key set is the same rule one level
+down: `Exclude<keyof T, Ks>` is `keyof T & ¬Ks` while T is abstract, and reduces
+to a plain key union once T grounds, which is the key set the mapped type
+iterates.
+
+The rule is in `nativeDifference`, and `reduceDifference` computes the meet, both
+in `internal/solver/typeops_negation.go`.
+
 ---
 
 ## Coupling point 2 (the hazard): conditional `extends` runs on MLstruct's `<:`
@@ -158,6 +180,16 @@ than inheriting MLstruct's merge** — or deliberately accept and document the
 non-standard result. The `constrainNF` implementation (PR5, #1062) and the
 type-level operators (PR10, #1067) both depend on this decision.
 
+**Escalier takes the sound reading.** `meetFuncs` fuses two arrows only where a
+single arrow denotes their meet exactly — equal domains, or equal codomains and
+one parameter — so example A's arms fuse and example B's stay apart. Arms that
+did not fuse are decided by `decideArrows`, the FCB decomposition, in
+`internal/solver/constrain_nf.go`. So the conditional in example A yields
+`"callable"`, diverging from TypeScript and sound, and the one in example B yields
+`"not"`, reconverging with TypeScript where MLstruct would answer `"callable"`.
+`TestConditionalOverArrowIntersection` in
+`internal/solver/typeops_negation_test.go` states both verdicts.
+
 ---
 
 ## Coupling point 3: distribution must compose with the algebra
@@ -207,7 +239,9 @@ subtyping does not change that ordering; operator reduction remains the
 budget-governed part. Negation adds exactly one new well-formedness obligation that
 folds into the existing regularity machinery: **contractivity** must reject `type T
 = ¬T` (an unguarded recursive complement), alongside the `type T = T | T` cases M9
-already rejects.
+already rejects. `guardsEveryOperand` in `internal/solver/productivity.go` counts a
+complement as emitting no structure, so the productivity check rejects that shape on
+the same terms it rejects `type T = T`.
 
 ---
 
@@ -215,9 +249,9 @@ already rejects.
 
 | Operator family | Interaction with MLstruct |
 |---|---|
-| `Exclude` / `Extract` / `NonNullable` / `Omit` | **Upgrade** — native `& ¬` makes them total on type variables, not just ground unions. Design fork: TS-distributive vs native set difference. |
-| Conditional `T extends U ? …` | **Hazard** — `extends` runs on MLstruct's non-TS-standard `<:`; divergence becomes user-visible (examples A/B). Verify against MLscript. |
-| `keyof`, indexed access, mapped types | Compose with union/intersection distribution; need a `NegationType` arm and Boolean key sets. |
-| `infer` | Orthogonal to normalization; needs a rule for negated members. Binds differently over merged arrow intersections (example A). |
+| `Exclude` / `Extract` / `NonNullable` / `Omit` | **Upgrade** — native `& ¬` makes them total on type variables, not just ground unions. Fork resolved: the TS-distributive filter over a ground operand, the native set difference over one that does not ground. |
+| Conditional `T extends U ? …` | **Hazard** — `extends` runs on the new `<:`, so its divergence from TypeScript is user-visible (examples A/B). Escalier decides unfused arrow arms by the FCB decomposition, so example A yields `"callable"` and example B `"not"`. |
+| `keyof`, indexed access, mapped types | Compose with union/intersection distribution; `keyof` of a union is the meet of its members' key sets even when one is a residual, and a mapped type iterates a key set that is a difference. |
+| `infer` | Orthogonal to normalization; matches the positive skeleton, so a complement in the scrutinee takes no part in the match. Binds the union domain over a fused arrow intersection (example A). |
 | Template literal types | Orthogonal; negation is not meaningful in the string domain. |
 | Recursion / termination | Operator budget dominates; negation adds the contractivity check for `type T = ¬T`. |

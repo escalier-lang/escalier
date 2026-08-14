@@ -163,6 +163,10 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return e.reduceStringIntrinsic(t.Kind, t.Operand)
 	case *soltype.ExactnessType:
 		return e.reduceExactness(t.Kind, t.Operand)
+	case *soltype.IntersectionType:
+		// A meet carrying a complement is a set difference, which reduces to the members its
+		// excluded side leaves. Any other meet comes back untouched. See typeops_negation.go.
+		return e.reduceDifference(t)
 	default:
 		return t
 	}
@@ -178,6 +182,9 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //   - a Check or Extends still carrying a type parameter or an unreduced residual keeps the whole
 //     conditional symbolic, rebuilt around the reduced Check and Extends, and reduces later once
 //     they ground. Then and Else stay unreduced in the symbolic form, since neither is selected yet.
+//     One family of undecidable conditional has an answer even so. A distributive conditional whose
+//     branches drop or keep the operand itself is a set difference, so `Exclude<T, string>` over a
+//     type parameter reduces to `T ∩ ¬string` rather than staying symbolic. See nativeDifference.
 //
 // A conditional written over a naked type parameter distributes: a Check that grounds to a union is
 // decided one member at a time and the branch results union, so `type Wrap<T> = if T : string { [T] }
@@ -192,6 +199,11 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	// unsubstituted. That position stands for a type no match has chosen yet, so the Check is not
 	// ground and the conditional stays symbolic.
 	if !condOperandGround(check) || containsInfer(check) || !condOperandGround(extends) {
+		// A distributive conditional that filters its own operand denotes a set difference, which
+		// an operand with no members to filter still has an answer for. See nativeDifference.
+		if diff, ok := e.nativeDifference(t, check, extends); ok {
+			return diff
+		}
 		return &soltype.CondType{Check: check, Extends: extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute}
 	}
 	if union, ok := check.(*soltype.UnionType); ok && t.Distribute {
@@ -301,7 +313,15 @@ func (s *occurrenceSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.T
 // The probe is discarded, so the variables and every bound recorded against them are gone by the
 // time this returns and the evaluator's no-mutation invariant holds. A failed constraint selects
 // Else, which covers a shape mismatch and a pattern whose written positions reject the Check alike.
+//
+// The Check is matched through positiveSkeleton, so a complement it carries takes no part in the
+// match. `¬X` names the values X rejects rather than any structure of its own, so no pattern
+// position aligns with it.
 func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends soltype.Type) soltype.Type {
+	skeleton, matchable := positiveSkeleton(check)
+	if !matchable {
+		return e.reduceBranch(t.Else)
+	}
 	decls := inferDeclIDs(extends)
 	vars := make([]*soltype.TypeVarType, len(decls))
 	holes := make(map[int]soltype.Type, len(decls))
@@ -311,7 +331,7 @@ func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends solt
 		vars[i] = e.ctx.freshVar(0)
 		holes[id] = vars[i]
 	}
-	captured, ok := e.ctx.trialCaptures(check, substituteInfer(extends, holes), vars, e.seen.Clone())
+	captured, ok := e.ctx.trialCaptures(skeleton, substituteInfer(extends, holes), vars, e.seen.Clone())
 	if !ok {
 		return e.reduceBranch(t.Else)
 	}
@@ -796,7 +816,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
-	members, inexactKeys := mappedKeyMembers(keys)
+	members, inexactKeys := unionMembers(keys)
 	pos := make(map[string]int, len(members))
 	for _, member := range members {
 		built, ok := e.mappedFields(t, member, source, homomorphic)
@@ -815,18 +835,21 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	return reduced, fields, inexactKeys, true
 }
 
-// mappedKeyMembers splits a mapped type's reduced Keys operand into the individual keys to emit a
-// field for, and reports whether the key set is inexact. A union contributes its members and carries
-// its own inexact marker through; `never` is the empty key set, so it contributes none; any other
-// type is a single key.
-func mappedKeyMembers(keys soltype.Type) ([]soltype.Type, bool) {
-	switch keys := keys.(type) {
+// unionMembers splits a reduced type into the members a rule runs over one at a time, and reports
+// whether the set they make up is inexact. A union contributes its members and carries its own
+// inexact marker through; `never` is the empty set, so it contributes none; any other type is a
+// single member.
+//
+// A mapped type splits its key set this way to emit one field per key, and a set difference splits
+// its positive side this way to settle one member at a time against what is excluded.
+func unionMembers(t soltype.Type) ([]soltype.Type, bool) {
+	switch t := t.(type) {
 	case *soltype.UnionType:
-		return keys.Types, keys.Inexact
+		return t.Types, t.Inexact
 	case *soltype.NeverType:
 		return nil, false
 	default:
-		return []soltype.Type{keys}, false
+		return []soltype.Type{t}, false
 	}
 }
 
@@ -904,7 +927,7 @@ func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, so
 // name position reduces to something that cannot name a field, which keeps the mapped type symbolic.
 func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) ([]string, bool) {
 	remapped := e.groundOperand(substituteMappedKey(t.Name, t.Key, key))
-	members, _ := mappedKeyMembers(remapped)
+	members, _ := unionMembers(remapped)
 	names := make([]string, 0, len(members))
 	for _, member := range members {
 		if _, dropped := member.(*soltype.NeverType); dropped {
@@ -1065,6 +1088,12 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 	case *soltype.IntersectionType:
 		// An intersection carries every operand's members, so its key sets union.
 		return e.keyofIntersection(op.Types, inexact)
+	case *soltype.NegationType:
+		// A complement admits every value its operand rejects, which is values of every shape
+		// other than that one. No key can be read from all of them, so the key set is empty. This
+		// is the same reason `keyof unknown` is `never`, and it holds whatever the operand is, so
+		// the operand needs no reduction.
+		return &soltype.NeverType{}
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
 		*soltype.NullType, *soltype.UndefinedType:
 		// None of these carries a readable member, so its key set is empty. `null` and
@@ -1197,22 +1226,24 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // every key the result names one that every member definitely carries, and the trailing `...`
 // records that the true key set may be larger.
 //
-// Some members have no key set to intersect. A type parameter is one, and so is an operator
-// whose own operands are not ground. Such a member can only shrink the intersection, never grow
-// it, so the fold skips it and keeps going. If the members it can read intersect to nothing, the
-// whole intersection is empty whatever the skipped member's keys turn out to be, and the result
-// is never. Otherwise the intersection is uncomputable and the whole operator stays symbolic,
-// rendering `keyof (T | {a: number})`. Skipping rather than bailing out on the first such member
-// keeps the result independent of the order the operand lists its members.
+// Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
+// own operands are not ground. Such a member reduces to a `keyof` residual, and the law the whole
+// rule states holds for it too: `keyof (A | B)` is `keyof A ∩ keyof B`. So the result is the meet
+// of the literal keys the readable members share with each residual the others left, and
+// `keyof (T | {a: number})` reduces to `"a" ∩ keyof T`. If the members it can read intersect to
+// nothing, the whole meet is empty whatever the residual members' keys turn out to be, and the
+// result is never. Folding every readable member before consulting the residuals keeps the result
+// independent of the order the operand lists its members.
 func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.Type {
 	var shared []soltype.Type
+	var residuals []soltype.Type
 	seeded := false
-	unreadable := false
 	sharedInexact := op.Inexact
 	for _, m := range op.Types {
-		keys, memberInexact, ok := literalKeys(e.reduceKeyof(m, inexact))
+		reduced := e.reduceKeyof(m, inexact)
+		keys, memberInexact, ok := literalKeys(reduced)
 		if !ok {
-			unreadable = true
+			residuals = append(residuals, reduced)
 			continue
 		}
 		if memberInexact {
@@ -1229,15 +1260,19 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 		}
 		if len(shared) == 0 {
 			// No later member can put a key back into an empty intersection, so stop here rather
-			// than reducing the rest. This holds for an unreadable member too, which is why the
-			// answer is never even when one has already been skipped.
+			// than reducing the rest. This holds for a residual member too, which is why the
+			// answer is never even when one has already been set aside.
 			return &soltype.NeverType{}
 		}
 	}
-	if unreadable {
-		return &soltype.KeyofType{Operand: op, Inexact: inexact}
+	if len(residuals) == 0 {
+		return newUnion(nil, shared, sharedInexact)
 	}
-	return newUnion(nil, shared, sharedInexact)
+	if !seeded {
+		// Every member left a residual, so there are no literal keys to meet them with.
+		return newIntersection(nil, residuals)
+	}
+	return newIntersection(nil, append([]soltype.Type{newUnion(nil, shared, sharedInexact)}, residuals...))
 }
 
 // literalKeys decomposes a reduced `keyof` result into the literal keys it names and whether its
