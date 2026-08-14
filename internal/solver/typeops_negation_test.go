@@ -9,7 +9,9 @@ import (
 )
 
 // A complement has no annotation syntax, so a test that needs one builds it as a solver type
-// through normal.go's negate, the way constrain_nf_rules_test.go does.
+// through normal.go's negate, the way constrain_nf_rules_test.go does. A case that builds its
+// operands leads with the type it built, written in annotation syntax with `¬` for the complement,
+// since the constructor calls are harder to read than the type they stand for.
 
 // reduceType reduces one type against an empty alias environment, the reduction constrain performs
 // when it checks a constraint against a residual operator.
@@ -42,6 +44,8 @@ func TestReduceSetDifference(t *testing.T) {
 		want string
 	}{
 		{
+			// `("a" | "b" | "c") & ¬"b"`
+			//
 			// The key set an `Omit<T, "b">` maps over. Each key is a literal, so each is either
 			// the excluded one or disjoint from it, and the difference is a plain key union the
 			// mapped type can iterate.
@@ -50,24 +54,32 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `"a" | "c"`,
 		},
 		{
+			// `("a" | "b" | "c") & ¬"a" & ¬"c"`
+			//
 			// Two exclusions each drop their own member.
 			name: "KeySetDropsTwoKeys",
 			diff: meet(join(strLit("a"), strLit("b"), strLit("c")), negate(strLit("a")), negate(strLit("c"))),
 			want: `"b"`,
 		},
 		{
+			// `("a" | "b") & ¬("a" | "b")`
+			//
 			// Excluding the whole positive side leaves the empty type.
 			name: "EverythingExcluded",
 			diff: meet(join(strLit("a"), strLit("b")), negate(join(strLit("a"), strLit("b")))),
 			want: "never",
 		},
 		{
+			// `number & ¬string`
+			//
 			// No number is a string, so the exclusion removes nothing and the complement goes.
 			name: "DisjointExclusionDrops",
 			diff: meet(num(), negate(str())),
 			want: "number",
 		},
 		{
+			// `string & ¬"a"`
+			//
 			// `"a"` is one of the strings the exclusion names, and the strings that are left are
 			// not a union of anything at hand, so the complement stays. This is the answer
 			// TypeScript's distributive `Exclude<string, "a">` cannot express, where it yields
@@ -77,6 +89,8 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `string & ¬"a"`,
 		},
 		{
+			// `(string | number) & ¬"a"`
+			//
 			// The exclusion cuts into one member and misses the other, so only the member it cuts
 			// into keeps the complement.
 			name: "PartialOverlapOnOneMemberOnly",
@@ -84,6 +98,8 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `number | string & ¬"a"`,
 		},
 		{
+			// `("a" | "b" | ...) & ¬"a"`
+			//
 			// An open tail names members the reduction cannot enumerate, so which of them the
 			// exclusion removes is undecided and the tail survives.
 			name: "InexactPositiveSideKeepsTail",
@@ -91,6 +107,8 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `"b" | ...`,
 		},
 		{
+			// `("a" | ...) & ¬"a"`
+			//
 			// Every named member is excluded and the tail is not, so there is no union left to
 			// carry the tail and the difference stays as it stands. Collapsing it would answer
 			// `never`, which claims the tail is empty too.
@@ -99,6 +117,8 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `("a" | ...) & ¬"a"`,
 		},
 		{
+			// `(("a" | "b") & ¬"a") & ¬"b"`
+			//
 			// Nested complements reduce as one difference, since newIntersection flattens the
 			// meet before the members are settled.
 			name: "NestedMeetFlattens",
@@ -118,20 +138,24 @@ func TestReduceSetDifference(t *testing.T) {
 // union operand it could not read every member of, and it has to ground the same way any other key
 // set does.
 func TestReduceIntersectionMembers(t *testing.T) {
+	// `"a" & keyof {a: number, b: string}`
 	t.Run("OperatorMemberReduces", func(t *testing.T) {
 		keys := &soltype.KeyofType{Operand: exactObj(propElem("a", num()), propElem("b", str()))}
 		require.Equal(t, `"a"`, soltype.Print(reduceType(meet(strLit("a"), keys))))
 	})
 
+	// `number & string`
 	t.Run("NothingToReduceKeepsThePointer", func(t *testing.T) {
 		concrete := meet(num(), str())
 		require.Same(t, concrete, reduceType(concrete))
 	})
 }
 
+// `{[K: string]: number} & ¬T`
+//
 // Every operand of a difference is reduced once, so a diagnostic the reduction records is recorded
-// once. The positive side here is `{[K: string]: number}`, a required index signature over a key
-// set with no keys to enumerate, which draws one diagnostic on its own. It is the shape
+// once. The positive side is a required index signature over a key set with no keys to enumerate,
+// which draws one diagnostic on its own. The whole meet is the shape
 // `Exclude<{[K: string]: number}, T>` mints, and the evaluator's diagnostics reach the user through
 // the constraint site that reduced the residual.
 func TestReduceSetDifferenceRecordsOneDiagnostic(t *testing.T) {
@@ -160,6 +184,8 @@ func TestReduceSetDifferenceStaysSymbolic(t *testing.T) {
 		want string
 	}{
 		{
+			// `T & ¬string`
+			//
 			// The `Exclude<T, string>` residual. Nothing is known about T's members, so nothing
 			// can be dropped from it.
 			name: "VariablePositiveSide",
@@ -167,6 +193,8 @@ func TestReduceSetDifferenceStaysSymbolic(t *testing.T) {
 			want: "t0 & ¬string",
 		},
 		{
+			// `("a" | "b") & ¬T`
+			//
 			// The exclusion is the variable this time, so no member of the positive side can be
 			// settled against it.
 			name: "VariableExclusion",
@@ -176,6 +204,8 @@ func TestReduceSetDifferenceStaysSymbolic(t *testing.T) {
 			want: `("a" | "b") & ¬t0`,
 		},
 		{
+			// `keyof T & ¬"b"`
+			//
 			// A `keyof T` operand is not ground either, and the difference keeps it whole so the
 			// key set reduces once T does.
 			name: "ResidualOperatorPositiveSide",
@@ -316,8 +346,9 @@ func TestGroundSetDifferenceKeepsFilterReading(t *testing.T) {
 // The key set reduces to the keys it names before the mapped type splits it, so a difference
 // enumerates the same way a union does and the mapped type emits one field per surviving key.
 //
-// Each case maps over `Point` with a key set built as a solver type, since only a reduction that
-// began before its operands ground produces a difference and a complement has no annotation syntax.
+// Each case reduces `MapKeys<Point, Keys>` over the key set its row names, built as a solver type
+// since only a reduction that began before its operands ground produces a difference. `Point` is
+// `{x: number, y: string}` and `PointKeys` is `"x" | "y"`, both from nativeDifferenceDecls.
 func TestMappedTypeIteratesBooleanKeySet(t *testing.T) {
 	point := &soltype.AliasType{Name: "Point"}
 	keyofPoint := &soltype.KeyofType{Operand: point}
@@ -328,28 +359,29 @@ func TestMappedTypeIteratesBooleanKeySet(t *testing.T) {
 		want string
 	}{
 		{
-			// `Omit<Point, "x">`'s key set. `keyof Point` grounds to `"x" | "y"`, the difference
-			// drops "x", and the mapped type emits the one field left.
+			// `keyof Point & ¬"x"`, which is `Omit<Point, "x">`'s key set. `keyof Point` grounds
+			// to `"x" | "y"`, the difference drops "x", and the mapped type emits the one field
+			// left.
 			name: "KeyofLessOneKey",
 			keys: meet(keyofPoint, negate(strLit("x"))),
 			want: "{y: string}",
 		},
 		{
-			// Excluding every key leaves nothing to iterate, so the mapped type emits an empty
-			// object rather than staying symbolic.
+			// `keyof Point & ¬("x" | "y")`. Excluding every key leaves nothing to iterate, so the
+			// mapped type emits an empty object rather than staying symbolic.
 			name: "KeyofLessEveryKey",
 			keys: meet(keyofPoint, negate(join(strLit("x"), strLit("y")))),
 			want: "{}",
 		},
 		{
-			// An exclusion naming no key of the source removes nothing.
+			// `keyof Point & ¬"z"`. An exclusion naming no key of the source removes nothing.
 			name: "ExclusionMissesEveryKey",
 			keys: meet(keyofPoint, negate(strLit("z"))),
 			want: "{x: number, y: string}",
 		},
 		{
-			// A named key set on the positive side expands to the keys it stands for, the way
-			// every other operand of a reduction does.
+			// `PointKeys & ¬"x"`. A named key set on the positive side expands to the keys it
+			// stands for, the way every other operand of a reduction does.
 			name: "AliasKeySetLessOneKey",
 			keys: meet(&soltype.AliasType{Name: "PointKeys"}, negate(strLit("x"))),
 			want: "{y: string}",
@@ -418,6 +450,8 @@ func TestReduceKeyofDistributesOverUnion(t *testing.T) {
 	}
 }
 
+// `keyof ¬{x: number}`
+//
 // `keyof ¬T` is the empty key set. A complement admits every value its operand rejects, and no key
 // can be read from all of them.
 func TestReduceKeyofComplement(t *testing.T) {
@@ -498,22 +532,22 @@ func TestInferMatchesPositiveSkeleton(t *testing.T) {
 		want  string
 	}{
 		{
-			// The positive member is what the pattern aligns with, so the capture binds the
-			// element type of the array the meet carries.
+			// `Elem<Array<number> & ¬string>`. The positive member is what the pattern aligns
+			// with, so the capture binds the element type of the array the meet carries.
 			name:  "ComplementMemberIsSkipped",
 			scrut: meet(&soltype.ArrayType{Elem: num()}, negate(str())),
 			want:  "number",
 		},
 		{
-			// A scrutinee that is nothing but a complement has no skeleton to align, so the
-			// match fails and the conditional takes its Else branch.
+			// `Elem<¬Array<number>>`. A scrutinee that is nothing but a complement has no
+			// skeleton to align, so the match fails and the conditional takes its Else branch.
 			name:  "BareComplementMatchesNothing",
 			scrut: negate(&soltype.ArrayType{Elem: num()}),
 			want:  "never",
 		},
 		{
-			// The positive part is what decides a failed match too. No array is a number, so the
-			// pattern rejects the meet whatever it excludes.
+			// `Elem<number & ¬string>`. The positive part is what decides a failed match too. No
+			// array is a number, so the pattern rejects the meet whatever it excludes.
 			name:  "PositivePartStillDecidesAFailedMatch",
 			scrut: meet(num(), negate(str())),
 			want:  "never",
