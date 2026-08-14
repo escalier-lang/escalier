@@ -165,8 +165,9 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		return e.reduceExactness(t.Kind, t.Operand)
 	case *soltype.IntersectionType:
 		// A meet carrying a complement is a set difference, which reduces to the members its
-		// excluded side leaves. Any other meet comes back untouched. See typeops_negation.go.
-		return e.reduceDifference(t)
+		// excluded side leaves. Any other meet has its members reduced in place. See
+		// typeops_negation.go.
+		return e.reduceIntersection(t)
 	default:
 		return t
 	}
@@ -199,8 +200,8 @@ func (e *typeEvaluator) reduceCond(t *soltype.CondType) soltype.Type {
 	// unsubstituted. That position stands for a type no match has chosen yet, so the Check is not
 	// ground and the conditional stays symbolic.
 	if !condOperandGround(check) || containsInfer(check) || !condOperandGround(extends) {
-		// A distributive conditional that filters its own operand denotes a set difference, which
-		// an operand with no members to filter still has an answer for. See nativeDifference.
+		// A distributive conditional that filters its own operand denotes a set difference, and a
+		// difference has an answer over an operand with no members to filter. See nativeDifference.
 		if diff, ok := e.nativeDifference(t, check, extends); ok {
 			return diff
 		}
@@ -1089,10 +1090,10 @@ func (e *typeEvaluator) reduceKeyof(operand soltype.Type, inexact bool) soltype.
 		// An intersection carries every operand's members, so its key sets union.
 		return e.keyofIntersection(op.Types, inexact)
 	case *soltype.NegationType:
-		// A complement admits every value its operand rejects, which is values of every shape
-		// other than that one. No key can be read from all of them, so the key set is empty. This
-		// is the same reason `keyof unknown` is `never`, and it holds whatever the operand is, so
-		// the operand needs no reduction.
+		// A complement admits every value its operand rejects, and those values share no shape. No
+		// key can be read from all of them, so the key set is empty. `keyof unknown` is `never` for
+		// the same reason. The rule holds whatever the operand is, so the operand needs no
+		// reduction.
 		return &soltype.NeverType{}
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
 		*soltype.NullType, *soltype.UndefinedType:
@@ -1227,13 +1228,15 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // records that the true key set may be larger.
 //
 // Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
-// own operands are not ground. Such a member reduces to a `keyof` residual, and the law the whole
-// rule states holds for it too: `keyof (A | B)` is `keyof A ∩ keyof B`. So the result is the meet
-// of the literal keys the readable members share with each residual the others left, and
-// `keyof (T | {a: number})` reduces to `"a" ∩ keyof T`. If the members it can read intersect to
-// nothing, the whole meet is empty whatever the residual members' keys turn out to be, and the
-// result is never. Folding every readable member before consulting the residuals keeps the result
-// independent of the order the operand lists its members.
+// own operands are not ground. Such a member reduces to a `keyof` residual, and the rule this whole
+// reduction states covers it too, since `keyof (A | B)` is `keyof A ∩ keyof B` whatever A and B
+// are. So the result is the meet of two things: the literal keys the readable members share, and
+// each residual the other members left. `keyof (T | {a: number})` reduces to `"a" ∩ keyof T`.
+//
+// If the members it can read intersect to nothing, the whole meet is empty whatever the residual
+// members' keys turn out to be, and the result is never. Folding every readable member before
+// consulting the residuals keeps the result independent of the order the operand lists its
+// members.
 func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.Type {
 	var shared []soltype.Type
 	var residuals []soltype.Type
@@ -1269,7 +1272,13 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 		return newUnion(nil, shared, sharedInexact)
 	}
 	if !seeded {
-		// Every member left a residual, so there are no literal keys to meet them with.
+		// Every member left a residual, so there are no literal keys to meet them with. An
+		// intersection carries no exactness marker, and with no key union among its members there
+		// is nothing to hang the open tail on, so an open key set keeps the whole operator
+		// symbolic rather than dropping what the tail stands for.
+		if sharedInexact {
+			return &soltype.KeyofType{Operand: op, Inexact: inexact}
+		}
 		return newIntersection(nil, residuals)
 	}
 	return newIntersection(nil, append([]soltype.Type{newUnion(nil, shared, sharedInexact)}, residuals...))

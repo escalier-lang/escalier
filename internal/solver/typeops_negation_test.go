@@ -91,10 +91,12 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `"b" | ...`,
 		},
 		{
-			// A meet with no complement is not a difference, so it comes back as it was.
-			name: "NoComplementIsUntouched",
-			diff: meet(num(), str()),
-			want: "number & string",
+			// Every named member is excluded and the tail is not, so there is no union left to
+			// carry the tail and the difference stays as it stands. Collapsing it would answer
+			// `never`, which claims the tail is empty too.
+			name: "InexactPositiveSideWithNoSurvivorsStays",
+			diff: meet(&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true}, negate(strLit("a"))),
+			want: `("a" | ...) & ¬"a"`,
 		},
 		{
 			// Nested complements reduce as one difference, since newIntersection flattens the
@@ -109,6 +111,22 @@ func TestReduceSetDifference(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(reduceType(tt.diff)))
 		})
 	}
+}
+
+// A meet with no complement is not a difference, but its members still reduce, so an operator
+// written as one of them reaches its value. `"a" & keyof {…}` is the shape keyofUnion mints for a
+// union operand it could not read every member of, and it has to ground the same way any other key
+// set does.
+func TestReduceIntersectionMembers(t *testing.T) {
+	t.Run("OperatorMemberReduces", func(t *testing.T) {
+		keys := &soltype.KeyofType{Operand: exactObj(propElem("a", num()), propElem("b", str()))}
+		require.Equal(t, `"a"`, soltype.Print(reduceType(meet(strLit("a"), keys))))
+	})
+
+	t.Run("NothingToReduceKeepsThePointer", func(t *testing.T) {
+		concrete := meet(num(), str())
+		require.Same(t, concrete, reduceType(concrete))
+	})
 }
 
 // A difference over an operand that is not ground stays a difference. The `∩ ¬` form is itself the
@@ -169,6 +187,7 @@ const nativeDifferenceDecls = `
 	type NonNullable<T> = if T : null | undefined { never } else { T }
 	type MapKeys<T, Ks> = {[K]: T[K] for K in Ks}
 	type Point = {x: number, y: string}
+	type PointKeys = "x" | "y"
 `
 
 // The set-difference family over an operand that does not ground. Each row applies one utility to a
@@ -187,34 +206,34 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 			// `Exclude<T, V>` is `T ∩ ¬V`.
 			name: "Exclude",
 			src:  `type Result<T> = Exclude<T, string>`,
-			want: "t15 & ¬string",
+			want: "t16 & ¬string",
 		},
 		{
 			// `Extract<T, V>` is the meet itself, with no complement to take.
 			name: "Extract",
 			src:  `type Result<T> = Extract<T, string>`,
-			want: "t15 & string",
+			want: "t16 & string",
 		},
 		{
 			// `NonNullable<T>` excludes the two absence markers together, since the conditional
 			// names them as one union.
 			name: "NonNullable",
 			src:  `type Result<T> = NonNullable<T>`,
-			want: "t15 & ¬(null | undefined)",
+			want: "t16 & ¬(null | undefined)",
 		},
 		{
 			// Both operands may be variables. The difference is still representable, and it is
 			// what makes the rule total rather than only more precise.
 			name: "ExcludeOverTwoVariables",
 			src:  `type Result<T, U> = Exclude<T, U>`,
-			want: "t15 & ¬t16",
+			want: "t16 & ¬t17",
 		},
 		{
 			// `Omit`'s key set over a type parameter: the keys of T other than "x". Neither half
 			// grounds, so the whole key set stays a difference.
 			name: "OmitKeySetOverVariable",
 			src:  `type Result<T> = Exclude<keyof T, "x">`,
-			want: `¬"x" & keyof t15`,
+			want: `¬"x" & keyof t16`,
 		},
 	}
 	for _, tt := range tests {
@@ -308,6 +327,13 @@ func TestMappedTypeIteratesBooleanKeySet(t *testing.T) {
 			keys: meet(keyofPoint, negate(strLit("z"))),
 			want: "{x: number, y: string}",
 		},
+		{
+			// A named key set on the positive side expands to the keys it stands for, the way
+			// every other operand of a reduction does.
+			name: "AliasKeySetLessOneKey",
+			keys: meet(&soltype.AliasType{Name: "PointKeys"}, negate(strLit("x"))),
+			want: "{y: string}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,13 +359,13 @@ func TestReduceKeyofDistributesOverUnion(t *testing.T) {
 			// One member's keys are known and the other's are not, so the meet names both.
 			name: "OneVariableMember",
 			src:  `type Result<T> = keyof (T | {a: number})`,
-			want: `"a" & keyof t15`,
+			want: `"a" & keyof t16`,
 		},
 		{
 			// Neither member has a key set to read, and the meet is still the answer.
 			name: "TwoVariableMembers",
 			src:  `type Result<T, U> = keyof (T | U)`,
-			want: "keyof t15 & keyof t16",
+			want: "keyof t16 & keyof t17",
 		},
 		{
 			// The readable members share no key, so the meet is empty whatever the variable's
@@ -353,6 +379,14 @@ func TestReduceKeyofDistributesOverUnion(t *testing.T) {
 			name: "AllMembersReadable",
 			src:  `type Result = keyof ({a: number, shared: string} | {b: boolean, shared: string})`,
 			want: `"shared"`,
+		},
+		{
+			// An open operand union stands for members the reduction cannot name, and an
+			// intersection has no marker to record that with. With no readable member to put a
+			// key union among the residuals, the whole operator stays symbolic.
+			name: "OpenUnionWithNoReadableMember",
+			src:  `type Result<T, U> = keyof (T | U | ...)`,
+			want: "keyof (t16 | t17 | ...)",
 		},
 	}
 	for _, tt := range tests {

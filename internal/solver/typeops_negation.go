@@ -36,13 +36,73 @@ import (
 //
 // The fork is therefore only reachable where the filter produced nothing at all.
 
-// reduceDifference reduces a meet carrying at least one complement — `A ∩ ¬B`, the values of A that
+// reduceIntersection reduces a meet. A meet carrying a complement is a set difference, which
+// reduceDifference settles. Any other meet has its members reduced in place, so a member that is
+// itself an operator reaches its value. `"a" ∩ keyof {a: number, b: string}` reduces to `"a"`. That
+// meet is the shape keyofUnion mints for a union operand it could not read every member of.
+//
+// A meet that neither folds to a key set nor has any member reduce comes back untouched, keeping
+// its pointer, so a plain intersection of concrete types costs nothing.
+func (e *typeEvaluator) reduceIntersection(t *soltype.IntersectionType) soltype.Type {
+	reduced := make([]soltype.Type, len(t.Types))
+	negated := false
+	changed := false
+	for i, m := range t.Types {
+		reduced[i] = e.reduce(m)
+		changed = changed || reduced[i] != m
+		if _, ok := reduced[i].(*soltype.NegationType); ok {
+			negated = true
+		}
+	}
+	if negated {
+		return e.reduceDifference(reduced)
+	}
+	if folded, ok := meetKeySets(reduced); ok {
+		return folded
+	}
+	if !changed {
+		return t
+	}
+	return newIntersection(nil, reduced)
+}
+
+// meetKeySets folds a meet whose every member is an enumerable key set into the keys they share,
+// and reports whether it had that shape. Take `keyof (T | {a: number, b: string})`, which reduces to
+// `"a" ∩ keyof T`. Once T grounds to an object carrying "a" and "b", that meet reads
+// `"a" ∩ ("a" | "b")`. Folding it to `"a"` is what leaves a mapped type over it a key to iterate.
+//
+// A member with an open key set stops the fold. Such a set names some of its keys and leaves the
+// rest to a tail, so a key the other members name may or may not be among them, and the meet is
+// undecided. The whole meet stays as it is in that case, which is what an undecided key set reduces
+// to elsewhere too.
+func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
+	if len(members) < 2 {
+		return nil, false
+	}
+	var shared []soltype.Type
+	for i, m := range members {
+		keys, inexact, ok := literalKeys(m)
+		if !ok || inexact {
+			return nil, false
+		}
+		if i == 0 {
+			// literalKeys hands back the member's own slice, and newUnion sorts its input in
+			// place, so seed the accumulator with a copy.
+			shared = append([]soltype.Type(nil), keys...)
+			continue
+		}
+		shared = intersectTypes(shared, keys)
+	}
+	return newUnion(nil, shared, false), true
+}
+
+// reduceDifference settles a meet carrying at least one complement — `A ∩ ¬B`, the values of A that
 // are not values of B. It is the reduction behind every Boolean key set: `Omit<T, "b">` maps over
 // `keyof T ∩ ¬"b"`, which reduces to `"a" | "c"` for `type T = {a: X, b: Y, c: Z}` so the mapped
 // type has keys to iterate.
 //
-// A meet with no complement is returned untouched, keeping its pointer, since an ordinary
-// intersection is not something reduction works out.
+// Each member of the meet grounds through groundOperand, so an alias named on either side expands
+// to the type whose values the difference is taken over.
 //
 // The difference distributes over the positive side's members, `(A | B) ∩ ¬X` being
 // `(A ∩ ¬X) | (B ∩ ¬X)`, and each member is settled against each excluded type by two subtype
@@ -58,32 +118,41 @@ import (
 // operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
-// An inexact positive side names only some of its members, and which of the unnamed ones the
-// exclusion removes cannot be worked out, so the result keeps the open tail. `("a" | ...) ∩ ¬"a"`
-// reduces to the inexact empty set rather than to `never`.
-func (e *typeEvaluator) reduceDifference(t *soltype.IntersectionType) soltype.Type {
-	positives := make([]soltype.Type, 0, len(t.Types))
+// An inexact positive side names only some of its members. The rest sit in an open tail, and what
+// the exclusion removes from those cannot be worked out. The result union keeps the tail, which
+// stands for whatever those undecided members contribute, so `("a" | "b" | ...) ∩ ¬"a"` reduces to
+// `"b" | ...`. When no named member survives, there is no union left to carry the tail, since an
+// empty union is `never` however the marker is set. The difference then stays as it stands rather
+// than claiming the tail is empty too.
+func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
+	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type
-	for _, m := range t.Types {
+	for _, m := range members {
 		if neg, ok := m.(*soltype.NegationType); ok {
-			excluded = append(excluded, e.reduce(neg.Inner))
+			excluded = append(excluded, e.groundOperand(neg.Inner))
 			continue
 		}
-		positives = append(positives, e.reduce(m))
+		positives = append(positives, e.groundOperand(m))
 	}
-	if len(excluded) == 0 {
-		return t
+	base, folded := meetKeySets(positives)
+	if !folded {
+		base = newIntersection(nil, positives)
 	}
-	base := newIntersection(nil, positives)
-	if !groundDifference(base, excluded) {
+	unreduced := func() soltype.Type {
 		return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))
 	}
-	members, inexact := unionMembers(base)
-	survivors := make([]soltype.Type, 0, len(members))
-	for _, m := range members {
+	if !groundDifference(base, excluded) {
+		return unreduced()
+	}
+	baseMembers, inexact := unionMembers(base)
+	survivors := make([]soltype.Type, 0, len(baseMembers))
+	for _, m := range baseMembers {
 		if narrowed, keep := e.excludeFrom(m, excluded); keep {
 			survivors = append(survivors, narrowed)
 		}
+	}
+	if len(survivors) == 0 && inexact {
+		return unreduced()
 	}
 	return newUnion(nil, survivors, inexact)
 }
@@ -152,16 +221,16 @@ func complementsOf(types []soltype.Type) []soltype.Type {
 // makes the filter a set operation rather than a single yes-or-no test over the whole operand. A
 // conditional over any other Check keeps its own semantics and stays symbolic.
 //
-// A branch is compared against the Check as the source wrote it, since both are reduced from the
-// same node and a naked type parameter reduces to itself.
+// The shape test reads the stored branches and the stored Check rather than their reduced forms,
+// so it states what the source wrote. The result is built from the reduced operands.
 func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends soltype.Type) (soltype.Type, bool) {
 	if !t.Distribute || containsInfer(check) || containsInfer(extends) {
 		return nil, false
 	}
 	switch {
-	case isNever(t.Then) && equalType(t.Check, t.Else):
+	case isNeverType(t.Then) && equalType(t.Check, t.Else):
 		return newIntersection(nil, []soltype.Type{check, &soltype.NegationType{Inner: extends}}), true
-	case isNever(t.Else) && equalType(t.Check, t.Then):
+	case isNeverType(t.Else) && equalType(t.Check, t.Then):
 		return newIntersection(nil, []soltype.Type{check, extends}), true
 	}
 	return nil, false
@@ -171,7 +240,8 @@ func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends sol
 // and reports whether any of it is left to match. A pattern binds a capture by aligning against
 // structure the scrutinee carries, and a complement names the values its operand rejects rather
 // than any structure of its own. So `¬X` matches no pattern position, and a meet contributes only
-// its positive members: `(Array<number> ∩ ¬X) extends Array<infer R>` binds R to number.
+// its positive members. Matching `Array<number> ∩ ¬X` against the pattern `Array<infer R>` binds R
+// to number.
 //
 // A Check that is nothing but complements has no skeleton to align, so the match fails and the
 // conditional takes its Else branch.
@@ -196,11 +266,4 @@ func positiveSkeleton(check soltype.Type) (soltype.Type, bool) {
 	default:
 		return check, true
 	}
-}
-
-// isNever reports whether t is the empty type, the branch a set-difference conditional drops its
-// operand through.
-func isNever(t soltype.Type) bool {
-	_, ok := t.(*soltype.NeverType)
-	return ok
 }
