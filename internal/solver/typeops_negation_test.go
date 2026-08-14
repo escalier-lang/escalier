@@ -143,7 +143,10 @@ func TestReduceSetDifferenceRecordsOneDiagnostic(t *testing.T) {
 	c := &Context{}
 	e := newTypeEvaluator(c, newSeenPairs())
 	e.reduce(meet(required, negate(c.freshVar(0))))
-	require.Len(t, e.errs, 1)
+	require.Equal(t, []string{
+		"no object has a field at every key of string, so [K: string]: number is uninhabited; " +
+			"write [K: string]?: number instead",
+	}, Messages(e.errs))
 }
 
 // A difference over an operand that is not ground stays a difference. The `∩ ¬` form is itself the

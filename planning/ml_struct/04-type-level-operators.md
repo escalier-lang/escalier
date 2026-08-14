@@ -185,8 +185,10 @@ single arrow denotes their meet exactly — equal domains, or equal codomains an
 one parameter — so example A's arms fuse and example B's stay apart. Arms that
 did not fuse are decided by `decideArrows`, the FCB decomposition, in
 `internal/solver/constrain_nf.go`. So the conditional in example A yields
-`"callable"`, diverging from TypeScript and sound, and the one in example B yields
-`"not"`, reconverging with TypeScript where MLstruct would answer `"callable"`.
+`"callable"`, which is set-theoretically sound and differs from TypeScript only
+because TypeScript reads the intersection as an overload table. The one in
+example B yields `"not"`, reconverging with TypeScript, where MLstruct would
+answer `"callable"`.
 `TestConditionalOverArrowIntersection` in
 `internal/solver/typeops_negation_test.go` states both verdicts.
 
