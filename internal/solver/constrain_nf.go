@@ -379,9 +379,18 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 // pin T to `unknown` and collapse `¬T` to `never` where the goal asks only for
 // `¬number`.
 //
-// A complement in a recorded bound is a display concern rather than a solving one.
-// simplifyNegations drops one whose operand shares no value with what it meets, so T
-// still coalesces to `"hi"` in the first example. See simplify.go.
+// simplifyNegations drops a complement whose operand shares no value with what it
+// meets, so T still coalesces to `"hi"` in the first example. See simplify.go. That
+// pass asks disjointness through the meet of two atoms, which derives `never` for a
+// literal against a primitive of another family and not for two records. A record,
+// tuple, or arrow sibling therefore leaves a complement that reaches the rendered type.
+// Deciding
+//
+//	{a: 1, ...} <: ({b: number, ...} | T)
+//
+// renders T as `{a: 1, ...} & ¬{b: number, ...}` rather than `{a: 1, ...}`. That is the
+// same case in which the subtraction changes what T admits at all, since a sibling the
+// meet is already disjoint from subtracts nothing.
 //
 // A candidate carrying a free variable is left in the join rather than subtracted, on
 // concreteMember's gate. Subtracting it is sound, and it costs a complement nothing can

@@ -496,9 +496,18 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // the same class-tag and literal/primitive facts the meet of two atoms reads, so
 // this pass adds no disjointness knowledge of its own.
 //
-// It is a DISPLAY pass. It runs over an already-coalesced type inside subsumeFinal
-// and never inside constrain, so disabling it makes an inferred type uglier and
-// never changes what the solver accepts. Nothing here reads or writes a bound.
+// It never runs inside constrain, and it reads and writes no bound. Two passes call it,
+// and what it decides differs between them.
+//
+//   - subsumeFinal runs it over an already-coalesced type. There it is cosmetic.
+//     Disabling it makes an inferred type uglier and changes nothing the solver accepts.
+//   - simplifyCaptured runs it over a conditional's `infer` capture, which
+//     reduceCondInfer substitutes into the Then branch. There it decides the type the
+//     branch reads.
+//
+// Both rewrites preserve the values the meet admits, so the second call site changes how
+// a branch's type is written rather than what it denotes. A `provedEmpty` collapse names
+// a meet no value satisfies, and the branch reads `never` for it.
 //
 // Its input stays small because Escalier rebinds on refinement rather than
 // re-typing the scrutinee. Each guard computes a fresh binding whose type is

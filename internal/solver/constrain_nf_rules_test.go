@@ -134,8 +134,9 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	tests := []struct {
 		name string
-		// goal builds the constraint to decide from the variable under test.
-		goal        func(v *soltype.TypeVarType) (sub, super soltype.Type)
+		// goal builds the constraint to decide, along with the variable under test. It
+		// mints every variable through c.freshVar so no two share an id.
+		goal        func(c *Context) (sub, super soltype.Type, v *soltype.TypeVarType)
 		wantBounds  []string
 		wantSurface string
 	}{
@@ -143,8 +144,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
 			// goal settles on T. It asks T for the values number does not already cover.
 			name: "a union member subtracts its concrete siblings",
-			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
-				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false)
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v
 			},
 			wantBounds:  []string{`"hi" & ¬number`},
 			wantSurface: `"hi"`,
@@ -154,8 +156,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
 			// collapse `¬T` to `never`, which the goal never asked for.
 			name: "a negated variable keeps the complement of the other side",
-			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
-				return negT(v), num()
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				return negT(v), num(), v
 			},
 			wantBounds:  []string{"¬number"},
 			wantSurface: "¬number",
@@ -164,8 +167,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// `5 <: (T | number)`. The number candidate holds, so the trial commits it and
 			// never reaches T. A candidate that decides a shape records no bound at all.
 			name: "a concrete candidate that holds leaves the variable unbounded",
-			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
-				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false)
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false), v
 			},
 			wantBounds:  []string{},
 			wantSurface: "never",
@@ -175,9 +179,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// reasons weakestBound gives. Recording `"hi" & ¬U` would render T as `never`,
 			// since coalescing resolves an unconstrained U inside the complement to `unknown`.
 			name: "a sibling variable is left in the join",
-			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
-				other := &soltype.TypeVarType{ID: v.ID + 1}
-				return strLit("hi"), newUnion(nil, []soltype.Type{v, other}, false)
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v, other := c.freshVar(0), c.freshVar(0)
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, other}, false), v
 			},
 			wantBounds:  []string{`"hi"`},
 			wantSurface: `"hi"`,
@@ -186,8 +190,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
-			v := c.freshVar(0)
-			sub, super := tt.goal(v)
+			sub, super, v := tt.goal(c)
 			require.False(t, hasHardError(c.Constrain(sub, super)))
 			require.Equal(t, tt.wantBounds, printedBounds(v.LowerBounds))
 			surface := coalesce(v, soltype.Positive).Accept(&finalSubsumer{ctx: c}, soltype.Positive)
