@@ -739,7 +739,17 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
 		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			decision := c.constrainNF(sub, namedMembers(supU), seen, mutCtx)
+			// An open tail has no atom to stand for it, so the layer hands a union that
+			// carries one straight back and weighs no member at all. The decision runs
+			// against the members with the tail dropped, and the tail rule below catches
+			// what they miss. Splicing the members out of any nested union first is what
+			// keeps a nested tail from putting the flag straight back.
+			named := super
+			if supU.Inexact {
+				flat, _ := flattenUnion(supU.Types, false)
+				named = newUnion(nil, flat, false)
+			}
+			decision := c.constrainNF(sub, named, seen, mutCtx)
 			if !hasHardError(decision.errs) {
 				// The decision carries any warning a nested trial emitted. Propagate it so a
 				// nested ambiguous union is not silently swallowed.
@@ -1470,20 +1480,6 @@ func (c *Context) partOfCommitted(m, committed soltype.Type) bool {
 		return false
 	}
 	return !hasHardError(c.trialUnderProbe(m, committed))
-}
-
-// namedMembers is the union the normal-form layer decides a union super against: the same
-// union with no open tail. An open tail has no atom to stand for it, so normalizing a union
-// that carries one hands the layer that union back whole and no member is ever weighed. The
-// members are spliced out of any nested union first, since a nested open tail would put the
-// flag straight back. The union-super rule catches through the tail what the members miss,
-// so dropping the tail here decides nothing the rule does not go on to answer.
-func namedMembers(u *soltype.UnionType) soltype.Type {
-	if !u.Inexact {
-		return u
-	}
-	flat, _ := flattenUnion(u.Types, false)
-	return newUnion(nil, flat, false)
 }
 
 // writtenMember returns the member of u the decision committed to, and reports whether the
