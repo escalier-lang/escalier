@@ -449,10 +449,10 @@ func TestConditionalOverArrowIntersection(t *testing.T) {
 		{
 			// Example B. The string arm returns null, so feeding the value a string yields a
 			// null rather than a boolean and the target type is a false claim. Escalier rejects
-			// it, reconverging with TypeScript. MLstruct accepts it, because it merges the two
-			// arms into `(number | string) -> (boolean & null)` and compares that one arrow;
+			// it, reconverging with TypeScript. MLstruct accepts it instead, since it merges the
+			// two arms into `(number | string) -> (boolean & null)` and compares that one arrow.
 			// Escalier keeps the arms apart and decides them by the Frisch-Castagna-Benzaken
-			// decomposition instead. See internal/solver/constrain_nf.go.
+			// decomposition. See internal/solver/constrain_nf.go.
 			name: "CodomainsConflict",
 			src: `
 				type Fn = (fn (x: number) -> boolean) & (fn (x: string) -> null)
