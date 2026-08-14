@@ -64,6 +64,9 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 //   - `¬never` is `unknown`, since `never` admits no value and `unknown` admits
 //     every one.
 //   - `¬unknown` is `never`, the same identity read the other way.
+//   - `¬(A | B | ...)` is `never`. An inexact union is the top of the subtype
+//     lattice, since its open tail accepts every value, so its complement admits
+//     none. TestOpenUnionIsTopForSubtypingOnly pins that reading.
 //   - `¬¬T` is T, since complementing twice returns the original set.
 //
 // It does NOT push the complement through a union or an intersection. `¬(A | B)`
@@ -79,6 +82,10 @@ func newNegation(inner soltype.Type) soltype.Type {
 		return &soltype.UnknownType{}
 	case *soltype.UnknownType:
 		return &soltype.NeverType{}
+	case *soltype.UnionType:
+		if inner.Inexact {
+			return &soltype.NeverType{}
+		}
 	case *soltype.NegationType:
 		return inner.Inner
 	}

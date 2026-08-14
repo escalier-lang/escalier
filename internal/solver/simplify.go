@@ -490,17 +490,20 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 //
 // provedEmpty reports that THIS PASS derived that no value satisfies the members, in
 // which case the returned list carries nothing. It is one-directional. A false says
-// the pass reached no such derivation, NOT that the meet has an inhabitant. Every
-// member the pass declines to weigh comes back false, and some of those really are
-// empty. `number & ¬(boolean | ...)` is one: constrain accepts every type against an
-// inexact union, so nothing satisfies its complement, yet usableOperand refuses that
-// operand and the pass reports false. Read the flag as "collapse this to `never`",
+// the pass reached no such derivation, NOT that the meet has an inhabitant. A meet
+// whose members the concreteness gate below keeps the pass away from comes back
+// false whether or not it is empty. Read the flag as "collapse this to `never`",
 // never as a claim about the type.
 //
 // A member carrying a free variable is left alone, on the concreteness gate
 // concreteMember states. That is what keeps `T & ¬Tag` over an abstract T intact:
 // nothing proves T disjoint from Tag, so the complement is real information and
 // stays on the rendered type.
+//
+// An INEXACT operand is weighed like any other. `A | B | ...` is the top of the
+// subtype lattice, so nothing satisfies `¬(A | B | ...)` and a meet carrying one is
+// empty. `number & ¬(boolean | string | ...)` collapses to `never` on that reading.
+// TestOpenUnionIsTopForSubtypingOnly pins it.
 func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
 	out := slices.Clone(members)
 	// negIdx holds the position of each complement both rewrites can act on, and
@@ -508,7 +511,7 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	var posIdx, negIdx []int
 	for i, m := range out {
 		if n, isNeg := m.(*soltype.NegationType); isNeg {
-			if usableOperand(n.Inner) {
+			if concreteMember(n.Inner) {
 				negIdx = append(negIdx, i)
 			}
 			continue
@@ -565,36 +568,6 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 		}
 	}
 	return kept, true, false
-}
-
-// usableOperand reports whether a complement's operand is one both rewrites can act
-// on. Two shapes are refused.
-//
-// A free type or lifetime variable makes the operand abstract, on the concreteness
-// gate concreteMember states. Nothing proves an abstract operand disjoint from
-// anything, so the complement carries real information.
-//
-// An INEXACT union is refused because what it denotes is unsettled, not because
-// collapsing it would contradict the solver. For the subtype relation `A | ...` is
-// already the top of the lattice. Constrain's open-tail rule accepts every type
-// against it, and it is below neither `number` nor `boolean`, matching `unknown` on
-// both counts. Under those rules `¬(A | ...)` is `never`, so
-// `number & ¬(boolean | ...)` really is empty and the collapse would be consistent.
-// TestOpenUnionIsTopForSubtypingOnly pins that reading.
-//
-// Two things make it the wrong call for this pass to act on. An open union is not
-// `unknown` everywhere. Reading a member off `{x: number} | {x: string} | ...` yields
-// `unknown`, where the same read off `unknown` is rejected outright, so the named
-// members carry meaning the subtype relation discards. And that relation is a
-// leniency in the accept-more direction, written so a value matching no named member
-// is still ACCEPTED. A display that collapsed to `never` would turn it around into a
-// claim that no such value can exist, which is a pass making a type look narrower
-// than the bound says.
-//
-// Whether an open union should be top at all is the exactness-aware merge's question
-// to settle. Until it does, this pass renders the complement as written.
-func usableOperand(n soltype.Type) bool {
-	return concreteMember(n) && !isInexactUnion(n)
 }
 
 // excludeArms returns p with every part that ¬n rules out removed, and reports

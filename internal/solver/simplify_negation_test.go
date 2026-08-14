@@ -119,6 +119,29 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			unsimplified: "¬(string & ¬string)",
 			want:         "unknown",
 		},
+		{
+			// An inexact union is the top of the subtype lattice, so nothing satisfies
+			// its complement and the meet is empty. Rendering `never` says that, where
+			// leaving the complement standing would read as a live constraint on a type
+			// no value inhabits.
+			name: "complement over an open union empties the meet",
+			build: func(*checker) soltype.Type {
+				return interT(num(), negT(newUnion(nil, []soltype.Type{boolT(), str()}, true)))
+			},
+			unsimplified: "number & ¬(string | boolean | ...)",
+			want:         "never",
+		},
+		{
+			// The same holds with the open union on both sides. Here the complement folds
+			// to `never` on its own, before the meet is weighed at all.
+			name: "an open union meets its own complement",
+			build: func(*checker) soltype.Type {
+				open := func() soltype.Type { return newUnion(nil, []soltype.Type{str(), num()}, true) }
+				return interT(open(), negT(open()))
+			},
+			unsimplified: "(number | string | ...) & ¬(number | string | ...)",
+			want:         "never",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -152,8 +175,8 @@ func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
 // directly is what isolates its own decision.
 //
 // Each case asserts provedEmpty, which reports what the pass DERIVED rather than whether
-// the meet has an inhabitant. A false means the pass reached no derivation, and the last
-// case below is one where the meet really is empty and the flag is still false.
+// the meet has an inhabitant. A false means the pass reached no derivation, which for a
+// meet the concreteness gate keeps it away from says nothing either way.
 func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	c := newChecker()
 
@@ -189,25 +212,18 @@ func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 		require.Equal(t, members, kept)
 	})
 
-	// `number & ¬(boolean | ...)`. Constrain accepts every type against an inexact union,
-	// asserted below, so nothing satisfies the complement of one and this meet is in fact
-	// empty. usableOperand refuses such an operand anyway, so the pass derives nothing and
-	// both members stand.
-	//
-	// provedEmpty is therefore false over a meet that has no inhabitant. That is the flag
-	// working as documented: it reports the pass's derivation, not the type. Collapsing
-	// here would turn constrain's one-directional leniency, which exists so a value
-	// matching no named member is still ACCEPTED, into a display claiming no such value
-	// can exist. What an open tail excludes is left to the exactness-aware merge.
-	t.Run("inexact union operand is refused", func(t *testing.T) {
+	// `number & ¬(boolean | ...)`. An inexact union is the top of the subtype lattice, so
+	// nothing satisfies its complement and the meet has no inhabitant. The two subtype
+	// facts the derivation rests on are asserted first, so a change to either shows up
+	// here as well as in TestOpenUnionIsTopForSubtypingOnly.
+	t.Run("inexact union operand collapses the meet", func(t *testing.T) {
 		open := newUnion(nil, []soltype.Type{boolT()}, true)
 		require.True(t, subtypeHolds(c.ctx, num(), open), "every type is below an inexact union")
 		require.False(t, subtypeHolds(c.ctx, num(), negT(open)), "so nothing is below its complement")
-		members := []soltype.Type{num(), negT(open)}
-		kept, changed, provedEmpty := simplifyNegations(c.ctx, members)
-		require.False(t, provedEmpty)
-		require.False(t, changed)
-		require.Equal(t, members, kept)
+		kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{num(), negT(open)})
+		require.True(t, provedEmpty)
+		require.True(t, changed)
+		require.Empty(t, kept)
 	})
 }
 
@@ -222,8 +238,11 @@ func TestNewNegation(t *testing.T) {
 		{"never", &soltype.NeverType{}, "unknown"},
 		{"unknown", &soltype.UnknownType{}, "never"},
 		{"double complement", negT(str()), "string"},
+		// An inexact union accepts every value, so its complement accepts none.
+		{"open union", newUnion(nil, []soltype.Type{boolT(), str()}, true), "never"},
 		{"primitive", str(), "¬string"},
-		{"union", unionT(str(), num()), "¬(number | string)"},
+		// A closed union bounds its members, so its complement is a real type.
+		{"closed union", unionT(str(), num()), "¬(number | string)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -232,19 +251,18 @@ func TestNewNegation(t *testing.T) {
 	}
 }
 
-// An inexact union is the top of the lattice for the subtype relation and nothing more.
-// usableOperand's refusal of such an operand rests on both halves of that, so both are
-// pinned here rather than left to a comment.
+// An inexact union is the top of the subtype lattice, and two passes now depend on that.
+// newNegation folds `¬(A | B | ...)` to `never`, and simplifyNegations collapses a meet
+// carrying such a complement. Both rest on the probes below, so they are pinned here
+// rather than left to a comment.
 //
-// The first half is the reason the collapse this pass declines would be CONSISTENT: if
-// `boolean | ...` accepts every value then nothing satisfies `¬(boolean | ...)`, and
-// `number & ¬(boolean | ...)` is empty. The second half is the reason it is still the
-// wrong call: an open union's named members survive a property read, so the type carries
-// meaning the subtype relation throws away, and reading that relation as a statement about
-// which values inhabit the type overcommits.
+// The second subtest is the step from top-ness to the fold: if `boolean | ...` accepts
+// every value then nothing satisfies `¬(boolean | ...)`.
 //
-// Whether an open union should be top at all is the exactness-aware merge's question. This
-// test states the behavior as it stands, so a change to it is visible rather than silent.
+// The third records where an open union and `unknown` part ways. A property read answers
+// from the open union's named members and is rejected outright on `unknown`. That is the
+// one place the named members still carry weight, and it is why an open union is top for
+// SUBTYPING rather than identical to `unknown` outright.
 func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
 	c := newChecker()
 	open := newUnion(nil, []soltype.Type{boolT()}, true) // boolean | ...
