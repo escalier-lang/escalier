@@ -1031,3 +1031,37 @@ func permutations(items []string) [][]string {
 	}
 	return out
 }
+
+// TestDeepNormalizeKeepsKnots covers the identity discipline a μ-knot needs. The
+// solver decides two recursive types by recognizing a pair of knots it is already
+// comparing, and it recognizes them by node identity, so normalization hands a
+// knot back as written and no fusion rebuilds one.
+func TestDeepNormalizeKeepsKnots(t *testing.T) {
+	// μX0.({head: number, tail: undefined} | {head: number, tail: X0}), the shape a
+	// recursive list builder infers. Its body is the union whose members would
+	// otherwise fuse into `{head: number, tail: undefined | X0}`.
+	knot := muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
+		return newUnion(nil, []soltype.Type{
+			exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
+			exactObj(propElem("head", num()), propElem("tail", ref)),
+		}, false)
+	})
+
+	t.Run("the knot itself is handed back", func(t *testing.T) {
+		c := &Context{}
+		require.Same(t, knot, c.mkDeepDNF(knot, soltype.Positive).toType())
+	})
+
+	t.Run("a union of atoms carrying the knot keeps both", func(t *testing.T) {
+		// The two members differ in one field, which is what joinObjects fuses. They
+		// stay apart because the fused field would hold the knot in a fresh node.
+		c := &Context{}
+		members := newUnion(nil, []soltype.Type{
+			exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
+			exactObj(propElem("head", num()), propElem("tail", knot)),
+		}, false)
+		require.Equal(t,
+			"{head: number, tail: undefined} | {head: number, tail: μX0.({head: number, tail: undefined} | {head: number, tail: X0})}",
+			soltype.Print(c.mkDeepDNF(members, soltype.Positive).toType()))
+	})
+}

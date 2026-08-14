@@ -240,8 +240,15 @@ func (c *Context) normalizeDeep(t soltype.Type, pol soltype.Polarity) soltype.Ty
 // node itself only has to settle the Boolean structure at that one level.
 type deepNormalizer struct{ ctx *Context }
 
-// EnterType takes over the walk for a borrow, and leaves every other node to the
-// ordinary bottom-up rebuild.
+// EnterType takes over the walk for a borrow, keeps a μ-knot as written, and
+// leaves every other node to the ordinary bottom-up rebuild.
+//
+// A μ-knot stands for an infinite type, and comparing two of them terminates only
+// because the solver's cache recognizes a pair of knots it is already deciding.
+// That cache keys on node identity, so rewriting a knot into an equal one hands the
+// comparison a pair it has never seen. Each unfolding would then rewrite the copy
+// it produced and the comparison would never close. So the knot is kept as
+// written, and the constraint rules normalize what an unfolding exposes.
 //
 // A borrow needs its own arm because RefType.Accept PEELS the wrapper when the
 // rewritten inner is not a type a borrow can point at, which is right for
@@ -251,6 +258,9 @@ type deepNormalizer struct{ ctx *Context }
 // borrowable. Otherwise the borrow stands as written, which keeps the wrapper the
 // header promises normalization never takes apart.
 func (n *deepNormalizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, isKnot := t.(*soltype.RecursiveType); isKnot {
+		return soltype.EnterResult{Type: t, SkipChildren: true}
+	}
 	ref, isRef := t.(*soltype.RefType)
 	if !isRef {
 		return soltype.EnterResult{Type: nil, SkipChildren: false}
@@ -615,6 +625,9 @@ func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if equalType(a, b) {
 		return a, true
 	}
+	if carriesKnot(a) || carriesKnot(b) {
+		return nil, false
+	}
 	if fused, ok := meetValueAtoms(a, b); ok {
 		return fused, true
 	}
@@ -648,6 +661,9 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if equalType(a, b) {
 		return a, true
 	}
+	if carriesKnot(a) || carriesKnot(b) {
+		return nil, false
+	}
 	if fused, ok := joinValueAtoms(a, b); ok {
 		return fused, true
 	}
@@ -667,6 +683,37 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	// of the union permits.
 	return nil, false
 }
+
+// carriesKnot reports whether t holds a μ-knot anywhere inside it. A fusion over
+// such an atom is skipped, which keeps both atoms and loses no precision.
+//
+// The reason is the solver's cycle detection. Comparing two recursive types
+// terminates because the constraint cache recognizes a pair of knots it is already
+// deciding, and that cache keys on node identity. A fusion rebuilds the children it
+// merges, so fusing `{next: undefined} | {next: μX.…}` into `{next: undefined | μX.…}`
+// mints a fresh union node holding the knot. Each unfolding would mint another one,
+// so the comparison would ask a pair the cache has never seen on every lap and would
+// never close. Leaving the two atoms apart keeps the knot reachable as one operand
+// of a pair, which is the pair the cache closes on.
+func carriesKnot(t soltype.Type) bool {
+	f := &knotFinder{}
+	t.Accept(f, soltype.Positive)
+	return f.found
+}
+
+// knotFinder is the walking visitor behind carriesKnot. It flags the first μ-knot
+// it reaches and skips that node's children, since one occurrence is enough.
+type knotFinder struct{ found bool }
+
+func (f *knotFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.RecursiveType); ok {
+		f.found = true
+		return soltype.EnterResult{SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (f *knotFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
 // valueFamily is a set of runtime values no value outside it belongs to. Two
 // atoms drawn from different families are disjoint, so their meet is `never`.
