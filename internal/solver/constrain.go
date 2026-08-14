@@ -1455,13 +1455,13 @@ func (c *Context) ambiguousAlternate(sub soltype.Type, u *soltype.UnionType, com
 
 // partOfCommitted reports whether the union member m is part of what the decision committed
 // to rather than an alternative to it. The decision runs on normalized atoms, so it may
-// commit to one atom that several members fused into, and each of those members sits below
-// that atom. Naming one of them as the alternative to the atom it helped build would report
-// an ambiguity where no choice was ever made.
+// commit to one atom that several members fused into, and each of those members is a
+// subtype of that atom. Naming one of them as the alternative to the atom it helped build
+// would report an ambiguity where no choice was ever made.
 //
-// A bare type variable is exempt. It sits below anything at all, since the trial records an
-// upper bound rather than deciding a shape, so subsumption says nothing about whether it is
-// an alternative. Those are the members the warning exists to name.
+// A bare type variable is exempt. It is a subtype of anything at all, since the trial
+// records an upper bound rather than deciding a shape, so subsumption says nothing about
+// whether it is an alternative. Those are the members the warning exists to name.
 func (c *Context) partOfCommitted(m, committed soltype.Type) bool {
 	if equalType(m, committed) {
 		return true

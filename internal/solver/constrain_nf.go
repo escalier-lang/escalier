@@ -33,7 +33,7 @@ import (
 //
 // `sub <: super` becomes `DNF(sub) <: CNF(super)`. A DNF is a union of conjuncts
 // and a CNF an intersection of disjuncts, so the constraint holds exactly when
-// every conjunct is below every disjunct. That product is the deterministic
+// every conjunct is a subtype of every disjunct. That product is the deterministic
 // decomposition: no member is guessed, and each implied goal is settled on its
 // own.
 //
@@ -103,17 +103,18 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 // constrainImplied decides one conjunct of the subtype's DNF against one disjunct
 // of the supertype's CNF, the implied goal this file's header describes. It moves
 // both negated parts across the `<:`, which leaves `⋂subCands <: ⋃superCands` over
-// atoms and variables, and proves that by finding one subtype candidate below one
-// supertype candidate, since `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for any such
-// pair. The pairs are trialled in specificity order, so a bare variable is only
-// ever a last resort, and each trial recurses into the ordinary structural rules.
+// atoms and variables, and proves that by finding a pair, one candidate from each
+// side, whose subtype-side candidate is a subtype of its supertype-side one, since
+// `⋂subCands <: sᵢ <: pⱼ <: ⋃superCands` for any such pair. The pairs are trialled
+// in specificity order, so a bare variable is only ever a last resort, and each
+// trial recurses into the ordinary structural rules.
 //
 // sub and super are the operands constrainNF was called with, and name the failure
 // when the goal has no pair to trial at all.
 //
 // Three things follow from deciding by one pair.
 //
-//   - It is incomplete. A meet can be below a join through its parts taken
+//   - It is incomplete. A meet can be a subtype of a join through its parts taken
 //     together, which no pair states, so `{x: number} & {y: number} <: {x: number,
 //     y: number}` is rejected. #1064's exact-record merge settles that one.
 //   - A pair repeating the caller's own question against an inexact union is
@@ -173,8 +174,8 @@ func (c *Context) constrainImplied(
 	if committed {
 		return nfDecision{errs: winErrs, committed: []soltype.Type{pairs[winIdx].super}}
 	}
-	// No single pair holds. An intersection of arrows can still be below an arrow
-	// through the arms taken together, which is what decideArrows weighs.
+	// No single pair holds. An intersection of arrows can still be a subtype of an
+	// arrow through the arms taken together, which is what decideArrows weighs.
 	if target, ok := c.decideArrows(subCands, superCands, seen); ok {
 		return nfDecision{committed: []soltype.Type{target}}
 	}
@@ -196,9 +197,9 @@ const maxDecomposedArms = 6
 // settled the goal at all. arrowLegsHold states the two legs, and the corpus
 // header in constrain_nf_test.go derives them.
 //
-// It runs after constrainImplied's pair trial found no single arm below the target.
-// Both rules are sound, so which runs first decides the bounds a variable in the
-// target picks up rather than the verdict.
+// It runs after constrainImplied's pair trial found no single arm that is a subtype
+// of the target. Both rules are sound, so which runs first decides the bounds a
+// variable in the target picks up rather than the verdict.
 //
 // Only plain one-parameter arrows are weighed, the shape decomposableArrow admits.
 // A multi-parameter arrow's domain is a product of positions rather than one type,
@@ -294,7 +295,7 @@ func meetCodomains(arms []*soltype.FuncType, group int) soltype.Type {
 }
 
 // decomposableArrows returns the atoms of a meet the decomposition can weigh and
-// drops the rest, which is sound because a meet is below each of its parts.
+// drops the rest, which is sound because a meet is a subtype of each of its parts.
 func decomposableArrows(atoms []soltype.Type) []*soltype.FuncType {
 	arrows := make([]*soltype.FuncType, 0, len(atoms))
 	for _, atom := range atoms {
