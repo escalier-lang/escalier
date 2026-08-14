@@ -1068,9 +1068,9 @@ func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
 				}`,
 			want: "fn (u: number | string | boolean) -> string",
 		},
-		// A third level is the chain caveat 2 works through, `(string | number | boolean)
-		// ∩ ¬string ∩ ¬number`. Each level narrows the previous binding, so the last one
-		// renders as the single member left.
+		// A third level is the chain caveat 2 works through, written unsimplified as
+		// `(string | number | boolean) ∩ ¬string ∩ ¬number`. Each level narrows the
+		// previous binding, so the last one renders as the single member left.
 		"ThreeGuards": {
 			src: `fn f(u: number | string | boolean) {
 					val x: number | boolean = u else { return true }

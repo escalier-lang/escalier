@@ -252,15 +252,15 @@ func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type 
 // rather than the bound as stored. subsumeFinal calls it for the same reason, since
 // its own rewrites can turn an operand into a lattice bound.
 //
-// The re-mint is what keeps a complement over an empty variable readable. A var with
-// the single upper bound `¬β` and a β with no lower bounds inlines β to `never`, and
-// the bare rebuild would render the meaningless `¬never` where the bound really says
-// unknown.
+// The re-mint is what keeps a complement over an empty variable readable. Take a var
+// whose single upper bound is `¬β`, over a β with no lower bounds. Coalescing inlines
+// β to `never`, so the bare rebuild would render the meaningless `¬never` where the
+// bound really says `unknown`.
 //
-// A complement newNegation does not collapse is returned as the caller passed it, so
-// the walk keeps the node it already has and no ancestor is rebuilt on its account.
-// newNegation wraps its operand in a fresh node whenever no collapse applies, so a
-// result still wrapping the SAME operand is what identifies that case.
+// A complement that newNegation does not collapse is returned as the caller passed
+// it, so the walk keeps the node it already has and no ancestor is rebuilt on its
+// account. newNegation wraps its operand in a fresh node whenever no collapse
+// applies, so a result still wrapping the SAME operand is what identifies that case.
 func foldNegation(t soltype.Type) soltype.Type {
 	n, isNeg := t.(*soltype.NegationType)
 	if !isNeg {

@@ -56,13 +56,14 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 	return collapseIntersection(pruned, hadError)
 }
 
-// newNegation is the complement twin of newUnion and newIntersection: the single
-// mint path for a NegationType in coalesced output. It collapses the three
-// operands whose complement the surface type set already spells, and wraps
-// everything else.
+// newNegation is the complement twin of newUnion and newIntersection, the single
+// mint path for a NegationType in coalesced output. Three operands have a
+// complement the surface type set already names. It returns that name for them and
+// wraps everything else.
 //
-//   - `¬never` is unknown, since never admits no value and unknown admits every one.
-//   - `¬unknown` is never, the same identity read the other way.
+//   - `¬never` is `unknown`, since `never` admits no value and `unknown` admits
+//     every one.
+//   - `¬unknown` is `never`, the same identity read the other way.
 //   - `¬¬T` is T, since complementing twice returns the original set.
 //
 // It does NOT push the complement through a union or an intersection. `¬(A | B)`
@@ -327,8 +328,8 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 
 // subtypeHolds reports whether sub <: super, decided speculatively so the answer
 // costs no bound. The trial runs under a discard-only probe, so a variable the
-// decision reached keeps the bounds it had. Every display-time pass that has to
-// weigh one type against another asks through here.
+// decision reached keeps the bounds it had. Every display-time pass that compares
+// one type against another asks through here.
 func subtypeHolds(c *Context, sub, super soltype.Type) bool {
 	return !hasHardError(c.trialUnderProbe(sub, super))
 }
@@ -361,8 +362,8 @@ func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
 // `number`; an inferred `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
 //
 // It is also where the disjointness-aware negation simplification runs, so an
-// intersection carrying a complement is collapsed before subsumption weighs what is
-// left. See simplify.go.
+// intersection carrying a complement is collapsed before subsumption runs over what
+// is left. See simplify.go.
 func (c *checker) subsumeFinal(t soltype.Type) soltype.Type {
 	return t.Accept(&finalSubsumer{ctx: c.ctx}, soltype.Positive)
 }
@@ -404,7 +405,7 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 	case *soltype.NegationType:
 		// The operand was already rewritten by this walk, so a complement whose
 		// operand collapsed to a lattice bound is folded here rather than left as the
-		// meaningless `¬never`. `¬(string & ¬string)` reads unknown.
+		// meaningless `¬never`. `¬(string & ¬string)` reads `unknown`.
 		return foldNegation(t)
 	}
 	return t

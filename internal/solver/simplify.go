@@ -481,9 +481,9 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // never changes what the solver accepts. Nothing here reads or writes a bound.
 //
 // Its input stays small because Escalier rebinds on refinement rather than
-// re-typing the scrutinee: each guard computes a fresh binding whose type is
-// simplified and frozen, so nested guards do not pile `& ¬A & ¬B` onto one
-// long-lived variable.
+// re-typing the scrutinee. Each guard computes a fresh binding whose type is
+// simplified and frozen at that site, so nested guards do not pile `& ¬A & ¬B` onto
+// one long-lived variable.
 
 // simplifyNegations applies the two rewrites above to one intersection's members.
 // changed reports whether any member was rewritten or dropped, and uninhabited
@@ -560,16 +560,16 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	return kept, true, false
 }
 
-// usableOperand reports whether a complement's operand is one both rewrites can
-// weigh. Two shapes are refused.
+// usableOperand reports whether a complement's operand is one both rewrites can act
+// on. Two shapes are refused.
 //
 // A free type or lifetime variable makes the operand abstract, on the concreteness
 // gate concreteMember states. Nothing proves an abstract operand disjoint from
 // anything, so the complement carries real information.
 //
-// An INEXACT union is refused because every type is a subtype of one: constrain's
-// open-tail rule accepts anything against `A | ...`, since the tail names content
-// the union does not spell. Reading that as containment would let `¬(boolean | ...)`
+// An INEXACT union is refused because every type is a subtype of one. Constrain's
+// open-tail rule accepts anything against `A | ...`, since the tail names content the
+// union does not spell. Reading that as containment would let `¬(boolean | ...)`
 // exclude every arm it is met with, so `number & ¬(boolean | ...)` would collapse to
 // `never`. Deciding what an open tail excludes is left to the exactness-aware merge.
 func usableOperand(n soltype.Type) bool {

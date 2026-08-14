@@ -37,8 +37,9 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			want:  "number",
 		},
 		{
-			// Three chained guards, the accumulation caveat 2 names. Each complement
-			// narrows what the previous one left.
+			// Three chained guards, the accumulation the MLstruct plan's caveat 2
+			// describes. Each complement narrows what the previous one left, so the
+			// last member standing is what renders.
 			name: "three-guard chain",
 			build: func(*checker) soltype.Type {
 				return interT(unionT(str(), num(), boolT()), negT(str()), negT(num()))
@@ -67,7 +68,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 		},
 		{
 			// Two class tags neither of which is below the other are disjoint, which is
-			// the M5 fact glbClass decides. `(Dog | Cat) & ¬Dog` is `Cat`.
+			// what glbClass decides. `(Dog | Cat) & ¬Dog` is `Cat`.
 			name: "class tags",
 			build: func(c *checker) soltype.Type {
 				c.ctx.registerClass("Animal", &ClassDef{})
