@@ -243,6 +243,22 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
+	return coalesceNegation(t)
+}
+
+// coalesceNegation re-mints a complement through newNegation once its operand has
+// been coalesced, and returns every other node unchanged. Both coalescers call it
+// from ExitType, which fires bottom-up, so the operand it reads is the coalesced
+// one rather than the bound as stored.
+//
+// The re-mint is what keeps a complement over an empty variable readable. A var
+// with the single upper bound `¬β` and a β with no lower bounds inlines β to
+// `never`, and the bare rebuild would render the meaningless `¬never` where the
+// bound really says unknown.
+func coalesceNegation(t soltype.Type) soltype.Type {
+	if n, ok := t.(*soltype.NegationType); ok {
+		return newNegation(n.Inner)
+	}
 	return t
 }
 
@@ -552,7 +568,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return t
+	return coalesceNegation(t)
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else

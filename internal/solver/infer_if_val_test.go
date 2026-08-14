@@ -1034,3 +1034,68 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 		})
 	}
 }
+
+// Binding-based narrowing keeps a chained guard's display clean. Escalier rebinds on
+// refinement rather than re-typing the scrutinee, so each guard computes a fresh binding
+// whose type is simplified and frozen at that site. A later guard starts from that clean
+// base rather than accumulating one complement per level on a single long-lived variable,
+// which is the readability problem the MLstruct plan's caveat 2 names.
+//
+// Each case returns the binding a guard introduced, so the function's return type IS that
+// binding's rendered type. A diverging `else` supplies the other path, and its string
+// fallbacks are subsumed into `string` at finalization.
+func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// One guard over a three-member union binds exactly the member its annotation
+		// admits, with no residual complement over the two it excluded.
+		"OneGuard": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number = u else { return 0 }
+					return x
+				}`,
+			want: "fn (u: number | string | boolean) -> number",
+		},
+		// The first guard's binding is a two-member union, and the second narrows THAT
+		// rather than the scrutinee. Both levels render as plain unions.
+		"TwoGuards": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | string = u else { return "no value" }
+					val y: string = x else { return "not a string" }
+					return y
+				}`,
+			want: "fn (u: number | string | boolean) -> string",
+		},
+		// A third level is the chain caveat 2 works through, `(string | number | boolean)
+		// ∩ ¬string ∩ ¬number`. Each level narrows the previous binding, so the last one
+		// renders as the single member left.
+		"ThreeGuards": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | boolean = u else { return true }
+					val y: boolean = x else { return false }
+					return y
+				}`,
+			want: "fn (u: number | string | boolean) -> boolean",
+		},
+		// Narrowing binds a fresh name and never re-types the scrutinee, so `u` still
+		// reads at its declared union after two guards have run.
+		"ScrutineeKeepsItsDeclaredType": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | string = u else { return u }
+					val y: string = x else { return u }
+					return u
+				}`,
+			want: "fn (u: number | string | boolean) -> number | string | boolean",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}

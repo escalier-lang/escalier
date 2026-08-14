@@ -56,6 +56,34 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 	return collapseIntersection(pruned, hadError)
 }
 
+// newNegation is the complement twin of newUnion and newIntersection: the single
+// mint path for a NegationType in coalesced output. It collapses the three
+// operands whose complement the surface type set already spells, and wraps
+// everything else.
+//
+//   - `¬never` is unknown, since never admits no value and unknown admits every one.
+//   - `¬unknown` is never, the same identity read the other way.
+//   - `¬¬T` is T, since complementing twice returns the original set.
+//
+// It does NOT push the complement through a union or an intersection. `¬(A | B)`
+// is a faithful render of what the bound says, and De Morgan's law would only
+// trade one node for two.
+//
+// normal.go's negate is the solver-internal twin. That one wraps unconditionally,
+// because the parts it negates are already known to be neither lattice bound nor
+// complement.
+func newNegation(inner soltype.Type) soltype.Type {
+	switch inner := inner.(type) {
+	case *soltype.NeverType:
+		return &soltype.UnknownType{}
+	case *soltype.UnknownType:
+		return &soltype.NeverType{}
+	case *soltype.NegationType:
+		return inner.Inner
+	}
+	return &soltype.NegationType{Inner: inner}
+}
+
 // flattenUnion splices nested UnionType members into the outer member list
 // and carries an inner inexact flag out to the caller. The splice is
 // recursive, so a UnionType whose members include another UnionType is fully
@@ -268,7 +296,7 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	// variable, so it is skipped by the concrete gate below.
 	hasVar := make([]bool, len(parts))
 	for i, p := range parts {
-		hasVar[i] = soltype.HasTypeVar(p) || soltype.HasLifetimeVar(p)
+		hasVar[i] = !concreteMember(p)
 	}
 	dropped := set.NewSet[int]()
 	for i, a := range parts {
@@ -297,10 +325,26 @@ func subsumeMembers(c *Context, parts []soltype.Type, drops func(c *Context, m, 
 	return out
 }
 
+// subtypeHolds reports whether sub <: super, decided speculatively so the answer
+// costs no bound. The trial runs under a discard-only probe, so a variable the
+// decision reached keeps the bounds it had. Every display-time pass that has to
+// weigh one type against another asks through here.
+func subtypeHolds(c *Context, sub, super soltype.Type) bool {
+	return !hasHardError(c.trialUnderProbe(sub, super))
+}
+
+// concreteMember reports whether t carries no free type or lifetime variable. A
+// member failing it is left out of every speculative comparison, for the two
+// reasons subsumeMembers gives: trialling against an inference variable could pin
+// it, and two members differing only in a lifetime variable would compare equal.
+func concreteMember(t soltype.Type) bool {
+	return !soltype.HasTypeVar(t) && !soltype.HasLifetimeVar(t)
+}
+
 // unionDrops returns true when union member m should be dropped because the
 // sibling subsumes it. The check is m <: sibling.
 func unionDrops(c *Context, m, sibling soltype.Type) bool {
-	return !hasHardError(c.trialUnderProbe(m, sibling))
+	return subtypeHolds(c, m, sibling)
 }
 
 // intersectionDrops returns true when intersection member m should be
@@ -308,13 +352,17 @@ func unionDrops(c *Context, m, sibling soltype.Type) bool {
 // <: m. The sibling is narrower, so it already implies m, and m is the wider
 // one to discard.
 func intersectionDrops(c *Context, m, sibling soltype.Type) bool {
-	return !hasHardError(c.trialUnderProbe(sibling, m))
+	return subtypeHolds(c, sibling, m)
 }
 
 // subsumeFinal re-mints every UnionType and IntersectionType node in a finalized
 // display type through newUnion / newIntersection with the ambient Context, so a
 // member a concrete sibling subsumes is dropped. An inferred `1 | number` becomes
 // `number`; an inferred `{x, ...} & {x, y, ...}` becomes `{x, y, ...}`.
+//
+// It is also where the disjointness-aware negation simplification runs, so an
+// intersection carrying a complement is collapsed before subsumption weighs what is
+// left. See simplify.go.
 func (c *checker) subsumeFinal(t soltype.Type) soltype.Type {
 	return t.Accept(&finalSubsumer{ctx: c.ctx}, soltype.Positive)
 }
@@ -344,8 +392,12 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 		}
 		return collapseUnion(kept, t.Inexact, false)
 	case *soltype.IntersectionType:
-		kept := subsumeMembers(s.ctx, t.Types, intersectionDrops)
-		if len(kept) == len(t.Types) {
+		members, changed, uninhabited := simplifyNegations(s.ctx, t.Types)
+		if uninhabited {
+			return &soltype.NeverType{}
+		}
+		kept := subsumeMembers(s.ctx, members, intersectionDrops)
+		if !changed && len(kept) == len(t.Types) {
 			return t
 		}
 		return collapseIntersection(kept, false)

@@ -1082,3 +1082,85 @@ func TestBijectionRebindKeepsOneToOne(t *testing.T) {
 		})
 	}
 }
+
+// A complement on a variable's bounds survives coalescing and renders as `¬T`. The
+// operand is coalesced first, at the flipped polarity NegationType.Accept walks it
+// at, and the result is re-minted through newNegation so a complement over a
+// lattice bound reads as the bound it really names.
+func TestCoalesceNegatedBound(t *testing.T) {
+	tests := []struct {
+		name string
+		// build returns the variable to coalesce, given the Context that mints it.
+		build func(c *Context) *soltype.TypeVarType
+		pol   soltype.Polarity
+		want  string
+	}{
+		{
+			// The plain case: a negated upper bound renders as written.
+			name: "negated upper bound",
+			build: func(c *Context) *soltype.TypeVarType {
+				a := c.freshVar(0)
+				a.UpperBounds = []soltype.Type{&soltype.NegationType{Inner: str()}}
+				return a
+			},
+			pol:  soltype.Negative,
+			want: "¬string",
+		},
+		{
+			// The operand is a variable, so it coalesces before the complement is
+			// re-minted. Its own lower bound is what the complement excludes.
+			name: "operand coalesces to its bound",
+			build: func(c *Context) *soltype.TypeVarType {
+				inner := c.freshVar(0)
+				inner.LowerBounds = []soltype.Type{str()}
+				a := c.freshVar(0)
+				a.UpperBounds = []soltype.Type{&soltype.NegationType{Inner: inner}}
+				return a
+			},
+			pol:  soltype.Negative,
+			want: "¬string",
+		},
+		{
+			// An operand with no lower bounds coalesces to `never`, and the complement
+			// of `never` is unknown. The re-mint is what keeps `¬never` off the display.
+			name: "operand with no bounds",
+			build: func(c *Context) *soltype.TypeVarType {
+				a := c.freshVar(0)
+				a.UpperBounds = []soltype.Type{&soltype.NegationType{Inner: c.freshVar(0)}}
+				return a
+			},
+			pol:  soltype.Negative,
+			want: "unknown",
+		},
+		{
+			// Complementing twice returns the operand, which the bottom-up ExitType
+			// walk folds one level at a time.
+			name: "double complement",
+			build: func(c *Context) *soltype.TypeVarType {
+				a := c.freshVar(0)
+				a.UpperBounds = []soltype.Type{&soltype.NegationType{Inner: &soltype.NegationType{Inner: str()}}}
+				return a
+			},
+			pol:  soltype.Negative,
+			want: "string",
+		},
+		{
+			// A complement nested in a structural position is re-minted like a
+			// top-level one, since every rewriter rides on the same walk.
+			name: "complement inside an object property",
+			build: func(c *Context) *soltype.TypeVarType {
+				a := c.freshVar(0)
+				a.UpperBounds = []soltype.Type{exactObj(propElem("x", &soltype.NegationType{Inner: str()}))}
+				return a
+			},
+			pol:  soltype.Negative,
+			want: "{x: ¬string}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			require.Equal(t, tt.want, soltype.Print(coalesce(tt.build(c), tt.pol)))
+		})
+	}
+}
