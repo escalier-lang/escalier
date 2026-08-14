@@ -583,3 +583,43 @@ func TestNonExhaustiveMessageNamesTheConstruct(t *testing.T) {
 		})
 	}
 }
+
+// TestMatchCoverageExactUnionNeedsNoDefault is the exactness payoff #1064 names. A
+// union written without a trailing `...` is closed, so its members are the whole set of
+// values a scrutinee of that type can take. Arms covering each member therefore leave
+// nothing for a default arm to catch, and asking for one would name a branch that could
+// never run.
+//
+// The inexact union of the same members is the contrast. Its open tail admits values no
+// arm names, so the same arms are not exhaustive there.
+//
+// The arms discriminate by field NAME. Discriminating a closed union by a literal tag
+// field, the `{kind: "circle"}` shape, is not credited yet: a literal inside an object
+// pattern reads as refutable, so its arm covers no member. That is the M5 tag-exhaustiveness
+// half of the payoff, and it lands with M5 rather than here.
+func TestMatchCoverageExactUnionNeedsNoDefault(t *testing.T) {
+	arms := `
+		return match s {
+			{x} => x,
+			{y} => y
+		}
+	`
+
+	t.Run("Exact", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			fn pick(s: {x: number} | {y: number}) {`+arms+`}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (s: {x: number} | {y: number}) -> number", values["pick"])
+	})
+
+	t.Run("Inexact", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			fn pick(s: {x: number} | {y: number} | ...) {`+arms+`}
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t,
+			"3:10-6:4: match is not exhaustive; `{x: number} | {y: number} | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			msgWithSpan(errs[0]))
+	})
+}

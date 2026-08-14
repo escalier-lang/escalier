@@ -58,12 +58,32 @@ import (
 //     makes every subtype pass against a supertype union of two records. A list
 //     keeps `{x: number} | {y: number}` precise in supertype position.
 //
+// # Exactness
+//
+// An `Inexact` flag on an object, a tuple, a function, or a union marks the type
+// OPEN: the object tolerates fields it does not name, the tuple tolerates
+// positions past the ones it lists, and the function tolerates argument counts
+// past its arity. The zero value is exact, which is Escalier's default.
+//
+// The merges below decide exactness rather than carrying it through, because a
+// blind field-union would be unsound for an exact object. Exact `{x}` names its
+// whole key set, so nothing is both exactly-`{x}` and exactly-`{y}` and their meet
+// is `never`, where the inexact pair meets at `{x, y, ...}`. The rules per kind are
+// on meetObjects, meetTuples, and meetFuncs.
+//
+// The open marker also runs in OPPOSITE directions per kind, which is why one
+// shared rule would be wrong. An exact object is a subtype of the otherwise-equal
+// inexact one, since capping the key set only removes values. An inexact FUNCTION
+// is the subtype instead, since tolerating more argument counts only removes
+// values. widerByMarker records both directions in one place.
+//
+// This file is the only place structural exactness is decided. newIntersection and
+// newUnion in lattice.go flatten, prune, dedup, and order a lattice node, and they
+// leave an uninhabited meet standing (#927), so a merge here cannot delegate its
+// exactness rule to them without asking the question back.
+//
 // # What is deliberately left to a later PR
 //
-//   - Exactness-driven merges. An atom's `Inexact` flag rides through every merge
-//     here, and two atoms whose flags disagree are kept separate rather than
-//     fused under a guess. PR7 (#1064) decides the exact cases, such as two exact
-//     objects with differing required fields meeting to `never`.
 //   - Ref atoms. A RefType is an opaque atom that normalization never takes apart.
 //     PR8 (#1065) owns the lifetime split and the guard rejecting `¬(mut 'a T)`.
 
@@ -151,8 +171,17 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 			// `A | B | ...` names A, B, and an open tail of unknown content. The tail has
 			// no atom to stand for it, so taking the union apart would drop it and hand
 			// back a type narrower than the source wrote. The whole node stays one atom,
-			// which round-trips exactly and keeps the flag. PR7 (#1064) decides how far
-			// an inexact union can be decomposed.
+			// which round-trips exactly and keeps the flag.
+			//
+			// The opaque atom is the final shape rather than a placeholder, and it costs
+			// only DISTRIBUTION. `(A | B | ...) & C` stays a two-atom meet instead of
+			// becoming `(A & C) | (B & C) | ...`. Two alternatives were weighed and both
+			// are worse. An atom of its own for the tail would have to denote ⊤, which
+			// absorbs the named members and turns `A | B | ...` into `unknown`, losing
+			// exactly what the diagnostics print. An `Open` flag on the DNF would
+			// distribute, but nothing says what the tail meets C to, so the mark would
+			// have to be polarity-aware to stay sound. Neither buys a verdict the opaque
+			// atom gets wrong. Escalier issue #1064 records the full comparison.
 			return dnfAtom(t)
 		}
 		out := DNF{Conjuncts: nil}
@@ -664,6 +693,9 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if carriesKnot(a) || carriesKnot(b) {
 		return nil, false
 	}
+	if wider, ok := widerByMarker(a, b); ok {
+		return wider, true
+	}
 	if fused, ok := joinValueAtoms(a, b); ok {
 		return fused, true
 	}
@@ -681,6 +713,75 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	// `(A -> C) | (A -> D)` has a single arrow that denotes it: a value of
 	// `A -> (C | D)` may return a C on one input and a D on another, which no member
 	// of the union permits.
+	return nil, false
+}
+
+// widerByMarker returns the wider of two atoms that are EQUAL APART FROM their open
+// marker, and reports whether the pair is such a pair. A union of two types where
+// one contains the other is the containing one, so joinAtoms fuses to it.
+//
+// Which side is wider depends on the kind, because the marker opens a different
+// dimension in each one.
+//
+//   - An OBJECT's marker opens its key set. `{x: A, ...}` admits every record
+//     `{x: A}` admits and also those carrying further fields, so the inexact side
+//     is wider.
+//   - A TUPLE's marker opens its length. `[A, ...]` admits every tuple `[A]` admits
+//     and also the longer ones, so the inexact side is wider again.
+//   - A FUNCTION's marker opens the argument counts a call may use, and the value
+//     filling the type has to tolerate all of them. `fn (x: A, ...) -> B` admits
+//     only functions taking any number of arguments, which is FEWER than
+//     `fn (x: A) -> B` admits. Here the exact side is the wider one.
+//
+// Each arm tests likeness by copying one atom, flipping the copy's marker to the
+// other's, and comparing. That reuses equalType rather than re-spelling per-kind
+// structural equality, and it keeps the test in step with equalType as kinds gain
+// fields.
+func widerByMarker(a, b soltype.Type) (soltype.Type, bool) {
+	switch a := a.(type) {
+	case *soltype.ObjectType:
+		b, isObj := b.(*soltype.ObjectType)
+		if !isObj || a.Inexact == b.Inexact {
+			return nil, false
+		}
+		flipped := *a
+		flipped.Inexact = b.Inexact
+		if !equalType(&flipped, b) {
+			return nil, false
+		}
+		if a.Inexact {
+			return a, true
+		}
+		return b, true
+	case *soltype.TupleType:
+		b, isTuple := b.(*soltype.TupleType)
+		if !isTuple || a.Inexact == b.Inexact {
+			return nil, false
+		}
+		flipped := *a
+		flipped.Inexact = b.Inexact
+		if !equalType(&flipped, b) {
+			return nil, false
+		}
+		if a.Inexact {
+			return a, true
+		}
+		return b, true
+	case *soltype.FuncType:
+		b, isFunc := b.(*soltype.FuncType)
+		if !isFunc || a.Inexact == b.Inexact {
+			return nil, false
+		}
+		flipped := *a
+		flipped.Inexact = b.Inexact
+		if !equalType(&flipped, b) {
+			return nil, false
+		}
+		if a.Inexact {
+			return b, true
+		}
+		return a, true
+	}
 	return nil, false
 }
 
@@ -827,29 +928,38 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	return nil, false
 }
 
-// meetObjects fuses two object atoms field by field, or keeps them apart when no
-// single object denotes their meet. Keeping two atoms is just as precise and costs
-// only the extra atom, so the fusion is an optimization rather than an obligation.
+// meetObjects fuses two object atoms field by field, returns `never` when no value
+// satisfies both, or keeps them apart when neither answer is available. Keeping two
+// atoms is just as precise and costs only the extra atom, so the fusion is an
+// optimization rather than an obligation.
 //
-// Two INEXACT objects always fuse. Each denotes the values carrying its own fields
-// plus anything else, so their meet is the values carrying both field sets plus
-// anything else, and that is what the merged object denotes.
+// # What an object atom denotes
 //
-// Two EXACT objects fuse when they name the same fields. Neither admits a field
-// its type does not name, so the meet only narrows the fields they share.
+// Read an object as two bounds on the key set S of the values it admits. Every
+// field it marks required is IN S, which is the floor. An exact object also caps S
+// at the fields it names, and an inexact one leaves S uncapped.
 //
-// Two EXACT objects naming DIFFERENT fields are kept apart. Their meet is really
-// `never`, since an exact object carries only the fields its type names and no
-// value satisfies two such objects at once. Settling that is PR7's
-// exactness-aware merge. TODO(#1064). Two objects whose `Inexact` flags disagree
-// are kept apart for the same reason.
+//	{x: A, y?: B}       admits S = {x} and S = {x, y}
+//	{x: A, y?: B, ...}  admits every S containing x
 //
-// A field one side requires and the other makes optional is required on the meet,
-// since a value has to satisfy both objects, so `{x: A} & {x?: B}` is `{x: A & B}`.
+// # The rule
+//
+// The meet's floor is the union of the two floors and its cap is the intersection
+// of the two caps, since a value has to satisfy both objects at once. So:
+//
+//  1. A field either side REQUIRES that the other side caps out is a contradiction,
+//     and the meet is `never`. This is what makes exact `{x} & {y}` uninhabited.
+//  2. A field inside the meet's cap survives. Both sides naming it means the meet
+//     narrows it to their meet, and a field either side requires is required on the
+//     meet, so `{x: A} & {x?: B}` is `{x: A & B}`.
+//  3. A field only one side names and the other side caps out drops. Nothing
+//     required is lost, since rule 1 already answered that case. Exact
+//     `{x: A, y?: B} & {x: C}` is `{x: A & C}`, because the second object admits no
+//     y at all.
+//
+// The meet is exact when either side is, since one cap is enough to close the key
+// set.
 func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
-	if a.Inexact != b.Inexact {
-		return nil, false
-	}
 	pa, ok := plainProps(a)
 	if !ok {
 		return nil, false
@@ -858,13 +968,16 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	if !ok {
 		return nil, false
 	}
-	if !a.Inexact && !sameFieldNames(pa, pb) {
-		return nil, false
+	if !requiredFieldsWithin(pa, pb, b.Inexact) || !requiredFieldsWithin(pb, pa, a.Inexact) {
+		return &soltype.NeverType{}, true
 	}
 	elems := make([]soltype.ObjTypeElem, 0, len(pa)+len(pb))
 	for _, p := range pa {
 		q, shared := propNamed(pb, p.Name)
 		if !shared {
+			if !b.Inexact {
+				continue
+			}
 			elems = append(elems, p)
 			continue
 		}
@@ -874,8 +987,6 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 		if p.Readonly != q.Readonly {
 			return nil, false
 		}
-		// A field either side requires is required on the meet, since a value has to
-		// satisfy both.
 		elems = append(elems, &soltype.PropertyElem{
 			Name:     p.Name,
 			Type:     c.meetTypes(p.Type, q.Type),
@@ -884,11 +995,33 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 		})
 	}
 	for _, q := range pb {
-		if _, shared := propNamed(pa, q.Name); !shared {
-			elems = append(elems, q)
+		if _, shared := propNamed(pa, q.Name); shared {
+			continue
+		}
+		if !a.Inexact {
+			continue
+		}
+		elems = append(elems, q)
+	}
+	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact && b.Inexact}, true
+}
+
+// requiredFieldsWithin reports whether every field props REQUIRES is one that
+// allowed names. open says whether the object allowed came from is inexact, which
+// caps nothing and so admits any field name.
+func requiredFieldsWithin(props, allowed []*soltype.PropertyElem, open bool) bool {
+	if open {
+		return true
+	}
+	for _, p := range props {
+		if p.Optional {
+			continue
+		}
+		if _, ok := propNamed(allowed, p.Name); !ok {
+			return false
 		}
 	}
-	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
+	return true
 }
 
 // joinObjects fuses two object atoms under a union. One object denotes their union
@@ -906,6 +1039,12 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 // budget, so `{x: A, y: C} | {x?: A, y: D}` keeps both atoms rather than fusing to
 // a record that admits an absent x beside a y drawn from C. Differing field names
 // break the fusion too, which is why `{x: number} | {y: number}` keeps both.
+//
+// Objects whose open markers disagree are kept apart. `{x: A} | {x: B, ...}` is not
+// `{x: A | B, ...}`, which would admit a record carrying an x drawn from A beside a
+// second field, and only the exact member admits an x from A. The pair that would
+// fuse is the one whose fields also agree, and joinAtoms answers that one through
+// widerByMarker before reaching here.
 func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	if a.Inexact != b.Inexact {
 		return nil, false
@@ -947,42 +1086,51 @@ func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
 }
 
-// meetTuples fuses two tuple atoms position by position.
+// meetTuples fuses two tuple atoms position by position, or returns `never` when
+// the two admit no common length.
 //
-// Two tuples of the same length meet at each position. Two INEXACT tuples of
-// different lengths meet as well. `[A, ...]` denotes the tuples of length at least
-// one whose first element is an A, so meeting it with `[A', B', ...]` gives the
-// tuples of length at least two whose first element is in `A & A'` and whose
-// second is a B'. That is `[A & A', B', ...]`, which is the longer length, the
-// shared prefix narrowed, and the longer tuple's remaining positions carried over.
+// # What a tuple atom denotes
 //
-// Two EXACT tuples of different lengths are kept apart. An exact tuple is
-// fixed-length, so no value is both and their meet is really `never`. Settling
-// that is PR7's exactness-aware merge, and keeping two atoms is sound meanwhile.
-// TODO(#1064). Two tuples whose open markers disagree are kept apart for the same
-// reason.
+// A tuple's length set is a floor and a cap, the way an object's key set is. Its
+// element list is the floor, and an exact tuple caps the length there while an
+// inexact one leaves it uncapped.
+//
+//	[A, B]     admits length 2 alone
+//	[A, ...]   admits every length from 1 up
+//
+// # The rule
+//
+// The meet's floor is the longer element list and its cap is the tighter of the
+// two caps. A cap below that floor admits no length, so the meet is `never`, which
+// is what makes exact `[A] & [A, B]` and exact `[A] & [A', B', ...]` uninhabited.
+//
+// Otherwise every position of the longer list survives. A position both lists name
+// narrows to the meet of the two elements. A position only the longer list names is
+// unconstrained by the shorter one, whose open tail admits anything there, so the
+// longer one's element carries over. `[A, ...] & [A', B', ...]` is
+// `[A & A', B', ...]`.
+//
+// The meet is exact when either side is, since one cap is enough to fix the length.
 func (c *Context) meetTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
 	if !comparableTuples(a, b) {
 		return nil, false
 	}
-	if len(a.Elems) != len(b.Elems) && !a.Inexact {
-		return nil, false
+	length := max(len(a.Elems), len(b.Elems))
+	if (!a.Inexact && length > len(a.Elems)) || (!b.Inexact && length > len(b.Elems)) {
+		return &soltype.NeverType{}, true
 	}
-	long, short := a, b
-	if len(b.Elems) > len(a.Elems) {
-		long, short = b, a
-	}
-	elems := make([]soltype.Type, len(long.Elems))
-	for i := range long.Elems {
-		if i < len(short.Elems) {
-			elems[i] = c.meetTypes(short.Elems[i], long.Elems[i])
-			continue
+	elems := make([]soltype.Type, length)
+	for i := range elems {
+		switch {
+		case i < len(a.Elems) && i < len(b.Elems):
+			elems[i] = c.meetTypes(a.Elems[i], b.Elems[i])
+		case i < len(a.Elems):
+			elems[i] = a.Elems[i]
+		default:
+			elems[i] = b.Elems[i]
 		}
-		// A position only the longer tuple names is unconstrained by the shorter one,
-		// whose open tail admits anything there.
-		elems[i] = long.Elems[i]
 	}
-	return &soltype.TupleType{Elems: elems, Inexact: a.Inexact}, true
+	return &soltype.TupleType{Elems: elems, Inexact: a.Inexact && b.Inexact}, true
 }
 
 // joinTuples fuses two tuple atoms under a union. One tuple denotes their union
@@ -996,8 +1144,12 @@ func (c *Context) meetTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
 // case that would fuse, a shared prefix matching position for position, where the
 // longer tuple is a subtype of the shorter and the union is the shorter one.
 // Recognizing it is a later refinement, not something the union rule needs.
+//
+// Tuples whose open markers disagree are kept apart too, since their length sets
+// differ. The pair that would fuse is the one where the element lists also agree,
+// and joinAtoms answers that one through widerByMarker before reaching here.
 func (c *Context) joinTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
-	if !comparableTuples(a, b) || len(a.Elems) != len(b.Elems) {
+	if !comparableTuples(a, b) || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 		return nil, false
 	}
 	elems := make([]soltype.Type, len(a.Elems))
@@ -1019,15 +1171,11 @@ func (c *Context) joinTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
 // comparableTuples reports whether two tuple atoms can be lined up position for
 // position at all. A `...P` spread element rules the pair out, since the element
 // list is not yet the tuple's real positions and pairing them up would compare a
-// spread against an ordinary element. Open markers that disagree rule it out too,
-// since one tuple is fixed-length and the other is not.
+// spread against an ordinary element.
 //
-// Length is not checked here, because the meet and the join differ on it. Each
-// applies its own length rule.
+// Neither the length nor the open marker is checked here, because the meet and the
+// join differ on both. Each applies its own rule.
 func comparableTuples(a, b *soltype.TupleType) bool {
-	if a.Inexact != b.Inexact {
-		return false
-	}
 	return !hasSpreadElem(a.Elems) && !hasSpreadElem(b.Elems)
 }
 
@@ -1053,6 +1201,10 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // The one-parameter restriction is load-bearing. Unioning each position
 // independently would fuse `(number, number) -> C` and `(string, string) -> C`
 // into a claim that the value accepts a number paired with a string.
+//
+// The fused arrow is inexact when either side is. An arrow's marker says the value
+// tolerates every argument count from its arity up, and a value satisfying both
+// arrows has to tolerate both demands, so the open one carries.
 func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 	if !fusableFuncs(a, b) {
 		return nil, false
@@ -1063,7 +1215,7 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 			Params:         a.Params,
 			Ret:            c.meetTypes(a.Ret, b.Ret),
 			Throws:         a.Throws,
-			Inexact:        a.Inexact,
+			Inexact:        a.Inexact || b.Inexact,
 			TypeParams:     nil,
 			LifetimeParams: nil,
 		}, true
@@ -1081,7 +1233,7 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 			Params:         []*soltype.FuncParam{fused},
 			Ret:            a.Ret,
 			Throws:         a.Throws,
-			Inexact:        a.Inexact,
+			Inexact:        a.Inexact || b.Inexact,
 			TypeParams:     nil,
 			LifetimeParams: nil,
 		}, true
@@ -1091,9 +1243,10 @@ func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 
 // fusableFuncs reports whether two function atoms are alike enough for meetFuncs
 // to build one arrow from them. Everything a fused arrow does not recompute must
-// already agree: the arity, the per-parameter markers, the trailing `...`, and what
-// a call may raise. A receiver or a quantifier rules the pair out, since one arrow
-// cannot say which receiver it takes or how the two binder lists correspond.
+// already agree: the arity, the per-parameter markers, and what a call may raise. A
+// receiver or a quantifier rules the pair out, since one arrow cannot say which
+// receiver it takes or how the two binder lists correspond. The trailing `...` is
+// recomputed rather than required to agree, so it is not checked here.
 //
 // Demanding equal raises is conservative. `(A -> C throws E) & (A -> C throws F)`
 // really raises `E & F`, but that merge belongs with PR9's throws threading.
@@ -1108,7 +1261,7 @@ func fusableFuncs(a, b *soltype.FuncType) bool {
 	if len(a.LifetimeParams) > 0 || len(b.LifetimeParams) > 0 {
 		return false
 	}
-	if a.Inexact != b.Inexact || len(a.Params) != len(b.Params) {
+	if len(a.Params) != len(b.Params) {
 		return false
 	}
 	for i := range a.Params {
