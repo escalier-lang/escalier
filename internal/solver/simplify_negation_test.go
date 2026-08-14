@@ -37,9 +37,8 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			want:  "number",
 		},
 		{
-			// Three chained guards, the accumulation the MLstruct plan's caveat 2
-			// describes. Each complement narrows what the previous one left, so the
-			// last member standing is what renders.
+			// Three chained guards. Each complement narrows what the previous one
+			// left, so the last member standing is what renders.
 			name: "three-guard chain",
 			build: func(*checker) soltype.Type {
 				return interT(unionT(str(), num(), boolT()), negT(str()), negT(num()))

@@ -1039,7 +1039,7 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 // refinement rather than re-typing the scrutinee, so each guard computes a fresh binding
 // whose type is simplified and frozen at that site. A later guard starts from that clean
 // base rather than accumulating one complement per level on a single long-lived variable,
-// which is the readability problem the MLstruct plan's caveat 2 names.
+// which is what would leave a deeply nested guard displaying a pile of negated members.
 //
 // Each case returns the binding a guard introduced, so the function's return type IS that
 // binding's rendered type. A diverging `else` supplies the other path, and its string
@@ -1068,7 +1068,7 @@ func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
 				}`,
 			want: "fn (u: number | string | boolean) -> string",
 		},
-		// A third level is the chain caveat 2 works through, written unsimplified as
+		// A third level, which unsimplified would read
 		// `(string | number | boolean) ∩ ¬string ∩ ¬number`. Each level narrows the
 		// previous binding, so the last one renders as the single member left.
 		"ThreeGuards": {
