@@ -150,15 +150,19 @@ func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
 // The cases the pass answers through its return values rather than through the type it
 // produces. subsumeFinal runs subsumeMembers over whatever comes back, so calling the pass
 // directly is what isolates its own decision.
+//
+// Each case asserts provedEmpty, which reports what the pass DERIVED rather than whether
+// the meet has an inhabitant. A false means the pass reached no derivation, and the last
+// case below is one where the meet really is empty and the flag is still false.
 func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	c := newChecker()
 
-	// `string & ¬string` admits no value. The empty meet is reported rather than returned
-	// as a `never` member, so the caller decides what an uninhabited intersection renders
-	// as.
-	t.Run("excluded positive part is uninhabited", func(t *testing.T) {
-		kept, changed, uninhabited := simplifyNegations(c.ctx, []soltype.Type{str(), negT(str())})
-		require.True(t, uninhabited)
+	// `string & ¬string` admits no value and the pass derives it. The empty meet is
+	// reported rather than returned as a `never` member, so the caller decides what an
+	// empty intersection renders as.
+	t.Run("excluded positive part is proved empty", func(t *testing.T) {
+		kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{str(), negT(str())})
+		require.True(t, provedEmpty)
 		require.True(t, changed)
 		require.Empty(t, kept)
 	})
@@ -167,8 +171,8 @@ func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	// finalizer keeps the node it already had.
 	t.Run("nothing to simplify", func(t *testing.T) {
 		members := []soltype.Type{num(), str()}
-		kept, changed, uninhabited := simplifyNegations(c.ctx, members)
-		require.False(t, uninhabited)
+		kept, changed, provedEmpty := simplifyNegations(c.ctx, members)
+		require.False(t, provedEmpty)
 		require.False(t, changed)
 		require.Equal(t, members, kept)
 	})
@@ -179,21 +183,29 @@ func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	t.Run("inexact union keeps its arms", func(t *testing.T) {
 		open := newUnion(nil, []soltype.Type{str(), num()}, true)
 		members := []soltype.Type{open, negT(str())}
-		kept, changed, uninhabited := simplifyNegations(c.ctx, members)
-		require.False(t, uninhabited)
+		kept, changed, provedEmpty := simplifyNegations(c.ctx, members)
+		require.False(t, provedEmpty)
 		require.False(t, changed)
 		require.Equal(t, members, kept)
 	})
 
-	// `number & ¬(boolean | ...)`. Every type is a subtype of an inexact union under the
-	// open-tail rule, so a complement over one would exclude whatever it is met with.
-	// Such an operand is refused, leaving both members standing.
+	// `number & ¬(boolean | ...)`. Constrain accepts every type against an inexact union,
+	// asserted below, so nothing satisfies the complement of one and this meet is in fact
+	// empty. usableOperand refuses such an operand anyway, so the pass derives nothing and
+	// both members stand.
+	//
+	// provedEmpty is therefore false over a meet that has no inhabitant. That is the flag
+	// working as documented: it reports the pass's derivation, not the type. Collapsing
+	// here would turn constrain's one-directional leniency, which exists so a value
+	// matching no named member is still ACCEPTED, into a display claiming no such value
+	// can exist. What an open tail excludes is left to the exactness-aware merge.
 	t.Run("inexact union operand is refused", func(t *testing.T) {
 		open := newUnion(nil, []soltype.Type{boolT()}, true)
-		require.True(t, subtypeHolds(c.ctx, num(), open))
+		require.True(t, subtypeHolds(c.ctx, num(), open), "every type is below an inexact union")
+		require.False(t, subtypeHolds(c.ctx, num(), negT(open)), "so nothing is below its complement")
 		members := []soltype.Type{num(), negT(open)}
-		kept, changed, uninhabited := simplifyNegations(c.ctx, members)
-		require.False(t, uninhabited)
+		kept, changed, provedEmpty := simplifyNegations(c.ctx, members)
+		require.False(t, provedEmpty)
 		require.False(t, changed)
 		require.Equal(t, members, kept)
 	})

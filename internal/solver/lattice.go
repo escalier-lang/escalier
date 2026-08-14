@@ -393,8 +393,8 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 		}
 		return collapseUnion(kept, t.Inexact, false)
 	case *soltype.IntersectionType:
-		members, changed, uninhabited := simplifyNegations(s.ctx, t.Types)
-		if uninhabited {
+		members, changed, provedEmpty := simplifyNegations(s.ctx, t.Types)
+		if provedEmpty {
 			return &soltype.NeverType{}
 		}
 		kept := subsumeMembers(s.ctx, members, intersectionDrops)

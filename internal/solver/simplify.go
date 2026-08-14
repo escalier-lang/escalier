@@ -486,15 +486,22 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // one long-lived variable.
 
 // simplifyNegations applies the two rewrites above to one intersection's members.
-// changed reports whether any member was rewritten or dropped, and uninhabited
-// reports that the members admit no value at all, in which case the returned list
-// carries nothing.
+// changed reports whether any member was rewritten or dropped.
+//
+// provedEmpty reports that THIS PASS derived that no value satisfies the members, in
+// which case the returned list carries nothing. It is one-directional. A false says
+// the pass reached no such derivation, NOT that the meet has an inhabitant. Every
+// member the pass declines to weigh comes back false, and some of those really are
+// empty. `number & ¬(boolean | ...)` is one: constrain accepts every type against an
+// inexact union, so nothing satisfies its complement, yet usableOperand refuses that
+// operand and the pass reports false. Read the flag as "collapse this to `never`",
+// never as a claim about the type.
 //
 // A member carrying a free variable is left alone, on the concreteness gate
 // concreteMember states. That is what keeps `T & ¬Tag` over an abstract T intact:
 // nothing proves T disjoint from Tag, so the complement is real information and
 // stays on the rendered type.
-func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, uninhabited bool) {
+func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
 	out := slices.Clone(members)
 	// negIdx holds the position of each complement both rewrites can act on, and
 	// posIdx the position of every other member.
