@@ -324,14 +324,39 @@ func TestNegatedBoundReachesAVariable(t *testing.T) {
 	})
 
 	// The normal-form layer moves a negated part to the far side of the `<:` as a
-	// POSITIVE one, so `α ∩ ¬string <: number` becomes `α <: number | string`. The bound
-	// α ends up with is one of those members, never a complement.
+	// POSITIVE one, so `α ∩ ¬string <: number` becomes `α <: number | string`. A union in
+	// supertype position is an exists rule, so ONE member is kept, never both and never a
+	// complement. Recording both would read as the meet `number & string`, which is
+	// stronger than the goal.
+	//
+	// Which member survives depends on α's other bounds, so both outcomes are pinned. A
+	// `"hi"` lower bound fails the `number` trial and pushes the choice to `string`.
 	t.Run("a negated part crosses over positive", func(t *testing.T) {
+		cases := map[string]struct {
+			lower []soltype.Type
+			want  []string
+		}{
+			"unconstrained commits the first member": {want: []string{"number"}},
+			"a string lower bound commits string":    {lower: []soltype.Type{strLit("hi")}, want: []string{"string"}},
+		}
+		for name, tt := range cases {
+			t.Run(name, func(t *testing.T) {
+				c := &Context{}
+				a := c.freshVar(0)
+				a.LowerBounds = tt.lower
+				sub := newIntersection(nil, []soltype.Type{a, negT(str())})
+				require.Empty(t, Messages(c.Constrain(sub, num())))
+				require.Equal(t, tt.want, printedBounds(a.UpperBounds))
+			})
+		}
+	})
+
+	// The meet reading of the upper-bound list is what rules out recording both members.
+	t.Run("upper bounds are read as a meet", func(t *testing.T) {
 		c := &Context{}
 		a := c.freshVar(0)
-		sub := newIntersection(nil, []soltype.Type{a, negT(str())})
-		require.Empty(t, Messages(c.Constrain(sub, num())))
-		require.Equal(t, []string{"number"}, printedBounds(a.UpperBounds))
+		a.UpperBounds = []soltype.Type{num(), str()}
+		require.Equal(t, "number & string", soltype.Print(coalesce(a, soltype.Negative)))
 	})
 }
 

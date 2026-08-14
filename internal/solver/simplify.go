@@ -466,10 +466,17 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 //
 // The normal-form layer's move-across-`<:` rewrite does the opposite, which is worth
 // knowing when tracking down where a complement came from. It turns a negated part
-// into a positive one on the far side, so the goal below leaves α with a positive
-// bound and no complement at all:
+// into a positive one on the far side:
 //
-//	α ∩ ¬string <: number   ⟹   α <: number | string   ⟹   α.UpperBounds = [number]
+//	α ∩ ¬string <: number   ⟹   α <: number | string
+//
+// α ends up with ONE positive upper bound there, never a complement and never both
+// members. A variable's upper bounds are read as a meet, so recording both would say
+// `α <: number & string` and reject what the goal allows. A union in supertype
+// position is an exists rule, so the layer trials `α <: number` and `α <: string` and
+// keeps the first that holds. Which one that is depends on α's other bounds. An
+// unconstrained α commits `number`, while an α carrying the lower bound `"hi"` fails
+// that trial and commits `string`.
 //
 // TestNegatedBoundReachesAVariable pins both. The literal stored form is faithful but
 // unreadable. Narrowing a `string | number` against "not a string" coalesces to
