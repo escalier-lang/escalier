@@ -1037,9 +1037,15 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 
 // Binding-based narrowing keeps a chained guard's display clean. Escalier rebinds on
 // refinement rather than re-typing the scrutinee, so each guard computes a fresh binding
-// whose type is simplified and frozen at that site. A later guard starts from that clean
-// base rather than accumulating one complement per level on a single long-lived variable,
-// which is what would leave a deeply nested guard displaying a pile of negated members.
+// whose type is frozen at that site and a later guard starts from that clean base.
+//
+// NO COMPLEMENT ARISES ALONG THE WAY. Narrowing drops the union members a guard's
+// annotation cannot admit, so the chain below reaches `boolean` as a plain member list and
+// the negation simplifier in simplify.go is never reached. A solver that re-typed one
+// long-lived variable would instead accumulate `& ¬string & ¬number` on it and need that
+// simplifier to read `boolean` back out. These cases pin that the accumulating form never
+// arises, which is what keeps the simplifier's input small when a complement does show up
+// from somewhere else.
 //
 // Each case returns the binding a guard introduced, so the function's return type IS that
 // binding's rendered type. A diverging `else` supplies the other path, and its string
@@ -1059,8 +1065,8 @@ func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
 			want: "fn (u: number | string | boolean) -> number",
 		},
 		// The first guard's binding is a two-member union, and the second narrows THAT
-		// rather than the scrutinee. Both levels render as plain unions.
-		"TwoGuards": {
+		// rather than the scrutinee. Both levels render as plain member lists.
+		"TwoGuardsEndingAtOneMember": {
 			src: `fn f(u: number | string | boolean) {
 					val x: number | string = u else { return "no value" }
 					val y: string = x else { return "not a string" }
@@ -1068,10 +1074,11 @@ func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
 				}`,
 			want: "fn (u: number | string | boolean) -> string",
 		},
-		// A third level, which unsimplified would read
-		// `(string | number | boolean) ∩ ¬string ∩ ¬number`. Each level narrows the
-		// previous binding, so the last one renders as the single member left.
-		"ThreeGuards": {
+		// Two guards that between them exclude two of the three members. This is the
+		// chain a flow-narrowing solver would render as
+		// `(number | string | boolean) & ¬string & ¬number`; here the first guard binds
+		// `number | boolean` and the second binds `boolean`, with no complement built.
+		"TwoGuardsReachingTheThirdMember": {
 			src: `fn f(u: number | string | boolean) {
 					val x: number | boolean = u else { return true }
 					val y: boolean = x else { return false }
