@@ -505,6 +505,51 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // simplified and frozen at that site, so nested guards do not pile `& ¬A & ¬B` onto
 // one long-lived variable.
 
+// simplifyCaptured applies the two rewrites to every intersection inside a
+// conditional's `infer` capture. A capture is read straight off a variable's bounds by
+// capturedBound and substituted into the Then branch, so it never passes through
+// coalesceScheme and subsumeFinal never sees it. Without this pass
+//
+//	type Result = if "a" : number | infer U { [U] } else { "no" }
+//
+// reduces to `["a" & ¬number]`, where U picked up the complement from the normal-form
+// layer settling `"a" <: number ∪ U` on U. See weakestBound in constrain_nf.go.
+//
+// It runs the negation rewrites alone rather than the whole of subsumeFinal. A capture
+// is a type the branch goes on to read structurally rather than a rendered binding, so
+// dropping a member a sibling subsumes would change what the branch reads.
+func (c *Context) simplifyCaptured(t soltype.Type) soltype.Type {
+	return t.Accept(&capturedSimplifier{ctx: c}, soltype.Positive)
+}
+
+// capturedSimplifier is the rewriting visitor behind simplifyCaptured. It rewrites in
+// ExitType, after its children, so a nested intersection is simplified before the
+// enclosing node reads it.
+type capturedSimplifier struct{ ctx *Context }
+
+func (s *capturedSimplifier) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	return soltype.EnterResult{}
+}
+
+func (s *capturedSimplifier) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.IntersectionType:
+		members, changed, provedEmpty := simplifyNegations(s.ctx, t.Types)
+		if provedEmpty {
+			return &soltype.NeverType{}
+		}
+		if !changed {
+			return t
+		}
+		return collapseIntersection(members, false)
+	case *soltype.NegationType:
+		// This walk already rewrote the operand, so a complement whose operand collapsed to
+		// a lattice bound is folded here rather than left as the meaningless `¬never`.
+		return foldNegation(t)
+	}
+	return t
+}
+
 // simplifyNegations applies the two rewrites above to one intersection's members.
 // changed reports whether any member was rewritten or dropped.
 //

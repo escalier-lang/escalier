@@ -118,6 +118,84 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 	require.Equal(t, "¬string", soltype.Print(coalesce(a, soltype.Negative)))
 }
 
+// TestConstrainRecordsWeakestBoundOnVarCandidate pins what a goal the normal-form
+// layer settles on a supertype-side variable records under that variable. The goal
+// asks only for what the other supertype candidates leave uncovered, so each of them
+// is subtracted from the bound:
+//
+//	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
+//
+// weakestBound in constrain_nf.go builds the left-hand side. Recording `⋂subCands`
+// instead would be sound and would pin the variable further than the goal asked.
+//
+// wantBounds is the bound list as stored, and wantSurface what the display simplifier
+// makes of it. The two differ wherever a complement's operand is disjoint from what it
+// meets, since simplifyNegations then drops it.
+func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
+	tests := []struct {
+		name string
+		// goal builds the constraint to decide from the variable under test.
+		goal        func(v *soltype.TypeVarType) (sub, super soltype.Type)
+		wantBounds  []string
+		wantSurface string
+	}{
+		{
+			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
+			// goal settles on T. It asks T for the values number does not already cover.
+			name: "a union member subtracts its concrete siblings",
+			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false)
+			},
+			wantBounds:  []string{`"hi" & ¬number`},
+			wantSurface: `"hi"`,
+		},
+		{
+			// `¬T <: number`. The layer moves both complements across the `<:`, which reads
+			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
+			// collapse `¬T` to `never`, which the goal never asked for.
+			name: "a negated variable keeps the complement of the other side",
+			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
+				return negT(v), num()
+			},
+			wantBounds:  []string{"¬number"},
+			wantSurface: "¬number",
+		},
+		{
+			// `5 <: (T | number)`. The number candidate holds, so the trial commits it and
+			// never reaches T. A candidate that decides a shape records no bound at all.
+			name: "a concrete candidate that holds leaves the variable unbounded",
+			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
+				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false)
+			},
+			wantBounds:  []string{},
+			wantSurface: "never",
+		},
+		{
+			// `"hi" <: (T | U)`. U is left in the join rather than subtracted, for the two
+			// reasons weakestBound gives. Recording `"hi" & ¬U` would render T as `never`,
+			// since coalescing resolves an unconstrained U inside the complement to `unknown`.
+			name: "a sibling variable is left in the join",
+			goal: func(v *soltype.TypeVarType) (soltype.Type, soltype.Type) {
+				other := &soltype.TypeVarType{ID: v.ID + 1}
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, other}, false)
+			},
+			wantBounds:  []string{`"hi"`},
+			wantSurface: `"hi"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			v := c.freshVar(0)
+			sub, super := tt.goal(v)
+			require.False(t, hasHardError(c.Constrain(sub, super)))
+			require.Equal(t, tt.wantBounds, printedBounds(v.LowerBounds))
+			surface := coalesce(v, soltype.Positive).Accept(&finalSubsumer{ctx: c}, soltype.Positive)
+			require.Equal(t, tt.wantSurface, soltype.Print(surface))
+		})
+	}
+}
+
 // TestConstrainIntersectionFusesBeforeComparing covers the subtype-side win the
 // normal-form layer brings. Two inexact objects meet to one object carrying both
 // fields, so the intersection satisfies a target naming both. Comparing the

@@ -358,6 +358,9 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, m
 // The bounds are read after constrain returns and before the probe rolls them back, the window
 // trialMutatesBounds reads p.mutatedBounds() in. The trial is discarded either way, so no bound
 // survives on any type the caller handed in.
+//
+// Each capture is simplified once the probe is closed. simplifyCaptured trials subtyping, so it
+// has to run outside the window where the pattern's variables still carry the trial's bounds.
 func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVarType, seen *seenPairs) ([]soltype.Type, bool) {
 	p := newProbe(c, c.probe)
 	c.probe = p
@@ -372,6 +375,9 @@ func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVar
 	}
 	c.probe = p.parent
 	p.Discard()
+	for i, t := range captured {
+		captured[i] = c.simplifyCaptured(t)
+	}
 	return captured, ok
 }
 

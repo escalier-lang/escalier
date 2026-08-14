@@ -112,7 +112,7 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 // sub and super are the operands constrainNF was called with, and name the failure
 // when the goal has no pair to trial at all.
 //
-// Three things follow from deciding by one pair.
+// Two things follow from deciding by one pair.
 //
 //   - It is incomplete. A type can be a subtype of a join through the join's
 //     members taken together, which no single pair states. `boolean <: true |
@@ -122,10 +122,6 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //     skipped. Such a union is one atom, so normalizing `boolean <: (number |
 //     string | ...)` hands back the pair it started from and no smaller question
 //     is ever reached. Every other supertype comes apart into smaller atoms.
-//   - A variable on the supertype side picks up the whole meet as a lower bound,
-//     which is stronger than the goal asks for. `¬T <: number` records `unknown`
-//     under T where `¬number` would do. That is sound, and a variable is reached
-//     only after every concrete candidate failed.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -340,10 +336,22 @@ type nfPair struct{ sub, super soltype.Type }
 // reader sees first. origSub and origSuper are the constraint the caller is
 // deciding; the pair repeating it against an inexact union is dropped, for the
 // reason constrainImplied gives.
+//
+// A variable supertype candidate gets one pair rather than one per subtype
+// candidate, and that pair's subtype side is weakestBound's meet. A concrete
+// candidate keeps a pair per subtype candidate, since deciding `sᵢ <: pⱼ` asks
+// whether one shape fits another and records no bound of its own.
+//
+// Both orderings stay in specificity order, which ranks a variable below every
+// concrete, so a variable candidate's pair is trialled after every concrete one.
 func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
+		if _, isVar := superCands[j].(*soltype.TypeVarType); isVar {
+			pairs = append(pairs, nfPair{sub: weakestBound(subCands, superCands, j), super: superCands[j]})
+			continue
+		}
 		for _, i := range subOrder {
 			if isInexactUnion(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
 				continue
@@ -352,6 +360,67 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 		}
 	}
 	return pairs
+}
+
+// weakestBound is the subtype side of the goal the variable at superCands[keep] is
+// trialled against. It is the meet of every subtype candidate with the complement of
+// each variable-free supertype candidate, and the variable records it as a lower bound.
+//
+// The subtraction comes out of the same move-across-the-`<:` rewrite the file header
+// states for a negated part, applied to the candidates the variable shares its side
+// with:
+//
+//	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
+//
+// The right-hand side is everything the goal asks of v and nothing more. Constraining
+// `⋂subCands` alone would take from v the values the other candidates already cover.
+// `"hi" <: (T | number)` would pin T to `"hi"` where the goal asks only for
+// `"hi" ∩ ¬number`. `¬T <: number` normalizes to `unknown <: number ∪ T`, so it would
+// pin T to `unknown` and collapse `¬T` to `never` where the goal asks only for
+// `¬number`.
+//
+// A complement in a recorded bound is a display concern rather than a solving one.
+// simplifyNegations drops one whose operand shares no value with what it meets, so T
+// still coalesces to `"hi"` in the first example. See simplify.go.
+//
+// A candidate carrying a free variable is left in the join rather than subtracted, on
+// concreteMember's gate. Subtracting it is sound, and it costs a complement nothing can
+// clear away afterwards.
+//
+//   - simplifyNegations weighs disjointness only between variable-free operands, so
+//     `¬U` survives every display pass.
+//   - Coalescing reads U at flipped polarity inside the complement, so an
+//     unconstrained U resolves to `unknown` there and `¬U` to `never`. Deciding
+//     `"hi" <: (T | U)` would then render T as `never` instead of `"hi"`.
+//
+// The partial subtraction proves the goal for the same reason the whole one does. Every
+// candidate left in the join stays on the supertype side, so the trial asks for at
+// least what the goal asks, and a bound recorded off it rules out no value the goal
+// admits.
+func weakestBound(subCands, superCands []soltype.Type, keep int) soltype.Type {
+	target := superCands[keep]
+	// The target standing in the meet discharges the goal by reflexivity, so it asks
+	// nothing of the variable. Handing constrain the bare variable lets its `v <: v`
+	// rule settle the pair without recording a self-referential bound.
+	if slices.ContainsFunc(subCands, func(s soltype.Type) bool { return equalType(s, target) }) {
+		return target
+	}
+	parts := make([]soltype.Type, 0, len(subCands)+len(superCands)-1)
+	parts = append(parts, subCands...)
+	for j, p := range superCands {
+		if j == keep || !concreteMember(p) {
+			continue
+		}
+		neg := newNegation(p)
+		if isNeverType(neg) {
+			// p is the top of the lattice, so it covers every value on its own and the meet
+			// under it is empty. `never <: v` records no bound, which is the right answer:
+			// the goal already holds without v.
+			return neg
+		}
+		parts = append(parts, neg)
+	}
+	return newIntersection(nil, parts)
 }
 
 // varsAsTypes returns a variable set's members as types, ordered by id so a
