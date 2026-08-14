@@ -150,7 +150,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// What the var branch records is the weakest bound that discharges the goal, so the
 		// number branch is subtracted. weakestBound in constrain_nf.go derives it. The
 		// complement is a solving artifact rather than something a reader should meet, and
-		// the display simplifier drops it below.
+		// the last assertion here shows the display simplifier dropping it.
 		c := &Context{}
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
@@ -159,8 +159,8 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		require.Equal(t, []string{`"hi" & ¬number`}, printedBounds(extra.LowerBounds))
 		require.Empty(t, extra.UpperBounds)
 
-		// `"hi"` and `number` share no value, so `¬number` states nothing the meet does not
-		// already say and simplifyNegations drops it.
+		// `"hi"` and `number` share no value, so `¬number` rules out nothing `"hi"` admits.
+		// simplifyNegations drops it.
 		surface := extra.LowerBounds[0].Accept(&finalSubsumer{ctx: c}, soltype.Positive)
 		require.Equal(t, `"hi"`, soltype.Print(surface))
 	})

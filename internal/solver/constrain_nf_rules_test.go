@@ -126,7 +126,9 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 //	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
 //
 // weakestBound in constrain_nf.go builds the left-hand side. Recording `⋂subCands`
-// instead would be sound and would pin the variable further than the goal asked.
+// instead is sound and pins the variable further than the goal asks. A candidate
+// carrying a free variable is the exception and stays in the join, for the reasons
+// weakestBound gives.
 //
 // wantBounds is the bound list as stored, and wantSurface what the display simplifier
 // makes of it. The two differ wherever a complement's operand is disjoint from what it
@@ -154,7 +156,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 		{
 			// `¬T <: number`. The layer moves both complements across the `<:`, which reads
 			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
-			// collapse `¬T` to `never`, which the goal never asked for.
+			// collapse `¬T` to `never`, which the goal never asks for.
 			name: "a negated variable keeps the complement of the other side",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)

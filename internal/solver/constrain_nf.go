@@ -342,8 +342,8 @@ type nfPair struct{ sub, super soltype.Type }
 // candidate keeps a pair per subtype candidate, since deciding `sᵢ <: pⱼ` asks
 // whether one shape fits another and records no bound of its own.
 //
-// Both orderings stay in specificity order, which ranks a variable below every
-// concrete, so a variable candidate's pair is trialled after every concrete one.
+// specificityOrder ranks a variable below every concrete type, so a variable
+// candidate's pair is trialled after every concrete candidate's.
 func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
@@ -379,33 +379,32 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 // pin T to `unknown` and collapse `¬T` to `never` where the goal asks only for
 // `¬number`.
 //
-// simplifyNegations drops a complement whose operand shares no value with what it
-// meets, so T still coalesces to `"hi"` in the first example. See simplify.go. That
-// pass asks disjointness through the meet of two atoms, which derives `never` for a
-// literal against a primitive of another family and not for two records. A record,
-// tuple, or arrow sibling therefore leaves a complement that reaches the rendered type.
-// Deciding
+// A complement the subtraction records survives only as far as the display simplifier.
+// simplifyNegations drops one whose operand shares no value with what it meets, so T
+// coalesces to `"hi"` in the first example. See simplify.go. It asks that through the
+// meet of two atoms, which derives `never` for `"hi"` meeting `number` and not for two
+// records. So a record, tuple, or arrow candidate leaves a complement in the rendered
+// type. Deciding
 //
 //	{a: 1, ...} <: ({b: number, ...} | T)
 //
-// renders T as `{a: 1, ...} & ¬{b: number, ...}` rather than `{a: 1, ...}`. That is the
-// same case in which the subtraction changes what T admits at all, since a sibling the
-// meet is already disjoint from subtracts nothing.
+// renders T as `{a: 1, ...} & ¬{b: number, ...}` rather than `{a: 1, ...}`. Those are
+// also the goals where the subtraction changes what T admits. A candidate the meet is
+// already disjoint from subtracts nothing, so it costs nothing at the surface either.
 //
 // A candidate carrying a free variable is left in the join rather than subtracted, on
-// concreteMember's gate. Subtracting it is sound, and it costs a complement nothing can
-// clear away afterwards.
+// concreteMember's gate. Subtracting it is sound. It buys a complement that nothing
+// downstream can clear away.
 //
 //   - simplifyNegations weighs disjointness only between variable-free operands, so
 //     `¬U` survives every display pass.
 //   - Coalescing reads U at flipped polarity inside the complement, so an
 //     unconstrained U resolves to `unknown` there and `¬U` to `never`. Deciding
-//     `"hi" <: (T | U)` would then render T as `never` instead of `"hi"`.
+//     `"hi" <: (T | U)` would then render T as `never` rather than `"hi"`.
 //
-// The partial subtraction proves the goal for the same reason the whole one does. Every
-// candidate left in the join stays on the supertype side, so the trial asks for at
-// least what the goal asks, and a bound recorded off it rules out no value the goal
-// admits.
+// Leaving a candidate in the join still proves the goal. That candidate stays on the
+// supertype side, so the trial asks for at least what the goal asks, and a bound
+// recorded off it rules out no value the goal admits.
 func weakestBound(subCands, superCands []soltype.Type, keep int) soltype.Type {
 	target := superCands[keep]
 	// The target standing in the meet discharges the goal by reflexivity, so it asks
@@ -423,8 +422,8 @@ func weakestBound(subCands, superCands []soltype.Type, keep int) soltype.Type {
 		neg := newNegation(p)
 		if isNeverType(neg) {
 			// p is the top of the lattice, so it covers every value on its own and the meet
-			// under it is empty. `never <: v` records no bound, which is the right answer:
-			// the goal already holds without v.
+			// under it is empty. `never <: v` records no bound. That is the right answer,
+			// since the goal already holds without v.
 			return neg
 		}
 		parts = append(parts, neg)
