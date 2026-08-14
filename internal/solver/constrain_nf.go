@@ -114,9 +114,10 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //
 // Three things follow from deciding by one pair.
 //
-//   - It is incomplete. A meet can be a subtype of a join through its parts taken
-//     together, which no pair states, so `{x: number} & {y: number} <: {x: number,
-//     y: number}` is rejected. #1064's exact-record merge settles that one.
+//   - It is incomplete. A type can be a subtype of a join through the join's
+//     members taken together, which no single pair states. `boolean <: true |
+//     false` is rejected for that reason. The two literals do not fuse into one
+//     atom, and `boolean` is a subtype of neither of them on its own.
 //   - A pair repeating the caller's own question against an inexact union is
 //     skipped. Such a union is one atom, so normalizing `boolean <: (number |
 //     string | ...)` hands back the pair it started from and no smaller question

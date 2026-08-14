@@ -78,9 +78,10 @@ import (
 // values. widerByMarker records both directions in one place.
 //
 // This file is the only place structural exactness is decided. newIntersection and
-// newUnion in lattice.go flatten, prune, dedup, and order a lattice node, and they
-// leave an uninhabited meet standing (#927), so a merge here cannot delegate its
-// exactness rule to them without asking the question back.
+// newUnion in lattice.go flatten, prune, dedup, and order a lattice node. They
+// leave an uninhabited meet standing, which is escalier-lang/escalier#927, so a
+// merge here cannot delegate its exactness rule to them without asking the question
+// back.
 //
 // # What is deliberately left to a later PR
 //
@@ -181,7 +182,7 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 			// exactly what the diagnostics print. An `Open` flag on the DNF would
 			// distribute, but nothing says what the tail meets C to, so the mark would
 			// have to be polarity-aware to stay sound. Neither buys a verdict the opaque
-			// atom gets wrong. Escalier issue #1064 records the full comparison.
+			// atom gets wrong. The full comparison is on escalier-lang/escalier#1064.
 			return dnfAtom(t)
 		}
 		out := DNF{Conjuncts: nil}
@@ -737,11 +738,24 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // other's, and comparing. That reuses equalType rather than re-spelling per-kind
 // structural equality, and it keeps the test in step with equalType as kinds gain
 // fields.
+//
+// An UNREDUCED atom is left alone, which is the same refusal plainProps and
+// comparableTuples make. A `{...S}` does not know its own field names and a
+// `[...P]` does not know its own positions, so neither supports the claim that the
+// exact side caps what the inexact side leaves open. The constraint rules treat
+// such an atom as inert and relate two of them only when they are equal. Fusing
+// the pair therefore leaves those rules an atom they cannot take apart, and this
+// declaration stops checking:
+//
+//	fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }
 func widerByMarker(a, b soltype.Type) (soltype.Type, bool) {
 	switch a := a.(type) {
 	case *soltype.ObjectType:
 		b, isObj := b.(*soltype.ObjectType)
 		if !isObj || a.Inexact == b.Inexact {
+			return nil, false
+		}
+		if soltype.HasResidualElem(a.Elems) || soltype.HasResidualElem(b.Elems) {
 			return nil, false
 		}
 		flipped := *a
@@ -756,6 +770,9 @@ func widerByMarker(a, b soltype.Type) (soltype.Type, bool) {
 	case *soltype.TupleType:
 		b, isTuple := b.(*soltype.TupleType)
 		if !isTuple || a.Inexact == b.Inexact {
+			return nil, false
+		}
+		if hasSpreadElem(a.Elems) || hasSpreadElem(b.Elems) {
 			return nil, false
 		}
 		flipped := *a
@@ -929,7 +946,7 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 }
 
 // meetObjects fuses two object atoms field by field, returns `never` when no value
-// satisfies both, or keeps them apart when neither answer is available. Keeping two
+// satisfies both, or keeps them apart when it can reach neither answer. Keeping two
 // atoms is just as precise and costs only the extra atom, so the fusion is an
 // optimization rather than an obligation.
 //
@@ -944,18 +961,21 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 //
 // # The rule
 //
-// The meet's floor is the union of the two floors and its cap is the intersection
-// of the two caps, since a value has to satisfy both objects at once. So:
+// A value has to satisfy both objects at once, so the meet's floor is the union of
+// the two floors and its cap is the intersection of the two caps. Three rules
+// follow.
 //
-//  1. A field either side REQUIRES that the other side caps out is a contradiction,
-//     and the meet is `never`. This is what makes exact `{x} & {y}` uninhabited.
-//  2. A field inside the meet's cap survives. Both sides naming it means the meet
+//  1. Take a field one side REQUIRES and the other side caps out. Carrying it
+//     breaks the second object's cap and omitting it breaks the first object's
+//     floor, so no value satisfies both and the meet is `never`. This is what makes
+//     exact `{x} & {y}` uninhabited.
+//  2. A field inside the meet's cap survives. When both sides name it the meet
 //     narrows it to their meet, and a field either side requires is required on the
 //     meet, so `{x: A} & {x?: B}` is `{x: A & B}`.
-//  3. A field only one side names and the other side caps out drops. Nothing
-//     required is lost, since rule 1 already answered that case. Exact
-//     `{x: A, y?: B} & {x: C}` is `{x: A & C}`, because the second object admits no
-//     y at all.
+//  3. A field only one side names and the other side caps out drops. Rule 1 already
+//     answered the case where such a field is required, so nothing required is lost
+//     here. Exact `{x: A, y?: B} & {x: C}` is `{x: A & C}`, because the second
+//     object admits no y at all.
 //
 // The meet is exact when either side is, since one cap is enough to close the key
 // set.
@@ -1006,9 +1026,10 @@ func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact && b.Inexact}, true
 }
 
-// requiredFieldsWithin reports whether every field props REQUIRES is one that
-// allowed names. open says whether the object allowed came from is inexact, which
-// caps nothing and so admits any field name.
+// requiredFieldsWithin reports whether every field props REQUIRES is one the
+// allowed list names. Pass open as true when allowed came off an inexact object.
+// Such an object caps nothing, so it admits any field name and the check passes
+// without reading either list.
 func requiredFieldsWithin(props, allowed []*soltype.PropertyElem, open bool) bool {
 	if open {
 		return true
@@ -1101,8 +1122,9 @@ func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 // # The rule
 //
 // The meet's floor is the longer element list and its cap is the tighter of the
-// two caps. A cap below that floor admits no length, so the meet is `never`, which
-// is what makes exact `[A] & [A, B]` and exact `[A] & [A', B', ...]` uninhabited.
+// two caps. A cap below that floor admits no length, so the meet is `never`. Both
+// `[A] & [A, B]` and `[A] & [A', B', ...]` are uninhabited for that reason: the
+// exact `[A]` caps the length at one, and the other side needs two.
 //
 // Otherwise every position of the longer list survives. A position both lists name
 // narrows to the meet of the two elements. A position only the longer list names is
@@ -1203,8 +1225,8 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // into a claim that the value accepts a number paired with a string.
 //
 // The fused arrow is inexact when either side is. An arrow's marker says the value
-// tolerates every argument count from its arity up, and a value satisfying both
-// arrows has to tolerate both demands, so the open one carries.
+// tolerates every argument count from its arity up. A value satisfying both arrows
+// meets both demands, and the open one is the stronger of the two.
 func (c *Context) meetFuncs(a, b *soltype.FuncType) (soltype.Type, bool) {
 	if !fusableFuncs(a, b) {
 		return nil, false

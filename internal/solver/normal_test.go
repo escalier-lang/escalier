@@ -264,8 +264,8 @@ func TestCNFRoundTrip(t *testing.T) {
 		{name: "the top of the lattice", in: "unknown", want: "unknown"},
 		{name: "a union is one disjunct", in: "number | string", want: "number | string"},
 		// A tuple and a record are the un-fusable pair these two rows need. No merge
-		// takes a pair of different kinds apart, and both stay inhabited: a value
-		// carrying an `x` alongside its indexed elements satisfies each of them.
+		// takes a pair of different kinds apart. Both also stay inhabited, since a
+		// value carrying an `x` alongside its indexed elements satisfies each of them.
 		{name: "an intersection is two disjuncts", in: "[number] & {x: number}", want: "[number] & {x: number}"},
 		{
 			name: "a union distributes over an intersection",
@@ -591,8 +591,30 @@ func TestDeMorganOverAnInexactUnion(t *testing.T) {
 	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
 }
 
+// TestUnreducedAtomsKeepTheirOpenMarkerApart guards the one pair widerByMarker must
+// refuse. A `{...S}` does not know its own field names and a `[...P]` does not know
+// its own positions, so neither says what the exact side caps. The constraint rules
+// treat such an atom as inert and relate two of them only when they are equal, so
+// fusing the pair leaves those rules an atom they cannot take apart.
+//
+// Each source below returns its own argument, which has to check.
+func TestUnreducedAtomsKeepTheirOpenMarkerApart(t *testing.T) {
+	tests := map[string]string{
+		"Tuple":  `fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }`,
+		"Object": `fn go<S>(x: {...S}) -> {...S} | {...S, ...} { return x }`,
+	}
+	for name, src := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
 // TestComplementsKeepTheOpenMarker covers exactness and negation threading through
-// normalization at once, which is the pairing #1064 calls out as easy to break.
+// normalization at once. The two are orthogonal, which is what makes the pairing
+// easy to break. A change that gets either one right on its own can still drop the
+// other where they cross.
 //
 // `¬{x: number}` excludes the records whose only field is an x. `¬{x: number, ...}`
 // excludes every record carrying an x, which is a strictly larger set, so the two
