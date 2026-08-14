@@ -488,22 +488,15 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // simplifyNegations applies the two rewrites above to one intersection's members.
 // changed reports whether any member was rewritten or dropped.
 //
-// provedEmpty reports that THIS PASS derived that no value satisfies the members, in
-// which case the returned list carries nothing. It is one-directional. A false says
-// the pass reached no such derivation, NOT that the meet has an inhabitant. A meet
-// whose members the concreteness gate below keeps the pass away from comes back
-// false whether or not it is empty. Read the flag as "collapse this to `never`",
-// never as a claim about the type.
+// provedEmpty is one-directional. True means the pass derived that no value satisfies
+// the members, and the returned list is then empty. False is not a claim that the meet
+// has an inhabitant, only that the pass derived nothing. Read it as "collapse this to
+// `never`".
 //
-// A member carrying a free variable is left alone, on the concreteness gate
-// concreteMember states. That is what keeps `T & ¬Tag` over an abstract T intact:
-// nothing proves T disjoint from Tag, so the complement is real information and
-// stays on the rendered type.
-//
-// An INEXACT operand is weighed like any other. `A | B | ...` is the top of the
-// subtype lattice, so nothing satisfies `¬(A | B | ...)` and a meet carrying one is
-// empty. `number & ¬(boolean | string | ...)` collapses to `never` on that reading.
-// TestOpenUnionIsTopForSubtypingOnly pins it.
+// A member carrying a free variable is left alone, on concreteMember's gate. That is
+// what keeps `T & ¬Tag` over an abstract T intact. An inexact operand is weighed like
+// any other, since `A | B | ...` is top and nothing satisfies its complement.
+// TestOpenUnionIsTopForSubtypingOnly pins that reading.
 func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
 	out := slices.Clone(members)
 	// negIdx holds the position of each complement both rewrites can act on, and
@@ -575,8 +568,8 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 // since meeting such an arm with ¬n leaves no value. A non-union p that is itself a
 // subtype of n leaves nothing at all, which excludeArms returns as `never`.
 //
-// An INEXACT union in p is left as written. Its open tail admits values no arm
-// names, so dropping an arm would render a type narrower than the tail still allows.
+// An INEXACT union in p is left as written. It is top, so none of its arms bounds the
+// type and dropping one would discard a named member for no gain.
 func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 	u, isUnion := p.(*soltype.UnionType)
 	if !isUnion {
