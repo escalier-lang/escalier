@@ -455,3 +455,163 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 	}
 	return &schemeSimplification{uf: uf, mergedOcc: mergedOcc, idToVar: vars}
 }
+
+// Disjointness-aware negation simplification. A complement reaches a variable's
+// bounds when the variable stands on the subtype side of one. Constrain routes a goal
+// to the normal-form layer only when NEITHER operand is a variable, so a variable
+// operand falls through to the ordinary variable arm and the complement is stored
+// whole:
+//
+//	α <: ¬string        ⟹   α.UpperBounds = [¬string]
+//
+// The normal-form layer's move-across-`<:` rewrite does the opposite, which is worth
+// knowing when tracking down where a complement came from. It turns a negated part
+// into a positive one on the far side:
+//
+//	α ∩ ¬string <: number   ⟹   α <: number | string
+//
+// α ends up with ONE positive upper bound there, never a complement and never both
+// members. A variable's upper bounds are read as a meet, so recording both would say
+// `α <: number & string` and reject what the goal allows. A union in supertype
+// position is an exists rule, so the layer trials `α <: number` and `α <: string` and
+// keeps the first that holds. Which one that is depends on α's other bounds. An
+// unconstrained α commits `number`, while an α carrying the lower bound `"hi"` fails
+// that trial and commits `string`.
+//
+// TestNegatedBoundReachesAVariable pins both. The literal stored form is faithful but
+// unreadable. Narrowing a `string | number` against "not a string" coalesces to
+// `(string | number) & ¬string`, where the user means `number`.
+//
+// Two facts the solver already decides collapse that form, and both are asked
+// through subtypeHolds, which trials under a discarding probe:
+//
+//  1. An arm the complement rules out contributes nothing. `string & ¬string`
+//     admits no value, so the arm is dropped and `(string | number) & ¬string`
+//     becomes `number & ¬string`.
+//  2. A complement whose operand shares no value with what is left states nothing
+//     more. `number` and `string` are disjoint, so `number & ¬string` is `number`.
+//
+// Disjointness is decided by `T <: ¬U`, which the normal-form layer settles by
+// moving `U` back to the subtype side and finding `T ∩ U` uninhabited. That reads
+// the same class-tag and literal/primitive facts the meet of two atoms reads, so
+// this pass adds no disjointness knowledge of its own.
+//
+// It is a DISPLAY pass. It runs over an already-coalesced type inside subsumeFinal
+// and never inside constrain, so disabling it makes an inferred type uglier and
+// never changes what the solver accepts. Nothing here reads or writes a bound.
+//
+// Its input stays small because Escalier rebinds on refinement rather than
+// re-typing the scrutinee. Each guard computes a fresh binding whose type is
+// simplified and frozen at that site, so nested guards do not pile `& ¬A & ¬B` onto
+// one long-lived variable.
+
+// simplifyNegations applies the two rewrites above to one intersection's members.
+// changed reports whether any member was rewritten or dropped.
+//
+// provedEmpty is one-directional. True means the pass derived that no value satisfies
+// the members, and the returned list is then empty. False is not a claim that the meet
+// has an inhabitant, only that the pass derived nothing. Read it as "collapse this to
+// `never`".
+//
+// A member carrying a free variable is left alone, on concreteMember's gate. That is
+// what keeps `T & ¬Tag` over an abstract T intact. An inexact operand is weighed like
+// any other, since `A | B | ...` is top and nothing satisfies its complement.
+// TestOpenUnionIsTopForSubtypingOnly pins that reading.
+func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
+	out := slices.Clone(members)
+	// negIdx holds the position of each complement both rewrites can act on, and
+	// posIdx the position of every other member.
+	var posIdx, negIdx []int
+	for i, m := range out {
+		if n, isNeg := m.(*soltype.NegationType); isNeg {
+			if concreteMember(n.Inner) {
+				negIdx = append(negIdx, i)
+			}
+			continue
+		}
+		posIdx = append(posIdx, i)
+	}
+	// A meet with no complement has nothing to simplify, and one with no positive
+	// part has nothing to simplify against.
+	if len(negIdx) == 0 || len(posIdx) == 0 {
+		return members, false, false
+	}
+
+	// Rewrite 1, over every (complement, positive member) pair. Each excluded arm
+	// is written back in place, so a later complement narrows what the earlier one
+	// left and `(string | number | boolean) & ¬string & ¬number` reaches `boolean`.
+	for _, ni := range negIdx {
+		n := out[ni].(*soltype.NegationType).Inner
+		for _, pi := range posIdx {
+			narrowed, dropped := excludeArms(c, out[pi], n)
+			if !dropped {
+				continue
+			}
+			if _, isNever := narrowed.(*soltype.NeverType); isNever {
+				return nil, true, true
+			}
+			out[pi] = narrowed
+			changed = true
+		}
+	}
+
+	// Rewrite 2. The surviving positive members meet to one type, and a complement
+	// disjoint from that meet is dropped.
+	positives := make([]soltype.Type, 0, len(posIdx))
+	for _, pi := range posIdx {
+		positives = append(positives, out[pi])
+	}
+	meet := newIntersection(nil, positives)
+	if !concreteMember(meet) {
+		return out, changed, false
+	}
+	redundant := set.NewSet[int]()
+	for _, ni := range negIdx {
+		if subtypeHolds(c, meet, out[ni]) {
+			redundant.Add(ni)
+		}
+	}
+	if redundant.Len() == 0 {
+		return out, changed, false
+	}
+	kept = make([]soltype.Type, 0, len(out)-redundant.Len())
+	for i, m := range out {
+		if !redundant.Contains(i) {
+			kept = append(kept, m)
+		}
+	}
+	return kept, true, false
+}
+
+// excludeArms returns p with every part that ¬n rules out removed, and reports
+// whether anything was removed. A union loses each arm that is a subtype of n,
+// since meeting such an arm with ¬n leaves no value. A non-union p that is itself a
+// subtype of n leaves nothing at all, which excludeArms returns as `never`.
+//
+// An INEXACT union in p is left as written. It is top, so none of its arms bounds the
+// type and dropping one would discard a named member for no gain.
+func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
+	u, isUnion := p.(*soltype.UnionType)
+	if !isUnion {
+		if concreteMember(p) && subtypeHolds(c, p, n) {
+			return &soltype.NeverType{}, true
+		}
+		return p, false
+	}
+	if u.Inexact {
+		return p, false
+	}
+	arms := make([]soltype.Type, 0, len(u.Types))
+	for _, arm := range u.Types {
+		if concreteMember(arm) && subtypeHolds(c, arm, n) {
+			continue
+		}
+		arms = append(arms, arm)
+	}
+	if len(arms) == len(u.Types) {
+		return p, false
+	}
+	// collapseUnion returns `never` for an empty arm list, which is the caller's
+	// signal that the whole meet is uninhabited.
+	return collapseUnion(arms, u.Inexact, false), true
+}

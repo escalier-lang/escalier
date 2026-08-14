@@ -1034,3 +1034,75 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 		})
 	}
 }
+
+// Binding-based narrowing keeps a chained guard's display clean. Escalier rebinds on
+// refinement rather than re-typing the scrutinee, so each guard computes a fresh binding
+// whose type is frozen at that site and a later guard starts from that clean base.
+//
+// NO COMPLEMENT ARISES ALONG THE WAY. Narrowing drops the union members a guard's
+// annotation cannot admit, so the chain below reaches `boolean` as a plain member list and
+// the negation simplifier in simplify.go is never reached. A solver that re-typed one
+// long-lived variable would instead accumulate `& ¬string & ¬number` on it and need that
+// simplifier to read `boolean` back out. These cases pin that the accumulating form never
+// arises, which is what keeps the simplifier's input small when a complement does show up
+// from somewhere else.
+//
+// Each case returns the binding a guard introduced, so the function's return type IS that
+// binding's rendered type. A diverging `else` supplies the other path, and its string
+// fallbacks are subsumed into `string` at finalization.
+func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		// One guard over a three-member union binds exactly the member its annotation
+		// admits, with no residual complement over the two it excluded.
+		"OneGuard": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number = u else { return 0 }
+					return x
+				}`,
+			want: "fn (u: number | string | boolean) -> number",
+		},
+		// The first guard's binding is a two-member union, and the second narrows THAT
+		// rather than the scrutinee. Both levels render as plain member lists.
+		"TwoGuardsEndingAtOneMember": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | string = u else { return "no value" }
+					val y: string = x else { return "not a string" }
+					return y
+				}`,
+			want: "fn (u: number | string | boolean) -> string",
+		},
+		// Two guards that between them exclude two of the three members. This is the
+		// chain a flow-narrowing solver would render as
+		// `(number | string | boolean) & ¬string & ¬number`; here the first guard binds
+		// `number | boolean` and the second binds `boolean`, with no complement built.
+		"TwoGuardsReachingTheThirdMember": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | boolean = u else { return true }
+					val y: boolean = x else { return false }
+					return y
+				}`,
+			want: "fn (u: number | string | boolean) -> boolean",
+		},
+		// Narrowing binds a fresh name and never re-types the scrutinee, so `u` still
+		// reads at its declared union after two guards have run.
+		"ScrutineeKeepsItsDeclaredType": {
+			src: `fn f(u: number | string | boolean) {
+					val x: number | string = u else { return u }
+					val y: string = x else { return u }
+					return u
+				}`,
+			want: "fn (u: number | string | boolean) -> number | string | boolean",
+		},
+	}
+
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}

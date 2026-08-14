@@ -243,7 +243,34 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return t
+	return foldNegation(t)
+}
+
+// foldNegation re-mints a complement through newNegation once its operand has been
+// rewritten, and returns every other node unchanged. Both coalescers call it from
+// ExitType, which fires bottom-up, so the operand it reads is the rewritten one
+// rather than the bound as stored. subsumeFinal calls it for the same reason, since
+// its own rewrites can turn an operand into a lattice bound.
+//
+// The re-mint is what keeps a complement over an empty variable readable. Take a var
+// whose single upper bound is `¬β`, over a β with no lower bounds. Coalescing inlines
+// β to `never`, so the bare rebuild would render the meaningless `¬never` where the
+// bound really says `unknown`.
+//
+// A complement that newNegation does not collapse is returned as the caller passed
+// it, so the walk keeps the node it already has and no ancestor is rebuilt on its
+// account. newNegation wraps its operand in a fresh node whenever no collapse
+// applies, so a result still wrapping the SAME operand is what identifies that case.
+func foldNegation(t soltype.Type) soltype.Type {
+	n, isNeg := t.(*soltype.NegationType)
+	if !isNeg {
+		return t
+	}
+	folded := newNegation(n.Inner)
+	if fn, stillNeg := folded.(*soltype.NegationType); stillNeg && fn.Inner == n.Inner {
+		return t
+	}
+	return folded
 }
 
 // bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
@@ -552,7 +579,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return t
+	return foldNegation(t)
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else
