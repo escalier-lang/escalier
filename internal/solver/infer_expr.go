@@ -3598,7 +3598,7 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, en
 		uncovered := make([]soltype.Type, 0, len(u.Types))
 		for _, m := range u.Types {
 			for _, part := range c.caughtMembers(m) {
-				if c.memberCaught(scope, part, handled, e.Catch) {
+				if c.memberCaught(part, handled, e.Catch) {
 					continue
 				}
 				uncovered = append(uncovered, part)
@@ -3690,58 +3690,23 @@ func unionParts(t soltype.Type) []soltype.Type {
 }
 
 // memberCaught reports whether the catch arms catch every value of one member of the caught
-// type, which is what keeps that member out of the rethrow. Three rules answer it, and the
-// member is caught when any of them does.
+// type, which is what keeps that member out of the rethrow. Two rules answer it, and the
+// member is caught when either does.
 //
 //  1. The set difference. handled is the type the arms catch, so the member is caught when
-//     `member ∩ ¬handled` holds no value. This is the primary rule, and it is the one that
-//     reads through subtyping: an arm naming a base class catches a subclass member, which
-//     comparing class names cannot see.
-//  2. The nominal name rule. A class arm catches every instance of the class it names,
-//     whatever type arguments that instance carries, and rule 1 declines the member when
-//     deciding it would pin a type argument. `catch { Err{x} => … }` therefore still catches
-//     an `Err<number>` member through this rule.
-//  3. The structural shape rule. An object or tuple pattern admits every value of a shape
+//     `member ∩ ¬handled` holds no value. This rule reads through subtyping, so an arm naming
+//     a base class catches a subclass member whatever type arguments either side carries.
+//  2. The structural shape rule. An object or tuple pattern admits every value of a shape
 //     rather than of a type, so it has no entry in handled at all and structuralMemberCovered
 //     reads the shape against the member.
 //
-// Each rule only ever catches more, so a member no rule answers is rethrown. That is the safe
+// Both rules only ever catch more, so a member neither answers is rethrown. That is the safe
 // direction. A clause naming a type the block cannot raise is still checked against the
 // enclosing clause, where a clause silent about one the block can raise would let an exception
 // escape unnamed.
-func (c *checker) memberCaught(scope *Scope, member, handled soltype.Type, arms []*ast.MatchCase) bool {
+func (c *checker) memberCaught(member, handled soltype.Type, arms []*ast.MatchCase) bool {
 	return c.memberSubtracted(member, handled) ||
-		c.nominalMemberCovered(scope, member, arms) ||
 		structuralMemberCovered(member, arms)
-}
-
-// nominalMemberCovered reports whether some unguarded arm names the class of a nominal
-// member. An instance or extractor pattern covers the member when it names that class and
-// every sub-pattern is irrefutable, so `Color.RGB(r, g, b)` covers `Color.RGB` but
-// `Color.RGB(1, g, b)`, which matches only when the first field is 1, does not. A member of
-// any other kind is never covered here.
-//
-// The class names are compared rather than the class types, so the rule holds whatever type
-// arguments either side carries. That is what it adds over the set difference, which declines
-// a member whose subtraction would pin a type argument.
-func (c *checker) nominalMemberCovered(scope *Scope, member soltype.Type, arms []*ast.MatchCase) bool {
-	ct, isClass := member.(*soltype.ClassType)
-	if !isClass {
-		return false
-	}
-	for _, arm := range arms {
-		if arm.Guard != nil {
-			continue
-		}
-		named, ok := c.armCatchType(scope, arm.Pattern)
-		if !ok {
-			continue
-		}
-		if armClass, isClass := named.(*soltype.ClassType); isClass && armClass.Name == ct.Name {
-			return true
-		}
-	}
-	return false
 }
 
 // armsCatchType returns the type the unguarded catch arms catch, as one union. It is the
@@ -3778,7 +3743,7 @@ func (c *checker) armsCatchType(scope *Scope, arms []*ast.MatchCase) soltype.Typ
 // a type, and objectMemberHasKeys and tupleMemberFitsArity are what read that shape against a
 // member, including through a borrow. structuralMemberCovered applies them, and the UCS IR's
 // own tests apply the same two, so a written pattern and its IR test cannot disagree about
-// which members a branch reaches. Rule 3 of memberCaught is where such a pattern is weighed.
+// which members a branch reaches. Rule 2 of memberCaught is where such a pattern is weighed.
 func (c *checker) armCatchType(scope *Scope, p ast.Pat) (soltype.Type, bool) {
 	switch pat := p.(type) {
 	case *ast.WildcardPat, *ast.IdentPat:
@@ -3821,19 +3786,45 @@ func allIrrefutable(pats []ast.Pat) bool {
 // solver. The normal-form layer moves `¬handled` to the supertype side, so the trial runs as
 // `member <: handled` over fused atoms.
 //
-// A member is subtracted only when the trial records no bound, which is the fidelity boundary
-// of the difference. A trial that records one settled the member by choosing an instantiation
-// for a type variable rather than by finding the member covered outright, and the probe then
-// rolls that choice back. `Sub<number> ∩ ¬Base<T>` is such a trial when the arm names the
-// generic class `Base` and `T` is its own parameter. Declining it keeps the member, so the
-// difference under-subtracts where an arm's type is abstract and never over-subtracts.
-// memberCaught's rules 2 and 3 are what recover the cases this declines.
+// A member is subtracted only when the trial binds none of the member's OWN type variables.
+// That is the fidelity boundary of the difference, and which side a binding lands on is what
+// it turns on.
+//
+//   - A binding on the member's side settles the member by choosing what it stands for, and
+//     the probe then rolls that choice back. Subtracting on the strength of it would drop a
+//     member the block can still raise under a different choice, so the member is kept.
+//   - A binding on the arm's side is the arm doing its job. An instance pattern tests the
+//     class alone, so `catch { Failure{payload} => … }` catches every `Failure`, and deciding
+//     `Timeout<number> <: Failure<T>` for T the class's own parameter is how the solver states
+//     that. Binding T is not a choice about the member.
+//
+// Watching the member's variables rather than every variable is what makes a generic class arm
+// behave like a non-generic one. `catch { AppError{code} => … }` and
+// `catch { Failure{payload} => … }` both catch a subclass member.
 func (c *checker) memberSubtracted(member, handled soltype.Type) bool {
 	// The intersection is built with a nil Context so its subsumption never calls constrain,
 	// the same reason capturedBound builds its result that way.
 	remainder := newIntersection(nil, []soltype.Type{member, &soltype.NegationType{Inner: handled}})
-	empty, mutated := c.ctx.trialMutatesBounds(remainder, &soltype.NeverType{}, newSeenPairs(), false)
-	return empty && !mutated
+	empty, bound := c.ctx.trialBindsWatched(remainder, &soltype.NeverType{}, typeVarsIn(member))
+	return empty && !bound
+}
+
+// typeVarsIn returns every type variable reachable from t, ordered by id so the walk is
+// repeatable. A variable reached only through another's bound list counts, since binding it
+// constrains what t can stand for just as directly.
+func typeVarsIn(t soltype.Type) []*soltype.TypeVarType {
+	vars := map[int]*soltype.TypeVarType{}
+	t.Accept(&varCollector{out: vars, seen: set.NewSet[*soltype.TypeVarType]()}, soltype.Positive)
+	ids := make([]int, 0, len(vars))
+	for id := range vars {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	out := make([]*soltype.TypeVarType, 0, len(ids))
+	for _, id := range ids {
+		out = append(out, vars[id])
+	}
+	return out
 }
 
 // structuralMemberCovered reports whether some unguarded arm's object or tuple pattern

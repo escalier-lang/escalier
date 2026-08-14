@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -339,5 +340,48 @@ func TestProbeRestoresShallowestAssumedOnDiscardOnly(t *testing.T) {
 		c.shallowestAssumed = 3
 		p.Discard()
 		require.Equal(t, 3, c.shallowestAssumed)
+	})
+}
+
+// TestTrialBindsWatched pins the asymmetry the try/catch difference turns on. The trial
+// reports a binding only for the variables the caller watches, so one constraint answers
+// "bound" or "not bound" depending on which side of it the caller cares about.
+//
+// memberSubtracted reads it that way. It watches the caught member's own variables and leaves
+// the arm's alone, so `Timeout<number> <: Failure<T>` subtracts the member by binding the
+// arm's class parameter, where `T <: "boom"` for an abstract member does not.
+func TestTrialBindsWatched(t *testing.T) {
+	t.Run("a constraint over no variable binds nothing", func(t *testing.T) {
+		c := &Context{}
+		ok, bound := c.trialBindsWatched(&soltype.LitType{Lit: &soltype.NumLit{Value: 5}}, num(), nil)
+		require.True(t, ok)
+		require.False(t, bound)
+	})
+
+	t.Run("a watched variable reports its binding", func(t *testing.T) {
+		c := &Context{}
+		v := c.freshVar(0)
+		ok, bound := c.trialBindsWatched(&soltype.LitType{Lit: &soltype.NumLit{Value: 5}}, v,
+			[]*soltype.TypeVarType{v})
+		require.True(t, ok)
+		require.True(t, bound)
+		// The probe rolls the trial back, so the bound it saw does not outlive the trial.
+		require.Empty(t, v.LowerBounds)
+	})
+
+	t.Run("an unwatched variable's binding goes unreported", func(t *testing.T) {
+		c := &Context{}
+		v := c.freshVar(0)
+		ok, bound := c.trialBindsWatched(&soltype.LitType{Lit: &soltype.NumLit{Value: 5}}, v, nil)
+		require.True(t, ok)
+		require.False(t, bound)
+		require.Empty(t, v.LowerBounds)
+	})
+
+	t.Run("a failing trial reports the failure", func(t *testing.T) {
+		c := &Context{}
+		ok, bound := c.trialBindsWatched(str(), num(), nil)
+		require.False(t, ok)
+		require.False(t, bound)
 	})
 }

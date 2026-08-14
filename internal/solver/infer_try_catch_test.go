@@ -408,16 +408,15 @@ func TestInferTryCatchSubtractsThroughSubtyping(t *testing.T) {
 	})
 }
 
-// The difference subtracts a member only when deciding it settles nothing about a type
-// variable. A generic class arm is where that bites: subtracting a member against `Base<T>`,
-// for T the class's own parameter, would have to choose what T stands for, so the difference
-// declines and the member survives it.
+// A generic class arm behaves exactly like a non-generic one. `catch { Failure{payload} => … }`
+// tests the class alone, so it catches every Failure whatever type argument the value carries,
+// including a Timeout that inherits from it.
 //
-// An arm naming the member's own class still catches it, since comparing class names needs no
-// choice of type argument. What the difference alone would have caught, and the name rule
-// cannot, is a SUBCLASS member under a base-class arm. That pair is the fidelity boundary: it
-// is rethrown, where the same pair over non-generic classes is subtracted.
-func TestInferTryCatchIsConservativeOverGenericClasses(t *testing.T) {
+// The difference is what reads this. Deciding `Timeout<number> <: Failure<T>`, for T the base
+// class's own parameter, binds T, and memberSubtracted permits that because T belongs to the
+// arm rather than to the member. Watching every variable instead would decline the subtraction
+// and rethrow a member the arm demonstrably catches.
+func TestInferTryCatchSubtractsThroughGenericClasses(t *testing.T) {
 	// base declares a generic root error class and a generic subclass of it, so a case can
 	// vary whether the arm names the member's own class or its base.
 	const base = `
@@ -431,8 +430,8 @@ func TestInferTryCatchIsConservativeOverGenericClasses(t *testing.T) {
 	`
 	runThrowsCases(t, []throwsCase{
 		{
-			// The arm names the member's own class. The name rule catches it whatever the
-			// type argument is, so nothing escapes and the function needs no clause.
+			// The arm names the member's own class, so the type argument is all that has to
+			// be decided and nothing escapes.
 			name: "AnArmNamingTheMembersOwnGenericClassCatchesIt",
 			src: base + `
 				fn a() throws Failure<number> { throw Failure(0) }
@@ -441,17 +440,26 @@ func TestInferTryCatchIsConservativeOverGenericClasses(t *testing.T) {
 			want: "fn () -> undefined",
 		},
 		{
-			// The arm names the member's base class, which only the difference could read,
-			// and the difference declines because subtracting would pin the base class's own
-			// parameter. The member is rethrown even though every Timeout<number> is a
-			// Failure<number>. Over the non-generic pair of
-			// TestInferTryCatchSubtractsThroughSubtyping the same shape is subtracted.
-			name: "ABaseClassArmDoesNotSubtractAGenericSubclassMember",
+			// The arm names the member's base class. Every Timeout<number> is a
+			// Failure<number>, so the member is subtracted and the function needs no clause,
+			// the same verdict the non-generic pair of
+			// TestInferTryCatchSubtractsThroughSubtyping reaches.
+			name: "ABaseClassArmSubtractsAGenericSubclassMember",
 			src: base + `
 				fn a() throws Timeout<number> { throw Timeout(0) }
-				fn f() throws _ { try { a() } catch { Failure{payload} => 0 } }
+				fn f() { try { a() } catch { Failure{payload} => 0 } }
 			`,
-			want: "fn () -> undefined throws Timeout<number>",
+			want: "fn () -> undefined",
+		},
+		{
+			// The reverse still does not subtract. A Failure<number> need not be a Timeout, so
+			// the member survives the difference and reaches the clause.
+			name: "ASubclassArmLeavesTheGenericBaseClassMember",
+			src: base + `
+				fn a() throws Failure<number> { throw Failure(0) }
+				fn f() throws _ { try { a() } catch { Timeout{payload} => 0 } }
+			`,
+			want: "fn () -> undefined throws Failure<number>",
 		},
 	})
 }

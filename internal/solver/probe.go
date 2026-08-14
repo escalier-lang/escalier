@@ -349,6 +349,33 @@ func (c *Context) trialMutatesBounds(sub, super soltype.Type, seen *seenPairs, m
 	return !hasHardError(errs), mutated
 }
 
+// trialBindsWatched trials sub <: super under a throwaway probe, reporting whether it succeeded
+// and whether it recorded a bound on any of the watched variables. It is trialMutatesBounds
+// narrowed to a chosen set, for a caller that cares which side of the constraint a binding
+// landed on rather than whether one happened at all.
+//
+// The bound lists are read after constrain returns and before the probe rolls them back, the
+// same window trialMutatesBounds and trialCaptures read in. The trial is discarded either way,
+// so no bound survives on any type the caller handed in.
+func (c *Context) trialBindsWatched(sub, super soltype.Type, watch []*soltype.TypeVarType) (ok, bound bool) {
+	widths := make([]int, len(watch))
+	for i, v := range watch {
+		widths[i] = len(v.LowerBounds) + len(v.UpperBounds)
+	}
+	p := newProbe(c, c.probe)
+	c.probe = p
+	errs := c.constrain(sub, super, newSeenPairs(), false)
+	for i, v := range watch {
+		if len(v.LowerBounds)+len(v.UpperBounds) != widths[i] {
+			bound = true
+			break
+		}
+	}
+	c.probe = p.parent
+	p.Discard()
+	return !hasHardError(errs), bound
+}
+
 // trialCaptures trials `sub <: super` under a throwaway probe and reports what each variable in vars
 // picked up, or ok=false when the trial failed. A conditional's `infer` reduction calls it with one
 // fresh variable per `infer` clause standing in the pattern, so the constraint that decides the
