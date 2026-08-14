@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"slices"
+
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -45,25 +47,24 @@ import (
 // its pointer, so a plain intersection of concrete types costs nothing.
 func (e *typeEvaluator) reduceIntersection(t *soltype.IntersectionType) soltype.Type {
 	reduced := make([]soltype.Type, len(t.Types))
-	negated := false
 	changed := false
 	for i, m := range t.Types {
 		reduced[i] = e.reduce(m)
 		changed = changed || reduced[i] != m
-		if _, ok := reduced[i].(*soltype.NegationType); ok {
-			negated = true
-		}
 	}
-	if negated {
-		return e.reduceDifference(reduced)
+	// A member may have reduced to a difference of its own, as an `Exclude<T, string>` member does,
+	// so the members are spliced together before the meet is read for a complement.
+	flat := flattenIntersection(reduced)
+	if slices.ContainsFunc(flat, isNegation) {
+		return e.reduceDifference(flat)
 	}
-	if folded, ok := meetKeySets(reduced); ok {
+	if folded, ok := meetKeySets(flat); ok {
 		return folded
 	}
 	if !changed {
 		return t
 	}
-	return newIntersection(nil, reduced)
+	return newIntersection(nil, flat)
 }
 
 // meetKeySets folds a meet whose every member is an enumerable key set into the keys they share,
@@ -101,8 +102,8 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // `keyof T ∩ ¬"b"`, which reduces to `"a" | "c"` for `type T = {a: X, b: Y, c: Z}` so the mapped
 // type has keys to iterate.
 //
-// Each member of the meet grounds through groundOperand, so an alias named on either side expands
-// to the type whose values the difference is taken over.
+// Each member of the meet is already reduced and grounds through groundReduced, so an alias named
+// on either side expands to the type whose values the difference is taken over.
 //
 // The difference distributes over the positive side's members, `(A | B) ∩ ¬X` being
 // `(A ∩ ¬X) | (B ∩ ¬X)`, and each member is settled against each excluded type by two subtype
@@ -129,10 +130,10 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	var excluded []soltype.Type
 	for _, m := range members {
 		if neg, ok := m.(*soltype.NegationType); ok {
-			excluded = append(excluded, e.groundOperand(neg.Inner))
+			excluded = append(excluded, e.groundReduced(neg.Inner))
 			continue
 		}
-		positives = append(positives, e.groundOperand(m))
+		positives = append(positives, e.groundReduced(m))
 	}
 	base, folded := meetKeySets(positives)
 	if !folded {

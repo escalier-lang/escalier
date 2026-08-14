@@ -129,6 +129,23 @@ func TestReduceIntersectionMembers(t *testing.T) {
 	})
 }
 
+// Every operand of a difference is reduced once, so a diagnostic the reduction records is recorded
+// once. The positive side here is `{[K: string]: number}`, a required index signature over a key
+// set with no keys to enumerate, which draws one diagnostic on its own. It is the shape
+// `Exclude<{[K: string]: number}, T>` mints, and the evaluator's diagnostics reach the user through
+// the constraint site that reduced the residual.
+func TestReduceSetDifferenceRecordsOneDiagnostic(t *testing.T) {
+	required := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{&soltype.MappedElem{
+		Key:   &soltype.MappedKeyType{ID: 0, Name: "K"},
+		Keys:  str(),
+		Value: num(),
+	}}}
+	c := &Context{}
+	e := newTypeEvaluator(c, newSeenPairs())
+	e.reduce(meet(required, negate(c.freshVar(0))))
+	require.Len(t, e.errs, 1)
+}
+
 // A difference over an operand that is not ground stays a difference. The `∩ ¬` form is itself the
 // answer, so the reduction hands back a type the caller can store and reduce again later, rather
 // than a stuck operator. Each row builds its variable at level 0, the level a ground operand sits

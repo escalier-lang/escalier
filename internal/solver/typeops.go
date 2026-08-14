@@ -168,6 +168,15 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 		// excluded side leaves. Any other meet has its members reduced in place. See
 		// typeops_negation.go.
 		return e.reduceIntersection(t)
+	case *soltype.NegationType:
+		// A complement stands for the values its operand rejects, so reducing the operand is all
+		// there is to do. The node is rebuilt only when that changed something, so a complement
+		// over a concrete type keeps its pointer.
+		inner := e.reduce(t.Inner)
+		if inner == t.Inner {
+			return t
+		}
+		return &soltype.NegationType{Inner: inner}
 	default:
 		return t
 	}
@@ -524,7 +533,14 @@ func (e *typeEvaluator) groundTuple(t *soltype.TupleType) (*soltype.TupleType, b
 // leaves the operand unexpanded, which keeps the enclosing operator symbolic. The tuple-spread,
 // template-literal, string-intrinsic, and mapped-type reductions share it.
 func (e *typeEvaluator) groundOperand(operand soltype.Type) soltype.Type {
-	reduced := e.reduce(operand)
+	return e.groundReduced(e.reduce(operand))
+}
+
+// groundReduced expands a named alias in an operand that is already reduced, the second half of
+// groundOperand. A caller that reduced its operands for some other purpose first grounds them
+// through this, so no operand is reduced twice and a diagnostic the reduction records is recorded
+// once.
+func (e *typeEvaluator) groundReduced(reduced soltype.Type) soltype.Type {
 	alias, ok := reduced.(*soltype.AliasType)
 	if !ok {
 		return reduced
