@@ -496,10 +496,14 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // stays on the rendered type.
 func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, uninhabited bool) {
 	out := slices.Clone(members)
+	// negIdx holds the position of each complement both rewrites can act on, and
+	// posIdx the position of every other member.
 	var posIdx, negIdx []int
 	for i, m := range out {
-		if _, isNeg := m.(*soltype.NegationType); isNeg {
-			negIdx = append(negIdx, i)
+		if n, isNeg := m.(*soltype.NegationType); isNeg {
+			if usableOperand(n.Inner) {
+				negIdx = append(negIdx, i)
+			}
 			continue
 		}
 		posIdx = append(posIdx, i)
@@ -515,9 +519,6 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	// left and `(string | number | boolean) & ¬string & ¬number` reaches `boolean`.
 	for _, ni := range negIdx {
 		n := out[ni].(*soltype.NegationType).Inner
-		if !concreteMember(n) {
-			continue
-		}
 		for _, pi := range posIdx {
 			narrowed, dropped := excludeArms(c, out[pi], n)
 			if !dropped {
@@ -543,7 +544,7 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	}
 	redundant := set.NewSet[int]()
 	for _, ni := range negIdx {
-		if concreteMember(out[ni]) && subtypeHolds(c, meet, out[ni]) {
+		if subtypeHolds(c, meet, out[ni]) {
 			redundant.Add(ni)
 		}
 	}
@@ -559,13 +560,29 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	return kept, true, false
 }
 
+// usableOperand reports whether a complement's operand is one both rewrites can
+// weigh. Two shapes are refused.
+//
+// A free type or lifetime variable makes the operand abstract, on the concreteness
+// gate concreteMember states. Nothing proves an abstract operand disjoint from
+// anything, so the complement carries real information.
+//
+// An INEXACT union is refused because every type is a subtype of one: constrain's
+// open-tail rule accepts anything against `A | ...`, since the tail names content
+// the union does not spell. Reading that as containment would let `¬(boolean | ...)`
+// exclude every arm it is met with, so `number & ¬(boolean | ...)` would collapse to
+// `never`. Deciding what an open tail excludes is left to the exactness-aware merge.
+func usableOperand(n soltype.Type) bool {
+	return concreteMember(n) && !isInexactUnion(n)
+}
+
 // excludeArms returns p with every part that ¬n rules out removed, and reports
 // whether anything was removed. A union loses each arm that is a subtype of n,
 // since meeting such an arm with ¬n leaves no value. A non-union p that is itself a
 // subtype of n leaves nothing at all, which excludeArms returns as `never`.
 //
-// An INEXACT union is left as written. Its open tail admits values no arm names, so
-// dropping an arm would render a type narrower than the tail still allows.
+// An INEXACT union in p is left as written. Its open tail admits values no arm
+// names, so dropping an arm would render a type narrower than the tail still allows.
 func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 	u, isUnion := p.(*soltype.UnionType)
 	if !isUnion {

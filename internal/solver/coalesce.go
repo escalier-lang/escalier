@@ -243,23 +243,34 @@ func (c *coalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ente
 func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return coalesceNegation(t)
+	return foldNegation(t)
 }
 
-// coalesceNegation re-mints a complement through newNegation once its operand has
-// been coalesced, and returns every other node unchanged. Both coalescers call it
-// from ExitType, which fires bottom-up, so the operand it reads is the coalesced
-// one rather than the bound as stored.
+// foldNegation re-mints a complement through newNegation once its operand has been
+// rewritten, and returns every other node unchanged. Both coalescers call it from
+// ExitType, which fires bottom-up, so the operand it reads is the rewritten one
+// rather than the bound as stored. subsumeFinal calls it for the same reason, since
+// its own rewrites can turn an operand into a lattice bound.
 //
-// The re-mint is what keeps a complement over an empty variable readable. A var
-// with the single upper bound `¬β` and a β with no lower bounds inlines β to
-// `never`, and the bare rebuild would render the meaningless `¬never` where the
-// bound really says unknown.
-func coalesceNegation(t soltype.Type) soltype.Type {
-	if n, ok := t.(*soltype.NegationType); ok {
-		return newNegation(n.Inner)
+// The re-mint is what keeps a complement over an empty variable readable. A var with
+// the single upper bound `¬β` and a β with no lower bounds inlines β to `never`, and
+// the bare rebuild would render the meaningless `¬never` where the bound really says
+// unknown.
+//
+// A complement newNegation does not collapse is returned as the caller passed it, so
+// the walk keeps the node it already has and no ancestor is rebuilt on its account.
+// newNegation wraps its operand in a fresh node whenever no collapse applies, so a
+// result still wrapping the SAME operand is what identifies that case.
+func foldNegation(t soltype.Type) soltype.Type {
+	n, isNeg := t.(*soltype.NegationType)
+	if !isNeg {
+		return t
 	}
-	return t
+	folded := newNegation(n.Inner)
+	if fn, stillNeg := folded.(*soltype.NegationType); stillNeg && fn.Inner == n.Inner {
+		return t
+	}
+	return folded
 }
 
 // bubbleOwnedMut rewrites a coalesced display type so no owned-mutable cell ever
@@ -568,7 +579,7 @@ func (c *schemeCoalescer) EnterType(t soltype.Type, pol soltype.Polarity) soltyp
 func (c *schemeCoalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// Borrow lifetimes are left raw here and resolved by the coalesceLifetimes
 	// post-pass, which needs the whole type to analyze lifetime occurrence (D4).
-	return coalesceNegation(t)
+	return foldNegation(t)
 }
 
 // displayBinder maps a binder var to its cleaned display copy when one exists, else

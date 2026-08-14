@@ -96,6 +96,13 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			build: func(*checker) soltype.Type { return negT(str()) },
 			want:  "¬string",
 		},
+		{
+			// The operand is rewritten before the complement over it, so an operand this
+			// pass empties is folded rather than left as the meaningless `¬never`.
+			name:  "complement over an emptied operand",
+			build: func(*checker) soltype.Type { return negT(interT(str(), negT(str()))) },
+			want:  "unknown",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,6 +158,19 @@ func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	t.Run("inexact union keeps its arms", func(t *testing.T) {
 		open := newUnion(nil, []soltype.Type{str(), num()}, true)
 		members := []soltype.Type{open, negT(str())}
+		kept, changed, uninhabited := simplifyNegations(c.ctx, members)
+		require.False(t, uninhabited)
+		require.False(t, changed)
+		require.Equal(t, members, kept)
+	})
+
+	// Every type is a subtype of an inexact union under the open-tail rule, so a
+	// complement over one would exclude whatever it is met with. Such an operand is
+	// refused, leaving `number & ¬(boolean | ...)` with both members.
+	t.Run("inexact union operand is refused", func(t *testing.T) {
+		open := newUnion(nil, []soltype.Type{boolT()}, true)
+		require.True(t, subtypeHolds(c.ctx, num(), open))
+		members := []soltype.Type{num(), negT(open)}
 		kept, changed, uninhabited := simplifyNegations(c.ctx, members)
 		require.False(t, uninhabited)
 		require.False(t, changed)

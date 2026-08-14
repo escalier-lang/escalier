@@ -401,6 +401,11 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 			return t
 		}
 		return collapseIntersection(kept, false)
+	case *soltype.NegationType:
+		// The operand was already rewritten by this walk, so a complement whose
+		// operand collapsed to a lattice bound is folded here rather than left as the
+		// meaningless `¬never`. `¬(string & ¬string)` reads unknown.
+		return foldNegation(t)
 	}
 	return t
 }
