@@ -574,11 +574,25 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 // gate concreteMember states. Nothing proves an abstract operand disjoint from
 // anything, so the complement carries real information.
 //
-// An INEXACT union is refused because every type is a subtype of one. Constrain's
-// open-tail rule accepts anything against `A | ...`, since the tail names content the
-// union does not spell. Reading that as containment would let `¬(boolean | ...)`
-// exclude every arm it is met with, so `number & ¬(boolean | ...)` would collapse to
-// `never`. Deciding what an open tail excludes is left to the exactness-aware merge.
+// An INEXACT union is refused because what it denotes is unsettled, not because
+// collapsing it would contradict the solver. For the subtype relation `A | ...` is
+// already the top of the lattice. Constrain's open-tail rule accepts every type
+// against it, and it is below neither `number` nor `boolean`, matching `unknown` on
+// both counts. Under those rules `¬(A | ...)` is `never`, so
+// `number & ¬(boolean | ...)` really is empty and the collapse would be consistent.
+// TestOpenUnionIsTopForSubtypingOnly pins that reading.
+//
+// Two things make it the wrong call for this pass to act on. An open union is not
+// `unknown` everywhere. Reading a member off `{x: number} | {x: string} | ...` yields
+// `unknown`, where the same read off `unknown` is rejected outright, so the named
+// members carry meaning the subtype relation discards. And that relation is a
+// leniency in the accept-more direction, written so a value matching no named member
+// is still ACCEPTED. A display that collapsed to `never` would turn it around into a
+// claim that no such value can exist, which is a pass making a type look narrower
+// than the bound says.
+//
+// Whether an open union should be top at all is the exactness-aware merge's question
+// to settle. Until it does, this pass renders the complement as written.
 func usableOperand(n soltype.Type) bool {
 	return concreteMember(n) && !isInexactUnion(n)
 }

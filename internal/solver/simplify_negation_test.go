@@ -231,3 +231,61 @@ func TestNewNegation(t *testing.T) {
 		})
 	}
 }
+
+// An inexact union is the top of the lattice for the subtype relation and nothing more.
+// usableOperand's refusal of such an operand rests on both halves of that, so both are
+// pinned here rather than left to a comment.
+//
+// The first half is the reason the collapse this pass declines would be CONSISTENT: if
+// `boolean | ...` accepts every value then nothing satisfies `¬(boolean | ...)`, and
+// `number & ¬(boolean | ...)` is empty. The second half is the reason it is still the
+// wrong call: an open union's named members survive a property read, so the type carries
+// meaning the subtype relation throws away, and reading that relation as a statement about
+// which values inhabit the type overcommits.
+//
+// Whether an open union should be top at all is the exactness-aware merge's question. This
+// test states the behavior as it stands, so a change to it is visible rather than silent.
+func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
+	c := newChecker()
+	open := newUnion(nil, []soltype.Type{boolT()}, true) // boolean | ...
+	unknownT := func() soltype.Type { return &soltype.UnknownType{} }
+
+	// For subtyping the two are interchangeable in both directions.
+	t.Run("indistinguishable from unknown", func(t *testing.T) {
+		probes := []struct {
+			name     string
+			sub, sup soltype.Type
+			want     bool
+		}{
+			{"every type is below an open union", num(), open, true},
+			{"every type is below unknown", num(), unknownT(), true},
+			{"an open union is not below a primitive", open, num(), false},
+			{"unknown is not below a primitive", unknownT(), num(), false},
+			{"an open union is not below its own member", open, boolT(), false},
+			{"unknown is not below boolean", unknownT(), boolT(), false},
+			{"unknown is below an open union", unknownT(), open, true},
+			{"an open union is below unknown", open, unknownT(), true},
+		}
+		for _, p := range probes {
+			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
+		}
+	})
+
+	// Nothing inhabits the complement of a type every value is below, which is what makes
+	// the refused collapse consistent with the rules above.
+	t.Run("nothing is below an open union's complement", func(t *testing.T) {
+		require.False(t, subtypeHolds(c.ctx, num(), negT(open)))
+		require.False(t, subtypeHolds(c.ctx, numLit(5), negT(open)))
+	})
+
+	// A property read is where the two part ways. The open union answers from its named
+	// members, widened by the tail; unknown has no members to answer from at all.
+	t.Run("a property read tells them apart", func(t *testing.T) {
+		values, _, errs := inferSource(t, `fn f(u: {x: number} | {x: string} | ...) { return u.x }`)
+		require.Empty(t, errs)
+		require.Equal(t, "fn (u: {x: number} | {x: string} | ...) -> unknown", values["f"])
+
+		_, _, errs = inferSource(t, `fn g(u: unknown) { return u.x }`)
+		require.Equal(t, []string{"1:27-1:30: cannot constrain unknown <: object"}, messagesWithSpan(errs))
+	})
+}
