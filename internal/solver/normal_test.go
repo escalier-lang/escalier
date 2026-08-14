@@ -599,13 +599,16 @@ func TestDeMorganOverAnInexactUnion(t *testing.T) {
 //
 // Each source below returns its own argument, which has to check.
 func TestUnreducedAtomsKeepTheirOpenMarkerApart(t *testing.T) {
-	tests := map[string]string{
-		"Tuple":  `fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }`,
-		"Object": `fn go<S>(x: {...S}) -> {...S} | {...S, ...} { return x }`,
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "Tuple", src: `fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }`},
+		{name: "Object", src: `fn go<S>(x: {...S}) -> {...S} | {...S, ...} { return x }`},
 	}
-	for name, src := range tests {
-		t.Run(name, func(t *testing.T) {
-			_, _, errs := inferSource(t, src)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
 			require.Empty(t, errs)
 		})
 	}
