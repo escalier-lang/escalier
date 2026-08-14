@@ -307,3 +307,40 @@ func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
 		require.Equal(t, []string{"1:27-1:30: cannot constrain unknown <: object"}, messagesWithSpan(errs))
 	})
 }
+
+// The two routes a complement can take past a variable, which the section comment above
+// simplifyNegations describes. They go opposite ways, and only the first leaves a
+// complement behind for that pass to find.
+func TestNegatedBoundReachesAVariable(t *testing.T) {
+	// A variable on the subtype side of a complement stores it whole. Constrain sends a
+	// goal to the normal-form layer only when neither operand is a variable, so this one
+	// falls through to the variable arm.
+	t.Run("a variable below a complement stores it", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		require.Empty(t, Messages(c.Constrain(a, negT(str()))))
+		require.Equal(t, []string{"¬string"}, printedBounds(a.UpperBounds))
+		require.Empty(t, a.LowerBounds)
+	})
+
+	// The normal-form layer moves a negated part to the far side of the `<:` as a
+	// POSITIVE one, so `α ∩ ¬string <: number` becomes `α <: number | string`. The bound
+	// α ends up with is one of those members, never a complement.
+	t.Run("a negated part crosses over positive", func(t *testing.T) {
+		c := &Context{}
+		a := c.freshVar(0)
+		sub := newIntersection(nil, []soltype.Type{a, negT(str())})
+		require.Empty(t, Messages(c.Constrain(sub, num())))
+		require.Equal(t, []string{"number"}, printedBounds(a.UpperBounds))
+	})
+}
+
+// printedBounds renders a variable's bound list for comparison against Escalier type
+// syntax, which is what makes a bound assertion readable.
+func printedBounds(bounds []soltype.Type) []string {
+	out := make([]string, len(bounds))
+	for i, b := range bounds {
+		out[i] = soltype.Print(b)
+	}
+	return out
+}

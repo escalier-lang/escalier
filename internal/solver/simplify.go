@@ -456,11 +456,24 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 	return &schemeSimplification{uf: uf, mergedOcc: mergedOcc, idToVar: vars}
 }
 
-// Disjointness-aware negation simplification. A complement enters a variable's
-// bounds when the solver moves a negated part across a `<:`, so `α <: ¬string`
-// stores `¬string` as an upper bound and coalescing renders it. The literal form
-// is faithful but unreadable. Narrowing a `string | number` against "not a string"
-// coalesces to `(string | number) & ¬string`, where the user means `number`.
+// Disjointness-aware negation simplification. A complement reaches a variable's
+// bounds when the variable stands on the subtype side of one. Constrain routes a goal
+// to the normal-form layer only when NEITHER operand is a variable, so a variable
+// operand falls through to the ordinary variable arm and the complement is stored
+// whole:
+//
+//	α <: ¬string        ⟹   α.UpperBounds = [¬string]
+//
+// The normal-form layer's move-across-`<:` rewrite does the opposite, which is worth
+// knowing when tracking down where a complement came from. It turns a negated part
+// into a positive one on the far side, so the goal below leaves α with a positive
+// bound and no complement at all:
+//
+//	α ∩ ¬string <: number   ⟹   α <: number | string   ⟹   α.UpperBounds = [number]
+//
+// TestNegatedBoundReachesAVariable pins both. The literal stored form is faithful but
+// unreadable. Narrowing a `string | number` against "not a string" coalesces to
+// `(string | number) & ¬string`, where the user means `number`.
 //
 // Two facts the solver already decides collapse that form, and both are asked
 // through subtypeHolds, which trials under a discarding probe:
