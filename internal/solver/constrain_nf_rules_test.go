@@ -285,8 +285,8 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			// `(T & {a: 1, ...}) <: (string | T)`, with T already bounded below by 5 so the
 			// string candidate fails on both `{a: 1, ...} <: string` and `T <: string`. T then
 			// stands on BOTH sides of the goal, which holds by reflexivity and asks nothing of
-			// T. varTrialSub hands constrain the bare variable so `T <: T` settles the pair,
-			// which keeps a bound naming T off T's own bound list.
+			// T. constrainImplied discharges it by reflexivity before any pair is built, so
+			// no bound is recorded and no candidate is reported as committed.
 			name: "the target standing in the meet records nothing",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -295,6 +295,35 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
 			},
 			wantBounds: []string{"5"},
+		},
+		{
+			// `(U & {a: 1, ...}) <: (T | U)`. U discharges the goal by reflexivity, but T sorts
+			// first among the two variables and would be settled on first. Checking
+			// reflexivity per candidate rather than across the goal would give T the whole
+			// meet, `U & {a: 1, ...}`, which the goal never asked of it.
+			name: "a sibling variable does not record when another discharges the goal",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				tv, u := c.freshVar(0), c.freshVar(0)
+				sub := newIntersection(nil, []soltype.Type{u, rec()})
+				return sub, newUnion(nil, []soltype.Type{tv, u}, false), tv
+			},
+			wantBounds: []string{},
+		},
+		{
+			// A reflexive discharge chose nothing, so it reports no commit. Reporting one
+			// would tag the variable as pinned by a union branch, and a later conflict would
+			// be blamed on a choice that recorded no bound. The message here carries no
+			// union breadcrumb.
+			name: "a reflexive discharge leaves no union-commit breadcrumb",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				v.LowerBounds = []soltype.Type{numLit(5)}
+				sub := newIntersection(nil, []soltype.Type{v, rec()})
+				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+			},
+			later:      func() soltype.Type { return str() },
+			wantBounds: []string{"5"},
+			wantLater:  []string{"cannot constrain 5 <: string"},
 		},
 		{
 			// A meet whose atoms sit at different levels. LevelOf reads an intersection as the

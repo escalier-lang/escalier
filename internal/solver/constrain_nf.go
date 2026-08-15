@@ -157,6 +157,15 @@ func (c *Context) constrainImplied(
 	subCands := slices.Concat(meet, varsAsTypes(conj.Vars), varsAsTypes(disj.NVars))
 	superCands := slices.Concat(join, varsAsTypes(disj.Vars), varsAsTypes(conj.NVars))
 
+	// A variable standing on both sides discharges the goal by reflexivity, since
+	// `⋂subCands <: v <: ⋃superCands`. Nothing was chosen and no bound is needed, so the
+	// decision reports neither a commit nor an error. Leaving this to the pair trial
+	// would let some other candidate commit first and record a bound the goal never
+	// asked for, and would report a commit that pinned nothing.
+	if sharesVar(subCands, superCands) {
+		return nfDecision{}
+	}
+
 	// An empty meet is `unknown`, the top of the lattice. Naming it explicitly gives the
 	// trial something to constrain, and `unknown <: T` still records a bound when the
 	// supertype side is a variable. topMeet remembers that the conjunct contributed no
@@ -350,9 +359,11 @@ type nfPair struct{ sub, super soltype.Type }
 //
 // A variable candidate gets ONE pair, whose subtype side varTrialSub decides, rather
 // than one pair per subtype candidate. Every other candidate keeps a pair per subtype
-// candidate, since deciding `sᵢ <: pⱼ` asks whether one shape fits another and records
-// no bound of its own. topMeet says the conjunct contributed no positive part, which is
-// one of the cases varTrialSub reads.
+// candidate, since deciding `sᵢ <: pⱼ` compares two shapes and settles on the first
+// that fits. A variable on the SUBTYPE side is not special-cased there: `sᵢ <: pⱼ`
+// records an upper bound on it through constrain's subVar arm, which is the mirror of
+// what a variable candidate on this side records. topMeet says the conjunct contributed
+// no positive part, which is the case varTrialSub reads.
 //
 // specificityOrder ranks a variable below every concrete type, so a variable
 // candidate's pair is trialled after every concrete candidate's.
@@ -386,19 +397,13 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 // that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
 // rejected even though the meet satisfies it.
 //
-// Two goals take something other than the meet.
+// A meet of `unknown` is the one exception. It bounds v by nothing at all, so
+// weakestBound subtracts the other supertype candidates instead, and says why the
+// subtraction stops there.
 //
-//   - The target standing in the meet discharges the goal by reflexivity, since
-//     `⋂subCands <: v` holds for any meet holding v. The goal asks nothing of v, so
-//     handing constrain the bare variable lets its `v <: v` rule settle the pair
-//     without recording a bound that names v.
-//   - A meet of `unknown` bounds v by nothing at all, so weakestBound subtracts the
-//     other supertype candidates instead. It says why the subtraction stops there.
+// v never stands in the meet here. constrainImplied discharges that goal by reflexivity
+// before any pair is built.
 func varTrialSub(subCands, superCands []soltype.Type, keep int, topMeet bool) soltype.Type {
-	target := superCands[keep]
-	if slices.ContainsFunc(subCands, func(s soltype.Type) bool { return equalType(s, target) }) {
-		return target
-	}
 	if topMeet {
 		return weakestBound(superCands, keep)
 	}
@@ -444,6 +449,22 @@ func weakestBound(superCands []soltype.Type, keep int) soltype.Type {
 		parts = append(parts, neg)
 	}
 	return newIntersection(nil, parts)
+}
+
+// sharesVar reports whether some type variable stands on both sides of the goal. It is
+// the shape constrainImplied discharges by reflexivity. Only a variable is weighed here.
+// A concrete candidate on both sides is settled by the ordinary pair trial, which finds
+// it, commits it, and keeps the diagnostics that commit carries.
+func sharesVar(subCands, superCands []soltype.Type) bool {
+	for _, s := range subCands {
+		if _, isVar := s.(*soltype.TypeVarType); !isVar {
+			continue
+		}
+		if slices.ContainsFunc(superCands, func(p soltype.Type) bool { return equalType(s, p) }) {
+			return true
+		}
+	}
+	return false
 }
 
 // varsAsTypes returns a variable set's members as types, ordered by id so a
