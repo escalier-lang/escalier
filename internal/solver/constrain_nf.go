@@ -357,13 +357,20 @@ type nfPair struct{ sub, super soltype.Type }
 // deciding; the pair repeating it against an inexact union is dropped, for the
 // reason constrainImplied gives.
 //
-// A variable candidate gets ONE pair, whose subtype side varTrialSub decides, rather
-// than one pair per subtype candidate. Every other candidate keeps a pair per subtype
-// candidate, since deciding `sᵢ <: pⱼ` compares two shapes and settles on the first
-// that fits. A variable on the SUBTYPE side is not special-cased there: `sᵢ <: pⱼ`
-// records an upper bound on it through constrain's subVar arm, which is the mirror of
-// what a variable candidate on this side records. topMeet says the conjunct contributed
-// no positive part, which is the case varTrialSub reads.
+// A variable candidate gets ONE pair, against the whole meet, rather than one pair per
+// subtype candidate. Pairing a single candidate with it would drop the rest, and the
+// trial cannot notice, since a pair against a free variable always holds and whichever
+// candidate is tried first wins. Deciding
+//
+//	{a: 1, ...} & ((x: number) -> string) <: (string | T)
+//
+// that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
+// rejected even though the meet satisfies it.
+//
+// Every other candidate keeps a pair per subtype candidate, since deciding `sᵢ <: pⱼ`
+// compares two shapes and settles on the first that fits. A variable on the SUBTYPE
+// side is not special-cased there. `sᵢ <: pⱼ` records an upper bound on it through
+// constrain's subVar arm, the mirror of what a variable candidate on this side records.
 //
 // specificityOrder ranks a variable below every concrete type, so a variable
 // candidate's pair is trialled after every concrete candidate's.
@@ -372,7 +379,17 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
 		if _, isVar := superCands[j].(*soltype.TypeVarType); isVar {
-			pairs = append(pairs, nfPair{sub: varTrialSub(subCands, superCands, j, topMeet), super: superCands[j]})
+			// topMeet says the conjunct contributed no positive part, so the meet is `unknown`
+			// and bounds the variable by nothing at all. weakestBound subtracts the other
+			// supertype candidates instead. The variable never stands in the meet here, since
+			// constrainImplied discharges that goal by reflexivity before any pair is built.
+			var trial soltype.Type
+			if topMeet {
+				trial = weakestBound(superCands, j)
+			} else {
+				trial = newIntersection(nil, subCands)
+			}
+			pairs = append(pairs, nfPair{sub: trial, super: superCands[j]})
 			continue
 		}
 		for _, i := range subOrder {
@@ -383,31 +400,6 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 		}
 	}
 	return pairs
-}
-
-// varTrialSub is the subtype side of the one pair the variable at superCands[keep] is
-// trialled against, and so the lower bound that variable records.
-//
-// The general case is the whole meet. Pairing a single candidate with the variable
-// instead would drop the rest, and the trial cannot notice, since a pair against a free
-// variable always holds and whichever candidate is tried first wins. Deciding
-//
-//	{a: 1, ...} & ((x: number) -> string) <: (string | T)
-//
-// that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
-// rejected even though the meet satisfies it.
-//
-// A meet of `unknown` is the one exception. It bounds v by nothing at all, so
-// weakestBound subtracts the other supertype candidates instead, and says why the
-// subtraction stops there.
-//
-// v never stands in the meet here. constrainImplied discharges that goal by reflexivity
-// before any pair is built.
-func varTrialSub(subCands, superCands []soltype.Type, keep int, topMeet bool) soltype.Type {
-	if topMeet {
-		return weakestBound(superCands, keep)
-	}
-	return newIntersection(nil, subCands)
 }
 
 // weakestBound is the subtype side of the goal the variable at superCands[keep] is

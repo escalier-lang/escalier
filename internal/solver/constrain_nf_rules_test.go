@@ -237,7 +237,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 // The variable takes ONE pair whose subtype side is the whole meet, so every atom is
 // recorded. Pairing a single atom instead would drop the rest, and the trial could not
 // notice: a pair against a free variable always holds, so whichever atom came first
-// would win on canonical order alone. varTrialSub builds the subtype side.
+// would win on canonical order alone. orderedPairs builds the pair.
 //
 // later is a constraint run against the variable once the goal is decided. Most rows
 // choose one that holds for the whole meet and fails for any single atom, which is what
