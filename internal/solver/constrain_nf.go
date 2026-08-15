@@ -118,16 +118,21 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //     members taken together, which no single pair states. `boolean <: true |
 //     false` is rejected for that reason. The two literals do not fuse into one
 //     atom, and `boolean` is a subtype of neither of them on its own.
+//
 //   - A pair repeating the caller's own question against an inexact union is
 //     skipped. Such a union is one atom, so normalizing `boolean <: (number |
 //     string | ...)` hands back the pair it started from and no smaller question
 //     is ever reached. Every other supertype comes apart into smaller atoms.
-//   - A variable on the supertype side picks up the whole meet as a lower bound,
-//     which is stronger than the goal asks for. `"hi" <: (T | number)` records
-//     `"hi"` under T where `"hi" ∩ ¬number` would do. That is sound, and a
-//     variable is reached only after every concrete candidate failed. weakestBound
-//     subtracts the other candidates for the one meet where the stronger bound
-//     does damage, `unknown`, and says why it goes no further.
+//
+//   - A variable on the supertype side records ONE subtype candidate, which is
+//     stronger than the goal asks for. Each candidate is paired with the variable
+//     and the first pair that holds commits, so deciding `{a: 1, ...} & ((x:
+//     number) -> string) <: (string | T)` gives T the lower bound `{a: 1, ...}`
+//     and drops the arrow. That is sound, since the meet is a subtype of each of
+//     its atoms, and it demands more of T than the goal asks. A variable is
+//     reached only after every concrete candidate failed. weakestBound settles the
+//     one subtype side where this does real damage, `unknown`, and says why it
+//     goes no further.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -386,9 +391,9 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 // `unknown` and `¬T` would collapse to `never`. `¬number` is what the goal asks for.
 //
 // The rewrite is confined to a subtype side of `unknown` because that is where the
-// stronger bound does damage. Elsewhere the meet already bounds v, and subtracting a
-// candidate from it either changes nothing or leaves a complement that reaches the
-// rendered type. Deciding
+// stronger bound does damage. Elsewhere the trial already bounds v by one subtype
+// candidate, and subtracting from that either changes nothing or leaves a complement
+// that reaches the rendered type. Deciding
 //
 //	{a: 1, ...} <: ({b: number, ...} | T)
 //

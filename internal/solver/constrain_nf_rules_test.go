@@ -125,9 +125,10 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 //	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
 //
 // weakestBound in constrain_nf.go builds the left-hand side, and only where `⋂subCands`
-// is `unknown`. Everywhere else the meet is recorded whole, which is sound and pins the
-// variable further than the goal asks. weakestBound says why the subtraction stops
-// there, and constrainImplied's third bullet records what it leaves behind.
+// is `unknown`. Everywhere else the trial records one subtype candidate, which is sound
+// and pins the variable further than the goal asks. weakestBound says why the
+// subtraction stops there, and constrainImplied's third bullet records what it leaves
+// behind.
 //
 // wantBounds is the bound list as stored, and wantSurface what the display simplifier
 // makes of it.
@@ -142,10 +143,10 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	}{
 		{
 			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
-			// goal settles on T. The meet carries a positive part, so T takes it whole rather
-			// than the `"hi" ∩ ¬number` the goal asks for. The two admit the same values here,
-			// since `"hi"` and `number` share none.
-			name: "a meet with a positive part is recorded whole",
+			// goal settles on T. The subtype side carries a positive part, so T takes that
+			// candidate rather than the `"hi" ∩ ¬number` the goal asks for. The two admit the
+			// same values here, since `"hi"` and `number` share none.
+			name: "a subtype side with a positive part records the candidate",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v
