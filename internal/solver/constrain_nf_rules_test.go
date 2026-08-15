@@ -135,9 +135,10 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	tests := []struct {
 		name string
-		// goal builds the constraint to decide, along with the variable under test. It
-		// mints every variable through c.freshVar so no two share an id.
-		goal        func(c *Context) (sub, super soltype.Type, v *soltype.TypeVarType)
+		// goal builds the constraint to decide, the variable under test, and the
+		// variables the goal should leave unbounded. It mints every variable through
+		// c.freshVar so no two share an id.
+		goal        func(c *Context) (sub, super soltype.Type, v *soltype.TypeVarType, untouched []*soltype.TypeVarType)
 		wantBounds  []string
 		wantSurface string
 	}{
@@ -147,9 +148,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// candidate rather than the `"hi" ∩ ¬number` the goal asks for. The two admit the
 			// same values here, since `"hi"` and `number` share none.
 			name: "a subtype side with a positive part records the candidate",
-			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
-				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v, nil
 			},
 			wantBounds:  []string{`"hi"`},
 			wantSurface: `"hi"`,
@@ -159,9 +160,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
 			// collapse `¬T` to `never`, which the goal never asks for.
 			name: "a top meet subtracts its concrete siblings",
-			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
-				return negT(v), num(), v
+				return negT(v), num(), v, nil
 			},
 			wantBounds:  []string{"¬number"},
 			wantSurface: "¬number",
@@ -170,21 +171,28 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// `5 <: (T | number)`. The number candidate holds, so the trial commits it and
 			// never reaches T. A candidate that decides a shape records no bound at all.
 			name: "a concrete candidate that holds leaves the variable unbounded",
-			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
-				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false), v
+				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false), v, nil
 			},
 			wantBounds:  []string{},
 			wantSurface: "never",
 		},
 		{
-			// `¬T <: (number | U)`, which reads `unknown <: number ∪ U ∪ T`. U is settled on
-			// first, since two variables keep their list order. T is skipped rather than
-			// subtracted, on concreteMember's gate, so U takes `¬number` alone.
+			// `¬T <: (number | U)`. The negated variable crosses the `<:` as a positive one,
+			// which empties the subtype side and makes this a top meet. The goal reads
+			// `unknown <: number ∪ U ∪ T`, and U is settled on first, since two variables
+			// keep their list order.
+			//
+			// T is dropped twice over. weakestBound skips it on concreteMember's gate, so U
+			// takes `¬number` rather than the weakest `¬number ∩ ¬T`. U's pair then discharges
+			// the goal on its own, so T's own pair is never trialled and T ends unbounded.
+			// That is the right answer here, since `number ∪ ¬number` already admits every
+			// value `¬T` could hold, whatever T turns out to be.
 			name: "a top meet skips a variable sibling",
-			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				other, v := c.freshVar(0), c.freshVar(0)
-				return negT(other), newUnion(nil, []soltype.Type{num(), v}, false), v
+				return negT(other), newUnion(nil, []soltype.Type{num(), v}, false), v, []*soltype.TypeVarType{other}
 			},
 			wantBounds:  []string{"¬number"},
 			wantSurface: "¬number",
@@ -196,9 +204,9 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			// is a variable, so every one is skipped and the meet is empty. newIntersection
 			// returns `unknown` for it, the bound the goal records with no subtraction at all.
 			name: "a top meet whose siblings are all variables records unknown",
-			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				other, v, third := c.freshVar(0), c.freshVar(0), c.freshVar(0)
-				return negT(other), newUnion(nil, []soltype.Type{v, third}, false), v
+				return negT(other), newUnion(nil, []soltype.Type{v, third}, false), v, []*soltype.TypeVarType{other, third}
 			},
 			wantBounds:  []string{"unknown"},
 			wantSurface: "unknown",
@@ -207,11 +215,17 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
-			sub, super, v := tt.goal(c)
+			sub, super, v, untouched := tt.goal(c)
 			require.False(t, hasHardError(c.Constrain(sub, super)))
 			require.Equal(t, tt.wantBounds, printedBounds(v.LowerBounds))
 			surface := coalesce(v, soltype.Positive).Accept(&finalSubsumer{ctx: c}, soltype.Positive)
 			require.Equal(t, tt.wantSurface, soltype.Print(surface))
+			// A candidate weakestBound skipped, or one the committed pair made unnecessary,
+			// takes no bound of its own. The goal is discharged without it.
+			for i, u := range untouched {
+				require.Empty(t, printedBounds(u.LowerBounds), "untouched[%d] lower bounds", i)
+				require.Empty(t, printedBounds(u.UpperBounds), "untouched[%d] upper bounds", i)
+			}
 		})
 	}
 }
