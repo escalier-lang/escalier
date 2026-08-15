@@ -142,27 +142,19 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// A super-union member that is itself an unbounded TypeVar is trialled after every
 		// concrete member, since specificityOrder ranks a variable below every concrete. The
 		// super union here has a fresh var on one branch and an incompatible prim on the
-		// other. The number trial fails on its own merits, StrLit "hi" against PrimType
-		// number, so the rule falls through to the var branch and commits it. The var member
-		// is a last-resort catch-all, not a speculative first pin, because it is reached only
-		// when no concrete member matches.
-		//
-		// What the var branch records is the weakest bound that discharges the goal, so the
-		// number branch is subtracted. weakestBound in constrain_nf.go derives it. The
-		// complement is a solving artifact rather than something a reader should meet, and
-		// the last assertion here shows the display simplifier dropping it.
+		// other. The number trial fails on its own merits (StrLit "hi" against PrimType
+		// number), so the rule falls through to the var branch: `"hi" <: extra` records "hi"
+		// as extra's lower bound and commits. The var member is a last-resort catch-all, not
+		// a speculative first pin, because it is reached only when no concrete member matches.
 		c := &Context{}
 		extra := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{extra, num()}, false)
 
-		require.Empty(t, c.Constrain(strLit("hi"), super))
-		require.Equal(t, []string{`"hi" & ¬number`}, printedBounds(extra.LowerBounds))
+		hi := strLit("hi")
+		require.Empty(t, c.Constrain(hi, super))
+		require.Len(t, extra.LowerBounds, 1)
+		require.Same(t, hi, extra.LowerBounds[0])
 		require.Empty(t, extra.UpperBounds)
-
-		// `"hi"` and `number` share no value, so `¬number` rules out nothing `"hi"` admits.
-		// simplifyNegations drops it.
-		surface := extra.LowerBounds[0].Accept(&finalSubsumer{ctx: c}, soltype.Positive)
-		require.Equal(t, `"hi"`, soltype.Print(surface))
 	})
 
 	t.Run("concrete match commits before the var member and leaves it unpinned", func(t *testing.T) {
@@ -192,20 +184,18 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 // binding an inference variable.
 func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 	t.Run("var-committed member breadcrumbs a later conflict back to the union", func(t *testing.T) {
-		// "hi" <: (T | number). The number member fails, since "hi" is not a number, so the
-		// trial falls through to the catch-all var member and commits it, bounding T below
-		// by `"hi" & ¬number`. No other member matches, so the commit is unambiguous and
-		// reports nothing.
+		// "hi" <: (T | number). The number member fails ("hi" is not number), so the trial
+		// falls through to the catch-all var member and commits `"hi" <: T`, pinning T to
+		// "hi". No other member matches, so the commit is unambiguous and reports nothing.
 		c := &Context{}
 		tv := c.freshVar(0)
 		super := newUnion(nil, []soltype.Type{tv, num()}, false)
 
 		require.Empty(t, c.Constrain(strLit("hi"), super))
-		require.Equal(t, []string{`"hi" & ¬number`}, printedBounds(tv.LowerBounds))
+		require.Len(t, tv.LowerBounds, 1)
 
-		// A later use of T as number forces `"hi" & ¬number <: number`, which fails on the
-		// `"hi"` part. The breadcrumb names the union choice that bounded T rather than
-		// blaming only this use.
+		// A later use of T as number forces "hi" <: number, which fails. The breadcrumb
+		// names the union choice that pinned T rather than blaming only this use.
 		errs := c.Constrain(tv, num())
 		require.Equal(t, []string{
 			`cannot constrain "hi" <: number; t0 was committed to a branch of t0 | number by an earlier match, so it cannot also satisfy number`,

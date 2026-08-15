@@ -119,20 +119,18 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 }
 
 // TestConstrainRecordsWeakestBoundOnVarCandidate pins what a goal the normal-form
-// layer settles on a supertype-side variable records under that variable. The goal
-// asks only for what the other supertype candidates leave uncovered, so each of them
-// is subtracted from the bound:
+// layer settles on a supertype-side variable records under that variable. The goal asks
+// only for what the other supertype candidates leave uncovered:
 //
 //	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
 //
-// weakestBound in constrain_nf.go builds the left-hand side. Recording `⋂subCands`
-// instead is sound and pins the variable further than the goal asks. A candidate
-// carrying a free variable is the exception and stays in the join, for the reasons
-// weakestBound gives.
+// weakestBound in constrain_nf.go builds the left-hand side, and only where `⋂subCands`
+// is `unknown`. Everywhere else the meet is recorded whole, which is sound and pins the
+// variable further than the goal asks. weakestBound says why the subtraction stops
+// there, and constrainImplied's third bullet records what it leaves behind.
 //
 // wantBounds is the bound list as stored, and wantSurface what the display simplifier
-// makes of it. The two differ wherever a complement's operand is disjoint from what it
-// meets, since simplifyNegations then drops it.
+// makes of it.
 func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	tests := []struct {
 		name string
@@ -144,20 +142,22 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	}{
 		{
 			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
-			// goal settles on T. It asks T for the values number does not already cover.
-			name: "a union member subtracts its concrete siblings",
+			// goal settles on T. The meet carries a positive part, so T takes it whole rather
+			// than the `"hi" ∩ ¬number` the goal asks for. The two admit the same values here,
+			// since `"hi"` and `number` share none.
+			name: "a meet with a positive part is recorded whole",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v
 			},
-			wantBounds:  []string{`"hi" & ¬number`},
+			wantBounds:  []string{`"hi"`},
 			wantSurface: `"hi"`,
 		},
 		{
 			// `¬T <: number`. The layer moves both complements across the `<:`, which reads
 			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
 			// collapse `¬T` to `never`, which the goal never asks for.
-			name: "a negated variable keeps the complement of the other side",
+			name: "a top meet subtracts its concrete siblings",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				return negT(v), num(), v
@@ -177,16 +177,30 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			wantSurface: "never",
 		},
 		{
-			// `"hi" <: (T | U)`. U is left in the join rather than subtracted, for the two
-			// reasons weakestBound gives. Recording `"hi" & ¬U` would render T as `never`,
-			// since coalescing resolves an unconstrained U inside the complement to `unknown`.
-			name: "a sibling variable is left in the join",
+			// `¬T <: (number | U)`, which reads `unknown <: number ∪ U ∪ T`. U is settled on
+			// first, since two variables keep their list order. T is skipped rather than
+			// subtracted, on concreteMember's gate, so U takes `¬number` alone.
+			name: "a top meet skips a variable sibling",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
-				v, other := c.freshVar(0), c.freshVar(0)
-				return strLit("hi"), newUnion(nil, []soltype.Type{v, other}, false), v
+				other, v := c.freshVar(0), c.freshVar(0)
+				return negT(other), newUnion(nil, []soltype.Type{num(), v}, false), v
 			},
-			wantBounds:  []string{`"hi"`},
-			wantSurface: `"hi"`,
+			wantBounds:  []string{"¬number"},
+			wantSurface: "¬number",
+		},
+		{
+			// `¬T <: (U | V)`, which reads `unknown <: U ∪ V ∪ T`. The super has to be the
+			// union rather than a bare variable, since a variable operand falls through to the
+			// variable arm and never reaches this layer. U is settled on first. Every sibling
+			// is a variable, so every one is skipped and the meet is empty. newIntersection
+			// returns `unknown` for it, the bound the goal records with no subtraction at all.
+			name: "a top meet whose siblings are all variables records unknown",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				other, v, third := c.freshVar(0), c.freshVar(0), c.freshVar(0)
+				return negT(other), newUnion(nil, []soltype.Type{v, third}, false), v
+			},
+			wantBounds:  []string{"unknown"},
+			wantSurface: "unknown",
 		},
 	}
 	for _, tt := range tests {

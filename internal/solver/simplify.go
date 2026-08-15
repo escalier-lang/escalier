@@ -496,68 +496,14 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // the same class-tag and literal/primitive facts the meet of two atoms reads, so
 // this pass adds no disjointness knowledge of its own.
 //
-// It never runs inside constrain, and it reads and writes no bound. Two passes call it,
-// and what it decides differs between them.
-//
-//   - subsumeFinal runs it over an already-coalesced type. There it is cosmetic.
-//     Disabling it makes an inferred type uglier and changes nothing the solver accepts.
-//   - simplifyCaptured runs it over a conditional's `infer` capture, which
-//     reduceCondInfer substitutes into the Then branch. There it decides the type the
-//     branch reads.
-//
-// Both rewrites preserve the values the meet admits, so the second call site changes how
-// a branch's type is written rather than what it denotes. A `provedEmpty` collapse names
-// a meet no value satisfies, and the branch reads `never` for it.
+// It is a DISPLAY pass. It runs over an already-coalesced type inside subsumeFinal
+// and never inside constrain, so disabling it makes an inferred type uglier and
+// never changes what the solver accepts. Nothing here reads or writes a bound.
 //
 // Its input stays small because Escalier rebinds on refinement rather than
 // re-typing the scrutinee. Each guard computes a fresh binding whose type is
 // simplified and frozen at that site, so nested guards do not pile `& ¬A & ¬B` onto
 // one long-lived variable.
-
-// simplifyCaptured applies the two rewrites to every intersection inside a
-// conditional's `infer` capture. A capture is read straight off a variable's bounds by
-// capturedBound and substituted into the Then branch, so it never passes through
-// coalesceScheme and subsumeFinal never sees it. Without this pass
-//
-//	type Result = if "a" : number | infer U { [U] } else { "no" }
-//
-// reduces to `["a" & ¬number]`, where U picked up the complement from the normal-form
-// layer settling `"a" <: number ∪ U` on U. See weakestBound in constrain_nf.go.
-//
-// It runs the negation rewrites alone rather than the whole of subsumeFinal. A capture
-// is a type the branch goes on to read structurally rather than a rendered binding, so
-// dropping a member a sibling subsumes would change what the branch reads.
-func (c *Context) simplifyCaptured(t soltype.Type) soltype.Type {
-	return t.Accept(&capturedSimplifier{ctx: c}, soltype.Positive)
-}
-
-// capturedSimplifier is the rewriting visitor behind simplifyCaptured. It rewrites in
-// ExitType, after its children, so a nested intersection is simplified before the
-// enclosing node reads it.
-type capturedSimplifier struct{ ctx *Context }
-
-func (s *capturedSimplifier) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
-	return soltype.EnterResult{}
-}
-
-func (s *capturedSimplifier) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	switch t := t.(type) {
-	case *soltype.IntersectionType:
-		members, changed, provedEmpty := simplifyNegations(s.ctx, t.Types)
-		if provedEmpty {
-			return &soltype.NeverType{}
-		}
-		if !changed {
-			return t
-		}
-		return collapseIntersection(members, false)
-	case *soltype.NegationType:
-		// This walk already rewrote the operand, so a complement whose operand collapsed to
-		// a lattice bound is folded here rather than left as the meaningless `¬never`.
-		return foldNegation(t)
-	}
-	return t
-}
 
 // simplifyNegations applies the two rewrites above to one intersection's members.
 // changed reports whether any member was rewritten or dropped.
