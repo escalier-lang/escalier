@@ -230,6 +230,96 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	}
 }
 
+// TestConstrainVarCandidateOverAMultiAtomMeet pins what a supertype-side variable
+// records when the subtype side holds several atoms that no fusion merged into one.
+// Two atoms of different kinds never fuse, since no single record denotes the meet of a
+// record and an arrow, so a cross-kind meet is the shape that reaches this.
+//
+// The trial pairs ONE atom with the variable and the pair holds at once, since
+// constraining into a free variable only appends a bound. So the variable records that
+// atom and the rest of the meet is dropped. constrainImplied's third bullet states it.
+//
+// later is a constraint run after the goal, chosen so it holds for the whole meet and
+// fails for the single atom. It is what makes the dropped atom observable rather than
+// merely unrecorded.
+func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
+	rec := func() *soltype.ObjectType { return inexactObj(propElem("a", numLit(1))) }
+	numToStr := func() *soltype.FuncType { return exactFn(str(), identParam("x", num())) }
+	strToNum := func() *soltype.FuncType { return exactFn(num(), identParam("x", str())) }
+
+	tests := []struct {
+		name string
+		goal func(c *Context) (sub, super soltype.Type, v *soltype.TypeVarType)
+		// later runs against the variable once the goal is decided. nil skips it.
+		later      func() soltype.Type
+		wantBounds []string
+		wantLater  []string
+	}{
+		{
+			// `{a: 1, ...} & ((x: number) -> string) <: (string | T)`. Neither atom is a
+			// subtype of string, so the trial falls through to T and commits the first atom
+			// paired with it. sortAtoms ranks a record before an arrow, so T takes the record.
+			name: "a record and an arrow record only the record",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				sub := newIntersection(nil, []soltype.Type{rec(), numToStr()})
+				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+			},
+			later:      func() soltype.Type { return numToStr() },
+			wantBounds: []string{"{a: 1, ...}"},
+			wantLater: []string{
+				"cannot constrain object <: function; t0 was committed to a branch of " +
+					"t0 | string by an earlier match, so it cannot also satisfy function",
+			},
+		},
+		{
+			// Two arrows with different domains AND different codomains. `(x: number | string)
+			// -> ?` names no single codomain, so they do not fuse and the meet stays two atoms.
+			name: "two unfused arrows record only the first",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				sub := newIntersection(nil, []soltype.Type{numToStr(), strToNum()})
+				return sub, newUnion(nil, []soltype.Type{boolT(), v}, false), v
+			},
+			later:      func() soltype.Type { return strToNum() },
+			wantBounds: []string{"fn (x: number) -> string"},
+			wantLater: []string{
+				"cannot constrain string <: number; t0 was committed to a branch of " +
+					"t0 | boolean by an earlier match, so it cannot also satisfy number",
+				"cannot constrain string <: number; t0 was committed to a branch of " +
+					"t0 | boolean by an earlier match, so it cannot also satisfy number",
+			},
+		},
+		{
+			// `(T & {a: 1, ...}) <: (string | T)`, with T already bounded below by 5 so the
+			// string candidate fails on both `{a: 1, ...} <: string` and `T <: string`. T then
+			// stands on BOTH sides of the goal, which holds by reflexivity and asks nothing of
+			// T. The trial records the record anyway, since it pairs `{a: 1, ...}` with T
+			// before it reaches the reflexive `T <: T`.
+			name: "the target standing in the meet still records another atom",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				v.LowerBounds = []soltype.Type{numLit(5)}
+				sub := newIntersection(nil, []soltype.Type{v, rec()})
+				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+			},
+			wantBounds: []string{"5", "{a: 1, ...}"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			sub, super, v := tt.goal(c)
+			require.False(t, hasHardError(c.Constrain(sub, super)))
+			require.Equal(t, tt.wantBounds, printedBounds(v.LowerBounds))
+			if tt.later == nil {
+				return
+			}
+			require.Equal(t, tt.wantLater, Messages(c.Constrain(v, tt.later())))
+		})
+	}
+}
+
 // TestConstrainIntersectionFusesBeforeComparing covers the subtype-side win the
 // normal-form layer brings. Two inexact objects meet to one object carrying both
 // fields, so the intersection satisfies a target naming both. Comparing the
