@@ -124,22 +124,13 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //     string | ...)` hands back the pair it started from and no smaller question
 //     is ever reached. Every other supertype comes apart into smaller atoms.
 //
-//   - A variable on the supertype side records ONE subtype candidate rather than
-//     what the goal asks of it. Every pair puts a single candidate against the
-//     variable, and a pair against a free variable always holds, since
-//     constraining into one only appends a bound. So the first candidate trialled
-//     against it wins outright. Two incomparable atoms keep the canonical order
-//     sortAtoms gave them, which is what picks the record over the arrow in
-//
-//     {a: 1, ...} & ((x: number) -> string) <: (string | T)
-//
-//     T takes the lower bound `{a: 1, ...}`, the arrow is never reached, and a
-//     later `T <: (x: number) -> string` is rejected. The proof still holds, since
-//     a meet is a subtype of each of its atoms. But `{a: 1, ...}` is wider than
-//     the `{a: 1, ...} ∩ ((x: number) -> string) ∩ ¬string` the goal asks for, so
-//     it demands more of T. A variable is reached only after every concrete
-//     candidate failed, and weakestBound settles the one subtype side where this
-//     does real damage, `unknown`.
+//   - A variable on the supertype side picks up the whole meet as a lower bound,
+//     which is stronger than the goal asks for. The goal asks only for the meet
+//     with the other supertype candidates subtracted, so `"hi" <: (T | number)`
+//     records `"hi"` under T where `"hi" ∩ ¬number` would do. That is sound, and a
+//     variable is reached only after every concrete candidate failed. weakestBound
+//     subtracts for the one subtype side where the stronger bound does damage,
+//     `unknown`, and says why it goes no further.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -357,10 +348,11 @@ type nfPair struct{ sub, super soltype.Type }
 // deciding; the pair repeating it against an inexact union is dropped, for the
 // reason constrainImplied gives.
 //
-// topMeet says the conjunct contributed no positive part, so the subtype side is the
-// lone `unknown` constrainImplied named for it. A variable candidate then gets one pair
-// whose subtype side is weakestBound's meet, in place of the pair against `unknown`.
-// Every other candidate keeps a pair per subtype candidate.
+// A variable candidate gets ONE pair, whose subtype side varTrialSub decides, rather
+// than one pair per subtype candidate. Every other candidate keeps a pair per subtype
+// candidate, since deciding `sᵢ <: pⱼ` asks whether one shape fits another and records
+// no bound of its own. topMeet says the conjunct contributed no positive part, which is
+// one of the cases varTrialSub reads.
 //
 // specificityOrder ranks a variable below every concrete type, so a variable
 // candidate's pair is trialled after every concrete candidate's.
@@ -368,8 +360,8 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
-		if _, isVar := superCands[j].(*soltype.TypeVarType); isVar && topMeet {
-			pairs = append(pairs, nfPair{sub: weakestBound(superCands, j), super: superCands[j]})
+		if _, isVar := superCands[j].(*soltype.TypeVarType); isVar {
+			pairs = append(pairs, nfPair{sub: varTrialSub(subCands, superCands, j, topMeet), super: superCands[j]})
 			continue
 		}
 		for _, i := range subOrder {
@@ -380,6 +372,37 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 		}
 	}
 	return pairs
+}
+
+// varTrialSub is the subtype side of the one pair the variable at superCands[keep] is
+// trialled against, and so the lower bound that variable records.
+//
+// The general case is the whole meet. Pairing a single candidate with the variable
+// instead would drop the rest, and the trial cannot notice, since a pair against a free
+// variable always holds and whichever candidate is tried first wins. Deciding
+//
+//	{a: 1, ...} & ((x: number) -> string) <: (string | T)
+//
+// that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
+// rejected even though the meet satisfies it.
+//
+// Two goals take something other than the meet.
+//
+//   - The target standing in the meet discharges the goal by reflexivity, since
+//     `⋂subCands <: v` holds for any meet holding v. The goal asks nothing of v, so
+//     handing constrain the bare variable lets its `v <: v` rule settle the pair
+//     without recording a bound that names v.
+//   - A meet of `unknown` bounds v by nothing at all, so weakestBound subtracts the
+//     other supertype candidates instead. It says why the subtraction stops there.
+func varTrialSub(subCands, superCands []soltype.Type, keep int, topMeet bool) soltype.Type {
+	target := superCands[keep]
+	if slices.ContainsFunc(subCands, func(s soltype.Type) bool { return equalType(s, target) }) {
+		return target
+	}
+	if topMeet {
+		return weakestBound(superCands, keep)
+	}
+	return newIntersection(nil, subCands)
 }
 
 // weakestBound is the subtype side of the goal the variable at superCands[keep] is

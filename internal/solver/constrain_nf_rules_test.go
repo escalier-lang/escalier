@@ -125,10 +125,9 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 //	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
 //
 // weakestBound in constrain_nf.go builds the left-hand side, and only where `⋂subCands`
-// is `unknown`. Everywhere else the trial records one subtype candidate, which is sound
-// and pins the variable further than the goal asks. weakestBound says why the
-// subtraction stops there, and constrainImplied's third bullet records what it leaves
-// behind.
+// is `unknown`. Everywhere else the variable records the whole meet, which is sound and
+// pins it further than the goal asks. weakestBound says why the subtraction stops there,
+// and constrainImplied's third bullet records what it leaves behind.
 //
 // wantBounds is the bound list as stored, and wantSurface what the display simplifier
 // makes of it.
@@ -144,10 +143,10 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 	}{
 		{
 			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
-			// goal settles on T. The subtype side carries a positive part, so T takes that
-			// candidate rather than the `"hi" ∩ ¬number` the goal asks for. The two admit the
-			// same values here, since `"hi"` and `number` share none.
-			name: "a subtype side with a positive part records the candidate",
+			// goal settles on T. The subtype side carries a positive part, so T takes the meet
+			// rather than the `"hi" ∩ ¬number` the goal asks for. The two admit the same values
+			// here, since `"hi"` and `number` share none.
+			name: "a subtype side with a positive part records the meet",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
 				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v, nil
@@ -235,13 +234,14 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 // Two atoms of different kinds never fuse, since no single record denotes the meet of a
 // record and an arrow, so a cross-kind meet is the shape that reaches this.
 //
-// The trial pairs ONE atom with the variable and the pair holds at once, since
-// constraining into a free variable only appends a bound. So the variable records that
-// atom and the rest of the meet is dropped. constrainImplied's third bullet states it.
+// The variable takes ONE pair whose subtype side is the whole meet, so every atom is
+// recorded. Pairing a single atom instead would drop the rest, and the trial could not
+// notice: a pair against a free variable always holds, so whichever atom came first
+// would win on canonical order alone. varTrialSub builds the subtype side.
 //
 // later is a constraint run after the goal, chosen so it holds for the whole meet and
-// fails for the single atom. It is what makes the dropped atom observable rather than
-// merely unrecorded.
+// fails for any single atom. It is what makes the recorded meet observable rather than
+// merely stored.
 func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 	rec := func() *soltype.ObjectType { return inexactObj(propElem("a", numLit(1))) }
 	numToStr := func() *soltype.FuncType { return exactFn(str(), identParam("x", num())) }
@@ -257,53 +257,59 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 	}{
 		{
 			// `{a: 1, ...} & ((x: number) -> string) <: (string | T)`. Neither atom is a
-			// subtype of string, so the trial falls through to T and commits the first atom
-			// paired with it. sortAtoms ranks a record before an arrow, so T takes the record.
-			name: "a record and an arrow record only the record",
+			// subtype of string, so the trial falls through to T, which takes both.
+			name: "a record and an arrow record the whole meet",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				sub := newIntersection(nil, []soltype.Type{rec(), numToStr()})
 				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
 			},
 			later:      func() soltype.Type { return numToStr() },
-			wantBounds: []string{"{a: 1, ...}"},
-			wantLater: []string{
-				"cannot constrain object <: function; t0 was committed to a branch of " +
-					"t0 | string by an earlier match, so it cannot also satisfy function",
-			},
+			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> string)"},
+			wantLater:  nil,
 		},
 		{
 			// Two arrows with different domains AND different codomains. `(x: number | string)
 			// -> ?` names no single codomain, so they do not fuse and the meet stays two atoms.
-			name: "two unfused arrows record only the first",
+			name: "two unfused arrows record both",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				sub := newIntersection(nil, []soltype.Type{numToStr(), strToNum()})
 				return sub, newUnion(nil, []soltype.Type{boolT(), v}, false), v
 			},
 			later:      func() soltype.Type { return strToNum() },
-			wantBounds: []string{"fn (x: number) -> string"},
-			wantLater: []string{
-				"cannot constrain string <: number; t0 was committed to a branch of " +
-					"t0 | boolean by an earlier match, so it cannot also satisfy number",
-				"cannot constrain string <: number; t0 was committed to a branch of " +
-					"t0 | boolean by an earlier match, so it cannot also satisfy number",
-			},
+			wantBounds: []string{"(fn (x: number) -> string) & (fn (x: string) -> number)"},
+			wantLater:  nil,
 		},
 		{
 			// `(T & {a: 1, ...}) <: (string | T)`, with T already bounded below by 5 so the
 			// string candidate fails on both `{a: 1, ...} <: string` and `T <: string`. T then
 			// stands on BOTH sides of the goal, which holds by reflexivity and asks nothing of
-			// T. The trial records the record anyway, since it pairs `{a: 1, ...}` with T
-			// before it reaches the reflexive `T <: T`.
-			name: "the target standing in the meet still records another atom",
+			// T. varTrialSub hands constrain the bare variable so `T <: T` settles the pair,
+			// which keeps a bound naming T off T's own bound list.
+			name: "the target standing in the meet records nothing",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				v.LowerBounds = []soltype.Type{numLit(5)}
 				sub := newIntersection(nil, []soltype.Type{v, rec()})
 				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
 			},
-			wantBounds: []string{"5", "{a: 1, ...}"},
+			wantBounds: []string{"5"},
+		},
+		{
+			// A meet whose atoms sit at different levels. LevelOf reads an intersection as the
+			// max over its members, so recording the meet routes through extrude where a
+			// single atom at the target's own level would not. The deeper variable is replaced
+			// by a proxy at the target's level, which is what keeps it from being generalized
+			// at the wrong one.
+			name: "a meet spanning two levels extrudes the deeper one",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				outer := c.freshVar(0)
+				deep := c.freshVar(1)
+				sub := newIntersection(nil, []soltype.Type{rec(), exactFn(deep, identParam("x", num()))})
+				return sub, newUnion(nil, []soltype.Type{str(), outer}, false), outer
+			},
+			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> t2)"},
 		},
 	}
 	for _, tt := range tests {
