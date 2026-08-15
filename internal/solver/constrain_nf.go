@@ -376,43 +376,28 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 }
 
 // weakestBound is the subtype side of the goal the variable at superCands[keep] is
-// trialled against when the subtype side is `unknown`. It is the meet of the
-// complements of the variable-free supertype candidates, and the variable records it as
-// a lower bound.
-//
-// It comes out of the same move-across-the-`<:` rewrite the file header states for a
-// negated part, applied to the candidates the variable shares its side with:
+// trialled against when the subtype side is `unknown`. It meets the complements of the
+// variable-free supertype candidates, by the move-across-the-`<:` rewrite the file
+// header states for a negated part:
 //
 //	unknown <: p₁ ∪ … ∪ pₙ ∪ v    is    ¬p₁ ∩ … ∩ ¬pₙ <: v
 //
-// The right-hand side is everything the goal asks of v and nothing more. Constraining
-// `unknown` is what the goal would otherwise record, and that pins v to the top of the
-// lattice. `¬T <: number` normalizes to `unknown <: number ∪ T`, so T would take
-// `unknown` and `¬T` would collapse to `never`. `¬number` is what the goal asks for.
+// That asks of v what the goal asks and nothing more. Recording `unknown` instead pins v
+// to the top of the lattice, so `¬T <: number`, which normalizes to
+// `unknown <: number ∪ T`, would give T `unknown` and collapse `¬T` to `never` where
+// `¬number` is what the goal asks for.
 //
-// The rewrite is confined to a subtype side of `unknown` because that is where the
-// stronger bound does damage. Elsewhere the trial already bounds v by one subtype
-// candidate, and subtracting from that either changes nothing or leaves a complement
-// that reaches the rendered type. Deciding
+// A candidate is subtracted only when it is variable-free, and only from a subtype side
+// of `unknown`. Both gates keep out a complement no later pass can clear.
+// simplifyNegations decides disjointness through the meet of two atoms, so it drops
+// `¬number` against `"hi"` but not `¬{b: number, ...}` against `{a: 1, ...}`, which can
+// share a value, and it refuses a complement over a variable outright. Subtracting past
+// either gate is sound and leaves the complement in the rendered type, which
+// constrainImplied's third bullet records.
 //
-//	{a: 1, ...} <: ({b: number, ...} | T)
-//
-// would render T as `{a: 1, ...} & ¬{b: number, ...}` rather than `{a: 1, ...}`. The
-// display simplifier cannot clear that one. It decides disjointness through the meet of
-// two atoms, and two inexact records overlap, since a value of `{a: 1, ...}` may carry
-// a `b: number`. So the meet is left whole and v keeps a bound stronger than the goal
-// asks for, which constrainImplied's third bullet records.
-//
-// A candidate carrying a free variable is skipped, on concreteMember's gate.
-// Subtracting it is sound. It buys a complement that nothing downstream can clear away,
-// since simplifyNegations weighs disjointness only between variable-free operands, and
-// coalescing reads that variable at flipped polarity, so an unconstrained one resolves
-// to `unknown` there and its complement to `never`.
-//
-// Skipping a candidate still proves the goal. It stays on the supertype side, so the
-// trial asks for at least what the goal asks, and a bound recorded off it rules out no
-// value the goal admits. Skipping every candidate leaves an empty meet, which
-// newIntersection returns as `unknown`, the bound the goal would have recorded anyway.
+// A skipped candidate stays on the supertype side, so the trial asks for at least what
+// the goal asks. Skipping every one leaves an empty meet, which newIntersection returns
+// as `unknown`.
 func weakestBound(superCands []soltype.Type, keep int) soltype.Type {
 	parts := make([]soltype.Type, 0, len(superCands)-1)
 	for j, p := range superCands {
