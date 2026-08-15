@@ -1367,8 +1367,10 @@ func (c *Context) combineRefInners(a, b *soltype.RefType, role atomRole) (inner 
 	if _, isNever := combined.(*soltype.NeverType); isNever {
 		return nil, true, true
 	}
-	// A combination that is not itself borrowable, such as a pointee that fused to a
-	// primitive, has no wrapper to sit in. Keeping the two borrows apart is precise.
+	// A combination no borrow may point at has no wrapper to sit in, so the two
+	// borrows stay apart. Every merge arm over two borrowable pointees yields a
+	// borrowable one or `never`, so this guards the RefInner set against a future
+	// arm rather than answering a pair the merges reach today.
 	borrowable, isRefInner := combined.(soltype.RefInner)
 	if !isRefInner {
 		return nil, false, false

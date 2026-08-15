@@ -112,6 +112,49 @@ func TestRefAtomMerge(t *testing.T) {
 			inter: "&'static mut {x: number}",
 		},
 		{
+			// An exact record names its whole key set, so nothing is both exactly
+			// `{x: number}` and exactly `{y: string}` and the pointees meet at `never`.
+			// A borrow of an uninhabited pointee points at nothing, so the whole meet is
+			// `never`. Their join has no single record that denotes it, so the union
+			// keeps both borrows even though they share a lifetime.
+			name: "immutable borrows over records naming different fields",
+			build: func(t *testing.T, c *Context) (soltype.Type, soltype.Type) {
+				lt := c.freshLifetime(0)
+				return borrow(false, lt, refObj(t, "{x: number}")), borrow(false, lt, refObj(t, "{y: string}"))
+			},
+			union: "<'a> &'a {x: number} | &'a {y: string}",
+			inter: "never",
+		},
+		{
+			// A pointee still under inference is opaque to the atom merges, which have
+			// no arm for a type variable, so neither the meet nor the join combines the
+			// two and both borrows stay.
+			name: "immutable borrows over distinct type variables",
+			build: func(t *testing.T, c *Context) (soltype.Type, soltype.Type) {
+				lt := c.freshLifetime(0)
+				return borrow(false, lt, c.freshVar(0)), borrow(false, lt, c.freshVar(0))
+			},
+			union: "<T0, T1, 'a> &'a T0 | &'a T1",
+			inter: "<T0, T1, 'a> &'a T0 & &'a T1",
+		},
+		{
+			// Two unrelated class tags are disjoint, so their meet is `never`. No value
+			// inhabits the pointee, and a borrow of an uninhabited pointee points at
+			// nothing, so the whole meet is `never` rather than a borrow of one.
+			name: "immutable borrows over disjoint class tags",
+			build: func(t *testing.T, c *Context) (soltype.Type, soltype.Type) {
+				c.registerClass("Point", &ClassDef{})
+				c.registerClass("Line", &ClassDef{})
+				lt := c.freshLifetime(0)
+				return borrow(false, lt, &soltype.ClassType{Name: "Point"}),
+					borrow(false, lt, &soltype.ClassType{Name: "Line"})
+			},
+			// A union of two class tags has no single tag that denotes it, so joinAtoms
+			// leaves the pointees alone and both borrows stay.
+			union: "<'a> &'a Line | &'a Point",
+			inter: "never",
+		},
+		{
 			// A union does not distribute over the lifetime and the pointee at once, so
 			// two borrows that differ in BOTH stay two atoms. Fusing them would give
 			// `&'a {x: number | string}`, which admits an `&'a {x: number}` that neither
@@ -171,6 +214,49 @@ func TestRefAtomMerge(t *testing.T) {
 			c = &Context{}
 			a, b = tt.build(t, c)
 			require.Equal(t, tt.inter, normScheme(c, newIntersection(nil, []soltype.Type{a, b})))
+		})
+	}
+}
+
+// TestRefLifetimeCombination pins the lifetime half of the merge on its own, one
+// pair of lifetimes at a time. The atom merges reach these two functions only in
+// the order sortAtoms puts the borrows in, so a table over the pairs is what
+// states the rule in both argument orders.
+func TestRefLifetimeCombination(t *testing.T) {
+	c := &Context{}
+	lt := c.freshLifetime(0)
+	other := c.freshLifetime(0)
+	// A second 'static instance, since 'static is a lattice bound compared by value
+	// rather than an origin compared by identity.
+	otherStatic := &soltype.StaticLifetime{}
+
+	tests := []struct {
+		name     string
+		a, b     soltype.Lifetime
+		meet     soltype.Lifetime
+		join     soltype.Lifetime
+		combines bool
+	}{
+		{name: "two owned cells", a: nil, b: nil, meet: nil, join: nil, combines: true},
+		{name: "an owned cell and a borrow", a: nil, b: lt, combines: false},
+		{name: "a borrow and an owned cell", a: lt, b: nil, combines: false},
+		{name: "one lifetime with itself", a: lt, b: lt, meet: lt, join: lt, combines: true},
+		{name: "two 'static instances", a: soltype.Static, b: otherStatic, meet: soltype.Static, join: soltype.Static, combines: true},
+		{name: "'static then a variable", a: soltype.Static, b: lt, meet: soltype.Static, join: lt, combines: true},
+		{name: "a variable then 'static", a: lt, b: soltype.Static, meet: soltype.Static, join: lt, combines: true},
+		{name: "two distinct variables", a: lt, b: other, combines: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			met, metOK := meetRefLifetimes(tt.a, tt.b)
+			require.Equal(t, tt.combines, metOK)
+			joined, joinedOK := joinRefLifetimes(tt.a, tt.b)
+			require.Equal(t, tt.combines, joinedOK)
+			if !tt.combines {
+				return
+			}
+			require.Equal(t, tt.meet, met)
+			require.Equal(t, tt.join, joined)
 		})
 	}
 }
