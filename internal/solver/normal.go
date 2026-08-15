@@ -75,7 +75,7 @@ import (
 // shared rule would be wrong. An exact object is a subtype of the otherwise-equal
 // inexact one, since capping the key set only removes values. An inexact FUNCTION
 // is the subtype instead, since tolerating more argument counts only removes
-// values. widerByMarker records both directions in one place.
+// values. widerByExactness records both directions in one place.
 //
 // This file is the only place structural exactness is decided. newIntersection and
 // newUnion in lattice.go flatten, prune, dedup, and order a lattice node. They
@@ -694,7 +694,7 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if carriesKnot(a) || carriesKnot(b) {
 		return nil, false
 	}
-	if wider, ok := widerByMarker(a, b); ok {
+	if wider, ok := widerByExactness(a, b); ok {
 		return wider, true
 	}
 	if fused, ok := joinValueAtoms(a, b); ok {
@@ -717,24 +717,24 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	return nil, false
 }
 
-// widerByMarker returns the wider of two atoms that are EQUAL APART FROM their open
-// marker, and reports whether the pair is such a pair. A union of two types where
-// one contains the other is the containing one, so joinAtoms fuses to it.
+// widerByExactness returns the wider of two atoms that are EQUAL APART FROM their
+// exactness, and reports whether the pair is such a pair. A union of two types
+// where one contains the other is the containing one, so joinAtoms fuses to it.
 //
-// Which side is wider depends on the kind, because the marker opens a different
+// Which side is wider depends on the kind, because inexactness relaxes a different
 // dimension in each one.
 //
-//   - An OBJECT's marker opens its key set. `{x: A, ...}` admits every record
-//     `{x: A}` admits and also those carrying further fields, so the inexact side
-//     is wider.
-//   - A TUPLE's marker opens its length. `[A, ...]` admits every tuple `[A]` admits
-//     and also the longer ones, so the inexact side is wider again.
-//   - A FUNCTION's marker opens the argument counts a call may use, and the value
-//     filling the type has to tolerate all of them. `fn (x: A, ...) -> B` admits
-//     only functions taking any number of arguments, which is FEWER than
+//   - An OBJECT's inexactness relaxes its key set. `{x: A, ...}` admits every
+//     record `{x: A}` admits and also those carrying further fields, so the inexact
+//     side is wider.
+//   - A TUPLE's inexactness relaxes its length. `[A, ...]` admits every tuple `[A]`
+//     admits and also the longer ones, so the inexact side is wider again.
+//   - A FUNCTION's inexactness relaxes the argument counts a call may use, and the
+//     value filling the type has to tolerate all of them. `fn (x: A, ...) -> B`
+//     admits only functions taking any number of arguments, which is FEWER than
 //     `fn (x: A) -> B` admits. Here the exact side is the wider one.
 //
-// Each arm tests likeness by copying one atom, flipping the copy's marker to the
+// Each arm tests likeness by copying one atom, flipping the copy's exactness to the
 // other's, and comparing. That reuses equalType rather than re-spelling per-kind
 // structural equality, and it keeps the test in step with equalType as kinds gain
 // fields.
@@ -748,7 +748,7 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // declaration stops checking:
 //
 //	fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }
-func widerByMarker(a, b soltype.Type) (soltype.Type, bool) {
+func widerByExactness(a, b soltype.Type) (soltype.Type, bool) {
 	switch a := a.(type) {
 	case *soltype.ObjectType:
 		b, isObj := b.(*soltype.ObjectType)
@@ -1065,7 +1065,7 @@ func requiredFieldsWithin(props, allowed []*soltype.PropertyElem, open bool) boo
 // `{x: A | B, ...}`, which would admit a record carrying an x drawn from A beside a
 // second field, and only the exact member admits an x from A. The pair that would
 // fuse is the one whose fields also agree, and joinAtoms answers that one through
-// widerByMarker before reaching here.
+// widerByExactness before reaching here.
 func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	if a.Inexact != b.Inexact {
 		return nil, false
@@ -1169,7 +1169,7 @@ func (c *Context) meetTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
 //
 // Tuples whose open markers disagree are kept apart too, since their length sets
 // differ. The pair that would fuse is the one where the element lists also agree,
-// and joinAtoms answers that one through widerByMarker before reaching here.
+// and joinAtoms answers that one through widerByExactness before reaching here.
 func (c *Context) joinTuples(a, b *soltype.TupleType) (soltype.Type, bool) {
 	if !comparableTuples(a, b) || a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
 		return nil, false

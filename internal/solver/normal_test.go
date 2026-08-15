@@ -212,7 +212,7 @@ func TestDNFRoundTrip(t *testing.T) {
 		},
 		// The three rows below join an atom with the open version of itself. The open
 		// marker decides which side contains the other, and it points the opposite way
-		// for an arrow than for a record or a tuple. widerByMarker states why.
+		// for an arrow than for a record or a tuple. widerByExactness states why.
 		{
 			name: "a record joins with its open version at the open one",
 			in:   "{x: number} | {x: number, ...}",
@@ -591,7 +591,7 @@ func TestDeMorganOverAnInexactUnion(t *testing.T) {
 	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
 }
 
-// TestUnreducedAtomsKeepTheirOpenMarkerApart guards the one pair widerByMarker must
+// TestUnreducedAtomsKeepTheirOpenMarkerApart guards the one pair widerByExactness must
 // refuse. A `{...S}` does not know its own field names and a `[...P]` does not know
 // its own positions, so neither says what the exact side caps. The constraint rules
 // treat such an atom as inert and relate two of them only when they are equal, so
