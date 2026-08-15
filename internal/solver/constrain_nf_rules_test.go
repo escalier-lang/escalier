@@ -291,12 +291,16 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantLater:  nil,
 		},
 		{
-			// `(T & {a: 1, ...}) <: (string | T)`
+			// `(T & {a: 1, ...}) <: (string | T)`, decided with `5 <: T` already recorded.
 			//
 			// T stands on BOTH sides, so the goal holds by reflexivity and asks nothing of T.
 			// constrainImplied discharges it before any pair is built, so the string candidate
-			// is never trialled and nothing is recorded. T carries a pre-seeded `5` only so the
-			// assertion tells "nothing was added" apart from "T never had a bound".
+			// is never trialled and nothing is recorded.
+			//
+			// The `5` in the expectation is that pre-existing lower bound, unchanged. The goal
+			// does not put it there. It is seeded so the assertion tells "the goal added
+			// nothing" apart from "T never had a bound at all", which an empty list would leave
+			// ambiguous.
 			name: "the target standing in the meet records nothing",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -322,13 +326,16 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantBounds: []string{},
 		},
 		{
-			// `(T & {a: 1, ...}) <: (string | T)`, the goal two rows above, followed by
-			// `T <: string`.
+			// `(T & {a: 1, ...}) <: (string | T)` with `5 <: T` already recorded, the goal two
+			// rows above, followed by `T <: string`.
 			//
 			// The discharge chose no candidate, so it reports no commit. Reporting one would tag
 			// T as pinned by a branch of `string | T`, and the later failure would then be
-			// blamed on a choice that had recorded no bound. The seeded `5` is what makes that
-			// later constraint fail, so its message can be read: it names `5 <: string` alone.
+			// blamed on a choice that had recorded no bound.
+			//
+			// The seeded `5` does double duty. It is the unchanged bound wantBounds names, and
+			// it is what makes `T <: string` fail, since that constraint propagates T's lower
+			// bounds against string. The message names `5 <: string` and nothing more.
 			name: "a reflexive discharge leaves no union-commit breadcrumb",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
