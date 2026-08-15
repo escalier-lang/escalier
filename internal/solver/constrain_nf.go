@@ -367,6 +367,14 @@ type nfPair struct{ sub, super soltype.Type }
 // that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
 // rejected even though the meet satisfies it.
 //
+// Taking the meet forgoes nothing, so there is no candidate it could have chosen
+// better. The meet is a subtype of every candidate, so an upper bound on the variable
+// that some candidate satisfies the meet satisfies too, and the bound it records
+// demands less of the variable than any single candidate would. The choice that does
+// remain is on the supertype side, where committing one candidate can hide another that
+// would also have matched. ambiguousAlternate reports that as a warning rather than
+// deciding it here.
+//
 // Every other candidate keeps a pair per subtype candidate, since deciding `sᵢ <: pⱼ`
 // compares two shapes and settles on the first that fits. A variable on the SUBTYPE
 // side is not special-cased there. `sᵢ <: pⱼ` records an upper bound on it through

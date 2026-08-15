@@ -348,6 +348,24 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantLater:  []string{"cannot constrain 5 <: string"},
 		},
 		{
+			// `{a: 1, ...} & ((x: number) -> string) <: (string | T)`, decided with
+			// `T <: (x: number) -> string` already recorded.
+			//
+			// The upper bound is satisfied by the arrow alone, not by the record. Recording the
+			// meet propagates it against that bound and it holds, since the meet is a subtype
+			// of every atom it holds. Recording a single atom would pick the record first and
+			// fail. This is why taking the meet forgoes no better candidate: whatever one atom
+			// satisfies, the meet satisfies too.
+			name: "the meet satisfies an upper bound only one atom satisfies",
+			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
+				v := c.freshVar(0)
+				v.UpperBounds = []soltype.Type{numToStr()}
+				sub := newIntersection(nil, []soltype.Type{rec(), numToStr()})
+				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+			},
+			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> string)"},
+		},
+		{
 			// `{a: 1, ...} & ((x: number) -> U) <: (string | T)`, with U one level deeper
 			// than T.
 			//
