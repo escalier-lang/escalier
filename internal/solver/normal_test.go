@@ -64,9 +64,9 @@ func TestDNFRoundTrip(t *testing.T) {
 		{name: "a borrow is an opaque atom", in: "mut {x: number}", want: "mut {x: number}"},
 		{name: "a union of two primitives keeps both", in: "number | string", want: "number | string"},
 		{
-			name: "two exact records keep both atoms",
+			name: "two exact records over disjoint fields meet to the bottom of the lattice",
 			in:   "{x: number} & {y: number}",
-			want: "{x: number} & {y: number}",
+			want: "never",
 		},
 		{
 			name: "two inexact records merge field-wise",
@@ -77,6 +77,21 @@ func TestDNFRoundTrip(t *testing.T) {
 			name: "two exact records over one field narrow that field",
 			in:   "{x: number | string} & {x: string | boolean}",
 			want: "{x: string}",
+		},
+		{
+			name: "an optional field the other exact record caps out drops",
+			in:   "{x: number, y?: string} & {x: number}",
+			want: "{x: number}",
+		},
+		{
+			name: "an exact record caps the fields an inexact one leaves open",
+			in:   "{x: number, y?: string} & {x: number, ...}",
+			want: "{x: number, y?: string}",
+		},
+		{
+			name: "an inexact record requiring a field the exact one caps out meets to never",
+			in:   "{x: number} & {y: number, ...}",
+			want: "never",
 		},
 		{
 			name: "a field either side requires is required on the meet",
@@ -99,14 +114,19 @@ func TestDNFRoundTrip(t *testing.T) {
 			want: "[string, boolean, ...]",
 		},
 		{
-			name: "two exact tuples of different lengths keep both atoms",
+			name: "two exact tuples of different lengths meet to the bottom of the lattice",
 			in:   "[number] & [number, boolean]",
-			want: "[number] & [number, boolean]",
+			want: "never",
 		},
 		{
-			name: "two tuples whose open markers disagree keep both atoms",
+			name: "an exact tuple fixes the length an inexact one leaves open",
 			in:   "[number, ...] & [number, boolean]",
-			want: "[number, boolean] & [number, ...]",
+			want: "[number, boolean]",
+		},
+		{
+			name: "an exact tuple shorter than an inexact one's floor meets to never",
+			in:   "[number] & [number, boolean, ...]",
+			want: "never",
 		},
 		{
 			name: "two disjoint primitives meet to the bottom of the lattice",
@@ -139,9 +159,11 @@ func TestDNFRoundTrip(t *testing.T) {
 			want: "{x: number}",
 		},
 		{
+			// The members are inexact so that each distributed meet is inhabited. Two exact
+			// records over disjoint fields would meet to `never` and leave nothing to read.
 			name: "an intersection distributes over a union",
-			in:   "({x: number} | {y: number}) & {z: number}",
-			want: "{x: number} & {z: number} | {y: number} & {z: number}",
+			in:   "({x: number, ...} | {y: number, ...}) & {z: number, ...}",
+			want: "{x: number, z: number, ...} | {y: number, z: number, ...}",
 		},
 		{
 			name: "a primitive absorbs a literal of its own family",
@@ -188,6 +210,29 @@ func TestDNFRoundTrip(t *testing.T) {
 			in:   "[number] | [number, boolean]",
 			want: "[number] | [number, boolean]",
 		},
+		// The three rows below join an atom with the open version of itself. The open
+		// marker decides which side contains the other, and it points the opposite way
+		// for an arrow than for a record or a tuple. widerByExactness states why.
+		{
+			name: "a record joins with its open version at the open one",
+			in:   "{x: number} | {x: number, ...}",
+			want: "{x: number, ...}",
+		},
+		{
+			name: "a tuple joins with its open version at the open one",
+			in:   "[number] | [number, ...]",
+			want: "[number, ...]",
+		},
+		{
+			name: "an arrow joins with its open version at the CLOSED one",
+			in:   "(fn (x: number) -> boolean) | (fn (x: number, ...) -> boolean)",
+			want: "fn (x: number) -> boolean",
+		},
+		{
+			name: "and the meet of that arrow pair takes the open one",
+			in:   "(fn (x: number) -> boolean) & (fn (x: number, ...) -> boolean)",
+			want: "fn (x: number, ...) -> boolean",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -218,11 +263,14 @@ func TestCNFRoundTrip(t *testing.T) {
 		{name: "the bottom of the lattice", in: "never", want: "never"},
 		{name: "the top of the lattice", in: "unknown", want: "unknown"},
 		{name: "a union is one disjunct", in: "number | string", want: "number | string"},
-		{name: "an intersection is two disjuncts", in: "{x: number} & {y: number}", want: "{x: number} & {y: number}"},
+		// A tuple and a record are the un-fusable pair these two rows need. No merge
+		// takes a pair of different kinds apart. Both also stay inhabited, since a
+		// value carrying an `x` alongside its indexed elements satisfies each of them.
+		{name: "an intersection is two disjuncts", in: "[number] & {x: number}", want: "[number] & {x: number}"},
 		{
 			name: "a union distributes over an intersection",
-			in:   "({x: number} & {y: number}) | {z: number}",
-			want: "({x: number} | {z: number}) & ({y: number} | {z: number})",
+			in:   "([number] & {x: number}) | {z: number}",
+			want: "([number] | {z: number}) & ({x: number} | {z: number})",
 		},
 		{
 			name: "a primitive absorbs a literal of its own family",
@@ -397,9 +445,9 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 		{
 			name: "a complemented intersection is one disjunct negating both atoms",
 			in: func(t *testing.T) soltype.Type {
-				return notSrc(t, "{x: number} & {y: number}")
+				return notSrc(t, "[number] & {x: number}")
 			},
-			want: "¬({x: number} & {y: number})",
+			want: "¬([number] & {x: number})",
 		},
 		{
 			name: "a complement beside a positive atom",
@@ -541,6 +589,82 @@ func TestDeMorganOverAnInexactUnion(t *testing.T) {
 	open := newUnion(nil, []soltype.Type{a, b}, true)
 	require.Equal(t, "¬({x: number} | {y: number} | ...)", normDNF(c, not(open)))
 	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
+}
+
+// TestUnreducedAtomsKeepTheirOpenMarkerApart guards the one pair widerByExactness must
+// refuse. A `{...S}` does not know its own field names and a `[...P]` does not know
+// its own positions, so neither says what the exact side caps. The constraint rules
+// treat such an atom as inert and relate two of them only when they are equal, so
+// fusing the pair leaves those rules an atom they cannot take apart.
+//
+// Each source below returns its own argument, which has to check.
+func TestUnreducedAtomsKeepTheirOpenMarkerApart(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{name: "Tuple", src: `fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }`},
+		{name: "Object", src: `fn go<S>(x: {...S}) -> {...S} | {...S, ...} { return x }`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+		})
+	}
+}
+
+// TestComplementsKeepTheOpenMarker covers exactness and negation threading through
+// normalization at once. The two are orthogonal, which is what makes the pairing
+// easy to break. A change that gets either one right on its own can still drop the
+// other where they cross.
+//
+// `¬{x: number}` excludes the records whose only field is an x. `¬{x: number, ...}`
+// excludes every record carrying an x, which is a strictly larger set, so the two
+// complements denote different types. Normalization has to keep them apart as atoms
+// and still apply the containment between them when they meet or join.
+func TestComplementsKeepTheOpenMarker(t *testing.T) {
+	c := &Context{}
+	closed, open := parseType(t, "{x: number}"), parseType(t, "{x: number, ...}")
+
+	// Each complement round-trips with its marker intact.
+	require.Equal(t, "¬{x: number}", normDNF(c, not(closed)))
+	require.Equal(t, "¬{x: number, ...}", normDNF(c, not(open)))
+
+	// The two complements are distinct types, so nothing downstream may dedup one
+	// into the other. compareType is checked alongside equalType because the merges
+	// order atoms before they compare them.
+	require.False(t, equalType(not(closed), not(open)))
+	require.NotEqual(t, 0, compareType(not(closed), not(open)))
+
+	// `{x: number}` is contained in `{x: number, ...}`, so complementing flips which
+	// side absorbs. The meet of the complements excludes the larger set and the join
+	// of them excludes the smaller one.
+	require.Equal(t, "¬{x: number, ...}",
+		normDNF(c, newIntersection(nil, []soltype.Type{not(closed), not(open)})))
+	require.Equal(t, "¬{x: number}",
+		normDNF(c, newUnion(nil, []soltype.Type{not(closed), not(open)}, false)))
+}
+
+// TestExactUnionNormalizesClosed contrasts a closed union with the open union of
+// the same members. `"a" | "b"` names its whole member set, so normalization takes
+// it apart into one conjunct per member. `"a" | "b" | ...` also admits an open tail
+// that no atom stands for, so it stays whole.
+//
+// The conjunct counts are the substantive half. A meet distributes over the closed
+// union's members and cannot distribute over the open one, which is the cost the
+// mkDNF arm's comment weighs.
+func TestExactUnionNormalizesClosed(t *testing.T) {
+	c := &Context{}
+	members := parseTypes(t, `"a"`, `"b"`)
+	closed := newUnion(nil, members, false)
+	open := newUnion(nil, members, true)
+
+	require.Equal(t, `"a" | "b"`, normDNF(c, closed))
+	require.Len(t, c.mkDNF(closed, soltype.Positive).Conjuncts, 2)
+
+	require.Equal(t, `"a" | "b" | ...`, normDNF(c, open))
+	require.Len(t, c.mkDNF(open, soltype.Positive).Conjuncts, 1)
 }
 
 // TestValueAtomsAnswerEqualAtoms checks the value-family merges on their own,
@@ -777,9 +901,9 @@ func TestFuncMerge(t *testing.T) {
 			want: "fn (x: number, y: string) -> string",
 		},
 		{
-			name: "arms differing in the trailing open marker are kept apart",
+			name: "arms differing in the trailing open marker fuse to the open one",
 			in:   "(fn (x: number) -> boolean) & (fn (x: string, ...) -> boolean)",
-			want: "(fn (x: number) -> boolean) & (fn (x: string, ...) -> boolean)",
+			want: "fn (x: number | string, ...) -> boolean",
 		},
 		{
 			name: "a union of two arrows keeps both, since no single arrow denotes it",
@@ -853,9 +977,12 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 			want:    "{x: number} | {y: number} | {z: number}",
 		},
 		{
-			name:    "an intersection of records",
-			members: []string{"{y: number}", "{x: number}", "{z: number}"},
-			want:    "{x: number} & {y: number} & {z: number}",
+			// Three records would not do here. Exact records over disjoint fields meet to
+			// `never`, which leaves no member order to compare, so the row draws one atom
+			// from each of three kinds no merge fuses.
+			name:    "an intersection of atoms no merge fuses",
+			members: []string{"{x: number}", "fn () -> boolean", "[number]"},
+			want:    "[number] & {x: number} & (fn () -> boolean)",
 		},
 		{
 			name:    "an intersection of inexact records, which fuses into one",

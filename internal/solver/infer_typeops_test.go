@@ -2545,8 +2545,11 @@ func TestInferCondCaptureFromConstraint(t *testing.T) {
 		{
 			// An intersection Check is decomposed by constrain too, so a pattern reads a member off
 			// whichever operand carries it.
+			// The two operands are inexact so the intersection is inhabited. Exact records
+			// over disjoint fields meet to `never`, which satisfies the Check vacuously and
+			// leaves the capture unconstrained.
 			name:         "IntersectionCheckCaptures",
-			src:          `type Result = if {a: number} & {b: string} : {a: infer A, ...} { [A] } else { "no" }`,
+			src:          `type Result = if {a: number, ...} & {b: string, ...} : {a: infer A, ...} { [A] } else { "no" }`,
 			wantExpanded: `[number]`,
 		},
 	}
