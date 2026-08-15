@@ -118,14 +118,19 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //     members taken together, which no single pair states. `boolean <: true |
 //     false` is rejected for that reason. The two literals do not fuse into one
 //     atom, and `boolean` is a subtype of neither of them on its own.
+//
 //   - A pair repeating the caller's own question against an inexact union is
 //     skipped. Such a union is one atom, so normalizing `boolean <: (number |
 //     string | ...)` hands back the pair it started from and no smaller question
 //     is ever reached. Every other supertype comes apart into smaller atoms.
+//
 //   - A variable on the supertype side picks up the whole meet as a lower bound,
-//     which is stronger than the goal asks for. `¬T <: number` records `unknown`
-//     under T where `¬number` would do. That is sound, and a variable is reached
-//     only after every concrete candidate failed.
+//     which is stronger than the goal asks for. The goal asks only for the meet
+//     with the other supertype candidates subtracted, so `"hi" <: (T | number)`
+//     records `"hi"` under T where `"hi" ∩ ¬number` would do. That is sound, and a
+//     variable is reached only after every concrete candidate failed. weakestBound
+//     subtracts for the one subtype side where the stronger bound does damage,
+//     `unknown`, and says why it goes no further.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
@@ -152,14 +157,25 @@ func (c *Context) constrainImplied(
 	subCands := slices.Concat(meet, varsAsTypes(conj.Vars), varsAsTypes(disj.NVars))
 	superCands := slices.Concat(join, varsAsTypes(disj.Vars), varsAsTypes(conj.NVars))
 
-	if len(subCands) == 0 {
-		// An empty meet is `unknown`, the top of the lattice. Naming it explicitly
-		// gives the trial something to constrain, and `unknown <: T` still records a
-		// bound when the supertype side is a variable.
+	// A variable standing on both sides discharges the goal by reflexivity, since
+	// `⋂subCands <: v <: ⋃superCands`. Nothing was chosen and no bound is needed, so the
+	// decision reports neither a commit nor an error. Leaving this to the pair trial
+	// would let some other candidate commit first and record a bound the goal never
+	// asked for, and would report a commit that pinned nothing.
+	if sharesVar(subCands, superCands) {
+		return nfDecision{}
+	}
+
+	// An empty meet is `unknown`, the top of the lattice. Naming it explicitly gives the
+	// trial something to constrain, and `unknown <: T` still records a bound when the
+	// supertype side is a variable. topMeet remembers that the conjunct contributed no
+	// positive part, which is the goal weakestBound subtracts under.
+	topMeet := len(subCands) == 0
+	if topMeet {
 		subCands = []soltype.Type{&soltype.UnknownType{}}
 	}
 
-	pairs := orderedPairs(subCands, superCands, sub, super)
+	pairs := orderedPairs(subCands, superCands, sub, super, topMeet)
 	if len(pairs) == 0 {
 		return nfDecision{errs: []SolverError{&CannotConstrainError{Sub: sub, Super: super}}}
 	}
@@ -340,10 +356,50 @@ type nfPair struct{ sub, super soltype.Type }
 // reader sees first. origSub and origSuper are the constraint the caller is
 // deciding; the pair repeating it against an inexact union is dropped, for the
 // reason constrainImplied gives.
-func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type) []nfPair {
+//
+// A variable candidate gets ONE pair, against the whole meet, rather than one pair per
+// subtype candidate. Pairing a single candidate with it would drop the rest, and the
+// trial cannot notice, since a pair against a free variable always holds and whichever
+// candidate is tried first wins. Deciding
+//
+//	{a: 1, ...} & ((x: number) -> string) <: (string | T)
+//
+// that way gives T only `{a: 1, ...}`, so a later `T <: (x: number) -> string` is
+// rejected even though the meet satisfies it.
+//
+// Taking the meet forgoes nothing, so there is no candidate it could have chosen
+// better. The meet is a subtype of every candidate, so an upper bound on the variable
+// that some candidate satisfies the meet satisfies too, and the bound it records
+// demands less of the variable than any single candidate would. The choice that does
+// remain is on the supertype side, where committing one candidate can hide another that
+// would also have matched. ambiguousAlternate reports that as a warning rather than
+// deciding it here.
+//
+// Every other candidate keeps a pair per subtype candidate, since deciding `sᵢ <: pⱼ`
+// compares two shapes and settles on the first that fits. A variable on the SUBTYPE
+// side is not special-cased there. `sᵢ <: pⱼ` records an upper bound on it through
+// constrain's subVar arm, the mirror of what a variable candidate on this side records.
+//
+// specificityOrder ranks a variable below every concrete type, so a variable
+// candidate's pair is trialled after every concrete candidate's.
+func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type, topMeet bool) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
+		if _, isVar := superCands[j].(*soltype.TypeVarType); isVar {
+			// topMeet says the conjunct contributed no positive part, so the meet is `unknown`
+			// and bounds the variable by nothing at all. weakestBound subtracts the other
+			// supertype candidates instead. The variable never stands in the meet here, since
+			// constrainImplied discharges that goal by reflexivity before any pair is built.
+			var trial soltype.Type
+			if topMeet {
+				trial = weakestBound(superCands, j)
+			} else {
+				trial = newIntersection(nil, subCands)
+			}
+			pairs = append(pairs, nfPair{sub: trial, super: superCands[j]})
+			continue
+		}
 		for _, i := range subOrder {
 			if isInexactUnion(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
 				continue
@@ -352,6 +408,63 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 		}
 	}
 	return pairs
+}
+
+// weakestBound is the subtype side of the goal the variable at superCands[keep] is
+// trialled against when the subtype side is `unknown`. It meets the complements of the
+// variable-free supertype candidates, by the move-across-the-`<:` rewrite the file
+// header states for a negated part:
+//
+//	unknown <: p₁ ∪ … ∪ pₙ ∪ v    is    ¬p₁ ∩ … ∩ ¬pₙ <: v
+//
+// That asks of v what the goal asks and nothing more. Recording `unknown` instead pins v
+// to the top of the lattice, so `¬T <: number`, which normalizes to
+// `unknown <: number ∪ T`, would give T `unknown` and collapse `¬T` to `never` where
+// `¬number` is what the goal asks for.
+//
+// A candidate is subtracted only when it is variable-free, and only from a subtype side
+// of `unknown`. Both gates keep out a complement no later pass can clear.
+// simplifyNegations decides disjointness through the meet of two atoms, so it drops
+// `¬number` against `"hi"` but not `¬{b: number, ...}` against `{a: 1, ...}`, which can
+// share a value, and it refuses a complement over a variable outright. Subtracting past
+// either gate is sound and leaves the complement in the rendered type, which
+// constrainImplied's third bullet records.
+//
+// A skipped candidate stays on the supertype side, so the trial asks for at least what
+// the goal asks. Skipping every one leaves an empty meet, which newIntersection returns
+// as `unknown`.
+func weakestBound(superCands []soltype.Type, keep int) soltype.Type {
+	parts := make([]soltype.Type, 0, len(superCands)-1)
+	for j, p := range superCands {
+		if j == keep || !concreteMember(p) {
+			continue
+		}
+		neg := newNegation(p)
+		if isNeverType(neg) {
+			// p is the top of the lattice, so it covers every value on its own and the meet
+			// under it is empty. `never <: v` records no bound. That is the right answer,
+			// since the goal already holds without v.
+			return neg
+		}
+		parts = append(parts, neg)
+	}
+	return newIntersection(nil, parts)
+}
+
+// sharesVar reports whether some type variable stands on both sides of the goal. It is
+// the shape constrainImplied discharges by reflexivity. Only a variable is weighed here.
+// A concrete candidate on both sides is settled by the ordinary pair trial, which finds
+// it, commits it, and keeps the diagnostics that commit carries.
+func sharesVar(subCands, superCands []soltype.Type) bool {
+	for _, s := range subCands {
+		if _, isVar := s.(*soltype.TypeVarType); !isVar {
+			continue
+		}
+		if slices.ContainsFunc(superCands, func(p soltype.Type) bool { return equalType(s, p) }) {
+			return true
+		}
+	}
+	return false
 }
 
 // varsAsTypes returns a variable set's members as types, ordered by id so a
