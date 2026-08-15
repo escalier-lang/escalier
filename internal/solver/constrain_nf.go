@@ -124,15 +124,22 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //     string | ...)` hands back the pair it started from and no smaller question
 //     is ever reached. Every other supertype comes apart into smaller atoms.
 //
-//   - A variable on the supertype side records ONE subtype candidate, which is
-//     stronger than the goal asks for. Each candidate is paired with the variable
-//     and the first pair that holds commits, so deciding `{a: 1, ...} & ((x:
-//     number) -> string) <: (string | T)` gives T the lower bound `{a: 1, ...}`
-//     and drops the arrow. That is sound, since the meet is a subtype of each of
-//     its atoms, and it demands more of T than the goal asks. A variable is
-//     reached only after every concrete candidate failed. weakestBound settles the
-//     one subtype side where this does real damage, `unknown`, and says why it
-//     goes no further.
+//   - A variable on the supertype side records ONE subtype candidate rather than
+//     what the goal asks of it. Every pair puts a single candidate against the
+//     variable, and a pair against a free variable always holds, since
+//     constraining into one only appends a bound. So the first candidate trialled
+//     against it wins outright. Two incomparable atoms keep the canonical order
+//     sortAtoms gave them, which is what picks the record over the arrow in
+//
+//     {a: 1, ...} & ((x: number) -> string) <: (string | T)
+//
+//     T takes the lower bound `{a: 1, ...}`, the arrow is never reached, and a
+//     later `T <: (x: number) -> string` is rejected. The proof still holds, since
+//     a meet is a subtype of each of its atoms. But `{a: 1, ...}` is wider than
+//     the `{a: 1, ...} ∩ ((x: number) -> string) ∩ ¬string` the goal asks for, so
+//     it demands more of T. A variable is reached only after every concrete
+//     candidate failed, and weakestBound settles the one subtype side where this
+//     does real damage, `unknown`.
 func (c *Context) constrainImplied(
 	conj Conjunct, disj Disjunct, sub, super soltype.Type, seen *seenPairs, mutCtx bool,
 ) nfDecision {
