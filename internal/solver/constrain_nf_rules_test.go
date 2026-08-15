@@ -230,18 +230,19 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 }
 
 // TestConstrainVarCandidateOverAMultiAtomMeet pins what a supertype-side variable
-// records when the subtype side holds several atoms that no fusion merged into one.
-// Two atoms of different kinds never fuse, since no single record denotes the meet of a
-// record and an arrow, so a cross-kind meet is the shape that reaches this.
+// records when the subtype side holds several atoms that no fusion merged into one. Two
+// atoms fuse only when a single atom denotes their meet exactly, so a record met with an
+// arrow stays two atoms, and so do two arrows differing in both domain and codomain.
 //
 // The variable takes ONE pair whose subtype side is the whole meet, so every atom is
 // recorded. Pairing a single atom instead would drop the rest, and the trial could not
 // notice: a pair against a free variable always holds, so whichever atom came first
 // would win on canonical order alone. varTrialSub builds the subtype side.
 //
-// later is a constraint run after the goal, chosen so it holds for the whole meet and
-// fails for any single atom. It is what makes the recorded meet observable rather than
-// merely stored.
+// later is a constraint run against the variable once the goal is decided. Most rows
+// choose one that holds for the whole meet and fails for any single atom, which is what
+// makes the recorded meet observable rather than merely stored. The breadcrumb row
+// chooses one that fails, so the message it produces can be read.
 func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 	rec := func() *soltype.ObjectType { return inexactObj(propElem("a", numLit(1))) }
 	numToStr := func() *soltype.FuncType { return exactFn(str(), identParam("x", num())) }
@@ -256,8 +257,11 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 		wantLater  []string
 	}{
 		{
-			// `{a: 1, ...} & ((x: number) -> string) <: (string | T)`. Neither atom is a
-			// subtype of string, so the trial falls through to T, which takes both.
+			// `{a: 1, ...} & ((x: number) -> string) <: (string | T)`
+			//
+			// Neither atom is a subtype of string, so the trial falls through to T and T takes
+			// both. later asks `T <: (x: number) -> string`, which holds only because the arrow
+			// was recorded alongside the record.
 			name: "a record and an arrow record the whole meet",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -269,8 +273,13 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantLater:  nil,
 		},
 		{
-			// Two arrows with different domains AND different codomains. `(x: number | string)
-			// -> ?` names no single codomain, so they do not fuse and the meet stays two atoms.
+			// `((x: number) -> string) & ((x: string) -> number) <: (boolean | T)`
+			//
+			// The two arrows differ in domain AND codomain, so `(x: number | string) -> ?` names
+			// no single codomain and the meet stays two atoms. Neither is a subtype of boolean,
+			// so the trial falls through to T. later asks `T <: (x: string) -> number`. The
+			// candidate order puts the other arrow first, so this holds exactly when the whole
+			// meet was recorded rather than one atom.
 			name: "two unfused arrows record both",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -282,11 +291,12 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantLater:  nil,
 		},
 		{
-			// `(T & {a: 1, ...}) <: (string | T)`, with T already bounded below by 5 so the
-			// string candidate fails on both `{a: 1, ...} <: string` and `T <: string`. T then
-			// stands on BOTH sides of the goal, which holds by reflexivity and asks nothing of
-			// T. constrainImplied discharges it by reflexivity before any pair is built, so
-			// no bound is recorded and no candidate is reported as committed.
+			// `(T & {a: 1, ...}) <: (string | T)`
+			//
+			// T stands on BOTH sides, so the goal holds by reflexivity and asks nothing of T.
+			// constrainImplied discharges it before any pair is built, so the string candidate
+			// is never trialled and nothing is recorded. T carries a pre-seeded `5` only so the
+			// assertion tells "nothing was added" apart from "T never had a bound".
 			name: "the target standing in the meet records nothing",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -297,10 +307,12 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantBounds: []string{"5"},
 		},
 		{
-			// `(U & {a: 1, ...}) <: (T | U)`. U discharges the goal by reflexivity, but T sorts
-			// first among the two variables and would be settled on first. Checking
-			// reflexivity per candidate rather than across the goal would give T the whole
-			// meet, `U & {a: 1, ...}`, which the goal never asked of it.
+			// `(U & {a: 1, ...}) <: (T | U)`
+			//
+			// U stands on both sides and discharges the goal. T does not, and sorts first among
+			// the two variables, so it is the candidate a per-candidate reflexivity check would
+			// settle on. That check would give T the whole meet, `U & {a: 1, ...}`, which the
+			// goal never asked of it. Checking across the goal leaves T untouched.
 			name: "a sibling variable does not record when another discharges the goal",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				tv, u := c.freshVar(0), c.freshVar(0)
@@ -310,10 +322,13 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantBounds: []string{},
 		},
 		{
-			// A reflexive discharge chose nothing, so it reports no commit. Reporting one
-			// would tag the variable as pinned by a union branch, and a later conflict would
-			// be blamed on a choice that recorded no bound. The message here carries no
-			// union breadcrumb.
+			// `(T & {a: 1, ...}) <: (string | T)`, the goal two rows above, followed by
+			// `T <: string`.
+			//
+			// The discharge chose no candidate, so it reports no commit. Reporting one would tag
+			// T as pinned by a branch of `string | T`, and the later failure would then be
+			// blamed on a choice that had recorded no bound. The seeded `5` is what makes that
+			// later constraint fail, so its message can be read: it names `5 <: string` alone.
 			name: "a reflexive discharge leaves no union-commit breadcrumb",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
@@ -326,11 +341,14 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			wantLater:  []string{"cannot constrain 5 <: string"},
 		},
 		{
-			// A meet whose atoms sit at different levels. LevelOf reads an intersection as the
-			// max over its members, so recording the meet routes through extrude where a
-			// single atom at the target's own level would not. The deeper variable is replaced
-			// by a proxy at the target's level, which is what keeps it from being generalized
-			// at the wrong one.
+			// `{a: 1, ...} & ((x: number) -> U) <: (string | T)`, with U one level deeper
+			// than T.
+			//
+			// LevelOf reads an intersection as the max over its members, so recording the meet
+			// routes through extrude where a single atom at T's own level would not. U is
+			// replaced by a proxy minted at T's level, which is what keeps U from being
+			// generalized at the wrong one. The proxy renders as `t2`, the third variable this
+			// row mints.
 			name: "a meet spanning two levels extrudes the deeper one",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				outer := c.freshVar(0)
