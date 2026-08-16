@@ -1251,12 +1251,13 @@ func hasSpreadElem(elems []soltype.Type) bool {
 	return false
 }
 
-// The borrow atom merges split their work by sort. The pointees combine in the
-// type algebra through combineRefInners, and the two lifetimes combine in the
-// outlives lattice through meetRefLifetimes or joinRefLifetimes. Neither sort is
-// consulted about the other, which is the split the wrapper already draws: Inner is
-// a Type and Lt is a Lifetime. Both merges keep borrows of differing mutability
-// apart, since mut-decay relates those rather than a fused wrapper.
+// meetRefs and joinRefs below, and the three helpers they call, split their work by
+// sort. The pointees combine in the type algebra through combineRefInners, and the
+// two lifetimes combine in the outlives lattice through meetRefLifetimes or
+// joinRefLifetimes. Neither sort is consulted about the other, which is the split the
+// wrapper already draws: Inner is a Type and Lt is a Lifetime. Both merges keep
+// borrows of differing mutability apart, since mut-decay relates those rather than a
+// fused wrapper.
 //
 // Two borrows over one pointee whose lifetimes are distinct variables stay two
 // atoms. The fusion ruled out is the one over the JOIN of the two lifetimes, the
