@@ -689,9 +689,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			if subU.Inexact && subU.TailBound == nil {
 				// Nothing says what an unbounded tail holds, so a closed super cannot
 				// absorb it and the mismatch is reported once for the whole union.
+				// Only a super whose own tail is unbounded can absorb this one, since a
+				// bounded tail admits just its bound and an unbounded sub tail may hold
+				// anything. `("a" | ...) <: ("a" | "b" | ...string)` is therefore rejected.
 				closed := true
 				if s, ok := super.(*soltype.UnionType); ok {
-					closed = !s.Inexact
+					closed = !s.Inexact || s.TailBound != nil
 				}
 				if closed {
 					errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})

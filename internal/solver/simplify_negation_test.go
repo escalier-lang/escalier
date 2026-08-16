@@ -380,11 +380,81 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 				newBoundedUnion(nil, []soltype.Type{strLit("a")}, strLit("z")), bounded, true,
 			},
 			{"a bounded tail is not below a lone member", bounded, strLit("a"), false},
+			// The unbounded sub is top, so no bounded super absorbs it. This is the one
+			// pair where both operands carry a tail and only the sub's is unbounded.
+			{
+				"an unbounded tail is not below a bounded one",
+				newUnion(nil, []soltype.Type{strLit("a")}, true), bounded, false,
+			},
+			{
+				"a bounded tail is below an unbounded one",
+				bounded, newUnion(nil, []soltype.Type{strLit("a")}, true), true,
+			},
 		}
 		for _, p := range probes {
 			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
 		}
 	})
+}
+
+// A type operator that rebuilds a union has to carry the tail's bound through, or the result
+// lands back at the top of the lattice the bound took it off. Each case runs an operator over
+// `keyof {a: number, b: string, ...}`, whose tail is bounded by `string`.
+func TestOperatorsCarryTheTailBound(t *testing.T) {
+	tests := []struct {
+		name string
+		// decl is a type declaration appended to the shared Obj alias, binding Result.
+		decl string
+		want string
+	}{
+		{
+			// The key set the operator starts from.
+			name: "Keyof",
+			decl: `type Result = keyof Obj`,
+			want: `"a" | "b" | ...string`,
+		},
+		{
+			// A distributive conditional reaches the bound the way it reaches a named member,
+			// so `Exclude` over an inexact object's keys stays a key set rather than widening
+			// to top. This is what leaves `Omit` a bounded tail to map over.
+			name: "DistributiveConditional",
+			decl: `
+				type Drop<T, U> = if T : U { never } else { T }
+				type Result = Drop<keyof Obj, "a">
+			`,
+			want: `"b" | ...string`,
+		},
+		{
+			// `Inexact` over an already-open union is the identity, so the bound has to
+			// survive the rewrite rather than being reset to unbounded.
+			name: "InexactIsTheIdentityOnAnOpenUnion",
+			decl: `type Result = Inexact<keyof Obj>`,
+			want: `"a" | "b" | ...string`,
+		},
+		{
+			// `Exact` closes the union, and a closed union has no tail to bound.
+			name: "ExactDropsTheTail",
+			decl: `type Result = Exact<keyof Obj>`,
+			want: `"a" | "b"`,
+		},
+		{
+			// A string intrinsic transforms the bound alongside the named members. Only a
+			// literal has a case to change, so the bound comes back symbolic, but it still
+			// says the tail holds strings.
+			name: "StringIntrinsic",
+			decl: `type Result = Uppercase<keyof Obj>`,
+			want: `"A" | "B" | ...Uppercase<string>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type Obj = {a: number, b: string, ...}
+			`+tt.decl)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
 }
 
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,

@@ -282,7 +282,20 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
 	}
-	return newUnion(nil, parts, check.Inexact)
+	// The conditional reaches the tail's bound as well, since the tail's unnamed members are
+	// drawn from it and each one selects a branch the same way a named member does. This is
+	// what keeps `Exclude<keyof {a: X, ...}, "a">` off the top of the lattice: without it the
+	// result's tail would come back unbounded and accept every value.
+	tail := tailOf(check)
+	if tail.bound != nil {
+		tail.bound = e.reduceCond(&soltype.CondType{
+			Check:   tail.bound,
+			Extends: substituteOccurrences(t.Extends, t.Check, tail.bound),
+			Then:    substituteOccurrences(t.Then, t.Check, tail.bound),
+			Else:    substituteOccurrences(t.Else, t.Check, tail.bound),
+		})
+	}
+	return newUnionWithTail(nil, parts, tail)
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
@@ -1401,10 +1414,20 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 	// what carries an inexact object's openness into `T[keyof T]`. Over `type Obj = {a: number, ...}`,
 	// `keyof Obj` reduces to `"a" | ...` and `Obj[keyof Obj]` to `number | ...`.
 	if u, ok := idx.(*soltype.UnionType); ok {
+		if len(u.Types) == 0 {
+			// An open key set naming no key of its own, such as the `...string` a set
+			// difference leaves when it excludes every named key. There is no key to read
+			// the target at, so the access stays symbolic. Distributing over no member
+			// would answer `never`, claiming the key set is empty when it is only unread.
+			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
+		}
 		parts := make([]soltype.Type, len(u.Types))
 		for i, m := range u.Types {
 			parts[i] = e.reduceIndex(target, m, inexact)
 		}
+		// The result's tail stays unbounded whatever bounds the key tail. The bound says
+		// what the unread KEYS are, and this union holds the VALUES stored at them, which
+		// nothing here has read.
 		return newUnion(nil, parts, u.Inexact)
 	}
 	switch tgt := target.(type) {
@@ -1743,7 +1766,17 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 		for i, m := range op.Types {
 			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
-		return newUnion(nil, parts, op.Inexact)
+		// The intrinsic reaches the tail's bound too, since the tail's unnamed members are
+		// drawn from it and each is transformed the way a named member is.
+		// `Uppercase<"a" | ...string>` is `"A" | ...Uppercase<string>`. The bound stays
+		// symbolic there, since only a string LITERAL has a case to change, but it still
+		// says the tail holds strings where dropping it would leave the union at the top of
+		// the lattice.
+		tail := tailOf(op)
+		if tail.bound != nil {
+			tail.bound = e.reduceStringIntrinsic(kind, tail.bound)
+		}
+		return newUnionWithTail(nil, parts, tail)
 	case *soltype.LitType:
 		if s, ok := op.Lit.(*soltype.StrLit); ok {
 			return strLitType(applyStringIntrinsic(kind, s.Value))
@@ -1779,9 +1812,17 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		rewritten.Inexact = inexact
 		return &rewritten
 	case *soltype.UnionType:
-		// newUnion rather than a direct rebuild, so clearing the marker on a one-member union
-		// collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
-		return newUnion(nil, op.Types, inexact)
+		// newUnionWithTail rather than a direct rebuild, so clearing the marker on a one-member
+		// union collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
+		//
+		// Opening a union keeps whatever bound the operand's tail carried, so `Inexact<T>` over
+		// an already-inexact T is the identity `Inexact<keyof {a: X, ...}>` needs. Dropping the
+		// bound would widen `"a" | ...string` to `"a" | ...`, which is top.
+		tail := unionTail{open: inexact}
+		if inexact {
+			tail.bound = op.TailBound
+		}
+		return newUnionWithTail(nil, op.Types, tail)
 	case *soltype.IntersectionType:
 		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).
 		parts := make([]soltype.Type, len(op.Types))
