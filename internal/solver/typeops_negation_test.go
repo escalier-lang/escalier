@@ -279,6 +279,20 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 			want: "t16 & ¬t17",
 		},
 		{
+			// Excluding the empty type removes nothing. `¬never` is `unknown`, the identity of a
+			// meet, so the difference is the operand itself.
+			name: "ExcludeOfNever",
+			src:  `type Result<T> = Exclude<T, never>`,
+			want: "t16",
+		},
+		{
+			// Excluding every value leaves nothing, and `¬unknown` is `never`. The meet does not
+			// collapse on that `never` yet, which is the uninhabited-intersection gap #927 tracks.
+			name: "ExcludeOfUnknown",
+			src:  `type Result<T> = Exclude<T, unknown>`,
+			want: "never & t16",
+		},
+		{
 			// `Omit`'s key set over a type parameter: the keys of T other than "x". Neither half
 			// grounds, so the whole key set stays a difference.
 			name: "OmitKeySetOverVariable",
@@ -289,6 +303,74 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, nativeDifferenceDecls+tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
+// No complement may name a borrow, which is the ¬Ref exclusion invariant in
+// `internal/soltype/negation.go`. A borrow carries a lifetime as well as a type, and the outlives
+// lattice has no complement, so `¬(&'a T)` names nothing.
+//
+// A set difference is the one reduction that chooses an operand to complement, so it is where the
+// invariant has to be honored rather than asserted. A difference whose excluded side would take a
+// borrow leaves the whole meet as it arrived, and the conditional it would have been rewritten from
+// stays symbolic. Neither loses anything that reduces today: the solver decides disjointness only
+// within the value families, so a borrow exclusion would leave an unsettled residual even if the
+// complement were allowed. #1125 carries the work to lift the exclusion.
+func TestSetDifferenceDeclinesToComplementABorrow(t *testing.T) {
+	// Every case applies `Exclude` to an operand the reduction cannot filter, so the rewrite to a
+	// difference is what would mint the complement.
+	const decls = `
+		type Exclude<U, V> = if U : V { never } else { U }
+		type Point = {x: number}
+		type Handle = &Point
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// `Exclude<T, &'a Point>` has no difference form, so it keeps the shape the source
+			// wrote instead of reducing to `T & ¬(&'a Point)`.
+			name: "BorrowExclusion",
+			src:  `type Result<T, 'a> = Exclude<T, &'a Point>`,
+			want: "if t6 : &Point { never } else { t6 }",
+		},
+		{
+			// De Morgan would put the borrow in a negated part of its own, so a borrow anywhere in
+			// the excluded side's lattice spine stops the rewrite, not only one at the top.
+			name: "BorrowInExcludedUnion",
+			src:  `type Result<T, 'a> = Exclude<T, &'a Point | string>`,
+			want: "if t6 : string | &Point { never } else { t6 }",
+		},
+		{
+			// An alias naming a borrow is the same forbidden complement with a name in front of
+			// it, so the test reads the grounded operand and this stays symbolic too.
+			name: "AliasNamingABorrow",
+			src:  `type Result<T> = Exclude<T, Handle>`,
+			want: "if t6 : Handle { never } else { t6 }",
+		},
+		{
+			// A borrow inside an atom is allowed. The negated part names the object, and the
+			// borrow is one of its fields rather than a negated part of its own.
+			name: "BorrowInsideAnExcludedAtom",
+			src:  `type Result<T, 'a> = Exclude<T, {a: &'a Point}>`,
+			want: "t6 & ¬{a: &Point}",
+		},
+		{
+			// A borrow on the positive side is allowed too. The complement names `string`, so the
+			// invariant has nothing to say and the borrow rides through as a member.
+			name: "BorrowOnThePositiveSide",
+			src:  `type Result<T, 'a> = Exclude<T | &'a Point, string>`,
+			want: "(t6 | &Point) & ¬string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, decls+tt.src)
 			require.Empty(t, errs)
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})

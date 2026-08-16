@@ -135,6 +135,12 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 		}
 		positives = append(positives, e.groundReduced(m))
 	}
+	// Settling a member against an exclusion asks whether the two are disjoint, which is the
+	// constraint `m <: ¬x`, and rebuilding an unsettled difference re-mints each `¬x`. Both need a
+	// complement of x, so an x no complement may name leaves the meet exactly as it arrived.
+	if !negatableOperands(excluded) {
+		return newIntersection(nil, members)
+	}
 	base, folded := meetKeySets(positives)
 	if !folded {
 		base = newIntersection(nil, positives)
@@ -161,16 +167,20 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 // excludeFrom settles one member of a difference's positive side against every excluded type. It
 // reports whether the member survives at all, and returns what is left of it: the member itself
 // when no exclusion cuts into it, and the member met with the complements of those that do.
+//
+// Every excluded type is one a complement may name, which reduceDifference checked before calling
+// this. soltype.NewNegation asserts that here, so a caller that skipped the check is caught at the
+// site that builds the forbidden node rather than deep inside normalization.
 func (e *typeEvaluator) excludeFrom(m soltype.Type, excluded []soltype.Type) (soltype.Type, bool) {
 	overlapping := make([]soltype.Type, 0, len(excluded))
 	for _, x := range excluded {
 		if e.ctx.condExtends(m, x, e.seen) {
 			return nil, false
 		}
-		if e.ctx.condExtends(m, &soltype.NegationType{Inner: x}, e.seen) {
+		if e.ctx.condExtends(m, soltype.NewNegation(x), e.seen) {
 			continue
 		}
-		overlapping = append(overlapping, &soltype.NegationType{Inner: x})
+		overlapping = append(overlapping, soltype.NewNegation(x))
 	}
 	if len(overlapping) == 0 {
 		return m, true
@@ -194,13 +204,55 @@ func groundDifference(base soltype.Type, excluded []soltype.Type) bool {
 }
 
 // complementsOf wraps each type in a complement, rebuilding the negated half of a difference the
-// reduction left standing.
+// reduction left standing. It mints through newNegation, the lattice's complement constructor, so
+// an operand whose complement the surface type set already names comes back under that name.
 func complementsOf(types []soltype.Type) []soltype.Type {
 	out := make([]soltype.Type, len(types))
 	for i, t := range types {
-		out[i] = &soltype.NegationType{Inner: t}
+		out[i] = newNegation(t)
 	}
 	return out
+}
+
+// negatableOperands reports whether a complement may name every one of these types.
+func negatableOperands(types []soltype.Type) bool {
+	for _, t := range types {
+		if !negatableOperand(t) {
+			return false
+		}
+	}
+	return true
+}
+
+// negatableOperand reports whether a complement may name t, which is the ¬Ref exclusion invariant
+// asked ahead of time rather than asserted. soltype.AssertNegatable panics on a borrow, and
+// normalization applies it to every atom of a negated part, so a borrow anywhere in t's lattice
+// spine is forbidden and not only one at the top. `¬({x: number} | &'a {y: string})` is
+// `¬{x: number} ∩ ¬(&'a {y: string})` by De Morgan, which names the borrow.
+//
+// The walk stops at the spine. A borrow nested inside an atom, as in `¬{a: &'a T}`, is a field of
+// the object the negated part names rather than a negated part of its own, so it is allowed.
+//
+// A borrow under a second complement is negatable in truth, since `¬¬(&'a T)` cancels, but this
+// reports it forbidden. The reduction that would build such a type does not arise, and answering
+// conservatively costs a residual rather than a wrong type.
+//
+// Reduction consults this where it chooses an operand to complement. A site that only re-mints an
+// existing complement around a rewritten operand chooses nothing, which is why soltype.NewNegation
+// draws the same distinction.
+func negatableOperand(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return false
+	case *soltype.UnionType:
+		return negatableOperands(t.Types)
+	case *soltype.IntersectionType:
+		return negatableOperands(t.Types)
+	case *soltype.NegationType:
+		return negatableOperand(t.Inner)
+	default:
+		return true
+	}
 }
 
 // nativeDifference rewrites a distributive conditional that filters its own operand into the set
@@ -208,6 +260,10 @@ func complementsOf(types []soltype.Type) []soltype.Type {
 //
 //	if U : V { never } else { U }   ⟹  U ∩ ¬V
 //	if U : V { U } else { never }   ⟹  U ∩ V
+//
+// Both meets are minted through the lattice constructors, so a V whose complement the surface type
+// set already names comes back under that name. `Exclude<T, never>` is `T ∩ ¬never`, which is
+// `T ∩ unknown` and then `T`.
 //
 // Those are `Exclude<U, V>` and `Extract<U, V>` as TypeScript's library writes them, and the same
 // two shapes back `NonNullable<T>`, whose V is `null | undefined`, and `Omit<T, Ks>`, whose key set
@@ -230,7 +286,14 @@ func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends sol
 	}
 	switch {
 	case isNeverType(t.Then) && equalType(t.Check, t.Else):
-		return newIntersection(nil, []soltype.Type{check, &soltype.NegationType{Inner: extends}}), true
+		// The difference is `check ∩ ¬extends`, so an Extends no complement may name has no
+		// difference form and the conditional stays as it is. The test reads the grounded
+		// operand, since an alias naming a borrow is that same forbidden complement with a name
+		// in front of it. See negatableOperand.
+		if !negatableOperand(e.groundReduced(extends)) {
+			return nil, false
+		}
+		return newIntersection(nil, []soltype.Type{check, newNegation(extends)}), true
 	case isNeverType(t.Else) && equalType(t.Check, t.Then):
 		return newIntersection(nil, []soltype.Type{check, extends}), true
 	}
