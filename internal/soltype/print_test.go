@@ -737,6 +737,26 @@ func TestPrintScheme(t *testing.T) {
 		require.Equal(t, "<T0> [T0, T0]", PrintAsScheme(ty))
 	})
 
+	// The quantifier prefix on a non-function body binds the WHOLE body. A body
+	// joined by `|` or `&` takes parens to say so, since `<T0, T1> T0 | T1` reads as
+	// though the prefix covered T0 alone, which would leave T1 bound by nothing. A
+	// body that is one atom or one prefix form cannot be split by a following
+	// operator, so it keeps the bare form the two rows above show.
+	t.Run("a union body is parenthesized under the prefix", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		b := &TypeVarType{ID: 2, Level: 1}
+		require.Equal(t, "<T0, T1> (T0 | T1)", PrintAsScheme(&UnionType{Types: []Type{a, b}}))
+		require.Equal(t, "<T0, T1> (T0 & T1)", PrintAsScheme(&IntersectionType{Types: []Type{a, b}}))
+	})
+
+	t.Run("a prefix-form body needs no parens", func(t *testing.T) {
+		a := &TypeVarType{ID: 1, Level: 1}
+		ty := &RefType{Mut: true, Lt: &LifetimeVar{ID: 0}, Inner: &ObjectType{
+			Elems: []ObjTypeElem{&PropertyElem{Name: "x", Type: a}},
+		}}
+		require.Equal(t, "<T0, 'a> &'a mut {x: T0}", PrintAsScheme(ty))
+	})
+
 	t.Run("object property vars are named in property order", func(t *testing.T) {
 		a := &TypeVarType{ID: 1, Level: 1}
 		b := &TypeVarType{ID: 2, Level: 1}

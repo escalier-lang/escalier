@@ -315,7 +315,12 @@ func PrintAsSchemeWith(
 		return "fn <" + strings.Join(binders, ", ") + ">" + p.printFuncBody(ft)
 	}
 	prefix := "<" + strings.Join(append(labels, ltLabels...), ", ") + ">"
-	return prefix + " " + p.printType(t)
+	// The prefix binds the WHOLE body, and a body joined by `|` or `&` needs parens to
+	// say so. `<'a, 'b> &'a T | &'b T` reads as though the prefix covered the first
+	// member alone, which would leave 'b bound by nothing. A body that is one atom or
+	// one prefix form cannot be split by a following operator, so it needs none: the
+	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`.
+	return prefix + " " + p.printTypeMinPrec(t, precPrefix)
 }
 
 // lifetimeBinder renders one lifetime binder in the quantifier prefix: the bare name

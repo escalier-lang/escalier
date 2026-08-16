@@ -83,10 +83,19 @@ import (
 // merge here cannot delegate its exactness rule to them without asking the question
 // back.
 //
-// # What is deliberately left to a later PR
+// # Borrows
 //
-//   - Ref atoms. A RefType is an opaque atom that normalization never takes apart.
-//     PR8 (#1065) owns the lifetime split and the guard rejecting `¬(mut 'a T)`.
+// A RefType is an atom, and normalization never takes the wrapper apart. Two
+// borrow atoms that land in one conjunct or disjunct do fuse, and the fusion
+// splits its work by sort: the pointees combine in the type algebra and the two
+// lifetimes combine in the outlives lattice. meetRefs and joinRefs are that split,
+// and the comment above them states which lifetime pairs combine exactly.
+//
+// A borrow is also the one atom a complement may not name, the `¬Ref` exclusion
+// invariant. soltype.AssertNegatable states it and the two NegationType arms of
+// mkDNF and mkCNF enforce it. Negation INSIDE a borrow is a different node and
+// normalizes by the ordinary rules, so `mut 'a ({x: number} | ¬{y: string})` is
+// fine.
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -202,7 +211,15 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		// CNF and negate each disjunct into a conjunct. Negating permutes fields without
 		// consulting the merges, so the result is canonicalized afterwards.
 		negated := c.mkCNF(t.Inner, pol.Flip()).neg()
-		return DNF{Conjuncts: c.canonicalConjuncts(negated.Conjuncts)}
+		conjuncts := c.canonicalConjuncts(negated.Conjuncts)
+		// A borrow lands in a conjunct's Rnf exactly when the complement names it, so
+		// scanning the result is what enforces the ¬Ref exclusion invariant. The scan
+		// reads the result rather than t.Inner because a borrow reaches a negated part
+		// from two shapes, not one. `¬(mut 'a T)` names the borrow directly, and
+		// `¬(A | mut 'a T)` reaches it through De Morgan's law, which turns the
+		// complement of a join into a meet of complements.
+		assertBorrowFreeNegatedParts(conjuncts, func(a Conjunct) []soltype.Type { return a.Rnf.Atoms })
+		return DNF{Conjuncts: conjuncts}
 	case *soltype.TypeVarType:
 		return DNF{Conjuncts: []Conjunct{newConjunct().withVar(t)}}
 	default:
@@ -234,8 +251,12 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
+		// The dual of the mkDNF arm. A disjunct holds its negated part in Lnf, so that
+		// is the list the ¬Ref scan reads.
 		negated := c.mkDNF(t.Inner, pol.Flip()).neg()
-		return CNF{Disjuncts: c.canonicalDisjuncts(negated.Disjuncts)}
+		disjuncts := c.canonicalDisjuncts(negated.Disjuncts)
+		assertBorrowFreeNegatedParts(disjuncts, func(a Disjunct) []soltype.Type { return a.Lnf.Atoms })
+		return CNF{Disjuncts: disjuncts}
 	case *soltype.TypeVarType:
 		return CNF{Disjuncts: []Disjunct{newDisjunct().withVar(t)}}
 	default:
@@ -307,6 +328,18 @@ func (n *deepNormalizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 
 func (n *deepNormalizer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return n.ctx.mkDNF(t, pol).toType()
+}
+
+// assertBorrowFreeNegatedParts enforces the ¬Ref exclusion invariant over a
+// normalized complement. A borrow in a negated part is a `¬(mut 'a T)` however the
+// source wrote it. negatedPart reads that part off one member, Rnf for a conjunct
+// and Lnf for a disjunct.
+func assertBorrowFreeNegatedParts[T any](members []T, negatedPart func(T) []soltype.Type) {
+	for _, member := range members {
+		for _, atom := range negatedPart(member) {
+			soltype.AssertNegatable(atom)
+		}
+	}
 }
 
 // dnfTop is `unknown` as a DNF: one conjunct with nothing in it, since an empty
@@ -678,6 +711,10 @@ func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 		if b, ok := b.(*soltype.ClassType); ok {
 			return c.glbClass(a, b)
 		}
+	case *soltype.RefType:
+		if b, ok := b.(*soltype.RefType); ok {
+			return c.meetRefs(a, b)
+		}
 	}
 	return nil, false
 }
@@ -708,6 +745,10 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	case *soltype.TupleType:
 		if b, ok := b.(*soltype.TupleType); ok {
 			return c.joinTuples(a, b)
+		}
+	case *soltype.RefType:
+		if b, ok := b.(*soltype.RefType); ok {
+			return c.joinRefs(a, b)
 		}
 	}
 	// Two function atoms never fuse under a union. Neither `(A -> C) | (B -> C)` nor
@@ -1208,6 +1249,139 @@ func hasSpreadElem(elems []soltype.Type) bool {
 		}
 	}
 	return false
+}
+
+// meetRefs and joinRefs below, and the three helpers they call, split their work by
+// sort. The pointees combine in the type algebra through combineRefInners, and the
+// two lifetimes combine in the outlives lattice through meetRefLifetimes or
+// joinRefLifetimes. Neither sort is consulted about the other, which is the split the
+// wrapper already draws: Inner is a Type and Lt is a Lifetime. Both merges keep
+// borrows of differing mutability apart, since mut-decay relates those rather than a
+// fused wrapper.
+//
+// Two borrows over one pointee whose lifetimes are distinct variables stay two
+// atoms. The fusion ruled out is the one over the JOIN of the two lifetimes, the
+// `&'c mut T` a return uniting two `mut` parameters produces. It also admits a
+// borrow valid for 'c alone, which neither member admits, so it denotes strictly
+// more than the union does. joinBorrows in infer_expr.go may widen to it because it
+// is choosing one type for a value at a branch. A fusion here must denote exactly
+// what it replaces, and a two-atom list already denotes the union precisely.
+
+// meetRefs fuses two borrow atoms of an intersection. An uninhabited pointee makes
+// the whole meet `never`, since nothing is there to borrow.
+func (c *Context) meetRefs(a, b *soltype.RefType) (soltype.Type, bool) {
+	if a.Mut != b.Mut {
+		return nil, false
+	}
+	lt, ok := meetRefLifetimes(a.Lt, b.Lt)
+	if !ok {
+		return nil, false
+	}
+	inner, uninhabited, ok := c.combineRefInners(a, b, meetOfAtoms)
+	if !ok {
+		return nil, false
+	}
+	if uninhabited {
+		return &soltype.NeverType{}, true
+	}
+	return soltype.NewRef(a.Mut, lt, inner), true
+}
+
+// joinRefs is the dual of meetRefs. It fuses only when the two borrows already agree
+// on ONE of the two sorts, because a union does not distribute over the pair of
+// them. Fusing `(&'static {x: number}) | (&'a {x: string})` would give
+// `&'a {x: number | string}`, which admits an `&'a {x: number}` that neither member
+// does.
+func (c *Context) joinRefs(a, b *soltype.RefType) (soltype.Type, bool) {
+	if a.Mut != b.Mut {
+		return nil, false
+	}
+	if !ltEqual(a.Lt, b.Lt) && !equalType(a.Inner, b.Inner) {
+		return nil, false
+	}
+	lt, ok := joinRefLifetimes(a.Lt, b.Lt)
+	if !ok {
+		return nil, false
+	}
+	inner, uninhabited, ok := c.combineRefInners(a, b, joinOfAtoms)
+	// An uninhabited join needs both pointees uninhabited, which no atom pair
+	// reaches, and fuseAtoms reads a `never` from a join as a failed MEET. Keeping
+	// the two borrows apart states the join just as precisely.
+	if !ok || uninhabited {
+		return nil, false
+	}
+	return soltype.NewRef(a.Mut, lt, inner), true
+}
+
+// combineRefInners combines two borrows' pointees in the type algebra alone. role
+// picks the direction, uninhabited reports a `never`, and ok is false when no exact
+// combination exists. A MUTABLE borrow's pointee is invariant, so the two must
+// already be equal. Widening `{x: number}` and `{x: string}` to `{x: number | string}`
+// would let a holder write a string into the cell holding the number.
+func (c *Context) combineRefInners(a, b *soltype.RefType, role atomRole) (inner soltype.RefInner, uninhabited, ok bool) {
+	if equalType(a.Inner, b.Inner) {
+		return a.Inner, false, true
+	}
+	if a.Mut {
+		return nil, false, false
+	}
+	var combined soltype.Type
+	if role == meetOfAtoms {
+		combined, ok = c.meetAtoms(a.Inner, b.Inner)
+	} else {
+		combined, ok = c.joinAtoms(a.Inner, b.Inner)
+	}
+	if !ok {
+		return nil, false, false
+	}
+	if _, isNever := combined.(*soltype.NeverType); isNever {
+		return nil, true, true
+	}
+	// A combination no borrow may point at has no wrapper to sit in, so the two
+	// borrows stay apart. Every merge arm over two borrowable pointees yields a
+	// borrowable one or `never`, so this guards the RefInner set against a future
+	// arm rather than answering a pair the merges reach today.
+	borrowable, isRefInner := combined.(soltype.RefInner)
+	if !isRefInner {
+		return nil, false, false
+	}
+	return borrowable, false, true
+}
+
+// meetRefLifetimes combines two borrows' lifetimes in the outlives lattice alone.
+// The meet is the longer-lived of the two, so 'static absorbs it as the bottom of
+// the lattice. A nil slot is an owned cell carrying no lifetime. ok is false where
+// no lifetime already names the meet, which keeps the two borrows as separate atoms.
+func meetRefLifetimes(a, b soltype.Lifetime) (soltype.Lifetime, bool) {
+	if ltEqual(a, b) {
+		return a, true
+	}
+	if a == nil || b == nil {
+		return nil, false
+	}
+	if soltype.IsStaticLifetime(a) || soltype.IsStaticLifetime(b) {
+		return soltype.Static, true
+	}
+	return nil, false
+}
+
+// joinRefLifetimes is the dual of meetRefLifetimes, returning the shorter-lived of
+// the two. 'static drops OUT of the join rather than absorbing it, since every other
+// lifetime outlives it, so `(&'static T) | (&'a T)` is `&'a T`.
+func joinRefLifetimes(a, b soltype.Lifetime) (soltype.Lifetime, bool) {
+	if ltEqual(a, b) {
+		return a, true
+	}
+	if a == nil || b == nil {
+		return nil, false
+	}
+	if soltype.IsStaticLifetime(a) {
+		return b, true
+	}
+	if soltype.IsStaticLifetime(b) {
+		return a, true
+	}
+	return nil, false
 }
 
 // meetFuncs fuses two function atoms into one arrow, but only for the two cases
@@ -1858,6 +2032,12 @@ func (r RhsNf) toType() soltype.Type {
 // variable, so it is never a lattice bound whose complement is the other bound,
 // and mkDNF decomposes every negation it meets, so no atom is itself a complement
 // that a second one would cancel.
+//
+// It goes through soltype.NewNegation, which enforces the ¬Ref exclusion
+// invariant. Nothing is expected to trip that check here, since the parts rendered
+// below come from a normal form whose negated side mkDNF already scanned for a
+// borrow. It is the construction-site gate, applied wherever a complement is
+// built.
 func negate(t soltype.Type) soltype.Type {
-	return &soltype.NegationType{Inner: t}
+	return soltype.NewNegation(t)
 }
