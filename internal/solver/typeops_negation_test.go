@@ -107,6 +107,17 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `"b" | ...`,
 		},
 		{
+			// `(string | null) & ¬(null | undefined)`
+			//
+			// `NonNullable<string | null>` written natively. Each member is settled against the
+			// exclusion union: `null` is inside it and goes, and `string` is disjoint from both
+			// absence markers, so it stays bare. The filter reading answers the same, which
+			// TestGroundSetDifferenceKeepsFilterReading asserts.
+			name: "NonNullableDropsTheAbsenceMarkers",
+			diff: meet(join(str(), &soltype.NullType{}), negate(join(&soltype.NullType{}, &soltype.UndefinedType{}))),
+			want: "string",
+		},
+		{
 			// `("a" | ...) & ¬"a"`
 			//
 			// Every named member is excluded and the tail is not, so there is no union left to
@@ -148,6 +159,21 @@ func TestReduceIntersectionMembers(t *testing.T) {
 	t.Run("NothingToReduceKeepsThePointer", func(t *testing.T) {
 		concrete := meet(num(), str())
 		require.Same(t, concrete, reduceType(concrete))
+	})
+
+	// `("a" | "b" | 1) & string`, which is `Extract<"a" | "b" | 1, string>` written natively.
+	//
+	// The meet stays as it stands. A difference settles each member of its positive side against
+	// what is excluded, and a plain meet has no such rule, so nothing here distributes `string`
+	// over the union or drops the member no value inhabits. The filter reading is what answers
+	// this one, and TestUtilityTypeReductions/Extract asserts `"a" | "b"` for it.
+	//
+	// The two are only ever asked of different operands. A meet is minted for `Extract` when the
+	// operand does not ground, and an operand that does ground takes the filter instead, so the
+	// concrete meet above is reachable only by building it.
+	t.Run("ExtractMeetDoesNotDistribute", func(t *testing.T) {
+		extract := meet(join(strLit("a"), strLit("b"), numLit(1)), str())
+		require.Same(t, extract, reduceType(extract))
 	})
 }
 
