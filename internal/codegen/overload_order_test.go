@@ -84,6 +84,25 @@ fn f(x: string) -> string { return "s" }`,
   } else throw new TypeError("No overload matches the provided arguments for function 'f'");
 }`,
 		},
+		// A declare-only arm gets no branch of its own, but it still takes part in the
+		// ranking, because the checker ranks it too. Here `{y, w, ...}` outranks
+		// `{y, ...}`, which is what leaves the later `{x, ...}` arm ahead of it. Ranking
+		// only the arms that get a branch would drop that and put `{y, ...}` first, so
+		// f({x: 1, y: 2}) would return true where the checker typed it as a number.
+		"DeclareOnlyArmParticipatesInRanking": {
+			src: `fn f(p: {y: number, ...}) -> boolean { return true }
+declare fn f(p: {y: number, w: number, ...}) -> string
+fn f(p: {x: number, ...}) -> number { return 1 }`,
+			expected: `export function f(param0) {
+  if (param0 !== null && typeof param0 === "object" && "x" in param0 && typeof param0.x === "number") {
+    const p = param0;
+    return 1;
+  } else if (param0 !== null && typeof param0 === "object" && "y" in param0 && typeof param0.y === "number") {
+    const p = param0;
+    return true;
+  } else throw new TypeError("No overload matches the provided arguments for function 'f'");
+}`,
+		},
 		// A guard tests only the parameters its own arm declares, so the arm with more
 		// parameters runs first. Otherwise `typeof param0 === "string"` alone would answer
 		// a two-argument call.

@@ -918,8 +918,8 @@ type NoMatchingOverloadError struct {
 // arm then swallows every call that reaches it. A bodyless `declare fn` arm
 // contributes no branch to the chain and so is not reported.
 //
-// The set still infers and still binds — inference reads the arms as one intersection
-// of arrows and needs no annotation. Only the runtime dispatch does.
+// The set still infers and still binds. Inference reads the arms as one intersection of
+// arrows and needs no annotation; only the runtime dispatch does.
 //
 // It is a BRIDGE error: born in checkOverloadDispatch with the offending parameter in
 // hand, so it self-blames (Span() is the un-annotated parameter's pattern) and relates

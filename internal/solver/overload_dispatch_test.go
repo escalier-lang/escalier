@@ -17,8 +17,8 @@ import (
 // call. The checker picks an arm in resolveOverload, driven by specificityOrder over
 // the inferred arm types. The generated code picks one by running the if-else chain
 // codegen.DispatchOrder lays out, driven by the arms' written parameter annotations.
-// Two rankings derived from two representations can drift, and when they drift a call
-// reaches an arm whose return type is not the one the checker gave it — which is a
+// The two rankings read different things, so they can drift apart. When they do, a call
+// reaches an arm whose return type is not the one the checker gave it. That is a
 // soundness problem, not a cosmetic one.
 //
 // The rows below are the corpus that measures the two against each other. Each row is
@@ -138,6 +138,18 @@ func TestOverloadDispatchAgreesWithResolution(t *testing.T) {
 				fn f(p: {x: number | string, y: number}) -> boolean { return true }
 			`,
 			want: []string{"boolean", "string"},
+		},
+		{
+			// A declare-only arm gets no branch in the generated chain, but it still takes
+			// part in the ranking on both sides. `{y, w, ...}` outranks `{y, ...}`, which is
+			// what leaves the later `{x, ...}` arm ahead of it.
+			name: "a declare-only arm takes part in the ranking",
+			src: `
+				fn f(p: {y: number, ...}) -> boolean { return true }
+				declare fn f(p: {y: number, w: number, ...}) -> number
+				fn f(p: {x: number, ...}) -> string { return "x" }
+			`,
+			want: []string{"number", "string", "boolean"},
 		},
 		{
 			// Three arms whose ranking is only a partial order: the two concretes are

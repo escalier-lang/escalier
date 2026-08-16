@@ -30,39 +30,38 @@ import (
 //     values than the matching parameter, and at least one admits strictly fewer. So
 //     `(x: 5)` is tested before `(x: number)`, and `({x, y})` before `({x})`.
 //  3. Source position — source id, then line, then column. This is the declaration
-//     order the checker's armPosLess pins, and it settles every pair the first two keys
-//     leave tied. Sorting the arms rather than taking them as the dep graph happens to
-//     hold them is what keeps the two tiebreaks the same.
+//     order the checker's armPosLess pins. It settles every pair the first two keys
+//     leave tied. Sorting is what makes the two tiebreaks the same, since the dep graph
+//     hands its declarations back in the order they were registered.
 //
 // # Where the two orders can still differ
 //
-// Both keys 2 and 3 are derived from what the arm WROTE, while the checker derives its
-// ranking from what it INFERRED. Two gaps follow, both narrow and both documented at
-// the code that leaves them.
+// Key 2 ranks what the arm WROTE, while the checker ranks what it INFERRED. Three gaps
+// follow. Each is narrow, and each is documented at the code that leaves it.
 //
-//   - A parameter annotated with a type alias. The checker ranks the type the alias
-//     expands to; annSubsumes sees only the name and ranks the pair as a tie. An alias
-//     naming a class is the exception, since nominalGuardName resolves it.
+//   - A parameter annotated with a type reference. annSubsumes reads the name and never
+//     resolves it, so two references tie unless they were spelled the same way. The
+//     checker ranks the type the reference resolves to. An alias for a literal or for an
+//     object can therefore separate a pair this ties. Two class references are safe,
+//     because the checker ties those as well.
 //   - Key 3 orders by source id where armPosLess orders by file path. The compiler
 //     assigns ids by walking the source tree in lexical order, so the two agree for
-//     every program it builds; a caller that hands the parser sources in some other
+//     every program it builds. Only a caller that hands the parser sources in some other
 //     order can separate them.
-//
-// Key 1 has a gap of its own, and it predates this ordering. An optional or rest
-// parameter widens an arm's accepted argument counts, so `(x: string, y?: number|string)`
-// and `(x: string)` both accept a one-argument call and the checker ranks them by
-// declaration order. Key 1 tests the longer arm first, and its `y` guard is a bare
-// `true` because a union is untestable, so the longer arm answers a call the checker
-// gave to the shorter one. Closing this needs the dispatcher to test how many arguments
-// it was called with, which it does not do today.
+//   - Key 1's own gap. An optional or rest parameter widens the argument counts an arm
+//     accepts, so `(x: string, y?: number|string)` and `(x: string)` both accept a
+//     one-argument call. The checker ranks a pair of different arities by declaration
+//     order, while key 1 tests the longer arm first. A union is untestable, so that
+//     arm's `y` guard is a bare `true` and it answers a call the checker gave to the
+//     shorter arm. Closing this needs the dispatcher to test how many arguments it was
+//     called with, which it does not do.
 //
 // One further divergence lives on the checker's side rather than here. When a call
 // argument is a still-unconstrained variable, overloadOrder cannot rank the arms and
-// falls back to plain declaration order, so `fn g(y) { return f(y) }` pins y to the
-// FIRST arm rather than to the one specificity would choose. The dispatcher always
-// ranks by specificity, so a call through g can reach a different arm than the one g
-// was typed with. That fallback is the MVP limitation #723 tracks, and deferred
-// resolution retires this divergence with it.
+// falls back to plain declaration order. So `fn g(y) { return f(y) }` pins y to the
+// FIRST arm rather than to the one specificity would choose, and a call through g can
+// reach a different arm than the one g was typed with. That fallback is the MVP
+// limitation #723 tracks, and deferred resolution retires this divergence with it.
 
 // DispatchOrder returns overloads in the order the generated if-else chain tests them.
 // The input is left untouched.
@@ -114,11 +113,13 @@ func DispatchOrder(overloads []*ast.FuncDecl) []*ast.FuncDecl {
 }
 
 // earlierInSource reports whether a is declared before b, by source id, then line, then
-// column. It is the tiebreak internal/solver's armPosLess applies, with one difference:
+// column. It is the tiebreak internal/solver's armPosLess applies, with one difference.
 // armPosLess orders by file path where this orders by source id. The compiler assigns
 // ids by walking the source tree in lexical order, so id order is path order for every
-// program it builds. Ordering here at all is what matters — the dep graph hands its
-// declarations back in the order they were registered, which no rule pins.
+// program it builds.
+//
+// Ordering here at all is what matters most. The dep graph hands its declarations back
+// in the order they were registered, and no rule pins that order.
 func earlierInSource(a, b *ast.FuncDecl) bool {
 	as, bs := a.Span(), b.Span()
 	if as.SourceID != bs.SourceID {
@@ -206,18 +207,18 @@ func isTopAnn(ann ast.TypeAnn, vars set.Set[string]) bool {
 }
 
 // annSubsumes reports whether the values a admits are a subset of those b admits. It is
-// the dispatch-order counterpart of structuralSubtype in internal/solver, written over
-// the annotations the source wrote rather than over inferred types, and it is
-// deliberately partial in the same way: a pair it cannot rank returns false in both
+// the dispatch-order counterpart of structuralSubtype in internal/solver, reading the
+// annotations the source wrote rather than the types the checker inferred. It is
+// deliberately partial in the same way. A pair it cannot rank returns false in both
 // directions, which armSpecificity reads as a tie and DispatchOrder settles by source
 // position.
 //
-// An annotation buildTypeGuard cannot test at runtime — a union, a function type — is
-// NOT treated as top here, because the checker does not treat it as top either. Such an
-// arm ties with everything, so it keeps its declared place. Its guard is still a bare
-// `true`, which means an untestable arm declared first answers every call that reaches
-// it; that is what the checker's resolution does too, so the two agree on the arm even
-// where the program is a poor one.
+// An annotation buildTypeGuard cannot test at runtime, such as a union or a function
+// type, is NOT top here. The checker does not treat one as top either, so such an arm
+// ties with everything and keeps its declared place. Its guard is still a bare `true`,
+// so an untestable arm declared first answers every call that reaches it. The checker's
+// resolution picks that same arm, which is the agreement this ordering is for, even
+// though the program would be better written with a testable annotation.
 func annSubsumes(a, b armParam) bool {
 	if b.top {
 		return true

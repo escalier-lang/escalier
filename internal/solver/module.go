@@ -459,6 +459,11 @@ func (c *checker) inferComponent(
 			})
 		}
 		if fused {
+			// Sort before fusing, not only in phase 3. The fused bound is what an
+			// in-component recursive call is checked against, and specificityOrder settles a
+			// tie by position in the list it is handed, so an unsorted fusion would resolve
+			// such a call against a different arm order than the exported binding uses.
+			sortArms(module, b.arms)
 			c.fuseOverloadArms(b)
 		}
 	}
@@ -757,22 +762,26 @@ func (c *checker) fuseOverloadArms(b *componentBinding) {
 // `.d.ts`-shaped overload set keeps the freedom to leave a parameter un-annotated.
 //
 // Inference itself needs none of this. An overload set enters the lattice as one
-// intersection of arrows (see fuseOverloadArms), so a set that fails here still infers
-// and still binds.
+// intersection of arrows, the form fuseOverloadArms records, so a set that fails here
+// still infers and still binds.
 func (c *checker) checkOverloadDispatch(g *dep_graph.DepGraph, component []dep_graph.BindingKey) {
 	for _, key := range component {
 		funcs := funcOnlyDecls(g, key)
 		if len(funcs) <= 1 {
-			continue // not an overload set (a mixed val/var name is a duplicate, not reported here)
+			// Not an overload set. A name a `val`/`var` shares with a function is a
+			// duplicate declaration, reported in phase 2 rather than here.
+			continue
 		}
 		for _, fd := range funcs {
 			if fd.Body == nil {
-				continue // declare-only: no dispatcher branch to guard
+				continue // a declare-only arm gets no branch, so it has no guard to write
 			}
 			for _, p := range fd.FuncSig.Params {
 				if p.TypeAnn == nil && p.Pattern != nil {
 					c.report(&UndispatchableOverloadError{Param: p.Pattern, Decl: fd, Name: key.Name()})
-					break // one diagnostic per arm (blame the first gap)
+					// One diagnostic per arm, blaming the first parameter that is missing an
+					// annotation. Each arm is fixed on its own.
+					break
 				}
 			}
 		}

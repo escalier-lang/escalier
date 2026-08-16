@@ -166,8 +166,8 @@ func TestInferOverloadNoMatch(t *testing.T) {
 // annotation on any arm. The set reaches its binding variable as the single lower
 // bound `(number -> R1) & (string -> R2)`, and the recursive `f("hi")` inside g
 // records `v <: (string) -> R` against it. The arrow-decomposition rule settles that
-// without picking an arm, so neither the branch choice nor the annotation that used to
-// stand in for it is needed.
+// by weighing both arms together, so nothing has to pick an arm before the group's
+// bodies are inferred and nothing has to be annotated to make that choice possible.
 func TestInferOverloadMutualRecursionInfersUnannotatedReturns(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x: number) { return g(x) }
