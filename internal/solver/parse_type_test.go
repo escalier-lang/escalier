@@ -135,12 +135,16 @@ func litToSoltype(t *testing.T, lit ast.Lit) soltype.Type {
 	return nil
 }
 
-// funcToSoltype lowers a `fn (x: T) -> U` annotation into a soltype.FuncType.
-// It accepts positional parameters written as `name: T`, an optional `?`
-// marker, and the trailing `...` inexactness marker. A destructuring or rest
-// pattern, a missing parameter or return annotation, and the type-parameter,
-// lifetime, and `throws` clauses all fail the test, mirroring how the rest of
-// this converter refuses what it cannot lower faithfully.
+// funcToSoltype lowers a `fn (x: T) -> U throws E` annotation into a
+// soltype.FuncType. It accepts positional parameters written as `name: T`, an
+// optional `?` marker, the trailing `...` inexactness marker, and a `throws`
+// clause. A destructuring or rest pattern, a missing parameter or return
+// annotation, and the type-parameter and lifetime clauses all fail the test,
+// mirroring how the rest of this converter refuses what it cannot lower
+// faithfully.
+//
+// An omitted `throws` leaves Throws nil, the shorthand for `never` that
+// FuncType.ThrowsOrNever resolves.
 //
 // An `open p` parameter fails for the same reason. soltype.FuncParam has no
 // slot for the marker, so lowering one would drop it and hand back a signature
@@ -149,7 +153,6 @@ func funcToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.FuncTypeAn
 	t.Helper()
 	require.Empty(t, ta.TypeParams, "parseType: type parameters on a fn annotation")
 	require.Empty(t, ta.LifetimeParams, "parseType: lifetime parameters on a fn annotation")
-	require.Nil(t, ta.Throws, "parseType: throws clause on a fn annotation")
 	require.NotNil(t, ta.Return, "parseType: fn annotation without a return type")
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
@@ -163,9 +166,14 @@ func funcToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.FuncTypeAn
 			Optional: p.Optional,
 		}
 	}
+	var throws soltype.Type
+	if ta.Throws != nil {
+		throws = toSoltype(t, env, ta.Throws)
+	}
 	return &soltype.FuncType{
 		Params:  params,
 		Ret:     toSoltype(t, env, ta.Return),
+		Throws:  throws,
 		Inexact: ta.Inexact,
 	}
 }

@@ -1578,14 +1578,14 @@ and the M7 interlock.
   calls to throwing functions emit `constrain(thrown, throws_var)`. Throws
   polymorphism (`<E>(f: () -> T throws E) -> T throws E`) falls out of M3's
   let-generalization without special handling — `E` is just another type
-  variable that gets quantified. **Open design question, not settled in
-  this plan:** how `try`/`catch` narrows the inferred throws of the body
-  (i.e., the "subtract `K` from `body_throws` for everything not in the
-  `catch` clause" semantics). A two-variable encoding (`body_throws <:
-  surrounding_throws ∪ caught_throws`) works in the existing lattice and is
-  the conservative starting point; integration with the existing checker's
-  narrowing semantics is the actual question to resolve before
-  implementation.
+  variable that gets quantified. How `try`/`catch` narrows the inferred
+  throws of the body — the "subtract `K` from `body_throws` for everything
+  not in the `catch` clause" semantics — was left open here. It is settled
+  by MLstruct PR9 (#1066) as the native set difference
+  `surrounding_throws = body_throws ∩ ¬caught`, which negation expresses
+  directly. The two-variable encoding (`body_throws <: surrounding_throws ∪
+  caught_throws`) was the conservative fallback for a lattice without
+  negation and is not what the solver runs.
 
 **Accept:** the spike's type-operator cases against real source —
 `keyof`/indexed access over ground and usage-inferred operands; conditional

@@ -796,9 +796,11 @@ is the exceptional twin of `UnusedLifetimeParamError`.
   `never`, and `throws _` makes it a fresh variable whose coalesced value becomes the
   inferred clause. Each exceptional exit is therefore checked at its own site. A `try`
   block then needs no new lattice machinery: it pushes a nested sink, and the enclosing
-  sink receives only the part the `catch` arms leave unhandled. That is the
-  two-variable encoding `body_throws <: surrounding_throws ∪ caught_throws` with the
-  union realized by the arms' patterns rather than by a second variable.
+  sink receives only the part the `catch` arms leave unhandled. MLstruct PR9 (#1066)
+  states that part as the set difference `body_throws ∩ ¬caught`, which negation
+  expresses directly. The two-variable encoding
+  `body_throws <: surrounding_throws ∪ caught_throws` was the fallback for a lattice
+  without negation.
 
   The nested sink is also what makes a clause-less function usable once `try`/`catch`
   lands: a call wrapped in a `try` whose arms are exhaustive contributes nothing to the
@@ -843,12 +845,11 @@ body, so a `try` inside a `try` nests for free.
   the caught union. Per [06_error_handling.md](../../docs/06_error_handling.md), "if
   there is no catch-all, the compiler will automatically re-throw the unhandled error",
   so an uncovered member is constrained into the ENCLOSING sink instead of being
-  reported. `unionMemberCovered` and `isCatchAll`
-  ([infer_expr.go](../../internal/solver/infer_expr.go)) already decide coverage per
-  member for `checkMatchExhaustive`; this reads the same relation the other way, keeping
-  one definition of "this pattern covers this member". A catch-all therefore
-  contributes nothing to the enclosing sink, which is what makes a clause-less caller
-  legal.
+  reported. `memberCaught` and `ast.HasUnguardedCatchAll`
+  ([infer_expr.go](../../internal/solver/infer_expr.go)) decide coverage per member,
+  reading the same shape rules `checkCondExhaustive` reads so there is one definition of
+  "this pattern covers this member". A catch-all therefore contributes nothing to the
+  enclosing sink, which is what makes a clause-less caller legal.
 - **The caught union is inexact.** The docs are explicit that a caught error is always
   an open union — `FooError | ...` — because any function can throw something the type
   system did not predict. `soltype.UnionType` already carries `Inexact`, so the caught
