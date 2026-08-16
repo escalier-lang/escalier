@@ -285,6 +285,15 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 	tail := tailOf(check)
 	if tail.bound != nil {
 		tail.bound = e.condOverTailBound(t, tail.bound)
+		if tail.bound == nil && len(parts) == 0 {
+			// The check union names no member of its own, so the tail was the whole operand
+			// and the conditional just failed to answer over it. Unbounding the tail would
+			// leave a union with neither member nor bound, which collapses to `never` and
+			// claims the operand was empty. Stay symbolic instead.
+			return &soltype.CondType{
+				Check: check, Extends: t.Extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute,
+			}
+		}
 	}
 	return newUnionWithTail(nil, parts, tail)
 }
@@ -867,11 +876,11 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	if !condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
-	if soltype.UncountableKeys(keys) {
-		// An uncountable key set has no keys to enumerate, so the member stays unexpanded and is
-		// itself the index signature. The required form over such a key set is uninhabited and is
-		// rejected. A rename or filter over one has no enumerable keys to run over, so it stays
-		// symbolic with no diagnostic. That gap is #930.
+	if unenumerableKeys(keys) {
+		// A key set with nothing to enumerate leaves the member unexpanded, so it is itself the
+		// index signature. The required form over such a key set is uninhabited and is rejected.
+		// A rename or filter over one has no enumerable keys to run over, so it stays symbolic
+		// with no diagnostic. That gap is #930.
 		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
 			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
 		}
@@ -895,6 +904,26 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		}
 	}
 	return reduced, fields, keyTail.open, true
+}
+
+// unenumerableKeys reports whether a mapped type's key set gives it no key to emit a field for.
+// Two shapes do.
+//
+//   - An uncountable key set such as `string` names more keys than any object could list.
+//   - An open key set naming no key of its own, such as the `...(string & ¬"a")` a set difference
+//     leaves after excluding every named key. Its bound says what the keys are drawn from without
+//     saying which of them the set holds, so no field follows from it whether the bound is
+//     infinite or not.
+//
+// An open key set that DOES name keys is enumerable. Each named key gets a field and the tail
+// becomes the result object's own inexactness marker, so `{[K]: T[K] for K in keyof {x: X, ...}}`
+// expands to `{x: X, ...}` rather than collapsing to an index signature.
+func unenumerableKeys(keys soltype.Type) bool {
+	if soltype.UncountableKeys(keys) {
+		return true
+	}
+	u, ok := keys.(*soltype.UnionType)
+	return ok && len(u.Types) == 0 && u.TailBound != nil
 }
 
 // unionMembers splits a reduced type into the members a rule runs over one at a time, and returns
@@ -1295,10 +1324,18 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // An inexact key set is open, so it can carry keys its written members do not name. That makes
 // the result inexact whenever the operand union is inexact or any member's key set is. Take
 // `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
-// `"shared" | ...`. Only "shared" is written on both members, so only "shared" is definitely a
-// key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
+// `"shared" | ...string`. Only "shared" is written on both members, so only "shared" is definitely
+// a key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
 // every key the result names one that every member definitely carries, and the trailing `...`
 // records that the true key set may be larger.
+//
+// The tail's bound is wider than the operand allows. This reduction is a MEET of key sets, so an
+// unnamed shared key has to be a key of every member, and the example above bounds its tail by
+// `string` where only "a" is possible: the first member is exact, so no key outside {"a", "shared"}
+// is a key of it. Bounding the tail by the exact members' key sets is what would close that gap.
+// The bound is still narrower than the unbounded tail the reduction would otherwise leave, which
+// admits every value, so `"zz"` reads as a possible key here where before it read as a possible
+// anything. escalier-lang/escalier#1126 tracks tightening it.
 //
 // Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
 // own operands are not ground. Such a member reduces to a `keyof` residual, and the rule this whole
@@ -1684,6 +1721,11 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // The result is exact only when every interpolation is, since an interpolation that names an open
 // set of choices produces an open set of strings (exact-types §5.6). `on${"a" | "b"}` reduces to
 // the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
+//
+// A tail's bound is not folded into the result. The bound says the tail's choices are strings
+// without saying which, so no segment can absorb them and the result's tail stays unbounded.
+// An interpolation that names no choice at all, which is the shape a set difference leaves when it
+// excludes every named one, has nothing to run the product over and keeps the template symbolic.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
 	combinations := 1
@@ -1692,6 +1734,14 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 		reduced := e.groundOperand(interp)
 		if u, ok := reduced.(*soltype.UnionType); ok {
 			openChoices = openChoices || u.Inexact
+			if len(u.Types) == 0 {
+				// An interpolation naming no choice of its own, such as the `...string` a set
+				// difference leaves when it excludes every named key. Its bound says the
+				// choices are strings without saying which, so there is nothing to fold into
+				// the surrounding segments and the template stays symbolic. Running the
+				// product over no choice would empty it and answer `never`.
+				return &soltype.TemplateLitType{Quasis: t.Quasis, Interps: t.Interps}
+			}
 			// Ground each union member too, so a reducible member — an alias to a literal, or a
 			// nested operator such as `keyof O` — collapses to its string literal before the product
 			// rather than surviving as a residual interpolation.

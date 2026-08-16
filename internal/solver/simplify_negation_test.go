@@ -487,6 +487,66 @@ func TestExcludingEveryNamedKeyStillRejectsIt(t *testing.T) {
 	require.False(t, subtypeHolds(c.ctx, numLit(5), rest), "the bound still rules out a non-string")
 }
 
+// A union that names no member and bounds its tail is a shape only the type operators mint,
+// and every rule that runs over a union's members has to notice that the members it can see
+// are not all there are. Reading the empty list as "nothing" answers `never` or `{}`, both of
+// which claim the union is empty when it is only unenumerated.
+//
+// Each case here reduces such a union through a different operator. `Drop<keyof Obj, "a">` is
+// `...(string & ¬"a")`, the string keys of an inexact one-key object other than the one it names.
+func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
+	tests := []struct {
+		name string
+		decl string
+		want string
+	}{
+		{
+			// A mapped type has no key to emit a field for, so the member stays the index
+			// signature it was written as. Expanding over no key would give `{}`, and the
+			// inexactness marker alone would give `{...}`, which accepts a field of any type.
+			name: "MappedTypeStaysAnIndexSignature",
+			decl: `type Result = {[K]: boolean for K in Drop<keyof Obj, "a">}`,
+			want: `{[K: ...(string & ¬"a")]: boolean}`,
+		},
+		{
+			// A template literal has no choice to fold into its segments, so it stays
+			// symbolic. The cartesian product over no choice is empty, which would answer
+			// `never`.
+			name: "TemplateLiteralStaysSymbolic",
+			decl: "type Result = `on${Drop<keyof Obj, \"a\">}`",
+			want: "`on${Drop<keyof Obj, \"a\">}`",
+		},
+		{
+			// A second exclusion over the same key set has no named member to filter and no
+			// filter answer for the bound, so it stays a meet rather than collapsing.
+			name: "SecondExclusionStaysAMeet",
+			decl: `type Result = Drop<Drop<keyof Obj, "a">, "b">`,
+			want: `¬"b" & Drop<keyof Obj, "a">`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type Obj = {a: number, ...}
+				type Drop<T, U> = if T : U { never } else { T }
+			`+tt.decl)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+
+	// A key set that names keys is still enumerable, so the tail changes nothing about how a
+	// mapped type over it expands. This is the case the rules above must not catch.
+	t.Run("a named key still gets a field", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = {[K]: boolean for K in keyof Obj}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "{a: boolean, ...}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+	})
+}
+
 // An indexed access over a key set or a target that names no member of its own. Both shapes
 // arrive from a set difference that excluded every named member, and neither may be read as
 // `never`, which would claim the union is empty when it is only unenumerated.
