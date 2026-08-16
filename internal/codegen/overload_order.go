@@ -4,6 +4,8 @@ import (
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -13,23 +15,54 @@ import (
 // runs each arm's guard in turn, so the order decides which arm answers a call two
 // arms both accept. The checker answers the same question statically in
 // internal/solver's resolveOverload. The two have to agree: a call the checker types
-// with one arm's return type must reach that arm at runtime. This file is where the
-// dispatcher's order is derived so it matches the checker's.
+// with one arm's return type must reach that arm at runtime. This file derives the
+// dispatcher's order so it matches the checker's.
 //
-// The order has two keys.
+// The order has three keys, applied in turn.
 //
-//  1. Parameter count, descending. A guard only tests the parameters its own arm
+//  1. Parameter count, descending. A guard tests only the parameters its own arm
 //     declares, so a one-parameter arm placed first would answer a two-argument call
-//     that the two-parameter arm was written for. The checker has no matching rule
-//     because it gates arity separately, in tryOverloadArm, before an arm is ranked at
-//     all. So this key is invisible to the checker rather than in conflict with it.
+//     the two-parameter arm was written for. The checker has no matching rule because
+//     it gates arity separately, in tryOverloadArm, before an arm is ranked at all. So
+//     this key is invisible to the checker rather than in conflict with it.
 //  2. Specificity, most specific first, mirroring the checker's specificityOrder. An
 //     arm is more specific than another when each of its parameters admits no more
 //     values than the matching parameter, and at least one admits strictly fewer. So
-//     `(x: 5)` is tested before `(x: number)` and `({x, y})` before `({x})`.
+//     `(x: 5)` is tested before `(x: number)`, and `({x, y})` before `({x})`.
+//  3. Source position — source id, then line, then column. This is the declaration
+//     order the checker's armPosLess pins, and it settles every pair the first two keys
+//     leave tied. Sorting the arms rather than taking them as the dep graph happens to
+//     hold them is what keeps the two tiebreaks the same.
 //
-// Arms neither ranking separates keep their declaration order, which is the tiebreak
-// the checker's stable sort also falls back on.
+// # Where the two orders can still differ
+//
+// Both keys 2 and 3 are derived from what the arm WROTE, while the checker derives its
+// ranking from what it INFERRED. Two gaps follow, both narrow and both documented at
+// the code that leaves them.
+//
+//   - A parameter annotated with a type alias. The checker ranks the type the alias
+//     expands to; annSubsumes sees only the name and ranks the pair as a tie. An alias
+//     naming a class is the exception, since nominalGuardName resolves it.
+//   - Key 3 orders by source id where armPosLess orders by file path. The compiler
+//     assigns ids by walking the source tree in lexical order, so the two agree for
+//     every program it builds; a caller that hands the parser sources in some other
+//     order can separate them.
+//
+// Key 1 has a gap of its own, and it predates this ordering. An optional or rest
+// parameter widens an arm's accepted argument counts, so `(x: string, y?: number|string)`
+// and `(x: string)` both accept a one-argument call and the checker ranks them by
+// declaration order. Key 1 tests the longer arm first, and its `y` guard is a bare
+// `true` because a union is untestable, so the longer arm answers a call the checker
+// gave to the shorter one. Closing this needs the dispatcher to test how many arguments
+// it was called with, which it does not do today.
+//
+// One further divergence lives on the checker's side rather than here. When a call
+// argument is a still-unconstrained variable, overloadOrder cannot rank the arms and
+// falls back to plain declaration order, so `fn g(y) { return f(y) }` pins y to the
+// FIRST arm rather than to the one specificity would choose. The dispatcher always
+// ranks by specificity, so a call through g can reach a different arm than the one g
+// was typed with. That fallback is the MVP limitation #723 tracks, and deferred
+// resolution retires this divergence with it.
 
 // DispatchOrder returns overloads in the order the generated if-else chain tests them.
 // The input is left untouched.
@@ -68,13 +101,33 @@ func DispatchOrder(overloads []*ast.FuncDecl) []*ast.FuncDecl {
 		if len(ordered[a].Params) != len(ordered[b].Params) {
 			return len(ordered[a].Params) > len(ordered[b].Params)
 		}
-		return dominators[a] < dominators[b]
+		if dominators[a] != dominators[b] {
+			return dominators[a] < dominators[b]
+		}
+		return earlierInSource(ordered[a], ordered[b])
 	})
 	sorted := make([]*ast.FuncDecl, len(ordered))
 	for i, idx := range order {
 		sorted[i] = ordered[idx]
 	}
 	return sorted
+}
+
+// earlierInSource reports whether a is declared before b, by source id, then line, then
+// column. It is the tiebreak internal/solver's armPosLess applies, with one difference:
+// armPosLess orders by file path where this orders by source id. The compiler assigns
+// ids by walking the source tree in lexical order, so id order is path order for every
+// program it builds. Ordering here at all is what matters — the dep graph hands its
+// declarations back in the order they were registered, which no rule pins.
+func earlierInSource(a, b *ast.FuncDecl) bool {
+	as, bs := a.Span(), b.Span()
+	if as.SourceID != bs.SourceID {
+		return as.SourceID < bs.SourceID
+	}
+	if as.Start.Line != bs.Start.Line {
+		return as.Start.Line < bs.Start.Line
+	}
+	return as.Start.Column < bs.Start.Column
 }
 
 // armSpecificity compares two overload arms parameter by parameter. It returns -1 when
@@ -86,12 +139,14 @@ func armSpecificity(a, b *ast.FuncDecl) int {
 	if len(a.Params) != len(b.Params) {
 		return 0
 	}
+	aParams := armParams(a)
+	bParams := armParams(b)
 	aSubB, bSubA := true, true
-	for i := range a.Params {
-		if aSubB && !annSubsumes(a.Params[i].TypeAnn, b.Params[i].TypeAnn) {
+	for i := range aParams {
+		if aSubB && !annSubsumes(aParams[i], bParams[i]) {
 			aSubB = false
 		}
-		if bSubA && !annSubsumes(b.Params[i].TypeAnn, a.Params[i].TypeAnn) {
+		if bSubA && !annSubsumes(bParams[i], aParams[i]) {
 			bSubA = false
 		}
 		if !aSubB && !bSubA {
@@ -107,126 +162,111 @@ func armSpecificity(a, b *ast.FuncDecl) int {
 	return 0
 }
 
-// annSubsumes reports whether the values a's guard accepts are a subset of those b's
-// guard accepts. It is the dispatch-order counterpart of structuralSubtype in
-// internal/solver, written over the annotations buildTypeGuard reads rather than over
-// inferred types, and it is deliberately partial in the same way: a pair it cannot rank
-// returns false in both directions, which armSpecificity reads as a tie and
-// DispatchOrder resolves in declaration order.
-//
-// An annotation buildTypeGuard cannot test emits a bare `true`, so it accepts every
-// value. It is the top of this ordering: everything is a subset of it and it is a
-// subset of nothing else. A missing annotation is the same case, since it emits no
-// guard at all.
-func annSubsumes(a, b ast.TypeAnn) bool {
-	if guardAcceptsAnything(b) {
+// armParam is one parameter of an arm as the ordering reads it: the written annotation
+// plus whether that annotation admits every value.
+type armParam struct {
+	ann ast.TypeAnn
+	// top marks a parameter that accepts anything, so every other parameter is at least
+	// as specific as it. Two cases qualify, and they are the two the checker's
+	// structuralSubtype treats as the top of its own ordering by seeing a type variable:
+	// a parameter with no annotation, whose type is a fresh inference variable, and one
+	// annotated with the arm's own type parameter.
+	top bool
+}
+
+// armParams describes each of decl's parameters for the ordering.
+func armParams(decl *ast.FuncDecl) []armParam {
+	// The arm's own type parameters are the names that stand for a type variable rather
+	// than for a type. A signature with no `<…>` list allocates nothing.
+	var vars set.Set[string]
+	if len(decl.TypeParams) > 0 {
+		vars = set.NewSet[string]()
+		for _, tp := range decl.TypeParams {
+			vars.Add(tp.Name)
+		}
+	}
+	params := make([]armParam, len(decl.Params))
+	for i, p := range decl.Params {
+		params[i] = armParam{ann: p.TypeAnn, top: isTopAnn(p.TypeAnn, vars)}
+	}
+	return params
+}
+
+// isTopAnn reports whether ann admits every value: either there is no annotation, or it
+// names one of vars, the enclosing arm's own type parameters.
+func isTopAnn(ann ast.TypeAnn, vars set.Set[string]) bool {
+	if ann == nil {
 		return true
 	}
-	if guardAcceptsAnything(a) {
+	ref, ok := ann.(*ast.TypeRefTypeAnn)
+	if !ok || ref.Name == nil || vars == nil {
 		return false
 	}
-	if sameGuardedType(a, b) {
+	return vars.Contains(ast.QualIdentToString(ref.Name))
+}
+
+// annSubsumes reports whether the values a admits are a subset of those b admits. It is
+// the dispatch-order counterpart of structuralSubtype in internal/solver, written over
+// the annotations the source wrote rather than over inferred types, and it is
+// deliberately partial in the same way: a pair it cannot rank returns false in both
+// directions, which armSpecificity reads as a tie and DispatchOrder settles by source
+// position.
+//
+// An annotation buildTypeGuard cannot test at runtime — a union, a function type — is
+// NOT treated as top here, because the checker does not treat it as top either. Such an
+// arm ties with everything, so it keeps its declared place. Its guard is still a bare
+// `true`, which means an untestable arm declared first answers every call that reaches
+// it; that is what the checker's resolution does too, so the two agree on the arm even
+// where the program is a poor one.
+func annSubsumes(a, b armParam) bool {
+	if b.top {
+		return true
+	}
+	if a.top {
+		return false
+	}
+	if sameAnn(a.ann, b.ann) {
 		return true
 	}
 	// A literal is one value out of its primitive's set, so `5` is more specific than
 	// `number`. The checker ranks a LitType under its PrimType the same way.
-	if lit, ok := a.(*ast.LitTypeAnn); ok {
-		return litUnderPrimitive(lit.Lit, b)
+	if lit, ok := a.ann.(*ast.LitTypeAnn); ok {
+		return litUnderPrimitive(lit.Lit, b.ann)
 	}
-	if ao, ok := a.(*ast.ObjectTypeAnn); ok {
-		if bo, ok := b.(*ast.ObjectTypeAnn); ok {
+	if ao, ok := a.ann.(*ast.ObjectTypeAnn); ok {
+		if bo, ok := b.ann.(*ast.ObjectTypeAnn); ok {
 			return objectAnnSubsumes(ao, bo)
 		}
 	}
 	return false
 }
 
-// sameGuardedType reports whether two annotations produce guards that accept exactly
-// the same values, so neither arm outranks the other. It covers the annotation kinds
-// buildTypeGuard can actually test.
-func sameGuardedType(a, b ast.TypeAnn) bool {
-	switch at := a.(type) {
-	case *ast.NumberTypeAnn:
-		_, ok := b.(*ast.NumberTypeAnn)
-		return ok
-	case *ast.StringTypeAnn:
-		_, ok := b.(*ast.StringTypeAnn)
-		return ok
-	case *ast.BooleanTypeAnn:
-		_, ok := b.(*ast.BooleanTypeAnn)
-		return ok
-	case *ast.LitTypeAnn:
-		bt, ok := b.(*ast.LitTypeAnn)
-		return ok && sameLitValue(at.Lit, bt.Lit)
-	case *ast.TupleTypeAnn:
-		// Every tuple guard is `Array.isArray`, so two tuple annotations are
-		// indistinguishable at runtime however their elements differ.
-		_, ok := b.(*ast.TupleTypeAnn)
-		return ok
-	case *ast.TypeRefTypeAnn:
-		bt, ok := b.(*ast.TypeRefTypeAnn)
-		if !ok {
-			return false
-		}
-		if aName, aNominal := nominalGuardName(at); aNominal {
-			bName, bNominal := nominalGuardName(bt)
-			return bNominal && aName == bName
-		}
-		// Both reach here as `Array.isArray` guards, since guardAcceptsAnything already
-		// removed every other type reference.
-		return isArrayTypeRef(at) && isArrayTypeRef(bt)
-	case *ast.ObjectTypeAnn:
-		bt, ok := b.(*ast.ObjectTypeAnn)
-		return ok && sameObjectAnn(at, bt)
-	}
-	return false
+// sameAnn reports whether two annotations were written the same way, by rendering each
+// back to source and comparing the text. It stands in for the alpha-equality the
+// checker's structuralSubtype tests first, and covers every annotation form rather than
+// the handful the guard builder can test, so `{x: number | string}` compares equal to
+// itself even though no guard tests a union.
+//
+// Two annotations naming the same type through different spellings — an alias and its
+// expansion, a qualified and an unqualified reference — read as different here and rank
+// as a tie. The checker sees one type and ranks them equal, which is also a tie.
+func sameAnn(a, b ast.TypeAnn) bool {
+	aText, aOK := annText(a)
+	bText, bOK := annText(b)
+	return aOK && bOK && aText == bText
 }
 
-// sameObjectAnn reports whether two object annotations describe the same shape: the
-// same property names, each required on both sides or optional on both, with property
-// types that guard the same values, and the same trailing `...` marker. It stands in
-// for the alpha-equality the checker's structuralSubtype tests first.
-func sameObjectAnn(a, b *ast.ObjectTypeAnn) bool {
-	if a.Inexact != b.Inexact || len(a.Elems) != len(b.Elems) {
-		return false
+// annText renders an annotation back to Escalier source, reporting false for a nil
+// annotation or one the printer cannot render.
+func annText(ann ast.TypeAnn) (string, bool) {
+	if ann == nil {
+		return "", false
 	}
-	for _, elem := range a.Elems {
-		prop, ok := elem.(*ast.PropertyTypeAnn)
-		if !ok {
-			return false // a non-property member is outside what the guard tests
-		}
-		match, found := lookupProp(b, propAnnName(prop))
-		if !found || match.Optional != prop.Optional || !sameGuardedType(match.Value, prop.Value) {
-			return false
-		}
+	text, err := printer.Print(ann, printer.CompactOptions())
+	if err != nil {
+		return "", false
 	}
-	return true
-}
-
-// sameLitValue reports whether two literal annotations name the same value, which is
-// what the `===` guard tests.
-func sameLitValue(a, b ast.Lit) bool {
-	switch al := a.(type) {
-	case *ast.NumLit:
-		bl, ok := b.(*ast.NumLit)
-		return ok && al.Value == bl.Value
-	case *ast.StrLit:
-		bl, ok := b.(*ast.StrLit)
-		return ok && al.Value == bl.Value
-	case *ast.BoolLit:
-		bl, ok := b.(*ast.BoolLit)
-		return ok && al.Value == bl.Value
-	case *ast.BigIntLit:
-		bl, ok := b.(*ast.BigIntLit)
-		return ok && al.Value.Cmp(&bl.Value) == 0
-	case *ast.NullLit:
-		_, ok := b.(*ast.NullLit)
-		return ok
-	case *ast.UndefinedLit:
-		_, ok := b.(*ast.UndefinedLit)
-		return ok
-	}
-	return false
+	return text, true
 }
 
 // litUnderPrimitive reports whether lit is one of the values the primitive annotation
@@ -247,10 +287,7 @@ func litUnderPrimitive(lit ast.Lit, prim ast.TypeAnn) bool {
 }
 
 // objectAnnSubsumes reports whether object annotation a accepts a subset of what b
-// accepts, ranking the two axes the emitted guard can tell apart. It mirrors
-// objectSubsumes in internal/solver.
-//
-// It ranks two axes and ignores a third, exactly as objectSubsumes does.
+// accepts. It ranks two axes and ignores a third, exactly as objectSubsumes does.
 //
 //   - Required-property count. The guard tests that each required property is present
 //     and that its value passes the property's own guard, so a is narrower when its
@@ -264,7 +301,7 @@ func litUnderPrimitive(lit ast.Lit, prim ast.TypeAnn) bool {
 //     that decides which of them answers a call both accept.
 //
 // Property types are NOT ranked. Two arms whose shared properties differ in type tie
-// here and fall back to declaration order.
+// here and fall back to source position.
 //
 // An optional property is never tested and widens the arm rather than narrowing it, so
 // it is not counted: `{x, y?}` accepts everything `{x}` accepts.
@@ -280,7 +317,7 @@ func objectAnnSubsumes(a, b *ast.ObjectTypeAnn) bool {
 		}
 		requiredB++
 		match, found := lookupProp(a, propAnnName(prop))
-		if !found || match.Optional || !sameGuardedType(match.Value, prop.Value) {
+		if !found || match.Optional || !sameAnn(match.Value, prop.Value) {
 			return false
 		}
 	}
@@ -328,27 +365,6 @@ func propAnnName(prop *ast.PropertyTypeAnn) string {
 		return key.Value
 	}
 	return ""
-}
-
-// guardAcceptsAnything reports whether buildTypeGuard emits a bare `true` for typeAnn,
-// which is what it falls back to for an annotation it cannot test at runtime — a union,
-// a type parameter, a function type. Such an arm accepts every argument that reaches
-// it, so DispatchOrder has to sort it after every arm that tests something.
-func guardAcceptsAnything(typeAnn ast.TypeAnn) bool {
-	switch t := typeAnn.(type) {
-	case nil:
-		return true // an un-annotated parameter contributes no guard at all
-	case *ast.NumberTypeAnn, *ast.StringTypeAnn, *ast.BooleanTypeAnn,
-		*ast.LitTypeAnn, *ast.ObjectTypeAnn, *ast.TupleTypeAnn:
-		return false
-	case *ast.TypeRefTypeAnn:
-		if _, nominal := nominalGuardName(t); nominal {
-			return false
-		}
-		return !isArrayTypeRef(t)
-	default:
-		return true
-	}
 }
 
 // nominalGuardName returns the class name an `x instanceof C` guard tests for a

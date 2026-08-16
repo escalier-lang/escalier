@@ -1,11 +1,14 @@
 package solver
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/codegen"
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -113,6 +116,30 @@ func TestOverloadDispatchAgreesWithResolution(t *testing.T) {
 			want: []string{"boolean", "T"},
 		},
 		{
+			// A union is untestable at runtime, so this arm's guard is a bare `true` — but
+			// it is NOT the catch-all a type parameter is. The checker cannot rank a union
+			// against a primitive either, so both sides leave the pair tied and the union
+			// arm keeps its declared place. Sorting it last on the strength of its `true`
+			// guard would send f(5) to the number arm the checker did not resolve it to.
+			name: "an untestable union arm is not a catch-all",
+			src: `
+				fn f(x: number | string) -> string { return "u" }
+				fn f(x: number) -> boolean { return true }
+			`,
+			want: []string{"string", "boolean"},
+		},
+		{
+			// Required-property counting has to look past a property type neither side can
+			// test. Both arms type `x` as the same union, so the `y` property is what
+			// separates them and the two-property arm is tested first.
+			name: "required properties rank past an untestable property type",
+			src: `
+				fn f(p: {x: number | string}) -> string { return "x" }
+				fn f(p: {x: number | string, y: number}) -> boolean { return true }
+			`,
+			want: []string{"boolean", "string"},
+		},
+		{
 			// Three arms whose ranking is only a partial order: the two concretes are
 			// incomparable with each other and both beat the catch-all. Ranking by how many
 			// arms dominate each one puts the concretes first, tied in declaration order,
@@ -181,12 +208,51 @@ func TestOverloadDispatchArityIsCheckerOnly(t *testing.T) {
 	require.Equal(t, "boolean", values["b"])
 }
 
-// overloadArmsOf infers src and returns the declarations of the overload set bound to
-// name, in declaration order, alongside the inferred type of each arm. The two line up
-// by index: arms[i] is the declaration the checker inferred armType[i] from.
+// Two arms the specificity ranking cannot separate fall back to declaration order, and
+// both sides have to mean the same thing by that. The checker sorts its arms into
+// source-position order before binding the set, so it never sees the order the parser
+// happened to produce; DispatchOrder sorts too, for the same reason. Here the two arms
+// live in separate files handed to the parser in reverse-alphabetical order, so an
+// unsorted dispatcher would test them back to front.
+func TestOverloadDispatchTiebreakIsSourcePosition(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{
+		{ID: 0, Path: "a.esc", Contents: `fn f(x: number) -> string { return "n" }`},
+		{ID: 1, Path: "b.esc", Contents: `fn f(x: string) -> boolean { return true }`},
+	})
+	require.Empty(t, parseErrs, "expected no parse errors")
+
+	arms, schemes := overloadArmsOfModule(t, module, "f")
+	resolution := make([]string, len(arms))
+	for i, idx := range specificityOrderOfArms(schemes) {
+		resolution[i] = returnAnnOf(t, arms[idx])
+	}
+	require.Equal(t, []string{"string", "boolean"}, resolution,
+		"the checker reads the arms in source-position order, a.esc before b.esc")
+
+	// Hand DispatchOrder the arms back to front, the way an unsorted dep-graph walk
+	// could. Sorting is what recovers the same order the checker read them in.
+	reversed := []*ast.FuncDecl{arms[1], arms[0]}
+	dispatch := make([]string, len(reversed))
+	for i, decl := range codegen.DispatchOrder(reversed) {
+		dispatch[i] = returnAnnOf(t, decl)
+	}
+	require.Equal(t, []string{"string", "boolean"}, dispatch,
+		"the dispatcher recovers source-position order rather than keeping the order it was handed")
+}
+
+// overloadArmsOf parses and infers src, then returns the overload set bound to name.
 func overloadArmsOf(t *testing.T, src, name string) ([]*ast.FuncDecl, []TypeScheme) {
 	t.Helper()
-	module := parseModule(t, src)
+	return overloadArmsOfModule(t, parseModule(t, src), name)
+}
+
+// overloadArmsOfModule infers module and returns the declarations of the overload set
+// bound to name, in declaration order, alongside the inferred scheme of each arm. The
+// two line up by index: arms[i] is the declaration the checker inferred schemes[i] from.
+func overloadArmsOfModule(t *testing.T, module *ast.Module, name string) ([]*ast.FuncDecl, []TypeScheme) {
+	t.Helper()
 	c := newChecker()
 	scope := sharedPrelude().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
