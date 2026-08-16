@@ -127,12 +127,17 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
-// An inexact positive side names only some of its members. The rest sit in an open tail, and what
-// the exclusion removes from those cannot be worked out. The result union keeps the tail, which
-// stands for whatever those undecided members contribute, so `("a" | "b" | ...) ∩ ¬"a"` reduces to
-// `"b" | ...`. When no named member survives, there is no union left to carry the tail, since an
-// empty union is `never` however the marker is set. The difference then stays as it stands rather
-// than claiming the tail is empty too.
+// An inexact positive side names only some of its members. The rest sit in an open tail that the
+// reduction cannot enumerate, so what the exclusion takes from them cannot be worked out. The
+// result union keeps the tail, which stands for whatever those undecided members contribute, so
+// `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`.
+//
+// When no named member survives, the difference stays as it stands, since neither answer available
+// is the one the reduction means. `newUnion` over an empty member list is `never` however the
+// marker is set, which would claim the tail is empty too. Reading the open union as `unknown` —
+// which is what it is for subtyping, since its tail accepts every value — would answer `¬X`, and
+// that is wrong for the key sets this reduction mostly serves. `keyof {a: X, ...}` is `"a" | ...`,
+// where the tail stands for the keys the object did not name, not for every key there is.
 func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type

@@ -120,9 +120,9 @@ func TestReduceSetDifference(t *testing.T) {
 		{
 			// `("a" | ...) & ¬"a"`
 			//
-			// Every named member is excluded and the tail is not, so there is no union left to
-			// carry the tail and the difference stays as it stands. Collapsing it would answer
-			// `never`, which claims the tail is empty too.
+			// Every named member is excluded and the tail is undecided, so the difference stays
+			// as it stands. Building the union would answer `never`, which claims the tail is
+			// empty too.
 			name: "InexactPositiveSideWithNoSurvivorsStays",
 			diff: meet(&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true}, negate(strLit("a"))),
 			want: `("a" | ...) & ¬"a"`,
