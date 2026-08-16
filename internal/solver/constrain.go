@@ -686,7 +686,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return errs
 			}
 			var errs []SolverError
-			if subU.Inexact {
+			if subU.Inexact && subU.TailBound == nil {
+				// Nothing says what an unbounded tail holds, so a closed super cannot
+				// absorb it and the mismatch is reported once for the whole union.
 				closed := true
 				if s, ok := super.(*soltype.UnionType); ok {
 					closed = !s.Inexact
@@ -697,6 +699,13 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			for _, m := range subU.Types {
 				errs = append(errs, c.constrain(m, super, seen, mutCtx)...)
+			}
+			if subU.TailBound != nil {
+				// A bounded tail holds only values of its bound, so the super absorbs the
+				// whole tail exactly when it absorbs that bound. Checking it is what makes
+				// `("a" | ...string) <: string` hold and `("a" | ...string) <: ("a" | ...number)`
+				// fail, the latter because the sub's tail may hold a string the super rejects.
+				errs = append(errs, c.constrain(subU.TailBound, super, seen, mutCtx)...)
 			}
 			return errs
 		}

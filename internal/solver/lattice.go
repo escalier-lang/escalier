@@ -283,15 +283,19 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 }
 
 func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype.Type {
-	if len(pruned) == 0 && (!tail.open || tail.bound == nil) {
+	if len(pruned) == 0 {
+		// ErrorType absorbs, so a union whose every other member was pruned comes back
+		// as the sole surviving error whatever its tail says.
 		if hadError {
 			return &soltype.ErrorType{}
 		}
-		// Empty union ⇒ never, the identity of |. An empty union with an unbounded
-		// tail is still never, since that tail says nothing a member could stand
-		// for. A caller that needs a union whose only content is an unbounded tail
-		// should write unknown directly.
-		return &soltype.NeverType{}
+		if !tail.open || tail.bound == nil {
+			// Empty union ⇒ never, the identity of |. An empty union with an unbounded
+			// tail is still never, since that tail says nothing a member could stand
+			// for. A caller that needs a union whose only content is an unbounded tail
+			// should write unknown directly.
+			return &soltype.NeverType{}
+		}
 	}
 	if len(pruned) == 1 && !tail.open {
 		// A single exact-union member collapses to that member. An inexact

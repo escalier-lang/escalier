@@ -1482,7 +1482,9 @@ func LevelOf(t Type) int {
 	// union annotation). Coalesced-output unions/intersections hold no live vars, so
 	// both arms still return 0 for them.
 	case *UnionType:
-		return maxMemberLevel(t.Types)
+		// The tail's bound is a member the union does not list, so it counts toward the
+		// level the same way a written member does.
+		return max(maxMemberLevel(t.Types), LevelOf(t.TailBound))
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	case *NegationType:

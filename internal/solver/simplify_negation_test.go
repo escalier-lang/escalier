@@ -356,6 +356,35 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 		require.True(t, subtypeHolds(c.ctx, numLit(5), negT(bounded)))
 		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
 	})
+
+	// The bound also decides what the union is below, which is the direction that carries
+	// the tail into a supertype rather than out of one. An unbounded tail is below nothing
+	// but `unknown`, since no closed type absorbs a tail that may hold anything.
+	t.Run("the bound decides what the union is below", func(t *testing.T) {
+		probes := []struct {
+			name     string
+			sub, sup soltype.Type
+			want     bool
+		}{
+			// Every member is a string, the named one included, so `string` absorbs the
+			// whole union.
+			{"a bounded tail is below its own bound", bounded, str(), true},
+			// The sub's tail may hold "zz", which the super's `number` tail rejects.
+			{
+				"a string tail is not below a number tail",
+				bounded, newBoundedUnion(nil, []soltype.Type{strLit("a")}, num()), false,
+			},
+			// The super's tail admits every string, so it absorbs the sub's whole tail.
+			{
+				"a narrower bound is below a wider one",
+				newBoundedUnion(nil, []soltype.Type{strLit("a")}, strLit("z")), bounded, true,
+			},
+			{"a bounded tail is not below a lone member", bounded, strLit("a"), false},
+		}
+		for _, p := range probes {
+			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
+		}
+	})
 }
 
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,

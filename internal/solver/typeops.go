@@ -1269,11 +1269,13 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 	var shared []soltype.Type
 	var residuals []soltype.Type
 	seeded := false
-	// The result's tail starts as the operand union's own. An unlisted member of the
-	// operand could be an object or a tuple, so nothing bounds the keys it contributes.
-	// Each member's own key set then merges in, and a member that is an inexact object
-	// brings the `string` bound its keys carry.
-	sharedTail := tailOf(op)
+	// The result's tail is open when the operand union's is, since an unlisted member
+	// carries keys the reduction cannot read. It takes no bound from that member: the
+	// operand's own bound is over VALUES and this tail is over KEYS, and an unlisted
+	// member could be an object or a tuple, so nothing says whether its keys are names
+	// or positions. Each member's own key set then merges in, and a member that is an
+	// inexact object brings the `string` bound its keys carry.
+	sharedTail := unionTail{open: op.Inexact}
 	for _, m := range op.Types {
 		reduced := e.reduceKeyof(m, inexact)
 		keys, memberTail, ok := literalKeys(reduced)

@@ -594,6 +594,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, m := range t.Types {
 				walk(m)
 			}
+			if t.TailBound != nil {
+				walk(t.TailBound)
+			}
 		case *IntersectionType:
 			for _, m := range t.Types {
 				walk(m)

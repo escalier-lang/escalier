@@ -2996,12 +2996,32 @@ func describe(t soltype.Type) string {
 		return "error"
 	case *soltype.UnionType:
 		s := joinDescribe(t.Types, " | ")
-		if t.Inexact {
-			// An inexact union has an open tail. Append the marker so a
-			// diagnostic naming the union matches the printer's surface form.
-			return s + " | ..."
+		if !t.Inexact {
+			return s
 		}
-		return s
+		// An inexact union has an open tail. Append the marker so a diagnostic naming
+		// the union matches the printer's surface form, and append the tail's bound
+		// after it so a diagnostic distinguishes `"a" | ...string`, which rejects `5`,
+		// from the `"a" | ...` that would have accepted it. A union with no named
+		// member renders as the marker alone, since a leading `" | "` would read as an
+		// empty first member.
+		marker := "..."
+		if t.TailBound != nil {
+			// A union or intersection bound is parenthesized, since its `|` or `&` would
+			// otherwise bind past the `...` and `...string & ¬"a"` read back as a member
+			// of the enclosing union. The NegationType arm below parenthesizes for the
+			// same reason.
+			bound := describe(t.TailBound)
+			switch t.TailBound.(type) {
+			case *soltype.UnionType, *soltype.IntersectionType:
+				bound = "(" + bound + ")"
+			}
+			marker += bound
+		}
+		if len(t.Types) == 0 {
+			return marker
+		}
+		return s + " | " + marker
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
 	case *soltype.NegationType:
