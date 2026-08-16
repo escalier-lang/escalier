@@ -255,16 +255,32 @@ func TestFlattenUnionMergesTailBounds(t *testing.T) {
 }
 
 // A bound is part of a union's identity, so two unions that differ only in what their
-// tails admit are neither equal nor deduped into one.
+// tails admit are neither equal nor deduped into one, and they hold a stable place in
+// canonical order. compareType is what sortTypes consults, so an unstable answer there
+// would let one member list render two ways.
 func TestBoundedTailsCompareByTheirBound(t *testing.T) {
 	strBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
 	numBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, num())
 	unbounded := newUnion(nil, []soltype.Type{strLit("a")}, true)
 
-	require.True(t, equalType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
-	require.False(t, equalType(strBound, numBound))
-	require.False(t, equalType(strBound, unbounded))
-	require.False(t, equalType(strBound, unionT(strLit("a"))))
+	t.Run("equality reads the bound", func(t *testing.T) {
+		require.True(t, equalType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
+		require.False(t, equalType(strBound, numBound))
+		require.False(t, equalType(strBound, unbounded))
+		require.False(t, equalType(strBound, unionT(strLit("a"))))
+	})
+
+	t.Run("canonical order reads the bound", func(t *testing.T) {
+		// An unbounded tail sorts before a bounded one, so the two never compare equal and
+		// whichever way a caller hands them over they come back in one order.
+		require.Equal(t, -1, compareType(unbounded, strBound))
+		require.Equal(t, 1, compareType(strBound, unbounded))
+		// Two bounded tails order by their bounds, `number` before `string`.
+		require.Equal(t, 1, compareType(strBound, numBound))
+		require.Equal(t, -1, compareType(numBound, strBound))
+		// Identical bounds tie, which is what lets dedup drop one of them.
+		require.Equal(t, 0, compareType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
+	})
 }
 
 // TestNewUnionSubsumeWithContext covers the Context-gated subsumption step.

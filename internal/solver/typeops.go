@@ -1549,7 +1549,8 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		// the ones the access read, so the result union is open too (exact-types §7.6). A bounded
 		// tail says what those unlisted members are, so reading K off the bound reads it off every
 		// one of them at once, and the result's tail keeps whatever that read yields. A target
-		// naming no member of its own has only the bound to read.
+		// naming no member of its own has only the bound to read, and is the shape a set
+		// difference leaves when it excludes every named member.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, inexact)
@@ -1557,12 +1558,6 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		tail := tailOf(tgt)
 		if tail.bound != nil {
 			tail.bound = e.reduceIndex(tail.bound, idx, inexact)
-		}
-		if len(parts) == 0 && tail.bound == nil {
-			// An open target naming no member and bounding none. There is nothing to read K
-			// off, so the access stays symbolic rather than distributing over no member and
-			// answering `never`.
-			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 		}
 		return newUnionWithTail(nil, parts, tail)
 	case *soltype.IntersectionType:

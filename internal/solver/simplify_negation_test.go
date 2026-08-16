@@ -535,6 +535,33 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 		})
 	}
 
+	// A conditional over such a union runs entirely on the bound, since the bound is the only
+	// thing the union says. Whether it has an answer decides whether the conditional reduces
+	// at all, so both outcomes are stated here as solver types rather than as source, which
+	// has no syntax for a bounded tail to write the operand with.
+	t.Run("a check the bound answers uniformly reduces", func(t *testing.T) {
+		// `if (...string) : string { 1 } else { 2 }`. Every value the tail could hold is a
+		// string, so every member takes Then and the result's tail is bounded by `1`.
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: str(), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, "...1", soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("a check that splits the bound with no difference form stays symbolic", func(t *testing.T) {
+		// `if (...string) : "b" { 1 } else { 2 }`. Some strings are "b" and some are not, so
+		// the members do not agree on a branch. The conditional keeps neither branch and does
+		// not denote a set difference, so there is no answer to give and it stays as written.
+		// Unbounding the tail would leave a union with neither member nor bound, which
+		// collapses to `never`.
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: strLit("b"), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, `if ...string : "b" { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
+	})
+
 	// A key set that names keys is still enumerable, so the tail changes nothing about how a
 	// mapped type over it expands. This is the case the rules above must not catch.
 	t.Run("a named key still gets a field", func(t *testing.T) {
@@ -545,6 +572,49 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 		require.Empty(t, errs)
 		require.Equal(t, "{a: boolean, ...}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 	})
+}
+
+// The normalization layer reads a bounded tail as one more disjunct, so a decision about
+// which values the union admits sees the bound alongside the named members. The two probes
+// below are the two directions that reading is consulted from.
+func TestNormalizationReadsTheTailBound(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
+
+	// `"a"` is one of the strings the bound admits, so the two fuse and the whole union
+	// normalizes to `string`. An unbounded tail has no atom to fuse and stays whole.
+	t.Run("a bounded tail joins the disjuncts", func(t *testing.T) {
+		require.Equal(t, "string", soltype.Print(c.ctx.mkCNF(bounded, soltype.Positive).toType()))
+		require.Equal(t, "string", soltype.Print(c.ctx.mkDNF(bounded, soltype.Positive).toType()))
+	})
+
+	t.Run("an unbounded tail stays one atom", func(t *testing.T) {
+		open := newUnion(nil, []soltype.Type{strLit("a")}, true)
+		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkCNF(open, soltype.Positive).toType()))
+	})
+}
+
+// simplifyNegations weighs a bounded tail the way it weighs a named arm, so a complement that
+// rules out everything the bound admits empties the meet. An unbounded tail is top and no
+// complement can empty it, which TestSimplifyNegationsRefusesToCollapse pins on the other side.
+func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
+
+	// `("a" | ...string) & ¬string`. Both the named member and every value the tail could
+	// hold is a string, so nothing survives.
+	kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{bounded, negT(str())})
+	require.True(t, provedEmpty)
+	require.True(t, changed)
+	require.Empty(t, kept)
+}
+
+// peelBorrows strips the borrow wrapper off every member a union has, and the tail's bound is
+// one of them. A dropped bound would leave the peeled union unbounded, which is top.
+func TestPeelBorrowsReachesTheTailBound(t *testing.T) {
+	inner := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
+	peeled := peelBorrows(newBoundedUnion(nil, []soltype.Type{num()}, &soltype.RefType{Inner: inner}))
+	require.Equal(t, "number | ...{x: number}", soltype.Print(peeled))
 }
 
 // An indexed access over a key set or a target that names no member of its own. Both shapes
