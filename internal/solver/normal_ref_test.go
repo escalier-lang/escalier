@@ -263,8 +263,9 @@ func TestRefLifetimeCombination(t *testing.T) {
 	}
 }
 
-// TestRefMergeRecordsNoLifetimeBound holds the line normalization draws around the
-// lifetime sort: a merge READS the two lifetimes and never constrains them.
+// TestRefMergeRecordsNoLifetimeBound checks what a merge does to the lifetime
+// sort. It READS the two lifetimes and never constrains them, so it records no
+// outlives bound and mints no lifetime variable.
 //
 // Two things rest on that. constrainNF normalizes both operands before opening the
 // probe its derivation runs under, so a bound recorded during a merge would

@@ -1267,7 +1267,7 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // # What the lifetime sort does NOT fuse
 //
 // Two borrows over one pointee whose lifetimes are two distinct variables stay two
-// atoms. The tempting fusion is the single borrow over the JOIN of the two
+// atoms. The fusion ruled out here is the single borrow over the JOIN of the two
 // lifetimes, the `&'c mut T` with 'a and 'b each outliving 'c. A return uniting
 // two `mut` parameters produces exactly that borrow. It denotes strictly more than
 // `(&'a mut T) | (&'b mut T)` does, because it also admits a borrow valid for 'c
