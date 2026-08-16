@@ -3638,22 +3638,11 @@ func (c *checker) expandAliasChain(t soltype.Type) soltype.Type {
 	}
 }
 
-// caughtMembers returns the members one member of the caught union stands for, each weighed
-// against the catch arms on its own. A transparent alias, an enum handle or a `type`
-// reference, carries the alias rather than the type it names, so it is expanded, and a union
-// it expands to is taken apart member by member. The expansion repeats through both, since an
-// alias may name a union whose own members are aliases.
-//
-//	type Inner = "a" | "b"
-//	type Outer = Inner | "c"
-//
-// `Outer` yields `"a"`, `"b"`, and `"c"`. Stopping one level in would weigh the whole of
-// `Inner` against the arms, so an arm naming `"a"` alone would leave `Inner` uncovered and
-// rethrow `"b"` under the alias's name together with the `"a"` the arm did catch. Expanding
-// also keeps an aliased error type behaving like the union spelled inline, which is why
-// checkCondExhaustive expands as well.
-//
-// A member that is neither an alias nor a union is returned as it is.
+// caughtMembers returns the members one member of the caught union stands for, so each is
+// weighed against the catch arms on its own. It expands a transparent alias and takes a union
+// apart, and repeats through both, since an alias may name a union whose own members are
+// aliases. `type Outer = Inner | "c"` over `type Inner = "a" | "b"` yields `"a"`, `"b"`, and
+// `"c"`. A member that is neither an alias nor a union is returned as it is.
 func (c *checker) caughtMembers(t soltype.Type) []soltype.Type {
 	return c.appendCaughtMembers(nil, t, set.NewSet[string]())
 }
@@ -3690,20 +3679,10 @@ func unionParts(t soltype.Type) []soltype.Type {
 }
 
 // memberCaught reports whether the catch arms catch every value of one member of the caught
-// type, which is what keeps that member out of the rethrow. Two rules answer it, and the
-// member is caught when either does.
-//
-//  1. The set difference. handled is the type the arms catch, so the member is caught when
-//     `member ∩ ¬handled` holds no value. This rule reads through subtyping, so an arm naming
-//     a base class catches a subclass member whatever type arguments either side carries.
-//  2. The structural shape rule. An object or tuple pattern admits every value of a shape
-//     rather than of a type, so it has no entry in handled at all and structuralMemberCovered
-//     reads the shape against the member.
-//
-// Both rules only ever catch more, so a member neither answers is rethrown. That is the safe
-// direction. A clause naming a type the block cannot raise is still checked against the
-// enclosing clause, where a clause silent about one the block can raise would let an exception
-// escape unnamed.
+// type, which keeps that member out of the rethrow. Either of two rules answers it. The set
+// difference catches the member when `member ∩ ¬handled` holds no value, reading through
+// subtyping so a base-class arm catches a subclass member. structuralMemberCovered reads an
+// object or tuple pattern's shape, which names no type and so has no entry in handled.
 func (c *checker) memberCaught(member, handled soltype.Type, arms []*ast.MatchCase) bool {
 	return c.memberSubtracted(member, handled) ||
 		structuralMemberCovered(member, arms)
@@ -3780,27 +3759,11 @@ func allIrrefutable(pats []ast.Pat) bool {
 	return true
 }
 
-// memberSubtracted reports whether handled leaves nothing of one caught member, which is
-// what removes that member from the rethrow. The question it asks is whether the meet
-// `member ∩ ¬handled` holds a value, and the complement is what states that question to the
-// solver. The normal-form layer moves `¬handled` to the supertype side, so the trial runs as
-// `member <: handled` over fused atoms.
-//
-// A member is subtracted only when the trial binds none of the member's OWN type variables.
-// That is the fidelity boundary of the difference, and which side a binding lands on is what
-// it turns on.
-//
-//   - A binding on the member's side settles the member by choosing what it stands for, and
-//     the probe then rolls that choice back. Subtracting on the strength of it would drop a
-//     member the block can still raise under a different choice, so the member is kept.
-//   - A binding on the arm's side is the arm doing its job. An instance pattern tests the
-//     class alone, so `catch { Failure{payload} => … }` catches every `Failure`, and deciding
-//     `Timeout<number> <: Failure<T>` for T the class's own parameter is how the solver states
-//     that. Binding T is not a choice about the member.
-//
-// Watching the member's variables rather than every variable is what makes a generic class arm
-// behave like a non-generic one. `catch { AppError{code} => … }` and
-// `catch { Failure{payload} => … }` both catch a subclass member.
+// memberSubtracted reports whether handled leaves nothing of one caught member. The complement
+// states that question to the solver, which moves `¬handled` to the supertype side and runs the
+// trial as `member <: handled`. Only the member's OWN type variables are watched. Binding one
+// settles what the member stands for, so the member is kept. Binding the arm's is the arm doing
+// its job, and is what lets `catch { Failure{payload} => … }` catch a `Timeout<number>` member.
 func (c *checker) memberSubtracted(member, handled soltype.Type) bool {
 	// The intersection is built with a nil Context so its subsumption never calls constrain,
 	// the same reason capturedBound builds its result that way.
