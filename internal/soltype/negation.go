@@ -6,9 +6,23 @@ import "fmt"
 //
 // A borrow carries two sorts, and only the type sort is a Boolean algebra. The
 // outlives lattice has a join and a meet but no complement, so `¬'a` names nothing.
-// Lifetime coalescing also mis-classifies a borrow under a complement and drops its
-// name from the rendered signature. See escalier-lang/escalier#1125, which carries
-// the measurements and a fix for the second half.
+//
+// The decision procedure never asks for one. In constrainImplied a negated atom always
+// crosses the `<:` and lands as a positive atom on the other side, where it is met or
+// joined, and meetRefs and joinRefs already provide both. The polarity a borrow's
+// lifetime is read at does reach it under a complement, contrary to what the shape of
+// RefType.Accept suggests. NegationType.Accept flips the polarity before descending, and
+// every pass that reads a lifetime reads it off the RefType node in its own EnterType,
+// where the flip has already applied. The extruder is the clearest case, calling
+// extrudeLt with the polarity it was handed. Accept not walking Lt does not matter,
+// because no pass relies on Accept to reach it.
+//
+// What the exclusion still rules out is a residual complement that reduces no further.
+// The solver knows disjointness only inside the value families, which cover primitives,
+// literals, `null` and `undefined`. A borrow belongs to none of them, so `Exclude` over
+// one yields the same `T & ¬(&'a U)` it started with rather than a simplified type.
+// Widening valueFamilyOf is what would make lifting this worthwhile. See
+// escalier-lang/escalier#1125 for the measurements behind both halves.
 //
 // Negation INSIDE a borrow is allowed. A NegationType is not a RefInner, so the
 // complement sits under a union or an intersection, as in

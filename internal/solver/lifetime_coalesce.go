@@ -70,16 +70,38 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // structurally. A RefType lifetime is COVARIANT, since it lives on the wrapper, not
 // in the inner, so it is recorded in the borrow's own polarity. The mut-driven write
 // view that flips the inner never touches it.
+//
+// negDepth counts the complements enclosing the node being visited. It exists because
+// this pass reads polarity as dataflow rather than as variance. Negative means the
+// borrow originates at a parameter, so its lifetime is nameable, and positive means the
+// borrow reaches an output, so its lifetime must not be elided. NegationType.Accept
+// flips the polarity its operand is visited at, which is right for variance and wrong
+// for that reading. A complemented borrow in a return still lets a parameter's lifetime
+// reach the output, so the flip would report the parameter's lifetime as an output-only
+// lifetime and strip its name.
+//
+// Under a complement the two readings cannot be told apart from polarity alone, so a
+// lifetime found there is recorded in BOTH polarities. That names it and keeps it from
+// being elided. Claiming both is the safe direction, because eliding a lifetime under a
+// complement changes the type rather than merely dropping a name: `¬(&'a T)` rendered
+// as `¬(&T)` is the complement of any borrow of T, not of the 'a one.
 type ltOccVisitor struct {
-	occ map[*soltype.LifetimeVar]occPolarity
+	occ      map[*soltype.LifetimeVar]occPolarity
+	negDepth int
 }
 
 func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
+	if _, isNeg := t.(*soltype.NegationType); isNeg {
+		v.negDepth++
+	}
 	if r, ok := t.(*soltype.RefType); ok {
 		if lv, ok := r.Lt.(*soltype.LifetimeVar); ok {
-			if pol == soltype.Positive {
+			switch {
+			case v.negDepth > 0:
+				v.occ[lv] |= occPos | occNeg
+			case pol == soltype.Positive:
 				v.occ[lv] |= occPos
-			} else {
+			default:
 				v.occ[lv] |= occNeg
 			}
 		}
@@ -87,7 +109,14 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 	return soltype.EnterResult{}
 }
 
-func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
+// ExitType pops the complement EnterType pushed. The two stay balanced because this
+// visitor never sets SkipChildren, so Accept runs both halves for every node it enters.
+func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	if _, isNeg := t.(*soltype.NegationType); isNeg {
+		v.negDepth--
+	}
+	return t
+}
 
 // ltAnalysis is the precomputed input the rewriter reads: per-variable structural
 // occurrence, the condensed outlives graph the grouping is built from, the

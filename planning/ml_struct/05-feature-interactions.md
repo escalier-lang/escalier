@@ -49,17 +49,46 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   (`(mut 'a T) | (mut 'b T)`) is the M6 permissive-borrow-join case; it factors to
   `mut ('a | 'b) T` via the existing M4 D4 single-carrier logic, and normalization
   must reuse that rather than treating the two refs as un-mergeable.
-- **One subtle soundness watch-item: `¬Ref` and lifetime polarity.** Negation is
-  contravariant, so `¬(mut 'b T) <: ¬(mut 'a T)` when `'a` outlives `'b` — the
-  lifetime's outlives-direction should flip under negation. But the
-  `RefType.Accept` visitor deliberately does *not* walk the lifetime (it is a
-  separate sort handled by the lifetime passes), so the polarity-flip from
-  `NegationType.Accept` ([03-graft-sketch.md](03-graft-sketch.md) §4) would not
-  reach it. If `¬Ref` ever participates in constraint solving, the lifetime needs
-  its polarity flipped explicitly. Escalier's binding-based narrowing makes `¬Ref`
-  rare in practice — you narrow by rebinding, not by complementing a borrow — so
-  this is a "rule it out or handle it specially" item, not a pervasive hazard. Add
-  a guard either way.
+- **The lifetime polarity-flip under `¬Ref` already works.** Negation is
+  contravariant, so `¬(mut 'b T) <: ¬(mut 'a T)` when `'a` outlives `'b`, and the
+  lifetime's outlives-direction must flip under negation. It does.
+  `NegationType.Accept` ([03-graft-sketch.md](03-graft-sketch.md) §4) flips the
+  polarity *before* descending, and every pass that reads a lifetime reads it off
+  the `RefType` node in its own `EnterType`, where the flip has already applied.
+  `e.c.extrudeLt(r.Lt, pol, …)` in `internal/solver/constrain.go` is the clearest
+  case. `extrudeLt` wires the origin lifetime to its fresh proxy through the bound
+  direction the polarity picks — an upper bound at `Positive`, a lower bound at
+  `Negative`. Extruding `&'a T` from level 5 to level 0 at root `Positive` leaves
+  `'a` with `lower=0 upper=1`; extruding `¬(&'a T)` at the same root polarity leaves
+  it with `lower=1 upper=0`. That is the outlives direction flipping.
+  `RefType.Accept` not walking the lifetime turns out not to matter, because no pass
+  relies on `Accept` to reach it.
+  `TestComplementFlipsExtrudedLifetimeDirection` pins both rows.
+- **`¬Ref` is excluded for two other reasons.** `soltype.AssertNegatable` panics on
+  a borrow operand, and the guard stays for now.
+  1. **The outlives lattice is not a Boolean algebra**, so `¬'a` names nothing. The
+     decision procedure never asks for one: in `constrainImplied` a negated atom
+     always crosses the `<:` and lands as a positive atom on the other side, where
+     it is met or joined, and `meetRefs` / `joinRefs` already provide both.
+  2. **A residual `¬Ref` would not reduce.** The solver knows disjointness only
+     inside the value families, which cover primitives, literals, `null` and
+     `undefined`. `normal.go`'s `valueFamily` comment records that objects, tuples,
+     functions and class tags were left out. A borrow is in no family, so `Exclude`
+     over one yields the same `T & ¬(&'a U)` it started with. Lifting the exclusion
+     stops the panic without making the result useful; widening `valueFamilyOf` is
+     the other half of the work.
+
+  Display-time lifetime classification was a third blocker and is fixed.
+  `coalesceLifetimes` reads polarity as dataflow rather than as variance — negative
+  means the borrow originates at a parameter and so is nameable, positive means it
+  reaches an output and so must not be elided — and the complement's flip inverted
+  that reading, stripping the lifetime name off every complemented borrow.
+  `ltOccVisitor` now records a lifetime under a complement in both polarities, which
+  names it and keeps it. Eliding there changed the type rather than merely dropping a
+  name, since `¬(&'a T)` rendered as `¬(&T)` is the complement of *any* borrow of
+  `T`. The same relation feeds `checkDeclaredLifetimeBounds` through
+  `ltOutlivesRelation`, so the mis-reading also invented outlives bounds inference
+  never proved.
 
 ---
 
@@ -243,13 +272,14 @@ now exception narrowing in `try` / `catch`. Wherever Escalier currently has a
 conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
-unchanged — with the single `¬Ref`-lifetime-polarity guard as the one soundness
-item to verify. Function overloading is the lone counter-current: there the
+unchanged. `¬Ref` stays excluded, because the outlives lattice has no complement
+and a residual `¬Ref` would not reduce, not because the polarity flip fails to
+reach the lifetime. Function overloading is the lone counter-current: there the
 inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |
 |---|---|
-| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). Watch-item: `¬Ref` must flip lifetime polarity, which `Accept` does not walk. |
+| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` stays excluded: `¬'a` names nothing and a residual `¬Ref` would not reduce until `valueFamilyOf` widens. The polarity flip does reach the lifetime. |
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
 | Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |

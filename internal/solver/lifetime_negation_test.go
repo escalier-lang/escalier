@@ -1,0 +1,232 @@
+package solver
+
+import (
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// negRef complements a borrow, building the `¬(&'a mut {x: number})` these tests need.
+// It builds the NegationType node directly rather than calling soltype.NewNegation,
+// which enforces the ¬Ref exclusion invariant and panics on a borrow operand. The
+// invariant still holds for the solver, so no source program produces this shape. The
+// display passes must classify it correctly before the invariant can be lifted, and
+// building the node here is what lets these tests run ahead of that.
+func negRef(lt soltype.Lifetime) soltype.Type {
+	return &soltype.NegationType{Inner: mutPointRef(lt)}
+}
+
+// A complement flips the polarity its operand is visited at. coalesceLifetimes reads
+// polarity as dataflow rather than as variance, so the flip tells it a parameter's
+// borrow reaches an output and an output's borrow originates at a parameter. Read that
+// way, a complemented borrow's lifetime is neither named nor kept, and every row below
+// renders `¬&mut {x: number}` with the name stripped.
+//
+// Eliding there is not merely a lost name, it is a different type. `¬(&'a T)` rendered
+// as `¬(&T)` is the complement of any borrow of T rather than of the 'a one. So
+// ltOccVisitor records a lifetime under a complement in both polarities, which names it
+// and keeps it.
+func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+
+	tests := []struct {
+		name string
+		// build returns the signature under test, given one param lifetime to hang
+		// borrows off.
+		build func(a *soltype.LifetimeVar) *soltype.FuncType
+		want  string
+	}{
+		{
+			// The uncomplemented baseline: a borrow in and the same borrow out, which
+			// already renders under one name.
+			name:  "borrow param to borrow return",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType { return borrowFn(mutPointRef(a), a) },
+			want:  "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		},
+		{
+			// The complement sits in the return, so the parameter's lifetime still
+			// reaches an output and the signature must keep recording that connection.
+			name:  "borrow param to complemented return",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType { return borrowFn(negRef(a), a) },
+			want:  "fn <'a>(p: &'a mut {x: number}) -> ¬&'a mut {x: number}",
+		},
+		{
+			name: "complemented return with no param",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
+				return &soltype.FuncType{Ret: negRef(a)}
+			},
+			want: "fn <'a>() -> ¬&'a mut {x: number}",
+		},
+		{
+			name: "complemented param to non-borrow return",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
+				return &soltype.FuncType{
+					Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: negRef(a)}},
+					Ret:    num,
+				}
+			},
+			want: "fn <'a>(p: ¬&'a mut {x: number}) -> number",
+		},
+		{
+			// The worst row. Stripping the name here leaves a returned borrow with no
+			// named source, which is what D4's elision exists to prevent, since it hides
+			// a borrow at the call site.
+			name: "complemented param to borrow return",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
+				return &soltype.FuncType{
+					Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: negRef(a)}},
+					Ret:    mutPointRef(a),
+				}
+			},
+			want: "fn <'a>(p: ¬&'a mut {x: number}) -> &'a mut {x: number}",
+		},
+		{
+			// The control. Recording both polarities under a complement must not make
+			// every borrow survive elision, so an uncomplemented borrow reaching no
+			// output still renders with its lifetime elided.
+			name: "uncomplemented connect-nothing borrow still elides",
+			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
+				return borrowFn(num, a)
+			},
+			want: "fn (p: &mut {x: number}) -> number",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			a := c.ctx.freshLifetime(0)
+			require.Equal(t, tt.want, renderScheme(&MonoScheme{Ty: tt.build(a)}))
+		})
+	}
+}
+
+// Two complements around one borrow cancel, and the coalescer folds `¬¬T` to T before
+// the lifetime pass runs, so that shape never reaches the occurrence walk. Nesting does
+// reach it through an intervening former. Here a complement encloses a function whose
+// parameter is itself a complemented borrow, so the walk sees two complements and two
+// polarity flips that cancel back to the negative position the borrow structurally sits
+// in.
+//
+// Recording both polarities under any enclosing complement is coarser than un-flipping
+// the cancelled pair would be. It over-names, which is the safe direction: a name that
+// could have been elided still denotes the same type, while an elision does not.
+func TestNestedComplementsKeepLifetimeName(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	inner := &soltype.FuncType{
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "q"}, Type: negRef(a)}},
+		Ret:    num,
+	}
+	fn := borrowFn(&soltype.NegationType{Inner: inner}, a)
+
+	require.Equal(t,
+		"fn <'a>(p: &'a mut {x: number}) -> ¬(fn (q: ¬&'a mut {x: number}) -> number)",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// The coalescer folds `¬¬T` to T, so a borrow under two immediately-nested complements
+// reaches the lifetime pass with no complement around it at all and takes the ordinary
+// polarity reading.
+func TestDoubleComplementFoldsBeforeLifetimePass(t *testing.T) {
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	fn := borrowFn(&soltype.NegationType{Inner: negRef(a)}, a)
+
+	require.Equal(t,
+		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// The polarity flip a complement applies does reach a borrow's lifetime, even though
+// RefType.Accept never walks it. NegationType.Accept flips the polarity before
+// descending, and the extruder reads the lifetime off the RefType node in its own
+// EnterType, where the flip has already applied.
+//
+// extrudeLt wires the origin lifetime to its fresh proxy through the bound direction
+// the polarity picks. At Positive the proxy becomes an upper bound of the origin, and
+// at Negative a lower bound. So extruding the same borrow from level 5 to level 0 at
+// one root polarity leaves the origin with opposite bounds depending on whether a
+// complement encloses it, which is the outlives direction flipping.
+func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
+	tests := []struct {
+		name              string
+		complemented      bool
+		wantLow, wantHigh int
+	}{
+		{name: "bare borrow", complemented: false, wantLow: 0, wantHigh: 1},
+		{name: "complemented borrow", complemented: true, wantLow: 1, wantHigh: 0},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			a := c.ctx.freshLifetime(5)
+			var ty soltype.Type = mutPointRef(a)
+			if tt.complemented {
+				ty = &soltype.NegationType{Inner: ty}
+			}
+			require.Equal(t, 5, soltype.LevelOf(ty),
+				"the borrow must be inner to the extrusion level, or the walk prunes it")
+
+			e := &extruder{
+				c:       c.ctx,
+				lvl:     0,
+				cache:   map[extrudeKey]*soltype.TypeVarType{},
+				ltCache: map[ltExtrudeKey]*soltype.LifetimeVar{},
+			}
+			ty.Accept(e, soltype.Positive)
+
+			require.Len(t, a.LowerBounds, tt.wantLow)
+			require.Len(t, a.UpperBounds, tt.wantHigh)
+		})
+	}
+}
+
+// ltOutlivesRelation feeds the declared-bound check as well as the printer, so the
+// mis-classification reaches further than rendering. A lifetime read as an output-only
+// lifetime is taken for a multi-source join, and componentParams then reports every
+// param in the join's connected component as outliving it. That invents outlives
+// relations inference never proved.
+//
+// 'm is an instantiation intermediary outliving 'a, 'b and 'd, which puts all four in
+// one connected component while leaving no directed edge among 'a, 'b and 'd. Reading
+// the complemented 'd as a join over 'a and 'b would assert `'a: 'd` and `'b: 'd`, and
+// checkDeclaredLifetimeBounds would accept a declared `<'a: 'd>` the body never
+// establishes. Classifying 'd as a param instead leaves the relation empty.
+func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
+	c := newChecker()
+	m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
+	a := c.ctx.freshLifetime(0)
+	b := c.ctx.freshLifetime(0)
+	d := c.ctx.freshLifetime(0)
+	c.ctx.constrainLt(m, a)
+	c.ctx.constrainLt(m, b)
+	c.ctx.constrainLt(m, d)
+
+	fn := &soltype.FuncType{
+		Params: []*soltype.FuncParam{
+			{Pattern: &soltype.IdentPat{Name: "p"}, Type: mutPointRef(a)},
+			{Pattern: &soltype.IdentPat{Name: "q"}, Type: mutPointRef(b)},
+			{Pattern: &soltype.IdentPat{Name: "r"}, Type: negRef(d)},
+		},
+		Ret: &soltype.PrimType{Prim: soltype.NumPrim},
+	}
+
+	_, survivors, outlives := ltOutlivesRelation(fn, soltype.Positive)
+	require.Len(t, survivors, 3)
+	for _, u := range survivors {
+		for _, w := range survivors {
+			require.False(t, outlives(u, w),
+				"no outlives relation holds among the three param lifetimes")
+		}
+	}
+
+	// The rendered signature carries the same fact: three independent names and no
+	// bound in the quantifier prefix.
+	require.Equal(t,
+		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: ¬&'c mut {x: number}) -> number",
+		renderScheme(&MonoScheme{Ty: fn}))
+}
