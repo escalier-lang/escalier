@@ -69,6 +69,9 @@ func tailOf(u *soltype.UnionType) unionTail {
 // nested union's members into the outer list. Two bounded tails join their bounds,
 // since `...string | ...number` may hold a member of either. An unbounded tail absorbs
 // a bounded one, since nothing says what the unbounded one holds.
+//
+// keyofUnion is the other caller, and the join is wider than that reduction wants, since
+// a key set of a union is a meet. The doc comment there records the gap.
 func (t unionTail) merge(other unionTail) unionTail {
 	if !other.open {
 		return t

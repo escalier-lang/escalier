@@ -1330,12 +1330,12 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // records that the true key set may be larger.
 //
 // The tail's bound is wider than the operand allows. This reduction is a MEET of key sets, so an
-// unnamed shared key has to be a key of every member, and the example above bounds its tail by
-// `string` where only "a" is possible: the first member is exact, so no key outside {"a", "shared"}
-// is a key of it. Bounding the tail by the exact members' key sets is what would close that gap.
-// The bound is still narrower than the unbounded tail the reduction would otherwise leave, which
-// admits every value, so `"zz"` reads as a possible key here where before it read as a possible
-// anything. escalier-lang/escalier#1126 tracks tightening it.
+// unnamed shared key has to be a key of every member. The example above bounds its tail by
+// `string` where only "a" is possible. Its first member is exact, so no key outside "a" and
+// "shared" is a key of that member, and "shared" is already named. Bounding the tail by the exact
+// members' key sets is what would close the gap. The bound still admits less than the unbounded
+// tail the reduction leaves without it, which admits every value at all, so this is an imprecise
+// answer rather than a useless one. escalier-lang/escalier#1126 tracks tightening it.
 //
 // Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
 // own operands are not ground. Such a member reduces to a `keyof` residual, and the rule this whole
@@ -1352,8 +1352,8 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 	var residuals []soltype.Type
 	seeded := false
 	// The result's tail is open when the operand union's is, since an unlisted member
-	// carries keys the reduction cannot read. It takes no bound from that member: the
-	// operand's own bound is over VALUES and this tail is over KEYS, and an unlisted
+	// carries keys the reduction cannot read. It takes no bound from that member. The
+	// operand's own bound is over VALUES where this tail is over KEYS, and an unlisted
 	// member could be an object or a tuple, so nothing says whether its keys are names
 	// or positions. Each member's own key set then merges in, and a member that is an
 	// inexact object brings the `string` bound its keys carry.

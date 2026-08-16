@@ -469,7 +469,7 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 }
 
 // Excluding the one key an inexact object names leaves a key set with no named member, so what
-// the tail admits is the whole answer. The bound is where the exclusion has to land: a tail that
+// the tail admits is the whole answer. The bound is where the exclusion has to land. A tail that
 // kept `string` whole would take back the very key the exclusion removed.
 func TestExcludingEveryNamedKeyStillRejectsIt(t *testing.T) {
 	nodes, ctx, errs := inferTypeNodes(t, `
@@ -487,10 +487,10 @@ func TestExcludingEveryNamedKeyStillRejectsIt(t *testing.T) {
 	require.False(t, subtypeHolds(c.ctx, numLit(5), rest), "the bound still rules out a non-string")
 }
 
-// A union that names no member and bounds its tail is a shape only the type operators mint,
-// and every rule that runs over a union's members has to notice that the members it can see
-// are not all there are. Reading the empty list as "nothing" answers `never` or `{}`, both of
-// which claim the union is empty when it is only unenumerated.
+// A union that names no member and bounds its tail is a shape only the type operators mint.
+// Every rule that runs over a union's members has to notice that the members it can see are
+// not all there are. Reading the empty list as "nothing" answers `never` or `{}`, and both
+// claim the union is empty when it is only unenumerated.
 //
 // Each case here reduces such a union through a different operator. `Drop<keyof Obj, "a">` is
 // `...(string & ¬"a")`, the string keys of an inexact one-key object other than the one it names.

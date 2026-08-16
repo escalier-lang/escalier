@@ -2999,12 +2999,13 @@ func describe(t soltype.Type) string {
 		if !t.Inexact {
 			return s
 		}
-		// An inexact union has an open tail. Append the marker so a diagnostic naming
-		// the union matches the printer's surface form, and append the tail's bound
-		// after it so a diagnostic distinguishes `"a" | ...string`, which rejects `5`,
-		// from the `"a" | ...` that would have accepted it. A union with no named
-		// member renders as the marker alone, since a leading `" | "` would read as an
-		// empty first member.
+		// An inexact union has an open tail. The marker follows the members so a
+		// diagnostic naming the union matches the printer's surface form. The tail's
+		// bound follows the marker, since the bound is what decides the constraint.
+		// `"a" | ...string` rejects `5` where `"a" | ...` accepts it, and a message
+		// rendering both the same way leaves the reader no way to tell which rule
+		// fired. A union with no named member renders as the marker alone, since a
+		// leading `" | "` would read as an empty first member.
 		marker := "..."
 		if t.TailBound != nil {
 			// A union or intersection bound is parenthesized, since its `|` or `&` would
