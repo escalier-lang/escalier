@@ -36,7 +36,11 @@ import (
 //     an answer, and it reduces to the filter's answer once the variable grounds to a union whose
 //     members are each inside or disjoint from V.
 //
-// The fork is therefore only reachable where the filter produced nothing at all.
+// Where the filter has an answer, that is the answer, so the two readings never disagree on the
+// same operand. The difference is reached only where the filter is stuck.
+//
+// The rewrite is not sticky either. An alias body is stored unreduced, so a later instantiation
+// with a ground argument reduces from the conditional again and takes the filter.
 
 // reduceIntersection reduces a meet. A meet carrying a complement is a set difference, which
 // reduceDifference settles. Any other meet has its members reduced in place, so a member that is
