@@ -158,23 +158,20 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	if !folded {
 		base = newIntersection(nil, positives)
 	}
-	unreduced := func() soltype.Type {
-		return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))
-	}
-	if !groundDifference(base, excluded) {
-		return unreduced()
-	}
-	baseMembers, inexact := unionMembers(base)
-	survivors := make([]soltype.Type, 0, len(baseMembers))
-	for _, m := range baseMembers {
-		if narrowed, keep := e.excludeFrom(m, excluded); keep {
-			survivors = append(survivors, narrowed)
+	if groundDifference(base, excluded) {
+		baseMembers, inexact := unionMembers(base)
+		survivors := make([]soltype.Type, 0, len(baseMembers))
+		for _, m := range baseMembers {
+			if narrowed, keep := e.excludeFrom(m, excluded); keep {
+				survivors = append(survivors, narrowed)
+			}
+		}
+		// A tail with no surviving member to ride on falls through to the residual below.
+		if len(survivors) > 0 || !inexact {
+			return newUnion(nil, survivors, inexact)
 		}
 	}
-	if len(survivors) == 0 && inexact {
-		return unreduced()
-	}
-	return newUnion(nil, survivors, inexact)
+	return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))
 }
 
 // excludeFrom settles one member of a difference's positive side against every excluded type. It
