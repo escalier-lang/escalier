@@ -3969,14 +3969,43 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
 	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
 	// union narrows to precisely the members that matched.
-	if len(kept) == 1 && !u.Inexact {
+	tail := tailOf(u)
+	if tail.bound != nil && atomicShape(tail.bound) && !keep(tail.bound) {
+		// No value the bound admits has the shape the test asks for, so the tail contributes
+		// no member to this branch and goes. See atomicShape for why only an atomic bound may
+		// be decided this way.
+		tail = unionTail{}
+	}
+	if len(kept) == 1 && !tail.open {
 		return kept[0], true
 	}
 	// Keep the structured inexact union rather than returning `unknown`. It is the bind
 	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
 	// read each field before the tail widens it. Binding against bare `unknown` would leave
 	// nothing to destructure.
-	return &soltype.UnionType{Types: kept, Inexact: u.Inexact, TailBound: u.TailBound}, true
+	return &soltype.UnionType{Types: kept, Inexact: tail.open, TailBound: tail.bound}, true
+}
+
+// atomicShape reports whether every value t admits has t's own shape, so a shape test over t
+// answers for each of those values at once. A primitive and a literal are the two, since a
+// string is a string however it was written.
+//
+// Nothing else qualifies, and the gate is what keeps narrowUnionMembers from over-narrowing.
+// The `keep` predicates it takes are shape tests over one MEMBER, and a bound is not a member
+// but the set its members are drawn from. Reading a bound's own failure as every member's
+// would be wrong for a bound whose members can differ in shape from it. A bound of
+// `{kind: string}` fails an object test for some other key while a member drawn from it may
+// carry that key, and a union bound fails every object test while its members need not.
+// Deciding those needs a disjointness question, which is a subtype check, and
+// narrowUnionMembers holds no Context to ask one. Such a tail is kept, which is the wider
+// answer and the safe one.
+func atomicShape(t soltype.Type) bool {
+	switch t.(type) {
+	case *soltype.PrimType, *soltype.LitType:
+		return true
+	default:
+		return false
+	}
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether

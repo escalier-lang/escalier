@@ -884,8 +884,7 @@ type UnknownType struct{}
 // members the type does not name. The flag is Inexact rather than Exact so the
 // zero value is exact, matching the ObjectType, TupleType, and FuncType
 // convention. IntersectionType carries no exactness flag, since exactness is a
-// property of the result rather than the meet. The flag and the smart
-// constructors land with M6 PR1.
+// property of the result rather than the meet.
 //
 // TailBound says what the tail's unnamed members may be. See the field comment.
 type UnionType struct {

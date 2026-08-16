@@ -136,8 +136,8 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // contribute, so `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`. When no named member survives
 // either, the difference stays as it stands, since neither answer available is the one the
 // reduction means. `newUnion` over an empty member list is `never`, which would claim the tail is
-// empty too. Reading the open union as `unknown` — which is what it is for subtyping, since an
-// unbounded tail accepts every value — would answer `¬X`, and that is wrong for the key sets this
+// empty too. For subtyping the open union is `unknown`, since an unbounded tail accepts every
+// value. Reading it that way here would answer `¬X`, and that is wrong for the key sets this
 // reduction mostly serves.
 //
 // A bounded tail draws its members from its bound, so excluding from the bound excludes from every

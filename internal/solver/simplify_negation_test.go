@@ -589,8 +589,10 @@ func TestNormalizationReadsTheTailBound(t *testing.T) {
 	})
 
 	t.Run("an unbounded tail stays one atom", func(t *testing.T) {
+		// mkDNF and mkCNF each carry their own unbounded-tail guard, so both are probed.
 		open := newUnion(nil, []soltype.Type{strLit("a")}, true)
 		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkCNF(open, soltype.Positive).toType()))
+		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkDNF(open, soltype.Positive).toType()))
 	})
 }
 
@@ -615,6 +617,45 @@ func TestPeelBorrowsReachesTheTailBound(t *testing.T) {
 	inner := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
 	peeled := peelBorrows(newBoundedUnion(nil, []soltype.Type{num()}, &soltype.RefType{Inner: inner}))
 	require.Equal(t, "number | ...{x: number}", soltype.Print(peeled))
+}
+
+// Narrowing a union to the members a pattern can destructure weighs the tail's bound too, but
+// only where the bound answers for every member drawn from it. The `keep` predicate is a shape
+// test over one member, and a bound is the set its members come from, so the two coincide for
+// an atomic bound and part ways for a structured one.
+func TestNarrowUnionMembersWeighsTheTailBound(t *testing.T) {
+	objA := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("a", num())}}
+	objB := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("b", str())}}
+	// keepA stands for an object pattern `{a}`: it accepts a member carrying the key "a".
+	keepA := func(m soltype.Type) bool { return objectMemberHasKeys(m, []string{"a"}) }
+
+	t.Run("an atomic bound no member of which fits is dropped", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...string`. Every value the tail holds is a string, and
+		// no string carries the key "a", so the tail contributes nothing to this branch.
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, str())
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("a structured bound is kept", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...{b: string}`. The bound itself carries no "a", but a
+		// member drawn from it may, so deciding the tail needs a disjointness question
+		// narrowUnionMembers cannot ask. It keeps the tail, which is the wider answer.
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objB)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ...{b: string}", soltype.Print(narrowed))
+	})
+
+	t.Run("an unbounded tail is kept", func(t *testing.T) {
+		// Nothing says what the tail holds, so it survives every narrowing, which is the rule
+		// the field-read path already depends on.
+		u := newUnion(nil, []soltype.Type{objA, objB}, true)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ...", soltype.Print(narrowed))
+	})
 }
 
 // An indexed access over a key set or a target that names no member of its own. Both shapes
