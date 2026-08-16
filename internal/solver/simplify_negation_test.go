@@ -238,11 +238,19 @@ func TestNewNegation(t *testing.T) {
 		{"never", &soltype.NeverType{}, "unknown"},
 		{"unknown", &soltype.UnknownType{}, "never"},
 		{"double complement", negT(str()), "string"},
-		// An inexact union accepts every value, so its complement accepts none.
+		// A union whose open tail carries no bound accepts every value, so its complement
+		// accepts none.
 		{"open union", newUnion(nil, []soltype.Type{boolT(), str()}, true), "never"},
 		{"primitive", str(), "¬string"},
 		// A closed union bounds its members, so its complement is a real type.
 		{"closed union", unionT(str(), num()), "¬(number | string)"},
+		// So does a bounded tail. `¬("a" | ...string)` admits `5`, which is exactly what the
+		// fold above would have thrown away.
+		{
+			"bounded open union",
+			newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
+			`¬("a" | ...string)`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -251,10 +259,13 @@ func TestNewNegation(t *testing.T) {
 	}
 }
 
-// An inexact union is the top of the subtype lattice, and two passes now depend on that.
-// newNegation folds `¬(A | B | ...)` to `never`, and simplifyNegations collapses a meet
-// carrying such a complement. Both rest on the probes below, so they are pinned here
-// rather than left to a comment.
+// A union whose open tail carries no bound is the top of the subtype lattice, and two
+// passes depend on that. newNegation folds `¬(A | B | ...)` to `never`, and
+// simplifyNegations collapses a meet carrying such a complement. Both rest on the probes
+// below, so they are pinned here rather than left to a comment.
+//
+// TestBoundedTailIsNotTop is the counterpart. Writing a bound on the tail is what takes
+// the union out of the top position these probes put it in.
 //
 // The second subtest is the step from top-ness to the fold: if `boolean | ...` accepts
 // every value then nothing satisfies `¬(boolean | ...)`.
@@ -305,6 +316,79 @@ func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
 
 		_, _, errs = inferSource(t, `fn g(u: unknown) { return u.x }`)
 		require.Equal(t, []string{"1:27-1:30: cannot constrain unknown <: object"}, messagesWithSpan(errs))
+	})
+}
+
+// Writing a bound on the open tail takes the union out of the top position
+// TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ...string` names "a" and draws every
+// other member it has from `string`, so a value outside `string` is outside the union.
+//
+// Each probe below has a counterpart in that test that answers the other way, which is
+// what makes the bound the thing that changed rather than some difference in the shapes.
+func TestBoundedTailIsNotTop(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ...string
+
+	t.Run("the bound decides what is below the union", func(t *testing.T) {
+		probes := []struct {
+			name     string
+			sub, sup soltype.Type
+			want     bool
+		}{
+			// A value the bound admits may be one of the tail's members.
+			{"a named member is below it", strLit("a"), bounded, true},
+			{"another string is below it", strLit("z"), bounded, true},
+			{"the bound itself is below it", str(), bounded, true},
+			// A value the bound rejects cannot be, which is where the unbounded tail
+			// answered true for every sub.
+			{"a number literal is not below it", numLit(5), bounded, false},
+			{"a number is not below it", num(), bounded, false},
+			{"unknown is not below it", &soltype.UnknownType{}, bounded, false},
+		}
+		for _, p := range probes {
+			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
+		}
+	})
+
+	// The complement is inhabited, so newNegation has something to wrap. This is the probe
+	// behind `¬keyof {a: X, ...}` rejecting `5` rather than reducing to `never`.
+	t.Run("its complement is inhabited", func(t *testing.T) {
+		require.True(t, subtypeHolds(c.ctx, numLit(5), negT(bounded)))
+		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
+	})
+}
+
+// keyof over an inexact object or tuple is the one site that mints a bounded tail today,
+// and the bound is decided by what kind of key the operand has. An object's unlisted keys
+// are property names and a tuple's are positions, so the two take different bounds.
+func TestKeyofBoundsItsOpenTail(t *testing.T) {
+	c := newChecker()
+	keysOf := func(t *testing.T, src string) soltype.Type {
+		t.Helper()
+		nodes, ctx, errs := inferTypeNodes(t, src)
+		require.Empty(t, errs)
+		return expandAliasResidual(ctx, nodes["Result"])
+	}
+
+	t.Run("an object's tail is bounded by string", func(t *testing.T) {
+		keys := keysOf(t, `
+			type Obj = {a: number, ...}
+			type Result = keyof Obj
+		`)
+		require.Equal(t, `"a" | ...string`, soltype.Print(keys))
+		// `5` is plainly not a key of that object, which an unbounded tail could not say.
+		require.False(t, subtypeHolds(c.ctx, numLit(5), keys))
+		require.True(t, subtypeHolds(c.ctx, strLit("b"), keys))
+	})
+
+	t.Run("a tuple's tail is bounded by number", func(t *testing.T) {
+		keys := keysOf(t, `
+			type Tup = [number, ...]
+			type Result = keyof Tup
+		`)
+		require.Equal(t, "0 | ...number", soltype.Print(keys))
+		require.False(t, subtypeHolds(c.ctx, strLit("a"), keys))
+		require.True(t, subtypeHolds(c.ctx, numLit(1), keys))
 	})
 }
 

@@ -171,6 +171,29 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},
 		// An inexact union renders a trailing `...` entry.
 		{"inexact union", &UnionType{Types: []Type{numP(), strP()}, Inexact: true}, "number | string | ..."},
+		// A bounded tail renders its bound after the marker. The bound prints at precPrefix,
+		// so an atom stays bare and an intersection is parenthesized under the `...`.
+		{
+			"bounded tail",
+			&UnionType{Types: []Type{numP()}, Inexact: true, TailBound: strP()},
+			"number | ...string",
+		},
+		{
+			"bounded tail over a compound bound",
+			&UnionType{
+				Types:     []Type{numP()},
+				Inexact:   true,
+				TailBound: &IntersectionType{Types: []Type{strP(), &NegationType{Inner: strP()}}},
+			},
+			"number | ...(string & ¬string)",
+		},
+		// A bounded tail with no named member is the whole union, which is what a set
+		// difference that excludes every named member leaves.
+		{
+			"bounded tail with no named member",
+			&UnionType{Inexact: true, TailBound: strP()},
+			"...string",
+		},
 		// NullType renders as `null`. It is a distinct atomic kind from UndefinedType.
 		{"null atom", &NullType{}, "null"},
 		{"intersection pair", &IntersectionType{Types: []Type{numP(), strP()}}, "number & string"},

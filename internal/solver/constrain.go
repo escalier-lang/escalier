@@ -738,15 +738,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// commits `number` and never touches T. `"hi" <: (T | number)` finds no concrete
 	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
-		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
-			// An open tail has no atom to stand for it, so the layer hands a union that
-			// carries one straight back and weighs no member at all. The decision runs
-			// against the members with the tail dropped, and the tail rule below catches
-			// what they miss. Splicing the members out of any nested union first is what
-			// keeps a nested tail from putting the flag straight back.
+		// A bounded tail is weighed even with no named member beside it, since `...string`
+		// admits every string on the tail's strength alone.
+		hasCandidate := len(supU.Types) > 0 || supU.TailBound != nil
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && hasCandidate {
+			// An unbounded tail has no atom to stand for it, so the layer hands a union
+			// that carries one straight back and weighs no member at all. The decision
+			// runs against the members with the tail dropped, and the tail rule below
+			// catches what they miss. Splicing the members out of any nested union first
+			// is what keeps a nested tail from putting the flag straight back.
+			//
+			// A bounded tail stays on, since the normal-form layer takes it apart into one
+			// more disjunct and so decides the whole union in one go.
 			named := super
-			if supU.Inexact {
-				flat, _ := flattenUnion(supU.Types, false)
+			if supU.Inexact && supU.TailBound == nil {
+				flat, _ := flattenUnion(supU.Types, unionTail{})
 				named = newUnion(nil, flat, false)
 			}
 			decision := c.constrainNF(sub, named, seen, mutCtx)
@@ -778,11 +784,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				}
 				return diags
 			}
-			if supU.Inexact {
-				// An inexact union super has an open, unknown-typed tail. A sub that
-				// matches no named member is subsumed by that tail, so accept it. This
-				// is the dual of the union-sub arm above, which rejects an inexact sub
-				// into a closed super because that open tail can't be absorbed.
+			if supU.Inexact && supU.TailBound == nil {
+				// An unbounded tail admits every value, so a sub that matches no named
+				// member is subsumed by that tail and the constraint holds. This is the
+				// dual of the union-sub arm above, which rejects an inexact sub into a
+				// closed super because that open tail can't be absorbed.
+				//
+				// A bounded tail admits only what its bound does, and the decision above
+				// already weighed the bound, so a sub that got here is outside it. Fall
+				// through to the error.
 				return nil
 			}
 			// No candidate holds, the var members included, and the decomposition's own

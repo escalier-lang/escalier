@@ -492,9 +492,10 @@ func isNegation(t soltype.Type) bool {
 	return ok
 }
 
-// isInexactUnion reports whether t is a union with an open tail, the one supertype
-// normalization hands back whole.
+// isInexactUnion reports whether t is a union with an unbounded open tail, the one
+// supertype normalization hands back whole. A bounded tail contributes its bound as one
+// more disjunct, so such a union is taken apart and never reaches a candidate list.
 func isInexactUnion(t soltype.Type) bool {
 	u, ok := t.(*soltype.UnionType)
-	return ok && u.Inexact
+	return ok && u.Inexact && u.TailBound == nil
 }

@@ -1500,10 +1500,18 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
 		// Inexact flags must match, since an open union never equals a closed
-		// one. newUnion imposes canonical member order at construction, so the
-		// positional equalTypeSliceWith is order-stable and two unions over the
-		// same member set compare equal whatever order their members were minted in.
-		return ok && a.Inexact == b.Inexact && equalTypeSliceWith(a.Types, b.Types, ctx)
+		// one, and so must the tails' bounds, since `"a" | ...string` admits values
+		// `"a" | ...number` rejects. newUnion imposes canonical member order at
+		// construction, so the positional equalTypeSliceWith is order-stable and two
+		// unions over the same member set compare equal whatever order their members
+		// were minted in.
+		if !ok || a.Inexact != b.Inexact || (a.TailBound == nil) != (b.TailBound == nil) {
+			return false
+		}
+		if a.TailBound != nil && !equalTypeWith(a.TailBound, b.TailBound, ctx) {
+			return false
+		}
+		return equalTypeSliceWith(a.Types, b.Types, ctx)
 	case *soltype.IntersectionType:
 		b, ok := b.(*soltype.IntersectionType)
 		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)

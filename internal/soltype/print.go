@@ -998,12 +998,20 @@ func (p *namedPrinter) printType(t Type) string {
 		// An inexact union renders a trailing `...` entry, so a union typed
 		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
 		// object, and function arms render their flag the same way.
+		//
+		// A bounded tail renders its bound after the marker, so `"a" | ...string`
+		// says the unnamed members are strings. The bound prints at precPrefix, so a
+		// looser bound such as an intersection is parenthesized under the `...`.
 		parts := make([]string, 0, len(t.Types)+1)
 		for _, m := range t.Types {
 			parts = append(parts, p.printTypeMinPrec(m, precUnion))
 		}
 		if t.Inexact {
-			parts = append(parts, "...")
+			marker := "..."
+			if t.TailBound != nil {
+				marker += p.printTypeMinPrec(t.TailBound, precPrefix)
+			}
+			parts = append(parts, marker)
 		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:

@@ -209,6 +209,64 @@ func TestNewUnionInexactPrintRoundTrip(t *testing.T) {
 	require.Equal(t, "number | string | ...", soltype.Print(u))
 }
 
+// Splicing a nested union carries its tail out to the outer union, and the two tails
+// merge. The bound says what the tail's unnamed members may be, so a union that swallows
+// another inherits whatever the swallowed one could hold.
+func TestFlattenUnionMergesTailBounds(t *testing.T) {
+	strTail := func(parts ...soltype.Type) soltype.Type { return newBoundedUnion(nil, parts, str()) }
+	numTail := func(parts ...soltype.Type) soltype.Type { return newBoundedUnion(nil, parts, num()) }
+
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		want  string
+	}{
+		{
+			// A nested bounded tail with no other tail to meet comes through as written.
+			name:  "a lone bounded tail carries out",
+			parts: []soltype.Type{numLit(1), strTail(strLit("a"))},
+			want:  `1 | "a" | ...string`,
+		},
+		{
+			// Two bounded tails join their bounds, since a member of either could be in the
+			// result.
+			name:  "two bounded tails join their bounds",
+			parts: []soltype.Type{strTail(strLit("a")), numTail(numLit(1))},
+			want:  `1 | "a" | ...(number | string)`,
+		},
+		{
+			// Nothing says what an unbounded tail holds, so meeting one loses the bound.
+			name:  "an unbounded tail absorbs a bounded one",
+			parts: []soltype.Type{strTail(strLit("a")), newUnion(nil, []soltype.Type{numLit(1)}, true)},
+			want:  `1 | "a" | ...`,
+		},
+		{
+			// An exact nested union brings no tail, so the outer one is untouched.
+			name:  "an exact nested union leaves the tail alone",
+			parts: []soltype.Type{strTail(strLit("a")), unionT(numLit(1), numLit(2))},
+			want:  `1 | 2 | "a" | ...string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, soltype.Print(newUnion(nil, tt.parts, false)))
+		})
+	}
+}
+
+// A bound is part of a union's identity, so two unions that differ only in what their
+// tails admit are neither equal nor deduped into one.
+func TestBoundedTailsCompareByTheirBound(t *testing.T) {
+	strBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
+	numBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, num())
+	unbounded := newUnion(nil, []soltype.Type{strLit("a")}, true)
+
+	require.True(t, equalType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
+	require.False(t, equalType(strBound, numBound))
+	require.False(t, equalType(strBound, unbounded))
+	require.False(t, equalType(strBound, unionT(strLit("a"))))
+}
+
 // TestNewUnionSubsumeWithContext covers the Context-gated subsumption step.
 // A member that is a subtype of another member is dropped, so `number | 1`
 // reduces to `number`.

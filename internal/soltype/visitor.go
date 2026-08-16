@@ -442,9 +442,16 @@ func (t *UnionType) Accept(v TypeVisitor, pol Polarity) Type {
 	}
 	cur := descendReplacement(t, e)
 	types, changed := acceptTypes(cur.Types, v, pol)
+	// The tail's unnamed members are members of the union, so its bound is visited at
+	// the union's own polarity, the same as a written member.
+	bound := cur.TailBound
+	if bound != nil {
+		bound = bound.Accept(v, pol)
+		changed = changed || bound != cur.TailBound
+	}
 	out := cur
 	if changed {
-		out = &UnionType{Types: types, Inexact: cur.Inexact}
+		out = &UnionType{Types: types, Inexact: cur.Inexact, TailBound: bound}
 	}
 	return v.ExitType(out, pol)
 }

@@ -128,6 +128,35 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `("a" | ...) & ¬"a"`,
 		},
 		{
+			// `("a" | "b" | ...string) & ¬"a"`
+			//
+			// A bounded tail draws its members from `string`, so the exclusion applies to that
+			// bound the same way it applies to a named member. The tail comes through narrowed
+			// rather than undecided.
+			name: "BoundedTailNarrowsWithTheNamedMembers",
+			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a"), strLit("b")}, str()), negate(strLit("a"))),
+			want: `"b" | ...(string & ¬"a")`,
+		},
+		{
+			// `("a" | ...string) & ¬"a"`
+			//
+			// The case InexactPositiveSideWithNoSurvivorsStays leaves standing, settled. The
+			// answer is the string keys other than "a", a union naming no member and drawing
+			// every one it has from `string & ¬"a"`.
+			name: "BoundedTailSurvivesWithNoNamedMember",
+			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()), negate(strLit("a"))),
+			want: `...(string & ¬"a")`,
+		},
+		{
+			// `("a" | ...string) & ¬string`
+			//
+			// The exclusion empties the bound, so the tail contributes nothing, and it excludes
+			// the one named member too. Nothing is left.
+			name: "BoundedTailEmptiedByItsOwnBound",
+			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()), negate(str())),
+			want: "never",
+		},
+		{
 			// `(("a" | "b") & ¬"a") & ¬"b"`
 			//
 			// Nested complements reduce as one difference, since newIntersection flattens the

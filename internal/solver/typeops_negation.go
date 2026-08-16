@@ -90,8 +90,8 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 	}
 	var shared []soltype.Type
 	for i, m := range members {
-		keys, inexact, ok := literalKeys(m)
-		if !ok || inexact {
+		keys, tail, ok := literalKeys(m)
+		if !ok || tail.open {
 			return nil, false
 		}
 		if i == 0 {
@@ -127,17 +127,24 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
-// An inexact positive side names only some of its members. The rest sit in an open tail that the
-// reduction cannot enumerate, so what the exclusion takes from them cannot be worked out. The
-// result union keeps the tail, which stands for whatever those undecided members contribute, so
-// `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`.
+// An inexact positive side names only some of its members. The rest sit in an open tail the
+// reduction cannot enumerate, and what the exclusion takes from them depends on what the tail is
+// bounded by.
 //
-// When no named member survives, the difference stays as it stands, since neither answer available
-// is the one the reduction means. `newUnion` over an empty member list is `never` however the
-// marker is set, which would claim the tail is empty too. Reading the open union as `unknown` —
-// which is what it is for subtyping, since its tail accepts every value — would answer `¬X`, and
-// that is wrong for the key sets this reduction mostly serves. `keyof {a: X, ...}` is `"a" | ...`,
-// where the tail stands for the keys the object did not name, not for every key there is.
+// An unbounded tail says nothing about its members, so what the exclusion takes from them cannot be
+// worked out. The result union keeps the tail, which stands for whatever those undecided members
+// contribute, so `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`. When no named member survives
+// either, the difference stays as it stands, since neither answer available is the one the
+// reduction means. `newUnion` over an empty member list is `never`, which would claim the tail is
+// empty too. Reading the open union as `unknown` — which is what it is for subtyping, since an
+// unbounded tail accepts every value — would answer `¬X`, and that is wrong for the key sets this
+// reduction mostly serves.
+//
+// A bounded tail draws its members from its bound, so excluding from the bound excludes from every
+// member at once and the tail narrows along with the named ones. `keyof {a: X, ...}` is
+// `"a" | ...string`, so `keyof {a: X, ...} ∩ ¬"a"` reduces to `...(string & ¬"a")`, the string keys
+// other than "a". A bound the exclusion empties leaves an exact union of whatever named members
+// survived.
 func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type
@@ -159,16 +166,24 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 		base = newIntersection(nil, positives)
 	}
 	if groundDifference(base, excluded) {
-		baseMembers, inexact := unionMembers(base)
+		baseMembers, tail := unionMembers(base)
 		survivors := make([]soltype.Type, 0, len(baseMembers))
 		for _, m := range baseMembers {
 			if narrowed, keep := e.excludeFrom(m, excluded); keep {
 				survivors = append(survivors, narrowed)
 			}
 		}
-		// A tail with no surviving member to ride on falls through to the residual below.
-		if len(survivors) > 0 || !inexact {
-			return newUnion(nil, survivors, inexact)
+		if tail.bound != nil && condOperandGround(tail.bound) {
+			if narrowed, keep := e.excludeFrom(tail.bound, excluded); keep {
+				tail.bound = narrowed
+			} else {
+				tail = unionTail{}
+			}
+		}
+		// An unbounded tail with no surviving member to ride on falls through to the residual
+		// below. A bounded one needs no member, since its bound says what it holds.
+		if len(survivors) > 0 || !tail.open || tail.bound != nil {
+			return newUnionWithTail(nil, survivors, tail)
 		}
 	}
 	return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))

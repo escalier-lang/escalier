@@ -3970,7 +3970,7 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
 	// read each field before the tail widens it. Binding against bare `unknown` would leave
 	// nothing to destructure.
-	return &soltype.UnionType{Types: kept, Inexact: u.Inexact}, true
+	return &soltype.UnionType{Types: kept, Inexact: u.Inexact, TailBound: u.TailBound}, true
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether

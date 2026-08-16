@@ -97,26 +97,28 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"only"`,
 		},
 		{
-			// An inexact object's key union is inexact too: the known
-			// keys plus a trailing `...` standing for the unlisted ones.
+			// An inexact object's key union is inexact too: the known keys plus a trailing `...`
+			// standing for the unlisted ones. The tail is bounded by `string`, since a key the
+			// object did not list is still a property name.
 			name: "InexactObject",
 			src: `
 				type Obj = {x: number, y: string, ...}
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"x" | "y" | ...`,
+			wantExpanded: `"x" | "y" | ...string`,
 		},
 		{
 			// A single-key inexact object keeps the union wrapper rather than collapsing to the lone
-			// literal, since the open tail makes `"only" | ...` strictly weaker than bare `"only"`.
+			// literal, since the open tail makes `"only" | ...string` strictly weaker than bare
+			// `"only"`.
 			name: "InexactSingleKeyObject",
 			src: `
 				type Obj = {only: number, ...}
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"only" | ...`,
+			wantExpanded: `"only" | ...string`,
 		},
 		{
 			// A key is readable from a union only when every member carries it, so the members'
@@ -184,14 +186,15 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 		},
 		{
 			// An inexact member's open key set may carry "a" as well, so the intersection cannot
-			// rule "a" out. The written keys intersect to "shared" and the result stays open.
+			// rule "a" out. The written keys intersect to "shared" and the result stays open,
+			// carrying the `string` bound that member's own key set had.
 			name: "UnionInexactMember",
 			src: `
 				type U = {a: number, shared: string} | {b: boolean, shared: string, ...}
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `"shared" | ...`,
+			wantExpanded: `"shared" | ...string`,
 		},
 		{
 			// An inexact union has an unlisted member whose keys are unknown, so it cannot close
@@ -292,7 +295,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 		},
 		{
 			// A non-final class projects to an inexact instance body, since a subclass may add
-			// members, so its key union is open: `"x" | "y" | ...`.
+			// members, so its key union is open: `"x" | "y" | ...string`.
 			name: "Class",
 			src: `
 				class Point {
@@ -302,7 +305,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Point
 			`,
 			wantSymbolic: "keyof Point",
-			wantExpanded: `"x" | "y" | ...`,
+			wantExpanded: `"x" | "y" | ...string`,
 		},
 		{
 			// A final class has no subclasses to widen it, so its instance body is exact and its

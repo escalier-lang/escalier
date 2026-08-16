@@ -177,8 +177,8 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 	case *soltype.UnknownType:
 		return dnfTop()
 	case *soltype.UnionType:
-		if t.Inexact {
-			// `A | B | ...` names A, B, and an open tail of unknown content. The tail has
+		if t.Inexact && t.TailBound == nil {
+			// `A | B | ...` names A, B, and an open tail nothing bounds. The tail has
 			// no atom to stand for it, so taking the union apart would drop it and hand
 			// back a type narrower than the source wrote. The whole node stays one atom,
 			// which round-trips exactly and keeps the flag.
@@ -197,6 +197,18 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		out := DNF{Conjuncts: nil}
 		for _, m := range t.Types {
 			out = dnfOr(out, c.mkDNF(m, pol))
+		}
+		if t.TailBound != nil {
+			// A bounded tail holds some unknown set of the bound's values, so no value
+			// outside the bound reaches the union and every value inside it might. That
+			// makes the bound one more disjunct for a decision about which values the
+			// union admits. `5 <: ("a" | ...string)` fails and `"z" <: ("a" | ...string)`
+			// holds, both by the ordinary union rule once the bound joins the members.
+			//
+			// The bound joins the DNF rather than the member list, so the named members
+			// stay enumerable for keyof and mapped types. Adding it to the members would
+			// let subsumption drop `"a"` against `string` and leave nothing to iterate.
+			out = dnfOr(out, c.mkDNF(t.TailBound, pol))
 		}
 		return DNF{Conjuncts: c.canonicalConjuncts(out.Conjuncts)}
 	case *soltype.IntersectionType:
@@ -241,13 +253,17 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.UnionType:
-		if t.Inexact {
-			// The open tail has no atom to stand for it; see the mkDNF arm.
+		if t.Inexact && t.TailBound == nil {
+			// An unbounded tail has no atom to stand for it; see the mkDNF arm.
 			return cnfAtom(t)
 		}
 		out := cnfBot()
 		for _, m := range t.Types {
 			out = cnfOr(out, c.mkCNF(m, pol))
+		}
+		if t.TailBound != nil {
+			// A bounded tail contributes its bound; see the mkDNF arm.
+			out = cnfOr(out, c.mkCNF(t.TailBound, pol))
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
