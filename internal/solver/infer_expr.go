@@ -960,7 +960,13 @@ func peelBorrows(t soltype.Type) soltype.Type {
 		for i, m := range t.Types {
 			members[i] = peelBorrows(m)
 		}
-		return newUnion(nil, members, t.Inexact)
+		// The tail's bound is a member the union does not list, so it peels too. Dropping it
+		// would leave the peeled union unbounded, which is top.
+		tail := tailOf(t)
+		if tail.bound != nil {
+			tail.bound = peelBorrows(tail.bound)
+		}
+		return newUnionWithTail(nil, members, tail)
 	}
 	return t
 }

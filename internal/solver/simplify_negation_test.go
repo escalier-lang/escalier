@@ -414,15 +414,26 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 			want: `"a" | "b" | ...string`,
 		},
 		{
-			// A distributive conditional reaches the bound the way it reaches a named member,
-			// so `Exclude` over an inexact object's keys stays a key set rather than widening
-			// to top. This is what leaves `Omit` a bounded tail to map over.
-			name: "DistributiveConditional",
+			// A filtering conditional splits the bound rather than keeping or dropping it
+			// whole, since `"a"` is one of the strings the bound admits. The tail comes back
+			// cut by the same exclusion the named members took, which is the answer
+			// reduceDifference computes for this set through the `∩ ¬` form.
+			name: "DistributiveConditionalSplitsTheBound",
 			decl: `
 				type Drop<T, U> = if T : U { never } else { T }
 				type Result = Drop<keyof Obj, "a">
 			`,
-			want: `"b" | ...string`,
+			want: `"b" | ...(string & ¬"a")`,
+		},
+		{
+			// A check every value of the bound satisfies takes the same branch for every tail
+			// member, so the conditional runs on the bound the way it runs on a named member.
+			name: "DistributiveConditionalUniformOverTheBound",
+			decl: `
+				type Yes<T> = if T : string { "y" } else { "n" }
+				type Result = Yes<keyof Obj>
+			`,
+			want: `"y" | ..."y"`,
 		},
 		{
 			// `Inexact` over an already-open union is the identity, so the bound has to
@@ -455,6 +466,46 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
+}
+
+// Excluding the one key an inexact object names leaves a key set with no named member, so what
+// the tail admits is the whole answer. The bound is where the exclusion has to land: a tail that
+// kept `string` whole would take back the very key the exclusion removed.
+func TestExcludingEveryNamedKeyStillRejectsIt(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Result = Drop<keyof Obj, "a">
+	`)
+	require.Empty(t, errs)
+	rest := expandAliasResidual(ctx, nodes["Result"])
+	require.Equal(t, `...(string & ¬"a")`, soltype.Print(rest))
+
+	c := newChecker()
+	require.False(t, subtypeHolds(c.ctx, strLit("a"), rest), "the excluded key is not a member")
+	require.True(t, subtypeHolds(c.ctx, strLit("b"), rest), "another key may be one of the unlisted members")
+	require.False(t, subtypeHolds(c.ctx, numLit(5), rest), "the bound still rules out a non-string")
+}
+
+// An indexed access over a key set or a target that names no member of its own. Both shapes
+// arrive from a set difference that excluded every named member, and neither may be read as
+// `never`, which would claim the union is empty when it is only unenumerated.
+func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
+	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}, Inexact: true}
+
+	t.Run("a member-less key set leaves the access symbolic", func(t *testing.T) {
+		// There is no key to read the target at, since the bound says the keys are strings
+		// without saying which.
+		idx := &soltype.IndexType{Target: obj, Index: newBoundedUnion(nil, nil, str())}
+		require.Equal(t, `{x: number, ...}[...string]`, soltype.Print(reduceType(idx)))
+	})
+
+	t.Run("a member-less target reads the key off its bound", func(t *testing.T) {
+		// The bound names every member the target has, so reading "x" off it reads "x" off
+		// all of them at once.
+		idx := &soltype.IndexType{Target: newBoundedUnion(nil, nil, obj), Index: strLit("x")}
+		require.Equal(t, "...number", soltype.Print(reduceType(idx)))
+	})
 }
 
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,

@@ -282,20 +282,52 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
 	}
-	// The conditional reaches the tail's bound as well, since the tail's unnamed members are
-	// drawn from it and each one selects a branch the same way a named member does. This is
-	// what keeps `Exclude<keyof {a: X, ...}, "a">` off the top of the lattice: without it the
-	// result's tail would come back unbounded and accept every value.
 	tail := tailOf(check)
 	if tail.bound != nil {
-		tail.bound = e.reduceCond(&soltype.CondType{
-			Check:   tail.bound,
-			Extends: substituteOccurrences(t.Extends, t.Check, tail.bound),
-			Then:    substituteOccurrences(t.Then, t.Check, tail.bound),
-			Else:    substituteOccurrences(t.Else, t.Check, tail.bound),
-		})
+		tail.bound = e.condOverTailBound(t, tail.bound)
 	}
 	return newUnionWithTail(nil, parts, tail)
+}
+
+// condOverTailBound applies a distributive conditional to a tail's bound and returns the bound
+// the result's tail takes, nil when the conditional has no answer over it.
+//
+// A bound stands for a SET of members rather than one, so the member-at-a-time rule the named
+// members take does not carry over. Running the conditional once over the whole bound would
+// answer as though every value the bound admits took the same branch, and a check that some
+// satisfy and others do not splits it instead.
+//
+// Three cases, tried in order.
+//
+//  1. Every value of the bound satisfies the check, so every tail member takes Then. The
+//     conditional runs on the bound the way it runs on a named member. Over `"a" | ...string`,
+//     `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
+//  2. No value satisfies it, so every tail member takes Else, and the same run answers.
+//  3. The check splits the bound. A filtering conditional denotes a set difference, which cuts
+//     inside the bound and answers exactly. `Exclude<"a" | ...string, "a">` gives a tail
+//     bounded by `string & ¬"a"`, the same answer reduceDifference computes for that set, so
+//     the filter and the difference agree on this operand as the file header requires. A
+//     conditional of any other shape has no answer here, so the tail comes back unbounded.
+func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
+	extends := substituteOccurrences(t.Extends, t.Check, bound)
+	uniform := e.ctx.condExtends(bound, extends, e.seen)
+	if !uniform && negatableOperand(extends) {
+		// Disjointness is the check `bound <: ¬extends`, the same question excludeFrom asks to
+		// decide that an exclusion takes nothing from a member.
+		uniform = e.ctx.condExtends(bound, soltype.NewNegation(extends), e.seen)
+	}
+	if uniform {
+		return e.reduceCond(&soltype.CondType{
+			Check:   bound,
+			Extends: extends,
+			Then:    substituteOccurrences(t.Then, t.Check, bound),
+			Else:    substituteOccurrences(t.Else, t.Check, bound),
+		})
+	}
+	if diff, ok := e.nativeDifference(t, bound, extends); ok {
+		return e.reduce(diff)
+	}
+	return nil
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
@@ -1477,12 +1509,25 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		// with the same reduced key.
 		//
 		// An inexact target union has unlisted members, and the value each holds at K is not among
-		// the ones the access read, so the result union is open too (exact-types §7.6).
+		// the ones the access read, so the result union is open too (exact-types §7.6). A bounded
+		// tail says what those unlisted members are, so reading K off the bound reads it off every
+		// one of them at once, and the result's tail keeps whatever that read yields. A target
+		// naming no member of its own has only the bound to read.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, inexact)
 		}
-		return newUnion(nil, parts, tgt.Inexact)
+		tail := tailOf(tgt)
+		if tail.bound != nil {
+			tail.bound = e.reduceIndex(tail.bound, idx, inexact)
+		}
+		if len(parts) == 0 && tail.bound == nil {
+			// An open target naming no member and bounding none. There is nothing to read K
+			// off, so the access stays symbolic rather than distributing over no member and
+			// answering `never`.
+			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
+		}
+		return newUnionWithTail(nil, parts, tail)
 	case *soltype.IntersectionType:
 		return e.reduceIndexIntersection(tgt, idx, inexact)
 	default:
