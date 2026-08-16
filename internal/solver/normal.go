@@ -331,10 +331,9 @@ func (n *deepNormalizer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.
 }
 
 // assertBorrowFreeNegatedParts enforces the ¬Ref exclusion invariant over a
-// normalized complement. A borrow in a negated structural part would be a
-// `¬(mut 'a T)` however the source wrote it, which soltype.AssertNegatable rejects.
-// negatedPart reads that part off one member, Rnf for a conjunct and Lnf for a
-// disjunct.
+// normalized complement. A borrow in a negated part is a `¬(mut 'a T)` however the
+// source wrote it. negatedPart reads that part off one member, Rnf for a conjunct
+// and Lnf for a disjunct.
 func assertBorrowFreeNegatedParts[T any](members []T, negatedPart func(T) []soltype.Type) {
 	for _, member := range members {
 		for _, atom := range negatedPart(member) {
@@ -1268,8 +1267,7 @@ func hasSpreadElem(elems []soltype.Type) bool {
 // what it replaces, and a two-atom list already denotes the union precisely.
 
 // meetRefs fuses two borrow atoms of an intersection. An uninhabited pointee makes
-// the whole meet `never`. No value inhabits the pointee, so nothing is there to
-// borrow.
+// the whole meet `never`, since nothing is there to borrow.
 func (c *Context) meetRefs(a, b *soltype.RefType) (soltype.Type, bool) {
 	if a.Mut != b.Mut {
 		return nil, false
@@ -1288,12 +1286,11 @@ func (c *Context) meetRefs(a, b *soltype.RefType) (soltype.Type, bool) {
 	return soltype.NewRef(a.Mut, lt, inner), true
 }
 
-// joinRefs fuses two borrow atoms of a union, the dual of meetRefs. It fuses only
-// when the two borrows already agree on ONE of the two sorts, because a union does
-// not distribute over the pair of them. `(&'static {x: number}) | (&'a {x: string})`
-// would fuse to `&'a {x: number | string}`, which admits an `&'a {x: number}` that
-// neither member does. An intersection distributes, so meetRefs combines both sorts
-// unconditionally.
+// joinRefs is the dual of meetRefs. It fuses only when the two borrows already agree
+// on ONE of the two sorts, because a union does not distribute over the pair of
+// them. Fusing `(&'static {x: number}) | (&'a {x: string})` would give
+// `&'a {x: number | string}`, which admits an `&'a {x: number}` that neither member
+// does.
 func (c *Context) joinRefs(a, b *soltype.RefType) (soltype.Type, bool) {
 	if a.Mut != b.Mut {
 		return nil, false
@@ -1315,17 +1312,11 @@ func (c *Context) joinRefs(a, b *soltype.RefType) (soltype.Type, bool) {
 	return soltype.NewRef(a.Mut, lt, inner), true
 }
 
-// combineRefInners combines the pointees of two borrows in the type algebra alone.
-// role picks the direction, meetOfAtoms for an intersection of the two borrows and
-// joinOfAtoms for a union. uninhabited reports a combination of `never`, which only
-// a meet reaches, and ok is false when no exact combination exists, which keeps the
-// two borrows as separate atoms.
-//
-// A MUTABLE borrow's pointee is invariant, since a holder reads and writes through
-// it, so the two pointees must already be equal. Fusing `&'a mut {x: number}` with
-// `&'a mut {x: string}` into `&'a mut {x: number | string}` would let a holder write
-// a string into the cell holding the number. An IMMUTABLE borrow is read-only, so
-// its pointee combines covariantly by the ordinary atom merges.
+// combineRefInners combines two borrows' pointees in the type algebra alone. role
+// picks the direction, uninhabited reports a `never`, and ok is false when no exact
+// combination exists. A MUTABLE borrow's pointee is invariant, so the two must
+// already be equal. Widening `{x: number}` and `{x: string}` to `{x: number | string}`
+// would let a holder write a string into the cell holding the number.
 func (c *Context) combineRefInners(a, b *soltype.RefType, role atomRole) (inner soltype.RefInner, uninhabited, ok bool) {
 	if equalType(a.Inner, b.Inner) {
 		return a.Inner, false, true
@@ -1357,17 +1348,9 @@ func (c *Context) combineRefInners(a, b *soltype.RefType, role atomRole) (inner 
 }
 
 // meetRefLifetimes combines two borrows' lifetimes in the outlives lattice alone.
-// The meet is the longer-lived of the two, since a value that is both borrows is
-// usable wherever either is. ok is false where no lifetime already names that,
-// which keeps the two borrows as separate atoms.
-//
-// Equal lifetimes meet to themselves, under the ltEqual that equalType's RefType
-// arm applies, so a merge and a type comparison agree on when two borrows carry one
-// lifetime. 'static is the bottom of the lattice and outlives everything else, so it
-// absorbs the meet, the absorption meetValueAtoms performs for a literal and its
-// primitive. A nil slot is an owned cell carrying no lifetime, so two of them
-// combine to none while one paired with a borrow bails. Two distinct variables bail
-// for the reason the header above gives.
+// The meet is the longer-lived of the two, so 'static absorbs it as the bottom of
+// the lattice. A nil slot is an owned cell carrying no lifetime. ok is false where
+// no lifetime already names the meet, which keeps the two borrows as separate atoms.
 func meetRefLifetimes(a, b soltype.Lifetime) (soltype.Lifetime, bool) {
 	if ltEqual(a, b) {
 		return a, true
@@ -1382,10 +1365,8 @@ func meetRefLifetimes(a, b soltype.Lifetime) (soltype.Lifetime, bool) {
 }
 
 // joinRefLifetimes is the dual of meetRefLifetimes, returning the shorter-lived of
-// the two, since a value drawn from either borrow is usable only where both are.
-// The owned-cell and equal-lifetime rules read the same, and two distinct variables
-// bail there too. 'static drops OUT of the join rather than absorbing it, since
-// every other lifetime outlives it, so `(&'static T) | (&'a T)` is `&'a T`.
+// the two. 'static drops OUT of the join rather than absorbing it, since every other
+// lifetime outlives it, so `(&'static T) | (&'a T)` is `&'a T`.
 func joinRefLifetimes(a, b soltype.Lifetime) (soltype.Lifetime, bool) {
 	if ltEqual(a, b) {
 		return a, true
