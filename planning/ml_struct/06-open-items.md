@@ -51,7 +51,12 @@ must be scoped, and static resolution must pick the same arm the dispatcher rout
 to (example A is where the two can disagree).
 
 **Residual decision:** the annotation-obligation scope plus the static-vs-runtime
-agreement test. Owned by **PR11 (#1068)**.
+agreement test. Owned by **PR11 (#1068)**, and settled there. The obligation covers
+*parameter* annotations on arms with a body, the arms `buildOverloadedFunc` emits a
+branch for; declare-only arms are exempt and inference carries no obligation at all.
+Agreement is held by construction rather than only measured — `codegen.DispatchOrder`
+lays the dispatcher's chain out to match `specificityOrder` — and
+`internal/solver/overload_dispatch_test.go` is the corpus that measures the two.
 
 ## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
 

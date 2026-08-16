@@ -1142,53 +1142,9 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 		return []Stmt{}
 	}
 
-	// Helper function to count the specificity of a parameter type
-	// For object types, count the number of required properties
-	countTypeSpecificity := func(param *ast.Param) int {
-		if param.TypeAnn == nil {
-			return 0
-		}
-		switch typeAnn := param.TypeAnn.(type) {
-		case *ast.ObjectTypeAnn:
-			// Count required properties (non-optional)
-			count := 0
-			for _, elem := range typeAnn.Elems {
-				if propType, ok := elem.(*ast.PropertyTypeAnn); ok {
-					if !propType.Optional {
-						count++
-					}
-				}
-			}
-			return count
-		default:
-			return 1 // Default specificity for other types
-		}
-	}
-
-	// Sort overloads by specificity (descending) so that more specific overloads
-	// are checked first. This is necessary because without arity checks, function
-	// subtyping allows less specific functions to match more specific calls.
-	// We sort by: 1) parameter count (more first), 2) type specificity (more first)
-	slices.SortFunc(implementedOverloads, func(a, b *ast.FuncDecl) int {
-		// First, compare by parameter count
-		if len(a.Params) != len(b.Params) {
-			return len(b.Params) - len(a.Params) // Descending order
-		}
-
-		// If same parameter count, compare by type specificity
-		// Calculate total specificity for each overload
-		aSpecificity := 0
-		for _, param := range a.Params {
-			aSpecificity += countTypeSpecificity(param)
-		}
-
-		bSpecificity := 0
-		for _, param := range b.Params {
-			bSpecificity += countTypeSpecificity(param)
-		}
-
-		return bSpecificity - aSpecificity // Descending order
-	})
+	// Order the arms so the chain tests the most specific first, matching the order the
+	// checker resolves a call in. See overload_order.go.
+	implementedOverloads = DispatchOrder(implementedOverloads)
 
 	// Collect all unique parameter names across overloads
 	// We'll use the maximum parameter count and give them generic names
@@ -1449,56 +1405,23 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// Check if it's an array
 		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
-		// For type references, expand the type and check if it's a nominal type
-		inferredType := t.InferredType()
-		if inferredType != nil {
-			// Prune type variables to get the actual type
-			prunedType := type_system.Prune(inferredType)
-
-			// Check if it's a TypeRefType with a TypeAlias
-			if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
-				if typeRef.TypeAlias != nil {
-					// Get the aliased type
-					aliasedType := type_system.Prune(typeRef.TypeAlias.Type)
-
-					// Check if the aliased type is a nominal object type
-					if objType, ok := aliasedType.(*type_system.ObjectType); ok && objType.Nominal {
-						// Generate instanceof check for nominal types
-						typeName := ast.QualIdentToString(t.Name)
-						return NewBinaryExpr(
-							valueExpr,
-							InstanceOf,
-							NewIdentExpr(typeName, "", nil),
-							nil,
-						)
-					}
-				}
-			}
-
-			// Check if it's directly an object type (not aliased)
-			if objType, ok := prunedType.(*type_system.ObjectType); ok && objType.Nominal {
-				// Generate instanceof check for nominal types
-				typeName := ast.QualIdentToString(t.Name)
-				return NewBinaryExpr(
-					valueExpr,
-					InstanceOf,
-					NewIdentExpr(typeName, "", nil),
-					nil,
-				)
-			}
-
-			// TODO(#289): handle non-object types
-			// TODO(#289): handle structural object types
+		// A reference to a nominal type is tested with `instanceof` against the class
+		// name. nominalGuardName resolves the reference through its inferred type, either
+		// directly or through a type alias. dispatchOrder consults the same helper, so the
+		// arm order and the guards agree on which references are testable.
+		//
+		// TODO(#289): handle non-object types
+		// TODO(#289): handle structural object types
+		if typeName, nominal := nominalGuardName(t); nominal {
+			return NewBinaryExpr(
+				valueExpr,
+				InstanceOf,
+				NewIdentExpr(typeName, "", nil),
+				nil,
+			)
 		}
-
-		// For type references like Array<T>, try to infer the check
-		if t.Name != nil {
-			// Get the simple name from QualIdent
-			name := ast.QualIdentToString(t.Name)
-			switch name {
-			case "Array":
-				return buildArrayIsArrayCheck(valueExpr, nil)
-			}
+		if isArrayTypeRef(t) {
+			return buildArrayIsArrayCheck(valueExpr, nil)
 		}
 		// Default: accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
