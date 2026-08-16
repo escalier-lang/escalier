@@ -14,8 +14,10 @@ import (
 // A case builds its borrows directly rather than parsing an annotation, because
 // parseType does not accept a named lifetime. It renders the result with
 // PrintAsScheme, which names each surviving lifetime variable 'a, 'b, … by first
-// appearance, so a fused borrow reads `&'a mut {x: number}` and an unfused pair
-// reads `&'a mut {x: number} | &'b mut {x: number}`.
+// appearance and prefixes the type with the names it bound. A fused borrow reads
+// `<'a> &'a mut {x: number}` and an unfused pair reads
+// `<'a, 'b> (&'a mut {x: number} | &'b mut {x: number})`, where the parens mark
+// that the prefix binds both members rather than only the first.
 
 // borrow builds a borrow atom. inner is stated as a soltype.RefInner so a case
 // reads as the type it writes.
@@ -59,8 +61,8 @@ func TestRefAtomMerge(t *testing.T) {
 				obj := refObj(t, "{x: number}")
 				return borrow(true, c.freshLifetime(0), obj), borrow(true, c.freshLifetime(0), obj)
 			},
-			union: "<'a, 'b> &'a mut {x: number} | &'b mut {x: number}",
-			inter: "<'a, 'b> &'a mut {x: number} & &'b mut {x: number}",
+			union: "<'a, 'b> (&'a mut {x: number} | &'b mut {x: number})",
+			inter: "<'a, 'b> (&'a mut {x: number} & &'b mut {x: number})",
 		},
 		{
 			// One shared lifetime combines to itself, so two borrows over one pointee
@@ -83,8 +85,8 @@ func TestRefAtomMerge(t *testing.T) {
 				return borrow(true, c.freshLifetime(0), refObj(t, "{x: number}")),
 					borrow(true, c.freshLifetime(0), refObj(t, "{x: string}"))
 			},
-			union: "<'a, 'b> &'a mut {x: number} | &'b mut {x: string}",
-			inter: "<'a, 'b> &'a mut {x: number} & &'b mut {x: string}",
+			union: "<'a, 'b> (&'a mut {x: number} | &'b mut {x: string})",
+			inter: "<'a, 'b> (&'a mut {x: number} & &'b mut {x: string})",
 		},
 		{
 			// An immutable borrow is read-only, so its pointee combines covariantly and
@@ -122,7 +124,7 @@ func TestRefAtomMerge(t *testing.T) {
 				lt := c.freshLifetime(0)
 				return borrow(false, lt, refObj(t, "{x: number}")), borrow(false, lt, refObj(t, "{y: string}"))
 			},
-			union: "<'a> &'a {x: number} | &'a {y: string}",
+			union: "<'a> (&'a {x: number} | &'a {y: string})",
 			inter: "never",
 		},
 		{
@@ -134,8 +136,8 @@ func TestRefAtomMerge(t *testing.T) {
 				lt := c.freshLifetime(0)
 				return borrow(false, lt, c.freshVar(0)), borrow(false, lt, c.freshVar(0))
 			},
-			union: "<T0, T1, 'a> &'a T0 | &'a T1",
-			inter: "<T0, T1, 'a> &'a T0 & &'a T1",
+			union: "<T0, T1, 'a> (&'a T0 | &'a T1)",
+			inter: "<T0, T1, 'a> (&'a T0 & &'a T1)",
 		},
 		{
 			// Two unrelated class tags are disjoint, so their meet is `never`. No value
@@ -151,7 +153,7 @@ func TestRefAtomMerge(t *testing.T) {
 			},
 			// A union of two class tags has no single tag that denotes it, so joinAtoms
 			// leaves the pointees alone and both borrows stay.
-			union: "<'a> &'a Line | &'a Point",
+			union: "<'a> (&'a Line | &'a Point)",
 			inter: "never",
 		},
 		{
@@ -165,7 +167,7 @@ func TestRefAtomMerge(t *testing.T) {
 				return borrow(false, soltype.Static, refObj(t, "{x: number}")),
 					borrow(false, c.freshLifetime(0), refObj(t, "{x: string}"))
 			},
-			union: "<'a> &'static {x: number} | &'a {x: string}",
+			union: "<'a> (&'static {x: number} | &'a {x: string})",
 			inter: "&'static {x: never}",
 		},
 		{
@@ -188,8 +190,8 @@ func TestRefAtomMerge(t *testing.T) {
 				lt := c.freshLifetime(0)
 				return borrow(true, lt, obj), borrow(false, lt, obj)
 			},
-			union: "<'a> &'a {x: number} | &'a mut {x: number}",
-			inter: "<'a> &'a {x: number} & &'a mut {x: number}",
+			union: "<'a> (&'a {x: number} | &'a mut {x: number})",
+			inter: "<'a> (&'a {x: number} & &'a mut {x: number})",
 		},
 		{
 			// One shared lifetime needs no join variable, so the fusion combines the two
