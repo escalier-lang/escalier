@@ -74,21 +74,23 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      inside the value families, which cover primitives, literals, `null` and
      `undefined`. `normal.go`'s `valueFamily` comment records that objects, tuples,
      functions and class tags were left out. A borrow is in no family, so `Exclude`
-     over one yields the same `T & ¬(&'a U)` it started with. Lifting the exclusion
-     stops the panic without making the result useful; widening `valueFamilyOf` is
-     the other half of the work.
+     over one yields back the same `T & ¬(&'a U)`. Lifting the exclusion stops the
+     panic without making the result useful. Widening `valueFamilyOf` to cover
+     borrows is the other half of the work.
 
-  Display-time lifetime classification was a third blocker and is fixed.
-  `coalesceLifetimes` reads polarity as dataflow rather than as variance — negative
-  means the borrow originates at a parameter and so is nameable, positive means it
-  reaches an output and so must not be elided — and the complement's flip inverted
-  that reading, stripping the lifetime name off every complemented borrow.
-  `ltOccVisitor` now records a lifetime under a complement in both polarities, which
-  names it and keeps it. Eliding there changed the type rather than merely dropping a
-  name, since `¬(&'a T)` rendered as `¬(&T)` is the complement of *any* borrow of
-  `T`. The same relation feeds `checkDeclaredLifetimeBounds` through
-  `ltOutlivesRelation`, so the mis-reading also invented outlives bounds inference
-  never proved.
+  Display-time lifetime classification was a third blocker. It no longer is.
+  `coalesceLifetimes` reads polarity as dataflow rather than as variance. Negative
+  means the borrow originates at a parameter, so its lifetime is nameable. Positive
+  means the borrow reaches an output, so its lifetime must not be elided. The
+  complement's flip inverts that reading and strips the name off every complemented
+  borrow, which changes the type rather than merely dropping a name, since
+  `¬(&'a T)` rendered as `¬(&T)` is the complement of *any* borrow of `T`.
+  `ltOccVisitor` therefore records a lifetime under a complement in both polarities,
+  which names it and keeps it. The same occurrence map feeds
+  `checkDeclaredLifetimeBounds` through `ltOutlivesRelation`, so the mis-reading also
+  invented outlives bounds inference never proved.
+  `TestComplementedBorrowKeepsLifetimeName` covers the rendering, and
+  `TestComplementedBorrowAssertsNoOutlivesRelation` the bounds.
 
 ---
 

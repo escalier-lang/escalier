@@ -17,11 +17,15 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 	return &soltype.NegationType{Inner: mutPointRef(lt)}
 }
 
-// A complement flips the polarity its operand is visited at. coalesceLifetimes reads
-// polarity as dataflow rather than as variance, so the flip tells it a parameter's
-// borrow reaches an output and an output's borrow originates at a parameter. Read that
-// way, a complemented borrow's lifetime is neither named nor kept, and every row below
-// renders `¬&mut {x: number}` with the name stripped.
+// A complemented borrow keeps its lifetime name in the rendered signature, wherever the
+// complement sits.
+//
+// The name is at risk because a complement flips the polarity its operand is visited at,
+// and coalesceLifetimes reads polarity as dataflow rather than as variance. Under the
+// flip a parameter's borrow looks like one reaching an output, and an output's borrow
+// looks like one originating at a parameter. Read that way a complemented borrow's
+// lifetime is neither named nor kept, so every row below would render
+// `¬&mut {x: number}` with no name at all.
 //
 // Eliding there is not merely a lost name, it is a different type. `¬(&'a T)` rendered
 // as `¬(&T)` is the complement of any borrow of T rather than of the 'a one. So
@@ -110,8 +114,9 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // in.
 //
 // Recording both polarities under any enclosing complement is coarser than un-flipping
-// the cancelled pair would be. It over-names, which is the safe direction: a name that
-// could have been elided still denotes the same type, while an elision does not.
+// the cancelled pair would be, so it over-names. Over-naming is the safe direction. A
+// name that could have been elided still denotes the same type, while an elision does
+// not.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -229,4 +234,53 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 	require.Equal(t,
 		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: ¬&'c mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
+}
+
+// Classifying a complemented borrow's lifetime as a param puts it on the same footing
+// as an uncomplemented one, including where the connectivity-based grouping is loose.
+// componentParams gathers every kept param in a join's connected component, so a param
+// linked to the join only through an instantiation intermediary is still reported as a
+// source. That looseness is deliberate, since an intermediary is exactly how a call's
+// argument lifetime reaches the join it feeds, and it applies to a complemented borrow
+// and a plain one alike.
+//
+// 'm is an intermediary outliving 'a and 'b. 'j is a genuine join over 'a and 'x. 'b
+// reaches 'j only through 'm, yet renders `'b: 'd` either way. Reading 'b as an
+// output-only lifetime instead would make it a join over 'a and 'x and assert the
+// reversed `'a: 'b` and `'x: 'b`, neither of which inference proves.
+func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
+	// build wires the graph above and returns the signature, wrapping the second
+	// parameter's borrow in a complement when complemented is set.
+	build := func(complemented bool) *soltype.FuncType {
+		c := newChecker()
+		m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
+		a := c.ctx.freshLifetime(0)
+		b := c.ctx.freshLifetime(0)
+		x := c.ctx.freshLifetime(0)
+		j := c.ctx.freshJoinLifetime(0)
+		c.ctx.constrainLt(m, a)
+		c.ctx.constrainLt(m, b)
+		c.ctx.constrainLt(a, j)
+		c.ctx.constrainLt(x, j)
+
+		second := soltype.Type(mutPointRef(b))
+		if complemented {
+			second = negRef(b)
+		}
+		return &soltype.FuncType{
+			Params: []*soltype.FuncParam{
+				{Pattern: &soltype.IdentPat{Name: "p"}, Type: mutPointRef(a)},
+				{Pattern: &soltype.IdentPat{Name: "q"}, Type: second},
+				{Pattern: &soltype.IdentPat{Name: "s"}, Type: mutPointRef(x)},
+			},
+			Ret: mutPointRef(j),
+		}
+	}
+
+	require.Equal(t,
+		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, s: &'c mut {x: number}) -> &'d mut {x: number}",
+		renderScheme(&MonoScheme{Ty: build(false)}))
+	require.Equal(t,
+		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: ¬&'b mut {x: number}, s: &'c mut {x: number}) -> &'d mut {x: number}",
+		renderScheme(&MonoScheme{Ty: build(true)}))
 }

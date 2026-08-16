@@ -256,9 +256,19 @@ func PrintAsSchemeWith(
 		labels = append(labels, p.bindTypeParam(v, name))
 	}
 	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
-	// nameable. A connect-nothing one was already elided; a param lifetime and a kept
-	// join lifetime both survive here. Name each 'a, 'b, … in first-appearance order
-	// and add it to the quantifier prefix after the type parameters.
+	// nameable. A connect-nothing one was already elided. Three kinds survive to here:
+	// a param lifetime, a kept join lifetime, and a lifetime occurring under a
+	// complement.
+	//
+	// The third kind is named even when it reaches no parameter, so
+	// `fn () -> ¬(&'a mut {x: number})` renders `fn <'a>() -> ¬&'a mut {x: number}`
+	// with 'a quantified but bound by nothing in the signature. That is a defect, and
+	// coalesceLifetimes accepts it because eliding is the worse one. An elided
+	// complement changes the type rather than dropping a name, since `¬(&T)` is the
+	// complement of any borrow of T rather than of the 'a one.
+	//
+	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
+	// after the type parameters.
 	ltVars := freeLifetimeVars(t)
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}

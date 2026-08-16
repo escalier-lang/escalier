@@ -80,11 +80,12 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // reach the output, so the flip would report the parameter's lifetime as an output-only
 // lifetime and strip its name.
 //
-// Under a complement the two readings cannot be told apart from polarity alone, so a
-// lifetime found there is recorded in BOTH polarities. That names it and keeps it from
-// being elided. Claiming both is the safe direction, because eliding a lifetime under a
-// complement changes the type rather than merely dropping a name: `¬(&'a T)` rendered
-// as `¬(&T)` is the complement of any borrow of T, not of the 'a one.
+// Under a complement, origination and reachability cannot be told apart from polarity
+// alone, so a lifetime found there is recorded in BOTH polarities. That names it and
+// keeps it from being elided. Claiming both is the safe direction. Eliding a lifetime
+// under a complement changes the type rather than merely dropping a name, since
+// `¬(&'a T)` rendered as `¬(&T)` is the complement of any borrow of T rather than of
+// the 'a one.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	negDepth int
