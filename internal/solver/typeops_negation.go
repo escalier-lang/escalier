@@ -42,13 +42,17 @@ import (
 // The rewrite is not sticky either. An alias body is stored unreduced, so a later instantiation
 // with a ground argument reduces from the conditional again and takes the filter.
 
-// reduceIntersection reduces a meet. A meet carrying a complement is a set difference, which
-// reduceDifference settles. Any other meet has its members reduced in place, so a member that is
-// itself an operator reaches its value. `"a" ∩ keyof {a: number, b: string}` reduces to `"a"`. That
-// meet is the shape keyofUnion mints for a union operand it could not read every member of.
+// reduceIntersection reduces a meet of any members, not only of key sets. Every member is reduced
+// first, so one that is itself an operator reaches its value and `{a: string}["a"] ∩ {b: number}`
+// becomes `string ∩ {b: number}`. What becomes of the reduced members depends on what they turned
+// out to be.
 //
-// A meet that neither folds to a key set nor has any member reduce comes back untouched, keeping
-// its pointer, so a plain intersection of concrete types costs nothing.
+//   - A complement among them makes the meet a set difference, which reduceDifference settles.
+//   - A meet whose members are all enumerable key sets folds to the keys they share, so
+//     `"a" ∩ keyof {a: number, b: string}` reduces to `"a"`. This is the one rule here that asks
+//     what kind its members are. See meetKeySets.
+//   - Anything else is rebuilt as a meet. A meet whose members each reduced to themselves comes
+//     back untouched, keeping its pointer, so a plain intersection of concrete types costs nothing.
 func (e *typeEvaluator) reduceIntersection(t *soltype.IntersectionType) soltype.Type {
 	reduced := make([]soltype.Type, len(t.Types))
 	changed := false
