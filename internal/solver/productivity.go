@@ -202,8 +202,11 @@ func (v *unguardedRefCollector) ExitType(t soltype.Type, _ soltype.Polarity) sol
 //
 // Every other kind emits nothing. A union or intersection is a choice among its members rather than
 // a wrapper, so `type A<T> = {x: T} | A<{y: T}>` unfolds to an ever-widening union and settles on no
-// type. The type-level operators — `keyof`, indexed access, the string intrinsics — read a
-// component out of their operand instead of wrapping it, so a lap through one emits nothing either.
+// type. A complement is the same. `¬T` admits the values T rejects, which states something about
+// T's own values rather than building a level of structure over them. So `type T = ¬T` is rejected
+// on the same terms as `type T = T`. The type-level operators — `keyof`, indexed
+// access, the string intrinsics — read a component out of their operand instead of wrapping it, so a
+// lap through one emits nothing either.
 func guardsEveryOperand(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.FuncType, *soltype.RefType, *soltype.PromiseType, *soltype.GeneratorType,
