@@ -440,6 +440,20 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 			want: `"y"`,
 		},
 		{
+			// A check that splits the bound and drops neither branch reaches both, so the tail
+			// is bounded by what the two produce together. Here that is `1 | 2`, which the named
+			// members already are, so the tail is subsumed and the whole result closes.
+			//
+			// Without the split the tail would come back unbounded, putting the result at the
+			// top of the lattice where `"zz"` and `5` alike would satisfy it.
+			name: "DistributiveConditionalSplitsWithoutFiltering",
+			decl: `
+				type Pick2<T> = if T : "b" { 1 } else { 2 }
+				type Result = Pick2<keyof Obj>
+			`,
+			want: "1 | 2",
+		},
+		{
 			// `Inexact` over an already-open union is the identity, so the bound has to
 			// survive the rewrite rather than being reset to unbounded.
 			name: "InexactIsTheIdentityOnAnOpenUnion",
@@ -553,17 +567,52 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 		require.Equal(t, "...1", soltype.Print(reduceType(cond)))
 	})
 
-	t.Run("a check that splits the bound with no difference form stays symbolic", func(t *testing.T) {
+	t.Run("a check that splits the bound takes both branches", func(t *testing.T) {
 		// `if (...string) : "b" { 1 } else { 2 }`. Some strings are "b" and some are not, so
-		// the members do not agree on a branch. The conditional keeps neither branch and does
-		// not denote a set difference, so there is no answer to give and it stays as written.
-		// Unbounding the tail would leave a union with neither member nor bound, which
-		// collapses to `never`.
+		// the members do not agree on a branch and neither branch is dropped. The tail may hold
+		// a "b", a string that is not one, both, or neither, so what it produces is somewhere
+		// inside `1 | 2`.
+		//
+		// `1 | 2` on its own would be the wrong answer, since it claims both branches are
+		// reached. The marker is what withholds that.
 		cond := &soltype.CondType{
 			Check:   newBoundedUnion(nil, nil, str()),
 			Extends: strLit("b"), Then: numLit(1), Else: numLit(2), Distribute: true,
 		}
-		require.Equal(t, `if ...string : "b" { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
+		require.Equal(t, "...(1 | 2)", soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("the split reaches a branch that names the distributed parameter", func(t *testing.T) {
+		// `if (...string) : "b" { [T] } else { T }`, where T is the parameter the conditional
+		// distributes over. Each branch sees its own half of the split rather than the whole
+		// bound, so Then wraps the part that matched and Else keeps the part that did not.
+		//
+		// The branches name the Check itself, since that is the pointer an alias expansion
+		// installs at every occurrence of the parameter and the one substituteOccurrences
+		// matches on.
+		check := newBoundedUnion(nil, nil, str())
+		cond := &soltype.CondType{
+			Check:      check,
+			Extends:    strLit("b"),
+			Then:       &soltype.TupleType{Elems: []soltype.Type{check}},
+			Else:       check,
+			Distribute: true,
+		}
+		require.Equal(t, `...([string & "b"] | string & ¬"b")`, soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("an unnegatable check leaves the tail unbounded", func(t *testing.T) {
+		// The Else half is the values `¬extends` names, and a borrow is the one operand no
+		// complement may name, so the split has no half to give it. With no named member to
+		// carry a result the conditional stays as written rather than answering from Then alone.
+		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
+			Elems: []soltype.ObjTypeElem{propElem("x", num())},
+		}}
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: ref, Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, `if ...string : mut {x: number} { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
 	})
 
 	// A key set that names keys is still enumerable, so the tail changes nothing about how a

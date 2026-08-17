@@ -306,17 +306,27 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 // answer as though every value the bound admits took the same branch, and a check that some
 // satisfy and others do not splits it instead.
 //
-// Three cases, tried in order.
+// Four cases, tried in order.
 //
 //  1. Every value of the bound satisfies the check, so every tail member takes Then. The
 //     conditional runs on the bound the way it runs on a named member. Over `"a" | ...string`,
 //     `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
 //  2. No value satisfies it, so every tail member takes Else, and the same run answers.
-//  3. The check splits the bound. A filtering conditional denotes a set difference, which cuts
-//     inside the bound and answers exactly. `Exclude<"a" | ...string, "a">` gives a tail
-//     bounded by `string & ¬"a"`, the same answer reduceDifference computes for that set, so
-//     the filter and the difference agree on this operand as the file header requires. A
-//     conditional of any other shape has no answer here, so the tail comes back unbounded.
+//  3. The check splits the bound and the conditional is a filter, which denotes a set
+//     difference. That cuts inside the bound and answers exactly. `Exclude<"a" | ...string, "a">`
+//     gives a tail bounded by `string & ¬"a"`, the same answer reduceDifference computes for
+//     that set, so the filter and the difference agree on this operand as the file header
+//     requires.
+//  4. The check splits the bound and the conditional is not a filter. Each part of the split
+//     takes its own branch, and the bound is what the two branches produce together.
+//     `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail
+//     may hold a "b", a string that is not one, both, or neither.
+//
+// The split bounds rather than enumerates. A tail member is somewhere in `bound ∩ Extends` or in
+// `bound ∩ ¬Extends`, so what it produces is inside what those two parts produce, which is what
+// makes case 4 sound. It also subsumes case 3, since a filter's branches are `never` and the
+// check itself, leaving `never | (bound ∩ ¬Extends)`. Case 3 runs first anyway, because
+// nativeDifference returns the `∩ ¬` form that reduceDifference recognizes.
 func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
 	extends := substituteOccurrences(t.Extends, t.Check, bound)
 	uniform := e.ctx.condExtends(bound, extends, e.seen)
@@ -336,7 +346,17 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 	if diff, ok := e.nativeDifference(t, bound, extends); ok {
 		return e.reduce(diff)
 	}
-	return nil
+	if !negatableOperand(extends) {
+		// The Else half is the values `¬extends` names, and an operand no complement may name
+		// has no such half. The tail comes back unbounded rather than half-decided.
+		return nil
+	}
+	matched := newIntersection(nil, []soltype.Type{bound, extends})
+	unmatched := newIntersection(nil, []soltype.Type{bound, newNegation(extends)})
+	return newUnion(nil, []soltype.Type{
+		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
+		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),
+	}, false)
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,

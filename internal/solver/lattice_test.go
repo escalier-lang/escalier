@@ -288,6 +288,25 @@ func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
 			want: `1 | "y"`,
 		},
 		{
+			// A union bound is subsumed when every one of its members is named, which is the
+			// shape a conditional that reaches both branches leaves behind.
+			name: "a union bound whose every member is named closes the union",
+			build: func() soltype.Type {
+				return newBoundedUnion(nil, []soltype.Type{numLit(1), numLit(2)},
+					unionT(numLit(1), numLit(2)))
+			},
+			want: "1 | 2",
+		},
+		{
+			// One unnamed member in the bound is enough to keep the tail, since the union does
+			// not otherwise admit it.
+			name: "a union bound with an unnamed member is kept",
+			build: func() soltype.Type {
+				return newBoundedUnion(nil, []soltype.Type{numLit(1)}, unionT(numLit(1), numLit(2)))
+			},
+			want: "1 | ...(1 | 2)",
+		},
+		{
 			// A bound naming values no member does is not subsumed, so the tail stays.
 			name:  "an unrelated bound is kept",
 			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, str()) },

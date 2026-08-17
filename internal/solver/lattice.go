@@ -286,18 +286,40 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 	return out
 }
 
+// tailSubsumed reports whether every value a tail's bound admits is one the union's named
+// members already admit, which makes the tail contribute nothing and the union exactly its
+// named side. `"y" | ..."y"` is exactly `"y"`, `string | ...string` exactly `string`, and
+// `1 | 2 | ...(1 | 2)` exactly `1 | 2`.
+//
+// This is subsumption applied to the tail rather than to a member. Equality decides it rather
+// than a subtype test, so it needs no Context and runs on every mint. Two shapes qualify: a
+// bound equal to a named member, and an exact union whose every member is. A bound merely BELOW
+// the named members by some other route, such as `string | ..."a"`, is subsumed too but goes
+// undetected. An inexact union bound never qualifies, since its own tail says nothing about
+// what it holds.
+func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
+	if bound == nil {
+		return false
+	}
+	named := func(t soltype.Type) bool {
+		return slices.ContainsFunc(pruned, func(m soltype.Type) bool { return equalType(m, t) })
+	}
+	if u, ok := bound.(*soltype.UnionType); ok && !u.Inexact {
+		if len(u.Types) == 0 {
+			return false
+		}
+		for _, m := range u.Types {
+			if !named(m) {
+				return false
+			}
+		}
+		return true
+	}
+	return named(bound)
+}
+
 func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype.Type {
-	if tail.bound != nil && slices.ContainsFunc(pruned, func(m soltype.Type) bool {
-		return equalType(m, tail.bound)
-	}) {
-		// The tail draws its members from a type the union already names, so every value the
-		// tail could hold is one that member already admits and the tail adds nothing. Both
-		// `"y" | ..."y"` and `string | ...string` are exactly their named side.
-		//
-		// This is subsumption applied to the tail rather than to a member, and it is decided
-		// by equality rather than by a subtype test, so it needs no Context and runs on every
-		// mint. A bound merely BELOW the named members, as in `"a" | "b" | ...("a" | "b")`,
-		// is subsumed too but goes undetected here.
+	if tailSubsumed(pruned, tail.bound) {
 		tail = unionTail{}
 	}
 	if len(pruned) == 0 {
