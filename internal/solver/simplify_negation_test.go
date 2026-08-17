@@ -765,16 +765,21 @@ func TestVisitorRidersReachTheTailBound(t *testing.T) {
 	}
 
 	t.Run("a binder in the bound captures the check's bound", func(t *testing.T) {
+		// if ("a" | ...string) : ("a" | ...infer U) { U } else { boolean }  ⇒  string
 		require.Equal(t, "string", match(binder, binder))
 	})
 
 	t.Run("the capture reaches a compound branch", func(t *testing.T) {
-		// Then is `[U]`, so the answer shows substituteInfer filling a position inside the
-		// branch rather than the branch being the binder itself.
+		// if ("a" | ...string) : ("a" | ...infer U) { [U] } else { boolean }  ⇒  [string]
+		//
+		// The answer shows substituteInfer filling a position inside the branch rather than
+		// the branch being the binder itself.
 		require.Equal(t, "[string]", match(binder, &soltype.TupleType{Elems: []soltype.Type{binder}}))
 	})
 
 	t.Run("a concrete bound the check fits takes the Then branch", func(t *testing.T) {
+		// if ("a" | ...string) : ("a" | ...string) { 9 } else { boolean }  ⇒  9
+		//
 		// No binder anywhere. The bounds still have to meet for the branch to be selected, so
 		// this and the case below are what show the bound is matched against rather than
 		// carried along.
@@ -782,10 +787,13 @@ func TestVisitorRidersReachTheTailBound(t *testing.T) {
 	})
 
 	t.Run("a bound the check does not fit takes the Else branch", func(t *testing.T) {
-		require.Equal(t, "boolean", match(num(), binder))
+		// if ("a" | ...string) : ("a" | ...number) { 9 } else { boolean }  ⇒  boolean
+		require.Equal(t, "boolean", match(num(), numLit(9)))
 	})
 
 	t.Run("a residual operator in the bound leaves the union ungrounded", func(t *testing.T) {
+		// "a" | ...keyof T
+		//
 		// condOperandGround reads containsResidualOp, so a `keyof` reachable only through the
 		// bound has to keep a conditional over this union symbolic.
 		u := newBoundedUnion(nil, []soltype.Type{strLit("a")},
@@ -795,6 +803,7 @@ func TestVisitorRidersReachTheTailBound(t *testing.T) {
 	})
 
 	t.Run("a free variable in the bound is found", func(t *testing.T) {
+		// "a" | ...T
 		u := newBoundedUnion(nil, []soltype.Type{strLit("a")}, &soltype.TypeVarType{ID: 2, Level: 1})
 		require.True(t, containsFreeVar(u))
 	})
