@@ -899,9 +899,9 @@ type UnionType struct {
 	//
 	// A bound keeps the named members enumerable while still saying what the rest
 	// can be. `keyof {a: X, ...}` is `"a" | ...string`, so a mapped type still has
-	// "a" to iterate and `¬keyof {a: X, ...}` still rejects `5`. Flattening the
-	// bound into the member list instead would give `"a" | string`, which subsumes
-	// to `string` and loses both.
+	// "a" to iterate and the key set still rejects `5`. Flattening the bound into
+	// the member list instead would give `"a" | string`, which subsumes to `string`
+	// and loses both.
 	TailBound Type
 }
 type IntersectionType struct{ Types []Type }

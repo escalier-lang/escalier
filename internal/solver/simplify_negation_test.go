@@ -350,8 +350,9 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 		}
 	})
 
-	// The complement is inhabited, so newNegation has something to wrap. This is the probe
-	// behind `¬keyof {a: X, ...}` rejecting `5` rather than reducing to `never`.
+	// The complement is inhabited, so newNegation has something to wrap. `5` is not a key of
+	// the object, so it satisfies `¬keyof {a: X, ...}`, while a string that could be one does
+	// not. An unbounded tail folds the whole complement to `never`, which nothing satisfies.
 	t.Run("its complement is inhabited", func(t *testing.T) {
 		require.True(t, subtypeHolds(c.ctx, numLit(5), negT(bounded)))
 		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
