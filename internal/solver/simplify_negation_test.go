@@ -687,6 +687,53 @@ func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
 	})
 }
 
+// Five predicates and rewriters reach a union's members through soltype's visitor, so each
+// reaches the tail's bound too. None of them names the bound itself, which is what makes a walk
+// that stopped at the member list invisible: `condOperandGround` would call an ungrounded union
+// ground, and a capture written in the bound would never be filled.
+//
+// No surface syntax writes a bound, so an `infer` cannot reach one from source today. The
+// machinery still has to hold, since the bound is an ordinary type position and every one of
+// these rides the same walk.
+func TestVisitorRidersReachTheTailBound(t *testing.T) {
+	binder := &soltype.InferType{ID: 7, Name: "U", Binder: true}
+
+	t.Run("an infer binder in the bound is found and filled", func(t *testing.T) {
+		pattern := newBoundedUnion(nil, []soltype.Type{strLit("a")}, binder)
+		require.Equal(t, `"a" | ...infer U`, soltype.Print(pattern))
+		require.True(t, containsInfer(pattern))
+		require.Equal(t, []int{7}, inferDeclIDs(pattern))
+		filled := substituteInfer(pattern, map[int]soltype.Type{7: str()})
+		require.Equal(t, `"a" | ...string`, soltype.Print(filled))
+	})
+
+	t.Run("a residual operator in the bound leaves the union ungrounded", func(t *testing.T) {
+		// condOperandGround reads containsResidualOp, so a `keyof` reachable only through the
+		// bound has to keep a conditional over this union symbolic.
+		u := newBoundedUnion(nil, []soltype.Type{strLit("a")},
+			&soltype.KeyofType{Operand: &soltype.TypeVarType{ID: 1, Level: 1}})
+		require.True(t, containsResidualOp(u))
+		require.False(t, condOperandGround(u))
+	})
+
+	t.Run("a free variable in the bound is found", func(t *testing.T) {
+		u := newBoundedUnion(nil, []soltype.Type{strLit("a")}, &soltype.TypeVarType{ID: 2, Level: 1})
+		require.True(t, containsFreeVar(u))
+	})
+
+	// End to end: the capture comes from the subtype check that decides the branch, so a binder
+	// in the bound is filled by the same route a binder in a written member is.
+	t.Run("a conditional captures from the bound", func(t *testing.T) {
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
+			Extends: newBoundedUnion(nil, []soltype.Type{strLit("a")}, binder),
+			Then:    binder,
+			Else:    boolT(),
+		}
+		require.Equal(t, "string", soltype.Print(reduceType(cond)))
+	})
+}
+
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,
 // and the bound is decided by what kind of key the operand has. An object's unlisted keys
 // are property names and a tuple's are positions, so the two take different bounds.
