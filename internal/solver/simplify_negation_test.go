@@ -430,12 +430,14 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 		{
 			// A check every value of the bound satisfies takes the same branch for every tail
 			// member, so the conditional runs on the bound the way it runs on a named member.
+			// Every member and the bound alike select `"y"`, and a tail drawn from a type the
+			// union already names adds nothing, so the whole result closes to `"y"`.
 			name: "DistributiveConditionalUniformOverTheBound",
 			decl: `
 				type Yes<T> = if T : string { "y" } else { "n" }
 				type Result = Yes<keyof Obj>
 			`,
-			want: `"y" | ..."y"`,
+			want: `"y"`,
 		},
 		{
 			// `Inexact` over an already-open union is the identity, so the bound has to
@@ -641,13 +643,17 @@ func TestNarrowUnionMembersWeighsTheTailBound(t *testing.T) {
 	})
 
 	t.Run("a structured bound is kept", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...{b: string}`. The bound itself carries no "a", but a
+		// `{a: number} | {b: string} | ...{c: boolean}`. The bound itself carries no "a", but a
 		// member drawn from it may, so deciding the tail needs a disjointness question
 		// narrowUnionMembers cannot ask. It keeps the tail, which is the wider answer.
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objB)
+		//
+		// The bound names a shape no member of the union does. A bound equal to a named member
+		// is subsumed by it and drops at construction, which would leave nothing to narrow.
+		objC := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("c", boolT())}}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objC)
 		narrowed, ok := narrowUnionMembers(u, keepA)
 		require.True(t, ok)
-		require.Equal(t, "{a: number} | ...{b: string}", soltype.Print(narrowed))
+		require.Equal(t, "{a: number} | ...{c: boolean}", soltype.Print(narrowed))
 	})
 
 	t.Run("an unbounded tail is kept", func(t *testing.T) {

@@ -254,6 +254,59 @@ func TestFlattenUnionMergesTailBounds(t *testing.T) {
 	}
 }
 
+// A tail whose bound the union already names as a member contributes no value that member
+// does not, so it drops and the union closes. This is subsumption applied to the tail rather
+// than to a member, and equality decides it, so no Context is needed.
+func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
+	tests := []struct {
+		name  string
+		build func() soltype.Type
+		want  string
+	}{
+		{
+			// `"y" | ..."y"`. Every value the tail could hold is a `"y"`, which the named
+			// member already admits, so the union is exactly `"y"` and collapses to it. This
+			// is what a distributive conditional leaves when every member and the bound
+			// select the same branch.
+			name:  "a bound equal to the only member closes the union",
+			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, strLit("y")) },
+			want:  `"y"`,
+		},
+		{
+			// `string | ...string`, the same rule over a primitive.
+			name:  "a bound equal to a primitive member closes the union",
+			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{str()}, str()) },
+			want:  "string",
+		},
+		{
+			// The tail drops but other members remain, so the union stays a union and only
+			// loses its `...`.
+			name: "the union keeps its other members",
+			build: func() soltype.Type {
+				return newBoundedUnion(nil, []soltype.Type{strLit("y"), numLit(1)}, strLit("y"))
+			},
+			want: `1 | "y"`,
+		},
+		{
+			// A bound naming values no member does is not subsumed, so the tail stays.
+			name:  "an unrelated bound is kept",
+			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, str()) },
+			want:  `"y" | ...string`,
+		},
+		{
+			// Subsumption needs a member to be subsumed by. A tail with none stays whole.
+			name:  "a member-less tail is kept",
+			build: func() soltype.Type { return newBoundedUnion(nil, nil, str()) },
+			want:  "...string",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, soltype.Print(tt.build()))
+		})
+	}
+}
+
 // A bound is part of a union's identity, so two unions that differ only in what their
 // tails admit are neither equal nor deduped into one, and they hold a stable place in
 // canonical order. compareType is what sortTypes consults, so an unstable answer there

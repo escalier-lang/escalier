@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -286,6 +287,19 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 }
 
 func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype.Type {
+	if tail.bound != nil && slices.ContainsFunc(pruned, func(m soltype.Type) bool {
+		return equalType(m, tail.bound)
+	}) {
+		// The tail draws its members from a type the union already names, so every value the
+		// tail could hold is one that member already admits and the tail adds nothing. Both
+		// `"y" | ..."y"` and `string | ...string` are exactly their named side.
+		//
+		// This is subsumption applied to the tail rather than to a member, and it is decided
+		// by equality rather than by a subtype test, so it needs no Context and runs on every
+		// mint. A bound merely BELOW the named members, as in `"a" | "b" | ...("a" | "b")`,
+		// is subsumed too but goes undetected here.
+		tail = unionTail{}
+	}
 	if len(pruned) == 0 {
 		// ErrorType absorbs, so a union whose every other member was pruned comes back
 		// as the sole surviving error whatever its tail says.
