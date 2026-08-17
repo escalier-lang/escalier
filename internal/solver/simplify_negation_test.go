@@ -329,21 +329,21 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 	c := newChecker()
 	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ...string
 
-	t.Run("the bound decides what is below the union", func(t *testing.T) {
+	t.Run("the bound decides what is a subtype of the union", func(t *testing.T) {
 		probes := []struct {
 			name     string
 			sub, sup soltype.Type
 			want     bool
 		}{
 			// A value the bound admits may be one of the tail's members.
-			{"a named member is below it", strLit("a"), bounded, true},
-			{"another string is below it", strLit("z"), bounded, true},
-			{"the bound itself is below it", str(), bounded, true},
+			{"a named member is a subtype of it", strLit("a"), bounded, true},
+			{"another string is a subtype of it", strLit("z"), bounded, true},
+			{"the bound itself is a subtype of it", str(), bounded, true},
 			// A value the bound rejects cannot be, which is where the unbounded tail
 			// answered true for every sub.
-			{"a number literal is not below it", numLit(5), bounded, false},
-			{"a number is not below it", num(), bounded, false},
-			{"unknown is not below it", &soltype.UnknownType{}, bounded, false},
+			{"a number literal is not a subtype of it", numLit(5), bounded, false},
+			{"a number is not a subtype of it", num(), bounded, false},
+			{"unknown is not a subtype of it", &soltype.UnknownType{}, bounded, false},
 		}
 		for _, p := range probes {
 			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
@@ -358,10 +358,11 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
 	})
 
-	// The bound also decides what the union is below, which is the direction that carries
-	// the tail into a supertype rather than out of one. An unbounded tail is below nothing
-	// but `unknown`, since no closed type absorbs a tail that may hold anything.
-	t.Run("the bound decides what the union is below", func(t *testing.T) {
+	// The bound also decides what the union is a subtype of, which is the direction that
+	// carries the tail into a supertype rather than out of one. An unbounded tail is a
+	// subtype of nothing but `unknown`, since no closed type absorbs a tail that may hold
+	// anything.
+	t.Run("the bound decides what the union is a subtype of", func(t *testing.T) {
 		probes := []struct {
 			name     string
 			sub, sup soltype.Type
@@ -369,26 +370,26 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 		}{
 			// Every member is a string, the named one included, so `string` absorbs the
 			// whole union.
-			{"a bounded tail is below its own bound", bounded, str(), true},
+			{"a bounded tail is a subtype of its own bound", bounded, str(), true},
 			// The sub's tail may hold "zz", which the super's `number` tail rejects.
 			{
-				"a string tail is not below a number tail",
+				"a string tail is not a subtype of a number tail",
 				bounded, newBoundedUnion(nil, []soltype.Type{strLit("a")}, num()), false,
 			},
 			// The super's tail admits every string, so it absorbs the sub's whole tail.
 			{
-				"a narrower bound is below a wider one",
+				"a narrower bound is a subtype of a wider one",
 				newBoundedUnion(nil, []soltype.Type{strLit("a")}, strLit("z")), bounded, true,
 			},
-			{"a bounded tail is not below a lone member", bounded, strLit("a"), false},
+			{"a bounded tail is not a subtype of a lone member", bounded, strLit("a"), false},
 			// The unbounded sub is top, so no bounded super absorbs it. This is the one
 			// pair where both operands carry a tail and only the sub's is unbounded.
 			{
-				"an unbounded tail is not below a bounded one",
+				"an unbounded tail is not a subtype of a bounded one",
 				newUnion(nil, []soltype.Type{strLit("a")}, true), bounded, false,
 			},
 			{
-				"a bounded tail is below an unbounded one",
+				"a bounded tail is a subtype of an unbounded one",
 				bounded, newUnion(nil, []soltype.Type{strLit("a")}, true), true,
 			},
 		}
