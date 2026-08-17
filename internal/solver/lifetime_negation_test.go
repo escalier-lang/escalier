@@ -83,8 +83,8 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 		},
 		{
 			// The worst row. Stripping the name here leaves a returned borrow with no
-			// named source, which is what D4's elision exists to prevent, since it hides
-			// a borrow at the call site.
+			// named source, which is the outcome elision exists to prevent, since it
+			// hides a borrow at the call site.
 			name: "complemented param to borrow return",
 			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
 				return &soltype.FuncType{

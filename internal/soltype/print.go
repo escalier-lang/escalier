@@ -255,7 +255,7 @@ func PrintAsSchemeWith(
 		next++
 		labels = append(labels, p.bindTypeParam(v, name))
 	}
-	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
+	// Borrow lifetimes left in the coalesced type by coalesceLifetimes are all
 	// nameable. A connect-nothing one was already elided. Three kinds survive to here:
 	// a param lifetime, a kept join lifetime, and a lifetime occurring under a
 	// complement.
@@ -626,7 +626,7 @@ type namedPrinter struct {
 	names map[*TypeVarType]string
 	// ltNames maps a retained lifetime variable to its surface name (`'a`, `'b`,
 	// …). It is nil for plain Print, where a lifetime var renders as the raw
-	// `'l{ID}` debug form; D4's display-time coalescing populates it so a
+	// `'l{ID}` debug form. Display-time lifetime coalescing populates it so a
 	// param-originated lifetime renders under its quantified name.
 	ltNames map[*LifetimeVar]string
 	// qualify renders a ClassType or AliasType under its full dep_graph-qualified name

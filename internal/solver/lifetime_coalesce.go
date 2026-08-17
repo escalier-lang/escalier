@@ -9,7 +9,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Display-time lifetime coalescing (M4 D4). The structural coalescers (coalesce /
+// Display-time lifetime coalescing. The structural coalescers (coalesce /
 // coalesceScheme) rebuild a type through the shared visitor, which carries every
 // RefType lifetime through unchanged because a Lifetime is not a Type. They leave
 // the RAW lifetime variables in place: a borrow parameter's originated lifetime, a
@@ -87,7 +87,8 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // rendered signature.
 //
 // Position alone is not enough, because a complemented borrow reaching no output is
-// genuinely connect-nothing and D4 elides those. Eliding under a complement changes the
+// genuinely connect-nothing, and the elision rule above drops those. Eliding under a
+// complement changes the
 // type rather than merely dropping a name, since `¬(&'a T)` rendered as `¬(&T)` is the
 // complement of any borrow of T rather than of the 'a one. noElide is the veto that
 // keeps the name in exactly that case, and it is deliberately independent of position so

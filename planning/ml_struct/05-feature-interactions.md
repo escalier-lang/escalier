@@ -96,8 +96,8 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      unrelated lifetimes named and invents outlives bounds.
   2. **Complement-enclosed**, a veto that forbids eliding a lifetime whatever its
      position. Position alone is not enough, because a complemented borrow reaching no
-     output is genuinely connect-nothing and D4 elides those. The veto is what puts the
-     name on a complemented borrow.
+     output is genuinely connect-nothing, and the display-time elision rule drops those.
+     The veto is what puts the name on a complemented borrow.
 
   The two are kept separate so that correcting one cannot silently re-break the other.
   They are also pinned by different tests: the veto by
