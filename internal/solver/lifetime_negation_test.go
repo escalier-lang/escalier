@@ -31,10 +31,15 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // as `¬(&T)` is the complement of any borrow of T rather than of the 'a one.
 //
 // ltOccVisitor answers with two facts instead of one. It undoes the complement's flip to
-// recover the position the borrow structurally sits in, which is what names it, and it
-// records the borrow as complement-enclosed, which forbids eliding it. The rows below
-// need both. Rows 2 and 5 are fixed by the position correction, while rows 3 and 4 hold
-// only because of the no-elide veto, their borrows reaching no output at all.
+// recover the position the borrow structurally sits in, and it records the borrow as
+// complement-enclosed, which forbids eliding its lifetime.
+//
+// Every row below is carried by the veto alone. Disabling the position correction leaves
+// all of them passing, because a complemented borrow named through the veto renders the
+// same string either way. The correction is pinned instead by
+// TestComplementedBorrowAssertsNoOutlivesRelation and
+// TestComplementedBorrowGroupsLikeAnOrdinaryParam, where a mis-read position changes
+// which component counts as output-reaching.
 func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 	num := &soltype.PrimType{Prim: soltype.NumPrim}
 
@@ -115,10 +120,10 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // reach it through an intervening former. Here a complement encloses a function whose
 // parameter is itself a complemented borrow, so the walk sees two complements.
 //
-// This is what the parity rule buys. Two flips cancel, so undoing them returns the inner
-// borrow to the negative position it structurally sits in, and it is read as a parameter
-// borrow rather than an output one. The no-elide veto then keeps its name, since neither
-// borrow reaches an output.
+// Two flips cancel, so undoing them returns the inner borrow to the negative position it
+// structurally sits in. Neither borrow reaches an output, so the name here comes from the
+// no-elide veto rather than from the position. This row passes with the position
+// correction disabled, so treat it as covering the nesting shape, not the parity rule.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)

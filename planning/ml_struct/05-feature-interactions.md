@@ -91,17 +91,23 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   `ltOccVisitor` therefore produces two facts rather than one:
 
   1. **Position**, recovered by undoing one polarity flip per enclosing complement.
-     Only the parity matters, since two complements cancel. This is what names a
-     lifetime.
+     Only the parity matters, since two complements cancel. Position decides which
+     connected component counts as output-reaching, so a mis-read position keeps
+     unrelated lifetimes named and invents outlives bounds.
   2. **Complement-enclosed**, a veto that forbids eliding a lifetime whatever its
      position. Position alone is not enough, because a complemented borrow reaching no
-     output is genuinely connect-nothing and D4 elides those.
+     output is genuinely connect-nothing and D4 elides those. The veto is what puts the
+     name on a complemented borrow.
 
   The two are kept separate so that correcting one cannot silently re-break the other.
+  They are also pinned by different tests: the veto by
+  `TestComplementedBorrowKeepsLifetimeName`, the position correction by
+  `TestComplementedBorrowAssertsNoOutlivesRelation` and
+  `TestComplementedBorrowGroupsLikeAnOrdinaryParam`.
+
   The same occurrence map feeds `checkDeclaredLifetimeBounds` through
-  `ltOutlivesRelation`, so the mis-reading also invented outlives bounds inference never
-  proved. `TestComplementedBorrowKeepsLifetimeName` covers the rendering, and
-  `TestComplementedBorrowAssertsNoOutlivesRelation` the bounds.
+  `ltOutlivesRelation`, so the mis-reading reached the declared-bound check and not only
+  the printer.
 
 ---
 
