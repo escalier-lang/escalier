@@ -79,17 +79,28 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      borrows is the other half of the work.
 
   Display-time lifetime classification was a third blocker. It no longer is.
-  `coalesceLifetimes` reads polarity as dataflow rather than as variance. Negative
-  means the borrow originates at a parameter, so its lifetime is nameable. Positive
-  means the borrow reaches an output, so its lifetime must not be elided. The
-  complement's flip inverts that reading and strips the name off every complemented
-  borrow, which changes the type rather than merely dropping a name, since
-  `¬(&'a T)` rendered as `¬(&T)` is the complement of *any* borrow of `T`.
-  `ltOccVisitor` therefore records a lifetime under a complement in both polarities,
-  which names it and keeps it. The same occurrence map feeds
-  `checkDeclaredLifetimeBounds` through `ltOutlivesRelation`, so the mis-reading also
-  invented outlives bounds inference never proved.
-  `TestComplementedBorrowKeepsLifetimeName` covers the rendering, and
+  `coalesceLifetimes` reads a borrow's position as dataflow rather than as variance.
+  Negative means the borrow originates at a parameter, so its lifetime is nameable.
+  Positive means the borrow reaches an output, so its lifetime is not elided. A
+  complement does not move a borrow between a parameter and an output, but it does flip
+  the polarity its operand is visited at, so reading position straight off the polarity
+  strips the name from every complemented borrow. That changes the type rather than
+  merely dropping a name, since `¬(&'a T)` rendered as `¬(&T)` is the complement of
+  *any* borrow of `T`.
+
+  `ltOccVisitor` therefore produces two facts rather than one:
+
+  1. **Position**, recovered by undoing one polarity flip per enclosing complement.
+     Only the parity matters, since two complements cancel. This is what names a
+     lifetime.
+  2. **Complement-enclosed**, a veto that forbids eliding a lifetime whatever its
+     position. Position alone is not enough, because a complemented borrow reaching no
+     output is genuinely connect-nothing and D4 elides those.
+
+  The two are kept separate so that correcting one cannot silently re-break the other.
+  The same occurrence map feeds `checkDeclaredLifetimeBounds` through
+  `ltOutlivesRelation`, so the mis-reading also invented outlives bounds inference never
+  proved. `TestComplementedBorrowKeepsLifetimeName` covers the rendering, and
   `TestComplementedBorrowAssertsNoOutlivesRelation` the bounds.
 
 ---

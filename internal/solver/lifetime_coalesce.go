@@ -59,35 +59,42 @@ import (
 // Positive root today, so this is Positive in practice. Threading it keeps the
 // lifetime analysis consistent with the coalescing polarity rather than assuming it.
 func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	occ := map[*soltype.LifetimeVar]occPolarity{}
-	t.Accept(&ltOccVisitor{occ: occ}, pol)
-
-	a := newLtAnalysis(occ)
+	a := newLtAnalysis(walkLtOcc(t, pol))
 	return t.Accept(&ltRewriter{a: a}, pol)
 }
 
-// ltOccVisitor records the polarities each lifetime variable occurs in
-// structurally. A RefType lifetime is COVARIANT, since it lives on the wrapper, not
-// in the inner, so it is recorded in the borrow's own polarity. The mut-driven write
-// view that flips the inner never touches it.
+// ltOccVisitor records where each lifetime variable occurs, producing the two facts the
+// analysis needs. A RefType lifetime is COVARIANT, since it lives on the wrapper, not in
+// the inner, so it is recorded in the borrow's own polarity. The mut-driven write view
+// that flips the inner never touches it.
 //
-// negDepth counts the complements enclosing the node being visited. It exists because
-// this pass reads polarity as dataflow rather than as variance. Negative means the
-// borrow originates at a parameter, so its lifetime is nameable, and positive means the
-// borrow reaches an output, so its lifetime must not be elided. NegationType.Accept
-// flips the polarity its operand is visited at, which is right for variance and wrong
-// for that reading. A complemented borrow in a return still lets a parameter's lifetime
-// reach the output, so the flip would report the parameter's lifetime as an output-only
-// lifetime and strip its name.
+// The two facts are separate because a complement affects them differently:
 //
-// Under a complement, origination and reachability cannot be told apart from polarity
-// alone, so a lifetime found there is recorded in BOTH polarities. That names it and
-// keeps it from being elided. Claiming both is the safe direction. Eliding a lifetime
-// under a complement changes the type rather than merely dropping a name, since
-// `¬(&'a T)` rendered as `¬(&T)` is the complement of any borrow of T rather than of
-// the 'a one.
+//   - occ records the STRUCTURAL POSITION, meaning whether the borrow sits in a
+//     parameter or in an output. This pass reads position as dataflow rather than as
+//     variance. Negative means the borrow originates at a parameter, so its lifetime is
+//     nameable, and positive means the borrow reaches an output, so its lifetime is not
+//     elided.
+//   - noElide records that a complement encloses the borrow, which forbids eliding its
+//     lifetime whatever its position.
+//
+// A complement does not move a borrow between a parameter and an output, but
+// NegationType.Accept flips the polarity its operand is visited at, which is right for
+// variance and wrong for reading position. Undoing that flip recovers the position:
+// each enclosing complement inverts it once, so the parity of negDepth says whether to
+// flip back. Without the correction `fn (p: &'a T) -> ¬(&'a T)` reads its returned
+// borrow as a parameter borrow and drops the parameter-to-return connection from the
+// rendered signature.
+//
+// Position alone is not enough, because a complemented borrow reaching no output is
+// genuinely connect-nothing and D4 elides those. Eliding under a complement changes the
+// type rather than merely dropping a name, since `¬(&'a T)` rendered as `¬(&T)` is the
+// complement of any borrow of T rather than of the 'a one. noElide is the veto that
+// keeps the name in exactly that case, and it is deliberately independent of position so
+// that correcting one does not silently re-break the other.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
+	noElide  set.Set[*soltype.LifetimeVar]
 	negDepth int
 }
 
@@ -97,13 +104,19 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 	}
 	if r, ok := t.(*soltype.RefType); ok {
 		if lv, ok := r.Lt.(*soltype.LifetimeVar); ok {
-			switch {
-			case v.negDepth > 0:
-				v.occ[lv] |= occPos | occNeg
-			case pol == soltype.Positive:
+			// Undo one polarity flip per enclosing complement to recover the position the
+			// borrow structurally sits in. Two complements cancel, so only the parity counts.
+			position := pol
+			if v.negDepth%2 == 1 {
+				position = position.Flip()
+			}
+			if position == soltype.Positive {
 				v.occ[lv] |= occPos
-			default:
+			} else {
 				v.occ[lv] |= occNeg
+			}
+			if v.negDepth > 0 {
+				v.noElide.Add(lv)
 			}
 		}
 	}
@@ -119,15 +132,27 @@ func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type
 	return t
 }
 
+// walkLtOcc runs the occurrence walk over t from the root polarity pol, returning the
+// structural positions and the set of lifetimes a complement encloses.
+func walkLtOcc(t soltype.Type, pol soltype.Polarity) (map[*soltype.LifetimeVar]occPolarity, set.Set[*soltype.LifetimeVar]) {
+	v := &ltOccVisitor{
+		occ:     map[*soltype.LifetimeVar]occPolarity{},
+		noElide: set.NewSet[*soltype.LifetimeVar](),
+	}
+	t.Accept(v, pol)
+	return v.occ, v.noElide
+}
+
 // ltAnalysis is the precomputed input the rewriter reads: per-variable structural
 // occurrence, the condensed outlives graph the grouping is built from, the
 // connected-component leader of each representative, and the set of component leaders
 // that hold a positive output lifetime.
 type ltAnalysis struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
-	bs       *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
-	comp     map[int]int  // representative ID -> connected-component leader ID in bs
-	posComps set.Set[int] // component leaders reaching a positive occurrence
+	noElide  set.Set[*soltype.LifetimeVar] // lifetimes a complement encloses; never elided
+	bs       *ltBoundSet                   // condensed outlives graph; rep IDs collapse mutual-outlives cycles
+	comp     map[int]int                   // representative ID -> connected-component leader ID in bs
+	posComps set.Set[int]                  // component leaders reaching a positive occurrence
 }
 
 // newLtAnalysis builds the grouping from the structurally-occurring lifetime
@@ -145,7 +170,7 @@ type ltAnalysis struct {
 // the other along outlives edges. Condensing mutual-outlives cycles to one
 // representative first is what leaves a DAG for reduce and for the directional bound
 // rendering that layers on top.
-func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
+func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity, noElide set.Set[*soltype.LifetimeVar]) *ltAnalysis {
 	bs := buildLtBoundSet(occ)
 	comp := bs.weakComponents()
 
@@ -159,7 +184,7 @@ func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity) *ltAnalysis {
 			posComps.Add(comp[bs.repOf(v.ID)])
 		}
 	}
-	return &ltAnalysis{occ: occ, bs: bs, comp: comp, posComps: posComps}
+	return &ltAnalysis{occ: occ, noElide: noElide, bs: bs, comp: comp, posComps: posComps}
 }
 
 // isParam reports whether v is a param lifetime: one that originates at a borrow
@@ -217,12 +242,17 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 
 // resolveLt maps a lifetime variable to its display form, or reports elide=true when
 // the borrow connects nothing and the wrapper should drop.
+//
+// A lifetime a complement encloses is never elided. It renders under its own name even
+// when it connects nothing, because dropping it would change the type rather than drop a
+// name. That is the one case where a named lifetime is bound by nothing in the
+// signature, so `fn () -> ¬(&'a T)` quantifies an 'a the caller cannot choose.
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {
 		return soltype.Static, false
 	}
 	if a.isParam(v) {
-		if a.kept(v) {
+		if a.kept(v) || a.noElide.Contains(v) {
 			return v, false // a named param renders under its own quantified name
 		}
 		return nil, true // connect-nothing param: elide
@@ -232,6 +262,9 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 	members := a.componentParams(v)
 	switch len(members) {
 	case 0:
+		if a.noElide.Contains(v) {
+			return v, false // complemented and reaching no param: keep its own name
+		}
 		return nil, true // reaches no param: elide
 	case 1:
 		// A single reached param means v reborrows one source, so it renders under that
@@ -264,12 +297,11 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 // relation between them. pol is the polarity t was built at, threaded so the occurrence
 // walk starts from the same root.
 func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*soltype.LifetimeVar, func(u, w *soltype.LifetimeVar) bool) {
-	occ := map[*soltype.LifetimeVar]occPolarity{}
-	t.Accept(&ltOccVisitor{occ: occ}, pol)
+	occ, noElide := walkLtOcc(t, pol)
 	if len(occ) == 0 {
 		return nil, nil, nil
 	}
-	a := newLtAnalysis(occ)
+	a := newLtAnalysis(occ, noElide)
 	bs := a.bs
 
 	survivors := slices.Collect(maps.Keys(occ))

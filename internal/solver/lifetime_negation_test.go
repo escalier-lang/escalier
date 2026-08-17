@@ -28,9 +28,13 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // `¬&mut {x: number}` with no name at all.
 //
 // Eliding there is not merely a lost name, it is a different type. `¬(&'a T)` rendered
-// as `¬(&T)` is the complement of any borrow of T rather than of the 'a one. So
-// ltOccVisitor records a lifetime under a complement in both polarities, which names it
-// and keeps it.
+// as `¬(&T)` is the complement of any borrow of T rather than of the 'a one.
+//
+// ltOccVisitor answers with two facts instead of one. It undoes the complement's flip to
+// recover the position the borrow structurally sits in, which is what names it, and it
+// records the borrow as complement-enclosed, which forbids eliding it. The rows below
+// need both. Rows 2 and 5 are fixed by the position correction, while rows 3 and 4 hold
+// only because of the no-elide veto, their borrows reaching no output at all.
 func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 	num := &soltype.PrimType{Prim: soltype.NumPrim}
 
@@ -86,9 +90,9 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 			want: "fn <'a>(p: ¬&'a mut {x: number}) -> &'a mut {x: number}",
 		},
 		{
-			// The control. Recording both polarities under a complement must not make
-			// every borrow survive elision, so an uncomplemented borrow reaching no
-			// output still renders with its lifetime elided.
+			// The control. The no-elide veto is keyed to the borrows a complement
+			// encloses, so an uncomplemented borrow reaching no output still renders
+			// with its lifetime elided.
 			name: "uncomplemented connect-nothing borrow still elides",
 			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
 				return borrowFn(num, a)
@@ -109,14 +113,12 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // Two complements around one borrow cancel, and the coalescer folds `¬¬T` to T before
 // the lifetime pass runs, so that shape never reaches the occurrence walk. Nesting does
 // reach it through an intervening former. Here a complement encloses a function whose
-// parameter is itself a complemented borrow, so the walk sees two complements and two
-// polarity flips that cancel back to the negative position the borrow structurally sits
-// in.
+// parameter is itself a complemented borrow, so the walk sees two complements.
 //
-// Recording both polarities under any enclosing complement is coarser than un-flipping
-// the cancelled pair would be, so it over-names. Over-naming is the safe direction. A
-// name that could have been elided still denotes the same type, while an elision does
-// not.
+// This is what the parity rule buys. Two flips cancel, so undoing them returns the inner
+// borrow to the negative position it structurally sits in, and it is read as a parameter
+// borrow rather than an output one. The no-elide veto then keeps its name, since neither
+// borrow reaches an output.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -229,10 +231,13 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 		}
 	}
 
-	// The rendered signature carries the same fact: three independent names and no
-	// bound in the quantifier prefix.
+	// The rendered signature carries the same fact: no bound in the quantifier prefix.
+	// It also shows the two signals acting separately. All three borrows reach no
+	// output, so all three are connect-nothing and 'a and 'b elide on position alone.
+	// Only the complemented one keeps a name, because the no-elide veto overrides the
+	// same connect-nothing verdict for it.
 	require.Equal(t,
-		"fn <'a, 'b, 'c>(p: &'a mut {x: number}, q: &'b mut {x: number}, r: ¬&'c mut {x: number}) -> number",
+		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ¬&'a mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
