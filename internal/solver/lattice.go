@@ -297,6 +297,9 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 // the named members by some other route, such as `string | ..."a"`, is subsumed too but goes
 // undetected. An inexact union bound never qualifies, since its own tail says nothing about
 // what it holds.
+//
+// An exact union bound naming no member denotes `never`, so the loop below passes it vacuously
+// and the tail drops. A tail drawn from `never` holds nothing, which is the answer that wants.
 func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
 	if bound == nil {
 		return false
@@ -305,9 +308,6 @@ func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
 		return slices.ContainsFunc(pruned, func(m soltype.Type) bool { return equalType(m, t) })
 	}
 	if u, ok := bound.(*soltype.UnionType); ok && !u.Inexact {
-		if len(u.Types) == 0 {
-			return false
-		}
 		for _, m := range u.Types {
 			if !named(m) {
 				return false
