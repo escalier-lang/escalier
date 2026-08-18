@@ -372,9 +372,8 @@ func (t *TupleTypeAnn) Accept(v Visitor) {
 type UnionTypeAnn struct {
 	Types   []TypeAnn
 	Inexact bool // trailing `...` marker: `A | B | ...` tolerates an unknown tail
-	// TailBound names the type the tail's unknown members are drawn from, set by a
-	// `...R` tail as in `A | ...string`. It is nil on an exact union and may be nil on
-	// an inexact one, which leaves the tail unbounded as `A | ...`.
+	// TailBound names the type the tail's unknown members are drawn from, as in
+	// `A | ...string`. It is nil when the tail is unbounded (`A | ...`) or the union exact.
 	TailBound    TypeAnn
 	span         Span
 	inferredType Type

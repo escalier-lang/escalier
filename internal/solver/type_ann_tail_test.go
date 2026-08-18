@@ -7,10 +7,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The surface syntax `A | ...R` resolves to a bounded tail, and `A | B | ...` to an
-// unbounded one, so a test can write the source directly instead of minting the union by
-// hand. resolveUnionTypeAnn reads UnionTypeAnn.TailBound and lowers it through
-// newBoundedUnion, or leaves the tail unbounded when the source wrote a bare `...`.
+// The surface syntax `A | ...R` resolves to a bounded tail and `A | B | ...` to an unbounded
+// one, so a test can write the source directly rather than minting the union by hand.
 func TestResolveUnionTailSyntax(t *testing.T) {
 	tests := []struct {
 		name string

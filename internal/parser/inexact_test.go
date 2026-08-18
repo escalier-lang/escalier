@@ -106,9 +106,8 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 	})
 }
 
-// A `...R` tail bounds the open tail: `A | ...string` draws its unknown members from
-// string. The bound is parsed as a primary type and stored on TailBound, and it makes a
-// tail meaningful even after a single member, which the bare `...` marker rejects.
+// A `...R` tail bounds the open tail: `A | ...string` stores string on TailBound. A bound
+// also makes a tail meaningful after a single member, which the bare `...` marker rejects.
 func TestParseBoundedUnionTail(t *testing.T) {
 	ctx := context.Background()
 
@@ -121,6 +120,8 @@ func TestParseBoundedUnionTail(t *testing.T) {
 		require.Len(t, u.Types, 2)
 		_, ok = u.TailBound.(*ast.StringTypeAnn)
 		require.True(t, ok)
+		// The union's span reaches through the bound, so it ends at the end of `string`.
+		require.Equal(t, u.TailBound.Span().End, u.Span().End)
 	})
 
 	t.Run("bound after a single member wraps in a one-member union", func(t *testing.T) {
