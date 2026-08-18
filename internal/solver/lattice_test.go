@@ -298,13 +298,25 @@ func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
 			want: "1 | 2",
 		},
 		{
-			// One unnamed member in the bound is enough to keep the tail, since the union does
-			// not otherwise admit it.
-			name: "a union bound with an unnamed member is kept",
+			// A bound that only partly overlaps the named members is narrowed to the part the
+			// union does not already admit. `1 | ...(1 | 2)` and `1 | ...2` both admit `1`
+			// alone or `1 | 2`, so this tightens how the type reads without changing what it
+			// denotes.
+			name: "a union bound is narrowed to its unnamed members",
 			build: func() soltype.Type {
 				return newBoundedUnion(nil, []soltype.Type{numLit(1)}, unionT(numLit(1), numLit(2)))
 			},
-			want: "1 | ...(1 | 2)",
+			want: "1 | ...2",
+		},
+		{
+			// Narrowing down to a single member leaves that member as the bound rather than a
+			// one-member union, since newUnion collapses it.
+			name: "a bound narrowed to one member drops its union wrapper",
+			build: func() soltype.Type {
+				return newBoundedUnion(nil, []soltype.Type{numLit(1), numLit(2)},
+					unionT(numLit(1), numLit(2), numLit(3)))
+			},
+			want: "1 | 2 | ...3",
 		},
 		{
 			// A bound naming values no member does is not subsumed, so the tail stays.

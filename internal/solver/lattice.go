@@ -286,45 +286,53 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 	return out
 }
 
-// tailSubsumed reports whether every value a tail's bound admits is one the union's named
-// members already admit, which makes the tail contribute nothing and the union exactly its
-// named side. `"y" | ..."y"` is exactly `"y"`, `string | ...string` exactly `string`, and
-// `1 | 2 | ...(1 | 2)` exactly `1 | 2`.
+// narrowTailBound removes from a tail's bound every value the union's named members already
+// admit, and returns nil once nothing is left. A nil result drops the tail, so `"y" | ..."y"`
+// is exactly `"y"`. A partial overlap narrows instead: `1 | ...(1 | 2)` becomes `1 | ...2`,
+// which reads tighter and denotes the same thing, since both admit `1` alone or `1 | 2`.
 //
-// This is subsumption applied to the tail rather than to a member. Equality decides it rather
-// than a subtype test, so it needs no Context and runs on every mint. Two shapes qualify: a
-// bound equal to a named member, and an exact union whose every member is. A bound that is a
-// subtype of the named members by some other route, such as `string | ..."a"`, is subsumed too
-// but goes undetected. An inexact union bound never qualifies, since its own tail says nothing about
-// what it holds.
+// Equality decides membership rather than a subtype test, so this needs no Context and runs on
+// every mint. A bound that is a subtype of the named members by some other route, such as
+// `string | ..."a"`, goes undetected. An inexact union bound is left alone, since its own tail
+// says nothing about what it holds, and a `never` bound holds nothing and drops.
 //
-// A tail drawn from `never` holds nothing, so it drops however that emptiness is spelled. A
-// bare `never` is one spelling and an exact union naming no member is the other, which the
-// loop below passes vacuously.
-func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
+// An unchanged bound comes back as the same pointer, which is how finalSubsumer tells whether
+// the walk changed anything.
+func narrowTailBound(pruned []soltype.Type, bound soltype.Type) soltype.Type {
 	if bound == nil {
-		return false
+		return nil
 	}
 	if _, empty := bound.(*soltype.NeverType); empty {
-		return true
-	}
-	named := func(t soltype.Type) bool {
-		return slices.ContainsFunc(pruned, func(m soltype.Type) bool { return equalType(m, t) })
+		return nil
 	}
 	if u, ok := bound.(*soltype.UnionType); ok && !u.Inexact {
-		for _, m := range u.Types {
-			if !named(m) {
-				return false
+		kept := make([]soltype.Type, 0, len(u.Types))
+		for _, member := range u.Types {
+			if !slices.ContainsFunc(pruned, func(p soltype.Type) bool { return equalType(p, member) }) {
+				kept = append(kept, member)
 			}
 		}
-		return true
+		switch {
+		case len(kept) == 0:
+			return nil
+		case len(kept) == len(u.Types):
+			return bound
+		}
+		// The filtered members carry no tail of their own, so this mint reaches collapseUnion
+		// with a nil bound and does not come back here.
+		return newUnion(nil, kept, false)
 	}
-	return named(bound)
+	if slices.ContainsFunc(pruned, func(p soltype.Type) bool { return equalType(p, bound) }) {
+		return nil
+	}
+	return bound
 }
 
 func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype.Type {
-	if tailSubsumed(pruned, tail.bound) {
-		tail = unionTail{}
+	if tail.bound != nil {
+		if tail.bound = narrowTailBound(pruned, tail.bound); tail.bound == nil {
+			tail = unionTail{}
+		}
 	}
 	if len(pruned) == 0 {
 		// ErrorType absorbs, so a union whose every other member was pruned comes back
@@ -480,11 +488,12 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 
 // ExitType subsumes a lattice node's members and rebuilds it only when something
 // changed. The input is a coalesced display type, so it is already flattened,
-// pruned, deduped, and canonically ordered — newUnion's other normalization steps
-// would be no-ops here, so only subsumeMembers runs. subsumeMembers only ever
-// removes members, so a length drop is an O(1) signal that the node changed, which
-// avoids a structural re-comparison. When nothing changed the original node is
-// returned, preserving pointer identity up the spine.
+// pruned, deduped, and canonically ordered. newUnion's other normalization steps
+// would be no-ops here, so only subsumeMembers runs. It removes members and never
+// rewrites one, so comparing how many members came back against how many went in
+// says whether anything changed, and the members themselves need no comparison.
+// When nothing changed the original node is returned, preserving pointer identity
+// up the spine.
 //
 // A union asks about its tail as well as its members, because this walk rewrites
 // the bound before the union itself. A bound that folds to `never` on the way up
@@ -495,7 +504,7 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 	switch t := t.(type) {
 	case *soltype.UnionType:
 		kept := subsumeMembers(s.ctx, t.Types, unionDrops)
-		if len(kept) == len(t.Types) && !tailSubsumed(kept, t.TailBound) {
+		if len(kept) == len(t.Types) && narrowTailBound(kept, t.TailBound) == t.TailBound {
 			return t
 		}
 		return collapseUnion(kept, tailOf(t), false)
