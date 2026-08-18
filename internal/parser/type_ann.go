@@ -71,6 +71,7 @@ func (p *Parser) typeAnn() ast.TypeAnn {
 	ops := NewStack[*TypeAnnOp]()
 	unionInexact := false
 	var unionInexactSpan ast.Span
+	var unionTailBound ast.TypeAnn
 
 	token := p.lexer.peek()
 	//nolint: exhaustive
@@ -133,6 +134,10 @@ loop:
 			unionInexactSpan = p.lexer.peek().Span
 			p.lexer.consume()
 			unionInexact = true
+			// A primary type after the `...` bounds the tail: `A | ...string` draws the
+			// tail's unknown members from string. primaryTypeAnn returns nil without
+			// consuming when no type follows, which leaves the tail unbounded as `A | ...`.
+			unionTailBound = p.primaryTypeAnn()
 			break loop
 		}
 
@@ -219,9 +224,19 @@ loop:
 	if unionInexact {
 		if u, ok := result.(*ast.UnionTypeAnn); ok {
 			u.Inexact = true
+			u.TailBound = unionTailBound
+		} else if unionTailBound != nil {
+			// A single named member with a bounded tail, as in `"a" | ...string`. The bound
+			// makes the tail meaningful with one member, so wrap the member in a one-member
+			// inexact union carrying it rather than rejecting the marker.
+			span := ast.MergeSpans(result.Span(), unionTailBound.Span())
+			u := ast.NewUnionTypeAnn([]ast.TypeAnn{result}, span)
+			u.Inexact = true
+			u.TailBound = unionTailBound
+			result = u
 		} else {
-			// The `...` followed a single member or a non-union top operator, so
-			// no UnionTypeAnn was built to carry the flag. A trailing `...` is
+			// The `...` followed a single member or a non-union top operator with no bound,
+			// so no UnionTypeAnn was built to carry the flag. An unbounded trailing `...` is
 			// only meaningful on a union of two or more members.
 			p.reportError(unionInexactSpan, "a trailing `...` must follow two or more union members, as in `A | B | ...`")
 		}
