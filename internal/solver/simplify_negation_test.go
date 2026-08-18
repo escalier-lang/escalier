@@ -436,6 +436,40 @@ func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
 	require.Empty(t, kept)
 }
 
+// keyof over an inexact object or tuple is the one site that mints a bounded tail today,
+// and the bound is decided by what kind of key the operand has. An object's unlisted keys
+// are property names and a tuple's are positions, so the two take different bounds.
+func TestKeyofBoundsItsOpenTail(t *testing.T) {
+	c := newChecker()
+	keysOf := func(t *testing.T, src string) soltype.Type {
+		t.Helper()
+		nodes, ctx, errs := inferTypeNodes(t, src)
+		require.Empty(t, errs)
+		return expandAliasResidual(ctx, nodes["Result"])
+	}
+
+	t.Run("an object's tail is bounded by string", func(t *testing.T) {
+		keys := keysOf(t, `
+			type Obj = {a: number, ...}
+			type Result = keyof Obj
+		`)
+		require.Equal(t, `"a" | ...string`, soltype.Print(keys))
+		// `5` is plainly not a key of that object, which an unbounded tail could not say.
+		require.False(t, subtypeHolds(c.ctx, numLit(5), keys))
+		require.True(t, subtypeHolds(c.ctx, strLit("b"), keys))
+	})
+
+	t.Run("a tuple's tail is bounded by number", func(t *testing.T) {
+		keys := keysOf(t, `
+			type Tup = [number, ...]
+			type Result = keyof Tup
+		`)
+		require.Equal(t, "0 | ...number", soltype.Print(keys))
+		require.False(t, subtypeHolds(c.ctx, strLit("a"), keys))
+		require.True(t, subtypeHolds(c.ctx, numLit(1), keys))
+	})
+}
+
 // The two routes a complement can take past a variable, which the section comment above
 // simplifyNegations describes. They go opposite ways, and only the first leaves a
 // complement behind for that pass to find.

@@ -31,14 +31,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 		},
 		{
 			// An inexact tuple has unknown trailing positions, so its index set is open and carries
-			// the indices those positions occupy in a trailing `...`.
+			// the indices those positions occupy in a trailing `...`. Those indices are positions,
+			// so the tail is bounded by `number`.
 			name: "KeyofInexactTuple",
 			src: `
 				type Tup = [number, string, ...]
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "0 | 1 | ...",
+			wantExpanded: "0 | 1 | ...number",
 		},
 		{
 			// `T[keyof T]` over an exact object reads every key the object declares, and those are
@@ -161,14 +162,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 		},
 		{
 			// An intersection carries both operands' members, so its key sets union. An inexact
-			// operand's open key set leaves the whole union open.
+			// operand's open key set leaves the whole union open, bounded by `string` because the
+			// keys it did not list are still property names.
 			name: "KeyofIntersectionWithInexactMember",
 			src: `
 				type I = {a: number} & {b: string, ...}
 				type Result = keyof I
 			`,
 			wantSymbolic: "keyof I",
-			wantExpanded: `"a" | "b" | ...`,
+			wantExpanded: `"a" | "b" | ...string`,
 		},
 		{
 			// `Exact` and `Inexact` are the two operators that run the other way. Every case above
@@ -442,7 +444,7 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 				type Result = keyof Inexact<Obj>
 			`,
 			wantSymbolic: "keyof Inexact<Obj>",
-			wantExpanded: `"a" | "b" | ...`,
+			wantExpanded: `"a" | "b" | ...string`,
 		},
 	}
 	for _, tt := range tests {
