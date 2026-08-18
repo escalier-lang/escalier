@@ -890,18 +890,15 @@ func (f *knotFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 
 func (f *knotFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
-// valueFamily is a set of runtime values no value outside it belongs to. Two
-// atoms drawn from different families are disjoint, so their meet is `never`.
+// valueFamily is a set of runtime values no value outside it belongs to, so two atoms drawn
+// from different families are disjoint and their meet is `never`. Five families cover the
+// primitives and the two absence markers, and a sixth, refCellFamily, covers the borrows no
+// primitive can be.
 //
-// Five families cover the primitives and the two absence markers, the kinds whose
-// disjointness the solver already decides elsewhere. A sixth covers the borrows a
-// primitive can never be. Bare objects, tuples, functions, and class instances are
-// deliberately absent. They are disjoint from a primitive too, but keeping two such
-// atoms separate is already precise, so naming them here would buy nothing.
-//
-// Only cross-family disjointness applies to refCellFamily. The within-family rules
-// meetValueAtoms uses for the primitives read two distinct atoms as disjoint, which
-// is right for `5` and `6` and wrong for two borrows.
+// Objects, tuples, functions, and class instances are deliberately absent. They are disjoint
+// from a primitive too, but keeping two such atoms apart is already precise, so a family for
+// them would buy nothing. refCellFamily uses only the cross-family rule, never the within-family
+// one meetValueAtoms applies to the primitives, since two distinct borrows are not disjoint.
 type valueFamily int
 
 const (
@@ -932,17 +929,15 @@ func valueFamilyOf(t soltype.Type) valueFamily {
 	return notValueAtom
 }
 
-// refCellOrNot returns refCellFamily for a borrow whose carrier settles the values it
-// admits to objects, tuples, or class instances, and notValueAtom for one whose carrier
-// may still rewrite. It reads the carrier because a borrow is only as decided as the
+// refCellOrNot returns refCellFamily for a borrow over an object, a tuple, or a class
+// instance, and notValueAtom for any other carrier, since a borrow is only as decided as the
 // value it points at.
 //
-// The three kinds it admits stay themselves under every rewrite, so a borrow over one
-// admits no primitive and no absence marker. The kinds it turns away can leave the
-// RefInner set, and RefType.Accept peels a borrow whose inner does. A `mut β` whose β
-// inlines to `string` becomes `string`, so reading it as disjoint from `string` would be
-// wrong. A union, an intersection, and an alias can each reduce to a bare primitive the
-// same way.
+// Those three kinds stay themselves under every rewrite, so a borrow over one admits no
+// primitive. The kinds it turns away can leave the RefInner set, and RefType.Accept peels a
+// borrow whose inner does: a `mut β` whose β inlines to `string` becomes `string`, and a
+// union, an intersection, or an alias can reduce to a bare primitive the same way. Reading
+// such a borrow as disjoint from `string` would be wrong.
 func refCellOrNot(carrier soltype.Type) valueFamily {
 	switch carrier.(type) {
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType:
