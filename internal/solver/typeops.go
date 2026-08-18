@@ -285,11 +285,13 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 	tail := tailOf(check)
 	if tail.bound != nil {
 		tail.bound = e.condOverTailBound(t, tail.bound)
-		if tail.bound == nil && len(parts) == 0 {
-			// The check union names no member of its own, so the tail was the whole operand
-			// and the conditional just failed to answer over it. Unbounding the tail would
-			// leave a union with neither member nor bound, which collapses to `never` and
-			// claims the operand was empty. Stay symbolic instead.
+		if tail.bound == nil {
+			// The conditional failed to answer over the bound. Carrying on would drop the
+			// bound and leave the tail unbounded, and an unbounded tail admits every value,
+			// which makes the whole result the top of the subtype lattice. That is a wider
+			// answer than the operand the conditional started from, so
+			// `Exclude<keyof {a: number, ...}, R>` would accept a `5`. Stay symbolic
+			// instead, and reduce once the bound grounds enough to decide.
 			return &soltype.CondType{
 				Check: check, Extends: t.Extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute,
 			}
@@ -312,6 +314,7 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 //     conditional runs on the bound the way it runs on a named member. Over `"a" | ...string`,
 //     `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
 //  2. No value satisfies it, so every tail member takes Else, and the same run answers.
+//     boundDisjointFrom decides that, reading an empty meet as "no value satisfies".
 //  3. The check splits the bound and the conditional is a filter, which denotes a set
 //     difference. That cuts inside the bound and answers exactly. `Exclude<"a" | ...string, "a">`
 //     gives a tail bounded by `string & ¬"a"`, the same answer reduceDifference computes for
@@ -329,12 +332,7 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 // nativeDifference returns the `∩ ¬` form that reduceDifference recognizes.
 func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
 	extends := substituteOccurrences(t.Extends, t.Check, bound)
-	uniform := e.ctx.condExtends(bound, extends, e.seen)
-	if !uniform && negatableOperand(extends) {
-		// Disjointness is the check `bound <: ¬extends`, the same question excludeFrom asks to
-		// decide that an exclusion takes nothing from a member.
-		uniform = e.ctx.condExtends(bound, soltype.NewNegation(extends), e.seen)
-	}
+	uniform := e.ctx.condExtends(bound, extends, e.seen) || e.boundDisjointFrom(bound, extends)
 	if uniform {
 		return e.reduceCond(&soltype.CondType{
 			Check:   bound,
@@ -344,11 +342,21 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 		})
 	}
 	if diff, ok := e.nativeDifference(t, bound, extends); ok {
-		return e.reduce(diff)
+		// The difference is a meet, and nothing downstream normalizes one built here. The
+		// `Extract` shape leaves `bound ∩ extends`, so `Extract<"a" | ...string, "a">` would
+		// keep a tail bounded by `string & "a"` and never notice that it is just `"a"`, which
+		// the union already names. Normalizing fuses the meet so tailSubsumed can see it.
+		return e.ctx.normalizeDeep(e.reduce(diff), soltype.Positive)
 	}
-	if !negatableOperand(extends) {
+	if !negatableOperand(e.groundReduced(extends)) {
 		// The Else half is the values `¬extends` names, and an operand no complement may name
 		// has no such half. The tail comes back unbounded rather than half-decided.
+		//
+		// The check is asked of the grounded operand, because a name reveals nothing about
+		// what it stands for. `type Handle = &'static Point` is an AliasType, which
+		// negatableOperand reads as negatable, while the borrow its body names is the one
+		// thing a complement may not hold. nativeDifference grounds the same question for
+		// the same reason.
 		return nil
 	}
 	matched := newIntersection(nil, []soltype.Type{bound, extends})
@@ -357,6 +365,23 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
 		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),
 	}, false)
+}
+
+// boundDisjointFrom reports whether no value the bound admits satisfies the check, which
+// puts every tail member in the Else branch.
+//
+// It asks the question as an empty meet rather than as the subtype check
+// `bound <: ¬extends`. The two agree wherever both apply, and the meet also answers over a
+// check the ¬Ref exclusion invariant forbids naming under a complement. `...string` against
+// `mut {x: number}` is that case: no string is a borrowed object, so
+// `string ∩ mut {x: number}` is `never` and the whole tail takes Else.
+//
+// A `never` bound never reaches here. It is a subtype of every check, so the caller's
+// first test already answers uniform for it.
+func (e *typeEvaluator) boundDisjointFrom(bound, extends soltype.Type) bool {
+	met := newIntersection(nil, []soltype.Type{bound, extends})
+	_, disjoint := e.ctx.normalizeDeep(met, soltype.Positive).(*soltype.NeverType)
+	return disjoint
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
@@ -1578,6 +1603,15 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		tail := tailOf(tgt)
 		if tail.bound != nil {
 			tail.bound = e.reduceIndex(tail.bound, idx, inexact)
+			if containsResidualOp(tail.bound) {
+				// The read off the bound did not ground, so the bound comes back as an
+				// unreduced access. A union carrying an unreduced operator anywhere reads as
+				// residual, and constraint solving would decide against that operator rather
+				// than against the union. Unlike a string intrinsic there is no wider bound
+				// to fall back on, since an access yields whatever the field holds. Stay
+				// symbolic and reduce once the target grounds.
+				return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
+			}
 		}
 		return newUnionWithTail(nil, parts, tail)
 	case *soltype.IntersectionType:
@@ -1738,7 +1772,10 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
 //
 // A tail's bound is not folded into the result. The bound says the tail's choices are strings
-// without saying which, so no segment can absorb them and the result's tail stays unbounded.
+// without saying which, so no segment can absorb them. The result's tail is bounded by `string`
+// all the same, since a template produces a string whatever it interpolates. Leaving it unbounded
+// would make the result the top of the subtype lattice, and `` `on${keyof {a: number, ...}}` ``
+// would accept a `5`.
 // An interpolation that names no choice at all, which is the shape a set difference leaves when it
 // excludes every named one, has nothing to run the product over and keeps the template symbolic.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
@@ -1781,7 +1818,10 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 	for _, combo := range combos {
 		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
-	return newUnion(nil, parts, openChoices)
+	if openChoices {
+		return newBoundedUnion(nil, parts, &soltype.PrimType{Prim: soltype.StrPrim})
+	}
+	return newUnion(nil, parts, false)
 }
 
 // foldTemplatePart folds one cartesian-product combination into a single template result. It
@@ -1877,14 +1917,23 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
 		// The intrinsic reaches the tail's bound too, since the tail's unnamed members are
-		// drawn from it and each is transformed the way a named member is.
-		// `Uppercase<"a" | ...string>` is `"A" | ...Uppercase<string>`. The bound stays
-		// symbolic there, since only a string LITERAL has a case to change, but it still
-		// says the tail holds strings where dropping it would leave the union at the top of
-		// the lattice.
+		// drawn from it and each is transformed the way a named member is. A bound of `"a"`
+		// becomes `"A"` exactly as a named member does.
+		//
+		// Only a string LITERAL has a case to change, so a bound the transform cannot fold
+		// comes back as an unreduced operator. `Uppercase<string>` is one. Such a bound is
+		// widened to `string` rather than kept, because a bound is part of the union and a
+		// union carrying an unreduced operator anywhere reads as residual. Constraint
+		// solving then decides against the opaque operator and rejects
+		// `val u: Uppercase<keyof {a: number, ...}> = "A"`. Widening is sound, since the
+		// intrinsic maps strings to strings, and it keeps the tail bounded where dropping it
+		// would leave the union at the top of the lattice.
 		tail := tailOf(op)
 		if tail.bound != nil {
 			tail.bound = e.reduceStringIntrinsic(kind, tail.bound)
+			if containsResidualOp(tail.bound) {
+				tail.bound = &soltype.PrimType{Prim: soltype.StrPrim}
+			}
 		}
 		return newUnionWithTail(nil, parts, tail)
 	case *soltype.LitType:

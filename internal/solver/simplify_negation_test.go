@@ -468,11 +468,13 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 		},
 		{
 			// A string intrinsic transforms the bound alongside the named members. Only a
-			// literal has a case to change, so the bound comes back symbolic, but it still
-			// says the tail holds strings.
+			// literal has a case to change, so transforming `string` yields the unreduced
+			// `Uppercase<string>`, which is widened to `string`. A union carrying an
+			// unreduced operator anywhere reads as residual, and constraint solving then
+			// decides against the operator instead of the union it belongs to.
 			name: "StringIntrinsic",
 			decl: `type Result = Uppercase<keyof Obj>`,
-			want: `"A" | "B" | ...Uppercase<string>`,
+			want: `"A" | "B" | ...string`,
 		},
 	}
 	for _, tt := range tests {
@@ -601,18 +603,16 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 		require.Equal(t, `...([string & "b"] | string & ¬"b")`, soltype.Print(reduceType(cond)))
 	})
 
-	t.Run("an unnegatable check leaves the tail unbounded", func(t *testing.T) {
-		// The Else half is the values `¬extends` names, and a borrow is the one operand no
-		// complement may name, so the split has no half to give it. Neither does the
-		// uniform-Else test above, which asks the same complement question. With no named
-		// member to carry a result the conditional stays as written.
+	// `if (...string) : mut {x: number} { 1 } else { 2 }`, using the syntax #1131 asks for.
+	t.Run("an unnegatable check still decides a disjoint bound", func(t *testing.T) {
+		// No string is a borrowed object, so every value the bound admits takes Else and the
+		// tail is bounded by `2`. The uniform-Else test reaches that answer through the meet
+		// `string ∩ mut {x: number}`, which normalization reports `never`.
 		//
-		// `...2` is the better answer and is not reached. No string is a borrow, so every
-		// tail member takes Else, which the per-member path gets right: the same conditional
-		// over the named member `"a"` reduces to `2`. A bound needs disjointness where a
-		// member needs only "not a subtype", and no oracle here decides a primitive disjoint
-		// from a borrow. meetAtoms reports the pair unfusable rather than `never`, since
-		// valueFamily covers the primitives and the absence markers alone. See #1132.
+		// The complement `¬(mut {x: number})` would answer the same question, and the ¬Ref
+		// exclusion invariant forbids writing it. Asking through the meet is what keeps this
+		// case decidable, and it also spares the split below, which has no Else half to give
+		// an operand no complement may name.
 		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
 			Elems: []soltype.ObjTypeElem{propElem("x", num())},
 		}}
@@ -620,7 +620,7 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 			Check:   newBoundedUnion(nil, nil, str()),
 			Extends: ref, Then: numLit(1), Else: numLit(2), Distribute: true,
 		}
-		require.Equal(t, `if ...string : mut {x: number} { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
+		require.Equal(t, `...2`, soltype.Print(reduceType(cond)))
 	})
 
 	// A key set that names keys is still enumerable, so the tail changes nothing about how a
@@ -911,4 +911,140 @@ func printedBounds(bounds []soltype.Type) []string {
 		out[i] = soltype.Print(b)
 	}
 	return out
+}
+
+// A bound the conditional cannot decide must not be dropped. An unbounded tail admits every
+// value, so a union that loses its bound becomes the top of the subtype lattice, which is a
+// wider answer than the operand the conditional started from. Staying symbolic keeps the
+// operand's own bound reachable and lets the reduction run again once it grounds.
+//
+// A borrow is the check that reaches this. The ¬Ref exclusion invariant forbids naming one
+// under a complement, so the split has no Else half to give it, and the bound `string` is not
+// disjoint from a borrow over an object either, so the uniform tests do not answer.
+func TestAnUndecidableBoundKeepsTheConditionalSymbolic(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Point = {x: number}
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Direct = Drop<keyof Obj, mut Point>
+		type Named = Drop<keyof Obj, Handle>
+		type Handle = mut Point
+	`)
+	require.Empty(t, errs)
+
+	for _, name := range []string{"Direct", "Named"} {
+		t.Run(name, func(t *testing.T) {
+			rest := expandAliasResidual(ctx, nodes[name])
+			c := newChecker()
+			require.False(t, subtypeHolds(c.ctx, numLit(5), rest),
+				"a lost bound would leave the tail unbounded, which accepts every value")
+			require.NotContains(t, soltype.Print(rest), "¬",
+				"no complement may name a borrow, however the check spells it")
+		})
+	}
+}
+
+// Excluding the whole bound leaves a tail drawn from `never`, which holds nothing. The union
+// names no member either, so the answer is `never` rather than a union with an empty tail.
+// `...never` would read as a union with unlisted members and keep every rule that consults a
+// tail from seeing that there is nothing left.
+func TestExcludingTheWholeBoundEmptiesTheUnion(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Result = Drop<keyof Obj, string>
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `never`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+}
+
+// subsumeFinal rewrites a union's tail bound before the union itself, so a bound that only
+// becomes droppable on the way up still has to be noticed. Neither case below drops a member,
+// which is what makes them the cases a member count alone would miss.
+func TestFinalSubsumptionRereadsARewrittenTailBound(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		bound soltype.Type
+		want  string
+	}{
+		{
+			// `¬string` admits nothing a `string` admits, so the meet is empty and the tail
+			// is drawn from `never`. A tail holding nothing leaves the union its named side,
+			// and there is none, so the answer is `never` rather than `...never`.
+			name:  "a bound that folds to never empties the union",
+			bound: newIntersection(nil, []soltype.Type{str(), not(str())}),
+			want:  "never",
+		},
+		{
+			// The bound folds to `"y"`, which the union already names. The tail then draws
+			// only members the union lists, so it contributes nothing and drops.
+			name:  "a bound that folds to a named member drops the tail",
+			parts: []soltype.Type{strLit("y")},
+			bound: newIntersection(nil, []soltype.Type{strLit("y"), not(strLit("n"))}),
+			want:  `"y"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			in := &soltype.UnionType{Types: tt.parts, Inexact: true, TailBound: tt.bound}
+			require.Equal(t, tt.want, soltype.Print(c.subsumeFinal(in)))
+		})
+	}
+}
+
+// An operator over a bounded tail has to hand back a union that is still usable as a type. Two
+// ways it can fail are invisible in the printed form, so each case here checks what the result
+// accepts rather than only how it renders.
+func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
+	// A template produces a string whatever it interpolates, so its tail is bounded by
+	// `string`. An unbounded tail admits every value, which would let a number pass for a
+	// string the template could have produced.
+	t.Run("a template over an open key set still rejects a non-string", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = `+"`on${keyof Obj}`"+`
+		`)
+		require.Empty(t, errs)
+		result := expandAliasResidual(ctx, nodes["Result"])
+		require.Equal(t, "\"ona\" | ...string", soltype.Print(result))
+
+		c := newChecker()
+		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "a template never produces a number")
+		require.False(t, subtypeHolds(c.ctx, &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}, result), "nor a boolean")
+		require.True(t, subtypeHolds(c.ctx, strLit("ona"), result), "the named string is a member")
+		require.True(t, subtypeHolds(c.ctx, strLit("onb"), result), "so is one the tail may hold")
+	})
+
+	// A bound the intrinsic cannot fold comes back as an unreduced operator, and a union
+	// carrying one anywhere reads as residual. Constraint solving would then decide against
+	// the operator rather than the union, rejecting a string the union plainly names.
+	t.Run("an intrinsic over an open key set still accepts its own member", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = Uppercase<keyof Obj>
+		`)
+		require.Empty(t, errs)
+		result := expandAliasResidual(ctx, nodes["Result"])
+		require.Equal(t, `"A" | ...string`, soltype.Print(result))
+
+		c := newChecker()
+		require.False(t, containsResidualOp(result), "a residual union is decided against the operator")
+		require.True(t, subtypeHolds(c.ctx, strLit("A"), result), "the transformed key is a member")
+		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "the bound still rules out a non-string")
+	})
+
+	// Keeping only the named key leaves a tail drawn from `string ∩ "a"`, which is `"a"` — a key
+	// the union already names. An unfused meet would hide that and leave the tail standing,
+	// which makes the union inexact and stops it satisfying an exact object.
+	t.Run("keeping one key drops the tail it already names", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Keep<T, U> = if T : U { T } else { never }
+			type Result = Keep<keyof Obj, "a">
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, `"a"`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+	})
 }

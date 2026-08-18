@@ -298,11 +298,15 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 // undetected. An inexact union bound never qualifies, since its own tail says nothing about
 // what it holds.
 //
-// An exact union bound naming no member denotes `never`, so the loop below passes it vacuously
-// and the tail drops. A tail drawn from `never` holds nothing, which is the answer that wants.
+// A tail drawn from `never` holds nothing, so it drops however that emptiness is spelled. A
+// bare `never` is one spelling and an exact union naming no member is the other, which the
+// loop below passes vacuously.
 func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
 	if bound == nil {
 		return false
+	}
+	if _, empty := bound.(*soltype.NeverType); empty {
+		return true
 	}
 	named := func(t soltype.Type) bool {
 		return slices.ContainsFunc(pruned, func(m soltype.Type) bool { return equalType(m, t) })
@@ -474,18 +478,24 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 	return soltype.EnterResult{}
 }
 
-// ExitType subsumes a lattice node's members and rebuilds it only when a member
-// was dropped. The input is a coalesced display type, so it is already flattened,
+// ExitType subsumes a lattice node's members and rebuilds it only when something
+// changed. The input is a coalesced display type, so it is already flattened,
 // pruned, deduped, and canonically ordered — newUnion's other normalization steps
 // would be no-ops here, so only subsumeMembers runs. subsumeMembers only ever
 // removes members, so a length drop is an O(1) signal that the node changed, which
-// avoids a structural re-comparison. When nothing dropped the original node is
+// avoids a structural re-comparison. When nothing changed the original node is
 // returned, preserving pointer identity up the spine.
+//
+// A union asks about its tail as well as its members, because this walk rewrites
+// the bound before the union itself. A bound that folds to `never` on the way up
+// leaves a tail holding nothing, and a bound that folds to a named member leaves
+// one contributing nothing. Neither drops a member, so a member count alone would
+// miss both and render `...never` or `"y" | ..."y"`.
 func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.UnionType:
 		kept := subsumeMembers(s.ctx, t.Types, unionDrops)
-		if len(kept) == len(t.Types) {
+		if len(kept) == len(t.Types) && !tailSubsumed(kept, t.TailBound) {
 			return t
 		}
 		return collapseUnion(kept, tailOf(t), false)

@@ -377,3 +377,92 @@ func TestNegationIsNotBorrowable(t *testing.T) {
 	require.False(t, borrowable, "NegationType must not be a RefInner")
 	require.False(t, soltype.BorrowableType(complement))
 }
+
+// TestBorrowDisjointFromValueAtoms pins the disjointness rule that lets a meet decide
+// a borrow against a primitive. A borrow over an object, a tuple, or a class instance
+// admits none of the values a primitive or an absence marker admits, so the two are
+// disjoint and their meet is `never`.
+//
+// The rule is stated as a value family in normal.go, and a family carries two
+// obligations. Cross-family atoms are disjoint, which is the answer this buys. Within
+// one family two distinct atoms are disjoint as well, which is right for `5` and `6`
+// and wrong for two borrows, so the borrow family opts out of that half. The rows
+// below cover both obligations along with the carriers the rule turns away.
+func TestBorrowDisjointFromValueAtoms(t *testing.T) {
+	c := &Context{}
+	c.registerClass("Point", &ClassDef{})
+	obj := parseType(t, "{x: number}").(soltype.RefInner)
+	other := parseType(t, "{y: string}").(soltype.RefInner)
+	tuple := parseType(t, "[number]").(soltype.RefInner)
+
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		want  string
+	}{
+		// A borrow's carrier decides what values it admits, and none of these carriers
+		// admits a primitive however the borrow is written.
+		{"owned mutable cell against a primitive", []soltype.Type{str(), borrow(true, nil, obj)}, "never"},
+		{"lifetime borrow against a literal", []soltype.Type{numLit(5), borrow(false, c.freshLifetime(0), obj)}, "never"},
+		{"tuple carrier against a primitive", []soltype.Type{str(), borrow(true, nil, tuple)}, "never"},
+		{"class carrier against a primitive", []soltype.Type{num(), borrow(true, nil, cls("Point", false))}, "never"},
+		// The absence markers are families of their own, so they answer the same way.
+		{"null against a borrow", []soltype.Type{&soltype.NullType{}, borrow(true, nil, obj)}, "never"},
+		{"undefined against a borrow", []soltype.Type{&soltype.UndefinedType{}, borrow(true, nil, obj)}, "never"},
+
+		// Two borrows are distinct atoms of one family and are NOT disjoint: an object
+		// carrying both fields inhabits each. The pair is left for meetRefs to decide.
+		{"two borrows stay unfused", []soltype.Type{borrow(true, nil, obj), borrow(true, nil, other)},
+			"mut {x: number} & mut {y: string}"},
+
+		// A bare object is disjoint from a primitive too, but the families do not name it,
+		// so the pair keeps both atoms. That is precise, just less compact.
+		{"a bare object keeps both atoms", []soltype.Type{str(), obj}, "string & {x: number}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			met := newIntersection(nil, tt.parts)
+			require.Equal(t, tt.want, soltype.PrintAsScheme(c.normalizeDeep(met, soltype.Positive)))
+		})
+	}
+}
+
+// TestBorrowOverAnUnsettledCarrierIsNotDisjoint pins the gate the disjointness rule
+// needs to stay sound. RefType.Accept PEELS the wrapper when a rewritten inner leaves
+// the RefInner set, so a borrow over a carrier that can still become a primitive is not
+// yet a borrow of anything.
+//
+// `mut β` is the case. Coalescing it once β inlines to `string` yields a bare `string`,
+// and `string & string` is `string` rather than `never`. Reading the unresolved borrow
+// as disjoint from `string` would therefore answer a meet that later turns out
+// inhabited. A union carrier can reduce to a bare primitive the same way.
+func TestBorrowOverAnUnsettledCarrierIsNotDisjoint(t *testing.T) {
+	c := &Context{}
+	union := newUnion(nil, []soltype.Type{str(), numLit(5)}, false).(soltype.RefInner)
+
+	tests := []struct {
+		name    string
+		carrier soltype.RefInner
+		want    string
+	}{
+		{"a type variable may inline to a primitive", c.freshVar(0), "<T0> (string & mut T0)"},
+		{"a union may reduce to a bare primitive", union, "string & mut (string | 5)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			met := newIntersection(nil, []soltype.Type{str(), borrow(true, nil, tt.carrier)})
+			require.Equal(t, tt.want, soltype.PrintAsScheme(c.normalizeDeep(met, soltype.Positive)))
+		})
+	}
+}
+
+// TestBorrowAndPrimitiveJoinKeepsBothMembers pins the dual. Disjointness makes the MEET
+// empty and says nothing about the join, so a union of the two keeps both members. No
+// borrow absorbs a primitive the way `number` absorbs `5`.
+func TestBorrowAndPrimitiveJoinKeepsBothMembers(t *testing.T) {
+	c := &Context{}
+	obj := parseType(t, "{x: number}").(soltype.RefInner)
+	joined := newUnion(nil, []soltype.Type{str(), borrow(true, nil, obj)}, false)
+	require.Equal(t, "string | mut {x: number}",
+		soltype.PrintAsScheme(c.normalizeDeep(joined, soltype.Positive)))
+}
