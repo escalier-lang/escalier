@@ -603,8 +603,16 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 
 	t.Run("an unnegatable check leaves the tail unbounded", func(t *testing.T) {
 		// The Else half is the values `¬extends` names, and a borrow is the one operand no
-		// complement may name, so the split has no half to give it. With no named member to
-		// carry a result the conditional stays as written rather than answering from Then alone.
+		// complement may name, so the split has no half to give it. Neither does the
+		// uniform-Else test above, which asks the same complement question. With no named
+		// member to carry a result the conditional stays as written.
+		//
+		// `...2` is the better answer and is not reached. No string is a borrow, so every
+		// tail member takes Else, which the per-member path gets right: the same conditional
+		// over the named member `"a"` reduces to `2`. A bound needs disjointness where a
+		// member needs only "not a subtype", and no oracle here decides a primitive disjoint
+		// from a borrow. meetAtoms reports the pair unfusable rather than `never`, since
+		// valueFamily covers the primitives and the absence markers alone. See #1132.
 		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
 			Elems: []soltype.ObjTypeElem{propElem("x", num())},
 		}}
