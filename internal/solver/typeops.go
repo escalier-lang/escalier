@@ -373,7 +373,7 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 // It asks the question as an empty meet rather than as the subtype check
 // `bound <: ¬extends`. The two agree wherever both apply, and the meet also answers over a
 // check the ¬Ref exclusion invariant forbids naming under a complement. `...string` against
-// `mut {x: number}` is that case: no string is a borrowed object, so
+// `mut {x: number}` is that case. No string is a borrowed object, so
 // `string ∩ mut {x: number}` is `never` and the whole tail takes Else.
 //
 // A `never` bound never reaches here. It is a subtype of every check, so the caller's

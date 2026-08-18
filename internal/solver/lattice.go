@@ -293,9 +293,9 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 //
 // This is subsumption applied to the tail rather than to a member. Equality decides it rather
 // than a subtype test, so it needs no Context and runs on every mint. Two shapes qualify: a
-// bound equal to a named member, and an exact union whose every member is. A bound merely BELOW
-// the named members by some other route, such as `string | ..."a"`, is subsumed too but goes
-// undetected. An inexact union bound never qualifies, since its own tail says nothing about
+// bound equal to a named member, and an exact union whose every member is. A bound that is a
+// subtype of the named members by some other route, such as `string | ..."a"`, is subsumed too
+// but goes undetected. An inexact union bound never qualifies, since its own tail says nothing about
 // what it holds.
 //
 // A tail drawn from `never` holds nothing, so it drops however that emptiness is spelled. A

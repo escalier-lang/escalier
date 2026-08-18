@@ -410,7 +410,7 @@ func TestBorrowDisjointFromValueAtoms(t *testing.T) {
 		{"null against a borrow", []soltype.Type{&soltype.NullType{}, borrow(true, nil, obj)}, "never"},
 		{"undefined against a borrow", []soltype.Type{&soltype.UndefinedType{}, borrow(true, nil, obj)}, "never"},
 
-		// Two borrows are distinct atoms of one family and are NOT disjoint: an object
+		// Two borrows are distinct atoms of one family and are NOT disjoint. An object
 		// carrying both fields inhabits each. The pair is left for meetRefs to decide.
 		{"two borrows stay unfused", []soltype.Type{borrow(true, nil, obj), borrow(true, nil, other)},
 			"mut {x: number} & mut {y: string}"},

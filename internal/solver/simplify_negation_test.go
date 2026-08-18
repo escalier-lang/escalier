@@ -1035,6 +1035,18 @@ func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
 		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "the bound still rules out a non-string")
 	})
 
+	// An index read that cannot ground the bound has no answer to commit to. Answering anyway
+	// would produce `number | ...string["x"]`, a union whose bound is an unreduced access, and
+	// a union carrying an unreduced operator anywhere is decided against that operator rather
+	// than against the union. The whole access stays symbolic instead, so it reduces once the
+	// target grounds.
+	t.Run("an ungrounded index read over a bounded tail stays symbolic", func(t *testing.T) {
+		obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
+		target := &soltype.UnionType{Types: []soltype.Type{obj}, Inexact: true, TailBound: str()}
+		got := reduceType(&soltype.IndexType{Target: target, Index: strLit("x")})
+		require.Equal(t, `({x: number} | ...string)["x"]`, soltype.Print(got))
+	})
+
 	// Keeping only the named key leaves a tail drawn from `string ∩ "a"`, which is `"a"` — a key
 	// the union already names. An unfused meet would hide that and leave the tail standing,
 	// which makes the union inexact and stops it satisfying an exact object.
