@@ -831,61 +831,52 @@ func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
 // that stopped at the member list invisible: `condOperandGround` would call an ungrounded union
 // ground, and a capture written in the bound would never be filled.
 //
-// No surface syntax writes a bound, so an `infer` cannot reach one from source today. The
-// machinery still has to hold, since the bound is an ordinary type position and every one of
-// these rides the same walk.
+// The `A | ... : R` syntax writes a bound directly, so an `infer` in the bound is reachable
+// from source. The bound is an ordinary type position and every one of these rides the same
+// walk.
 func TestVisitorRidersReachTheTailBound(t *testing.T) {
-	binder := &soltype.InferType{ID: 7, Name: "U", Binder: true}
-
-	// `if ("a" | ...string) : ("a" | ...B) { then } else { boolean }`, the shape every binder
-	// case below runs. The check's bound is `string` and its only named member is `"a"`, so a
-	// capture of `string` can only have come from the bound.
-	//
-	// An `infer` binder means nothing outside a conditional, so these run one rather than
-	// calling the infer machinery on a bare pattern. reduceCondInfer drives inferDeclIDs,
-	// substituteInfer, and the trial constraint in turn, and each rides the visitor, so a walk
-	// that stopped at the member list would leave U undeclared and take the Else branch.
-	match := func(patternBound, then soltype.Type) string {
-		return soltype.Print(reduceType(&soltype.CondType{
-			Check:   newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
-			Extends: newBoundedUnion(nil, []soltype.Type{strLit("a")}, patternBound),
-			Then:    then,
-			Else:    boolT(),
-		}))
+	// Each case reduces a top-level conditional whose check is the concrete bounded union
+	// `"a" | ... : string`. A concrete union check does not distribute, so the whole union is
+	// matched against the extends as a unit, and `reduceCondInfer` rides the visitor to declare
+	// and capture `infer` binders. The check's only named member is `"a"` and its bound is
+	// `string`, so a capture of `string` can only have come from the bound. A walk that stopped
+	// at the member list would leave the binder undeclared and take the Else branch.
+	reduce := func(src string) string {
+		nodes, ctx, errs := inferTypeNodes(t, `type Result = `+src)
+		require.Empty(t, errs)
+		return soltype.Print(expandAliasResidual(ctx, nodes["Result"]))
 	}
 
 	t.Run("a binder in the bound captures the check's bound", func(t *testing.T) {
-		// if ("a" | ...string) : ("a" | ...infer U) { U } else { boolean }  ⇒  string
-		require.Equal(t, "string", match(binder, binder))
+		require.Equal(t, "string",
+			reduce(`if "a" | ... : string : "a" | ... : infer U { U } else { boolean }`))
 	})
 
 	t.Run("the capture reaches a compound branch", func(t *testing.T) {
-		// if ("a" | ...string) : ("a" | ...infer U) { [U] } else { boolean }  ⇒  [string]
-		//
-		// The answer shows substituteInfer filling a position inside the branch rather than
-		// the branch being the binder itself.
-		require.Equal(t, "[string]", match(binder, &soltype.TupleType{Elems: []soltype.Type{binder}}))
+		// The answer shows substituteInfer filling a position inside the branch rather than the
+		// branch being the binder itself.
+		require.Equal(t, "[string]",
+			reduce(`if "a" | ... : string : "a" | ... : infer U { [U] } else { boolean }`))
 	})
 
 	t.Run("a concrete bound the check fits takes the Then branch", func(t *testing.T) {
-		// if ("a" | ...string) : ("a" | ...string) { 9 } else { boolean }  ⇒  9
-		//
 		// No binder anywhere. The bounds still have to meet for the branch to be selected, so
-		// this and the case below are what show the bound is matched against rather than
-		// carried along.
-		require.Equal(t, "9", match(str(), numLit(9)))
+		// this and the case below are what show the bound is matched against rather than carried
+		// along.
+		require.Equal(t, "9",
+			reduce(`if "a" | ... : string : "a" | ... : string { 9 } else { boolean }`))
 	})
 
 	t.Run("a bound the check does not fit takes the Else branch", func(t *testing.T) {
-		// if ("a" | ...string) : ("a" | ...number) { 9 } else { boolean }  ⇒  boolean
-		require.Equal(t, "boolean", match(num(), numLit(9)))
+		require.Equal(t, "boolean",
+			reduce(`if "a" | ... : string : "a" | ... : number { 9 } else { boolean }`))
 	})
 
+	// The last two cases call a predicate on the union directly, so they build it by hand rather
+	// than through the pipeline.
 	t.Run("a residual operator in the bound leaves the union ungrounded", func(t *testing.T) {
-		// "a" | ...keyof T
-		//
-		// condOperandGround reads containsResidualOp, so a `keyof` reachable only through the
-		// bound has to keep a conditional over this union symbolic.
+		// `"a" | ...keyof T`. condOperandGround reads containsResidualOp, so a `keyof` reachable
+		// only through the bound has to keep a conditional over this union symbolic.
 		u := newBoundedUnion(nil, []soltype.Type{strLit("a")},
 			&soltype.KeyofType{Operand: &soltype.TypeVarType{ID: 1, Level: 1}})
 		require.True(t, containsResidualOp(u))
@@ -893,7 +884,7 @@ func TestVisitorRidersReachTheTailBound(t *testing.T) {
 	})
 
 	t.Run("a free variable in the bound is found", func(t *testing.T) {
-		// "a" | ...T
+		// `"a" | ...T`.
 		u := newBoundedUnion(nil, []soltype.Type{strLit("a")}, &soltype.TypeVarType{ID: 2, Level: 1})
 		require.True(t, containsFreeVar(u))
 	})
