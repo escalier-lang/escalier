@@ -521,12 +521,14 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 		want string
 	}{
 		{
-			// A mapped type has no key to emit a field for, so the member stays the index
-			// signature it was written as. Expanding over no key would give `{}`, and the
-			// inexactness marker alone would give `{...}`, which accepts a field of any type.
+			// A mapped type has no key to emit a field for, so the member stays an index
+			// signature over the bare tail. The tail is existential — some unknown subset of
+			// non-"a" strings — so a value at any given key may be absent and the signature is
+			// optional. Expanding over no key would give `{}`, and the inexactness marker alone
+			// would give `{...}`, which accepts a field of any type.
 			name: "MappedTypeStaysAnIndexSignature",
 			decl: `type Result = {[K]: boolean for K in Drop<keyof Obj, "a">}`,
-			want: `{[K: ... : (string & ¬"a")]: boolean}`,
+			want: `{[K: ... : (string & ¬"a")]?: boolean}`,
 		},
 		{
 			// A template literal has no choice to fold into its segments, so it stays

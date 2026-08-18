@@ -922,6 +922,14 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		return reduced, nil, false, false
 	}
 	if hasNoEnumerableKeys(keys) {
+		if u, ok := keys.(*soltype.UnionType); ok && len(u.Types) == 0 && u.Inexact {
+			// A bare tail is an existential key set: `...(string & ¬"a")` is some unknown
+			// subset of non-"a" strings, so a value at any given key may be absent. The index
+			// signature is therefore optional, whatever the source wrote, and carries the tail
+			// as its key domain, printed `{[K: ...R]?: V}`.
+			reduced.Optional = soltype.ModAdd
+			return reduced, nil, false, false
+		}
 		// A key set with nothing to enumerate leaves the member unexpanded, so it is itself the
 		// index signature. The required form over such a key set is uninhabited and is rejected.
 		// A rename or filter over one has no enumerable keys to run over, so it stays symbolic
