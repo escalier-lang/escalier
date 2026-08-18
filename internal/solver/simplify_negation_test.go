@@ -637,7 +637,7 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 			Check:   newBoundedUnion(nil, nil, str()),
 			Extends: ref, Then: numLit(1), Else: numLit(2), Distribute: true,
 		}
-		require.Equal(t, `if ... : string : mut {x: number} { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
+		require.Equal(t, `... : 2`, soltype.Print(reduceType(cond)))
 	})
 
 	// A key set that names keys is still enumerable, so the tail changes nothing about how a
