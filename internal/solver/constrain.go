@@ -746,7 +746,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// keeps a nested tail from putting the flag straight back.
 			named := super
 			if supU.Inexact {
-				flat, _ := flattenUnion(supU.Types, false)
+				flat, _ := flattenUnion(supU.Types, unionTail{})
 				named = newUnion(nil, flat, false)
 			}
 			decision := c.constrainNF(sub, named, seen, mutCtx)

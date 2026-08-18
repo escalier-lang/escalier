@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"slices"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -28,14 +29,61 @@ import (
 // so `number | string` and `string | number` print identically, and it lets
 // the canonical type serve as a stable key for caching.
 func newUnion(c *Context, parts []soltype.Type, inexact bool) soltype.Type {
-	flat, inexact := flattenUnion(parts, inexact)
+	return newUnionWithTail(c, parts, unionTail{open: inexact})
+}
+
+// newBoundedUnion mints `A | ...R`, an inexact union whose tail members are drawn from
+// bound. A nil bound leaves the tail unbounded, which is what newUnion's inexact form
+// mints, so a caller that computes a bound and may come up empty needs no branch.
+func newBoundedUnion(c *Context, parts []soltype.Type, bound soltype.Type) soltype.Type {
+	return newUnionWithTail(c, parts, unionTail{open: true, bound: bound})
+}
+
+// newUnionWithTail is the core newUnion and newBoundedUnion share. It runs the same
+// normalization for either and differs only in the tail it carries through.
+func newUnionWithTail(c *Context, parts []soltype.Type, tail unionTail) soltype.Type {
+	flat, tail := flattenUnion(parts, tail)
 	pruned, hadError := pruneUnion(flat)
 	pruned = dedup(pruned)
 	if c != nil {
 		pruned = subsumeMembers(c, pruned, unionDrops)
 	}
 	sortTypes(pruned)
-	return collapseUnion(pruned, inexact, hadError)
+	return collapseUnion(pruned, tail, hadError)
+}
+
+// unionTail is a union's open-tail marker as it moves through the mint pipeline. open
+// says a trailing `...` is present. bound names the type the tail's unnamed members are
+// drawn from, and a nil bound leaves them unbounded, so the tail admits every value.
+// The zero value is the exact union's tail, which is no tail at all.
+type unionTail struct {
+	open  bool
+	bound soltype.Type
+}
+
+// tailOf reads a union's tail back out, the inverse of what collapseUnion writes.
+func tailOf(u *soltype.UnionType) unionTail {
+	return unionTail{open: u.Inexact, bound: u.TailBound}
+}
+
+// merge folds another tail into t, the rule flattenUnion applies when it splices a
+// nested union's members into the outer list. Two bounded tails join their bounds,
+// since `...string | ...number` may hold a member of either. An unbounded tail absorbs
+// a bounded one, since nothing says what the unbounded one holds.
+//
+// keyofUnion is the other caller, and the join is wider than that reduction wants, since
+// a key set of a union is a meet. The doc comment there records the gap.
+func (t unionTail) merge(other unionTail) unionTail {
+	if !other.open {
+		return t
+	}
+	if !t.open {
+		return other
+	}
+	if t.bound == nil || other.bound == nil {
+		return unionTail{open: true}
+	}
+	return unionTail{open: true, bound: newUnion(nil, []soltype.Type{t.bound, other.bound}, false)}
 }
 
 // newIntersection is the meet twin of newUnion. An IntersectionType carries
@@ -64,9 +112,11 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 //   - `¬never` is `unknown`, since `never` admits no value and `unknown` admits
 //     every one.
 //   - `¬unknown` is `never`, the same identity read the other way.
-//   - `¬(A | B | ...)` is `never`. An inexact union is the top of the subtype
-//     lattice, since its open tail accepts every value, so its complement admits
-//     none. TestOpenUnionIsTopForSubtypingOnly pins that reading.
+//   - `¬(A | B | ...)` is `never`. A union whose open tail carries no bound is the
+//     top of the subtype lattice, since that tail accepts every value, so its
+//     complement admits none. TestOpenUnionIsTopForSubtypingOnly pins that reading.
+//     A bounded tail is not top and gets no fold. `¬("a" | ...string)` rejects every
+//     string and admits `5`, so it wraps like any other operand.
 //   - `¬¬T` is T, since complementing twice returns the original set.
 //
 // It does NOT push the complement through a union or an intersection. `¬(A | B)`
@@ -83,7 +133,7 @@ func newNegation(inner soltype.Type) soltype.Type {
 	case *soltype.UnknownType:
 		return &soltype.NeverType{}
 	case *soltype.UnionType:
-		if inner.Inexact {
+		if inner.Inexact && inner.TailBound == nil {
 			return &soltype.NeverType{}
 		}
 	case *soltype.NegationType:
@@ -93,12 +143,12 @@ func newNegation(inner soltype.Type) soltype.Type {
 }
 
 // flattenUnion splices nested UnionType members into the outer member list
-// and carries an inner inexact flag out to the caller. The splice is
-// recursive, so a UnionType whose members include another UnionType is fully
-// unwrapped in one pass. An inexact nested member at any depth makes the
-// outer union inexact, since `... | (A | ...)` collapses to `A | ...`. When
-// no member nests, the input slice is reused, so the common case pays no
-// allocation.
+// and carries an inner tail out to the caller. The splice is recursive, so a
+// UnionType whose members include another UnionType is fully unwrapped in one
+// pass. An inexact nested member at any depth makes the outer union inexact,
+// since `... | (A | ...)` collapses to `A | ...`, and unionTail.merge decides
+// what bounds the result. When no member nests, the input slice is reused, so
+// the common case pays no allocation.
 //
 // Recursion matters when a caller hands flatten an unnormalized member, such
 // as a raw `&UnionType{Types: [...]}` constructed in a test or rebuilt by a
@@ -106,9 +156,9 @@ func newNegation(inner soltype.Type) soltype.Type {
 // always flat, so a chain of normal newUnion calls would never trigger the
 // recursive case, but the recursion keeps the flatness invariant true for
 // every input.
-func flattenUnion(parts []soltype.Type, inexact bool) ([]soltype.Type, bool) {
+func flattenUnion(parts []soltype.Type, tail unionTail) ([]soltype.Type, unionTail) {
 	if !anyUnion(parts) {
-		return parts, inexact
+		return parts, tail
 	}
 	flat := make([]soltype.Type, 0, len(parts))
 	var splice func(p soltype.Type)
@@ -118,9 +168,7 @@ func flattenUnion(parts []soltype.Type, inexact bool) ([]soltype.Type, bool) {
 			flat = append(flat, p)
 			return
 		}
-		if u.Inexact {
-			inexact = true
-		}
+		tail = tail.merge(tailOf(u))
 		for _, m := range u.Types {
 			splice(m)
 		}
@@ -128,7 +176,7 @@ func flattenUnion(parts []soltype.Type, inexact bool) ([]soltype.Type, bool) {
 	for _, p := range parts {
 		splice(p)
 	}
-	return flat, inexact
+	return flat, tail
 }
 
 // flattenIntersection is the meet twin of flattenUnion. The splice is
@@ -238,24 +286,70 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 	return out
 }
 
-func collapseUnion(pruned []soltype.Type, inexact, hadError bool) soltype.Type {
+// tailSubsumed reports whether every value a tail's bound admits is one the union's named
+// members already admit, which makes the tail contribute nothing and the union exactly its
+// named side. `"y" | ..."y"` is exactly `"y"`, `string | ...string` exactly `string`, and
+// `1 | 2 | ...(1 | 2)` exactly `1 | 2`.
+//
+// This is subsumption applied to the tail rather than to a member. Equality decides it rather
+// than a subtype test, so it needs no Context and runs on every mint. Two shapes qualify: a
+// bound equal to a named member, and an exact union whose every member is. A bound that is a
+// subtype of the named members by some other route, such as `string | ..."a"`, is subsumed too
+// but goes undetected. An inexact union bound never qualifies, since its own tail says nothing about
+// what it holds.
+//
+// A tail drawn from `never` holds nothing, so it drops however that emptiness is spelled. A
+// bare `never` is one spelling and an exact union naming no member is the other, which the
+// loop below passes vacuously.
+func tailSubsumed(pruned []soltype.Type, bound soltype.Type) bool {
+	if bound == nil {
+		return false
+	}
+	if _, empty := bound.(*soltype.NeverType); empty {
+		return true
+	}
+	named := func(t soltype.Type) bool {
+		return slices.ContainsFunc(pruned, func(m soltype.Type) bool { return equalType(m, t) })
+	}
+	if u, ok := bound.(*soltype.UnionType); ok && !u.Inexact {
+		for _, m := range u.Types {
+			if !named(m) {
+				return false
+			}
+		}
+		return true
+	}
+	return named(bound)
+}
+
+func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype.Type {
+	if tailSubsumed(pruned, tail.bound) {
+		tail = unionTail{}
+	}
 	if len(pruned) == 0 {
+		// ErrorType absorbs, so a union whose every other member was pruned comes back
+		// as the sole surviving error whatever its tail says.
 		if hadError {
 			return &soltype.ErrorType{}
 		}
-		// Empty union ⇒ never, the identity of |. An inexact-but-empty union is
-		// still never, since the inexactness flag has no carrier without
-		// members. A caller that needs a union whose only content is the open
-		// tail should write unknown directly.
-		return &soltype.NeverType{}
+		if !tail.open || tail.bound == nil {
+			// Empty union ⇒ never, the identity of |. An empty union with an unbounded
+			// tail is still never, since that tail says nothing a member could stand
+			// for. A caller that needs a union whose only content is an unbounded tail
+			// should write unknown directly.
+			return &soltype.NeverType{}
+		}
 	}
-	if len(pruned) == 1 && !inexact {
+	if len(pruned) == 1 && !tail.open {
 		// A single exact-union member collapses to that member. An inexact
 		// single-member union keeps its wrapper, since the `... | T` tail
 		// makes it strictly weaker than the bare T.
 		return pruned[0]
 	}
-	return &soltype.UnionType{Types: pruned, Inexact: inexact}
+	// A bounded tail with no named member survives as `...R`, a union naming no member
+	// and drawing every one it has from R. `("a" | ...string) ∩ ¬"a"` reduces to
+	// `...(string & ¬"a")`, the string keys other than "a", which has no other spelling.
+	return &soltype.UnionType{Types: pruned, Inexact: tail.open, TailBound: tail.bound}
 }
 
 func collapseIntersection(pruned []soltype.Type, hadError bool) soltype.Type {
@@ -384,21 +478,27 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 	return soltype.EnterResult{}
 }
 
-// ExitType subsumes a lattice node's members and rebuilds it only when a member
-// was dropped. The input is a coalesced display type, so it is already flattened,
+// ExitType subsumes a lattice node's members and rebuilds it only when something
+// changed. The input is a coalesced display type, so it is already flattened,
 // pruned, deduped, and canonically ordered — newUnion's other normalization steps
 // would be no-ops here, so only subsumeMembers runs. subsumeMembers only ever
 // removes members, so a length drop is an O(1) signal that the node changed, which
-// avoids a structural re-comparison. When nothing dropped the original node is
+// avoids a structural re-comparison. When nothing changed the original node is
 // returned, preserving pointer identity up the spine.
+//
+// A union asks about its tail as well as its members, because this walk rewrites
+// the bound before the union itself. A bound that folds to `never` on the way up
+// leaves a tail holding nothing, and a bound that folds to a named member leaves
+// one contributing nothing. Neither drops a member, so a member count alone would
+// miss both and render `...never` or `"y" | ..."y"`.
 func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.UnionType:
 		kept := subsumeMembers(s.ctx, t.Types, unionDrops)
-		if len(kept) == len(t.Types) {
+		if len(kept) == len(t.Types) && !tailSubsumed(kept, t.TailBound) {
 			return t
 		}
-		return collapseUnion(kept, t.Inexact, false)
+		return collapseUnion(kept, tailOf(t), false)
 	case *soltype.IntersectionType:
 		members, changed, provedEmpty := simplifyNegations(s.ctx, t.Types)
 		if provedEmpty {
@@ -534,6 +634,16 @@ func compareSameKind(a, b soltype.Type) int {
 		b := b.(*soltype.UnionType)
 		if a.Inexact != b.Inexact {
 			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
+		}
+		// An unbounded tail sorts before a bounded one, so two unions over the same
+		// members order by what their tails admit.
+		if (a.TailBound == nil) != (b.TailBound == nil) {
+			return boolOrder(a.TailBound != nil) - boolOrder(b.TailBound != nil)
+		}
+		if a.TailBound != nil {
+			if c := compareType(a.TailBound, b.TailBound); c != 0 {
+				return c
+			}
 		}
 		if c := len(a.Types) - len(b.Types); c != 0 {
 			return c

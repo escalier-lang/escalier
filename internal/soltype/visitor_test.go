@@ -306,6 +306,31 @@ func TestAcceptUnionIdentityPreservation(t *testing.T) {
 	require.Same(t, u, u.Accept(identityVisitor{}, Positive), "an unchanged UnionType keeps its pointer")
 }
 
+// A tail's bound is a member the union does not list, so Accept walks it like a written one.
+// Every rewriter and every predicate that rides Accept reaches the bound through this, so a
+// walk that stopped at the member list would silently leave a variable in the bound
+// unsubstituted rather than fail anywhere visible.
+func TestAcceptUnionWalksTheTailBound(t *testing.T) {
+	a := &TypeVarType{ID: 1}
+	num := &PrimType{Prim: NumPrim}
+	str := &PrimType{Prim: StrPrim}
+
+	t.Run("a replacement in the bound rebuilds the union", func(t *testing.T) {
+		u := &UnionType{Types: []Type{num}, Inexact: true, TailBound: a}
+		got := u.Accept(&replaceVar{target: a, repl: str}, Positive).(*UnionType)
+
+		require.NotSame(t, u, got, "a changed bound forces a new union")
+		require.True(t, got.Inexact, "the rebuilt union keeps its Inexact marker")
+		require.Same(t, str, got.TailBound, "the bound took the replacement")
+		require.Same(t, num, got.Types[0], "the unchanged member keeps its pointer")
+	})
+
+	t.Run("an unchanged bound keeps the union's pointer", func(t *testing.T) {
+		u := &UnionType{Types: []Type{num}, Inexact: true, TailBound: str}
+		require.Same(t, u, u.Accept(identityVisitor{}, Positive), "copy-on-write covers the bound")
+	})
+}
+
 // Accept walks a complement's operand at the flipped polarity, and that flip composes with
 // the one a function's parameters get. So a parameter under a negation is covariant and a
 // second negation flips back, while a tuple's elements stay covariant.

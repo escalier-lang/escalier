@@ -238,11 +238,19 @@ func TestNewNegation(t *testing.T) {
 		{"never", &soltype.NeverType{}, "unknown"},
 		{"unknown", &soltype.UnknownType{}, "never"},
 		{"double complement", negT(str()), "string"},
-		// An inexact union accepts every value, so its complement accepts none.
+		// A union whose open tail carries no bound accepts every value, so its complement
+		// accepts none.
 		{"open union", newUnion(nil, []soltype.Type{boolT(), str()}, true), "never"},
 		{"primitive", str(), "¬string"},
 		// A closed union bounds its members, so its complement is a real type.
 		{"closed union", unionT(str(), num()), "¬(number | string)"},
+		// So does a bounded tail. `¬("a" | ...string)` admits `5`, which is exactly what the
+		// fold above would have thrown away.
+		{
+			"bounded open union",
+			newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
+			`¬("a" | ...string)`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -251,10 +259,13 @@ func TestNewNegation(t *testing.T) {
 	}
 }
 
-// An inexact union is the top of the subtype lattice, and two passes now depend on that.
-// newNegation folds `¬(A | B | ...)` to `never`, and simplifyNegations collapses a meet
-// carrying such a complement. Both rest on the probes below, so they are pinned here
-// rather than left to a comment.
+// A union whose open tail carries no bound is the top of the subtype lattice, and two
+// passes depend on that. newNegation folds `¬(A | B | ...)` to `never`, and
+// simplifyNegations collapses a meet carrying such a complement. Both rest on the probes
+// below, so they are pinned here rather than left to a comment.
+//
+// TestBoundedTailIsNotTop is the counterpart. Writing a bound on the tail is what takes
+// the union out of the top position these probes put it in.
 //
 // The second subtest is the step from top-ness to the fold: if `boolean | ...` accepts
 // every value then nothing satisfies `¬(boolean | ...)`.
@@ -368,4 +379,40 @@ func printedBounds(bounds []soltype.Type) []string {
 		out[i] = soltype.Print(b)
 	}
 	return out
+}
+
+// subsumeFinal rewrites a union's tail bound before the union itself, so a bound that only
+// becomes droppable on the way up still has to be noticed. Neither case below drops a member,
+// which is what makes them the cases a member count alone would miss.
+func TestFinalSubsumptionRereadsARewrittenTailBound(t *testing.T) {
+	tests := []struct {
+		name  string
+		parts []soltype.Type
+		bound soltype.Type
+		want  string
+	}{
+		{
+			// `¬string` admits nothing a `string` admits, so the meet is empty and the tail
+			// is drawn from `never`. A tail holding nothing leaves the union its named side,
+			// and there is none, so the answer is `never` rather than `...never`.
+			name:  "a bound that folds to never empties the union",
+			bound: newIntersection(nil, []soltype.Type{str(), not(str())}),
+			want:  "never",
+		},
+		{
+			// The bound folds to `"y"`, which the union already names. The tail then draws
+			// only members the union lists, so it contributes nothing and drops.
+			name:  "a bound that folds to a named member drops the tail",
+			parts: []soltype.Type{strLit("y")},
+			bound: newIntersection(nil, []soltype.Type{strLit("y"), not(strLit("n"))}),
+			want:  `"y"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			in := &soltype.UnionType{Types: tt.parts, Inexact: true, TailBound: tt.bound}
+			require.Equal(t, tt.want, soltype.Print(c.subsumeFinal(in)))
+		})
+	}
 }
