@@ -984,6 +984,10 @@ func hasBorrowShape(t soltype.Type) bool {
 				return true
 			}
 		}
+		// The tail's bound is an unlisted member, and peelBorrows peels it, so a borrow
+		// held only there has to count too. Without this readCarrier would peel the lower
+		// bound and then discard the peeled result, re-borrowing what the read had freed.
+		return t.TailBound != nil && hasBorrowShape(t.TailBound)
 	}
 	return false
 }
@@ -3962,19 +3966,24 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 			kept = append(kept, m)
 		}
 	}
-	if len(kept) == 0 || len(kept) == len(u.Types) {
-		return nil, false
-	}
 	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
 	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
 	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
 	// union narrows to precisely the members that matched.
 	tail := tailOf(u)
+	tailDropped := false
 	if tail.bound != nil && closedShape(tail.bound) && !keep(tail.bound) {
 		// No value the bound admits has the shape the test asks for, so the tail contributes
 		// no member to this branch and goes. See closedShape for which bounds may be decided
 		// this way: those whose own keys or arity pin every member drawn from them.
 		tail = unionTail{}
+		tailDropped = true
+	}
+	// Dropping the tail is narrowing even when every listed member matched, so the no-op
+	// return has to weigh it. `{a: number} | ...string` narrowed by `{a}` keeps its one
+	// member and sheds the string tail, which would be missed by a member count alone.
+	if len(kept) == 0 || (len(kept) == len(u.Types) && !tailDropped) {
+		return nil, false
 	}
 	if len(kept) == 1 && !tail.open {
 		return kept[0], true
@@ -3986,28 +3995,16 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 	return &soltype.UnionType{Types: kept, Inexact: tail.open, TailBound: tail.bound}, true
 }
 
-// closedShape reports whether t's key set or arity is fully determined by t itself, so a
-// `keep` test — which inspects only keys and arity, never field values — answers the same for
-// every value t admits. Four shapes qualify:
-//
-//   - A primitive or a literal: a string is a string however it was written, and neither
-//     carries object keys a test could find that t does not already show.
-//   - An exact object: exactness forbids extra fields, so its inhabitants all carry exactly
-//     t's keys. `{c: boolean}` lacking key "a" means no value it admits has "a".
-//   - An exact tuple with no rest element: its inhabitants all have exactly t's length.
-//
-// An inexact object or tuple does not qualify: `{c: boolean, ...}` admits `{c: boolean, a: ...}`,
-// which carries a key the bound does not name, so the bound failing a key test does not settle
-// the members drawn from it. A union bound fails every object test while its members need not.
-// Deciding those needs a disjointness question, a subtype check narrowUnionMembers holds no
-// Context to ask, so it keeps such a tail — the wider, safe answer.
-//
-// The gate is what keeps narrowUnionMembers from over-narrowing. Its `keep` predicates are
-// shape tests over one MEMBER, and a bound is not a member but the set its members are drawn
-// from. Reading a bound's own failure as every member's is sound only where t's shape pins
-// every member's keys, which is exactly what closedShape reports.
+// closedShape reports whether a `keep` test — which inspects only keys and arity, never field
+// values — answers the same for every value the bound admits, so the bound's own result settles
+// every member drawn from it. It reads through a borrow to the carrier first, matching how `keep`
+// peels one via CarrierOf. A primitive, a literal, an exact object, or an exact tuple qualifies:
+// each pins its members' keys exactly, so `{c: boolean}` lacking "a" means none of its inhabitants
+// has "a". An inexact object or tuple, a union, or a bare type variable does not, since a member
+// may carry a key the bound omits; deciding those needs a disjointness check narrowUnionMembers has
+// no Context to run, so it keeps the tail — the wider, safe answer.
 func closedShape(t soltype.Type) bool {
-	switch t := t.(type) {
+	switch t := soltype.CarrierOf(t).(type) {
 	case *soltype.PrimType, *soltype.LitType:
 		return true
 	case *soltype.ObjectType:
