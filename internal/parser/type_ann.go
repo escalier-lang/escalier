@@ -229,8 +229,10 @@ loop:
 			// A bounded tail rebuilds the union so its span reaches through the bound.
 			result = boundedUnionTypeAnn(u.Types, unionTailBound)
 		case unionTailBound != nil:
-			// A bound makes a single-member tail meaningful, as in `"a" | ...string`, so wrap
-			// the member rather than rejecting the marker.
+			// A lone member followed by a bounded tail, where the member is not itself a
+			// union: a primary as in `"a" | ...string`, or a higher-precedence compound as in
+			// `number & string | ...string`. The bound makes the tail meaningful with one
+			// member, so wrap it rather than rejecting the marker.
 			result = boundedUnionTypeAnn([]ast.TypeAnn{result}, unionTailBound)
 		default:
 			// An unbounded `...` after a single member carries no union to mark.
