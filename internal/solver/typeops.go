@@ -1774,8 +1774,8 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // A tail's bound is not folded into the result. The bound says the tail's choices are strings
 // without saying which, so no segment can absorb them. The result's tail is bounded by `string`
 // all the same, since a template produces a string whatever it interpolates. Leaving it unbounded
-// would make the result the top of the subtype lattice, and `` `on${keyof {a: number, ...}}` ``
-// would accept a `5`.
+// would make the result the top of the subtype lattice, so a template interpolating
+// `keyof {a: number, ...}` would accept a `5`.
 // An interpolation that names no choice at all, which is the shape a set difference leaves when it
 // excludes every named one, has nothing to run the product over and keeps the template symbolic.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
