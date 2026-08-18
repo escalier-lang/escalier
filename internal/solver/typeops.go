@@ -282,7 +282,91 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
 	}
-	return newUnion(nil, parts, check.Inexact)
+	tail := tailOf(check)
+	if tail.bound != nil {
+		tail.bound = e.condOverTailBound(t, tail.bound)
+		if tail.bound == nil {
+			// The conditional failed to answer over the bound. Carrying on would drop the
+			// bound and leave the tail unbounded, and an unbounded tail admits every value,
+			// which makes the whole result the top of the subtype lattice. That is a wider
+			// answer than the operand the conditional started from, so
+			// `Exclude<keyof {a: number, ...}, R>` would accept a `5`. Stay symbolic
+			// instead, and reduce once the bound grounds enough to decide.
+			return &soltype.CondType{
+				Check: check, Extends: t.Extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute,
+			}
+		}
+	}
+	return newUnionWithTail(nil, parts, tail)
+}
+
+// condOverTailBound applies a distributive conditional to a tail's bound and returns the bound
+// the result's tail takes, nil when the conditional has no answer over it.
+//
+// A bound stands for a SET of members rather than one, so the member-at-a-time rule the named
+// members take does not carry over. Running the conditional once over the whole bound would
+// answer as though every value the bound admits took the same branch, and a check that some
+// satisfy and others do not splits it instead. The blocks below handle, in order, a bound every
+// value of which takes one branch, a split the conditional filters, and a split it does not.
+//
+// The split bounds rather than enumerates. A tail member is somewhere in `bound ∩ Extends` or in
+// `bound ∩ ¬Extends`, so what it produces is inside what those two parts produce, which is what
+// makes the split-and-not-a-filter block sound. That block also subsumes the filter block, since
+// a filter's branches are `never` and the check itself, leaving `never | (bound ∩ ¬Extends)`. The
+// filter block runs first anyway, because nativeDifference returns the `∩ ¬` form that
+// reduceDifference recognizes.
+func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
+	extends := substituteOccurrences(t.Extends, t.Check, bound)
+	// Every value of the bound takes the same branch: all satisfy the check, so every tail member
+	// takes Then, or none do, so every member takes Else. Either way the conditional runs on the
+	// whole bound the way it runs on a named member. Over `"a" | ...string`,
+	// `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
+	uniform := e.ctx.condExtends(bound, extends, e.seen)
+	if !uniform && negatableOperand(extends) {
+		// The Else half is decided by `bound <: ¬extends`, the same question excludeFrom asks to
+		// decide that an exclusion takes nothing from a member.
+		uniform = e.ctx.condExtends(bound, soltype.NewNegation(extends), e.seen)
+	}
+	if uniform {
+		return e.reduceCond(&soltype.CondType{
+			Check:   bound,
+			Extends: extends,
+			Then:    substituteOccurrences(t.Then, t.Check, bound),
+			Else:    substituteOccurrences(t.Else, t.Check, bound),
+		})
+	}
+	// The check splits the bound and the conditional is a filter, which denotes a set difference.
+	// That cuts inside the bound and answers exactly. `Exclude<"a" | ...string, "a">` gives a tail
+	// bounded by `string & ¬"a"`, the same answer reduceDifference computes for that set, so the
+	// filter and the difference agree on this operand as the file header requires.
+	if diff, ok := e.nativeDifference(t, bound, extends); ok {
+		// The difference is a meet, and nothing downstream normalizes one built here. The
+		// `Extract` shape leaves `bound ∩ extends`, so `Extract<"a" | ...string, "a">` would
+		// keep a tail bounded by `string & "a"` and never notice that it is just `"a"`, which
+		// the union already names. Normalizing fuses the meet so tailSubsumed can see it.
+		return e.ctx.normalizeDeep(e.reduce(diff), soltype.Positive)
+	}
+	if !negatableOperand(e.groundReduced(extends)) {
+		// The Else half is the values `¬extends` names, and an operand no complement may name
+		// has no such half. The tail comes back unbounded rather than half-decided.
+		//
+		// The check is asked of the grounded operand, because a name reveals nothing about
+		// what it stands for. `type Handle = &'static Point` is an AliasType, which
+		// negatableOperand reads as negatable, while the borrow its body names is the one
+		// thing a complement may not hold. nativeDifference grounds the same question for
+		// the same reason.
+		return nil
+	}
+	// The check splits the bound and the conditional is not a filter. Each part of the split takes
+	// its own branch, and the bound is what the two branches produce together.
+	// `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail may
+	// hold a "b", a string that is not one, both, or neither.
+	matched := newIntersection(nil, []soltype.Type{bound, extends})
+	unmatched := newIntersection(nil, []soltype.Type{bound, newNegation(extends)})
+	return newUnion(nil, []soltype.Type{
+		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
+		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),
+	}, false)
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
