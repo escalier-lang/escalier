@@ -266,23 +266,26 @@ func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
 // Each member reduces through a copy of the conditional with Distribute cleared: the member is no
 // longer a union, and clearing it states that this pass already applied the rule.
 //
-// An inexact Check union names only some of its members. The rest sit in a tail of unknown type.
-// `unknown : Extends` is undecidable for every Extends other than `unknown` itself, so which branch
-// those members select cannot be worked out. The result union keeps the tail, which stands for
-// whatever those undecided members contribute. Over `"a" | "b" | ...`, the alias
-// `type Wrap<T> = if T : string { "yes" } else { "no" }` therefore reduces to `"yes" | ...`
-// (exact-types §7.4.3).
+// An inexact Check union names only some of its members. The rest sit in a tail whose values are
+// not enumerated, so which branch each takes cannot be worked out one at a time. What each produces
+// is still one of the two branches, though, so the result's tail is bounded by what the branches
+// produce over the tail — the same split condOverTailBound runs for a bounded tail. Over
+// `"a" | "b" | ...`, `type Wrap<T> = if T : string { "yes" } else { "no" }` reduces to
+// `"yes" | ..."no"` (exact-types §7.4.3): the named members take Then, and an unnamed member takes
+// either branch, so the tail is bounded by `"yes" | "no"`, narrowed to `"no"` once the named
+// `"yes"` is dropped.
 func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType) soltype.Type {
-	parts := make([]soltype.Type, len(check.Types))
-	for i, member := range check.Types {
-		parts[i] = e.reduceCond(&soltype.CondType{
-			Check:   member,
-			Extends: substituteOccurrences(t.Extends, t.Check, member),
-			Then:    substituteOccurrences(t.Then, t.Check, member),
-			Else:    substituteOccurrences(t.Else, t.Check, member),
-		})
-	}
+	// The bound is decided before the members are reduced. A member reduction can append a
+	// diagnostic or set the truncation flag on the evaluator, and constrain reads those after
+	// reduction, so reducing members whose results are then discarded would surface a
+	// diagnostic for a conditional that did not reduce.
 	tail := tailOf(check)
+	if tail.open && tail.bound == nil {
+		// An unbounded tail admits any value, so it behaves as a bound of `unknown`: the check
+		// splits it, each unnamed member takes Then or Else, and the result is bounded by what
+		// those branches produce. condOverTailBound runs that split below.
+		tail.bound = &soltype.UnknownType{}
+	}
 	if tail.bound != nil {
 		tail.bound = e.condOverTailBound(t, tail.bound)
 		if tail.bound == nil {
@@ -296,6 +299,15 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 				Check: check, Extends: t.Extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute,
 			}
 		}
+	}
+	parts := make([]soltype.Type, len(check.Types))
+	for i, member := range check.Types {
+		parts[i] = e.reduceCond(&soltype.CondType{
+			Check:   member,
+			Extends: substituteOccurrences(t.Extends, t.Check, member),
+			Then:    substituteOccurrences(t.Then, t.Check, member),
+			Else:    substituteOccurrences(t.Else, t.Check, member),
+		})
 	}
 	return newUnionWithTail(nil, parts, tail)
 }
@@ -361,8 +373,11 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 	// its own branch, and the bound is what the two branches produce together.
 	// `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail may
 	// hold a "b", a string that is not one, both, or neither.
-	matched := newIntersection(nil, []soltype.Type{bound, extends})
-	unmatched := newIntersection(nil, []soltype.Type{bound, newNegation(extends)})
+	//
+	// The meets are normalized so a branch that names the parameter sees `"b"` rather than
+	// `string & "b"`, the same fusion the difference path above applies through normalizeDeep.
+	matched := e.ctx.normalizeDeep(newIntersection(nil, []soltype.Type{bound, extends}), soltype.Positive)
+	unmatched := e.ctx.normalizeDeep(newIntersection(nil, []soltype.Type{bound, newNegation(extends)}), soltype.Positive)
 	return newUnion(nil, []soltype.Type{
 		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
 		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),

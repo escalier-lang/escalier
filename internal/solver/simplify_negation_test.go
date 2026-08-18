@@ -588,7 +588,8 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 	t.Run("the split reaches a branch that names the distributed parameter", func(t *testing.T) {
 		// `if (...string) : "b" { [T] } else { T }`, where T is the parameter the conditional
 		// distributes over. Each branch sees its own half of the split rather than the whole
-		// bound, so Then wraps the part that matched and Else keeps the part that did not.
+		// bound, so Then wraps the part that matched and Else keeps the part that did not. The
+		// matched half `string & "b"` fuses to `"b"`, so Then reads `["b"]`.
 		//
 		// The branches name the Check itself, since that is the pointer an alias expansion
 		// installs at every occurrence of the parameter and the one substituteOccurrences
@@ -601,7 +602,20 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 			Else:       check,
 			Distribute: true,
 		}
-		require.Equal(t, `... : ([string & "b"] | string & ¬"b")`, soltype.Print(reduceType(cond)))
+		require.Equal(t, `... : (["b"] | string & ¬"b")`, soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("an unbounded tail is bounded by the branch results", func(t *testing.T) {
+		// `if ("a" | ...) : string { 1 } else { 2 }`. The tail says nothing about what it holds, so
+		// each unnamed member could take either branch. Whichever it takes, it produces `1` or `2`,
+		// so the tail is bounded by `1 | 2`, narrowed to `2` once the named `1` is dropped. This is
+		// the path distributeCond takes when the tail has no bound, reading it as a bound of
+		// `unknown`.
+		cond := &soltype.CondType{
+			Check:   newUnion(nil, []soltype.Type{strLit("a")}, true),
+			Extends: str(), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, "1 | ... : 2", soltype.Print(reduceType(cond)))
 	})
 
 	// `if (...string) : mut {x: number} { 1 } else { 2 }`, using the syntax #1131 asks for.
