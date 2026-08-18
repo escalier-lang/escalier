@@ -127,17 +127,16 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
-// An inexact positive side names only some of its members. The rest sit in an open tail that the
-// reduction cannot enumerate, so what the exclusion takes from them cannot be worked out. The
-// result union keeps the tail, which stands for whatever those undecided members contribute, so
-// `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`.
+// An inexact positive side names only some members; the rest sit in an open tail, and what the
+// exclusion takes from them depends on the tail's bound.
 //
-// When no named member survives, the difference stays as it stands, since neither answer available
-// is the one the reduction means. `newUnion` over an empty member list is `never` however the
-// marker is set, which would claim the tail is empty too. Reading the open union as `unknown` —
-// which is what it is for subtyping, since its tail accepts every value — would answer `¬X`, and
-// that is wrong for the key sets this reduction mostly serves. `keyof {a: X, ...}` is `"a" | ...`,
-// where the tail stands for the keys the object did not name, not for every key there is.
+// An unbounded tail says nothing about its members, so the exclusion cannot be worked out. The
+// result keeps the tail, so `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`. With no named member
+// surviving either, the difference stays as it arrived rather than collapsing to `never`.
+//
+// A bounded tail draws its members from its bound, so excluding from the bound excludes from every
+// member at once. `keyof {a: X, ...}` is `"a" | ...string`, so `∩ ¬"a"` reduces to
+// `...(string & ¬"a")`. A bound the exclusion empties leaves an exact union of the survivors.
 func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type
@@ -159,16 +158,24 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 		base = newIntersection(nil, positives)
 	}
 	if groundDifference(base, excluded) {
-		baseMembers, inexact := unionMembers(base)
+		baseMembers, tail := unionMembers(base)
 		survivors := make([]soltype.Type, 0, len(baseMembers))
 		for _, m := range baseMembers {
 			if narrowed, keep := e.excludeFrom(m, excluded); keep {
 				survivors = append(survivors, narrowed)
 			}
 		}
-		// A tail with no surviving member to ride on falls through to the residual below.
-		if len(survivors) > 0 || !inexact {
-			return newUnion(nil, survivors, inexact)
+		if tail.bound != nil && condOperandGround(tail.bound) {
+			if narrowed, keep := e.excludeFrom(tail.bound, excluded); keep {
+				tail.bound = narrowed
+			} else {
+				tail = unionTail{}
+			}
+		}
+		// An unbounded tail with no surviving member to ride on falls through to the residual
+		// below. A bounded one needs no member, since its bound says what it holds.
+		if len(survivors) > 0 || !tail.open || tail.bound != nil {
+			return newUnionWithTail(nil, survivors, tail)
 		}
 	}
 	return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))

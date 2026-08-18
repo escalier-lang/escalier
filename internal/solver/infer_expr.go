@@ -960,7 +960,13 @@ func peelBorrows(t soltype.Type) soltype.Type {
 		for i, m := range t.Types {
 			members[i] = peelBorrows(m)
 		}
-		return newUnion(nil, members, t.Inexact)
+		// The tail's bound is a member the union does not list, so it peels too. Dropping it
+		// would leave the peeled union unbounded, which is top.
+		tail := tailOf(t)
+		if tail.bound != nil {
+			tail.bound = peelBorrows(tail.bound)
+		}
+		return newUnionWithTail(nil, members, tail)
 	}
 	return t
 }
@@ -3963,14 +3969,54 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
 	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
 	// union narrows to precisely the members that matched.
-	if len(kept) == 1 && !u.Inexact {
+	tail := tailOf(u)
+	if tail.bound != nil && closedShape(tail.bound) && !keep(tail.bound) {
+		// No value the bound admits has the shape the test asks for, so the tail contributes
+		// no member to this branch and goes. See closedShape for which bounds may be decided
+		// this way: those whose own keys or arity pin every member drawn from them.
+		tail = unionTail{}
+	}
+	if len(kept) == 1 && !tail.open {
 		return kept[0], true
 	}
 	// Keep the structured inexact union rather than returning `unknown`. It is the bind
 	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
 	// read each field before the tail widens it. Binding against bare `unknown` would leave
 	// nothing to destructure.
-	return &soltype.UnionType{Types: kept, Inexact: u.Inexact}, true
+	return &soltype.UnionType{Types: kept, Inexact: tail.open, TailBound: tail.bound}, true
+}
+
+// closedShape reports whether t's key set or arity is fully determined by t itself, so a
+// `keep` test — which inspects only keys and arity, never field values — answers the same for
+// every value t admits. Four shapes qualify:
+//
+//   - A primitive or a literal: a string is a string however it was written, and neither
+//     carries object keys a test could find that t does not already show.
+//   - An exact object: exactness forbids extra fields, so its inhabitants all carry exactly
+//     t's keys. `{c: boolean}` lacking key "a" means no value it admits has "a".
+//   - An exact tuple with no rest element: its inhabitants all have exactly t's length.
+//
+// An inexact object or tuple does not qualify: `{c: boolean, ...}` admits `{c: boolean, a: ...}`,
+// which carries a key the bound does not name, so the bound failing a key test does not settle
+// the members drawn from it. A union bound fails every object test while its members need not.
+// Deciding those needs a disjointness question, a subtype check narrowUnionMembers holds no
+// Context to ask, so it keeps such a tail — the wider, safe answer.
+//
+// The gate is what keeps narrowUnionMembers from over-narrowing. Its `keep` predicates are
+// shape tests over one MEMBER, and a bound is not a member but the set its members are drawn
+// from. Reading a bound's own failure as every member's is sound only where t's shape pins
+// every member's keys, which is exactly what closedShape reports.
+func closedShape(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.PrimType, *soltype.LitType:
+		return true
+	case *soltype.ObjectType:
+		return !t.Inexact
+	case *soltype.TupleType:
+		return !t.Inexact && !hasRestSpread(t.Elems)
+	default:
+		return false
+	}
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether

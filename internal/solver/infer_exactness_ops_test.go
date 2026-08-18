@@ -131,13 +131,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 		},
 		{
 			// An interpolation naming an open set of choices produces an open set of strings.
+			// The tail is bounded by `string` rather than left open, because a template
+			// produces a string whatever it interpolates. An open tail would accept a `5`.
 			name: "TemplateLitInexactInterp",
 			src: `
 				type Side = "left" | "right" | ...
 				type Result = ` + "`pad-${Side}`" + `
 			`,
 			wantSymbolic: "`pad-${Side}`",
-			wantExpanded: `"pad-left" | "pad-right" | ...`,
+			wantExpanded: `"pad-left" | "pad-right" | ... : string`,
 		},
 		{
 			// A string intrinsic maps each member of a closed operand union, and that is every
