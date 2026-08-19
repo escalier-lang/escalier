@@ -1555,8 +1555,9 @@ func templateMatchesString(s string, quasis []string, interps []soltype.Type) bo
 // matchInterp reports whether some prefix of s is a value interp admits and the leftover matches the
 // rest of the template, quasis and interps. A string literal or a literal that renders as a string
 // consumes exactly its own characters. The `string` primitive consumes any prefix, so each split point
-// is tried until one lets the rest match. A union admits a prefix any member does. Any other
-// interpolation type is left undecided and fails the match.
+// is tried until one lets the rest match. A residual string intrinsic over `string`, such as
+// `Uppercase<string>`, consumes a prefix its transform leaves unchanged. A union admits a prefix any
+// member does. Any other interpolation type is left undecided and fails the match.
 func matchInterp(s string, interp soltype.Type, quasis []string, interps []soltype.Type) bool {
 	switch it := interp.(type) {
 	case *soltype.LitType:
@@ -1574,6 +1575,23 @@ func matchInterp(s string, interp soltype.Type, quasis []string, interps []solty
 		}
 		for k := 0; k <= len(s); k++ {
 			if templateMatchesString(s[k:], quasis, interps) {
+				return true
+			}
+		}
+		return false
+	case *soltype.StringIntrinsicType:
+		// A residual intrinsic such as `Uppercase<string>` denotes the strings its transform
+		// leaves unchanged, since each of the four transforms is idempotent, so its image over
+		// `string` is exactly its fixed points. Try each split point and admit the prefix when
+		// the transform maps it to itself, the same fixed-point rule
+		// constrainStrLitToStringIntrinsic uses for the direct `"A" <: Uppercase<string>` path.
+		// An operand that is not `string`, such as a type parameter, leaves the operator symbolic,
+		// so no prefix lands in its image and the placeholder matches nothing.
+		if prim, ok := it.Operand.(*soltype.PrimType); !ok || prim.Prim != soltype.StrPrim {
+			return false
+		}
+		for k := 0; k <= len(s); k++ {
+			if applyStringIntrinsic(it.Kind, s[:k]) == s[:k] && templateMatchesString(s[k:], quasis, interps) {
 				return true
 			}
 		}
