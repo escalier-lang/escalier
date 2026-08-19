@@ -71,6 +71,7 @@ func (p *Parser) typeAnn() ast.TypeAnn {
 	ops := NewStack[*TypeAnnOp]()
 	unionInexact := false
 	var unionInexactSpan ast.Span
+	var unionTailBound ast.TypeAnn
 
 	token := p.lexer.peek()
 	//nolint: exhaustive
@@ -133,6 +134,9 @@ loop:
 			unionInexactSpan = p.lexer.peek().Span
 			p.lexer.consume()
 			unionInexact = true
+			// A primary type after the `...` bounds the tail, as in `A | ...string`.
+			// primaryTypeAnn returns nil without consuming when none follows, leaving `A | ...`.
+			unionTailBound = p.primaryTypeAnn()
 			break loop
 		}
 
@@ -217,16 +221,34 @@ loop:
 	}
 	result := typeAnns.Pop()
 	if unionInexact {
-		if u, ok := result.(*ast.UnionTypeAnn); ok {
+		u, isUnion := result.(*ast.UnionTypeAnn)
+		switch {
+		case isUnion && unionTailBound == nil:
 			u.Inexact = true
-		} else {
-			// The `...` followed a single member or a non-union top operator, so
-			// no UnionTypeAnn was built to carry the flag. A trailing `...` is
-			// only meaningful on a union of two or more members.
+		case isUnion:
+			// A bounded tail rebuilds the union so its span reaches through the bound.
+			result = boundedUnionTypeAnn(u.Types, unionTailBound)
+		case unionTailBound != nil:
+			// A lone member followed by a bounded tail, where the member is not itself a
+			// union: a primary as in `"a" | ...string`, or a higher-precedence compound as in
+			// `number & string | ...string`. The bound makes the tail meaningful with one
+			// member, so wrap it rather than rejecting the marker.
+			result = boundedUnionTypeAnn([]ast.TypeAnn{result}, unionTailBound)
+		default:
+			// An unbounded `...` after a single member carries no union to mark.
 			p.reportError(unionInexactSpan, "a trailing `...` must follow two or more union members, as in `A | B | ...`")
 		}
 	}
 	return result
+}
+
+// boundedUnionTypeAnn builds an inexact union carrying a `...R` tail bound, spanning from the
+// first member through the bound.
+func boundedUnionTypeAnn(types []ast.TypeAnn, bound ast.TypeAnn) *ast.UnionTypeAnn {
+	u := ast.NewUnionTypeAnn(types, ast.MergeSpans(types[0].Span(), bound.Span()))
+	u.Inexact = true
+	u.TailBound = bound
+	return u
 }
 
 // funcTypeAnnTail parses a function signature once its leading keyword has been consumed:

@@ -105,3 +105,57 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 		require.False(t, u.Inexact)
 	})
 }
+
+// A `...R` tail bounds the open tail: `A | ...string` stores string on TailBound. A bound
+// also makes a tail meaningful after a single member, which the bare `...` marker rejects.
+func TestParseBoundedUnionTail(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("bound after several members", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ...string`)
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		require.Len(t, u.Types, 2)
+		_, ok = u.TailBound.(*ast.StringTypeAnn)
+		require.True(t, ok)
+		// The union's span reaches through the bound, so it ends at the end of `string`.
+		require.Equal(t, u.TailBound.Span().End, u.Span().End)
+	})
+
+	t.Run("bound after a single member wraps in a one-member union", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, `"a" | ...string`)
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		require.Len(t, u.Types, 1)
+		require.NotNil(t, u.TailBound)
+	})
+
+	t.Run("a parenthesized bound is a full type", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, `"a" | ...(string | number)`)
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		_, ok = u.TailBound.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+	})
+
+	t.Run("an unbounded tail leaves TailBound nil", func(t *testing.T) {
+		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ...`)
+		require.Empty(t, errs)
+		u, ok := ta.(*ast.UnionTypeAnn)
+		require.True(t, ok)
+		require.True(t, u.Inexact)
+		require.Nil(t, u.TailBound)
+	})
+
+	t.Run("a single member with no bound is still an error", func(t *testing.T) {
+		_, errs := ParseTypeAnn(ctx, `number | ...`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "a trailing `...` must follow two or more union members, as in `A | B | ...`", errs[0].Message)
+	})
+}
