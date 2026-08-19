@@ -32,7 +32,7 @@ func newUnion(c *Context, parts []soltype.Type, inexact bool) soltype.Type {
 	return newUnionWithTail(c, parts, unionTail{open: inexact})
 }
 
-// newBoundedUnion mints `A | ...R`, an inexact union whose tail members are drawn from
+// newBoundedUnion mints `A | ... : R`, an inexact union whose tail members are drawn from
 // bound. A nil bound leaves the tail unbounded, which is what newUnion's inexact form
 // mints, so a caller that computes a bound and may come up empty needs no branch.
 func newBoundedUnion(c *Context, parts []soltype.Type, bound soltype.Type) soltype.Type {
@@ -68,7 +68,7 @@ func tailOf(u *soltype.UnionType) unionTail {
 
 // merge folds another tail into t, the rule flattenUnion applies when it splices a
 // nested union's members into the outer list. Two bounded tails join their bounds,
-// since `...string | ...number` may hold a member of either. An unbounded tail absorbs
+// since `... : string | ... : number` may hold a member of either. An unbounded tail absorbs
 // a bounded one, since nothing says what the unbounded one holds.
 //
 // keyofUnion is the other caller, and the join is wider than that reduction wants, since
@@ -115,7 +115,7 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 //   - `¬(A | B | ...)` is `never`. A union whose open tail carries no bound is the
 //     top of the subtype lattice, since that tail accepts every value, so its
 //     complement admits none. TestOpenUnionIsTopForSubtypingOnly pins that reading.
-//     A bounded tail is not top and gets no fold. `¬("a" | ...string)` rejects every
+//     A bounded tail is not top and gets no fold. `¬("a" | ... : string)` rejects every
 //     string and admits `5`, so it wraps like any other operand.
 //   - `¬¬T` is T, since complementing twice returns the original set.
 //
@@ -287,13 +287,13 @@ func filterDropped(parts []soltype.Type, drop func(soltype.Type) bool) []soltype
 }
 
 // narrowTailBound removes from a tail's bound every value the union's named members already
-// admit, and returns nil once nothing is left. A nil result drops the tail, so `"y" | ..."y"`
-// is exactly `"y"`. A partial overlap narrows instead: `1 | ...(1 | 2)` becomes `1 | ...2`,
+// admit, and returns nil once nothing is left. A nil result drops the tail, so `"y" | ... : "y"`
+// is exactly `"y"`. A partial overlap narrows instead: `1 | ... : (1 | 2)` becomes `1 | ... : 2`,
 // which reads tighter and denotes the same thing, since both admit `1` alone or `1 | 2`.
 //
 // Equality decides membership rather than a subtype test, so this needs no Context and runs on
 // every mint. A bound that is a subtype of the named members by some other route, such as
-// `string | ..."a"`, goes undetected. An inexact union bound is left alone, since its own tail
+// `string | ... : "a"`, goes undetected. An inexact union bound is left alone, since its own tail
 // says nothing about what it holds, and a `never` bound holds nothing and drops.
 //
 // An unchanged bound comes back as the same pointer, which is how finalSubsumer tells whether
@@ -354,9 +354,9 @@ func collapseUnion(pruned []soltype.Type, tail unionTail, hadError bool) soltype
 		// makes it strictly weaker than the bare T.
 		return pruned[0]
 	}
-	// A bounded tail with no named member survives as `...R`, a union naming no member
-	// and drawing every one it has from R. `("a" | ...string) ∩ ¬"a"` reduces to
-	// `...(string & ¬"a")`, the string keys other than "a", which has no other spelling.
+	// A bounded tail with no named member survives as `... : R`, a union naming no member
+	// and drawing every one it has from R. `("a" | ... : string) ∩ ¬"a"` reduces to
+	// `... : (string & ¬"a")`, the string keys other than "a", which has no other spelling.
 	return &soltype.UnionType{Types: pruned, Inexact: tail.open, TailBound: tail.bound}
 }
 
@@ -499,7 +499,7 @@ func (s *finalSubsumer) EnterType(t soltype.Type, pol soltype.Polarity) soltype.
 // the bound before the union itself. A bound that folds to `never` on the way up
 // leaves a tail holding nothing, and a bound that folds to a named member leaves
 // one contributing nothing. Neither drops a member, so a member count alone would
-// miss both and render `...never` or `"y" | ..."y"`.
+// miss both and render `... : never` or `"y" | ... : "y"`.
 func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.UnionType:

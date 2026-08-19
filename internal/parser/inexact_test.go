@@ -106,13 +106,14 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 	})
 }
 
-// A `...R` tail bounds the open tail: `A | ...string` stores string on TailBound. A bound
-// also makes a tail meaningful after a single member, which the bare `...` marker rejects.
+// A `... : R` tail bounds the open tail: `A | ... : string` stores string on TailBound. A
+// bound also makes a tail meaningful after a single member, which the bare `...` marker
+// rejects. The bound sits behind a `:` so `...T` stays a tuple spread alone.
 func TestParseBoundedUnionTail(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("bound after several members", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ...string`)
+		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ... : string`)
 		require.Empty(t, errs)
 		u, ok := ta.(*ast.UnionTypeAnn)
 		require.True(t, ok)
@@ -125,7 +126,7 @@ func TestParseBoundedUnionTail(t *testing.T) {
 	})
 
 	t.Run("bound after a single member wraps in a one-member union", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | ...string`)
+		ta, errs := ParseTypeAnn(ctx, `"a" | ... : string`)
 		require.Empty(t, errs)
 		u, ok := ta.(*ast.UnionTypeAnn)
 		require.True(t, ok)
@@ -135,7 +136,7 @@ func TestParseBoundedUnionTail(t *testing.T) {
 	})
 
 	t.Run("a parenthesized bound is a full type", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | ...(string | number)`)
+		ta, errs := ParseTypeAnn(ctx, `"a" | ... : (string | number)`)
 		require.Empty(t, errs)
 		u, ok := ta.(*ast.UnionTypeAnn)
 		require.True(t, ok)
@@ -151,6 +152,12 @@ func TestParseBoundedUnionTail(t *testing.T) {
 		require.True(t, ok)
 		require.True(t, u.Inexact)
 		require.Nil(t, u.TailBound)
+	})
+
+	t.Run("a `... :` with no type after it is an error", func(t *testing.T) {
+		_, errs := ParseTypeAnn(ctx, `"a" | "b" | ... :`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "expected a type annotation after `... :`", errs[0].Message)
 	})
 
 	t.Run("a single member with no bound is still an error", func(t *testing.T) {

@@ -39,7 +39,7 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "0 | 1 | ...number",
+			wantExpanded: "0 | 1 | ... : number",
 		},
 		{
 			// `T[keyof T]` over an exact object reads every key the object declares, and those are
@@ -170,7 +170,7 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 				type Result = keyof I
 			`,
 			wantSymbolic: "keyof I",
-			wantExpanded: `"a" | "b" | ...string`,
+			wantExpanded: `"a" | "b" | ... : string`,
 		},
 		{
 			// `Exact` and `Inexact` are the two operators that run the other way. Every case above
@@ -444,7 +444,7 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 				type Result = keyof Inexact<Obj>
 			`,
 			wantSymbolic: "keyof Inexact<Obj>",
-			wantExpanded: `"a" | "b" | ...string`,
+			wantExpanded: `"a" | "b" | ... : string`,
 		},
 	}
 	for _, tt := range tests {

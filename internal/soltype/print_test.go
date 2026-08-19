@@ -171,12 +171,12 @@ func TestPrintRoundTrips(t *testing.T) {
 		{"union triple", &UnionType{Types: []Type{numP(), strP(), boolP()}}, "number | string | boolean"},
 		// An inexact union renders a trailing `...` entry.
 		{"inexact union", &UnionType{Types: []Type{numP(), strP()}, Inexact: true}, "number | string | ..."},
-		// A bounded tail renders its bound after the marker. The bound prints at precPrefix,
-		// so an atom stays bare and an intersection is parenthesized under the `...`.
+		// A bounded tail renders its bound after a `:`. The bound prints at precPrefix,
+		// so an atom stays bare and an intersection is parenthesized after the `... :`.
 		{
 			"bounded tail",
 			&UnionType{Types: []Type{numP()}, Inexact: true, TailBound: strP()},
-			"number | ...string",
+			"number | ... : string",
 		},
 		{
 			"bounded tail over a compound bound",
@@ -185,21 +185,21 @@ func TestPrintRoundTrips(t *testing.T) {
 				Inexact:   true,
 				TailBound: &IntersectionType{Types: []Type{strP(), &NegationType{Inner: strP()}}},
 			},
-			"number | ...(string & ¬string)",
+			"number | ... : (string & ¬string)",
 		},
 		// A bounded tail with no named member is the whole union, which is what a set
 		// difference that excludes every named member leaves.
 		{
 			"bounded tail with no named member",
 			&UnionType{Inexact: true, TailBound: strP()},
-			"...string",
+			"... : string",
 		},
 		// LevelOf reads the bound too, so a variable reachable only through it lifts the
 		// union's level and the freshener descends to it.
 		{
 			"a variable in the bound lifts the level",
 			&UnionType{Types: []Type{numP()}, Inexact: true, TailBound: &TypeVarType{ID: 1, Level: 2}},
-			"number | ...t1",
+			"number | ... : t1",
 		},
 		// NullType renders as `null`. It is a distinct atomic kind from UndefinedType.
 		{"null atom", &NullType{}, "null"},
@@ -401,7 +401,7 @@ func TestPrintConstructorElem(t *testing.T) {
 func TestFreeTypeVarsUnionTailBound(t *testing.T) {
 	a := &TypeVarType{ID: 1, Level: 3}
 	u := &UnionType{Types: []Type{numP()}, Inexact: true, TailBound: a}
-	require.Equal(t, "<T0> (number | ...T0)", PrintAsScheme(u))
+	require.Equal(t, "<T0> (number | ... : T0)", PrintAsScheme(u))
 	require.Equal(t, 3, LevelOf(u))
 	// A nil bound is the childless case, which reads as level 0 rather than panicking.
 	require.Equal(t, 0, LevelOf(&UnionType{Types: []Type{numP()}, Inexact: true}))

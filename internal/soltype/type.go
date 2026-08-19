@@ -892,13 +892,13 @@ type UnionType struct {
 	// Inexact tracks the trailing `...` marker. The zero value is exact.
 	Inexact bool
 	// TailBound names the type the tail's unnamed members are drawn from, so
-	// `"a" | ...string` reads as `"a"` together with some unknown set of strings.
+	// `"a" | ... : string` reads as `"a"` together with some unknown set of strings.
 	// It is nil on an exact union and may be nil on an inexact one, which leaves
 	// the tail unbounded. An unbounded tail admits every value, which makes the
 	// whole union the top of the subtype lattice.
 	//
 	// A bound keeps the named members enumerable while still saying what the rest
-	// can be. `keyof {a: X, ...}` is `"a" | ...string`, so a mapped type still has
+	// can be. `keyof {a: X, ...}` is `"a" | ... : string`, so a mapped type still has
 	// "a" to iterate and the key set still rejects `5`. Flattening the bound into
 	// the member list instead would give `"a" | string`, which subsumes to `string`
 	// and loses both.

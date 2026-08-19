@@ -244,12 +244,12 @@ func TestNewNegation(t *testing.T) {
 		{"primitive", str(), "¬string"},
 		// A closed union bounds its members, so its complement is a real type.
 		{"closed union", unionT(str(), num()), "¬(number | string)"},
-		// So does a bounded tail. `¬("a" | ...string)` admits `5`, which is exactly what the
+		// So does a bounded tail. `¬("a" | ... : string)` admits `5`, which is exactly what the
 		// fold above would have thrown away.
 		{
 			"bounded open union",
 			newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
-			`¬("a" | ...string)`,
+			`¬("a" | ... : string)`,
 		},
 	}
 	for _, tt := range tests {
@@ -320,14 +320,14 @@ func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
 }
 
 // Writing a bound on the open tail takes the union out of the top position
-// TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ...string` names "a" and draws every
+// TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ... : string` names "a" and draws every
 // other member it has from `string`, so a value outside `string` is outside the union.
 //
 // Each probe below has a counterpart in that test that answers the other way, which is
 // what makes the bound the thing that changed rather than some difference in the shapes.
 func TestBoundedTailIsNotTop(t *testing.T) {
 	c := newChecker()
-	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ...string
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ... : string
 
 	t.Run("the bound decides what is a subtype of the union", func(t *testing.T) {
 		probes := []struct {
@@ -428,7 +428,7 @@ func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
 	c := newChecker()
 	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
 
-	// `("a" | ...string) & ¬string`. Both the named member and every value the tail could
+	// `("a" | ... : string) & ¬string`. Both the named member and every value the tail could
 	// hold is a string, so nothing survives.
 	kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{bounded, negT(str())})
 	require.True(t, provedEmpty)
@@ -453,7 +453,7 @@ func TestKeyofBoundsItsOpenTail(t *testing.T) {
 			type Obj = {a: number, ...}
 			type Result = keyof Obj
 		`)
-		require.Equal(t, `"a" | ...string`, soltype.Print(keys))
+		require.Equal(t, `"a" | ... : string`, soltype.Print(keys))
 		// `5` is plainly not a key of that object, which an unbounded tail could not say.
 		require.False(t, subtypeHolds(c.ctx, numLit(5), keys))
 		require.True(t, subtypeHolds(c.ctx, strLit("b"), keys))
@@ -464,7 +464,7 @@ func TestKeyofBoundsItsOpenTail(t *testing.T) {
 			type Tup = [number, ...]
 			type Result = keyof Tup
 		`)
-		require.Equal(t, "0 | ...number", soltype.Print(keys))
+		require.Equal(t, "0 | ... : number", soltype.Print(keys))
 		require.False(t, subtypeHolds(c.ctx, strLit("a"), keys))
 		require.True(t, subtypeHolds(c.ctx, numLit(1), keys))
 	})
