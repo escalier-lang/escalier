@@ -796,7 +796,7 @@ func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // structural equality, and it keeps the test in step with equalType as kinds gain
 // fields.
 //
-// An UNREDUCED atom is left alone, which is the same refusal plainProps and
+// An UNREDUCED atom is left alone, which is the same refusal mergeableElems and
 // comparableTuples make. A `{...S}` does not know its own field names and a
 // `[...P]` does not know its own positions, so neither supports the claim that the
 // exact side caps what the inexact side leaves open. The constraint rules treat
@@ -1073,70 +1073,77 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 //
 // The meet is exact when either side is, since one cap is enough to close the key
 // set.
+//
+// A member the two objects share is fused member against member by meetObjElem,
+// which bails on any pair it cannot fuse exactly, so a method or accessor whose
+// merge is not expressible keeps the two objects apart the same way a readonly
+// clash does.
 func (c *Context) meetObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
-	pa, ok := plainProps(a)
+	ea, ok := mergeableElems(a)
 	if !ok {
 		return nil, false
 	}
-	pb, ok := plainProps(b)
+	eb, ok := mergeableElems(b)
 	if !ok {
 		return nil, false
 	}
-	if !requiredFieldsWithin(pa, pb, b.Inexact) || !requiredFieldsWithin(pb, pa, a.Inexact) {
+	if !requiredMembersWithin(ea, eb, b.Inexact) || !requiredMembersWithin(eb, ea, a.Inexact) {
 		return &soltype.NeverType{}, true
 	}
-	elems := make([]soltype.ObjTypeElem, 0, len(pa)+len(pb))
-	for _, p := range pa {
-		q, shared := propNamed(pb, p.Name)
+	elems := make([]soltype.ObjTypeElem, 0, len(ea)+len(eb))
+	for _, e := range ea {
+		q, shared := elemNamed(eb, soltype.ObjElemName(e))
 		if !shared {
 			if !b.Inexact {
 				continue
 			}
-			elems = append(elems, p)
+			elems = append(elems, e)
 			continue
 		}
-		// A readonly field and a writable one constrain what a holder may do rather
-		// than which values inhabit the type, and no rule says which marker the fused
-		// field should carry, so the two atoms stay separate.
-		if p.Readonly != q.Readonly {
+		merged, ok := c.meetObjElem(e, q)
+		if !ok {
 			return nil, false
 		}
-		elems = append(elems, &soltype.PropertyElem{
-			Name:     p.Name,
-			Type:     c.meetTypes(p.Type, q.Type),
-			Optional: p.Optional && q.Optional,
-			Readonly: p.Readonly,
-		})
+		elems = append(elems, merged)
 	}
-	for _, q := range pb {
-		if _, shared := propNamed(pa, q.Name); shared {
+	for _, e := range eb {
+		if _, shared := elemNamed(ea, soltype.ObjElemName(e)); shared {
 			continue
 		}
 		if !a.Inexact {
 			continue
 		}
-		elems = append(elems, q)
+		elems = append(elems, e)
 	}
 	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact && b.Inexact}, true
 }
 
-// requiredFieldsWithin reports whether every field props REQUIRES is one the
-// allowed list names. Pass open as true when allowed came off an inexact object.
-// Such an object caps nothing, so it admits any field name and the check passes
-// without reading either list.
-func requiredFieldsWithin(props, allowed []*soltype.PropertyElem, open bool) bool {
+// requiredMembersWithin reports whether the allowed list names every member that
+// `members` requires. A member is required unless it is an optional property, so a
+// method, accessor, or constructor always counts. Pass open as true when allowed
+// came off an inexact object. Such an object caps nothing, so it admits any member
+// name and the check passes without reading either list.
+func requiredMembersWithin(members, allowed []soltype.ObjTypeElem, open bool) bool {
 	if open {
 		return true
 	}
-	for _, p := range props {
-		if p.Optional {
+	for _, e := range members {
+		if optionalProperty(e) {
 			continue
 		}
-		if _, ok := propNamed(allowed, p.Name); !ok {
+		if _, ok := elemNamed(allowed, soltype.ObjElemName(e)); !ok {
 			return false
 		}
 	}
 	return true
+}
+
+// optionalProperty reports whether a member is an `x?: T` property, the only member
+// kind that does not add to an object's required floor. A method, accessor, or
+// constructor is always present, so none is ever optional.
+func optionalProperty(e soltype.ObjTypeElem) bool {
+	p, ok := e.(*soltype.PropertyElem)
+	return ok && p.Optional
 }
 
 // joinObjects fuses two object atoms under a union. One object denotes their union
@@ -1160,43 +1167,43 @@ func requiredFieldsWithin(props, allowed []*soltype.PropertyElem, open bool) boo
 // second field, and only the exact member admits an x from A. The pair that would
 // fuse is the one whose fields also agree, and joinAtoms answers that one through
 // widerByExactness before reaching here.
+//
+// The one member that differs is fused by joinObjElem, which bails on any pair it
+// cannot fuse exactly. A method, setter, or constructor carries a contravariant
+// input or a per-call output, neither of which a union folds into one member, so
+// only a property or a getter ever widens.
 func (c *Context) joinObjects(a, b *soltype.ObjectType) (soltype.Type, bool) {
 	if a.Inexact != b.Inexact {
 		return nil, false
 	}
-	pa, ok := plainProps(a)
+	ea, ok := mergeableElems(a)
 	if !ok {
 		return nil, false
 	}
-	pb, ok := plainProps(b)
+	eb, ok := mergeableElems(b)
 	if !ok {
 		return nil, false
 	}
-	if !sameFieldNames(pa, pb) {
+	if !sameMemberNames(ea, eb) {
 		return nil, false
 	}
-	elems := make([]soltype.ObjTypeElem, 0, len(pa))
+	elems := make([]soltype.ObjTypeElem, 0, len(ea))
 	widened := 0
-	for _, p := range pa {
-		q, _ := propNamed(pb, p.Name)
-		// Readonly stays a bail, for the reason meetObjects gives.
-		if p.Readonly != q.Readonly {
-			return nil, false
-		}
-		if p.Optional == q.Optional && equalType(p.Type, q.Type) {
-			elems = append(elems, p)
+	for _, e := range ea {
+		q, _ := elemNamed(eb, soltype.ObjElemName(e))
+		if equalMember(e, q) {
+			elems = append(elems, e)
 			continue
 		}
 		widened++
 		if widened > 1 {
 			return nil, false
 		}
-		elems = append(elems, &soltype.PropertyElem{
-			Name:     p.Name,
-			Type:     c.joinTypes(p.Type, q.Type),
-			Optional: p.Optional || q.Optional,
-			Readonly: p.Readonly,
-		})
+		merged, ok := c.joinObjElem(e, q)
+		if !ok {
+			return nil, false
+		}
+		elems = append(elems, merged)
 	}
 	return &soltype.ObjectType{Elems: sortedByName(elems), Inexact: a.Inexact}, true
 }
@@ -1544,10 +1551,7 @@ func sameThrows(a, b *soltype.FuncType) bool {
 // non-throwing arrows yields a third whose Throws stays nil rather than an explicit
 // `never` the printer would have to suppress.
 func (c *Context) meetThrows(a, b *soltype.FuncType) soltype.Type {
-	if sameThrows(a, b) {
-		return a.Throws
-	}
-	return c.meetTypes(a.ThrowsOrNever(), b.ThrowsOrNever())
+	return c.meetThrowsTypes(a.Throws, b.Throws)
 }
 
 func equalParamTypes(a, b *soltype.FuncType) bool {
@@ -1579,30 +1583,278 @@ func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
 	return c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
 }
 
-// plainProps returns an object's members as properties, and ok is false when the
-// object carries any other member kind, which keeps that object an unfused atom.
-// The two reasons for refusing differ.
+// mergeableElems returns an object's members for a field-by-field merge, and ok is
+// false when the object cannot take part in one. The two refusals differ.
 //
-// A spread or a mapped member makes the object an unreduced residual whose real
-// member list is not known yet, so there is nothing to fuse field by field until
-// the evaluator settles it. See soltype.HasResidualElem. Refusing those two is
-// required, not a choice.
+// A member that is not a property, method, accessor, or constructor is refused. A
+// spread or a mapped member, an index signature included, stands for a member list
+// the merge cannot take apart field by field, so an object carrying one is kept
+// whole.
 //
-// A method, an accessor, and a constructor could fuse under a rule of their own,
-// since each carries a FuncType that could meet the way meetFuncs meets an arrow
-// atom. No such rule exists, and none is needed: an unfused atom denotes the meet
-// or the join just as precisely, so writing one would only shrink the normal form.
-// TODO(#1103).
-func plainProps(o *soltype.ObjectType) ([]*soltype.PropertyElem, bool) {
-	props := make([]*soltype.PropertyElem, 0, len(o.Elems))
+// A repeated member name is refused so the merge can pair members by name with at
+// most one hit per side. The only source of a repeat is a `get x` and `set x`
+// accessor pair sharing one name. Keeping such an object unfused costs an atom and
+// no precision, which is the trade this whole file is built on.
+func mergeableElems(o *soltype.ObjectType) ([]soltype.ObjTypeElem, bool) {
 	for _, e := range o.Elems {
-		p, ok := e.(*soltype.PropertyElem)
+		if !fusableMember(e) {
+			return nil, false
+		}
+	}
+	if hasRepeatedName(o.Elems) {
+		return nil, false
+	}
+	return o.Elems, true
+}
+
+// fusableMember reports whether a member has a per-kind merge rule. A spread and a
+// mapped member do not, so an object carrying either stays an unfused atom.
+func fusableMember(e soltype.ObjTypeElem) bool {
+	switch e.(type) {
+	case *soltype.PropertyElem, *soltype.MethodElem, *soltype.GetterElem,
+		*soltype.SetterElem, *soltype.ConstructorElem:
+		return true
+	}
+	return false
+}
+
+// hasRepeatedName reports whether two members of one object share a name. Its
+// callers rule out spread and mapped members first, so a constructor is the only
+// member that names the empty string, and an object holds at most one. The empty
+// key therefore never collides with itself here.
+func hasRepeatedName(elems []soltype.ObjTypeElem) bool {
+	seen := set.NewSet[string]()
+	for _, e := range elems {
+		name := soltype.ObjElemName(e)
+		if seen.Contains(name) {
+			return true
+		}
+		seen.Add(name)
+	}
+	return false
+}
+
+// meetObjElem fuses two members that share a name into the one member a value of
+// both objects carries, and ok is false when no single member denotes the meet.
+// Equal members fuse to themselves, which is what lets two objects sharing an
+// identical overloaded method fuse without meetMethods having to meet the overload
+// sets. A pair of different kinds never fuses.
+func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bool) {
+	if equalMember(a, b) {
+		return a, true
+	}
+	switch a := a.(type) {
+	case *soltype.PropertyElem:
+		b, ok := b.(*soltype.PropertyElem)
 		if !ok {
 			return nil, false
 		}
-		props = append(props, p)
+		// A readonly field and a writable one constrain what a holder may do rather
+		// than which values inhabit the type, and no rule says which marker the fused
+		// field should carry, so the two atoms stay separate.
+		if a.Readonly != b.Readonly {
+			return nil, false
+		}
+		return &soltype.PropertyElem{
+			Name:     a.Name,
+			Type:     c.meetTypes(a.Type, b.Type),
+			Optional: a.Optional && b.Optional,
+			Readonly: a.Readonly,
+		}, true
+	case *soltype.MethodElem:
+		b, ok := b.(*soltype.MethodElem)
+		if !ok {
+			return nil, false
+		}
+		return c.meetMethods(a, b)
+	case *soltype.GetterElem:
+		b, ok := b.(*soltype.GetterElem)
+		if !ok {
+			return nil, false
+		}
+		if !equalSelfParam(a.SelfParam, b.SelfParam, &alphaCtx{}) {
+			return nil, false
+		}
+		// A getter reads its property, so both Type and Throws are covariant outputs
+		// that meet the way a function's codomain does.
+		return &soltype.GetterElem{
+			Name:      a.Name,
+			SelfParam: a.SelfParam,
+			Type:      c.meetTypes(a.Type, b.Type),
+			Throws:    c.meetThrowsTypes(a.Throws, b.Throws),
+		}, true
+	case *soltype.SetterElem:
+		b, ok := b.(*soltype.SetterElem)
+		if !ok {
+			return nil, false
+		}
+		return c.meetSetters(a, b)
+	case *soltype.ConstructorElem:
+		b, ok := b.(*soltype.ConstructorElem)
+		if !ok {
+			return nil, false
+		}
+		fused, ok := c.meetFuncs(a.Fn, b.Fn)
+		if !ok {
+			return nil, false
+		}
+		fn, ok := fused.(*soltype.FuncType)
+		if !ok {
+			return nil, false
+		}
+		return &soltype.ConstructorElem{Fn: fn}, true
 	}
-	return props, true
+	return nil, false
+}
+
+// joinObjElem fuses the one member two objects differ in into the member their
+// union carries, and ok is false when no single member denotes the join. Only a
+// property and a getter can widen. Each reads a single value, so the union of the
+// two members reads a value from the union of the two types, which one member
+// states. A method, setter, or constructor carries a contravariant input or a
+// per-call output that no single member folds a union into, so each bails.
+func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bool) {
+	switch a := a.(type) {
+	case *soltype.PropertyElem:
+		b, ok := b.(*soltype.PropertyElem)
+		if !ok {
+			return nil, false
+		}
+		// Readonly stays a bail, for the reason meetObjElem gives.
+		if a.Readonly != b.Readonly {
+			return nil, false
+		}
+		return &soltype.PropertyElem{
+			Name:     a.Name,
+			Type:     c.joinTypes(a.Type, b.Type),
+			Optional: a.Optional || b.Optional,
+			Readonly: a.Readonly,
+		}, true
+	case *soltype.GetterElem:
+		b, ok := b.(*soltype.GetterElem)
+		if !ok {
+			return nil, false
+		}
+		if !equalSelfParam(a.SelfParam, b.SelfParam, &alphaCtx{}) {
+			return nil, false
+		}
+		return &soltype.GetterElem{
+			Name:      a.Name,
+			SelfParam: a.SelfParam,
+			Type:      c.joinTypes(a.Type, b.Type),
+			Throws:    c.joinThrowsTypes(a.Throws, b.Throws),
+		}, true
+	}
+	return nil, false
+}
+
+// meetMethods fuses two methods that share a name. An overloaded method fuses only
+// when the two overload sets are identical, which meetObjElem's equal-member check
+// already answered before reaching here, so a set that is not a single signature
+// keeps the objects apart. Static-ness must agree, since a static method lives on
+// the constructor value and an instance method on the instance, so the two are not
+// the same member.
+func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
+	if a.Static != b.Static {
+		return nil, false
+	}
+	if len(a.Signatures) != 1 || len(b.Signatures) != 1 {
+		return nil, false
+	}
+	fused, ok := c.meetMethodSig(a.Signatures[0], b.Signatures[0])
+	if !ok {
+		return nil, false
+	}
+	return &soltype.MethodElem{Name: a.Name, Signatures: []*soltype.FuncType{fused}, Static: a.Static}, true
+}
+
+// meetSetters fuses two setters that share a name. A setter is a one-input arrow
+// whose Throws is its only output, so its meet follows the two arrow cases
+// meetFuncs uses. When the written values agree the outputs meet, and when the
+// raises agree the written values join. A pair that agrees on neither has no single
+// setter that states both, the same reason meetFuncs keeps two arrows apart, so it
+// bails. The receivers must be equal, since one setter cannot say which it takes.
+func (c *Context) meetSetters(a, b *soltype.SetterElem) (soltype.ObjTypeElem, bool) {
+	if !equalSelfParam(a.SelfParam, b.SelfParam, &alphaCtx{}) {
+		return nil, false
+	}
+	if equalType(a.Param, b.Param) {
+		return &soltype.SetterElem{
+			Name:      a.Name,
+			SelfParam: a.SelfParam,
+			Param:     a.Param,
+			Throws:    c.meetThrowsTypes(a.Throws, b.Throws),
+		}, true
+	}
+	if equalType(orNever(a.Throws), orNever(b.Throws)) {
+		return &soltype.SetterElem{
+			Name:      a.Name,
+			SelfParam: a.SelfParam,
+			Param:     c.joinTypes(a.Param, b.Param),
+			Throws:    a.Throws,
+		}, true
+	}
+	return nil, false
+}
+
+// meetMethodSig meets two method signatures, which carry a self receiver that
+// meetFuncs does not handle. The receivers must be equal, since one signature
+// cannot say which receiver it takes. With the receiver set aside the rest meets as
+// an arrow, and the shared receiver is written back onto the result.
+func (c *Context) meetMethodSig(a, b *soltype.FuncType) (*soltype.FuncType, bool) {
+	if !equalSelfParam(a.SelfParam, b.SelfParam, &alphaCtx{}) {
+		return nil, false
+	}
+	da := *a
+	da.SelfParam = nil
+	db := *b
+	db.SelfParam = nil
+	fused, ok := c.meetFuncs(&da, &db)
+	if !ok {
+		return nil, false
+	}
+	fn, ok := fused.(*soltype.FuncType)
+	if !ok {
+		return nil, false
+	}
+	fn.SelfParam = a.SelfParam
+	return fn, true
+}
+
+// meetThrowsTypes meets two throws clauses, each read through the nil-is-never
+// shorthand. It keeps the clause unwritten when both agree, so fusing two members
+// whose Throws is nil leaves the result's Throws nil rather than an explicit
+// `never` the printer would suppress. It is the member twin of meetThrows.
+func (c *Context) meetThrowsTypes(a, b soltype.Type) soltype.Type {
+	if equalType(orNever(a), orNever(b)) {
+		return a
+	}
+	return c.meetTypes(orNever(a), orNever(b))
+}
+
+// joinThrowsTypes is the join twin of meetThrowsTypes, written for a widening
+// getter whose two Throws clauses join the way its returned value does.
+func (c *Context) joinThrowsTypes(a, b soltype.Type) soltype.Type {
+	if equalType(orNever(a), orNever(b)) {
+		return a
+	}
+	return c.joinTypes(orNever(a), orNever(b))
+}
+
+// orNever resolves the nil-is-never shorthand a throws clause uses, so a caller
+// comparing or merging two clauses reads a concrete type in either slot.
+func orNever(t soltype.Type) soltype.Type {
+	if t == nil {
+		return &soltype.NeverType{}
+	}
+	return t
+}
+
+// equalMember reports whether two object members are structurally equal, so a
+// merge can keep one unchanged instead of rebuilding it. It compares under a fresh
+// binder pairing, which two members carrying no bound name never consult.
+func equalMember(a, b soltype.ObjTypeElem) bool {
+	return equalObjElem(a, b, &alphaCtx{})
 }
 
 // sortedByName orders a fused object's members by field name. A fused object is
@@ -1618,23 +1870,24 @@ func sortedByName(elems []soltype.ObjTypeElem) []soltype.ObjTypeElem {
 	return elems
 }
 
-func propNamed(props []*soltype.PropertyElem, name string) (*soltype.PropertyElem, bool) {
-	for _, p := range props {
-		if p.Name == name {
-			return p, true
+func elemNamed(elems []soltype.ObjTypeElem, name string) (soltype.ObjTypeElem, bool) {
+	for _, e := range elems {
+		if soltype.ObjElemName(e) == name {
+			return e, true
 		}
 	}
 	return nil, false
 }
 
-// sameFieldNames reports whether two property lists name the same fields. Order is
-// irrelevant, since an object's element order is presentation only.
-func sameFieldNames(a, b []*soltype.PropertyElem) bool {
+// sameMemberNames reports whether two member lists name the same members. Order is
+// irrelevant, since an object's element order is presentation only. A repeated name
+// is ruled out before this runs, so equal lengths plus one-way containment settle it.
+func sameMemberNames(a, b []soltype.ObjTypeElem) bool {
 	if len(a) != len(b) {
 		return false
 	}
-	for _, p := range a {
-		if _, ok := propNamed(b, p.Name); !ok {
+	for _, e := range a {
+		if _, ok := elemNamed(b, soltype.ObjElemName(e)); !ok {
 			return false
 		}
 	}
