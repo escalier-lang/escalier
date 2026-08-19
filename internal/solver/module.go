@@ -787,7 +787,7 @@ func (c *checker) checkOverloadAnnotations(
 			continue
 		}
 		for _, fd := range funcs {
-			if !hasAnnotatedParams(fd.FuncSig) {
+			if !allParamsAnnotated(fd.FuncSig) {
 				c.report(&UnannotatedRecursiveOverloadError{Decl: fd, Name: key.Name()})
 				rejected.Add(key)
 				break // one diagnostic per overloaded binding, blaming the first gap
