@@ -256,9 +256,9 @@ func PrintAsSchemeWith(
 		labels = append(labels, p.bindTypeParam(v, name))
 	}
 	// Borrow lifetimes left in the coalesced type by coalesceLifetimes are all
-	// nameable. A connect-nothing one was already elided. Three kinds survive to here:
-	// a param lifetime, a kept join lifetime, and a lifetime occurring under a
-	// complement.
+	// nameable. A connect-nothing one was already elided unless a complement encloses
+	// it. Three kinds survive to here: a param lifetime, a kept join lifetime, and a
+	// lifetime occurring under a complement.
 	//
 	// The third kind is named even when it reaches no parameter, so
 	// `fn () -> ¬(&'a mut {x: number})` renders `fn <'a>() -> ¬&'a mut {x: number}`

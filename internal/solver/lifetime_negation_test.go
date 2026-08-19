@@ -206,11 +206,13 @@ func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 // param in the join's connected component as outliving it. That invents outlives
 // relations inference never proved.
 //
-// 'm is an instantiation intermediary outliving 'a, 'b and 'd, which puts all four in
-// one connected component while leaving no directed edge among 'a, 'b and 'd. Reading
-// the complemented 'd as a join over 'a and 'b would assert `'a: 'd` and `'b: 'd`, and
-// checkDeclaredLifetimeBounds would accept a declared `<'a: 'd>` the body never
-// establishes. Classifying 'd as a param instead leaves the relation empty.
+// Below, `m`, `a`, `b` and `d` name the lifetime variables the test builds, not the
+// names they render under. `m` is an instantiation intermediary outliving `a`, `b` and
+// `d`, which puts all four in one connected component while leaving no directed edge
+// among `a`, `b` and `d`. Reading the complemented `d` as a join over `a` and `b` would
+// assert that `a` and `b` outlive `d`, and checkDeclaredLifetimeBounds would accept a
+// declared bound the body never establishes. Classifying `d` as a param instead leaves
+// the relation empty.
 func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 	c := newChecker()
 	m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
@@ -241,9 +243,10 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 
 	// The rendered signature carries the same fact: no bound in the quantifier prefix.
 	// It also shows the two signals acting separately. All three borrows reach no
-	// output, so all three are connect-nothing. That verdict elides `'a` and `'b` on
-	// position alone. Only the complemented borrow keeps a name, because it is in the
-	// noElide set, which overrides the same verdict for it.
+	// output, so all three are connect-nothing. That verdict elides the borrows on `p`
+	// and `q` on position alone. Only the borrow on `r` keeps a name, because `d` is in
+	// the noElide set, which overrides the same verdict for it. It is the sole surviving
+	// lifetime, so the printer gives it the first display name, `'a`.
 	require.Equal(t,
 		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ¬&'a mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
@@ -257,12 +260,15 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 // argument lifetime reaches the join it feeds. It applies to a complemented borrow and
 // a plain one alike, which is what this test pins.
 //
-// The graph below wires 'm as an intermediary outliving 'a and 'b, and 'j as a genuine
-// join over 'a and 'x. 'b reaches 'j only through 'm. Both signatures still render the
-// bound, where the printer names the join `'d` because it assigns display names in
-// first-appearance order. Reading 'b as an output-only lifetime instead would make it a
-// join over 'a and 'x and assert the reversed `'a: 'b` and `'x: 'b`, neither of which
-// inference proves.
+// The graph below wires `m` as an intermediary outliving `a` and `b`, and `j` as a
+// genuine join over `a` and `x`. `b` reaches `j` only through `m`, and both signatures
+// still bound it to the join. Reading `b` as an output-only lifetime instead would make
+// it a join over `a` and `x` and assert the reverse, that `a` and `x` outlive `b`,
+// neither of which inference proves.
+//
+// Those are the variables the test builds, not the names they render under. The printer
+// assigns display names in first-appearance order, so `a`, `b`, `x` and `j` render as
+// `'a`, `'b`, `'c` and `'d`.
 func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
 	// build wires the graph above and returns the signature, wrapping the second
 	// parameter's borrow in a complement when complemented is set.

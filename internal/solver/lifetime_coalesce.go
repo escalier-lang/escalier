@@ -82,9 +82,10 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // NegationType.Accept flips the polarity its operand is visited at, which is right for
 // variance and wrong for reading position. Undoing that flip recovers the position.
 // Each enclosing complement inverts it once, so the parity of negDepth says whether to
-// flip back. Without the correction `fn (p: &'a T) -> ¬(&'a T)` reads its returned
-// borrow as a parameter borrow and drops the parameter-to-return connection from the
-// rendered signature.
+// flip back. Without the correction a returned complemented borrow reads as a parameter
+// borrow. That does not change how it renders, since noElide names it either way. What
+// it changes is which connected component counts as output-reaching, which keeps
+// unrelated lifetimes named and asserts outlives bounds inference never proved.
 //
 // Position alone is not enough, because a complemented borrow reaching no output is
 // genuinely connect-nothing, and the elision rule above drops those. Eliding under a

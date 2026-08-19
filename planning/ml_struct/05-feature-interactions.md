@@ -70,13 +70,17 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      decision procedure never asks for one. In `constrainImplied` a negated atom
      always crosses the `<:` and lands as a positive atom on the other side, where
      it is met or joined, and `meetRefs` / `joinRefs` already provide both.
-  2. **A residual `¬Ref` would not reduce.** The solver knows disjointness only
-     inside the value families, which cover primitives, literals, `null` and
-     `undefined`. `normal.go`'s `valueFamily` comment records that objects, tuples,
-     functions and class tags were left out. A borrow is in no family, so `Exclude`
-     over one yields back the same `T & ¬(&'a U)`. Lifting the exclusion stops the
-     panic without making the result useful. Widening `valueFamilyOf` to cover
-     borrows is the other half of the work.
+  2. **A residual `¬Ref` often would not reduce.** Since #1138, `valueFamilyOf` draws
+     a borrow over an object, a tuple, or a class instance into `refCellFamily`, so
+     such a borrow is disjoint from every primitive and a complement of it does decide
+     against one. `refCellFamily` carries only the cross-family rule, because two
+     distinct borrows are not disjoint. So excluding one borrow from another still
+     yields back the same `T & ¬(&'a U)`. Objects, tuples, functions and class
+     instances remain absent from the families by choice, since keeping two such atoms
+     apart is already precise.
+
+     This reason is weaker than it was when the exclusion was written, and it is worth
+     re-examining whether the exclusion still earns its keep.
 
   Display-time lifetime classification was a third blocker, and it is fixed.
   `coalesceLifetimes` reads a borrow's position as dataflow rather than as variance.
@@ -293,13 +297,13 @@ conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
 unchanged. `¬Ref` stays excluded, because the outlives lattice has no complement
-and a residual `¬Ref` would not reduce, not because the polarity flip fails to
-reach the lifetime. Function overloading is the lone counter-current: there the
+and excluding one borrow from another still leaves a residual, not because the
+polarity flip fails to reach the lifetime. Function overloading is the lone counter-current: there the
 inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |
 |---|---|
-| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` stays excluded: `¬'a` names nothing and a residual `¬Ref` would not reduce until `valueFamilyOf` widens. The polarity flip does reach the lifetime. |
+| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` stays excluded: `¬'a` names nothing, and excluding one borrow from another still leaves a residual because two distinct borrows are not disjoint. The polarity flip does reach the lifetime. |
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
 | Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |

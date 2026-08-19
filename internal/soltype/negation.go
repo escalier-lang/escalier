@@ -18,12 +18,16 @@ import "fmt"
 // case, calling extrudeLt with the polarity it was handed. Accept not walking Lt does
 // not matter, because no pass relies on Accept to reach it.
 //
-// The second reason to exclude a complemented borrow is that the result would not
-// reduce. The solver knows disjointness only inside the value families, which cover
-// primitives, literals, `null` and `undefined`. A borrow belongs to none of them, so
-// `Exclude` over one yields back the same `T & ¬(&'a U)` rather than a simplified type.
-// Widening valueFamilyOf to cover borrows is what would make lifting this worthwhile.
-// See escalier-lang/escalier#1125 for the measurements behind both reasons.
+// The second reason to exclude a complemented borrow is that the result often would not
+// reduce. valueFamilyOf draws a borrow over an object, a tuple, or a class instance into
+// refCellFamily, so such a borrow is disjoint from every primitive and a complement of it
+// does decide against one. refCellFamily carries only the cross-family rule, because two
+// distinct borrows are not disjoint. So excluding one borrow from another still yields
+// back the same `T & ¬(&'a U)` rather than a simplified type.
+//
+// See escalier-lang/escalier#1125 for the measurements behind both reasons. They were
+// taken before refCellFamily existed, so they record no borrow deciding against a
+// primitive.
 //
 // Negation INSIDE a borrow is allowed. A NegationType is not a RefInner, so the
 // complement sits under a union or an intersection, as in
