@@ -161,12 +161,6 @@ func (c *checker) inferComponent(
 ) {
 	inner := lvl + 1
 
-	// Every arm of an overload set that codegen emits a runtime dispatcher for must
-	// annotate its parameters, since the dispatcher tests those annotations. This is a
-	// codegen obligation, not a recursion one: inference itself needs no annotation,
-	// because an overload set enters the lattice as one intersection of arrows.
-	c.checkOverloadDispatch(g, component)
-
 	// Phase 1: a fresh var per value binding, all defined before any body so a
 	// mutually-recursive reference resolves through the var. M2 only infers value
 	// bindings; type-sort keys are handled (as unsupported) after the value walk.
@@ -747,53 +741,12 @@ func (c *checker) fuseOverloadArms(b *componentBinding) {
 	c.constrain(b.primary, &soltype.IntersectionType{Types: types}, b.v)
 }
 
-// checkOverloadDispatch reports every arm of an overload set that codegen would emit a
-// runtime dispatcher for and that leaves a parameter un-annotated.
-//
-// buildOverloadedFunc in internal/codegen compiles an overload set to one JavaScript
-// function whose if-else chain tests each arm's WRITTEN parameter annotations —
-// `typeof` for a primitive, `===` for a literal, `"k" in o` for an object shape,
-// `instanceof` for a class. An un-annotated parameter leaves nothing to test, so the
-// arm's guard degrades to `true` and swallows every call that reaches it. Requiring the
-// annotation is what keeps dispatch deterministic.
-//
-// The obligation is per arm and covers only arms with a body, since those are the arms
-// the dispatcher routes to. A bodyless `declare fn` arm contributes no branch, so a
-// `.d.ts`-shaped overload set keeps the freedom to leave a parameter un-annotated.
-//
-// Inference itself needs none of this. An overload set enters the lattice as one
-// intersection of arrows, the form fuseOverloadArms records, so a set that fails here
-// still infers and still binds.
-func (c *checker) checkOverloadDispatch(g *dep_graph.DepGraph, component []dep_graph.BindingKey) {
-	for _, key := range component {
-		funcs := funcOnlyDecls(g, key)
-		if len(funcs) <= 1 {
-			// Not an overload set. A name a `val`/`var` shares with a function is a
-			// duplicate declaration, reported in phase 2 rather than here.
-			continue
-		}
-		for _, fd := range funcs {
-			if fd.Body == nil {
-				continue // a declare-only arm gets no branch, so it has no guard to write
-			}
-			for _, p := range fd.FuncSig.Params {
-				if p.TypeAnn == nil && p.Pattern != nil {
-					c.report(&UndispatchableOverloadError{Param: p.Pattern, Decl: fd, Name: key.Name()})
-					// One diagnostic per arm, blaming the first parameter that is missing an
-					// annotation. Each arm is fixed on its own.
-					break
-				}
-			}
-		}
-	}
-}
-
 // funcOnlyDecls returns the FuncDecls bound to key when the name is bound ONLY by
 // FuncDecls, or nil when any `val`/`var` shares the name. A func-only result is a
 // candidate overload set. Its slice may have length 1, so it is not necessarily an
 // overload yet. A mixed result is nil because the clash is a duplicate declaration, not
-// an overload. Shared by checkOverloadDispatch, phase 2's fusion test, and
-// annotatedOverloadArms so all three classify a name the same way.
+// an overload. Shared by phase 2's fusion test and annotatedOverloadArms so both
+// classify a name the same way.
 func funcOnlyDecls(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
 	if key.Kind() != dep_graph.DepKindValue {
 		return nil

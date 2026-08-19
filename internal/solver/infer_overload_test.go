@@ -34,13 +34,10 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 
 // Resolution dispatches on arity: f(5) hits the 1-param arm, f(5, "hi") the 2-param
 // arm.
-// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
-// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
-// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
-		fn f<T, U>(x: T, y: U) -> T { return x }
+		fn f(x) { return x }
+		fn f(x, y) { return x }
 		val a = f(5)
 		val b = f(5, "hi")
 	`)
@@ -126,12 +123,9 @@ val r = f(5)`},
 // Specificity beats declaration order: a concrete arm declared AFTER a generic one
 // still wins for a matching concrete argument (most-specific-first). f("hi") picks
 // the string arm even though the generic arm is declared first and would also match.
-// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
-// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
-// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
+		fn f(x) { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -203,55 +197,6 @@ func TestInferOverloadMutualRecursionResolvesPerArm(t *testing.T) {
 	require.Equal(t, "1", values["b"])
 }
 
-// Codegen compiles an overload set with bodies to one function whose if-else chain
-// tests each arm's written parameter annotations, so an arm with a body must annotate
-// every parameter. Each offending arm reports once, blaming its first un-annotated
-// parameter. The set still infers: the report is about dispatch, not about the fixed
-// point. Both arms here also end up with the same parameter type, which is the
-// separate indistinguishable-arms report.
-func TestInferOverloadImplementedArmNeedsParamAnnotation(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		fn f(x) { return g(x) }
-		fn f(y) { return g(y) }
-		fn g(z: number) { return z }
-	`)
-	require.Len(t, errs, 3)
-	require.Equal(t,
-		"2:8-2:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
-		msgWithSpan(errs[0]))
-	require.Equal(t,
-		"3:8-3:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
-		msgWithSpan(errs[1]))
-	require.Equal(t,
-		"3:3-3:26: Overload arms must have distinguishable parameter types: f",
-		msgWithSpan(errs[2]))
-}
-
-// A `declare fn` arm contributes no branch to the generated dispatcher, so a
-// declare-only overload set keeps the freedom to leave a parameter un-annotated. This
-// is the `.d.ts`-shaped set the annotation obligation deliberately does not reach.
-func TestInferOverloadDeclareOnlyArmNeedsNoParamAnnotation(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		declare fn f(x)
-		declare fn f(x: string) -> boolean
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "(fn (x: unknown) -> undefined) & (fn (x: string) -> boolean)", values["f"])
-}
-
-// The obligation is per ARM, not per set: an implemented arm alongside a declare-only
-// one still has to annotate its parameters, and only the implemented arm reports.
-func TestInferOverloadMixedDeclareAndBodyReportsOnlyTheBody(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		declare fn f(x: string) -> boolean
-		fn f(y) { return y }
-	`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"3:8-3:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
-		msgWithSpan(errs[0]))
-}
-
 // A self-recursive fully-annotated overload type-checks: each arm's recursive call
 // resolves against the whole pre-bound overload set (the number arm's f(x) hits the
 // number arm, the string arm's hits the string arm), so neither arm is wrongly
@@ -320,13 +265,10 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // distinct types instead of cross-contaminating to "hi" | true. (Guards the
 // soltype.LevelOf recursion into IntersectionType — without it freshenAbove prunes
 // the level-0 intersection and aliases the arm's type variable across uses.)
-// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
-// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
-// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
-		fn f<T, U>(x: T, y: U) -> T { return x }
+		fn f(x) { return x }
+		fn f(x, y) { return x }
 		val g = f
 		val a = g("hi")
 		val b = g(true)
@@ -339,12 +281,9 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // Value-position resolution uses the SAME specificity order as a direct call: a
 // concrete arm declared after a generic one wins for a matching concrete argument,
 // whether the callee is the overloaded name directly or a let-bound alias.
-// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
-// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
-// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
+		fn f(x) { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -352,7 +291,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
 
 	binding, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
+		fn f(x) { return x }
 		fn f(x: string) -> boolean { return true }
 		val g = f
 		val r = g("hi")
@@ -364,12 +303,9 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // Three mixed arms (concrete-literal-ish, concrete-prim, generic) rank by specificity
 // without relying on a non-transitive comparator: each call with a concrete argument
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
-// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
-// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
-// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f<T>(x: T) -> T { return x }
+		fn f(x) { return x }
 		fn f(x: number) -> boolean { return true }
 		fn f(x: string) -> string { return x }
 		val p = f(5)

@@ -909,27 +909,6 @@ type NoMatchingOverloadError struct {
 	Candidates []TypeScheme
 }
 
-// UndispatchableOverloadError fires when an arm of an overload set has a body and
-// leaves one of its parameters un-annotated.
-//
-// An overload set with bodies compiles to a single JavaScript function whose if-else
-// chain tests each arm's written parameter annotations, so an un-annotated parameter
-// leaves the arm's guard with nothing to test. That guard degrades to `true` and the
-// arm then swallows every call that reaches it. A bodyless `declare fn` arm
-// contributes no branch to the chain and so is not reported.
-//
-// The set still infers and still binds. Inference reads the arms as one intersection of
-// arrows and needs no annotation; only the runtime dispatch does.
-//
-// It is a BRIDGE error: born in checkOverloadDispatch with the offending parameter in
-// hand, so it self-blames (Span() is the un-annotated parameter's pattern) and relates
-// the arm it belongs to. Name is the overloaded binding's name for the message.
-type UndispatchableOverloadError struct {
-	Param ast.Node
-	Decl  ast.Decl
-	Name  string
-}
-
 // DuplicateOverloadError fires when two arms of an overload set (PR6) are
 // indistinguishable for dispatch: they share an arity and have pointwise-equal
 // parameter types, so no call could ever select one over the other. An overload set
@@ -1222,7 +1201,6 @@ func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
 func (*NoMatchingOverloadError) isSolverError()             {}
-func (*UndispatchableOverloadError) isSolverError()         {}
 func (*DuplicateOverloadError) isSolverError()              {}
 func (*AwaitOutsideAsyncError) isSolverError()              {}
 func (*ForAwaitOutsideAsyncError) isSolverError()           {}
@@ -2411,12 +2389,6 @@ func (e *NoMatchingOverloadError) Message() string {
 		sb.WriteString(renderScheme(s))
 	}
 	return sb.String()
-}
-
-func (e *UndispatchableOverloadError) Span() ast.Span      { return e.Param.Span() }
-func (e *UndispatchableOverloadError) Related() []ast.Span { return []ast.Span{e.Decl.Span()} }
-func (e *UndispatchableOverloadError) Message() string {
-	return "Overload arm with a body must annotate every parameter to be dispatchable: " + e.Name
 }
 
 func (e *DuplicateOverloadError) Span() ast.Span      { return e.Decl.Span() }

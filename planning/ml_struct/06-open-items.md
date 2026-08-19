@@ -51,21 +51,22 @@ must be scoped, and static resolution must pick the same arm the dispatcher rout
 to (example A is where the two can disagree).
 
 **Residual decision:** the annotation-obligation scope plus the static-vs-runtime
-agreement test. Owned by **PR11 (#1068)**, and half settled there. The obligation
-covers *parameter* annotations on arms with a body, the arms `buildOverloadedFunc`
-emits a branch for; `checkOverloadDispatch` reports the rest. Declare-only arms are
-exempt, and inference carries no obligation at all, because `fuseOverloadArms` hands
-the whole set to the lattice as one intersection of arrows.
+agreement test. Owned by **PR11 (#1068)**, which delivered the inference half and
+deferred both decisions.
 
-The agreement half is deferred until the new checker feeds codegen, which is the **M12
-flip** in milestone 1 rather than anything MLstruct owns. `internal/codegen` reads the
-old `internal/checker`, which resolves overloads by first-match rather than by
-specificity, and nothing outside `internal/solver` imports the new checker. An ordering
-built to match `specificityOrder` would therefore disagree with the checker actually
-feeding codegen. Reconcile the two once the flip makes them one checker, reading
-inferred types rather than written annotations (#1152). **PR12 (#1069)** assumes the
-new checker is at or near default, so its rollout is the natural place for this to
-land.
+What PR11 settled is that the dispatcher's artifact is no longer what inference needs.
+`fuseOverloadArms` hands an overload set to the lattice as one intersection of arrows,
+so a recursive-group overload infers with no annotation on any arm. The obligation that
+used to stand in for that choice is gone from the checker.
+
+What PR11 deferred is everything that touches codegen, because `internal/codegen` reads
+the old `internal/checker` and nothing outside `internal/solver` imports the new one. An
+obligation reported by the new checker reaches no build, and an arm ordering built to
+match `specificityOrder` would disagree with the checker actually feeding codegen, which
+resolves overloads by first-match. Both wait for the **M12 flip** in milestone 1, when
+the two become one checker. #1152 tracks the shape they should take then: guards built
+from inferred types rather than written annotations, with the arm order derived from the
+checker's own ranking rather than mirrored over annotations.
 
 ## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
 
