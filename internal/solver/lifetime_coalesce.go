@@ -82,17 +82,16 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // NegationType.Accept flips the polarity its operand is visited at, which is right for
 // variance and wrong for reading position. Undoing that flip recovers the position.
 // Each enclosing complement inverts it once, so the parity of negDepth says whether to
-// flip back. Without the correction a returned complemented borrow reads as a parameter
-// borrow. That does not change how it renders, since noElide names it either way. What
-// it changes is which connected component counts as output-reaching, which keeps
-// unrelated lifetimes named and asserts outlives bounds inference never proved.
+// flip back. The recovered position decides which connected component counts as
+// output-reaching, and that governs both which lifetimes survive elision and which
+// outlives bounds ltOutlivesRelation asserts.
 //
 // Position alone is not enough, because a complemented borrow reaching no output is
 // genuinely connect-nothing, and the elision rule above drops those. Eliding under a
 // complement changes the type rather than merely dropping a name, since `¬(&'a T)`
 // rendered as `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
 // noElide is what keeps the name in exactly that case. It stays independent of position
-// so that correcting one cannot silently re-break the other.
+// so that a change to one cannot silently break the other.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]

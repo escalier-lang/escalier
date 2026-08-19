@@ -25,9 +25,7 @@ import "fmt"
 // distinct borrows are not disjoint. So excluding one borrow from another still yields
 // back the same `T & ¬(&'a U)` rather than a simplified type.
 //
-// See escalier-lang/escalier#1125 for the measurements behind both reasons. They were
-// taken before refCellFamily existed, so they record no borrow deciding against a
-// primitive.
+// See escalier-lang/escalier#1125 for the measurements behind both reasons.
 //
 // Negation INSIDE a borrow is allowed. A NegationType is not a RefInner, so the
 // complement sits under a union or an intersection, as in

@@ -10,7 +10,7 @@ import (
 // negRef complements a borrow, building the `¬(&'a mut {x: number})` these tests need.
 // It builds the NegationType node directly rather than calling soltype.NewNegation,
 // which enforces the ¬Ref exclusion invariant and panics on a borrow operand. The
-// invariant still holds for the solver, so no source program produces this shape. The
+// invariant holds for the solver, so no source program produces this shape. The
 // display passes must classify it correctly before the invariant can be lifted, and
 // building the node here is what lets these tests run ahead of that.
 func negRef(lt soltype.Lifetime) soltype.Type {
@@ -20,32 +20,23 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // A complemented borrow keeps its lifetime name in the rendered signature, wherever the
 // complement sits.
 //
-// The name is at risk because the Accept walk threads one polarity, and that polarity
-// means variance. coalesceLifetimes needs a different fact, the dataflow position saying
-// whether a borrow sits in a parameter or in an output. The two agree at every former
-// whose flip is a real position change, such as a function parameter. They disagree
-// under a complement, which inverts variance without moving the borrow. Taking the
-// polarity for the position there makes a parameter's borrow look like one reaching an
-// output, and an output's borrow look like one originating at a parameter. Read that way
-// a complemented borrow's lifetime is neither named nor saved from elision, so every row
-// below would render `¬&mut {x: number}` with no name at all.
+// The Accept walk threads one polarity and it means variance. coalesceLifetimes needs a
+// different fact, the dataflow position saying whether a borrow sits in a parameter or in
+// an output. The two agree at every former whose flip is a real position change, such as
+// a function parameter. They disagree under a complement, which inverts variance without
+// moving the borrow, so ltOccVisitor in lifetime_coalesce.go undoes that flip to recover
+// the position.
 //
-// Eliding there does not merely lose a name. It yields a different type, since
-// `¬(&'a T)` rendered as `¬(&T)` is the complement of any borrow of T rather than of
-// the `'a` one.
+// ltOccVisitor also adds the borrow's lifetime to its noElide set. That set holds every
+// lifetime a complement encloses, and resolveLt consults it at each point it would
+// otherwise drop a lifetime, so a lifetime in the set survives whatever its position.
+// Eliding one under a complement yields a different type, since `¬(&'a T)` rendered as
+// `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
 //
-// ltOccVisitor in lifetime_coalesce.go answers with two facts instead of one. It undoes
-// the complement's flip to recover the position the borrow structurally sits in, and it
-// adds the borrow's lifetime to its noElide set. The noElide set holds every lifetime a
-// complement encloses, and resolveLt consults it at each point it would otherwise drop a
-// lifetime, so a lifetime in the set is never elided whatever its position.
-//
-// Every row below is carried by the noElide set alone. Disabling the position correction
-// leaves all of them passing, because a complemented borrow named through the noElide set
-// renders the same string either way. The correction is pinned instead by
-// TestComplementedBorrowAssertsNoOutlivesRelation and
-// TestComplementedBorrowGroupsLikeAnOrdinaryParam, where a mis-read position changes
-// which component counts as output-reaching.
+// The noElide set alone carries every row below, so none of them guards the position
+// correction. That is pinned by TestComplementedBorrowAssertsNoOutlivesRelation and
+// TestComplementedBorrowGroupsLikeAnOrdinaryParam, where position decides which component
+// counts as output-reaching.
 func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 	num := &soltype.PrimType{Prim: soltype.NumPrim}
 
