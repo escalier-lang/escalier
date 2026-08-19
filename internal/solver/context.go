@@ -120,6 +120,24 @@ type Context struct {
 	// records T → (T | number). A later constraint that forces an incompatible bound onto the
 	// var reads this to breadcrumb the failure back to that union choice.
 	unionCommits map[*soltype.TypeVarType]*soltype.UnionType
+
+	// recordFusion records the interior provenance edge a normal-form fusion mints:
+	// fused was produced by merging the atoms in from. The engine's fusion sites live
+	// on *Context, while the Prov table lives on the checker carrier, so the carrier
+	// installs this hook in newChecker to bridge the two. It is nil on a Context that
+	// carries no such table, where a fusion records nothing. See recordFusionEdge for
+	// what an installed recorder writes.
+	recordFusion func(fused soltype.Type, from []soltype.Type)
+}
+
+// recordNorm records that fused came from merging the atoms in from, when a carrier
+// installed a recorder. A fusion helper in normal.go or classes.go calls it at the
+// fresh node it allocates, so the interior FromNormalization edge is minted at the
+// one place that knows the two source atoms. A no-op when no recorder is installed.
+func (c *Context) recordNorm(fused soltype.Type, from ...soltype.Type) {
+	if c.recordFusion != nil {
+		c.recordFusion(fused, from)
+	}
 }
 
 // tagUnionCommit records that committing union u pinned v, so a later failure on v can name

@@ -20,6 +20,80 @@ func requireOrigin(t *testing.T, c *checker, ty soltype.Type, node ast.Node, kin
 	require.Equal(t, kind, fa.Kind, "origin kind")
 }
 
+// requireFromNormalization asserts the Prov table records ty as a fused atom minted
+// by normalization from exactly sources, in order. It reads prov directly rather
+// than through NodeFor, since NodeFor resolves only the FromAST leaf and the
+// renderer that chases a FromNormalization edge to its AST leaves is deferred to
+// M11.5.
+func requireFromNormalization(t *testing.T, c *checker, ty soltype.Type, sources ...soltype.Type) {
+	t.Helper()
+	o, ok := c.prov[ty]
+	require.True(t, ok, "expected a Prov entry for the fused atom")
+	fn, ok := o.(FromNormalization)
+	require.True(t, ok, "expected a FromNormalization origin")
+	require.Len(t, fn.From, len(sources), "fused-atom source count")
+	for i, src := range sources {
+		require.Same(t, src, fn.From[i], "fused-atom source %d", i)
+	}
+}
+
+// A fused arrow and its fused domain each carry a FromNormalization edge naming the
+// two atoms the merge combined. `(fn (x: number) -> boolean) &
+// (fn (x: string) -> boolean)` fuses to the one arrow
+// `fn (x: number | string) -> boolean`. The arrow came from the two source arrows,
+// and its domain `number | string` from the two source domains. Neither node was
+// written by an AST node, so without the edge a diagnostic naming one falls back to
+// the constraint site's span.
+func TestProvFusedArrowAndDomain(t *testing.T) {
+	c := newChecker()
+	a := parseType(t, "fn (x: number) -> boolean")
+	b := parseType(t, "fn (x: string) -> boolean")
+
+	fused, ok := c.ctx.meetAtoms(a, b)
+	require.True(t, ok, "the two arrows fuse")
+	requireFromNormalization(t, c, fused, a, b)
+
+	ft, ok := fused.(*soltype.FuncType)
+	require.True(t, ok, "the fused atom is an arrow")
+	aDomain := a.(*soltype.FuncType).Params[0].Type
+	bDomain := b.(*soltype.FuncType).Params[0].Type
+	requireFromNormalization(t, c, ft.Params[0].Type, aDomain, bDomain)
+}
+
+// A fused record and each field the merge rebuilds carry a FromNormalization edge.
+// `{x: number, ...} & {x: string, ...}` fuses field by field to `{x: never, ...}`.
+// The record came from the two source records, and the field `never` from the meet
+// of the two source field types.
+func TestProvFusedRecordAndField(t *testing.T) {
+	c := newChecker()
+	a := parseType(t, "{x: number, ...}")
+	b := parseType(t, "{x: string, ...}")
+
+	fused, ok := c.ctx.meetAtoms(a, b)
+	require.True(t, ok, "the two records fuse")
+	requireFromNormalization(t, c, fused, a, b)
+
+	fusedField := fused.(*soltype.ObjectType).Elems[0].(*soltype.PropertyElem).Type
+	aField := a.(*soltype.ObjectType).Elems[0].(*soltype.PropertyElem).Type
+	bField := b.(*soltype.ObjectType).Elems[0].(*soltype.PropertyElem).Type
+	requireFromNormalization(t, c, fusedField, aField, bField)
+}
+
+// A disjoint meet mints an edge for the `never` it produces, so a later renderer can
+// still reach the two atoms whose intersection is uninhabited. `5 & 6` fuses to
+// `never` naming the two literals.
+func TestProvFusedNeverNamesSources(t *testing.T) {
+	c := newChecker()
+	a := parseType(t, "5")
+	b := parseType(t, "6")
+
+	fused, ok := c.ctx.meetAtoms(a, b)
+	require.True(t, ok, "two disjoint literals meet to never")
+	_, isNever := fused.(*soltype.NeverType)
+	require.True(t, isNever, "the meet is never")
+	requireFromNormalization(t, c, fused, a, b)
+}
+
 // A literal mints a LitType recorded against its LiteralExpr.
 func TestProvLiteralInference(t *testing.T) {
 	c := newChecker()
