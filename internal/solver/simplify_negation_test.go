@@ -416,6 +416,44 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 			want: `"a" | "b" | ... : string`,
 		},
 		{
+			// A filtering conditional splits the bound rather than keeping or dropping it
+			// whole, since `"a"` is one of the strings the bound admits. The tail comes back
+			// cut by the same exclusion the named members took, which is the answer
+			// reduceDifference computes for this set through the `∩ ¬` form.
+			name: "DistributiveConditionalSplitsTheBound",
+			decl: `
+				type Drop<T, U> = if T : U { never } else { T }
+				type Result = Drop<keyof Obj, "a">
+			`,
+			want: `"b" | ... : (string & ¬"a")`,
+		},
+		{
+			// A check every value of the bound satisfies takes the same branch for every tail
+			// member, so the conditional runs on the bound the way it runs on a named member.
+			// Every member and the bound alike select `"y"`, and a tail drawn from a type the
+			// union already names adds nothing, so the whole result closes to `"y"`.
+			name: "DistributiveConditionalUniformOverTheBound",
+			decl: `
+				type Yes<T> = if T : string { "y" } else { "n" }
+				type Result = Yes<keyof Obj>
+			`,
+			want: `"y"`,
+		},
+		{
+			// A check that splits the bound and drops neither branch reaches both, so the tail
+			// is bounded by what the two produce together. Here that is `1 | 2`, which the named
+			// members already are, so the tail is subsumed and the whole result closes.
+			//
+			// Without the split the tail would come back unbounded, putting the result at the
+			// top of the lattice where `"zz"` and `5` alike would satisfy it.
+			name: "DistributiveConditionalSplitsWithoutFiltering",
+			decl: `
+				type Pick2<T> = if T : "b" { 1 } else { 2 }
+				type Result = Pick2<keyof Obj>
+			`,
+			want: "1 | 2",
+		},
+		{
 			// `Inexact` over an already-open union is the identity, so the bound has to
 			// survive the rewrite rather than being reset to unbounded.
 			name: "InexactIsTheIdentityOnAnOpenUnion",
@@ -448,6 +486,170 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 		})
 	}
+}
+
+// Excluding the one key an inexact object names leaves a key set with no named member, so what
+// the tail admits is the whole answer. The bound is where the exclusion has to land. A tail that
+// kept `string` whole would take back the very key the exclusion removed.
+func TestExcludingEveryNamedKeyStillRejectsIt(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Result = Drop<keyof Obj, "a">
+	`)
+	require.Empty(t, errs)
+	rest := expandAliasResidual(ctx, nodes["Result"])
+	require.Equal(t, `... : (string & ¬"a")`, soltype.Print(rest))
+
+	c := newChecker()
+	require.False(t, subtypeHolds(c.ctx, strLit("a"), rest), "the excluded key is not a member")
+	require.True(t, subtypeHolds(c.ctx, strLit("b"), rest), "another key may be one of the unlisted members")
+	require.False(t, subtypeHolds(c.ctx, numLit(5), rest), "the bound still rules out a non-string")
+}
+
+// A union that names no member and bounds its tail is a shape only the type operators mint.
+// Every rule that runs over a union's members has to notice that the members it can see are
+// not all there are. Reading the empty list as "nothing" answers `never` or `{}`, and both
+// claim the union is empty when it is only unenumerated.
+//
+// Each case here reduces such a union through a different operator. `Drop<keyof Obj, "a">` is
+// `... : (string & ¬"a")`, the string keys of an inexact one-key object other than the one it names.
+func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
+	tests := []struct {
+		name string
+		decl string
+		want string
+	}{
+		{
+			// A mapped type has no key to emit a field for, so the member stays an index
+			// signature over the bare tail. The tail is existential — some unknown subset of
+			// non-"a" strings — so a value at any given key may be absent and the signature is
+			// optional. Expanding over no key would give `{}`, and the inexactness marker alone
+			// would give `{...}`, which accepts a field of any type.
+			name: "MappedTypeStaysAnIndexSignature",
+			decl: `type Result = {[K]: boolean for K in Drop<keyof Obj, "a">}`,
+			want: `{[K: ... : (string & ¬"a")]?: boolean}`,
+		},
+		{
+			// A template literal has no choice to fold into its segments, so it stays
+			// symbolic. The cartesian product over no choice is empty, which would answer
+			// `never`.
+			name: "TemplateLiteralStaysSymbolic",
+			decl: "type Result = `on${Drop<keyof Obj, \"a\">}`",
+			want: "`on${Drop<keyof Obj, \"a\">}`",
+		},
+		{
+			// A second exclusion over the same key set has no named member to filter and no
+			// filter answer for the bound, so it stays a meet rather than collapsing. The inner
+			// difference grounds, so the meet reads the reduced bound rather than the alias name.
+			name: "SecondExclusionStaysAMeet",
+			decl: `type Result = Drop<Drop<keyof Obj, "a">, "b">`,
+			want: `(... : (string & ¬"a")) & ¬"b"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type Obj = {a: number, ...}
+				type Drop<T, U> = if T : U { never } else { T }
+			`+tt.decl)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+
+	// A conditional over such a union runs entirely on the bound, since the bound is the only
+	// thing the union says. Whether it has an answer decides whether the conditional reduces
+	// at all, so both outcomes are stated here as solver types rather than as source, which
+	// has no syntax for a bounded tail to write the operand with.
+	t.Run("a check the bound answers uniformly reduces", func(t *testing.T) {
+		// `if (...string) : string { 1 } else { 2 }`. Every value the tail could hold is a
+		// string, so every member takes Then and the result's tail is bounded by `1`.
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: str(), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, "... : 1", soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("a check that splits the bound takes both branches", func(t *testing.T) {
+		// `if (...string) : "b" { 1 } else { 2 }`. Some strings are "b" and some are not, so
+		// the members do not agree on a branch and neither branch is dropped. The tail may hold
+		// a "b", a string that is not one, both, or neither, so what it produces is somewhere
+		// inside `1 | 2`.
+		//
+		// `1 | 2` on its own would be the wrong answer, since it claims both branches are
+		// reached. The marker is what withholds that.
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: strLit("b"), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, "... : (1 | 2)", soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("the split reaches a branch that names the distributed parameter", func(t *testing.T) {
+		// `if (...string) : "b" { [T] } else { T }`, where T is the parameter the conditional
+		// distributes over. Each branch sees its own half of the split rather than the whole
+		// bound, so Then wraps the part that matched and Else keeps the part that did not. The
+		// matched half `string & "b"` fuses to `"b"`, so Then reads `["b"]`.
+		//
+		// The branches name the Check itself, since that is the pointer an alias expansion
+		// installs at every occurrence of the parameter and the one substituteOccurrences
+		// matches on.
+		check := newBoundedUnion(nil, nil, str())
+		cond := &soltype.CondType{
+			Check:      check,
+			Extends:    strLit("b"),
+			Then:       &soltype.TupleType{Elems: []soltype.Type{check}},
+			Else:       check,
+			Distribute: true,
+		}
+		require.Equal(t, `... : (["b"] | string & ¬"b")`, soltype.Print(reduceType(cond)))
+	})
+
+	t.Run("an unbounded tail is bounded by the branch results", func(t *testing.T) {
+		// `if ("a" | ...) : string { 1 } else { 2 }`. The tail says nothing about what it holds, so
+		// each unnamed member could take either branch. Whichever it takes, it produces `1` or `2`,
+		// so the tail is bounded by `1 | 2`, narrowed to `2` once the named `1` is dropped. This is
+		// the path distributeCond takes when the tail has no bound, reading it as a bound of
+		// `unknown`.
+		cond := &soltype.CondType{
+			Check:   newUnion(nil, []soltype.Type{strLit("a")}, true),
+			Extends: str(), Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, "1 | ... : 2", soltype.Print(reduceType(cond)))
+	})
+
+	// `if (...string) : mut {x: number} { 1 } else { 2 }`, using the syntax #1131 asks for.
+	t.Run("an unnegatable check still decides a disjoint bound", func(t *testing.T) {
+		// No string is a borrowed object, so every value the bound admits takes Else and the
+		// tail is bounded by `2`. The uniform-Else test reaches that answer through the meet
+		// `string ∩ mut {x: number}`, which normalization reports `never`.
+		//
+		// The complement `¬(mut {x: number})` would answer the same question, and the ¬Ref
+		// exclusion invariant forbids writing it. Asking through the meet is what keeps this
+		// case decidable, and it also spares the split below, which has no Else half to give
+		// an operand no complement may name.
+		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
+			Elems: []soltype.ObjTypeElem{propElem("x", num())},
+		}}
+		cond := &soltype.CondType{
+			Check:   newBoundedUnion(nil, nil, str()),
+			Extends: ref, Then: numLit(1), Else: numLit(2), Distribute: true,
+		}
+		require.Equal(t, `if ... : string : mut {x: number} { 1 } else { 2 }`, soltype.Print(reduceType(cond)))
+	})
+
+	// A key set that names keys is still enumerable, so the tail changes nothing about how a
+	// mapped type over it expands. This is the case the rules above must not catch.
+	t.Run("a named key still gets a field", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = {[K]: boolean for K in keyof Obj}
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, "{a: boolean, ...}", soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+	})
 }
 
 // The normalization layer reads a bounded tail as one more disjunct, so a decision about
@@ -603,6 +805,91 @@ func TestNarrowUnionMembersWeighsTheTailBound(t *testing.T) {
 	})
 }
 
+// An indexed access over a key set or a target that names no member of its own. Both shapes
+// arrive from a set difference that excluded every named member, and neither may be read as
+// `never`, which would claim the union is empty when it is only unenumerated.
+func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
+	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}, Inexact: true}
+
+	t.Run("a member-less key set leaves the access symbolic", func(t *testing.T) {
+		// There is no key to read the target at, since the bound says the keys are strings
+		// without saying which.
+		idx := &soltype.IndexType{Target: obj, Index: newBoundedUnion(nil, nil, str())}
+		require.Equal(t, `{x: number, ...}[... : string]`, soltype.Print(reduceType(idx)))
+	})
+
+	t.Run("a member-less target reads the key off its bound", func(t *testing.T) {
+		// The bound names every member the target has, so reading "x" off it reads "x" off
+		// all of them at once.
+		idx := &soltype.IndexType{Target: newBoundedUnion(nil, nil, obj), Index: strLit("x")}
+		require.Equal(t, "... : number", soltype.Print(reduceType(idx)))
+	})
+}
+
+// Five predicates and rewriters reach a union's members through soltype's visitor, so each
+// reaches the tail's bound too. None of them names the bound itself, which is what makes a walk
+// that stopped at the member list invisible: `condOperandGround` would call an ungrounded union
+// ground, and a capture written in the bound would never be filled.
+//
+// The `A | ... : R` syntax writes a bound directly, so an `infer` in the bound is reachable
+// from source. The bound is an ordinary type position and every one of these rides the same
+// walk.
+func TestVisitorRidersReachTheTailBound(t *testing.T) {
+	// Each case reduces a top-level conditional whose check is the concrete bounded union
+	// `"a" | ... : string`. A concrete union check does not distribute, so the whole union is
+	// matched against the extends as a unit, and `reduceCondInfer` rides the visitor to declare
+	// and capture `infer` binders. The check's only named member is `"a"` and its bound is
+	// `string`, so a capture of `string` can only have come from the bound. A walk that stopped
+	// at the member list would leave the binder undeclared and take the Else branch.
+	reduce := func(src string) string {
+		nodes, ctx, errs := inferTypeNodes(t, `type Result = `+src)
+		require.Empty(t, errs)
+		return soltype.Print(expandAliasResidual(ctx, nodes["Result"]))
+	}
+
+	t.Run("a binder in the bound captures the check's bound", func(t *testing.T) {
+		require.Equal(t, "string",
+			reduce(`if "a" | ... : string : "a" | ... : infer U { U } else { boolean }`))
+	})
+
+	t.Run("the capture reaches a compound branch", func(t *testing.T) {
+		// The answer shows substituteInfer filling a position inside the branch rather than the
+		// branch being the binder itself.
+		require.Equal(t, "[string]",
+			reduce(`if "a" | ... : string : "a" | ... : infer U { [U] } else { boolean }`))
+	})
+
+	t.Run("a concrete bound the check fits takes the Then branch", func(t *testing.T) {
+		// No binder anywhere. The bounds still have to meet for the branch to be selected, so
+		// this and the case below are what show the bound is matched against rather than carried
+		// along.
+		require.Equal(t, "9",
+			reduce(`if "a" | ... : string : "a" | ... : string { 9 } else { boolean }`))
+	})
+
+	t.Run("a bound the check does not fit takes the Else branch", func(t *testing.T) {
+		require.Equal(t, "boolean",
+			reduce(`if "a" | ... : string : "a" | ... : number { 9 } else { boolean }`))
+	})
+
+	// The last two cases call a predicate on the union directly, so they build it by hand rather
+	// than through the pipeline.
+	t.Run("a residual operator in the bound leaves the union ungrounded", func(t *testing.T) {
+		// `"a" | ...keyof T`. condOperandGround reads containsResidualOp, so a `keyof` reachable
+		// only through the bound has to keep a conditional over this union symbolic.
+		u := newBoundedUnion(nil, []soltype.Type{strLit("a")},
+			&soltype.KeyofType{Operand: &soltype.TypeVarType{ID: 1, Level: 1}})
+		require.True(t, containsResidualOp(u))
+		require.False(t, condOperandGround(u))
+	})
+
+	t.Run("a free variable in the bound is found", func(t *testing.T) {
+		// `"a" | ...T`.
+		u := newBoundedUnion(nil, []soltype.Type{strLit("a")}, &soltype.TypeVarType{ID: 2, Level: 1})
+		require.True(t, containsFreeVar(u))
+	})
+}
+
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,
 // and the bound is decided by what kind of key the operand has. An object's unlisted keys
 // are property names and a tuple's are positions, so the two take different bounds.
@@ -699,6 +986,51 @@ func printedBounds(bounds []soltype.Type) []string {
 	return out
 }
 
+// A bound the conditional cannot decide must not be dropped. An unbounded tail admits every
+// value, so a union that loses its bound becomes the top of the subtype lattice, which is a
+// wider answer than the operand the conditional started from. Staying symbolic keeps the
+// operand's own bound reachable and lets the reduction run again once it grounds.
+//
+// A borrow is the check that reaches this. The ¬Ref exclusion invariant forbids naming one
+// under a complement, so the split has no Else half to give it, and the bound `string` is not
+// disjoint from a borrow over an object either, so the uniform tests do not answer.
+func TestAnUndecidableBoundKeepsTheConditionalSymbolic(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Point = {x: number}
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Direct = Drop<keyof Obj, mut Point>
+		type Named = Drop<keyof Obj, Handle>
+		type Handle = mut Point
+	`)
+	require.Empty(t, errs)
+
+	for _, name := range []string{"Direct", "Named"} {
+		t.Run(name, func(t *testing.T) {
+			rest := expandAliasResidual(ctx, nodes[name])
+			c := newChecker()
+			require.False(t, subtypeHolds(c.ctx, numLit(5), rest),
+				"a lost bound would leave the tail unbounded, which accepts every value")
+			require.NotContains(t, soltype.Print(rest), "¬",
+				"no complement may name a borrow, however the check spells it")
+		})
+	}
+}
+
+// Excluding the whole bound leaves a tail drawn from `never`, which holds nothing. The union
+// names no member either, so the answer is `never` rather than a union with an empty tail.
+// `...never` would read as a union with unlisted members and keep every rule that consults a
+// tail from seeing that there is nothing left.
+func TestExcludingTheWholeBoundEmptiesTheUnion(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Obj = {a: number, ...}
+		type Drop<T, U> = if T : U { never } else { T }
+		type Result = Drop<keyof Obj, string>
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, `never`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+}
+
 // subsumeFinal rewrites a union's tail bound before the union itself, so a bound that only
 // becomes droppable on the way up still has to be noticed. Neither case below drops a member,
 // which is what makes them the cases a member count alone would miss.
@@ -786,6 +1118,19 @@ func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
 		target := &soltype.UnionType{Types: []soltype.Type{obj}, Inexact: true, TailBound: str()}
 		got := reduceType(&soltype.IndexType{Target: target, Index: strLit("x")})
 		require.Equal(t, `({x: number} | ... : string)["x"]`, soltype.Print(got))
+	})
+
+	// Keeping only the named key leaves a tail drawn from `string ∩ "a"`, which is `"a"` — a key
+	// the union already names. An unfused meet would hide that and leave the tail standing,
+	// which makes the union inexact and stops it satisfying an exact object.
+	t.Run("keeping one key drops the tail it already names", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Keep<T, U> = if T : U { T } else { never }
+			type Result = Keep<keyof Obj, "a">
+		`)
+		require.Empty(t, errs)
+		require.Equal(t, `"a"`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 	})
 }
 

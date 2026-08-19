@@ -108,15 +108,17 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: `["a"] | ["b"]`,
 		},
 		{
-			// An inexact union's tail is unknown-typed, and `unknown : string` is undecidable, so
-			// which branch those members select cannot be worked out and the result stays open.
+			// An inexact union's tail is unknown-typed, so which branch each unnamed member takes
+			// cannot be worked out one at a time. What each produces is still one of the branches,
+			// so the tail is bounded by what Then and Else produce over it: a member that is a
+			// string takes Then as `[string]`, one that is not takes Else as `boolean`.
 			name: "CondDistributeInexactUnion",
 			src: `
 				type Wrap<T> = if T : string { [T] } else { boolean }
 				type Result = Wrap<"a" | "b" | ...>
 			`,
 			wantSymbolic: `Wrap<"a" | "b" | ...>`,
-			wantExpanded: `["a"] | ["b"] | ...`,
+			wantExpanded: `["a"] | ["b"] | ... : (boolean | [string])`,
 		},
 		{
 			// Every interpolation names a closed set of choices, so the strings the template

@@ -296,11 +296,16 @@ func negatableOperand(t soltype.Type) bool {
 // conditional over any other Check keeps its own semantics and stays symbolic.
 //
 // The shape test reads the stored branches and the stored Check rather than their reduced forms,
-// so it states what the source wrote. The result is built from the reduced operands.
+// so it states what the source wrote. The result is built from the grounded Check, so a named
+// alias in it — a nested `Drop<...>` — reduces to its body rather than surviving as a name in the
+// meet, while a bare type parameter is left as it is.
 func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends soltype.Type) (soltype.Type, bool) {
 	if !t.Distribute || containsInfer(check) || containsInfer(extends) {
 		return nil, false
 	}
+	// Ground the Check so an alias operand expands to the type the difference is taken over.
+	// groundReduced leaves a type variable untouched, so `Exclude<T, string>` stays `T ∩ ¬string`.
+	check = e.groundReduced(check)
 	switch {
 	case isNeverType(t.Then) && equalType(t.Check, t.Else):
 		// The difference is `check ∩ ¬extends`, so an Extends no complement may name has no
