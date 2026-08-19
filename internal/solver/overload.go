@@ -14,11 +14,11 @@ import (
 // A set whose arms span several files in a lib/ therefore reads top-to-bottom, file by
 // file alphabetically, independent of the order sources reached the parser.
 //
-// Resolution at a DIRECT call is a phase distinct from constrain. It is driven by the
-// PR5 probe. Each candidate is trialled under a probe and the losers are rolled back,
-// so a failed trial leaves no bounds on the argument variables and no stray Info or
-// Prov entries. Picking an arm is what gives the call that arm's own return type,
-// which is sharper than what the lattice derives.
+// Resolution at a DIRECT call is a phase distinct from constrain. Each candidate is
+// trialled under a probe and the losers are rolled back, so a failed trial leaves no
+// bounds on the argument variables and no stray Info or Prov entries. Picking an arm is
+// what gives the call that arm's own return type, which is sharper than what the
+// lattice derives.
 //
 // The lattice reads the same set without picking anything. An overload set is the
 // intersection of its arms, and the arrow-decomposition rule in constrain_nf.go settles
