@@ -50,6 +50,11 @@ so the option stays cheap to exercise when the decision point arrives.
   normal forms, constraint solving, coalescing, feature threading, operators, and
   rollout, each with its data structures and algorithms, plus a dependency graph
   and mermaid diagram.
+- **[08-pr12-rollout-status.md](08-pr12-rollout-status.md)** — where the PR12
+  rollout actually landed: why there is no solver-mode flag, what the conformance
+  oracle and new-checker corpus stand in for as the differential, the table of
+  blessed intended improvements from PR6–PR11 with merged-PR links, the caveat #4
+  status, and what is deferred to the M12 cutover.
 
 ## TL;DR of the strategy
 

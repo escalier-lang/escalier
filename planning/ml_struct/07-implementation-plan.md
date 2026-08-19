@@ -280,6 +280,14 @@ overloading", open item 3.
 
 ### PR12 — Differential, flag-gated rollout, and flip to default
 
+> **Status.** Shipped by a different route than the flag-and-flip mechanics
+> below. MLstruct normalization has been the sole `constrain` path since PR5, so
+> there is no solver-mode flag and nothing to flip inside `internal/solver`. The
+> conformance oracle and the new-checker corpus stand in for the differential, and
+> the production flip is deferred to the Simple-sub M12 cutover. See
+> [08-pr12-rollout-status.md](08-pr12-rollout-status.md) for the blessed-improvement
+> table and coverage bounds.
+
 Ship it behind a flag, triage divergences, then default it on.
 
 - **Data structures.** A solver-mode flag; a divergence-triage bucket in the
