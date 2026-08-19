@@ -81,7 +81,15 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
 - Still push at the end of a session so nothing is lost.
 
-# Writing Prose: Punctuation and sentence structure
+# Writing Prose
+
+The guidance in this section applies to every kind of prose you write: code
+comments, docstrings, and the messages you write to the user in conversation.
+Read each rule as covering all three. A few points are inherently code-specific,
+such as backticking type and keyword names or sweeping a diff before committing.
+Those apply wherever they make sense and are simply irrelevant elsewhere.
+
+## Punctuation and sentence structure
 
 - Use colons only for their standard jobs: introducing a list, a definition, or
   a direct elaboration that completes the clause before it. Do not use a colon
@@ -114,7 +122,7 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
   sentence case for headings and keep decorative emoji out of them. Don't add an
   inline bold lead-in that just restates the sentence after it.
 
-# Writing Prose: Word choice and explaining code
+## Word choice and explaining code
 
 - Define a technical or coined term the first time you use it. Terms like
   "co-occurrence", "representative", or "closure" mean nothing to a reader who
@@ -162,8 +170,9 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
   `seen` set. Backtick only the specialized sense. "it never needs parens" and
   "an unknown key" stay bare, because there the ordinary meaning is the intended
   one. Apply this when reviewing a comment as well as when writing one.
-- Treat a comment as draft-then-revise, not one-shot. After writing any comment
-  longer than a sentence or two, reread it as someone with no prior context.
-  Fix every unexplained term and every sentence that needs a second pass. On
-  that reread, scan for the stock phrases listed above and cut any that slipped
-  in. Do the same sweep over the comments in a diff before committing.
+- Treat any prose you write as draft-then-revise, not one-shot. After writing
+  anything longer than a sentence or two, whether a comment, a docstring, or a
+  reply to the user, reread it as someone with no prior context. Fix every
+  unexplained term and every sentence that needs a second pass. On that reread,
+  scan for the stock phrases listed above and cut any that slipped in. Do the
+  same sweep over the comments in a diff before committing.
