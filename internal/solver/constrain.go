@@ -441,10 +441,34 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	e := newTypeEvaluator(c, seen)
 	reduced := e.reduce(t)
+	if u, ok := reduced.(*soltype.UnionType); ok {
+		// A union grounds even when its tail bound is a residual such as `Uppercase<string>`,
+		// the shape `Uppercase<keyof {a: number, ...}>` reduces to. The bound reduces at its own
+		// site: constraint solving folds it in as a disjunct and decides a value against it there
+		// through the fixed-point test, the same way the object and tuple arms ground with a
+		// residual field or element. Only a residual among the named members keeps the union
+		// symbolic, since such a member never settled to a value the union can offer.
+		if anyMemberResidual(u) {
+			return nil, nil, false
+		}
+		return reduced, e.errs, true
+	}
 	if containsResidualOp(reduced) {
 		return nil, nil, false
 	}
 	return reduced, e.errs, true
+}
+
+// anyMemberResidual reports whether a named member of u carries an unreduced operator. It reads the
+// named members only, since a union's tail bound is allowed to stay residual and reduces where a
+// value is decided against it.
+func anyMemberResidual(u *soltype.UnionType) bool {
+	for _, member := range u.Types {
+		if containsResidualOp(member) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.

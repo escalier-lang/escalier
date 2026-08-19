@@ -1934,19 +1934,15 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 		// becomes `"A"` exactly as a named member does.
 		//
 		// Only a string LITERAL has a case to change, so a bound the transform cannot fold
-		// comes back as an unreduced operator. `Uppercase<string>` is one. Such a bound is
-		// widened to `string` rather than kept, because a bound is part of the union and a
-		// union carrying an unreduced operator anywhere reads as residual. Constraint
-		// solving then decides against the opaque operator and rejects
-		// `val u: Uppercase<keyof {a: number, ...}> = "A"`. Widening is sound, since the
-		// intrinsic maps strings to strings, and it keeps the tail bounded where dropping it
-		// would leave the union at the top of the lattice.
+		// comes back as an unreduced operator. `Uppercase<string>` is one, and it is kept as
+		// the tail's bound rather than widened. It names the exact set the tail draws from,
+		// the strings a round trip through the intrinsic leaves unchanged, so
+		// `val u: Uppercase<keyof {a: number, ...}> = "A"` holds and `= "a"` is rejected.
+		// Constraint solving folds the bound in as a disjunct and decides a literal against
+		// it through the fixed-point test `applyStringIntrinsic(kind, v) == v`.
 		tail := tailOf(op)
 		if tail.bound != nil {
 			tail.bound = e.reduceStringIntrinsic(kind, tail.bound)
-			if containsResidualOp(tail.bound) {
-				tail.bound = &soltype.PrimType{Prim: soltype.StrPrim}
-			}
 		}
 		return newUnionWithTail(nil, parts, tail)
 	case *soltype.LitType:

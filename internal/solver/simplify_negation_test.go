@@ -469,12 +469,12 @@ func TestOperatorsCarryTheTailBound(t *testing.T) {
 		{
 			// A string intrinsic transforms the bound alongside the named members. Only a
 			// literal has a case to change, so transforming `string` yields the unreduced
-			// `Uppercase<string>`, which is widened to `string`. A union carrying an
-			// unreduced operator anywhere reads as residual, and constraint solving then
-			// decides against the operator instead of the union it belongs to.
+			// `Uppercase<string>`, kept as the tail's bound. It names the exact set the tail
+			// draws from, and constraint solving folds it in as a disjunct and decides a
+			// literal against it through the fixed-point test.
 			name: "StringIntrinsic",
 			decl: `type Result = Uppercase<keyof Obj>`,
-			want: `"A" | "B" | ... : string`,
+			want: `"A" | "B" | ... : Uppercase<string>`,
 		},
 	}
 	for _, tt := range tests {
@@ -1090,22 +1090,27 @@ func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
 		require.True(t, subtypeHolds(c.ctx, strLit("onb"), result), "so is one the tail may hold")
 	})
 
-	// A bound the intrinsic cannot fold comes back as an unreduced operator, and a union
-	// carrying one anywhere reads as residual. Constraint solving would then decide against
-	// the operator rather than the union, rejecting a string the union plainly names.
+	// A bound the intrinsic cannot fold comes back as an unreduced operator such as
+	// `Uppercase<string>`, kept as the tail's bound. It names the exact set the tail draws from,
+	// the strings a round trip through the intrinsic leaves unchanged. Constraint solving folds
+	// the bound in as a disjunct and decides a literal against it through the fixed-point test,
+	// so the union accepts `"A"` and rejects `"a"`.
 	t.Run("an intrinsic over an open key set still accepts its own member", func(t *testing.T) {
 		nodes, ctx, errs := inferTypeNodes(t, `
 			type Obj = {a: number, ...}
 			type Result = Uppercase<keyof Obj>
 		`)
 		require.Empty(t, errs)
-		result := expandAliasResidual(ctx, nodes["Result"])
-		require.Equal(t, `"A" | ... : string`, soltype.Print(result))
+		require.Equal(t, `"A" | ... : Uppercase<string>`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
 
-		c := newChecker()
-		require.False(t, containsResidualOp(result), "a residual union is decided against the operator")
-		require.True(t, subtypeHolds(c.ctx, strLit("A"), result), "the transformed key is a member")
-		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "the bound still rules out a non-string")
+		// Constrain against the un-expanded alias inside the inference context, the path a
+		// `val u: Uppercase<keyof Obj> = "A"` annotation takes. The intrinsic super reduces to
+		// the union, whose residual tail bound grounds because only its named members must
+		// settle, and the literal decides against the bound as a folded disjunct.
+		raw := nodes["Result"]
+		require.True(t, subtypeHolds(ctx, strLit("A"), raw), "the transformed key is a member")
+		require.False(t, subtypeHolds(ctx, strLit("a"), raw), "the bound admits only uppercase-invariant strings")
+		require.False(t, subtypeHolds(ctx, numLit(5), raw), "the bound still rules out a non-string")
 	})
 
 	// An index read that cannot ground the bound has no answer to commit to. Answering anyway
