@@ -613,5 +613,5 @@ func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 	}
 	// collapseUnion returns `never` for an empty arm list, which is the caller's
 	// signal that the whole meet is uninhabited.
-	return collapseUnion(arms, u.Inexact, false), true
+	return collapseUnion(arms, unionTail{open: u.Inexact}, false), true
 }

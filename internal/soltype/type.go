@@ -880,15 +880,29 @@ type UnknownType struct{}
 //
 // UnionType.Inexact flags whether the union is open. A bare `A | B` is
 // exact, so its inhabitants are exactly A ∪ B. An `A | B | ...` written with
-// a trailing `...` is inexact: at least these, with an unknown-typed tail.
-// The flag is Inexact rather than Exact so the zero value is exact, matching
-// the ObjectType, TupleType, and FuncType convention. IntersectionType
-// carries no exactness flag, since exactness is a property of the result
-// rather than the meet. The flag and the smart constructors land with M6 PR1.
+// a trailing `...` is inexact: at least these, with an open tail standing for
+// members the type does not name. The flag is Inexact rather than Exact so the
+// zero value is exact, matching the ObjectType, TupleType, and FuncType
+// convention. IntersectionType carries no exactness flag, since exactness is a
+// property of the result rather than the meet.
+//
+// TailBound says what the tail's unnamed members may be. See the field comment.
 type UnionType struct {
 	Types []Type
 	// Inexact tracks the trailing `...` marker. The zero value is exact.
 	Inexact bool
+	// TailBound names the type the tail's unnamed members are drawn from, so
+	// `"a" | ...string` reads as `"a"` together with some unknown set of strings.
+	// It is nil on an exact union and may be nil on an inexact one, which leaves
+	// the tail unbounded. An unbounded tail admits every value, which makes the
+	// whole union the top of the subtype lattice.
+	//
+	// A bound keeps the named members enumerable while still saying what the rest
+	// can be. `keyof {a: X, ...}` is `"a" | ...string`, so a mapped type still has
+	// "a" to iterate and the key set still rejects `5`. Flattening the bound into
+	// the member list instead would give `"a" | string`, which subsumes to `string`
+	// and loses both.
+	TailBound Type
 }
 type IntersectionType struct{ Types []Type }
 
@@ -1467,7 +1481,9 @@ func LevelOf(t Type) int {
 	// union annotation). Coalesced-output unions/intersections hold no live vars, so
 	// both arms still return 0 for them.
 	case *UnionType:
-		return maxMemberLevel(t.Types)
+		// The tail's bound is a member the union does not list, so it counts toward the
+		// level the same way a written member does.
+		return max(maxMemberLevel(t.Types), LevelOf(t.TailBound))
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	case *NegationType:
