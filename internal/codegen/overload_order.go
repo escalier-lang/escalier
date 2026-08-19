@@ -17,7 +17,10 @@ import (
 // with one arm's return type must reach that arm at runtime. This file derives the
 // dispatcher's order so it matches the checker's.
 //
-// The order has three keys, applied in turn.
+// # The three ranking keys
+//
+// They are applied in turn: an arm's parameter count decides first, its specificity
+// breaks a tie there, and its source position breaks a tie in that.
 //
 //  1. Parameter count, descending. A guard tests only the parameters its own arm
 //     declares, so a one-parameter arm placed first would answer a two-argument call
@@ -38,16 +41,16 @@ import (
 // Key 2 ranks what the arm WROTE, while the checker ranks what it INFERRED. Three gaps
 // follow. Each is narrow, and each is documented at the code that leaves it.
 //
-//   - A parameter annotated with a type reference. annSubsumes reads the name and never
+//  1. A parameter annotated with a type reference. annSubsumes reads the name and never
 //     resolves it, so two references tie unless they were spelled the same way. The
 //     checker ranks the type the reference resolves to. An alias for a literal or for an
 //     object can therefore separate a pair this ties. Two class references are safe,
 //     because the checker ties those as well.
-//   - Key 3 orders by source id where armPosLess orders by file path. The compiler
+//  2. Key 3 orders by source id where armPosLess orders by file path. The compiler
 //     assigns ids by walking the source tree in lexical order, so the two agree for
 //     every program it builds. Only a caller that hands the parser sources in some other
 //     order can separate them.
-//   - Key 1's own gap. An optional or rest parameter widens the argument counts an arm
+//  3. Key 1's own gap. An optional or rest parameter widens the argument counts an arm
 //     accepts, so `(x: string, y?: number|string)` and `(x: string)` both accept a
 //     one-argument call. The checker ranks a pair of different arities by declaration
 //     order, while key 1 tests the longer arm first. A union is untestable, so that
