@@ -330,15 +330,11 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
 	extends := substituteOccurrences(t.Extends, t.Check, bound)
 	// Every value of the bound takes the same branch: all satisfy the check, so every tail member
-	// takes Then, or none do, so every member takes Else. Either way the conditional runs on the
-	// whole bound the way it runs on a named member. Over `"a" | ...string`,
+	// takes Then, or none satisfy it, so every member takes Else. boundDisjointFrom decides the
+	// Else case, reading an empty meet as "no value satisfies". Either way the conditional runs on
+	// the whole bound the way it runs on a named member. Over `"a" | ...string`,
 	// `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
-	uniform := e.ctx.condExtends(bound, extends, e.seen)
-	if !uniform && negatableOperand(extends) {
-		// The Else half is decided by `bound <: ¬extends`, the same question excludeFrom asks to
-		// decide that an exclusion takes nothing from a member.
-		uniform = e.ctx.condExtends(bound, soltype.NewNegation(extends), e.seen)
-	}
+	uniform := e.ctx.condExtends(bound, extends, e.seen) || e.boundDisjointFrom(bound, extends)
 	if uniform {
 		return e.reduceCond(&soltype.CondType{
 			Check:   bound,
@@ -382,6 +378,23 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
 		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),
 	}, false)
+}
+
+// boundDisjointFrom reports whether no value the bound admits satisfies the check, which
+// puts every tail member in the Else branch.
+//
+// It asks the question as an empty meet rather than as the subtype check
+// `bound <: ¬extends`. The two agree wherever both apply, and the meet also answers over a
+// check the ¬Ref exclusion invariant forbids naming under a complement. `...string` against
+// `mut {x: number}` is that case. No string is a borrowed object, so
+// `string ∩ mut {x: number}` is `never` and the whole tail takes Else.
+//
+// A `never` bound never reaches here. It is a subtype of every check, so the caller's
+// first test already answers uniform for it.
+func (e *typeEvaluator) boundDisjointFrom(bound, extends soltype.Type) bool {
+	met := newIntersection(nil, []soltype.Type{bound, extends})
+	_, disjoint := e.ctx.normalizeDeep(met, soltype.Positive).(*soltype.NeverType)
+	return disjoint
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,

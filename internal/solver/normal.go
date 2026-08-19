@@ -890,13 +890,15 @@ func (f *knotFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 
 func (f *knotFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
-// valueFamily is a set of runtime values no value outside it belongs to. Two
-// atoms drawn from different families are disjoint, so their meet is `never`.
-// The families cover the primitives and the two absence markers, the kinds whose
-// disjointness the solver already decides elsewhere. Objects, tuples, functions,
-// and class instances are deliberately absent: they are disjoint from a primitive
-// too, but claiming that here would go beyond what this PR needs, and keeping two
-// such atoms separate is precise anyway.
+// valueFamily is a set of runtime values no value outside it belongs to, so two atoms drawn
+// from different families are disjoint and their meet is `never`. Five families cover the
+// primitives and the two absence markers, and a sixth, refCellFamily, covers the borrows no
+// primitive can be.
+//
+// Objects, tuples, functions, and class instances are deliberately absent. They are disjoint
+// from a primitive too, but keeping two such atoms apart is already precise, so a family for
+// them would buy nothing. refCellFamily uses only the cross-family rule, never the within-family
+// one meetValueAtoms applies to the primitives, since two distinct borrows are not disjoint.
 type valueFamily int
 
 const (
@@ -906,6 +908,7 @@ const (
 	booleanFamily
 	nullFamily
 	undefinedFamily
+	refCellFamily
 )
 
 // valueFamilyOf returns the family t draws its values from, and notValueAtom for
@@ -920,10 +923,28 @@ func valueFamilyOf(t soltype.Type) valueFamily {
 		return nullFamily
 	case *soltype.UndefinedType:
 		return undefinedFamily
+	case *soltype.RefType:
+		return refCellOrNot(t.Inner)
 	}
 	return notValueAtom
 }
 
+// refCellOrNot returns refCellFamily for a borrow over an object, a tuple, or a class
+// instance, and notValueAtom for any other carrier, since a borrow is only as decided as the
+// value it points at.
+//
+// Those three kinds stay themselves under every rewrite, so a borrow over one admits no
+// primitive. The kinds it turns away can leave the RefInner set, and RefType.Accept peels a
+// borrow whose inner does: a `mut β` whose β inlines to `string` becomes `string`, and a
+// union, an intersection, or an alias can reduce to a bare primitive the same way. Reading
+// such a borrow as disjoint from `string` would be wrong.
+func refCellOrNot(carrier soltype.Type) valueFamily {
+	switch carrier.(type) {
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType:
+		return refCellFamily
+	}
+	return notValueAtom
+}
 
 func primFamily(p soltype.Prim) valueFamily {
 	switch p {
@@ -950,9 +971,15 @@ func litFamily(l soltype.Lit) valueFamily {
 }
 
 // meetValueAtoms fuses two atoms drawn from the value families. Different
-// families are disjoint, so the meet is `never`. Within one family a literal is
-// narrower than its primitive, so the literal wins, and two distinct atoms of the
-// family are disjoint.
+// families are disjoint, so the meet is `never`. Within one primitive family a
+// literal is narrower than its primitive, so the literal wins, and two distinct
+// atoms of the family are disjoint.
+//
+// Two borrows are the exception to that last rule, so they are handed back
+// unfused. `mut {x: number}` and `mut {y: string}` are distinct atoms of
+// refCellFamily and are not disjoint, since an object carrying both fields
+// inhabits each. meetAtoms reaches meetRefs once this bails, and meetRefs decides
+// the pair by comparing carriers.
 //
 // Equal atoms are answered here as well as by meetAtoms, which reaches them
 // first. The overlap is deliberate. Without it `"hello"` met with `"hello"` would
@@ -969,6 +996,9 @@ func meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if equalType(a, b) {
 		return a, true
 	}
+	if fa == refCellFamily {
+		return nil, false
+	}
 	if _, ok := a.(*soltype.PrimType); ok {
 		return b, true
 	}
@@ -983,6 +1013,9 @@ func meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // primitive absorbs a literal of its own family, so `5 | number` is `number`.
 // Anything else keeps both atoms, which is already precise.
 //
+// Two borrows keep both atoms as well. No borrow absorbs another the way a
+// primitive absorbs its literal, so joinRefs decides them once this bails.
+//
 // Equal atoms are answered here too, for the reason meetValueAtoms gives. Without
 // it two equal literals would read as un-fusable and stay two atoms, which is
 // sound but needlessly imprecise.
@@ -993,6 +1026,9 @@ func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	}
 	if equalType(a, b) {
 		return a, true
+	}
+	if fa == refCellFamily {
+		return nil, false
 	}
 	if _, ok := a.(*soltype.PrimType); ok {
 		return a, true
