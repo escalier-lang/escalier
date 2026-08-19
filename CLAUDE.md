@@ -110,6 +110,9 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - Read each sentence as if a human has to parse it left to right with no
   rereading. If understanding it requires jumping back to an earlier clause,
   restructure it.
+- In Markdown you write, such as PR descriptions, docs, and issue bodies, use
+  sentence case for headings and keep decorative emoji out of them. Don't add an
+  inline bold lead-in that just restates the sentence after it.
 
 # Writing Prose: Word choice and explaining code
 
@@ -124,6 +127,27 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - Use precise verbs. Replace vague verbs like "supplies", "handles", "drives",
   and "manages" with the actual action: produces, reads, returns, mutates,
   consults. A vague verb hides what the code does.
+- Cut the stock phrases that pad machine-written text. They add length without
+  adding information. Watch for these:
+    - Filler openers and connectors: "additionally", "furthermore", "moreover",
+      "in order to", "due to the fact that", "it is worth noting that", "it is
+      important to note that". Delete them or start with the point.
+    - Puffery and inflated verbs: "crucial", "pivotal", "seamless", "robust",
+      "powerful", "leverage", "utilize", "delve", "underscore", "showcase".
+      Prefer the plain word. Write "use" not "utilize", "important" not
+      "crucial", "shows" not "showcases".
+    - Filler copulas where a plain "is" or a precise verb reads better: "serves
+      as", "stands as", "acts as", "boasts", "features".
+    - The "not just X, but Y" construction, and groups of three forced for
+      rhythm. State the one thing that matters.
+    - Vague "-ing" tails bolted onto a clause: "..., ensuring correctness",
+      "..., highlighting the issue", "..., allowing reuse". Make the fact its
+      own sentence or drop it.
+    - Hedges that soften a claim you can state flatly: "generally", "typically",
+      "in most cases", when the code always does the thing.
+- Don't inject personality to compensate for cutting those phrases. A comment or
+  doc wants flat, precise description, not a lively voice, editorial opinions, or
+  first-person asides. Cut the tell and stop. Plain is the goal, not colorful.
 - Name the value, not the technique that produced it. Don't write "union-find"
   when you mean the merge classes it computed, or "the visitor" when you mean
   the walk's result. Refer to the thing the code hands around.
@@ -140,4 +164,6 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
   one. Apply this when reviewing a comment as well as when writing one.
 - Treat a comment as draft-then-revise, not one-shot. After writing any comment
   longer than a sentence or two, reread it as someone with no prior context.
-  Fix every unexplained term and every sentence that needs a second pass.
+  Fix every unexplained term and every sentence that needs a second pass. On
+  that reread, scan for the stock phrases listed above and cut any that slipped
+  in. Do the same sweep over the comments in a diff before committing.
