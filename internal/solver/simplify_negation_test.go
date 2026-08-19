@@ -1125,6 +1125,21 @@ func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
 		require.Equal(t, `({x: number} | ... : string)["x"]`, soltype.Print(got))
 	})
 
+	// A residual tail bound lets a union ground, since the bound decides at its own site. A
+	// residual named member does not: `Uppercase<"a" | keyof T>` reduces to
+	// `"A" | Uppercase<keyof T>`, whose second member never settles while `T` is abstract. A
+	// union offering a member it cannot name stays symbolic, so no literal can be decided
+	// against it and the whole intrinsic reduces once `T` grounds.
+	t.Run("an intrinsic over a union with a residual member stays symbolic", func(t *testing.T) {
+		c := newChecker()
+		v := c.ctx.freshVar(0)
+		intrinsic := &soltype.StringIntrinsicType{
+			Kind:    soltype.Uppercase,
+			Operand: &soltype.UnionType{Types: []soltype.Type{strLit("a"), &soltype.KeyofType{Operand: v}}},
+		}
+		require.False(t, subtypeHolds(c.ctx, strLit("A"), intrinsic), "an unsettled member blocks a decision")
+	})
+
 	// Keeping only the named key leaves a tail drawn from `string ∩ "a"`, which is `"a"` — a key
 	// the union already names. An unfused meet would hide that and leave the tail standing,
 	// which makes the union inexact and stops it satisfying an exact object.
