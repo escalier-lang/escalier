@@ -14,10 +14,18 @@ import (
 // A set whose arms span several files in a lib/ therefore reads top-to-bottom, file by
 // file alphabetically, independent of the order sources reached the parser.
 //
-// Resolution is a phase distinct from constrain. The disjunction "callable in several
-// ways" stays out of the subtype lattice. It is driven by the PR5 probe. Each candidate
-// is trialled under a probe and the losers are rolled back, so a failed trial leaves no
-// bounds on the argument variables and no stray Info or Prov entries.
+// Resolution at a DIRECT call is a phase distinct from constrain. It is driven by the
+// PR5 probe. Each candidate is trialled under a probe and the losers are rolled back,
+// so a failed trial leaves no bounds on the argument variables and no stray Info or
+// Prov entries. Picking an arm is what gives the call that arm's own return type,
+// which is sharper than what the lattice derives.
+//
+// The lattice reads the same set without picking anything. An overload set is the
+// intersection of its arms, and the arrow-decomposition rule in constrain_nf.go settles
+// `(A -> B) & (C -> D) <: (args) -> R` by weighing the arms together. That is the form
+// a reference inside a mutually-recursive group takes, where no arm can be picked
+// because the arms are still being inferred. fuseOverloadArms in module.go records the
+// set in that form.
 //
 // Specificity ordering is the one documented rule, reused by M4 object-arg and M5 method
 // overloads. When every argument carries type information, meaning none is an
@@ -452,10 +460,9 @@ func overloadDisplayType(b ValueBinding) soltype.Type {
 }
 
 // isFullyAnnotated reports whether a function signature is ground from its annotations
-// alone, with every parameter typed and a return type present. The recursion gate
-// checkOverloadAnnotations requires this of every arm of an overloaded function in a
-// mutually-recursive group, since an un-annotated arm's signature is not known before
-// its body is inferred.
+// alone, with every parameter typed and a return type present. annotatedOverloadArms
+// requires this of every arm of an overload set it pre-binds from signatures, since an
+// un-annotated arm's signature is not known before its body is inferred.
 func isFullyAnnotated(sig ast.FuncSig) bool {
 	if sig.Return == nil {
 		return false

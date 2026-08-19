@@ -32,13 +32,12 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
 }
 
-// Unannotated overloads are allowed when NOT recursive — arms are inferred
-// independently and resolution dispatches on arity: f(5) hits the 1-param arm,
-// f(5, "hi") the 2-param arm.
+// Resolution dispatches on arity: f(5) hits the 1-param arm, f(5, "hi") the 2-param
+// arm.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T>(x: T) -> T { return x }
+		fn f<T, U>(x: T, y: U) -> T { return x }
 		val a = f(5)
 		val b = f(5, "hi")
 	`)
@@ -126,7 +125,7 @@ val r = f(5)`},
 // the string arm even though the generic arm is declared first and would also match.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T>(x: T) -> T { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -163,18 +162,87 @@ func TestInferOverloadNoMatch(t *testing.T) {
 		msgWithSpan(errs[0]))
 }
 
-// A mutually-recursive group containing an overloaded function with un-annotated
-// arms is rejected: the overload set must be ground before the group's bodies are
-// inferred. The error blames the offending overloaded participant.
-func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
+// An overloaded function in a mutually-recursive group infers without a return
+// annotation on any arm. The set reaches its binding variable as the single lower
+// bound `(number -> R1) & (string -> R2)`, and the recursive `f("hi")` inside g
+// records `v <: (string) -> R` against it. The arrow-decomposition rule settles that
+// by weighing both arms together, so nothing has to pick an arm before the group's
+// bodies are inferred and nothing has to be annotated to make that choice possible.
+func TestInferOverloadMutualRecursionInfersUnannotatedReturns(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) { return g(x) }
+		fn f(x: string) { return x }
+		fn g(n: number) { return f("hi") }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> string) & (fn (x: string) -> string)", values["f"])
+	require.Equal(t, "fn (n: number) -> string", values["g"])
+}
+
+// The same relaxation across a group whose recursion runs through BOTH arms: the
+// number arm returns a literal, the string arm recurses through g, and g calls back
+// into the number arm. Each call site reads its own arm's return type out of the
+// decomposition.
+func TestInferOverloadMutualRecursionResolvesPerArm(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) { return 1 }
+		fn f(x: string) { return g(x) }
+		fn g(s: string) { return f(1) }
+		val a = f(5)
+		val b = f("hi")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> 1) & (fn (x: string) -> 1)", values["f"])
+	require.Equal(t, "1", values["a"])
+	require.Equal(t, "1", values["b"])
+}
+
+// Codegen compiles an overload set with bodies to one function whose if-else chain
+// tests each arm's written parameter annotations, so an arm with a body must annotate
+// every parameter. Each offending arm reports once, blaming its first un-annotated
+// parameter. The set still infers: the report is about dispatch, not about the fixed
+// point. Both arms here also end up with the same parameter type, which is the
+// separate indistinguishable-arms report.
+func TestInferOverloadImplementedArmNeedsParamAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f(x) { g(x) }
-		fn f(y) { g(y) }
-		fn g(z) { f(z) }
+		fn f(x) { return g(x) }
+		fn f(y) { return g(y) }
+		fn g(z: number) { return z }
+	`)
+	require.Len(t, errs, 3)
+	require.Equal(t,
+		"2:8-2:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
+		msgWithSpan(errs[0]))
+	require.Equal(t,
+		"3:8-3:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
+		msgWithSpan(errs[1]))
+	require.Equal(t,
+		"3:3-3:26: Overload arms must have distinguishable parameter types: f",
+		msgWithSpan(errs[2]))
+}
+
+// A `declare fn` arm contributes no branch to the generated dispatcher, so a
+// declare-only overload set keeps the freedom to leave a parameter un-annotated. This
+// is the `.d.ts`-shaped set the annotation obligation deliberately does not reach.
+func TestInferOverloadDeclareOnlyArmNeedsNoParamAnnotation(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare fn f(x)
+		declare fn f(x: string) -> boolean
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: unknown) -> undefined) & (fn (x: string) -> boolean)", values["f"])
+}
+
+// The obligation is per ARM, not per set: an implemented arm alongside a declare-only
+// one still has to annotate its parameters, and only the implemented arm reports.
+func TestInferOverloadMixedDeclareAndBodyReportsOnlyTheBody(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare fn f(x: string) -> boolean
+		fn f(y) { return y }
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"2:3-2:19: Overloaded function in a recursive group must have fully-annotated signatures: f",
+		"3:8-3:9: Overload arm with a body must annotate every parameter to be dispatchable: f",
 		msgWithSpan(errs[0]))
 }
 
@@ -248,8 +316,8 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // the level-0 intersection and aliases the arm's type variable across uses.)
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
-		fn f(x, y) { return x }
+		fn f<T>(x: T) -> T { return x }
+		fn f<T, U>(x: T, y: U) -> T { return x }
 		val g = f
 		val a = g("hi")
 		val b = g(true)
@@ -264,7 +332,7 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // whether the callee is the overloaded name directly or a let-bound alias.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T>(x: T) -> T { return x }
 		fn f(x: string) -> boolean { return true }
 		val r = f("hi")
 	`)
@@ -272,7 +340,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	require.Equal(t, "boolean", direct["r"], "direct call picks the more specific arm")
 
 	binding, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T>(x: T) -> T { return x }
 		fn f(x: string) -> boolean { return true }
 		val g = f
 		val r = g("hi")
@@ -286,7 +354,7 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		fn f(x) { return x }
+		fn f<T>(x: T) -> T { return x }
 		fn f(x: number) -> boolean { return true }
 		fn f(x: string) -> string { return x }
 		val p = f(5)

@@ -11,23 +11,16 @@ import (
 // soltype.Type binding. A MonoScheme is a value that does not generalize (a
 // parameter, a current-level initializer during inference, a body-level `val`, a prelude
 // operator); a PolyScheme carries a generalize-level so each use can be
-// instantiated with fresh variables (let-polymorphism). The IsAnnotated bit is
-// forward-looking metadata for PR6's overload-recursion gate — PR1 sets it false
-// and never reads it.
+// instantiated with fresh variables (let-polymorphism).
 type TypeScheme interface {
 	isScheme()
-	// IsAnnotated reports whether this scheme came from a user-written signature.
-	// PR1 always returns false; PR6 sets it per overload arm and folds it over a
-	// binding's arms for the mutual-recursion-needs-annotation rule.
-	IsAnnotated() bool
 }
 
 // MonoScheme is a non-generalized type. instantiate returns its Ty unchanged, so
 // every use shares the same variables — the monomorphic discipline M2 had for
 // every binding, now scoped to the bindings that genuinely must not generalize.
 type MonoScheme struct {
-	Ty        soltype.Type
-	Annotated bool // PR6 only — consulted solely for overload arms
+	Ty soltype.Type
 }
 
 // PolyScheme is a generalized type. Body is the RAW (variable-carrying) type so
@@ -36,9 +29,8 @@ type MonoScheme struct {
 // captured from an enclosing scope (shared across uses). Level is the level the
 // binding was generalized at (the SCC component's level).
 type PolyScheme struct {
-	Level     int
-	Body      soltype.Type
-	Annotated bool // PR6 only — set per overload arm; folds for the recursion gate
+	Level int
+	Body  soltype.Type
 
 	// coalesced memoizes the display type. A Body is immutable after
 	// generalization. Later components instantiate fresh copies rather than
@@ -63,9 +55,6 @@ func (sc *PolyScheme) display() soltype.Type {
 	}
 	return sc.coalesced
 }
-
-func (s *MonoScheme) IsAnnotated() bool { return s.Annotated }
-func (s *PolyScheme) IsAnnotated() bool { return s.Annotated }
 
 // monoScheme wraps a raw type as a single-scheme value binding's scheme — the
 // common case for the param/prelude/body-level/raw-def bindings PR1 does not
