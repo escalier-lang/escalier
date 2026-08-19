@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1784,15 +1785,16 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // set of choices produces an open set of strings (exact-types §5.6). `on${"a" | "b"}` reduces to
 // the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
 //
-// A tail's bound is not folded into the result. The bound says the tail's choices are strings
-// without saying which, so no segment can absorb them. The result's tail is bounded by `string`
-// all the same, since a template produces a string whatever it interpolates. Leaving it unbounded
-// would make the result the top of the subtype lattice, so a template interpolating
-// `keyof {a: number, ...}` would accept a `5`.
-// An interpolation that names no choice at all, which is the shape a set difference leaves when it
-// excludes every named one, has nothing to run the product over and keeps the template symbolic.
+// A tail's bound is not folded into a named result string, since it says the tail's choices are
+// strings without saying which, so no segment can absorb them. It becomes the result's own tail
+// bound instead, transformed by the same template: `on${"a" | ...string}` reduces to
+// `"ona" | ...`on${string}``, keeping the result to strings the template can spell rather than
+// widening to every `string`. templateTailBound assembles that bound. An interpolation that names
+// no choice at all, which is the shape a set difference leaves when it excludes every named one,
+// has nothing to run the product over and keeps the template symbolic.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
+	interpBound := make([]soltype.Type, len(t.Interps))
 	combinations := 1
 	openChoices := false
 	for i, interp := range t.Interps {
@@ -1815,6 +1817,17 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 				members[j] = e.groundOperand(m)
 			}
 			interpChoices[i] = members
+			if u.Inexact {
+				// The interp has unnamed choices the tail draws from, so record the bound they come
+				// from; a non-nil entry marks this interp open. A bounded tail says which strings
+				// those are; an unbounded `...` says only that they are strings, so the bound is
+				// `string`. Either way the result's tail ranges over the template applied to it.
+				if u.TailBound != nil {
+					interpBound[i] = e.groundOperand(u.TailBound)
+				} else {
+					interpBound[i] = &soltype.PrimType{Prim: soltype.StrPrim}
+				}
+			}
 		} else {
 			interpChoices[i] = []soltype.Type{reduced}
 		}
@@ -1832,9 +1845,31 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
 	if openChoices {
-		return newBoundedUnion(nil, parts, &soltype.PrimType{Prim: soltype.StrPrim})
+		return newBoundedUnion(nil, parts, e.templateTailBound(t.Quasis, interpChoices, interpBound))
 	}
 	return newUnion(nil, parts, false)
+}
+
+// templateTailBound builds the bound on an open template's tail: the strings a combination drawing at
+// least one interpolation from an open interp's bound can spell. It is a template whose interpolations
+// range over each interp's full set of choices — its named ones, and its bound where the interp is
+// open, marked by a non-nil bound[i]. A tail string may pair one interp's named choice with another's
+// bound, so both are kept. Reducing the assembled template enumerates every combination, the all-named
+// one included; newBoundedUnion's narrowing then strips the combinations the outer union already lists
+// as members, leaving just what the tail adds — `on${string}` for a lone open interp, and the cross
+// combinations when several are open. A `string` interpolation stays symbolic through the reduction,
+// which the literal-vs-template subtyping rule then decides a member against.
+func (e *typeEvaluator) templateTailBound(quasis []string, choices [][]soltype.Type, bound []soltype.Type) soltype.Type {
+	interps := make([]soltype.Type, len(choices))
+	for i := range choices {
+		reps := choices[i]
+		if bound[i] != nil {
+			reps = append(slices.Clone(choices[i]), bound[i])
+		}
+		// newUnion collapses a lone choice to itself, so a closed interp keeps its single value.
+		interps[i] = newUnion(nil, reps, false)
+	}
+	return e.reduceTemplateLit(&soltype.TemplateLitType{Quasis: quasis, Interps: interps})
 }
 
 // foldTemplatePart folds one cartesian-product combination into a single template result. It

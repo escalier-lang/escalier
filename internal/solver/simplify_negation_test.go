@@ -1074,20 +1074,23 @@ func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
 	// A template produces a string whatever it interpolates, so its tail is bounded by
 	// `string`. An unbounded tail admits every value, which would let a number pass for a
 	// string the template could have produced.
-	t.Run("a template over an open key set still rejects a non-string", func(t *testing.T) {
+	t.Run("a template over an open key set keeps its prefix in the tail bound", func(t *testing.T) {
 		nodes, ctx, errs := inferTypeNodes(t, `
 			type Obj = {a: number, ...}
 			type Result = `+"`on${keyof Obj}`"+`
 		`)
 		require.Empty(t, errs)
 		result := expandAliasResidual(ctx, nodes["Result"])
-		require.Equal(t, "\"ona\" | ... : string", soltype.Print(result))
+		require.Equal(t, "\"ona\" | ... : `on${string}`", soltype.Print(result))
 
-		c := newChecker()
-		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "a template never produces a number")
-		require.False(t, subtypeHolds(c.ctx, &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}, result), "nor a boolean")
-		require.True(t, subtypeHolds(c.ctx, strLit("ona"), result), "the named string is a member")
-		require.True(t, subtypeHolds(c.ctx, strLit("onb"), result), "so is one the tail may hold")
+		// The tail bound is the template applied to the operand's `string` bound, so the tail holds
+		// only strings the template can spell. Widening it to `string` would have admitted a bare
+		// "xyz" the original never produced.
+		require.False(t, subtypeHolds(ctx, numLit(5), result), "a template never produces a number")
+		require.False(t, subtypeHolds(ctx, &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}, result), "nor a boolean")
+		require.False(t, subtypeHolds(ctx, strLit("xyz"), result), "nor a string outside the template's shape")
+		require.True(t, subtypeHolds(ctx, strLit("ona"), result), "the named string is a member")
+		require.True(t, subtypeHolds(ctx, strLit("onb"), result), "so is one the tail may hold")
 	})
 
 	// A bound the intrinsic cannot fold comes back as an unreduced operator such as

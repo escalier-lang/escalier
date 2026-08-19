@@ -322,3 +322,60 @@ func TestInferTemplateLitTooComplex(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "template literal type `${D}${D}${D}` is too complex to reduce; it expands to more than 10000 members", errs[0].Message())
 }
+
+// templateMatchesString decides a string literal against a template pattern character by character,
+// matching each quasi in order and letting each interpolation consume a span its type admits. It is
+// the rule behind `"onb" <: `on${string}``, and the cases below drive every interpolation kind it
+// reads: a literal that must appear verbatim, the `string` primitive that consumes any span, a union
+// that matches when a member does, and the kinds it leaves undecided — a non-string primitive and a
+// bare type variable — which fail the match rather than guess.
+func TestTemplateMatchesString(t *testing.T) {
+	tests := []struct {
+		name    string
+		s       string
+		quasis  []string
+		interps []soltype.Type
+		want    bool
+	}{
+		{"no quasis is not a template", "x", nil, nil, false},
+		{"a bare segment matches exactly", "hi", []string{"hi"}, nil, true},
+		{"a bare segment rejects a longer string", "hix", []string{"hi"}, nil, false},
+		{"a string interp takes any middle", "onb", []string{"on", ""}, []soltype.Type{str()}, true},
+		{"a string interp needs the prefix", "xyz", []string{"on", ""}, []soltype.Type{str()}, false},
+		{"a string interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{str()}, true},
+		{"a string interp matches up to a trailing quasi", "onbz", []string{"on", "z"}, []soltype.Type{str()}, true},
+		{"a literal interp matches its own text", "onax", []string{"on", "x"}, []soltype.Type{strLit("a")}, true},
+		{"a literal interp rejects other text", "onbx", []string{"on", "x"}, []soltype.Type{strLit("a")}, false},
+		{"a non-string literal interp is left undecided", "on5", []string{"on", ""}, []soltype.Type{numLit(5)}, false},
+		{"a number interp is left undecided", "n5", []string{"n", ""}, []soltype.Type{num()}, false},
+		{"a union interp matches through its string member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), str()}, false)}, true},
+		{"a union interp matches a literal member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")}, false)}, true},
+		{"a union interp rejects a non-member", "onc", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")}, false)}, false},
+		{"a type-variable interp is left undecided", "onx", []string{"on", ""}, []soltype.Type{&soltype.TypeVarType{ID: 1, Level: 1}}, false},
+		{"two string interps backtrack to a split", "a-b", []string{"", "-", ""}, []soltype.Type{str(), str()}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, templateMatchesString(tt.s, tt.quasis, tt.interps))
+		})
+	}
+}
+
+// A template with two open interpolations builds a tail bound where each interp ranges over its named
+// choices and its bound, since a tail string may pair one interp's named choice with the other's
+// bound. `${keyof Obj}-${keyof Obj}` over `{a: number, ...}` keeps the named "a-a" and bounds the tail
+// by the three combinations that draw at least one side from `string`.
+func TestTemplateOverTwoOpenInterpsBoundsEachSide(t *testing.T) {
+	nodes, ctx, errs := inferTypeNodes(t, `
+		type Obj = {a: number, ...}
+		type Result = `+"`${keyof Obj}-${keyof Obj}`"+`
+	`)
+	require.Empty(t, errs)
+	result := expandAliasResidual(ctx, nodes["Result"])
+	require.Equal(t, "\"a-a\" | ... : (`${string}-${string}` | `${string}-a` | `a-${string}`)", soltype.Print(result))
+
+	require.True(t, subtypeHolds(ctx, strLit("a-a"), result), "the named pairing is a member")
+	require.True(t, subtypeHolds(ctx, strLit("b-c"), result), "so is a pairing the tail bounds")
+	require.True(t, subtypeHolds(ctx, strLit("b-a"), result), "and one pairing a name with a bound string")
+	require.False(t, subtypeHolds(ctx, strLit("xyz"), result), "a string the template cannot spell is not")
+}
