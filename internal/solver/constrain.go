@@ -3,6 +3,7 @@ package solver
 import (
 	"maps"
 	"math"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -441,10 +442,34 @@ func (c *Context) evalTypeOperator(t soltype.Type, seen *seenPairs) (soltype.Typ
 func (c *Context) reduceResidual(t soltype.Type, seen *seenPairs) (soltype.Type, []SolverError, bool) {
 	e := newTypeEvaluator(c, seen)
 	reduced := e.reduce(t)
+	if u, ok := reduced.(*soltype.UnionType); ok {
+		// A union grounds even when its tail bound is a residual such as `Uppercase<string>`,
+		// the shape `Uppercase<keyof {a: number, ...}>` reduces to. The bound reduces at its own
+		// site: constraint solving folds it in as a disjunct and decides a value against it there
+		// through the fixed-point test, the same way the object and tuple arms ground with a
+		// residual field or element. Only a residual among the named members keeps the union
+		// symbolic, since such a member never settled to a value the union can offer.
+		if anyMemberResidual(u) {
+			return nil, nil, false
+		}
+		return reduced, e.errs, true
+	}
 	if containsResidualOp(reduced) {
 		return nil, nil, false
 	}
 	return reduced, e.errs, true
+}
+
+// anyMemberResidual reports whether a named member of u carries an unreduced operator. It reads the
+// named members only, since a union's tail bound is allowed to stay residual and reduces where a
+// value is decided against it.
+func anyMemberResidual(u *soltype.UnionType) bool {
+	for _, member := range u.Types {
+		if containsResidualOp(member) {
+			return true
+		}
+	}
+	return false
 }
 
 // maxUnwrapDepth caps how many type operators constrain may evaluate along one constraint path.
@@ -849,6 +874,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		}
 		if sup, ok := super.(*soltype.StringIntrinsicType); ok {
 			return c.constrainStrLitToStringIntrinsic(sub, sup)
+		}
+		if sup, ok := super.(*soltype.TemplateLitType); ok {
+			return c.constrainStrLitToTemplateLit(sub, sup)
 		}
 	case *soltype.SkolemType:
 		// A skolem is a subtype of the same skolem and of its declared upper bound, so an
@@ -1484,6 +1512,82 @@ func (c *Context) constrainStrLitToStringIntrinsic(sub *soltype.LitType, super *
 		return nil
 	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainStrLitToTemplateLit checks a string-literal sub against a template-literal super, such as
+// `"onb" <: `on${string}``. A template denotes the strings its fixed quasi segments and its
+// interpolations spell out, so the literal is a subtype iff its characters match that pattern. The
+// match reads the literal left to right: each quasi must appear in order, and each interpolation
+// consumes a span the interpolation type admits. `"onb"` matches ``on${string}`` because it starts
+// with `on` and `b` is a string; `"xyz"` does not, since it lacks the `on` prefix. An interpolation
+// type templateMatchesString cannot decide — anything but a string literal, the `string` primitive,
+// or a union of those — makes the whole match fail, which reports the mismatch rather than guessing.
+func (c *Context) constrainStrLitToTemplateLit(sub *soltype.LitType, super *soltype.TemplateLitType) []SolverError {
+	strLit, ok := sub.Lit.(*soltype.StrLit)
+	if !ok {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+	}
+	if templateMatchesString(strLit.Value, super.Quasis, super.Interps) {
+		return nil
+	}
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// templateMatchesString reports whether s is one of the strings the template spells out. quasis holds
+// the fixed segments and interps the interpolations between them, so quasis is one longer than interps.
+// s must begin with the leading quasi; what remains is handed to the first interpolation, which peels
+// off the span it admits before the next quasi is matched. With no interpolations left, s matches only
+// when it has been consumed down to the empty string.
+func templateMatchesString(s string, quasis []string, interps []soltype.Type) bool {
+	if len(quasis) == 0 {
+		return false
+	}
+	if !strings.HasPrefix(s, quasis[0]) {
+		return false
+	}
+	rest := s[len(quasis[0]):]
+	if len(interps) == 0 {
+		return rest == ""
+	}
+	return matchInterp(rest, interps[0], quasis[1:], interps[1:])
+}
+
+// matchInterp reports whether some prefix of s is a value interp admits and the leftover matches the
+// rest of the template, quasis and interps. A string literal or a literal that renders as a string
+// consumes exactly its own characters. The `string` primitive consumes any prefix, so each split point
+// is tried until one lets the rest match. A union admits a prefix any member does. Any other
+// interpolation type is left undecided and fails the match.
+func matchInterp(s string, interp soltype.Type, quasis []string, interps []soltype.Type) bool {
+	switch it := interp.(type) {
+	case *soltype.LitType:
+		lit, ok := it.Lit.(*soltype.StrLit)
+		if !ok {
+			return false
+		}
+		if !strings.HasPrefix(s, lit.Value) {
+			return false
+		}
+		return templateMatchesString(s[len(lit.Value):], quasis, interps)
+	case *soltype.PrimType:
+		if it.Prim != soltype.StrPrim {
+			return false
+		}
+		for k := 0; k <= len(s); k++ {
+			if templateMatchesString(s[k:], quasis, interps) {
+				return true
+			}
+		}
+		return false
+	case *soltype.UnionType:
+		for _, member := range it.Types {
+			if matchInterp(s, member, quasis, interps) {
+				return true
+			}
+		}
+		return false
+	default:
+		return false
+	}
 }
 
 // ambiguousAlternate returns a union member, other than the one the decision committed to,
