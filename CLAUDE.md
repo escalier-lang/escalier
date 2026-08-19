@@ -17,7 +17,7 @@ Escalier is a programming language with a Go-based compiler. The compiler pipeli
 - [internal/checker/](internal/checker/) — type inference and checking
 - [internal/codegen/](internal/codegen/), [internal/printer/](internal/printer/) — output
 - [internal/resolver/](internal/resolver/), [internal/dep_graph/](internal/dep_graph/) — module/name resolution
-- [internal/set/](internal/set/) — `Set` ADT (use this instead of `map[T]struct{}`)
+- [internal/set/](internal/set/) — the `Set` ADT
 - [cmd/escalier/](cmd/escalier/), [cmd/lsp-server/](cmd/lsp-server/) — CLI entry points
 
 ## Build & test
