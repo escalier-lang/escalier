@@ -125,6 +125,44 @@ func TestInferTemplateLitConstraint(t *testing.T) {
 	}
 }
 
+// A template whose interpolation is a residual intrinsic over `string`, such as
+// `on${Uppercase<string>}`, stays symbolic and is decided by templateMatchesString. A literal
+// satisfies it iff its interpolated span is a fixed point of the transform: `"onA"` and `"on5"`
+// hold because Uppercase leaves them unchanged, while `"onb"` is rejected because Uppercase maps
+// it to `"onB"`.
+func TestInferTemplateLitOverStringIntrinsic(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "UppercaseSpanAccepted",
+			src:  "val u: `on${Uppercase<string>}` = \"onA\"",
+		},
+		{
+			name: "CaselessSpanAccepted",
+			src:  "val u: `on${Uppercase<string>}` = \"on5\"",
+		},
+		{
+			name:    "LowercaseSpanRejected",
+			src:     "val u: `on${Uppercase<string>}` = \"onb\"",
+			wantErr: "cannot constrain \"onb\" <: `on${Uppercase<string>}`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // An intrinsic string operator `Uppercase<T>` and its three siblings are stored as residuals and
 // reduced over a string-literal operand. Each case asserts the stored `Result` renders the way the
 // source wrote it, then asserts that reducing it maps the operand's characters, distributing over a
@@ -353,6 +391,12 @@ func TestTemplateMatchesString(t *testing.T) {
 		{"a union interp rejects a non-member", "onc", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")}, false)}, false},
 		{"a type-variable interp is left undecided", "onx", []string{"on", ""}, []soltype.Type{&soltype.TypeVarType{ID: 1, Level: 1}}, false},
 		{"two string interps backtrack to a split", "a-b", []string{"", "-", ""}, []soltype.Type{str(), str()}, true},
+		{"an Uppercase<string> interp admits an uppercase span", "onA", []string{"on", ""}, []soltype.Type{upperOverStr()}, true},
+		{"an Uppercase<string> interp admits a caseless span", "on5", []string{"on", ""}, []soltype.Type{upperOverStr()}, true},
+		{"an Uppercase<string> interp rejects a lowercase span", "onb", []string{"on", ""}, []soltype.Type{upperOverStr()}, false},
+		{"an Uppercase<string> interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{upperOverStr()}, true},
+		{"an Uppercase<string> interp matches up to a trailing quasi", "onAz", []string{"on", "z"}, []soltype.Type{upperOverStr()}, true},
+		{"an intrinsic over a type variable is left undecided", "onA", []string{"on", ""}, []soltype.Type{&soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: &soltype.TypeVarType{ID: 1, Level: 1}}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

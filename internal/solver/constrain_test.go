@@ -50,6 +50,12 @@ func boolT() *soltype.PrimType { return &soltype.PrimType{Prim: soltype.BoolPrim
 func numLit(v float64) *soltype.LitType { return &soltype.LitType{Lit: &soltype.NumLit{Value: v}} }
 func strLit(v string) *soltype.LitType  { return &soltype.LitType{Lit: &soltype.StrLit{Value: v}} }
 
+// upperOverStr is the residual `Uppercase<string>`, the intrinsic placeholder a template such as
+// `on${Uppercase}` leaves symbolic over `string`.
+func upperOverStr() *soltype.StringIntrinsicType {
+	return &soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: str()}
+}
+
 func identParam(name string, t soltype.Type) *soltype.FuncParam {
 	return &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: t}
 }
