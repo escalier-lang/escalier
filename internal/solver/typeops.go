@@ -1188,10 +1188,15 @@ func aliasItself(op *soltype.AliasType) soltype.Type { return op }
 // and unions them. An empty projection collapses to `never`, the union identity newUnion returns
 // for no members.
 //
-// An inexact object carries an unknown-keyed tail, so its key set is open: `keyof {a: number, ...}`
-// is `"a" | ...`, an inexact union whose members are the known keys and whose tail stands for the
-// unlisted ones. keyofObject seeds the union's exactness from the object's, so an exact object
-// yields an exact key union and an inexact object an inexact one.
+// An inexact object carries an unknown-keyed tail, so its key set is open:
+// `keyof {a: number, ...}` is `"a" | ...string`, an inexact union whose members are the known keys
+// and whose tail stands for the unlisted ones. keyofObject seeds the union's exactness from the
+// object's, so an exact object yields an exact key union and an inexact object an inexact one.
+//
+// The tail is bounded by `string`, since the unlisted keys are property names whatever else is
+// unknown about them. That one fact is what makes the tail tractable. `¬keyof {a: number, ...}`
+// rejects every string and admits `5`, where an unbounded tail would be top and leave the
+// complement empty.
 //
 // It omits methods, which is correct for a class instance whose methods live on the prototype
 // and so are absent from Object.keys, but wrong for a bare object whose methods are own
@@ -1210,7 +1215,10 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 			keys = append(keys, strLitType(elem.Name))
 		}
 	}
-	return newUnion(nil, keys, obj.Inexact)
+	if obj.Inexact {
+		return newBoundedUnion(nil, keys, &soltype.PrimType{Prim: soltype.StrPrim})
+	}
+	return newUnion(nil, keys, false)
 }
 
 // keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
@@ -1220,14 +1228,18 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 // TODO: decide how keyof should account for inherited prototype members once interop is designed.
 //
 // An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
-// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ...`, where the tail stands
-// for the indices those unknown positions occupy (exact-types §7.1).
+// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ...number`, where the tail
+// stands for the indices those unknown positions occupy (exact-types §7.1). The bound is `number`
+// rather than the `string` an object's tail takes, since an index is a position and not a name.
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	keys := make([]soltype.Type, 0, len(tup.Elems))
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
 	}
-	return newUnion(nil, keys, tup.Inexact)
+	if tup.Inexact {
+		return newBoundedUnion(nil, keys, &soltype.PrimType{Prim: soltype.NumPrim})
+	}
+	return newUnion(nil, keys, false)
 }
 
 // keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
@@ -1238,10 +1250,18 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // An inexact key set is open, so it can carry keys its written members do not name. That makes
 // the result inexact whenever the operand union is inexact or any member's key set is. Take
 // `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
-// `"shared" | ...`. Only "shared" is written on both members, so only "shared" is definitely a
-// key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
+// `"shared" | ...string`. Only "shared" is written on both members, so only "shared" is definitely
+// a key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
 // every key the result names one that every member definitely carries, and the trailing `...`
 // records that the true key set may be larger.
+//
+// The tail's bound is wider than the operand allows. This reduction is a MEET of key sets, so an
+// unnamed shared key has to be a key of every member. The example above bounds its tail by
+// `string` where only "a" is possible. Its first member is exact, so no key outside "a" and
+// "shared" is a key of that member, and "shared" is already named. Bounding the tail by the exact
+// members' key sets is what would close the gap. The bound still admits less than the unbounded
+// tail the reduction leaves without it, which admits every value at all, so this is an imprecise
+// answer rather than a useless one. escalier-lang/escalier#1126 tracks tightening it.
 //
 // Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
 // own operands are not ground. Such a member reduces to a `keyof` residual, and the rule this whole
@@ -1257,17 +1277,21 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 	var shared []soltype.Type
 	var residuals []soltype.Type
 	seeded := false
-	sharedInexact := op.Inexact
+	// The result's tail is open when the operand union's is, since an unlisted member
+	// carries keys the reduction cannot read. It takes no bound from that member. The
+	// operand's own bound is over VALUES where this tail is over KEYS, and an unlisted
+	// member could be an object or a tuple, so nothing says whether its keys are names
+	// or positions. Each member's own key set then merges in, and a member that is an
+	// inexact object brings the `string` bound its keys carry.
+	sharedTail := unionTail{open: op.Inexact}
 	for _, m := range op.Types {
 		reduced := e.reduceKeyof(m, inexact)
-		keys, memberInexact, ok := literalKeys(reduced)
+		keys, memberTail, ok := literalKeys(reduced)
 		if !ok {
 			residuals = append(residuals, reduced)
 			continue
 		}
-		if memberInexact {
-			sharedInexact = true
-		}
+		sharedTail = sharedTail.merge(memberTail)
 		if seeded {
 			shared = intersectTypes(shared, keys)
 		} else {
@@ -1285,44 +1309,44 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 		}
 	}
 	if len(residuals) == 0 {
-		return newUnion(nil, shared, sharedInexact)
+		return newUnionWithTail(nil, shared, sharedTail)
 	}
 	if !seeded {
 		// Every member left a residual, so there are no literal keys to meet them with. An
 		// intersection carries no exactness marker, and with no key union among its members there
 		// is nothing to hang the open tail on, so an open key set keeps the whole operator
 		// symbolic rather than dropping what the tail stands for.
-		if sharedInexact {
+		if sharedTail.open {
 			return &soltype.KeyofType{Operand: op, Inexact: inexact}
 		}
 		return newIntersection(nil, residuals)
 	}
-	return newIntersection(nil, append([]soltype.Type{newUnion(nil, shared, sharedInexact)}, residuals...))
+	return newIntersection(nil, append([]soltype.Type{newUnionWithTail(nil, shared, sharedTail)}, residuals...))
 }
 
-// literalKeys decomposes a reduced `keyof` result into the literal keys it names and whether its
-// key set is inexact. It reports false for a result that names no enumerable key set, such as the
+// literalKeys decomposes a reduced `keyof` result into the literal keys it names and the open tail
+// carrying the rest. It reports false for a result that names no enumerable key set, such as the
 // `keyof T` residual over a type parameter, so a caller that needs the keys can fall back to
 // leaving its own operator symbolic.
 //
 // `never` decomposes to an empty exact set, a lone literal to that one key, and a union to its
-// members with the union's own exactness. A union carrying a non-literal member is not a key set
+// members under the union's own tail. A union carrying a non-literal member is not a key set
 // the reduction produced, so it reports false rather than silently dropping that member.
-func literalKeys(reduced soltype.Type) (keys []soltype.Type, inexact bool, ok bool) {
+func literalKeys(reduced soltype.Type) (keys []soltype.Type, tail unionTail, ok bool) {
 	switch t := reduced.(type) {
 	case *soltype.NeverType:
-		return nil, false, true
+		return nil, unionTail{}, true
 	case *soltype.LitType:
-		return []soltype.Type{t}, false, true
+		return []soltype.Type{t}, unionTail{}, true
 	case *soltype.UnionType:
 		for _, m := range t.Types {
 			if _, isLit := m.(*soltype.LitType); !isLit {
-				return nil, false, false
+				return nil, unionTail{}, false
 			}
 		}
-		return t.Types, t.Inexact, true
+		return t.Types, tailOf(t), true
 	default:
-		return nil, false, false
+		return nil, unionTail{}, false
 	}
 }
 

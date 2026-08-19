@@ -90,8 +90,8 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 	}
 	var shared []soltype.Type
 	for i, m := range members {
-		keys, inexact, ok := literalKeys(m)
-		if !ok || inexact {
+		keys, tail, ok := literalKeys(m)
+		if !ok || tail.open {
 			return nil, false
 		}
 		if i == 0 {
