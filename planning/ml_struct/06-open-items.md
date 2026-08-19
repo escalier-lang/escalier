@@ -51,7 +51,21 @@ must be scoped, and static resolution must pick the same arm the dispatcher rout
 to (example A is where the two can disagree).
 
 **Residual decision:** the annotation-obligation scope plus the static-vs-runtime
-agreement test. Owned by **PR11 (#1068)**.
+agreement test. Owned by **PR11 (#1068)**, and half settled there. The obligation
+covers *parameter* annotations on arms with a body, the arms `buildOverloadedFunc`
+emits a branch for; `checkOverloadDispatch` reports the rest. Declare-only arms are
+exempt, and inference carries no obligation at all, because `fuseOverloadArms` hands
+the whole set to the lattice as one intersection of arrows.
+
+The agreement half is deferred until the new checker feeds codegen, which is the **M12
+flip** in milestone 1 rather than anything MLstruct owns. `internal/codegen` reads the
+old `internal/checker`, which resolves overloads by first-match rather than by
+specificity, and nothing outside `internal/solver` imports the new checker. An ordering
+built to match `specificityOrder` would therefore disagree with the checker actually
+feeding codegen. Reconcile the two once the flip makes them one checker, reading
+inferred types rather than written annotations (#1152). **PR12 (#1069)** assumes the
+new checker is at or near default, so its rollout is the natural place for this to
+land.
 
 ## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
 
