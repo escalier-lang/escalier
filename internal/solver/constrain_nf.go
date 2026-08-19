@@ -409,7 +409,7 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 			continue
 		}
 		for _, i := range subOrder {
-			if isInexactUnion(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
+			if hasUnboundedTail(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
 				continue
 			}
 			pairs = append(pairs, nfPair{sub: subCands[i], super: superCands[j]})
@@ -492,9 +492,10 @@ func isNegation(t soltype.Type) bool {
 	return ok
 }
 
-// isInexactUnion reports whether t is a union with an open tail, the one supertype
-// normalization hands back whole.
-func isInexactUnion(t soltype.Type) bool {
+// hasUnboundedTail reports whether t is a union carrying an open tail that nothing bounds,
+// the one supertype normalization hands back whole. A bounded tail contributes its bound as
+// one more disjunct, so such a union is taken apart and never reaches a candidate list.
+func hasUnboundedTail(t soltype.Type) bool {
 	u, ok := t.(*soltype.UnionType)
-	return ok && u.Inexact
+	return ok && u.Inexact && u.TailBound == nil
 }

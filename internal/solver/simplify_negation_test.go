@@ -319,6 +319,123 @@ func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
 	})
 }
 
+// Writing a bound on the open tail takes the union out of the top position
+// TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ...string` names "a" and draws every
+// other member it has from `string`, so a value outside `string` is outside the union.
+//
+// Each probe below has a counterpart in that test that answers the other way, which is
+// what makes the bound the thing that changed rather than some difference in the shapes.
+func TestBoundedTailIsNotTop(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ...string
+
+	t.Run("the bound decides what is a subtype of the union", func(t *testing.T) {
+		probes := []struct {
+			name     string
+			sub, sup soltype.Type
+			want     bool
+		}{
+			// A value the bound admits may be one of the tail's members.
+			{"a named member is a subtype of it", strLit("a"), bounded, true},
+			{"another string is a subtype of it", strLit("z"), bounded, true},
+			{"the bound itself is a subtype of it", str(), bounded, true},
+			// A value the bound rejects cannot be, which is where the unbounded tail
+			// answered true for every sub.
+			{"a number literal is not a subtype of it", numLit(5), bounded, false},
+			{"a number is not a subtype of it", num(), bounded, false},
+			{"unknown is not a subtype of it", &soltype.UnknownType{}, bounded, false},
+		}
+		for _, p := range probes {
+			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
+		}
+	})
+
+	// The complement is inhabited, so newNegation has something to wrap. `5` is not a key of
+	// the object, so it satisfies `¬keyof {a: X, ...}`, while a string that could be one does
+	// not. An unbounded tail folds the whole complement to `never`, which nothing satisfies.
+	t.Run("its complement is inhabited", func(t *testing.T) {
+		require.True(t, subtypeHolds(c.ctx, numLit(5), negT(bounded)))
+		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
+	})
+
+	// The bound also decides what the union is a subtype of, which is the direction that
+	// carries the tail into a supertype rather than out of one. An unbounded tail is a
+	// subtype of nothing but `unknown`, since no closed type absorbs a tail that may hold
+	// anything.
+	t.Run("the bound decides what the union is a subtype of", func(t *testing.T) {
+		probes := []struct {
+			name     string
+			sub, sup soltype.Type
+			want     bool
+		}{
+			// Every member is a string, the named one included, so `string` absorbs the
+			// whole union.
+			{"a bounded tail is a subtype of its own bound", bounded, str(), true},
+			// The sub's tail may hold "zz", which the super's `number` tail rejects.
+			{
+				"a string tail is not a subtype of a number tail",
+				bounded, newBoundedUnion(nil, []soltype.Type{strLit("a")}, num()), false,
+			},
+			// The super's tail admits every string, so it absorbs the sub's whole tail.
+			{
+				"a narrower bound is a subtype of a wider one",
+				newBoundedUnion(nil, []soltype.Type{strLit("a")}, strLit("z")), bounded, true,
+			},
+			{"a bounded tail is not a subtype of a lone member", bounded, strLit("a"), false},
+			// The unbounded sub is top, so no bounded super absorbs it. This is the one
+			// pair where both operands carry a tail and only the sub's is unbounded.
+			{
+				"an unbounded tail is not a subtype of a bounded one",
+				newUnion(nil, []soltype.Type{strLit("a")}, true), bounded, false,
+			},
+			{
+				"a bounded tail is a subtype of an unbounded one",
+				bounded, newUnion(nil, []soltype.Type{strLit("a")}, true), true,
+			},
+		}
+		for _, p := range probes {
+			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
+		}
+	})
+}
+
+// The normalization layer reads a bounded tail as one more disjunct, so a decision about
+// which values the union admits sees the bound alongside the named members. The two probes
+// below are the two directions that reading is consulted from.
+func TestNormalizationReadsTheTailBound(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
+
+	// `"a"` is one of the strings the bound admits, so the two fuse and the whole union
+	// normalizes to `string`. An unbounded tail has no atom to fuse and stays whole.
+	t.Run("a bounded tail joins the disjuncts", func(t *testing.T) {
+		require.Equal(t, "string", soltype.Print(c.ctx.mkCNF(bounded, soltype.Positive).toType()))
+		require.Equal(t, "string", soltype.Print(c.ctx.mkDNF(bounded, soltype.Positive).toType()))
+	})
+
+	t.Run("an unbounded tail stays one atom", func(t *testing.T) {
+		// mkDNF and mkCNF each carry their own unbounded-tail guard, so both are probed.
+		open := newUnion(nil, []soltype.Type{strLit("a")}, true)
+		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkCNF(open, soltype.Positive).toType()))
+		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkDNF(open, soltype.Positive).toType()))
+	})
+}
+
+// simplifyNegations weighs a bounded tail the way it weighs a named arm, so a complement that
+// rules out everything the bound admits empties the meet. An unbounded tail is top and no
+// complement can empty it, which TestSimplifyNegationsRefusesToCollapse pins on the other side.
+func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
+	c := newChecker()
+	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
+
+	// `("a" | ...string) & ¬string`. Both the named member and every value the tail could
+	// hold is a string, so nothing survives.
+	kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{bounded, negT(str())})
+	require.True(t, provedEmpty)
+	require.True(t, changed)
+	require.Empty(t, kept)
+}
+
 // The two routes a complement can take past a variable, which the section comment above
 // simplifyNegations describes. They go opposite ways, and only the first leaves a
 // complement behind for that pass to find.
