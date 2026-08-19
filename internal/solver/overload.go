@@ -27,6 +27,11 @@ import (
 // because the arms are still being inferred. fuseOverloadArms in module.go records the
 // set in that form.
 //
+// Which arm a direct call resolves to must match which arm the generated dispatcher
+// routes to at runtime, since a call typed with one arm's return type has to reach that
+// arm. codegen.DispatchOrder lays the dispatcher's chain out to match specificityOrder
+// below, and overload_dispatch_test.go measures the two against each other.
+//
 // Specificity ordering is the one documented rule, reused by M4 object-arg and M5 method
 // overloads. When every argument carries type information, meaning none is an
 // unconstrained variable, candidates are tried most-specific-first. Arm A is more
