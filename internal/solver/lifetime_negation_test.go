@@ -20,12 +20,15 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // A complemented borrow keeps its lifetime name in the rendered signature, wherever the
 // complement sits.
 //
-// The name is at risk because a complement flips the polarity its operand is visited at,
-// and coalesceLifetimes reads polarity as dataflow rather than as variance. Under the
-// flip a parameter's borrow looks like one reaching an output, and an output's borrow
-// looks like one originating at a parameter. Read that way a complemented borrow's
-// lifetime is neither named nor saved from elision, so every row below would render
-// `¬&mut {x: number}` with no name at all.
+// The name is at risk because the Accept walk threads one polarity, and that polarity
+// means variance. coalesceLifetimes needs a different fact, the dataflow position saying
+// whether a borrow sits in a parameter or in an output. The two agree at every former
+// whose flip is a real position change, such as a function parameter. They disagree
+// under a complement, which inverts variance without moving the borrow. Taking the
+// polarity for the position there makes a parameter's borrow look like one reaching an
+// output, and an output's borrow look like one originating at a parameter. Read that way
+// a complemented borrow's lifetime is neither named nor saved from elision, so every row
+// below would render `¬&mut {x: number}` with no name at all.
 //
 // Eliding there does not merely lose a name. It yields a different type, since
 // `¬(&'a T)` rendered as `¬(&T)` is the complement of any borrow of T rather than of

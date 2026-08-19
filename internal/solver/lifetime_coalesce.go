@@ -71,10 +71,10 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // The two facts are separate because a complement affects them differently:
 //
 //   - occ records the STRUCTURAL POSITION, meaning whether the borrow sits in a
-//     parameter or in an output. This pass reads position as dataflow rather than as
-//     variance. `Negative` means the borrow originates at a parameter, so its lifetime
-//     is nameable. `Positive` means the borrow reaches an output, so its lifetime is
-//     not elided.
+//     parameter or in an output. That is a dataflow fact, not the variance the walk's
+//     polarity carries, so EnterType converts one into the other. `Negative` means the
+//     borrow originates at a parameter, so its lifetime is nameable. `Positive` means
+//     the borrow reaches an output, so its lifetime is not elided.
 //   - noElide holds the lifetimes a complement encloses. A lifetime in it is never
 //     elided, whatever its position.
 //

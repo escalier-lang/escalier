@@ -83,7 +83,8 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      re-examining whether the exclusion still earns its keep.
 
   Display-time lifetime classification was a third blocker, and it is fixed.
-  `coalesceLifetimes` reads a borrow's position as dataflow rather than as variance.
+  `coalesceLifetimes` needs a borrow's dataflow position, not the variance the walk's
+  polarity carries, so it converts one into the other.
   `Negative` means the borrow originates at a parameter, so its lifetime is nameable.
   `Positive` means the borrow reaches an output, so its lifetime is not elided. A
   complement does not move a borrow between a parameter and an output, but it does flip
