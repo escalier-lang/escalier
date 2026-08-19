@@ -81,6 +81,29 @@ When a one-off task needs more logic than a short shell pipeline (parsing JSON, 
 - While iterating on a PR, commit locally but don't `git push` until I explicitly ask.
 - Still push at the end of a session so nothing is lost.
 
+## Writing agent-facing docs
+
+This covers the files an agent reads to work here: `CLAUDE.md`, the skills under
+`.claude/skills/`, and any reference file they point to. `CLAUDE.md` loads on
+every turn, so treat its length as a running cost and keep only lines that change
+what the agent does.
+
+- State each rule once. When another section needs the same rule, link to the one
+  place that states it. A rule copied into two spots drifts when one copy changes.
+- Cut instructions that only restate a default. Spelling out behavior the agent
+  already does spends tokens without changing the outcome.
+- Inline what every task needs and push branch-specific detail into a separate
+  file, then point to that file. The repo-layout list does this: it names each
+  subsystem with a one-line gloss and a link instead of inlining the details.
+  Word the pointer so it says what the file is and which cases it covers, since
+  that wording is what prompts the agent to open it.
+- Give each instruction a clear done condition. "Re-run with both vars set so
+  snapshots and fixtures stay in sync" marks when the step is finished; "update
+  the snapshots" leaves the boundary vague.
+- Prefer naming the action to take over the action to avoid. "Use the `Set` ADT"
+  points at the target directly, where "don't use a raw map" only rules one path
+  out. Keep a prohibition when the wrong path is the tempting one.
+
 # Writing Prose
 
 The guidance in this section applies to every kind of prose you write: code
