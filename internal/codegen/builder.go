@@ -1449,56 +1449,22 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// Check if it's an array
 		return buildArrayIsArrayCheck(valueExpr, nil)
 	case *ast.TypeRefTypeAnn:
-		// For type references, expand the type and check if it's a nominal type
-		inferredType := t.InferredType()
-		if inferredType != nil {
-			// Prune type variables to get the actual type
-			prunedType := type_system.Prune(inferredType)
-
-			// Check if it's a TypeRefType with a TypeAlias
-			if typeRef, ok := prunedType.(*type_system.TypeRefType); ok {
-				if typeRef.TypeAlias != nil {
-					// Get the aliased type
-					aliasedType := type_system.Prune(typeRef.TypeAlias.Type)
-
-					// Check if the aliased type is a nominal object type
-					if objType, ok := aliasedType.(*type_system.ObjectType); ok && objType.Nominal {
-						// Generate instanceof check for nominal types
-						typeName := ast.QualIdentToString(t.Name)
-						return NewBinaryExpr(
-							valueExpr,
-							InstanceOf,
-							NewIdentExpr(typeName, "", nil),
-							nil,
-						)
-					}
-				}
-			}
-
-			// Check if it's directly an object type (not aliased)
-			if objType, ok := prunedType.(*type_system.ObjectType); ok && objType.Nominal {
-				// Generate instanceof check for nominal types
-				typeName := ast.QualIdentToString(t.Name)
-				return NewBinaryExpr(
-					valueExpr,
-					InstanceOf,
-					NewIdentExpr(typeName, "", nil),
-					nil,
-				)
-			}
-
-			// TODO(#289): handle non-object types
-			// TODO(#289): handle structural object types
+		// A reference to a nominal type is tested with `instanceof` against the class
+		// name. nominalGuardName resolves the reference through its inferred type, either
+		// directly or through a type alias.
+		//
+		// TODO(#289): handle non-object types
+		// TODO(#289): handle structural object types
+		if typeName, nominal := nominalGuardName(t); nominal {
+			return NewBinaryExpr(
+				valueExpr,
+				InstanceOf,
+				NewIdentExpr(typeName, "", nil),
+				nil,
+			)
 		}
-
-		// For type references like Array<T>, try to infer the check
-		if t.Name != nil {
-			// Get the simple name from QualIdent
-			name := ast.QualIdentToString(t.Name)
-			switch name {
-			case "Array":
-				return buildArrayIsArrayCheck(valueExpr, nil)
-			}
+		if isArrayTypeRef(t) {
+			return buildArrayIsArrayCheck(valueExpr, nil)
 		}
 		// Default: accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
@@ -1506,6 +1472,32 @@ func (b *Builder) buildTypeGuard(valueExpr Expr, typeAnn ast.TypeAnn) Expr {
 		// For complex types we can't easily check at runtime, accept anything
 		return NewLitExpr(NewBoolLit(true, nil), nil)
 	}
+}
+
+// nominalGuardName returns the class name an `x instanceof C` guard tests for a
+// reference to a nominal type, and reports whether the reference is one. A reference
+// resolves through its inferred type, either directly or through a type alias.
+func nominalGuardName(t *ast.TypeRefTypeAnn) (string, bool) {
+	inferred := t.InferredType()
+	if inferred == nil {
+		return "", false
+	}
+	pruned := type_system.Prune(inferred)
+	if typeRef, ok := pruned.(*type_system.TypeRefType); ok && typeRef.TypeAlias != nil {
+		if obj, ok := type_system.Prune(typeRef.TypeAlias.Type).(*type_system.ObjectType); ok && obj.Nominal {
+			return ast.QualIdentToString(t.Name), true
+		}
+	}
+	if obj, ok := pruned.(*type_system.ObjectType); ok && obj.Nominal {
+		return ast.QualIdentToString(t.Name), true
+	}
+	return "", false
+}
+
+// isArrayTypeRef reports whether a reference is the `Array` the guard tests with
+// `Array.isArray`.
+func isArrayTypeRef(t *ast.TypeRefTypeAnn) bool {
+	return t.Name != nil && ast.QualIdentToString(t.Name) == "Array"
 }
 
 func (b *Builder) buildExpr(expr ast.Expr, parent ast.Expr) (Expr, []Stmt) {
