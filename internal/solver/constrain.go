@@ -847,6 +847,9 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			}
 			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
 		}
+		if sup, ok := super.(*soltype.StringIntrinsicType); ok {
+			return c.constrainStrLitToStringIntrinsic(sub, sup)
+		}
 	case *soltype.SkolemType:
 		// A skolem is a subtype of the same skolem and of its declared upper bound, so an
 		// unconstrained `T` fails against `number` or a distinct `U`, while a `<U: T>` skolem
@@ -1457,6 +1460,29 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		return c.constrain(c.extrude(sub, soltype.Positive, superVar.Level, map[extrudeKey]*soltype.TypeVarType{}), super, seen, mutCtx)
 	}
 
+	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+}
+
+// constrainStrLitToStringIntrinsic checks a string-literal sub against a residual string-operator
+// super whose operand never reduced to a literal, such as `"A" <: Uppercase<string>`. The operator
+// denotes the image of its transform over the operand's inhabitants, and each of the four transforms
+// is idempotent, so its image is exactly the strings the transform leaves unchanged. When the operand
+// is the whole `string` primitive, a string literal lands in that image iff the transform maps it to
+// itself: `Uppercase<string>` accepts `"A"` because `Uppercase("A")` is `"A"`, and rejects `"a"`
+// because `Uppercase("a")` is `"A"`. An operand that is not `string`, such as a type parameter,
+// leaves the operator symbolic, so no literal can be shown to land in its image and the mismatch is
+// reported.
+func (c *Context) constrainStrLitToStringIntrinsic(sub *soltype.LitType, super *soltype.StringIntrinsicType) []SolverError {
+	strLit, ok := sub.Lit.(*soltype.StrLit)
+	if !ok {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+	}
+	if prim, ok := super.Operand.(*soltype.PrimType); !ok || prim.Prim != soltype.StrPrim {
+		return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
+	}
+	if applyStringIntrinsic(super.Kind, strLit.Value) == strLit.Value {
+		return nil
+	}
 	return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 }
 

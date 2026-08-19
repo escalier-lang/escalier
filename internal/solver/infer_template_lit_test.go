@@ -222,6 +222,66 @@ func TestInferStringIntrinsicConstraint(t *testing.T) {
 	}
 }
 
+// A string-intrinsic residual over the whole `string` primitive denotes the strings the transform
+// leaves unchanged, since each of the four transforms is idempotent. A string literal satisfies the
+// residual iff the transform maps it to itself: `Uppercase<string>` accepts `"A"` and rejects `"a"`,
+// and Lowercase, Capitalize, and Uncapitalize accept and reject by the same fixed-point test.
+func TestInferStringIntrinsicOverString(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "UppercaseAcceptsUppercase",
+			src:  `val u: Uppercase<string> = "A"`,
+		},
+		{
+			name:    "UppercaseRejectsLowercase",
+			src:     `val u: Uppercase<string> = "a"`,
+			wantErr: `cannot constrain "a" <: Uppercase<string>`,
+		},
+		{
+			name: "LowercaseAcceptsLowercase",
+			src:  `val l: Lowercase<string> = "a"`,
+		},
+		{
+			name:    "LowercaseRejectsUppercase",
+			src:     `val l: Lowercase<string> = "A"`,
+			wantErr: `cannot constrain "A" <: Lowercase<string>`,
+		},
+		{
+			name: "CapitalizeAcceptsLeadingUpper",
+			src:  `val c: Capitalize<string> = "Abc"`,
+		},
+		{
+			name:    "CapitalizeRejectsLeadingLower",
+			src:     `val c: Capitalize<string> = "abc"`,
+			wantErr: `cannot constrain "abc" <: Capitalize<string>`,
+		},
+		{
+			name: "UncapitalizeAcceptsLeadingLower",
+			src:  `val c: Uncapitalize<string> = "aBC"`,
+		},
+		{
+			name:    "UncapitalizeRejectsLeadingUpper",
+			src:     `val c: Uncapitalize<string> = "ABC"`,
+			wantErr: `cannot constrain "ABC" <: Uncapitalize<string>`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
 // A string intrinsic nested inside a template interpolation composes: `on${Capitalize<K>}`
 // over `type K = "click"` reduces the inner `Capitalize<K>` to `"Click"`, then folds it into the
 // template to yield `"onClick"`. This is the `EventName<K>` shape the utility-type suite builds on.
