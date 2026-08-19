@@ -909,6 +909,28 @@ type NoMatchingOverloadError struct {
 	Candidates []TypeScheme
 }
 
+// UnannotatedRecursiveOverloadError fires when an overloaded function participates in
+// a mutually-recursive group without annotating the parameters of every arm.
+//
+// An overload set reaches the fixed point as one intersection of arrows, and the
+// arrow-decomposition rule tells its arms apart by which inputs each accepts. Ground
+// domains are what make that separation possible; leave them to inference and every arm
+// widens to the same `unknown` parameter, which says nothing and reports again as a set
+// of indistinguishable arms. Return types carry no such requirement — the fixed point
+// infers those through the same decomposition. Self-recursion is not gated, since a
+// call there resolves against the arm it selects rather than against a fixed point over
+// the whole group.
+//
+// The binding degrades to its first arm so a later reference still resolves.
+//
+// It is a BRIDGE error: born in checkOverloadAnnotations with the offending arm's
+// declaration in hand, so it self-blames (Span() is the first arm with an un-annotated
+// parameter). Name is the overloaded binding's name for the message.
+type UnannotatedRecursiveOverloadError struct {
+	Decl ast.Decl
+	Name string
+}
+
 // DuplicateOverloadError fires when two arms of an overload set (PR6) are
 // indistinguishable for dispatch: they share an arity and have pointwise-equal
 // parameter types, so no call could ever select one over the other. An overload set
@@ -1201,6 +1223,7 @@ func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
 func (*NoMatchingOverloadError) isSolverError()             {}
+func (*UnannotatedRecursiveOverloadError) isSolverError()   {}
 func (*DuplicateOverloadError) isSolverError()              {}
 func (*AwaitOutsideAsyncError) isSolverError()              {}
 func (*ForAwaitOutsideAsyncError) isSolverError()           {}
@@ -2389,6 +2412,12 @@ func (e *NoMatchingOverloadError) Message() string {
 		sb.WriteString(renderScheme(s))
 	}
 	return sb.String()
+}
+
+func (e *UnannotatedRecursiveOverloadError) Span() ast.Span      { return e.Decl.Span() }
+func (e *UnannotatedRecursiveOverloadError) Related() []ast.Span { return nil }
+func (e *UnannotatedRecursiveOverloadError) Message() string {
+	return "Overloaded function in a recursive group must annotate its parameters: " + e.Name
 }
 
 func (e *DuplicateOverloadError) Span() ast.Span      { return e.Decl.Span() }

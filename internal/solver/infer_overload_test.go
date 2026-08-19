@@ -162,6 +162,23 @@ func TestInferOverloadNoMatch(t *testing.T) {
 		msgWithSpan(errs[0]))
 }
 
+// An overloaded function in a mutually-recursive group must annotate the parameters of
+// every arm. The fixed point tells the arms apart by their domains, so leaving those to
+// inference collapses every arm onto the same `unknown` parameter. The error blames the
+// first arm with an un-annotated parameter, and the binding degrades to that arm, which
+// is why the indistinguishable-arms check does not also fire.
+func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(x) { g(x) }
+		fn f(y) { g(y) }
+		fn g(z) { f(z) }
+	`)
+	require.Len(t, errs, 1)
+	require.Equal(t,
+		"2:3-2:19: Overloaded function in a recursive group must annotate its parameters: f",
+		msgWithSpan(errs[0]))
+}
+
 // An overloaded function in a mutually-recursive group infers without a return
 // annotation on any arm. The set reaches its binding variable as the single lower
 // bound `(number -> R1) & (string -> R2)`, and the recursive `f("hi")` inside g
