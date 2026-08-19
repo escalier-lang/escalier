@@ -13,6 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// An overload set is a name carrying more than one top-level function declaration, and
+// each of those declarations is an ARM of the set. A call reaches exactly one arm.
+//
 // Static resolution and the generated dispatcher must agree on which arm answers a
 // call. The checker picks an arm in resolveOverload, driven by specificityOrder over
 // the inferred arm types. The generated code picks one by running the if-else chain
@@ -116,11 +119,12 @@ func TestOverloadDispatchAgreesWithResolution(t *testing.T) {
 			want: []string{"boolean", "T"},
 		},
 		{
-			// A union is untestable at runtime, so this arm's guard is a bare `true` — but
-			// it is NOT the catch-all a type parameter is. The checker cannot rank a union
-			// against a primitive either, so both sides leave the pair tied and the union
-			// arm keeps its declared place. Sorting it last on the strength of its `true`
-			// guard would send f(5) to the number arm the checker did not resolve it to.
+			// A union is untestable at runtime, so this arm's guard is a bare `true`. That
+			// does NOT make it the catch-all a type parameter is. The checker cannot rank a
+			// union against a primitive either, so both sides leave the pair tied and the
+			// union arm keeps its declared place. Sorting it last on the strength of its
+			// `true` guard would send f(5) to the number arm the checker did not resolve
+			// it to.
 			name: "an untestable union arm is not a catch-all",
 			src: `
 				fn f(x: number | string) -> string { return "u" }
@@ -222,10 +226,16 @@ func TestOverloadDispatchArityIsCheckerOnly(t *testing.T) {
 
 // Two arms the specificity ranking cannot separate fall back to declaration order, and
 // both sides have to mean the same thing by that. The checker sorts its arms into
-// source-position order before binding the set, so it never sees the order the parser
-// happened to produce; DispatchOrder sorts too, for the same reason. Here the two arms
-// live in separate files handed to the parser in reverse-alphabetical order, so an
-// unsorted dispatcher would test them back to front.
+// source-position order before binding the set, so it never sees the order the dep
+// graph happened to produce. DispatchOrder sorts too, for the same reason, and this
+// test hands it the two arms back to front to prove it.
+//
+// The two arms live in separate files, since a single file's declarations are already
+// in position order and would prove nothing. The parser gets them in path order, which
+// is the order the compiler itself assigns source ids in. Reversing that would separate
+// the two rankings rather than exercise them: armPosLess orders by file path while
+// DispatchOrder orders by source id, the second gap the header of overload_order.go
+// records.
 func TestOverloadDispatchTiebreakIsSourcePosition(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
