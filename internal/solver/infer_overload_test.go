@@ -34,6 +34,9 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 
 // Resolution dispatches on arity: f(5) hits the 1-param arm, f(5, "hi") the 2-param
 // arm.
+// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
+// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
+// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<T>(x: T) -> T { return x }
@@ -123,6 +126,9 @@ val r = f(5)`},
 // Specificity beats declaration order: a concrete arm declared AFTER a generic one
 // still wins for a matching concrete argument (most-specific-first). f("hi") picks
 // the string arm even though the generic arm is declared first and would also match.
+// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
+// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
+// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadSpecificityBeatsDeclarationOrder(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<T>(x: T) -> T { return x }
@@ -314,6 +320,9 @@ func TestInferOverloadValuePosition(t *testing.T) {
 // distinct types instead of cross-contaminating to "hi" | true. (Guards the
 // soltype.LevelOf recursion into IntersectionType — without it freshenAbove prunes
 // the level-0 intersection and aliases the arm's type variable across uses.)
+// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
+// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
+// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<T>(x: T) -> T { return x }
@@ -330,6 +339,9 @@ func TestInferOverloadGenericArmValuePositionNoAlias(t *testing.T) {
 // Value-position resolution uses the SAME specificity order as a direct call: a
 // concrete arm declared after a generic one wins for a matching concrete argument,
 // whether the callee is the overloaded name directly or a let-bound alias.
+// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
+// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
+// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 	direct, _, errs := inferSource(t, `
 		fn f<T>(x: T) -> T { return x }
@@ -352,6 +364,9 @@ func TestInferOverloadValuePositionMatchesDirectOrder(t *testing.T) {
 // Three mixed arms (concrete-literal-ish, concrete-prim, generic) rank by specificity
 // without relying on a non-transitive comparator: each call with a concrete argument
 // selects the arm that accepts it, most-specific-first with declaration-order tiebreak.
+// TODO(#1152): drop the explicit type parameters once codegen builds its guards from
+// inferred types. They are here only to satisfy checkOverloadDispatch. An un-annotated
+// `fn f(x)` infers identically, and that is the shape this test was written to exercise.
 func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f<T>(x: T) -> T { return x }
