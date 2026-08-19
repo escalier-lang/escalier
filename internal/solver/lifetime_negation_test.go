@@ -30,13 +30,15 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // Eliding there is not merely a lost name, it is a different type. `¬(&'a T)` rendered
 // as `¬(&T)` is the complement of any borrow of T rather than of the 'a one.
 //
-// ltOccVisitor answers with two facts instead of one. It undoes the complement's flip to
-// recover the position the borrow structurally sits in, and it records the borrow as
-// complement-enclosed, which forbids eliding its lifetime.
+// ltOccVisitor in lifetime_coalesce.go answers with two facts instead of one. It undoes
+// the complement's flip to recover the position the borrow structurally sits in, and it
+// adds the borrow's lifetime to its noElide set. The noElide set holds every lifetime a
+// complement encloses, and resolveLt consults it at each point it would otherwise drop a
+// lifetime, so a lifetime in the set is never elided whatever its position.
 //
-// Every row below is carried by the veto alone. Disabling the position correction leaves
-// all of them passing, because a complemented borrow named through the veto renders the
-// same string either way. The correction is pinned instead by
+// Every row below is carried by the noElide set alone. Disabling the position correction
+// leaves all of them passing, because a complemented borrow named through the noElide set
+// renders the same string either way. The correction is pinned instead by
 // TestComplementedBorrowAssertsNoOutlivesRelation and
 // TestComplementedBorrowGroupsLikeAnOrdinaryParam, where a mis-read position changes
 // which component counts as output-reaching.
@@ -95,7 +97,7 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 			want: "fn <'a>(p: ¬&'a mut {x: number}) -> &'a mut {x: number}",
 		},
 		{
-			// The control. The no-elide veto is keyed to the borrows a complement
+			// The control. The noElide set holds only the borrows a complement
 			// encloses, so an uncomplemented borrow reaching no output still renders
 			// with its lifetime elided.
 			name: "uncomplemented connect-nothing borrow still elides",
@@ -122,8 +124,8 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 //
 // Two flips cancel, so undoing them returns the inner borrow to the negative position it
 // structurally sits in. Neither borrow reaches an output, so the name here comes from the
-// no-elide veto rather than from the position. This row passes with the position
-// correction disabled, so treat it as covering the nesting shape, not the parity rule.
+// noElide set rather than from the position. This row passes with the position correction
+// disabled, so treat it as covering the nesting shape, not the parity rule.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -239,8 +241,8 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 	// The rendered signature carries the same fact: no bound in the quantifier prefix.
 	// It also shows the two signals acting separately. All three borrows reach no
 	// output, so all three are connect-nothing and 'a and 'b elide on position alone.
-	// Only the complemented one keeps a name, because the no-elide veto overrides the
-	// same connect-nothing verdict for it.
+	// Only the complemented one keeps a name, because it is in the noElide set, which
+	// overrides the same connect-nothing verdict for it.
 	require.Equal(t,
 		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ¬&'a mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
