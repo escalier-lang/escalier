@@ -67,7 +67,7 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
 - **`¬Ref` is excluded for two other reasons.** `soltype.AssertNegatable` panics on
   a borrow operand, and the guard stays for now.
   1. **The outlives lattice is not a Boolean algebra**, so `¬'a` names nothing. The
-     decision procedure never asks for one: in `constrainImplied` a negated atom
+     decision procedure never asks for one. In `constrainImplied` a negated atom
      always crosses the `<:` and lands as a positive atom on the other side, where
      it is met or joined, and `meetRefs` / `joinRefs` already provide both.
   2. **A residual `¬Ref` would not reduce.** The solver knows disjointness only
@@ -78,10 +78,10 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      panic without making the result useful. Widening `valueFamilyOf` to cover
      borrows is the other half of the work.
 
-  Display-time lifetime classification was a third blocker. It no longer is.
+  Display-time lifetime classification was a third blocker, and it is fixed.
   `coalesceLifetimes` reads a borrow's position as dataflow rather than as variance.
-  Negative means the borrow originates at a parameter, so its lifetime is nameable.
-  Positive means the borrow reaches an output, so its lifetime is not elided. A
+  `Negative` means the borrow originates at a parameter, so its lifetime is nameable.
+  `Positive` means the borrow reaches an output, so its lifetime is not elided. A
   complement does not move a borrow between a parameter and an output, but it does flip
   the polarity its operand is visited at, so reading position straight off the polarity
   strips the name from every complemented borrow. That changes the type rather than
@@ -94,13 +94,14 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      Only the parity matters, since two complements cancel. Position decides which
      connected component counts as output-reaching, so a mis-read position keeps
      unrelated lifetimes named and invents outlives bounds.
-  2. **Complement-enclosed**, a veto that forbids eliding a lifetime whatever its
-     position. Position alone is not enough, because a complemented borrow reaching no
-     output is genuinely connect-nothing, and the display-time elision rule drops those.
-     The veto is what puts the name on a complemented borrow.
+  2. **The `noElide` set**, holding every lifetime a complement encloses. A lifetime in
+     it is never elided, whatever its position. Position alone is not enough, because a
+     complemented borrow reaching no output is genuinely connect-nothing, and the
+     display-time elision rule drops those. `noElide` is what puts the name on a
+     complemented borrow.
 
   The two are kept separate so that correcting one cannot silently re-break the other.
-  They are also pinned by different tests: the veto by
+  They are also pinned by different tests: `noElide` by
   `TestComplementedBorrowKeepsLifetimeName`, the position correction by
   `TestComplementedBorrowAssertsNoOutlivesRelation` and
   `TestComplementedBorrowGroupsLikeAnOrdinaryParam`.

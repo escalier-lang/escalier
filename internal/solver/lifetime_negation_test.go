@@ -24,11 +24,12 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // and coalesceLifetimes reads polarity as dataflow rather than as variance. Under the
 // flip a parameter's borrow looks like one reaching an output, and an output's borrow
 // looks like one originating at a parameter. Read that way a complemented borrow's
-// lifetime is neither named nor kept, so every row below would render
+// lifetime is neither named nor saved from elision, so every row below would render
 // `¬&mut {x: number}` with no name at all.
 //
-// Eliding there is not merely a lost name, it is a different type. `¬(&'a T)` rendered
-// as `¬(&T)` is the complement of any borrow of T rather than of the 'a one.
+// Eliding there does not merely lose a name. It yields a different type, since
+// `¬(&'a T)` rendered as `¬(&T)` is the complement of any borrow of T rather than of
+// the `'a` one.
 //
 // ltOccVisitor in lifetime_coalesce.go answers with two facts instead of one. It undoes
 // the complement's flip to recover the position the borrow structurally sits in, and it
@@ -240,9 +241,9 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 
 	// The rendered signature carries the same fact: no bound in the quantifier prefix.
 	// It also shows the two signals acting separately. All three borrows reach no
-	// output, so all three are connect-nothing and 'a and 'b elide on position alone.
-	// Only the complemented one keeps a name, because it is in the noElide set, which
-	// overrides the same connect-nothing verdict for it.
+	// output, so all three are connect-nothing. That verdict elides `'a` and `'b` on
+	// position alone. Only the complemented borrow keeps a name, because it is in the
+	// noElide set, which overrides the same verdict for it.
 	require.Equal(t,
 		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ¬&'a mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
@@ -253,13 +254,15 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 // componentParams gathers every kept param in a join's connected component, so a param
 // linked to the join only through an instantiation intermediary is still reported as a
 // source. That looseness is deliberate, since an intermediary is exactly how a call's
-// argument lifetime reaches the join it feeds, and it applies to a complemented borrow
-// and a plain one alike.
+// argument lifetime reaches the join it feeds. It applies to a complemented borrow and
+// a plain one alike, which is what this test pins.
 //
-// 'm is an intermediary outliving 'a and 'b. 'j is a genuine join over 'a and 'x. 'b
-// reaches 'j only through 'm, yet renders `'b: 'd` either way. Reading 'b as an
-// output-only lifetime instead would make it a join over 'a and 'x and assert the
-// reversed `'a: 'b` and `'x: 'b`, neither of which inference proves.
+// The graph below wires 'm as an intermediary outliving 'a and 'b, and 'j as a genuine
+// join over 'a and 'x. 'b reaches 'j only through 'm. Both signatures still render the
+// bound, where the printer names the join `'d` because it assigns display names in
+// first-appearance order. Reading 'b as an output-only lifetime instead would make it a
+// join over 'a and 'x and assert the reversed `'a: 'b` and `'x: 'b`, neither of which
+// inference proves.
 func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
 	// build wires the graph above and returns the signature, wrapping the second
 	// parameter's borrow in a complement when complemented is set.

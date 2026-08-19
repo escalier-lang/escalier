@@ -262,10 +262,10 @@ func PrintAsSchemeWith(
 	//
 	// The third kind is named even when it reaches no parameter, so
 	// `fn () -> ¬(&'a mut {x: number})` renders `fn <'a>() -> ¬&'a mut {x: number}`
-	// with 'a quantified but bound by nothing in the signature. That is a defect, and
-	// coalesceLifetimes accepts it because eliding is the worse one. An elided
+	// with `'a` quantified but bound by nothing in the signature. That is a defect.
+	// coalesceLifetimes accepts it because eliding would be the worse defect. An elided
 	// complement changes the type rather than dropping a name, since `¬(&T)` is the
-	// complement of any borrow of T rather than of the 'a one.
+	// complement of any borrow of T rather than of the `'a` one.
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
 	// after the type parameters.

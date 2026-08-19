@@ -72,27 +72,26 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 //
 //   - occ records the STRUCTURAL POSITION, meaning whether the borrow sits in a
 //     parameter or in an output. This pass reads position as dataflow rather than as
-//     variance. Negative means the borrow originates at a parameter, so its lifetime is
-//     nameable, and positive means the borrow reaches an output, so its lifetime is not
-//     elided.
-//   - noElide records that a complement encloses the borrow, which forbids eliding its
-//     lifetime whatever its position.
+//     variance. `Negative` means the borrow originates at a parameter, so its lifetime
+//     is nameable. `Positive` means the borrow reaches an output, so its lifetime is
+//     not elided.
+//   - noElide holds the lifetimes a complement encloses. A lifetime in it is never
+//     elided, whatever its position.
 //
-// A complement does not move a borrow between a parameter and an output, but
+// A complement does not move a borrow between a parameter and an output. But
 // NegationType.Accept flips the polarity its operand is visited at, which is right for
-// variance and wrong for reading position. Undoing that flip recovers the position:
-// each enclosing complement inverts it once, so the parity of negDepth says whether to
+// variance and wrong for reading position. Undoing that flip recovers the position.
+// Each enclosing complement inverts it once, so the parity of negDepth says whether to
 // flip back. Without the correction `fn (p: &'a T) -> ¬(&'a T)` reads its returned
 // borrow as a parameter borrow and drops the parameter-to-return connection from the
 // rendered signature.
 //
 // Position alone is not enough, because a complemented borrow reaching no output is
 // genuinely connect-nothing, and the elision rule above drops those. Eliding under a
-// complement changes the
-// type rather than merely dropping a name, since `¬(&'a T)` rendered as `¬(&T)` is the
-// complement of any borrow of T rather than of the 'a one. noElide is the veto that
-// keeps the name in exactly that case, and it is deliberately independent of position so
-// that correcting one does not silently re-break the other.
+// complement changes the type rather than merely dropping a name, since `¬(&'a T)`
+// rendered as `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
+// noElide is what keeps the name in exactly that case. It stays independent of position
+// so that correcting one cannot silently re-break the other.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]
@@ -247,7 +246,7 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 // A lifetime a complement encloses is never elided. It renders under its own name even
 // when it connects nothing, because dropping it would change the type rather than drop a
 // name. That is the one case where a named lifetime is bound by nothing in the
-// signature, so `fn () -> ¬(&'a T)` quantifies an 'a the caller cannot choose.
+// signature, so `fn () -> ¬(&'a T)` quantifies an `'a` the caller cannot choose.
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {
 		return soltype.Static, false

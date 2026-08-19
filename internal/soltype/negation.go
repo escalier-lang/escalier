@@ -23,7 +23,7 @@ import "fmt"
 // primitives, literals, `null` and `undefined`. A borrow belongs to none of them, so
 // `Exclude` over one yields back the same `T & ¬(&'a U)` rather than a simplified type.
 // Widening valueFamilyOf to cover borrows is what would make lifting this worthwhile.
-// escalier-lang/escalier#1125 carries the measurements behind both reasons.
+// See escalier-lang/escalier#1125 for the measurements behind both reasons.
 //
 // Negation INSIDE a borrow is allowed. A NegationType is not a RefInner, so the
 // complement sits under a union or an intersection, as in
