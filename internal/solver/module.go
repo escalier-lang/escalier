@@ -720,17 +720,12 @@ func leafName(g *dep_graph.DepGraph, key dep_graph.BindingKey) string {
 // fuseOverloadArms records an overload set's arms on its binding var as ONE lower
 // bound, the intersection of every arm's type.
 //
-// A reference from inside the component resolves through the var, so a recursive call
-// records `v <: (args) -> R` as an upper bound on it. The fused bound is what that
-// upper bound is checked against, and `(A -> B) & (C -> D) <: (args) -> R` is settled
-// by the arrow-decomposition rule in constrain_nf.go without any arm being picked.
-// That is what lets an overloaded function in a mutually-recursive group infer with no
-// annotations. Constraining only the first arm would instead check every recursive
-// call in the group against that one arm, which is why the set has to fuse.
+// A recursive call inside the component records `v <: (args) -> R` as an upper bound on
+// the var, and the arrow-decomposition rule in constrain_nf.go settles that against the
+// fused bound by weighing the arms together rather than picking one.
 //
-// The fused bound serves resolution INSIDE the component. Phase 3 binds the name from
-// b.arms, generalizing each arm on its own, so the var's coalesced type is never the
-// overload's exported type.
+// The bound serves resolution INSIDE the component only. Phase 3 binds the name from
+// b.arms, so the var's coalesced type is never the overload's exported type.
 func (c *checker) fuseOverloadArms(b *componentBinding) {
 	if len(b.arms) == 0 {
 		return // every arm failed to produce a definition
@@ -750,28 +745,15 @@ func (c *checker) fuseOverloadArms(b *componentBinding) {
 
 // checkOverloadAnnotations requires every arm of an overloaded function in a
 // mutually-recursive group to annotate its parameters. It returns the keys that failed,
-// which phase 2 and phase 3 degrade to the binding's first arm so a later reference
-// still resolves.
+// which phases 2 and 3 degrade to the binding's first arm so a later reference still
+// resolves. A singleton component is not gated, since self-recursion resolves against
+// the arm the call selects rather than against a fixed point over the group.
 //
-// The requirement is about DOMAINS, not about whole signatures. An overload set reaches
-// the fixed point as one intersection of arrows, and the arrow-decomposition rule tells
-// its arms apart by which inputs each one accepts. Ground domains are what make that
-// separation possible. Leave them to inference and every arm of
-//
-//	fn f(x) { g(x) }
-//	fn f(y) { g(y) }
-//	fn g(z) { f(z) }
-//
-// widens to the same `(x: unknown) -> undefined`, with g inferring the vacuous
-// `μX0.(X0 | X0)`. The arms are then indistinguishable, which is a second diagnostic on
-// top of a set that says nothing.
-//
-// Return types carry no such requirement. They are outputs the body determines, and the
-// fixed point infers them through the same decomposition — see
-// TestInferOverloadMutualRecursionInfersUnannotatedReturns.
-//
-// A singleton component is never gated. Self-recursion resolves against the arm the
-// call selects rather than against a fixed point over the whole group.
+// The requirement is on DOMAINS, not whole signatures. The arrow-decomposition rule
+// tells a fused set's arms apart by which inputs each accepts, so leaving the parameters
+// to inference widens every arm onto the same `unknown` and infers nothing useful for
+// the group. Return types are outputs the same decomposition infers, which is the
+// relaxation this rule is scoped around.
 func (c *checker) checkOverloadAnnotations(
 	g *dep_graph.DepGraph, component []dep_graph.BindingKey,
 ) set.Set[dep_graph.BindingKey] {
