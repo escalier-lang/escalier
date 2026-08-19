@@ -202,7 +202,7 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 			// A bounded tail holds some unknown set of the bound's values, so no value
 			// outside the bound reaches the union and every value inside it might. That
 			// makes the bound one more disjunct for a decision about which values the
-			// union admits. `5 <: ("a" | ...string)` fails and `"z" <: ("a" | ...string)`
+			// union admits. `5 <: ("a" | ... : string)` fails and `"z" <: ("a" | ... : string)`
 			// holds, both by the ordinary union rule once the bound joins the members.
 			//
 			// The bound joins the DNF rather than the member list, so the named members

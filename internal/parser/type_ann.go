@@ -132,11 +132,21 @@ loop:
 		// union below, or reported as an error when no union was built.
 		if nextOp.Kind == Union && p.lexer.peek().Type == DotDotDot {
 			unionInexactSpan = p.lexer.peek().Span
-			p.lexer.consume()
+			p.lexer.consume() // consume '...'
 			unionInexact = true
-			// A primary type after the `...` bounds the tail, as in `A | ...string`.
-			// primaryTypeAnn returns nil without consuming when none follows, leaving `A | ...`.
-			unionTailBound = p.primaryTypeAnn()
+			// A `... : R` bounds the tail: the union holds its named members plus
+			// unknown values drawn from R, as in `"a" | ... : string`. The bound sits
+			// behind a `:` so `...T` stays a tuple spread and only a tuple spread. A
+			// bare `... ` with no `:` leaves the tail unbounded.
+			if p.lexer.peek().Type == Colon {
+				p.lexer.consume() // consume ':'
+				unionTailBound = p.primaryTypeAnn()
+				if unionTailBound == nil {
+					token := p.lexer.peek()
+					p.reportError(token.Span, "expected a type annotation after `... :`")
+					unionTailBound = ast.NewErrorTypeAnn(token.Span)
+				}
+			}
 			break loop
 		}
 
@@ -230,9 +240,9 @@ loop:
 			result = boundedUnionTypeAnn(u.Types, unionTailBound)
 		case unionTailBound != nil:
 			// A lone member followed by a bounded tail, where the member is not itself a
-			// union: a primary as in `"a" | ...string`, or a higher-precedence compound as in
-			// `number & string | ...string`. The bound makes the tail meaningful with one
-			// member, so wrap it rather than rejecting the marker.
+			// union: a primary as in `"a" | ... : string`, or a higher-precedence compound as
+			// in `number & string | ... : string`. The bound makes the tail meaningful with
+			// one member, so wrap it rather than rejecting the marker.
 			result = boundedUnionTypeAnn([]ast.TypeAnn{result}, unionTailBound)
 		default:
 			// An unbounded `...` after a single member carries no union to mark.
@@ -242,8 +252,8 @@ loop:
 	return result
 }
 
-// boundedUnionTypeAnn builds an inexact union carrying a `...R` tail bound, spanning from the
-// first member through the bound.
+// boundedUnionTypeAnn builds an inexact union carrying a `... : R` tail bound, spanning from
+// the first member through the bound.
 func boundedUnionTypeAnn(types []ast.TypeAnn, bound ast.TypeAnn) *ast.UnionTypeAnn {
 	u := ast.NewUnionTypeAnn(types, ast.MergeSpans(types[0].Span(), bound.Span()))
 	u.Inexact = true

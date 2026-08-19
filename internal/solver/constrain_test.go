@@ -1214,7 +1214,7 @@ func TestDescribeNegation(t *testing.T) {
 }
 
 // A diagnostic naming an inexact union has to say what its tail admits, since the bound is
-// the reason the constraint failed. `5 <: ("a" | ...string)` is rejected where
+// the reason the constraint failed. `5 <: ("a" | ... : string)` is rejected where
 // `5 <: ("a" | ...)` holds, and a message rendering both as `"a" | ...` leaves the reader
 // with no way to tell which rule fired.
 func TestDescribeOpenUnionTail(t *testing.T) {
@@ -1231,7 +1231,7 @@ func TestDescribeOpenUnionTail(t *testing.T) {
 		{
 			"bounded tail",
 			&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true, TailBound: str()},
-			`"a" | ...string`,
+			`"a" | ... : string`,
 		},
 		{
 			// An intersection bound is parenthesized, so its `&` does not read as binding
@@ -1242,14 +1242,14 @@ func TestDescribeOpenUnionTail(t *testing.T) {
 				Inexact:   true,
 				TailBound: &soltype.IntersectionType{Types: []soltype.Type{str(), num()}},
 			},
-			`"a" | ...(string & number)`,
+			`"a" | ... : (string & number)`,
 		},
 		{
 			// The shape a set difference leaves when it excludes every named member. A
 			// leading `" | "` would read as an empty first member, so the marker stands alone.
 			"bounded tail with no named member",
 			&soltype.UnionType{Inexact: true, TailBound: str()},
-			"...string",
+			"... : string",
 		},
 	}
 	for _, tt := range tests {

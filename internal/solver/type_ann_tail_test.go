@@ -7,18 +7,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The surface syntax `A | ...R` resolves to a bounded tail and `A | B | ...` to an unbounded
-// one, so a test can write the source directly rather than minting the union by hand.
+// The surface syntax `A | ... : R` resolves to a bounded tail and `A | B | ...` to an
+// unbounded one, so a test can write the source directly rather than minting the union by
+// hand. Each printed form reparses to the same type, which is the round-trip the bounded
+// tail syntax exists to establish.
 func TestResolveUnionTailSyntax(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want string
 	}{
-		{"a bounded tail after several members", `type Result = "a" | "b" | ...string`, `"a" | "b" | ...string`},
-		{"a bounded tail after one member", `type Result = "a" | ...string`, `"a" | ...string`},
-		{"a numeric bound", `type Result = 0 | ...number`, "0 | ...number"},
-		{"a parenthesized union bound", `type Result = "a" | ...(number | string)`, `"a" | ...(number | string)`},
+		{"a bounded tail after several members", `type Result = "a" | "b" | ... : string`, `"a" | "b" | ... : string`},
+		{"a bounded tail after one member", `type Result = "a" | ... : string`, `"a" | ... : string`},
+		{"a numeric bound", `type Result = 0 | ... : number`, "0 | ... : number"},
+		{"a parenthesized union bound", `type Result = "a" | ... : (number | string)`, `"a" | ... : (number | string)`},
 		{"an unbounded tail", `type Result = "a" | "b" | ...`, `"a" | "b" | ...`},
 	}
 	for _, tt := range tests {

@@ -569,7 +569,7 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 // resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
 // member recovers to a fresh var so the union shape survives, mirroring the
 // Promise<bad> and object/tuple cascade-safe recovery. A trailing `...` in the
-// source sets ta.Inexact, which carries onto the resolved union, and a `...R`
+// source sets ta.Inexact, which carries onto the resolved union, and a `... : R`
 // tail sets ta.TailBound, which bounds it through newBoundedUnion.
 func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))

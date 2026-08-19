@@ -225,14 +225,14 @@ func TestFlattenUnionMergesTailBounds(t *testing.T) {
 			// A nested bounded tail with no other tail to meet comes through as written.
 			name:  "a lone bounded tail carries out",
 			parts: []soltype.Type{numLit(1), strTail(strLit("a"))},
-			want:  `1 | "a" | ...string`,
+			want:  `1 | "a" | ... : string`,
 		},
 		{
 			// Two bounded tails join their bounds, since a member of either could be in the
 			// result.
 			name:  "two bounded tails join their bounds",
 			parts: []soltype.Type{strTail(strLit("a")), numTail(numLit(1))},
-			want:  `1 | "a" | ...(number | string)`,
+			want:  `1 | "a" | ... : (number | string)`,
 		},
 		{
 			// Nothing says what an unbounded tail holds, so meeting one loses the bound.
@@ -244,7 +244,7 @@ func TestFlattenUnionMergesTailBounds(t *testing.T) {
 			// An exact nested union brings no tail, so the outer one is untouched.
 			name:  "an exact nested union leaves the tail alone",
 			parts: []soltype.Type{strTail(strLit("a")), unionT(numLit(1), numLit(2))},
-			want:  `1 | 2 | "a" | ...string`,
+			want:  `1 | 2 | "a" | ... : string`,
 		},
 	}
 	for _, tt := range tests {
@@ -273,7 +273,7 @@ func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
 			want:  `"y"`,
 		},
 		{
-			// `string | ...string`, the same rule over a primitive.
+			// `string | ... : string`, the same rule over a primitive.
 			name:  "a bound equal to a primitive member closes the union",
 			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{str()}, str()) },
 			want:  "string",
@@ -299,14 +299,14 @@ func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
 		},
 		{
 			// A bound that only partly overlaps the named members is narrowed to the part the
-			// union does not already admit. `1 | ...(1 | 2)` and `1 | ...2` both admit `1`
+			// union does not already admit. `1 | ... : (1 | 2)` and `1 | ... : 2` both admit `1`
 			// alone or `1 | 2`, so this tightens how the type reads without changing what it
 			// denotes.
 			name: "a union bound is narrowed to its unnamed members",
 			build: func() soltype.Type {
 				return newBoundedUnion(nil, []soltype.Type{numLit(1)}, unionT(numLit(1), numLit(2)))
 			},
-			want: "1 | ...2",
+			want: "1 | ... : 2",
 		},
 		{
 			// Narrowing down to a single member leaves that member as the bound rather than a
@@ -316,19 +316,19 @@ func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
 				return newBoundedUnion(nil, []soltype.Type{numLit(1), numLit(2)},
 					unionT(numLit(1), numLit(2), numLit(3)))
 			},
-			want: "1 | 2 | ...3",
+			want: "1 | 2 | ... : 3",
 		},
 		{
 			// A bound naming values no member does is not subsumed, so the tail stays.
 			name:  "an unrelated bound is kept",
 			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, str()) },
-			want:  `"y" | ...string`,
+			want:  `"y" | ... : string`,
 		},
 		{
 			// Subsumption needs a member to be subsumed by. A tail with none stays whole.
 			name:  "a member-less tail is kept",
 			build: func() soltype.Type { return newBoundedUnion(nil, nil, str()) },
-			want:  "...string",
+			want:  "... : string",
 		},
 	}
 	for _, tt := range tests {

@@ -106,11 +106,11 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"x" | "y" | ...string`,
+			wantExpanded: `"x" | "y" | ... : string`,
 		},
 		{
 			// A single-key inexact object keeps the union wrapper rather than collapsing to the lone
-			// literal, since the open tail makes `"only" | ...string` strictly weaker than bare
+			// literal, since the open tail makes `"only" | ... : string` strictly weaker than bare
 			// `"only"`.
 			name: "InexactSingleKeyObject",
 			src: `
@@ -118,7 +118,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"only" | ...string`,
+			wantExpanded: `"only" | ... : string`,
 		},
 		{
 			// A key is readable from a union only when every member carries it, so the members'
@@ -194,7 +194,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `"shared" | ...string`,
+			wantExpanded: `"shared" | ... : string`,
 		},
 		{
 			// An inexact union has an unlisted member whose keys are unknown, so it cannot close
@@ -295,7 +295,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 		},
 		{
 			// A non-final class projects to an inexact instance body, since a subclass may add
-			// members, so its key union is open: `"x" | "y" | ...string`.
+			// members, so its key union is open: `"x" | "y" | ... : string`.
 			name: "Class",
 			src: `
 				class Point {
@@ -305,7 +305,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Point
 			`,
 			wantSymbolic: "keyof Point",
-			wantExpanded: `"x" | "y" | ...string`,
+			wantExpanded: `"x" | "y" | ... : string`,
 		},
 		{
 			// A final class has no subclasses to widen it, so its instance body is exact and its

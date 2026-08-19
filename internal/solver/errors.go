@@ -3006,23 +3006,23 @@ func describe(t soltype.Type) string {
 		}
 		// An inexact union has an open tail. The marker follows the members so a
 		// diagnostic naming the union matches the printer's surface form. The tail's
-		// bound follows the marker, since the bound is what decides the constraint.
-		// `"a" | ...string` rejects `5` where `"a" | ...` accepts it, and a message
-		// rendering both the same way leaves the reader no way to tell which rule
-		// fired. A union with no named member renders as the marker alone, since a
+		// bound follows the marker after a `:`, since the bound is what decides the
+		// constraint. `"a" | ... : string` rejects `5` where `"a" | ...` accepts it, and
+		// a message rendering both the same way leaves the reader no way to tell which
+		// rule fired. A union with no named member renders as the marker alone, since a
 		// leading `" | "` would read as an empty first member.
 		marker := "..."
 		if t.TailBound != nil {
 			// A union or intersection bound is parenthesized, since its `|` or `&` would
-			// otherwise bind past the `...` and `...string & ¬"a"` read back as a member
-			// of the enclosing union. The NegationType arm below parenthesizes for the
-			// same reason.
+			// otherwise bind past the `... :` and `... : string & ¬"a"` read back as a
+			// member of the enclosing union. The NegationType arm below parenthesizes for
+			// the same reason.
 			bound := describe(t.TailBound)
 			switch t.TailBound.(type) {
 			case *soltype.UnionType, *soltype.IntersectionType:
 				bound = "(" + bound + ")"
 			}
-			marker += bound
+			marker += " : " + bound
 		}
 		if len(t.Types) == 0 {
 			return marker

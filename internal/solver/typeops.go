@@ -1189,7 +1189,7 @@ func aliasItself(op *soltype.AliasType) soltype.Type { return op }
 // for no members.
 //
 // An inexact object carries an unknown-keyed tail, so its key set is open:
-// `keyof {a: number, ...}` is `"a" | ...string`, an inexact union whose members are the known keys
+// `keyof {a: number, ...}` is `"a" | ... : string`, an inexact union whose members are the known keys
 // and whose tail stands for the unlisted ones. keyofObject seeds the union's exactness from the
 // object's, so an exact object yields an exact key union and an inexact object an inexact one.
 //
@@ -1228,7 +1228,7 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 // TODO: decide how keyof should account for inherited prototype members once interop is designed.
 //
 // An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
-// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ...number`, where the tail
+// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ... : number`, where the tail
 // stands for the indices those unknown positions occupy (exact-types §7.1). The bound is `number`
 // rather than the `string` an object's tail takes, since an index is a position and not a name.
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
@@ -1250,7 +1250,7 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // An inexact key set is open, so it can carry keys its written members do not name. That makes
 // the result inexact whenever the operand union is inexact or any member's key set is. Take
 // `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
-// `"shared" | ...string`. Only "shared" is written on both members, so only "shared" is definitely
+// `"shared" | ... : string`. Only "shared" is written on both members, so only "shared" is definitely
 // a key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
 // every key the result names one that every member definitely carries, and the trailing `...`
 // records that the true key set may be larger.
