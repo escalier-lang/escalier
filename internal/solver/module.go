@@ -79,12 +79,10 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 }
 
 // overloadArm is one collected arm of an overload set (PR6): a top-level FuncDecl's
-// raw inferred type plus whether its signature is fully annotated (the recursion
-// gate) and the decl itself (for per-arm Info recording in phase 3).
+// raw inferred type alongside the decl itself, which phase 3 records per-arm Info on.
 type overloadArm struct {
-	decl      *ast.FuncDecl
-	t         soltype.Type // the arm's RAW (variable-carrying) inferred FuncType
-	annotated bool
+	decl *ast.FuncDecl
+	t    soltype.Type // the arm's RAW (variable-carrying) inferred FuncType
 }
 
 // componentBinding tracks the in-flight state of one value binding while its
@@ -120,13 +118,13 @@ type componentBinding struct {
 	// FuncDecl's entry in sources.
 	arms []overloadArm
 	// signatureBound marks an overload set whose arms are ALL fully annotated, so phase
-	// 1 could build their signatures (body-free) and pre-bind the whole set in scope
-	// (b.arms holds the signature types). References WITHIN the component — recursive
-	// calls and value captures — then resolve against the set rather than a single
-	// first-arm var; phase 2 only checks each arm's body. An overload with any
-	// un-annotated arm cannot be signature-bound (its signature isn't known without
-	// inferring the body), so it stays on the ordinary group-var path and cannot be
-	// mutually recursive (the gate forbids it). See checkOverloadAnnotations / annotatedOverloadArms.
+	// 1 could build their signatures body-free and pre-bind the whole set in scope.
+	// b.arms then holds those signature types. A reference WITHIN the component — a
+	// recursive call or a value capture — resolves against the set rather than against a
+	// single first-arm var, and phase 2 only checks each arm's body. A set with any
+	// un-annotated arm has no signature to build without inferring the body, so it stays
+	// on the group-var path, where fuseOverloadArms records the whole set as one lower
+	// bound on that var. See annotatedOverloadArms.
 	signatureBound bool
 }
 
@@ -163,13 +161,9 @@ func (c *checker) inferComponent(
 ) {
 	inner := lvl + 1
 
-	// Recursion gate (PR6): an overloaded function in a mutually-recursive component
-	// (more than one binding) must have fully-annotated arms, since the overload set
-	// has to be ground before bodies are inferred — fixed-point iteration over
-	// overload choices is not guaranteed to converge under subtyping. The gate reports
-	// the offending participants and returns the set of keys to degrade to a single
-	// arm (so a later reference still resolves). Self-recursion (a singleton
-	// component) is softer and is not gated.
+	// An overloaded function in a mutually-recursive group must annotate its parameters,
+	// since the fixed point tells its arms apart by their domains. See
+	// checkOverloadAnnotations for what a set that fails this infers instead.
 	rejected := c.checkOverloadAnnotations(g, component)
 
 	// Phase 1: a fresh var per value binding, all defined before any body so a
@@ -184,29 +178,28 @@ func (c *checker) inferComponent(
 		// arm signatures alone (body-free), so references within the component resolve
 		// against every arm via resolveOverload instead of seeing only a single
 		// first-arm binding var (which would make a recursive arm — or a value capture —
-		// type-check against the wrong overload). The recursion gate guarantees a
-		// mutually-recursive overload IS fully annotated, so this is exactly the set it
-		// requires to be ground before bodies are inferred.
-		if !rejected.Contains(key) {
-			if armDecls := annotatedOverloadArms(g, key); armDecls != nil {
-				sortArmDecls(module, armDecls)
-				arms := make([]overloadArm, len(armDecls))
-				schemes := make([]TypeScheme, len(armDecls))
-				for i, fd := range armDecls {
-					// Build the signature body-free under a discarded probe: the arm is fully
-					// annotated, so the signature is concrete (no bounds to roll back), and
-					// discarding keeps phase 2's inferFunc — which re-derives the signature
-					// while checking the body — the single reporter of any signature error.
-					p := c.openProbe()
-					sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd, true)
-					c.closeProbe(p, false)
-					arms[i] = overloadArm{decl: fd, t: sig, annotated: true}
-					schemes[i] = monoScheme(sig)
-				}
-				bindings[key] = &componentBinding{arms: arms, bound: true, signatureBound: true}
-				scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
-				continue
+		// type-check against the wrong overload). Each recursive call then picks an arm
+		// and gets that arm's own return type, which is sharper than what the fused
+		// lower bound below derives. A set with any un-annotated arm cannot be built
+		// body-free, so it takes the fused path instead.
+		if armDecls := annotatedOverloadArms(g, key); armDecls != nil {
+			sortArmDecls(module, armDecls)
+			arms := make([]overloadArm, len(armDecls))
+			schemes := make([]TypeScheme, len(armDecls))
+			for i, fd := range armDecls {
+				// Build the signature body-free under a discarded probe: the arm is fully
+				// annotated, so the signature is concrete (no bounds to roll back), and
+				// discarding keeps phase 2's inferFunc — which re-derives the signature
+				// while checking the body — the single reporter of any signature error.
+				p := c.openProbe()
+				sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd, true)
+				c.closeProbe(p, false)
+				arms[i] = overloadArm{decl: fd, t: sig}
+				schemes[i] = monoScheme(sig)
 			}
+			bindings[key] = &componentBinding{arms: arms, bound: true, signatureBound: true}
+			scope.defineValue(key.Name(), ValueBinding{Schemes: schemes})
+			continue
 		}
 		v := c.freshAt(inner)
 		bindings[key] = &componentBinding{v: v}
@@ -363,6 +356,11 @@ func (c *checker) inferComponent(
 			}
 			continue
 		}
+		// An overload set reaches the binding var as ONE lower bound, the intersection of
+		// its arms, recorded after every arm is inferred. See fuseOverloadArms. A set the
+		// annotation gate rejected does not fuse: it degrades to its first arm, which is
+		// the recovery phase 3 binds it at.
+		fused := len(funcOnlyDecls(g, key)) > 1 && !rejected.Contains(key)
 		for _, d := range g.GetDecls(key) {
 			// M4 E3: a top-level destructuring `val [a, b] = …` / `val {x, y} = …`
 			// registers one decl under one leaf key per bound name. Bind it per key it
@@ -407,7 +405,11 @@ func (c *checker) inferComponent(
 			}
 			fd, isFunc := d.(*ast.FuncDecl)
 			if !b.bound {
-				c.constrain(d, t, b.v)
+				// An overload set's lower bound is the fusion of every arm, so the first arm
+				// is collected here and constrained after the loop rather than on its own.
+				if !fused {
+					c.constrain(d, t, b.v)
+				}
 				b.primary = d
 				b.bound = true
 				vd, isVarDecl := d.(*ast.VarDecl)
@@ -437,7 +439,7 @@ func (c *checker) inferComponent(
 				// more FuncDecls follow under this name it becomes an overload set; otherwise
 				// it stays a lone function.
 				if isFunc {
-					b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
+					b.arms = append(b.arms, overloadArm{decl: fd, t: t})
 				}
 				continue
 			}
@@ -448,7 +450,7 @@ func (c *checker) inferComponent(
 			// reports a duplicate — a second `val`/`var`, or a FuncDecl colliding with a
 			// variable binding, since a value cannot be overloaded.
 			if isFunc && !b.isVarDecl {
-				b.arms = append(b.arms, overloadArm{decl: fd, t: t, annotated: isFullyAnnotated(fd.FuncSig)})
+				b.arms = append(b.arms, overloadArm{decl: fd, t: t})
 				continue
 			}
 			c.report(&DuplicateDeclarationError{
@@ -456,6 +458,14 @@ func (c *checker) inferComponent(
 				Previous: b.primary,
 				Name:     key.Name(),
 			})
+		}
+		if fused {
+			// Sort before fusing, not only in phase 3. The fused bound is what an
+			// in-component recursive call is checked against, and specificityOrder settles a
+			// tie by position in the list it is handed, so an unsorted fusion would resolve
+			// such a call against a different arm order than the exported binding uses.
+			sortArms(module, b.arms)
+			c.fuseOverloadArms(b)
 		}
 	}
 
@@ -478,12 +488,9 @@ func (c *checker) inferComponent(
 			scope.removeValue(key.Name())
 			continue
 		}
-		// A PR6 overload set is a name with more than one FuncDecl arm. This branch binds
-		// such a set when the recursion gate did not reject it. A rejected set is a
-		// mutually-recursive unannotated overload. It is excluded here and degrades to its
-		// first arm below.
+		// A PR6 overload set is a name with more than one FuncDecl arm.
 		//
-		// Binding an accepted set takes four steps, each detailed at its block below:
+		// Binding a set takes four steps, each detailed at its block below:
 		//
 		//  1. sort the arms into source-position order;
 		//  2. reject any two arms with indistinguishable parameter types;
@@ -527,9 +534,6 @@ func (c *checker) inferComponent(
 			srcs := make([]provenance.Provenance, len(b.arms))
 			for i, arm := range b.arms {
 				sc := c.generalize(arm.t, lvl)
-				if ps, ok := sc.(*PolyScheme); ok {
-					ps.Annotated = arm.annotated
-				}
 				schemes[i] = sc
 				srcs[i] = &ast.NodeProvenance{Node: arm.decl}
 				if arm.decl.Name != nil {
@@ -542,8 +546,7 @@ func (c *checker) inferComponent(
 		// Generalize the binding var at the component's level (was: coalesce to a
 		// monotype). Every variable at Level > lvl becomes a quantified type
 		// parameter, captured outer variables do not — turning M2's monomorphic
-		// freeze into real let-polymorphism (PR1). A rejected overload degrades here to
-		// its first arm: b.v carries only the primary (first arm) definition.
+		// freeze into real let-polymorphism (PR1).
 		//
 		// PR8: a binding whose definition was wholly the ErrorType sentinel left its
 		// binding var with no bound (ErrorType absorbs in constrain), so generalizing it
@@ -714,30 +717,62 @@ func leafName(g *dep_graph.DepGraph, key dep_graph.BindingKey) string {
 	return name
 }
 
-// checkOverloadAnnotations enforces the PR6 recursion gate. It returns the set of
-// overloaded keys that failed the gate; phase 3 degrades each of them to its first arm.
-// A singleton component is never gated, since self-recursion is softer. Only a
-// genuinely mutually-recursive group of more than one binding requires its overloaded
-// members to have fully-annotated arms. For each overloaded member whose arms are not
-// all annotated, it reports an UnannotatedRecursiveOverloadError blaming the first
-// unannotated arm.
+// fuseOverloadArms records an overload set's arms on its binding var as ONE lower
+// bound, the intersection of every arm's type.
+//
+// A recursive call inside the component records `v <: (args) -> R` as an upper bound on
+// the var, and the arrow-decomposition rule in constrain_nf.go settles that against the
+// fused bound by weighing the arms together rather than picking one.
+//
+// The bound serves resolution INSIDE the component only. Phase 3 binds the name from
+// b.arms, so the var's coalesced type is never the overload's exported type.
+func (c *checker) fuseOverloadArms(b *componentBinding) {
+	if len(b.arms) == 0 {
+		return // every arm failed to produce a definition
+	}
+	if len(b.arms) == 1 {
+		// Only one arm survived inference, so there is nothing to fuse. Record it on its
+		// own, which is what the non-overloaded path would have done.
+		c.constrain(b.arms[0].decl, b.arms[0].t, b.v)
+		return
+	}
+	types := make([]soltype.Type, len(b.arms))
+	for i, arm := range b.arms {
+		types[i] = arm.t
+	}
+	c.constrain(b.primary, &soltype.IntersectionType{Types: types}, b.v)
+}
+
+// checkOverloadAnnotations requires every arm of an overloaded function in a
+// mutually-recursive group to annotate its parameters. It returns the keys that failed,
+// which phases 2 and 3 degrade to the binding's first arm so a later reference still
+// resolves. A singleton component is not gated, since self-recursion resolves against
+// the arm the call selects rather than against a fixed point over the group.
+//
+// The requirement is on DOMAINS, not whole signatures. The arrow-decomposition rule
+// tells a fused set's arms apart by which inputs each accepts, so leaving the parameters
+// to inference widens every arm onto the same `unknown` and infers nothing useful for
+// the group. Return types are outputs the same decomposition infers, which is the
+// relaxation this rule is scoped around.
 func (c *checker) checkOverloadAnnotations(
 	g *dep_graph.DepGraph, component []dep_graph.BindingKey,
 ) set.Set[dep_graph.BindingKey] {
 	rejected := set.NewSet[dep_graph.BindingKey]()
 	if len(component) <= 1 {
-		return rejected // self-recursion is softer; only mutual recursion is gated
+		return rejected
 	}
 	for _, key := range component {
 		funcs := funcOnlyDecls(g, key)
 		if len(funcs) <= 1 {
-			continue // not an overload set (a mixed val/var name is a duplicate, not gated here)
+			// Not an overload set. A name a `val`/`var` shares with a function is a
+			// duplicate declaration, reported in phase 2 rather than here.
+			continue
 		}
 		for _, fd := range funcs {
-			if !isFullyAnnotated(fd.FuncSig) {
+			if !allParamsAnnotated(fd.FuncSig) {
 				c.report(&UnannotatedRecursiveOverloadError{Decl: fd, Name: key.Name()})
 				rejected.Add(key)
-				break // one diagnostic per overloaded binding (blame the first gap)
+				break // one diagnostic per overloaded binding, blaming the first gap
 			}
 		}
 	}
@@ -748,8 +783,8 @@ func (c *checker) checkOverloadAnnotations(
 // FuncDecls, or nil when any `val`/`var` shares the name. A func-only result is a
 // candidate overload set. Its slice may have length 1, so it is not necessarily an
 // overload yet. A mixed result is nil because the clash is a duplicate declaration, not
-// an overload. Shared by the recursion gate and annotatedOverloadArms so both classify
-// a name the same way.
+// an overload. Shared by phase 2's fusion test and annotatedOverloadArms so both
+// classify a name the same way.
 func funcOnlyDecls(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*ast.FuncDecl {
 	if key.Kind() != dep_graph.DepKindValue {
 		return nil

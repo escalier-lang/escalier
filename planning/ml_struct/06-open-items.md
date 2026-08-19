@@ -51,7 +51,24 @@ must be scoped, and static resolution must pick the same arm the dispatcher rout
 to (example A is where the two can disagree).
 
 **Residual decision:** the annotation-obligation scope plus the static-vs-runtime
-agreement test. Owned by **PR11 (#1068)**.
+agreement test. Owned by **PR11 (#1068)**, which scoped the obligation and deferred the
+agreement.
+
+The obligation is scoped to **parameters**, and it is an inference requirement rather
+than the codegen one this finding anticipated. An overload set reaches the fixed point
+as one intersection of arrows, and the arrow-decomposition rule tells its arms apart by
+their domains, so a mutually-recursive group needs those ground. Return types do not:
+the same decomposition infers them, which is the trigger-3 win. `checkOverloadAnnotations`
+enforces the narrowed rule; `fuseOverloadArms` delivers the relaxation.
+
+The agreement is deferred, along with any obligation stated on codegen's behalf.
+`internal/codegen` reads the old `internal/checker`, and nothing outside
+`internal/solver` imports the new one, so a rule reported by the new checker reaches no
+build and an arm ordering built to match `specificityOrder` would disagree with the
+checker actually feeding codegen, which resolves overloads by first-match. Both wait for
+the **M12 flip** in milestone 1. #1152 tracks the shape they should take then: guards
+built from inferred types rather than written annotations, with the arm order derived
+from the checker's own ranking rather than mirrored over annotations.
 
 ## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
 

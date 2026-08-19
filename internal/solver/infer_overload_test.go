@@ -32,9 +32,8 @@ func TestInferOverloadResolvesByArgType(t *testing.T) {
 	require.Equal(t, "(fn (x: number) -> number) & (fn (x: string) -> string)", values["f"])
 }
 
-// Unannotated overloads are allowed when NOT recursive — arms are inferred
-// independently and resolution dispatches on arity: f(5) hits the 1-param arm,
-// f(5, "hi") the 2-param arm.
+// Resolution dispatches on arity: f(5) hits the 1-param arm, f(5, "hi") the 2-param
+// arm.
 func TestInferOverloadDispatchesOnArity(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn f(x) { return x }
@@ -163,9 +162,11 @@ func TestInferOverloadNoMatch(t *testing.T) {
 		msgWithSpan(errs[0]))
 }
 
-// A mutually-recursive group containing an overloaded function with un-annotated
-// arms is rejected: the overload set must be ground before the group's bodies are
-// inferred. The error blames the offending overloaded participant.
+// An overloaded function in a mutually-recursive group must annotate the parameters of
+// every arm. The fixed point tells the arms apart by their domains, so leaving those to
+// inference collapses every arm onto the same `unknown` parameter. The error blames the
+// first arm with an un-annotated parameter, and the binding degrades to that arm, which
+// is why the indistinguishable-arms check does not also fire.
 func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(x) { g(x) }
@@ -174,8 +175,43 @@ func TestInferOverloadMutualRecursionRequiresAnnotation(t *testing.T) {
 	`)
 	require.Len(t, errs, 1)
 	require.Equal(t,
-		"2:3-2:19: Overloaded function in a recursive group must have fully-annotated signatures: f",
+		"2:3-2:19: Overloaded function in a recursive group must annotate its parameters: f",
 		msgWithSpan(errs[0]))
+}
+
+// An overloaded function in a mutually-recursive group infers without a return
+// annotation on any arm. The set reaches its binding variable as the single lower
+// bound `(number -> R1) & (string -> R2)`, and the recursive `f("hi")` inside g
+// records `v <: (string) -> R` against it. The arrow-decomposition rule settles that
+// by weighing both arms together, so nothing has to pick an arm before the group's
+// bodies are inferred and nothing has to be annotated to make that choice possible.
+func TestInferOverloadMutualRecursionInfersUnannotatedReturns(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) { return g(x) }
+		fn f(x: string) { return x }
+		fn g(n: number) { return f("hi") }
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> string) & (fn (x: string) -> string)", values["f"])
+	require.Equal(t, "fn (n: number) -> string", values["g"])
+}
+
+// The same relaxation across a group whose recursion runs through BOTH arms: the
+// number arm returns a literal, the string arm recurses through g, and g calls back
+// into the number arm. Each call site reads its own arm's return type out of the
+// decomposition.
+func TestInferOverloadMutualRecursionResolvesPerArm(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		fn f(x: number) { return 1 }
+		fn f(x: string) { return g(x) }
+		fn g(s: string) { return f(1) }
+		val a = f(5)
+		val b = f("hi")
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "(fn (x: number) -> 1) & (fn (x: string) -> 1)", values["f"])
+	require.Equal(t, "1", values["a"])
+	require.Equal(t, "1", values["b"])
 }
 
 // A self-recursive fully-annotated overload type-checks: each arm's recursive call

@@ -909,17 +909,23 @@ type NoMatchingOverloadError struct {
 	Candidates []TypeScheme
 }
 
-// UnannotatedRecursiveOverloadError fires when an overloaded function participates
-// in a mutually-recursive group (a dep-graph component with more than one binding)
-// without fully-annotated overload signatures (PR6). Fixed-point iteration over
-// overload choices is not guaranteed to converge under subtyping, so the overload
-// set must be ground before the group is inferred; self-recursion (a singleton
-// component) is softer and does not trip this. The binding degrades to its first
-// arm so a later reference still resolves.
+// UnannotatedRecursiveOverloadError fires when an overloaded function participates in
+// a mutually-recursive group without annotating the parameters of every arm.
+//
+// An overload set reaches the fixed point as one intersection of arrows, and the
+// arrow-decomposition rule tells its arms apart by which inputs each accepts. Ground
+// domains are what make that separation possible; leave them to inference and every arm
+// widens to the same `unknown` parameter, which says nothing and reports again as a set
+// of indistinguishable arms. Return types carry no such requirement — the fixed point
+// infers those through the same decomposition. Self-recursion is not gated, since a
+// call there resolves against the arm it selects rather than against a fixed point over
+// the whole group.
+//
+// The binding degrades to its first arm so a later reference still resolves.
 //
 // It is a BRIDGE error: born in checkOverloadAnnotations with the offending arm's
-// declaration in hand, so it self-blames (Span() is the first unannotated arm).
-// Name is the overloaded binding's name for the message.
+// declaration in hand, so it self-blames (Span() is the first arm with an un-annotated
+// parameter). Name is the overloaded binding's name for the message.
 type UnannotatedRecursiveOverloadError struct {
 	Decl ast.Decl
 	Name string
@@ -1779,8 +1785,7 @@ func (e *SetterReceiverError) Message() string {
 // signature is pre-declared before its body is walked so a sibling call resolves,
 // but an un-annotated return in a cycle stays an inference variable that the cycle
 // cannot ground on its own. An annotation on any member of the cycle breaks it, so
-// every member reports until one is annotated. This mirrors the recursion gate
-// top-level overloaded functions use (UnannotatedRecursiveOverloadError).
+// every member reports until one is annotated.
 type RecursiveMethodAnnotationError struct {
 	Name  string
 	Elem  *ast.MethodElem
@@ -2412,7 +2417,7 @@ func (e *NoMatchingOverloadError) Message() string {
 func (e *UnannotatedRecursiveOverloadError) Span() ast.Span      { return e.Decl.Span() }
 func (e *UnannotatedRecursiveOverloadError) Related() []ast.Span { return nil }
 func (e *UnannotatedRecursiveOverloadError) Message() string {
-	return "Overloaded function in a recursive group must have fully-annotated signatures: " + e.Name
+	return "Overloaded function in a recursive group must annotate its parameters: " + e.Name
 }
 
 func (e *DuplicateOverloadError) Span() ast.Span      { return e.Decl.Span() }

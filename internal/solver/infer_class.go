@@ -856,7 +856,6 @@ func (c *checker) bindSelf(scope *Scope, recv *ast.MethodReceiver, body *soltype
 // before its body is walked so a sibling call resolves, but an un-annotated return in a
 // cycle stays an inference variable the cycle cannot ground on its own, so it collapses to
 // `never` rather than a useful type. An annotation on any member of the cycle breaks it.
-// This mirrors the recursion gate top-level overloaded functions use.
 //
 // The check builds the call graph over instance methods with bodies — an edge from a
 // method arm to each sibling method its body reads through `self` — and inspects each
