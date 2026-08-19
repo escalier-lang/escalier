@@ -960,7 +960,13 @@ func peelBorrows(t soltype.Type) soltype.Type {
 		for i, m := range t.Types {
 			members[i] = peelBorrows(m)
 		}
-		return newUnion(nil, members, t.Inexact)
+		// The tail's bound is a member the union does not list, so it peels too. Dropping it
+		// would leave the peeled union unbounded, which is top.
+		tail := tailOf(t)
+		if tail.bound != nil {
+			tail.bound = peelBorrows(tail.bound)
+		}
+		return newUnionWithTail(nil, members, tail)
 	}
 	return t
 }
@@ -978,6 +984,10 @@ func hasBorrowShape(t soltype.Type) bool {
 				return true
 			}
 		}
+		// The tail's bound is an unlisted member, and peelBorrows peels it, so a borrow
+		// held only there has to count too. Without this readCarrier would peel the lower
+		// bound and then discard the peeled result, re-borrowing what the read had freed.
+		return t.TailBound != nil && hasBorrowShape(t.TailBound)
 	}
 	return false
 }
@@ -3956,21 +3966,54 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 			kept = append(kept, m)
 		}
 	}
-	if len(kept) == 0 || len(kept) == len(u.Types) {
-		return nil, false
-	}
 	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
 	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
 	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
 	// union narrows to precisely the members that matched.
-	if len(kept) == 1 && !u.Inexact {
+	tail := tailOf(u)
+	tailDropped := false
+	if tail.bound != nil && closedShape(tail.bound) && !keep(tail.bound) {
+		// No value the bound admits has the shape the test asks for, so the tail contributes
+		// no member to this branch and goes. See closedShape for which bounds may be decided
+		// this way: those whose own keys or arity pin every member drawn from them.
+		tail = unionTail{}
+		tailDropped = true
+	}
+	// Dropping the tail is narrowing even when every listed member matched, so the no-op
+	// return has to weigh it. `{a: number} | ...string` narrowed by `{a}` keeps its one
+	// member and sheds the string tail, which would be missed by a member count alone.
+	if len(kept) == 0 || (len(kept) == len(u.Types) && !tailDropped) {
+		return nil, false
+	}
+	if len(kept) == 1 && !tail.open {
 		return kept[0], true
 	}
 	// Keep the structured inexact union rather than returning `unknown`. It is the bind
 	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
 	// read each field before the tail widens it. Binding against bare `unknown` would leave
 	// nothing to destructure.
-	return &soltype.UnionType{Types: kept, Inexact: u.Inexact}, true
+	return &soltype.UnionType{Types: kept, Inexact: tail.open, TailBound: tail.bound}, true
+}
+
+// closedShape reports whether a `keep` test — which inspects only keys and arity, never field
+// values — answers the same for every value the bound admits, so the bound's own result settles
+// every member drawn from it. It reads through a borrow to the carrier first, matching how `keep`
+// peels one via CarrierOf. A primitive, a literal, an exact object, or an exact tuple qualifies:
+// each pins its members' keys exactly, so `{c: boolean}` lacking "a" means none of its inhabitants
+// has "a". An inexact object or tuple, a union, or a bare type variable does not, since a member
+// may carry a key the bound omits; deciding those needs a disjointness check narrowUnionMembers has
+// no Context to run, so it keeps the tail — the wider, safe answer.
+func closedShape(t soltype.Type) bool {
+	switch t := soltype.CarrierOf(t).(type) {
+	case *soltype.PrimType, *soltype.LitType:
+		return true
+	case *soltype.ObjectType:
+		return !t.Inexact
+	case *soltype.TupleType:
+		return !t.Inexact && !hasRestSpread(t.Elems)
+	default:
+		return false
+	}
 }
 
 // structuralInexact returns the Inexact flag of an object or tuple type and whether

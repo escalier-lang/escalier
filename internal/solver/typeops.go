@@ -822,18 +822,18 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	if !condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
-	if soltype.UncountableKeys(keys) {
-		// An uncountable key set has no keys to enumerate, so the member stays unexpanded and is
-		// itself the index signature. The required form over such a key set is uninhabited and is
-		// rejected. A rename or filter over one has no enumerable keys to run over, so it stays
-		// symbolic with no diagnostic. That gap is #930.
+	if hasNoEnumerableKeys(keys) {
+		// A key set with nothing to enumerate leaves the member unexpanded, so it is itself the
+		// index signature. The required form over such a key set is uninhabited and is rejected.
+		// A rename or filter over one has no enumerable keys to run over, so it stays symbolic
+		// with no diagnostic. That gap is #930.
 		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
 			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
 		}
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
-	members, inexactKeys := unionMembers(keys)
+	members, keyTail := unionMembers(keys)
 	pos := make(map[string]int, len(members))
 	for _, member := range members {
 		built, ok := e.mappedFields(t, member, source, homomorphic)
@@ -849,24 +849,38 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 			fields = append(fields, field)
 		}
 	}
-	return reduced, fields, inexactKeys, true
+	return reduced, fields, keyTail.open, true
 }
 
-// unionMembers splits a reduced type into the members a rule runs over one at a time, and reports
-// whether the set they make up is inexact. A union contributes its members and carries its own
-// inexact marker through; `never` is the empty set, so it contributes none; any other type is a
-// single member.
+// hasNoEnumerableKeys reports whether a mapped type's key set has no key to emit a field for at
+// all: an uncountable set such as `string`, or an open set naming no key of its own, such as the
+// `...(string & ¬"a")` a difference leaves after excluding every named key. Its bound says what
+// the keys are drawn from, not which the set holds. A set that DOES name a key is not this, even
+// with an open tail: each named key gets a field and the tail becomes the result's own inexactness
+// marker, so `{[K]: T[K] for K in keyof {x: X, ...}}` expands to `{x: X, ...}`.
+func hasNoEnumerableKeys(keys soltype.Type) bool {
+	if soltype.UncountableKeys(keys) {
+		return true
+	}
+	u, ok := keys.(*soltype.UnionType)
+	return ok && len(u.Types) == 0 && u.TailBound != nil
+}
+
+// unionMembers splits a reduced type into the members a rule runs over one at a time, and returns
+// the open tail holding whatever it could not enumerate. A union contributes its members and
+// carries its own tail through; `never` is the empty set, so it contributes none; any other type is
+// a single member under no tail.
 //
 // A mapped type splits its key set this way to emit one field per key, and a set difference splits
 // its positive side this way to settle one member at a time against what is excluded.
-func unionMembers(t soltype.Type) ([]soltype.Type, bool) {
+func unionMembers(t soltype.Type) ([]soltype.Type, unionTail) {
 	switch t := t.(type) {
 	case *soltype.UnionType:
-		return t.Types, t.Inexact
+		return t.Types, tailOf(t)
 	case *soltype.NeverType:
-		return nil, false
+		return nil, unionTail{}
 	default:
-		return []soltype.Type{t}, false
+		return []soltype.Type{t}, unionTail{}
 	}
 }
 
@@ -1409,10 +1423,22 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 	// what carries an inexact object's openness into `T[keyof T]`. Over `type Obj = {a: number, ...}`,
 	// `keyof Obj` reduces to `"a" | ...` and `Obj[keyof Obj]` to `number | ...`.
 	if u, ok := idx.(*soltype.UnionType); ok {
+		// TODO(#1155): reduce `T[...R]` to the values the target stores at the keys in R
+		// rather than leaving the access symbolic.
+		if len(u.Types) == 0 {
+			// An open key set naming no key of its own, such as the `...string` a set
+			// difference leaves when it excludes every named key. There is no key to read
+			// the target at, so the access stays symbolic. Distributing over no member
+			// would answer `never`, claiming the key set is empty when it is only unread.
+			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
+		}
 		parts := make([]soltype.Type, len(u.Types))
 		for i, m := range u.Types {
 			parts[i] = e.reduceIndex(target, m, inexact)
 		}
+		// The result's tail stays unbounded whatever bounds the key tail. The bound says
+		// what the unread KEYS are, and this union holds the VALUES stored at them, which
+		// nothing here has read.
 		return newUnion(nil, parts, u.Inexact)
 	}
 	switch tgt := target.(type) {
@@ -1461,13 +1487,26 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		// lacking it records its own absence diagnostic through reduceIndex. Each member indexes
 		// with the same reduced key.
 		//
-		// An inexact target union has unlisted members, and the value each holds at K is not among
-		// the ones the access read, so the result union is open too (exact-types §7.6).
+		// An inexact target union has unlisted members whose value at K the access did not read,
+		// so the result is open too (exact-types §7.6). A bounded tail says what those members are,
+		// so reading K off the bound reads it off all of them at once and the result's tail keeps
+		// that. A target naming no member of its own has only the bound to read.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, inexact)
 		}
-		return newUnion(nil, parts, tgt.Inexact)
+		tail := tailOf(tgt)
+		if tail.bound != nil {
+			tail.bound = e.reduceIndex(tail.bound, idx, inexact)
+			if containsResidualOp(tail.bound) {
+				// The read off the bound did not ground, so it comes back as an unreduced
+				// access. A union carrying one reads as residual and would be decided against
+				// the operator rather than the union, and an access has no wider bound to fall
+				// back on. Stay symbolic and reduce once the target grounds.
+				return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
+			}
+		}
+		return newUnionWithTail(nil, parts, tail)
 	case *soltype.IntersectionType:
 		return e.reduceIndexIntersection(tgt, idx, inexact)
 	default:
@@ -1624,6 +1663,14 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // The result is exact only when every interpolation is, since an interpolation that names an open
 // set of choices produces an open set of strings (exact-types §5.6). `on${"a" | "b"}` reduces to
 // the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
+//
+// A tail's bound is not folded into the result. The bound says the tail's choices are strings
+// without saying which, so no segment can absorb them. The result's tail is bounded by `string`
+// all the same, since a template produces a string whatever it interpolates. Leaving it unbounded
+// would make the result the top of the subtype lattice, so a template interpolating
+// `keyof {a: number, ...}` would accept a `5`.
+// An interpolation that names no choice at all, which is the shape a set difference leaves when it
+// excludes every named one, has nothing to run the product over and keeps the template symbolic.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
 	combinations := 1
@@ -1632,6 +1679,14 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 		reduced := e.groundOperand(interp)
 		if u, ok := reduced.(*soltype.UnionType); ok {
 			openChoices = openChoices || u.Inexact
+			if len(u.Types) == 0 {
+				// An interpolation naming no choice of its own, such as the `...string` a set
+				// difference leaves when it excludes every named key. Its bound says the
+				// choices are strings without saying which, so there is nothing to fold into
+				// the surrounding segments and the template stays symbolic. Running the
+				// product over no choice would empty it and answer `never`.
+				return &soltype.TemplateLitType{Quasis: t.Quasis, Interps: t.Interps}
+			}
 			// Ground each union member too, so a reducible member — an alias to a literal, or a
 			// nested operator such as `keyof O` — collapses to its string literal before the product
 			// rather than surviving as a residual interpolation.
@@ -1656,7 +1711,10 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 	for _, combo := range combos {
 		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
-	return newUnion(nil, parts, openChoices)
+	if openChoices {
+		return newBoundedUnion(nil, parts, &soltype.PrimType{Prim: soltype.StrPrim})
+	}
+	return newUnion(nil, parts, false)
 }
 
 // foldTemplatePart folds one cartesian-product combination into a single template result. It
@@ -1751,7 +1809,26 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 		for i, m := range op.Types {
 			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
-		return newUnion(nil, parts, op.Inexact)
+		// The intrinsic reaches the tail's bound too, since the tail's unnamed members are
+		// drawn from it and each is transformed the way a named member is. A bound of `"a"`
+		// becomes `"A"` exactly as a named member does.
+		//
+		// Only a string LITERAL has a case to change, so a bound the transform cannot fold
+		// comes back as an unreduced operator. `Uppercase<string>` is one. Such a bound is
+		// widened to `string` rather than kept, because a bound is part of the union and a
+		// union carrying an unreduced operator anywhere reads as residual. Constraint
+		// solving then decides against the opaque operator and rejects
+		// `val u: Uppercase<keyof {a: number, ...}> = "A"`. Widening is sound, since the
+		// intrinsic maps strings to strings, and it keeps the tail bounded where dropping it
+		// would leave the union at the top of the lattice.
+		tail := tailOf(op)
+		if tail.bound != nil {
+			tail.bound = e.reduceStringIntrinsic(kind, tail.bound)
+			if containsResidualOp(tail.bound) {
+				tail.bound = &soltype.PrimType{Prim: soltype.StrPrim}
+			}
+		}
+		return newUnionWithTail(nil, parts, tail)
 	case *soltype.LitType:
 		if s, ok := op.Lit.(*soltype.StrLit); ok {
 			return strLitType(applyStringIntrinsic(kind, s.Value))
@@ -1787,9 +1864,17 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		rewritten.Inexact = inexact
 		return &rewritten
 	case *soltype.UnionType:
-		// newUnion rather than a direct rebuild, so clearing the marker on a one-member union
-		// collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
-		return newUnion(nil, op.Types, inexact)
+		// newUnionWithTail rather than a direct rebuild, so clearing the marker on a one-member
+		// union collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
+		//
+		// Opening a union keeps whatever bound the operand's tail carried, so `Inexact<T>` over
+		// an already-inexact T is the identity `Inexact<keyof {a: X, ...}>` needs. Dropping the
+		// bound would widen `"a" | ...string` to `"a" | ...`, which is top.
+		tail := unionTail{open: inexact}
+		if inexact {
+			tail.bound = op.TailBound
+		}
+		return newUnionWithTail(nil, op.Types, tail)
 	case *soltype.IntersectionType:
 		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).
 		parts := make([]soltype.Type, len(op.Types))

@@ -399,6 +399,57 @@ func TestBoundedTailIsNotTop(t *testing.T) {
 	})
 }
 
+// A type operator that rebuilds a union has to carry the tail's bound through, or the result
+// lands back at the top of the lattice the bound took it off. Each case runs an operator over
+// `keyof {a: number, b: string, ...}`, whose tail is bounded by `string`.
+func TestOperatorsCarryTheTailBound(t *testing.T) {
+	tests := []struct {
+		name string
+		// decl is a type declaration appended to the shared Obj alias, binding Result.
+		decl string
+		want string
+	}{
+		{
+			// The key set the operator starts from.
+			name: "Keyof",
+			decl: `type Result = keyof Obj`,
+			want: `"a" | "b" | ... : string`,
+		},
+		{
+			// `Inexact` over an already-open union is the identity, so the bound has to
+			// survive the rewrite rather than being reset to unbounded.
+			name: "InexactIsTheIdentityOnAnOpenUnion",
+			decl: `type Result = Inexact<keyof Obj>`,
+			want: `"a" | "b" | ... : string`,
+		},
+		{
+			// `Exact` closes the union, and a closed union has no tail to bound.
+			name: "ExactDropsTheTail",
+			decl: `type Result = Exact<keyof Obj>`,
+			want: `"a" | "b"`,
+		},
+		{
+			// A string intrinsic transforms the bound alongside the named members. Only a
+			// literal has a case to change, so transforming `string` yields the unreduced
+			// `Uppercase<string>`, which is widened to `string`. A union carrying an
+			// unreduced operator anywhere reads as residual, and constraint solving then
+			// decides against the operator instead of the union it belongs to.
+			name: "StringIntrinsic",
+			decl: `type Result = Uppercase<keyof Obj>`,
+			want: `"A" | "B" | ... : string`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			nodes, ctx, errs := inferTypeNodes(t, `
+				type Obj = {a: number, b: string, ...}
+			`+tt.decl)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+		})
+	}
+}
+
 // The normalization layer reads a bounded tail as one more disjunct, so a decision about
 // which values the union admits sees the bound alongside the named members. The two probes
 // below are the two directions that reading is consulted from.
@@ -434,6 +485,122 @@ func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
 	require.True(t, provedEmpty)
 	require.True(t, changed)
 	require.Empty(t, kept)
+}
+
+// peelBorrows strips the borrow wrapper off every member a union has, and the tail's bound is
+// one of them. A dropped bound would leave the peeled union unbounded, which is top.
+func TestPeelBorrowsReachesTheTailBound(t *testing.T) {
+	inner := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
+	peeled := peelBorrows(newBoundedUnion(nil, []soltype.Type{num()}, &soltype.RefType{Inner: inner}))
+	require.Equal(t, "number | ... : {x: number}", soltype.Print(peeled))
+}
+
+// Narrowing a union to the members a pattern can destructure weighs the tail's bound too, but
+// only where the bound answers for every member drawn from it. The `keep` predicate is a shape
+// test over one member, and a bound is the set its members come from, so the two coincide for
+// an atomic bound and part ways for a structured one.
+func TestNarrowUnionMembersWeighsTheTailBound(t *testing.T) {
+	objA := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("a", num())}}
+	objB := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("b", str())}}
+	// keepA stands for an object pattern `{a}`: it accepts a member carrying the key "a".
+	keepA := func(m soltype.Type) bool { return objectMemberHasKeys(m, []string{"a"}) }
+
+	t.Run("an atomic bound no member of which fits is dropped", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...string`. Every value the tail holds is a string, and
+		// no string carries the key "a", so the tail contributes nothing to this branch.
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, str())
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("every member matches and the atomic tail still drops", func(t *testing.T) {
+		// `{a: number} | ...string` narrowed by `{a}`. The one listed member matches, so a
+		// member count alone reads it as unchanged, but the string tail cannot carry "a" and
+		// goes. Weighing the tail before the no-op return is what narrows this to `{a: number}`
+		// rather than keeping the whole inexact union.
+		u := newBoundedUnion(nil, []soltype.Type{objA}, str())
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("an exact object bound no member of which fits is dropped", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...{c: boolean}`. The bound is exact, so its inhabitants
+		// carry exactly the key "c" and none carries "a". A key test over the bound settles every
+		// member drawn from it, exactly as it does for a primitive, so the tail drops.
+		objC := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("c", boolT())}}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objC)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("an inexact object bound is kept", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...{c: boolean, ...}`. The inexact bound admits a member
+		// such as `{c: boolean, a: number}` that carries "a", so the bound failing the key test
+		// does not settle the members drawn from it. Deciding the tail needs a disjointness
+		// question narrowUnionMembers cannot ask, so it keeps the tail — the wider answer.
+		objC := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("c", boolT())}, Inexact: true}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objC)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ... : {c: boolean, ...}", soltype.Print(narrowed))
+	})
+
+	t.Run("an exact tuple bound no member of which fits is dropped", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...[boolean, boolean]`. The bound is an exact tuple, so
+		// its inhabitants are all length-two tuples and none carries the object key "a". Arity
+		// pins every member drawn from it, exactly as an exact object's keys do, so the tail drops.
+		tup := &soltype.TupleType{Elems: []soltype.Type{boolT(), boolT()}}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, tup)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("a borrow of an exact object bound is dropped", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...&mut {x: number}`. closedShape reads through the borrow
+		// to its carrier the way `keep` does through CarrierOf. The carrier is an exact object
+		// with no "a", and a borrow of an exact object admits only borrows of that same object, so
+		// no member drawn from the tail carries "a" and the tail drops.
+		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, ref)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number}", soltype.Print(narrowed))
+	})
+
+	t.Run("a borrow of an inexact object bound is kept", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...&mut {x: number, ...}`. The carrier under the borrow is
+		// inexact, so it admits an object carrying "a", and the tail is kept just as a bare inexact
+		// object bound is.
+		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}, Inexact: true}}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, ref)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ... : mut {x: number, ...}", soltype.Print(narrowed))
+	})
+
+	t.Run("a type-variable bound is kept", func(t *testing.T) {
+		// `{a: number} | {b: string} | ...t1`. A bare type variable stands for a carrier not yet
+		// known, so closedShape cannot settle whether a member drawn from it carries "a", and the
+		// tail is kept — the undecidable case CarrierOf leaves in place.
+		v := &soltype.TypeVarType{ID: 1, Level: 1}
+		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, v)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ... : t1", soltype.Print(narrowed))
+	})
+
+	t.Run("an unbounded tail is kept", func(t *testing.T) {
+		// Nothing says what the tail holds, so it survives every narrowing, which is the rule
+		// the field-read path already depends on.
+		u := newUnion(nil, []soltype.Type{objA, objB}, true)
+		narrowed, ok := narrowUnionMembers(u, keepA)
+		require.True(t, ok)
+		require.Equal(t, "{a: number} | ...", soltype.Print(narrowed))
+	})
 }
 
 // keyof over an inexact object or tuple is the one site that mints a bounded tail today,
@@ -566,4 +733,81 @@ func TestFinalSubsumptionRereadsARewrittenTailBound(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(c.subsumeFinal(in)))
 		})
 	}
+}
+
+// An operator over a bounded tail has to hand back a union that is still usable as a type. Two
+// ways it can fail are invisible in the printed form, so each case here checks what the result
+// accepts rather than only how it renders.
+func TestOperatorResultsOverABoundedTailStayUsable(t *testing.T) {
+	// A template produces a string whatever it interpolates, so its tail is bounded by
+	// `string`. An unbounded tail admits every value, which would let a number pass for a
+	// string the template could have produced.
+	t.Run("a template over an open key set still rejects a non-string", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = `+"`on${keyof Obj}`"+`
+		`)
+		require.Empty(t, errs)
+		result := expandAliasResidual(ctx, nodes["Result"])
+		require.Equal(t, "\"ona\" | ... : string", soltype.Print(result))
+
+		c := newChecker()
+		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "a template never produces a number")
+		require.False(t, subtypeHolds(c.ctx, &soltype.LitType{Lit: &soltype.BoolLit{Value: true}}, result), "nor a boolean")
+		require.True(t, subtypeHolds(c.ctx, strLit("ona"), result), "the named string is a member")
+		require.True(t, subtypeHolds(c.ctx, strLit("onb"), result), "so is one the tail may hold")
+	})
+
+	// A bound the intrinsic cannot fold comes back as an unreduced operator, and a union
+	// carrying one anywhere reads as residual. Constraint solving would then decide against
+	// the operator rather than the union, rejecting a string the union plainly names.
+	t.Run("an intrinsic over an open key set still accepts its own member", func(t *testing.T) {
+		nodes, ctx, errs := inferTypeNodes(t, `
+			type Obj = {a: number, ...}
+			type Result = Uppercase<keyof Obj>
+		`)
+		require.Empty(t, errs)
+		result := expandAliasResidual(ctx, nodes["Result"])
+		require.Equal(t, `"A" | ... : string`, soltype.Print(result))
+
+		c := newChecker()
+		require.False(t, containsResidualOp(result), "a residual union is decided against the operator")
+		require.True(t, subtypeHolds(c.ctx, strLit("A"), result), "the transformed key is a member")
+		require.False(t, subtypeHolds(c.ctx, numLit(5), result), "the bound still rules out a non-string")
+	})
+
+	// An index read that cannot ground the bound has no answer to commit to. Answering anyway
+	// would produce `number | ...string["x"]`, a union whose bound is an unreduced access, and
+	// a union carrying an unreduced operator anywhere is decided against that operator rather
+	// than against the union. The whole access stays symbolic instead, so it reduces once the
+	// target grounds.
+	t.Run("an ungrounded index read over a bounded tail stays symbolic", func(t *testing.T) {
+		obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
+		target := &soltype.UnionType{Types: []soltype.Type{obj}, Inexact: true, TailBound: str()}
+		got := reduceType(&soltype.IndexType{Target: target, Index: strLit("x")})
+		require.Equal(t, `({x: number} | ... : string)["x"]`, soltype.Print(got))
+	})
+}
+
+// readCarrier peels a borrow held in a receiver variable's lower bounds so a field read does
+// not trip the borrow-escape guard. hasBorrowShape decides whether a lower bound carries a
+// borrow at all, and a bound whose only borrow sits in its open tail counts, since peelBorrows
+// peels that tail. Without it readCarrier would peel the bound and then hand back the bare
+// variable, re-borrowing what the read had freed.
+func TestReadCarrierPeelsATailOnlyBorrow(t *testing.T) {
+	c := newChecker()
+	ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
+		Elems: []soltype.ObjTypeElem{propElem("x", num())},
+	}}
+	// `{y: number} | ...&mut {x: number}`: no listed member is a borrow, only the tail bound is.
+	lb := newBoundedUnion(nil, []soltype.Type{
+		&soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("y", num())}},
+	}, ref)
+	v := c.ctx.freshVar(0)
+	v.LowerBounds = []soltype.Type{lb}
+
+	carrier := readCarrier(v)
+	require.NotSame(t, soltype.Type(v), carrier, "a tail-only borrow must divert to the peeled carrier")
+	require.Equal(t, "{y: number} | ... : {x: number}", soltype.Print(carrier))
+	require.True(t, hasBorrowShape(lb), "the tail bound's borrow is a borrow shape")
 }
