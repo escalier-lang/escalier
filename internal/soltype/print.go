@@ -261,11 +261,15 @@ func PrintAsSchemeWith(
 	// lifetime occurring under a complement.
 	//
 	// The third kind is named even when it reaches no parameter, so
-	// `fn () -> ¬(&'a mut {x: number})` renders `fn <'a>() -> ¬&'a mut {x: number}`
-	// with `'a` quantified but bound by nothing in the signature. That is a defect.
-	// coalesceLifetimes accepts it because eliding would be the worse defect. An elided
-	// complement changes the type rather than dropping a name, since `¬(&T)` is the
-	// complement of any borrow of T rather than of the `'a` one.
+	// `declare fn f<'a>() -> ¬(&'a mut {x: number})` renders
+	// `fn <'a>() -> ¬&'a mut {x: number}`. The name comes from the signature, never from
+	// this pass: a lifetime a signature uses without declaring is reported as an
+	// UndeclaredLifetimeError, so there is no name here to invent.
+	//
+	// The same signature over a plain borrow renders `fn () -> &mut {x: number}`, since a
+	// borrow that connects nothing loses only a name by eliding. Eliding under a
+	// complement changes the type instead, because `¬(&T)` is the complement of any
+	// borrow of T rather than of the `'a` one, so the complemented case keeps its name.
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
 	// after the type parameters.

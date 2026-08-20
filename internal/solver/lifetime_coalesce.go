@@ -245,8 +245,8 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 //
 // A lifetime a complement encloses is never elided. It renders under its own name even
 // when it connects nothing, because dropping it would change the type rather than drop a
-// name. That is the one case where a named lifetime is bound by nothing in the
-// signature, so `fn () -> ¬(&'a T)` quantifies an `'a` the caller cannot choose.
+// name. So `declare fn f<'a>() -> ¬(&'a T)` keeps `'a` in the quantifier prefix, where
+// the same signature over a plain borrow elides it.
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {
 		return soltype.Static, false
