@@ -148,6 +148,10 @@ func TestDoubleComplementFoldsBeforeLifetimePass(t *testing.T) {
 // at Negative a lower bound. So extruding the same borrow from level 5 to level 0 at
 // one root polarity leaves the origin with opposite bounds depending on whether a
 // complement encloses it, which is the outlives direction flipping.
+//
+// The types are assembled rather than written as source because the test drives the
+// extruder itself, at a chosen level and root polarity. Source reaches extrusion only as
+// a side effect of inference, which picks both.
 func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 	tests := []struct {
 		name              string
@@ -196,6 +200,12 @@ func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 // assert that `a` and `b` outlive `d`, and checkDeclaredLifetimeBounds would accept a
 // declared bound the body never establishes. Classifying `d` as a param instead leaves
 // the relation empty.
+//
+// The graph is wired directly rather than inferred from source because `m` names no
+// borrow, and a signature declaring a lifetime it never borrows under is rejected with
+// "lifetime parameter 'm is declared but never used". A real intermediary comes from
+// instantiating a borrow-passing function at a call site, which would make this a test
+// about inference rather than about the classifier.
 func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 	c := newChecker()
 	m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
@@ -252,6 +262,10 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 // Those are the variables the test builds, not the names they render under. The printer
 // assigns display names in first-appearance order, so `a`, `b`, `x` and `j` render as
 // `'a`, `'b`, `'c` and `'d`.
+//
+// The graph is wired directly for the same reason as
+// TestComplementedBorrowAssertsNoOutlivesRelation: `m` names no borrow, so no signature
+// can declare it.
 func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
 	// build wires the graph above and returns the signature, wrapping the second
 	// parameter's borrow in a complement when complemented is set.
