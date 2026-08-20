@@ -1748,12 +1748,13 @@ func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 	return nil, false
 }
 
-// meetMethods fuses two methods that share a name. An overloaded method fuses only
-// when the two overload sets are identical, which meetObjElem's equal-member check
-// already answered before reaching here, so a set that is not a single signature
-// keeps the objects apart. Static-ness must agree, since a static method lives on
-// the constructor value and an instance method on the instance, so the two are not
-// the same member.
+// meetMethods fuses two methods that share a name by meeting their signatures. It
+// fuses only single-signature methods, bailing when either carries an overload set.
+// Two identical methods never reach here, since meetObjElem's equal-member check
+// returns one of them first, so the overload sets that do reach here always differ,
+// and meeting two differing overload sets exactly is not attempted. Static-ness must
+// agree, since a static method lives on the constructor value and an instance method
+// on the instance, so the two are not the same member.
 func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
 	if a.Static != b.Static {
 		return nil, false
