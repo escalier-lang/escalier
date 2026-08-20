@@ -469,7 +469,7 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // method returns.
 func newChecker() *checker {
 	c := &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, varIDCounter: 1}
-	c.ctx.recordFusion = c.recordFusionEdge
+	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
 	return c
 }

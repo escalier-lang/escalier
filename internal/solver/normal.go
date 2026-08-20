@@ -712,7 +712,7 @@ func equalAtomLists(a, b []soltype.Type) bool {
 func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	fused, ok := c.meetFusedAtoms(a, b)
 	if ok {
-		c.recordNorm(fused, a, b)
+		c.recordFusion(fused, a, b)
 	}
 	return fused, ok
 }
@@ -763,7 +763,7 @@ func (c *Context) meetFusedAtoms(a, b soltype.Type) (soltype.Type, bool) {
 func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	fused, ok := c.joinFusedAtoms(a, b)
 	if ok {
-		c.recordNorm(fused, a, b)
+		c.recordFusion(fused, a, b)
 	}
 	return fused, ok
 }
@@ -1600,7 +1600,7 @@ func equalParamTypes(a, b *soltype.FuncType) bool {
 // is Positive because a shallow normalization reads the same at either one.
 func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
 	met := c.mkDNF(newIntersection(nil, []soltype.Type{a, b}), soltype.Positive).toType()
-	c.recordNorm(met, a, b)
+	c.recordFusion(met, a, b)
 	return met
 }
 
@@ -1608,7 +1608,7 @@ func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
 // widened record field are written from.
 func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
 	joined := c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
-	c.recordNorm(joined, a, b)
+	c.recordFusion(joined, a, b)
 	return joined
 }
 
