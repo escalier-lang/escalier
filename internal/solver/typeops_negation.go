@@ -262,10 +262,10 @@ func negatableOperand(t soltype.Type) bool {
 }
 
 // negatedSpineBorrow returns the first borrow on t's lattice spine, the atom the ¬Ref exclusion
-// invariant forbids a complement from naming, or nil when the spine holds none. It walks the same
-// union/intersection/negation spine as negatableOperand, so a caller that reports the violation can
-// name the offending borrow instead of only stating that one is present. See negatableOperand for
-// why the walk stops at the spine and treats a borrow under a second complement as forbidden.
+// invariant forbids a complement from naming, or nil when the spine holds none. negatableOperand's
+// boolean backs this walk, and a caller that reports the violation reads the borrow itself here so
+// it can name it. The walk stops at the spine: a borrow nested inside an atom, as in `¬{a: &'a T}`,
+// is a field of the type the negated part names rather than a negated part itself, so it is allowed.
 func negatedSpineBorrow(t soltype.Type) *soltype.RefType {
 	switch t := t.(type) {
 	case *soltype.RefType:

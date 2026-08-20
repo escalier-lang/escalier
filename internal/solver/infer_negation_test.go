@@ -187,7 +187,8 @@ func TestInferNegationInTemplateLit(t *testing.T) {
 // through the resolver's spine walk, so the diagnostic surfaces at the annotation rather than as a
 // panic deeper in normalization. A borrow reached only under a union or an intersection is caught
 // too, since De Morgan turns `¬(&Point | number)` into `¬(&Point) ∩ ¬number`, which still names the
-// borrow. The message renders the offending borrow with its `&` and `mut`, dropping the lifetime.
+// borrow. The message names the offending borrow with its `&` and `mut`; the plain `soltype.Print`
+// used here carries no lifetime names, so no borrow lifetime appears even when the source wrote one.
 func TestInferNegationOfBorrowRejected(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -212,6 +213,13 @@ func TestInferNegationOfBorrowRejected(t *testing.T) {
 		{
 			name:    "BorrowUnderIntersection",
 			src:     "class Point { x: number }\ntype Bad = ¬(number & &Point)",
+			wantErr: "cannot negate a borrow: &Point",
+		},
+		{
+			// A named lifetime the source wrote is still omitted, since plain soltype.Print
+			// carries no lifetime names.
+			name:    "BorrowWithNamedLifetime",
+			src:     "class Point { x: number }\ntype Bad<'a> = ¬(&'a Point)",
 			wantErr: "cannot negate a borrow: &Point",
 		},
 	}
