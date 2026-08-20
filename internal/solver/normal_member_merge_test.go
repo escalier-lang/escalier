@@ -172,12 +172,18 @@ func TestObjectMemberJoin(t *testing.T) {
 // so this checks fusableMember rather than the residual test alone keeps it out.
 func TestIndexSignatureObjectStaysUnfused(t *testing.T) {
 	c := &Context{}
+	// A settled index signature is `[K: string]?: number`, an optional member over an
+	// uncountable key set. MappedElemSettled recognizes it only when Optional is ModAdd.
+	// The non-optional `[K: string]: number` is uninhabited, so it stays an unsettled
+	// residual instead, which the residual check already keeps out.
 	withIndexSig := func() *soltype.ObjectType {
 		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
 			propElem("a", num()),
-			&soltype.MappedElem{Key: &soltype.MappedKeyType{ID: 0, Name: "K"}, Keys: str(), Value: num()},
+			&soltype.MappedElem{Key: &soltype.MappedKeyType{ID: 0, Name: "K"}, Keys: str(), Value: num(), Optional: soltype.ModAdd},
 		}}
 	}
+	require.True(t, soltype.MappedElemSettled(withIndexSig().Elems[1].(*soltype.MappedElem)),
+		"the index signature must be settled for this test to exercise fusableMember")
 	_, ok := c.meetObjects(withIndexSig(), withIndexSig())
 	require.False(t, ok, "meetObjects keeps an index-signature object unfused")
 	_, ok = c.joinObjects(withIndexSig(), withIndexSig())
