@@ -26,23 +26,22 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is
 		// how a mapped type filters its key set.
 		//
-		// No provenance is recorded. soltype.NeverType has no fields, so Go gives every
-		// `&soltype.NeverType{}` the same address, and the Prov side table is keyed by pointer
-		// identity. Recording against it would file every `never` annotation in the module under one
-		// entry, so each would report the last one's span as its blame, and the debugProv guard would
-		// panic on the second. A caller that needs a span for a rejected `never` falls back to the
-		// constraint site.
-		return &soltype.NeverType{}, true
+		// recordProvForResult records nothing here: NeverType is a shared zero-size singleton, so
+		// a caller that needs a span for a rejected `never` falls back to the constraint site.
+		t := &soltype.NeverType{}
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
 	case *ast.UnknownTypeAnn:
 		// `unknown` is the top of the lattice. Every type is a subtype of it through
 		// constrain's `_ <: unknown` rule, so it is the bound that admits any type at a
 		// position whose value is never read, as `fn () -> unknown` does in a type
 		// parameter's constraint.
 		//
-		// No provenance is recorded, for the reason the NeverTypeAnn arm above gives:
-		// soltype.UnknownType has no fields, so every `&soltype.UnknownType{}` shares one
-		// address and the pointer-keyed Prov table cannot tell two of them apart.
-		return &soltype.UnknownType{}, true
+		// recordProvForResult records nothing here, for the reason the NeverTypeAnn arm gives:
+		// UnknownType is a shared zero-size singleton.
+		t := &soltype.UnknownType{}
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
@@ -597,13 +596,10 @@ func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl in
 	} else {
 		t = newUnion(c.ctx, members, ta.Inexact)
 	}
-	// newUnion can collapse to an input member's pointer (single-member
-	// dedup, or subsumption). Re-recording Prov on a pointer that already
-	// carries it would overwrite the narrower child-annotation blame and
-	// trip the debugProv guard.
-	if !c.hasProv(t) {
-		c.recordProv(t, ta, AnnotationType)
-	}
+	// newUnion can collapse to an input member's pointer on single-member dedup or
+	// subsumption, so the result may already carry that member's blame. recordProvForResult
+	// records only a fresh, uniquely-owned result.
+	c.recordProvForResult(t, ta, AnnotationType)
 	return t, true
 }
 
@@ -618,9 +614,7 @@ func (c *checker) resolveIntersectionTypeAnn(scope *Scope, ta *ast.IntersectionT
 		}
 	}
 	t := newIntersection(c.ctx, members)
-	if !c.hasProv(t) {
-		c.recordProv(t, ta, AnnotationType)
-	}
+	c.recordProvForResult(t, ta, AnnotationType)
 	return t, true
 }
 
@@ -657,14 +651,11 @@ func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, 
 		return c.report(&NegatedBorrowError{Ann: ta, Borrow: borrow}), false
 	}
 	t := newNegation(operand)
-	// newNegation can return a pointer that already carries prov: `¬¬T` folds to the operand's
-	// inner, and the lattice-bound folds return the shared zero-size NeverType/UnknownType
-	// singletons every `&soltype.NeverType{}` shares an address with. Re-recording would overwrite
-	// the narrower child-annotation blame and trip the debugProv guard, so record only the first
-	// writer, mirroring resolveUnionTypeAnn.
-	if !c.hasProv(t) {
-		c.recordProv(t, ta, AnnotationType)
-	}
+	// newNegation can return a pointer that is not freshly minted: `¬¬T` folds to the
+	// operand's inner T, and the lattice-bound folds return the shared zero-size
+	// NeverType/UnknownType singletons. recordProvForResult skips both the already-blamed
+	// inner and the module-shared singleton, mirroring resolveUnionTypeAnn.
+	c.recordProvForResult(t, ta, AnnotationType)
 	return t, true
 }
 
@@ -675,12 +666,13 @@ func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, 
 //
 // `null` and `undefined` become the atoms atomLitOf returns. That makes both writable in an
 // annotation, so a binding can be declared `val n: null = null` and `NonNullable<T>` can test
-// its argument against `null | undefined`. The atom returns above the recordProv call below,
-// since neither atom can carry provenance. atomLitOf explains why.
+// its argument against `null | undefined`. recordProvForResult records nothing for either atom,
+// since both are shared zero-size singletons that cannot carry provenance.
 //
 // A literal with no soltype form, such as a regex or a bigint, reports unsupported and recovers.
 func (c *checker) resolveLitTypeAnn(ta *ast.LitTypeAnn) (soltype.Type, bool) {
 	if atom, _, isAtom := atomLitOf(ta.Lit); isAtom {
+		c.recordProvForResult(atom, ta, AnnotationType)
 		return atom, true
 	}
 	lit, ok := c.litTypeOf(ta.Lit)

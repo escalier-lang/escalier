@@ -59,13 +59,15 @@ func TestInferNegationTypeAnnResolves(t *testing.T) {
 	}
 }
 
-// newNegation can hand back a pointer that already carries provenance: `¬¬T` folds to the operand's
-// inner, and the lattice-bound folds return the shared zero-size NeverType/UnknownType singletons
-// every instance of which shares one address. resolveNegationTypeAnn records prov only on the first
-// writer, so a second annotation that folds to the same pointer overwrites no earlier blame and does
-// not trip the debugProv unique-pointer guard. Each case resolves two distinct annotations that fold
-// to one shared pointer and asserts the second records nothing new. inferSource leaves debugProv off,
-// so the test drives the resolver directly with the guard on, mirroring the atom-annotation test.
+// newNegation can hand back a pointer that is not freshly minted: `¬¬T` folds to the operand's
+// inner T, which already carries its own blame, and the lattice-bound folds return the shared
+// zero-size NeverType/UnknownType singletons every instance of which shares one address.
+// resolveNegationTypeAnn routes through recordProvForResult, which records neither, so a second
+// annotation that folds to the same pointer overwrites no earlier blame and does not trip the
+// debugProv unique-pointer guard. Each case resolves two distinct annotations that fold to one
+// shared pointer and asserts the second does not panic. TestProvSharedSingletonRecordsNothing
+// asserts the stronger fact that a singleton fold records nothing at all. inferSource leaves
+// debugProv off, so the test drives the resolver directly with the guard on.
 func TestResolveNegationFoldRecordsProvOnce(t *testing.T) {
 	str := func() ast.TypeAnn { return ast.NewLitTypeAnn(ast.NewString("a", testSpan()), testSpan()) }
 	tests := []struct {

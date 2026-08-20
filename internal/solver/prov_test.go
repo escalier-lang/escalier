@@ -209,6 +209,43 @@ func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
 	require.False(t, ok, "a coalesced type must have no provenance entry")
 }
 
+// A resolver arm whose result is a shared zero-size singleton records no provenance.
+// Every &UnknownType{} shares one address, so an entry would file every such annotation
+// in the module under one node. This is the mis-blame the guarded record path let
+// through for `¬never`: it folds to the shared `unknown` singleton, and the first such
+// annotation would capture the address, after which every later `unknown` — a bare
+// `unknown` annotation included — would resolve its blame to that first `¬never`.
+// recordProvForResult's singleton skip records nothing, so Prov stays empty. debugProv
+// is on so a stray record against a singleton already blamed by an earlier case would
+// also panic.
+func TestProvSharedSingletonRecordsNothing(t *testing.T) {
+	tests := []struct {
+		name string
+		ann  func() ast.TypeAnn
+	}{
+		{"never", func() ast.TypeAnn { return ast.NewNeverTypeAnn(testSpan()) }},
+		{"unknown", func() ast.TypeAnn { return ast.NewUnknownTypeAnn(testSpan()) }},
+		{"¬never folds to unknown", func() ast.TypeAnn {
+			return ast.NewNegationTypeAnn(ast.NewNeverTypeAnn(testSpan()), testSpan())
+		}},
+		{"¬unknown folds to never", func() ast.TypeAnn {
+			return ast.NewNegationTypeAnn(ast.NewUnknownTypeAnn(testSpan()), testSpan())
+		}},
+		{"null", func() ast.TypeAnn { return ast.NewLitTypeAnn(ast.NewNull(testSpan()), testSpan()) }},
+		{"undefined", func() ast.TypeAnn { return ast.NewLitTypeAnn(ast.NewUndefined(testSpan()), testSpan()) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newChecker()
+			c.debugProv = true
+			ty, ok := c.resolveTypeAnn(NewScope(), tt.ann(), 0)
+			require.True(t, ok)
+			require.True(t, sharedSingleton(ty), "result must be a shared zero-size singleton")
+			require.Empty(t, c.prov, "a shared singleton must record no provenance")
+		})
+	}
+}
+
 // The debugProv guard (finding #5) enforces the unique-pointer invariant: recording
 // the SAME type pointer against a DIFFERENT node panics (catching a future
 // interned/coalesced-pointer reuse that would silently mis-blame), while
