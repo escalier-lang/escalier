@@ -698,9 +698,27 @@ func equalAtomLists(a, b []soltype.Type) bool {
 // fusion exists, which tells the caller to keep both atoms. A returned `never`
 // means the two atoms are disjoint, so the enclosing conjunct is uninhabited.
 //
-// The kinds not named below never fuse. That costs nothing: a two-atom list is
-// already the precise meet, and only the atom count grows.
+// The kinds not named in meetFusedAtoms never fuse. That costs nothing: a two-atom
+// list is already the precise meet, and only the atom count grows.
+//
+// Every fusion mints one FromNormalization provenance edge here, at the single point
+// each merge passes through, rather than in the per-kind helpers. The edge names a
+// and b, the two atoms the merge combined. An identity or absorption result is one
+// of the sources. `A & A` is `A` and `5 & number` is `5`, and recordFusionEdge skips
+// such a result so the source keeps its own leaf origin. glbClass's meetClassArgs
+// also runs from instanceBelow, which fuses two tags only to test a relation and
+// discards the result. That call does not pass through here, so a throwaway tag meet
+// mints no edge for the fused tag.
 func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fused, ok := c.meetFusedAtoms(a, b)
+	if ok {
+		c.recordFusion(fused, a, b)
+	}
+	return fused, ok
+}
+
+// meetFusedAtoms computes the meet of two atoms without recording provenance.
+func (c *Context) meetFusedAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if equalType(a, b) {
 		return a, true
 	}
@@ -740,7 +758,18 @@ func (c *Context) meetAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // `{x: number} | {y: number}` stays two members: two records with different field
 // names have no single record that stands for their union, so the merge bails and
 // the union keeps both.
+//
+// It mints the FromNormalization edge naming a and b the way meetAtoms does.
 func (c *Context) joinAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fused, ok := c.joinFusedAtoms(a, b)
+	if ok {
+		c.recordFusion(fused, a, b)
+	}
+	return fused, ok
+}
+
+// joinFusedAtoms computes the join of two atoms without recording provenance.
+func (c *Context) joinFusedAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if equalType(a, b) {
 		return a, true
 	}
@@ -1570,13 +1599,17 @@ func equalParamTypes(a, b *soltype.FuncType) bool {
 // and a borrow — are opaque atoms that no merge takes apart. The polarity passed
 // is Positive because a shallow normalization reads the same at either one.
 func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
-	return c.mkDNF(newIntersection(nil, []soltype.Type{a, b}), soltype.Positive).toType()
+	met := c.mkDNF(newIntersection(nil, []soltype.Type{a, b}), soltype.Positive).toType()
+	c.recordFusion(met, a, b)
+	return met
 }
 
 // joinTypes is the join twin of meetTypes, the one a fused arrow's domain and a
 // widened record field are written from.
 func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
-	return c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
+	joined := c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
+	c.recordFusion(joined, a, b)
+	return joined
 }
 
 // plainProps returns an object's members as properties, and ok is false when the

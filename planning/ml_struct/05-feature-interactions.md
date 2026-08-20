@@ -196,6 +196,45 @@ not reach codegen.**
 
 ---
 
+## Diagnostics and blame
+
+Normalization mints types no AST node minted. A structural merge fuses two atoms
+into one — two records field by field, two arrows into one, two tags of one class —
+and the fused node is a pointer nobody wrote. `Prov`, the side table that maps a
+type back to its origin, is keyed by pointer identity, so a fused node resolves to
+nothing and a diagnostic naming it falls back to the constraint site's span rather
+than the narrower node it would otherwise blame.
+
+The rule for the minting side is settled here so a later PR in the epic follows one
+convention. Every fusion records a `FromNormalization` interior edge naming the two
+atoms it merged. `Origin` is an interface, so the edge is an addition rather than a
+change to the table's value type, alongside the `FromAST` leaf and the
+`FromInstantiation` edge.
+
+The two atom-merge dispatchers `meetAtoms` and `joinAtoms` in
+`internal/solver/normal.go` mint the edge for every fusion they perform — a
+structural merge of two records, tuples, arrows, borrows, or class tags; a
+value-atom absorption; or a `never` from two disjoint atoms — naming the two atoms
+combined. The field-level `meetTypes` and `joinTypes` each record the member node
+they build as well, since a rebuilt arrow domain such as `number | string` or a
+field that collapses to `never` does not itself pass back through a dispatcher. An
+identity or absorption merge returns a source unchanged, `A & A` is `A` and
+`5 & number` is `5`, and keeps that source's own leaf origin rather than gaining a
+self-referential edge. `meetClassArgs` also runs from `instanceBelow`, which fuses
+two tags only to test a subtype relation and discards the result; that path bypasses
+the dispatchers, so a throwaway meet does not mint a container edge.
+
+The rendering side is deferred to M11.5, the multi-hop provenance renderer in
+`planning/simple_sub/01-milestones.md`. `NodeFor` resolves only the `FromAST` leaf
+today, so a `FromNormalization` edge is minted-but-unread and no diagnostic moves
+until that renderer chases the edge to its AST leaves. A fused atom has more than
+one source, which the single-source `FromAST` and `FromInstantiation` edges never
+do, so the renderer needs a rule the others do not. Two candidates: blame the
+nearest common ancestor of the leaves, or attach every leaf as a related span. The
+choice belongs with the renderer and is recorded here when it is made.
+
+---
+
 ## The cross-cutting theme
 
 Negation upgrades **every set-difference in the language at once**: type-level
@@ -214,3 +253,4 @@ inference win does not reach codegen, so MLstruct complicates rather than upgrad
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
 | Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |
+| Diagnostics / blame | **Precision cost** — a structural merge mints a fused node no AST node wrote, so `Prov` resolves it to nothing and blame widens to the constraint site. Each merge records a `FromNormalization` edge naming the atoms it fused; the renderer that chases it to AST leaves is deferred to M11.5. |

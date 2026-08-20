@@ -19,8 +19,9 @@ import (
 // variant rather than changing the map's value type.
 type Prov map[soltype.Type]Origin
 
-// Origin is a tagged sum naming the kind of hop that minted a type. M2.5 shipped
-// the FromAST leaf; M3 adds FromInstantiation; the rest are deferred.
+// Origin is a tagged sum naming the kind of hop that minted a type. FromAST is the
+// leaf; FromInstantiation and FromNormalization are interior edges; the rest are
+// deferred.
 type Origin interface{ isOrigin() }
 
 // FromAST is the leaf: a direct AST cause for a freshly-minted type.
@@ -41,6 +42,24 @@ type FromInstantiation struct {
 }
 
 func (FromInstantiation) isOrigin() {}
+
+// FromNormalization is the interior edge a normal-form fusion mints: the atom the
+// merge produced came from the atoms it merged. `((x: number) -> boolean) &
+// ((x: string) -> boolean)` reaches the solver as the one arrow
+// `(x: number | string) -> boolean`, and neither the fused arrow nor its fused
+// domain `number | string` was written by an AST node, so without this edge both
+// resolve to nothing and a diagnostic naming one falls back to the constraint
+// site's span.
+//
+// From holds the two atoms the fusion combined, in the order the merge received
+// them. It carries no AST node of its own. The renderer that chases From back to
+// its AST leaves is M11.5's multi-hop provenance renderer, so NodeFor still
+// resolves only FromAST. This mints the edge; nothing reads it yet.
+type FromNormalization struct {
+	From []soltype.Type
+}
+
+func (FromNormalization) isOrigin() {}
 
 // ASTOriginKind tags WHY a node minted a type, so a renderer/LSP can phrase blame
 // ("the literal here", "this argument", "field `x`") without re-deriving it from
@@ -124,11 +143,39 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	c.prov[t] = FromAST{Node: n, Kind: kind}
 }
 
+// recordFusionEdge records the FromNormalization interior edge a normal-form
+// fusion mints, installed on Context in newChecker so a fusion in normal.go or
+// classes.go can reach the table the checker owns. fused is the atom the merge
+// produced; from names the atoms it merged.
+//
+// It writes nothing when fused already carries an origin, or when fused is one of
+// its own sources. An identity or absorption merge returns a source unchanged.
+// `A & A` is `A` and `5 & number` is `5`, so that source keeps its own leaf origin
+// rather than gaining a self-referential edge. A genuinely fresh fused node is a
+// distinct pointer with no entry, so it records.
+//
+// The write routes through snapshotProv so a discarded speculative trial rolls the
+// entry back, the same discipline recordProv and recordInstantiation follow. It
+// does not consult debugProv, since a fused pointer can legitimately already carry
+// an origin through interning. A re-record is skipped rather than crashing.
+func (c *checker) recordFusionEdge(fused soltype.Type, from []soltype.Type) {
+	if _, ok := c.prov[fused]; ok {
+		return
+	}
+	for _, src := range from {
+		if src == fused {
+			return
+		}
+	}
+	c.snapshotProv(fused)
+	c.prov[fused] = FromNormalization{From: from}
+}
+
 // snapshotProv registers a probe rollback for a pending write to t's Prov entry,
 // so a discarded speculative trial leaves Prov exactly as it was. A no-op when no
-// probe is open. Shared by both Prov writers (recordProv, recordInstantiation) so
-// every speculative side-table write is reversible; delegates to the same
-// snapshotMapEntry helper as recordType's Info write.
+// probe is open. recordProv, recordInstantiation, and recordFusionEdge all route
+// through it, so each speculative side-table write is reversible. It delegates to
+// the same snapshotMapEntry helper as recordType's Info write.
 func (c *checker) snapshotProv(t soltype.Type) {
 	snapshotMapEntry(c, c.prov, t)
 }
