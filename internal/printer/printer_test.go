@@ -569,6 +569,13 @@ func TestPrintTypeAnnGrouping(t *testing.T) {
 		{"keyof in union", "keyof A | B", "keyof A | B"},
 		{"union under mut", "mut (A | B)", "mut (A | B)"},
 		{"function type under keyof", "keyof fn () -> A", "keyof fn () -> A"},
+		// `¬` is a prefix like `keyof`, so it takes the whole annotation that follows and
+		// renders with no space before its operand, matching the solver's `¬number`.
+		{"negation of ref", "¬A", "¬A"},
+		{"negation in intersection", "A & ¬B", "A & ¬B"},
+		{"negation in union", "¬A | B", "¬A | B"},
+		{"union under negation", "¬(A | B)", "¬(A | B)"},
+		{"intersection under negation", "¬(A & B)", "¬(A & B)"},
 		// An indexed access reads from a target that binds as tightly as a type
 		// reference, so anything carrying an operator has to be wrapped.
 		{"union as index target", "(A | B)[C]", "(A | B)[C]"},

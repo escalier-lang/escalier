@@ -2894,3 +2894,93 @@
     },
 }
 ---
+
+[TestParseTypeAnnNoErrors/NegationType - 1]
+&ast.NegationTypeAnn{
+    Type: &ast.TypeRefTypeAnn{
+        Name: &ast.Ident{
+            Name: "T",
+            span: 1:2-1:3,
+        },
+        span: 1:2-1:3,
+    },
+    span: 1:1-1:3,
+}
+---
+
+[TestParseTypeAnnNoErrors/UnionTypeWithNegation - 1]
+&ast.UnionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.NegationTypeAnn{
+            Type: &ast.TypeRefTypeAnn{
+                Name: &ast.Ident{
+                    Name: "T",
+                    span: 1:2-1:3,
+                },
+                span: 1:2-1:3,
+            },
+            span: 1:1-1:3,
+        },
+        &ast.TypeRefTypeAnn{
+            Name: &ast.Ident{
+                Name: "U",
+                span: 1:6-1:7,
+            },
+            span: 1:6-1:7,
+        },
+    },
+    span: 1:1-1:7,
+}
+---
+
+[TestParseTypeAnnNoErrors/NegationOfLiteral - 1]
+&ast.NegationTypeAnn{
+    Type: &ast.LitTypeAnn{
+        Lit: &ast.StrLit{
+            Value: "a",
+            span: 1:2-1:5,
+        },
+        span: 1:2-1:5,
+    },
+    span: 1:1-1:5,
+}
+---
+
+[TestParseTypeAnnNoErrors/IntersectionTypeWithNegation - 1]
+&ast.IntersectionTypeAnn{
+    Types: []ast.TypeAnn{
+        &ast.StringTypeAnn{
+            span: 1:1-1:7,
+        },
+        &ast.NegationTypeAnn{
+            Type: &ast.LitTypeAnn{
+                Lit: &ast.StrLit{
+                    Value: "a",
+                    span: 1:11-1:14,
+                },
+                span: 1:11-1:14,
+            },
+            span: 1:10-1:14,
+        },
+    },
+    span: 1:1-1:14,
+}
+---
+
+[TestParseTypeAnnErrorHandling/NegationMissingType - 1]
+&ast.NegationTypeAnn{
+    Type: &ast.ErrorTypeAnn{
+        span: 1:1-1:2,
+    },
+    span: 1:1-1:2,
+}
+---
+
+[TestParseTypeAnnErrorHandling/NegationMissingType - 2]
+[]*parser.Error{
+    &parser.Error{
+        Span: 1:1-1:2,
+        Message: "expected a type annotation after '¬'",
+    },
+}
+---

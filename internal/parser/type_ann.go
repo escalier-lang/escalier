@@ -495,6 +495,17 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				typ,
 				ast.NewSpan(token.Span.Start, typ.Span().End, p.lexer.source.ID),
 			)
+		case Negation: // ¬T complement type
+			p.lexer.consume() // consume '¬'
+			typ := p.primaryTypeAnn()
+			if typ == nil {
+				p.reportError(token.Span, "expected a type annotation after '¬'")
+				typ = ast.NewErrorTypeAnn(token.Span)
+			}
+			typeAnn = ast.NewNegationTypeAnn(
+				typ,
+				ast.NewSpan(token.Span.Start, typ.Span().End, p.lexer.source.ID),
+			)
 		case Typeof: // typeof value
 			p.lexer.consume() // consume 'typeof'
 			// Parse the identifier that refers to a value

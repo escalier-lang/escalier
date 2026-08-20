@@ -338,6 +338,8 @@ func (lexer *Lexer) next() *Token {
 		} else {
 			token = NewToken(Ampersand, "&", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 		}
+	case '¬':
+		token = NewToken(Negation, "¬", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '`':
 		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
 	case '?':

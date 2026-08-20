@@ -115,6 +115,9 @@ const (
 	// snapshots record a token's numeric value, so inserting mid-enum renumbers every token
 	// after it.
 	Super
+	// Negation is `¬` (U+00AC), the prefix operator for a complement type. Appended for
+	// the same reason as Super: a token added mid-enum renumbers every token after it.
+	Negation
 )
 
 type Token struct {

@@ -26,6 +26,7 @@ func (*IntersectionTypeAnn) isTypeAnn() {}
 func (*TypeRefTypeAnn) isTypeAnn()      {}
 func (*FuncTypeAnn) isTypeAnn()         {}
 func (*KeyOfTypeAnn) isTypeAnn()        {}
+func (*NegationTypeAnn) isTypeAnn()     {}
 func (*TypeOfTypeAnn) isTypeAnn()       {}
 func (*IndexTypeAnn) isTypeAnn()        {}
 func (*CondTypeAnn) isTypeAnn()         {}
@@ -501,6 +502,24 @@ func NewKeyOfTypeAnn(typ TypeAnn, span Span) *KeyOfTypeAnn {
 	return &KeyOfTypeAnn{Type: typ, span: span, inferredType: nil}
 }
 func (t *KeyOfTypeAnn) Accept(v Visitor) {
+	if v.EnterTypeAnn(t) {
+		t.Type.Accept(v)
+	}
+	v.ExitTypeAnn(t)
+}
+
+// NegationTypeAnn is the prefix `¬T`, the set-theoretic complement admitting every value
+// its operand rejects. It resolves to a soltype.NegationType.
+type NegationTypeAnn struct {
+	Type         TypeAnn
+	span         Span
+	inferredType Type
+}
+
+func NewNegationTypeAnn(typ TypeAnn, span Span) *NegationTypeAnn {
+	return &NegationTypeAnn{Type: typ, span: span, inferredType: nil}
+}
+func (t *NegationTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
 		t.Type.Accept(v)
 	}
