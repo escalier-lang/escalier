@@ -193,6 +193,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.resolveFuncTypeAnn(scope, ta, lvl)
 	case *ast.KeyOfTypeAnn:
 		return c.resolveKeyOfTypeAnn(scope, ta, lvl)
+	case *ast.NegationTypeAnn:
+		return c.resolveNegationTypeAnn(scope, ta, lvl)
 	case *ast.IndexTypeAnn:
 		return c.resolveIndexTypeAnn(scope, ta, lvl)
 	case *ast.TypeOfTypeAnn:
@@ -633,6 +635,36 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	}
 	t := &soltype.KeyofType{Operand: operand}
 	c.recordProv(t, ta, AnnotationType)
+	return t, true
+}
+
+// resolveNegationTypeAnn lowers `¬T` to the complement of its operand through newNegation, which
+// folds `¬never` to `unknown`, `¬unknown` to `never`, `¬¬T` to `T`, and `¬(open union)` to `never`.
+// An unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
+//
+// A borrow is the one atom a complement may not name, the ¬Ref exclusion invariant. The outlives
+// lattice a borrow's lifetime lives in has no complement, so `¬(&'a Point)` names nothing. The check
+// reaches a borrow anywhere on the operand's spine, not only at the top, because De Morgan turns
+// `¬(&'a Point | number)` into `¬(&'a Point) ∩ ¬number`, which still names the borrow. The solver
+// enforces this on the complements it builds itself; a written `¬` routes through the same spine walk
+// here so the diagnostic surfaces at the annotation rather than as a panic deeper in normalization.
+func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, lvl int) (soltype.Type, bool) {
+	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
+	if !ok {
+		operand = c.freshAt(lvl)
+	}
+	if borrow := negatedSpineBorrow(operand); borrow != nil {
+		return c.report(&NegatedBorrowError{Ann: ta, Borrow: borrow}), false
+	}
+	t := newNegation(operand)
+	// newNegation can return a pointer that already carries prov: `¬¬T` folds to the operand's
+	// inner, and the lattice-bound folds return the shared zero-size NeverType/UnknownType
+	// singletons every `&soltype.NeverType{}` shares an address with. Re-recording would overwrite
+	// the narrower child-annotation blame and trip the debugProv guard, so record only the first
+	// writer, mirroring resolveUnionTypeAnn.
+	if !c.hasProv(t) {
+		c.recordProv(t, ta, AnnotationType)
+	}
 	return t, true
 }
 

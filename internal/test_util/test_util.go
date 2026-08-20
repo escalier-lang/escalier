@@ -176,6 +176,11 @@ func typeAnnToType(typeAnn ast.TypeAnn) Type {
 		// annotation here is a test mistake. Fail with a clear cause rather
 		// than the generic default below.
 		panic("typeAnnToType: borrow annotations are unsupported in the legacy test helper")
+	case *ast.NegationTypeAnn:
+		// The legacy type system has no complement representation. A NegationType
+		// lives only in the SimpleSub-based solver, so feeding a `¬T` annotation here
+		// is a test mistake. Fail with a clear cause rather than the generic default below.
+		panic("typeAnnToType: negation annotations are unsupported in the legacy test helper")
 	default:
 		panic(fmt.Sprintf("ConvertTypeAnnToType: unsupported type annotation: %T", typeAnn))
 	}

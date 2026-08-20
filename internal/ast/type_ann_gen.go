@@ -74,6 +74,10 @@ func (node *KeyOfTypeAnn) Span() Span             { return node.span }
 func (node *KeyOfTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *KeyOfTypeAnn) SetInferredType(t Type) { node.inferredType = t }
 
+func (node *NegationTypeAnn) Span() Span             { return node.span }
+func (node *NegationTypeAnn) InferredType() Type     { return node.inferredType }
+func (node *NegationTypeAnn) SetInferredType(t Type) { node.inferredType = t }
+
 func (node *TypeOfTypeAnn) Span() Span             { return node.span }
 func (node *TypeOfTypeAnn) InferredType() Type     { return node.inferredType }
 func (node *TypeOfTypeAnn) SetInferredType(t Type) { node.inferredType = t }

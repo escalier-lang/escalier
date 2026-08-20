@@ -1412,6 +1412,9 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 	case *ast.KeyOfTypeAnn:
 		p.writeString("keyof ")
 		p.printPrefixTypeAnnOperand(t.Type)
+	case *ast.NegationTypeAnn:
+		p.writeString("¬")
+		p.printPrefixTypeAnnOperand(t.Type)
 	case *ast.TypeOfTypeAnn:
 		p.writeString("typeof ")
 		p.printQualIdent(t.Value)
@@ -1630,8 +1633,8 @@ const (
 	precTypeOpenEnded    = 1
 	precTypeUnion        = 2
 	precTypeIntersection = 3
-	// precTypePrefix covers `keyof A`, `mut A`, `&A`, and `infer A`. Each takes the whole
-	// annotation that follows it.
+	// precTypePrefix covers `keyof A`, `mut A`, `&A`, `infer A`, and `¬A`. Each takes the
+	// whole annotation that follows it.
 	precTypePrefix = 4
 	// precTypePrimary is for an annotation that nothing can regroup, such as a type
 	// reference, an object type, a tuple, or an indexed access.
@@ -1647,7 +1650,7 @@ func typeAnnPrecedence(t ast.TypeAnn) int {
 		return precTypeUnion
 	case *ast.IntersectionTypeAnn:
 		return precTypeIntersection
-	case *ast.KeyOfTypeAnn, *ast.MutableTypeAnn, *ast.RefTypeAnn, *ast.InferTypeAnn:
+	case *ast.KeyOfTypeAnn, *ast.MutableTypeAnn, *ast.RefTypeAnn, *ast.InferTypeAnn, *ast.NegationTypeAnn:
 		return precTypePrefix
 	default:
 		return precTypePrimary

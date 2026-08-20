@@ -224,6 +224,16 @@ func (c *Checker) inferTypeAnn(
 		argType, argErrors := c.inferTypeAnn(ctx, typeAnn.Type)
 		errors = slices.Concat(errors, argErrors)
 		t = type_system.NewKeyOfType(provenance, argType)
+	case *ast.NegationTypeAnn:
+		// The complement type lives only in the SimpleSub-based solver, which has a
+		// NegationType this checker's type_system has no counterpart for. Report cleanly
+		// rather than panicking on the default arm so a stray `¬T` can't crash the CLI or LSP,
+		// mirroring the RefTypeAnn arm below.
+		errors = append(errors, &UnimplementedError{
+			message: "negation types are unsupported in the legacy checker",
+			span:    typeAnn.Span(),
+		})
+		t = type_system.NewErrorType(provenance)
 	case *ast.MutableTypeAnn:
 		targetType, targetErrors := c.inferTypeAnn(ctx, typeAnn.Target)
 		errors = slices.Concat(errors, targetErrors)

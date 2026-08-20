@@ -258,18 +258,37 @@ func negatableOperands(types []soltype.Type) bool {
 // existing complement around a rewritten operand chooses nothing, which is why soltype.NewNegation
 // draws the same distinction.
 func negatableOperand(t soltype.Type) bool {
+	return negatedSpineBorrow(t) == nil
+}
+
+// negatedSpineBorrow returns the first borrow on t's lattice spine, the atom the ¬Ref exclusion
+// invariant forbids a complement from naming, or nil when the spine holds none. It walks the same
+// union/intersection/negation spine as negatableOperand, so a caller that reports the violation can
+// name the offending borrow instead of only stating that one is present. See negatableOperand for
+// why the walk stops at the spine and treats a borrow under a second complement as forbidden.
+func negatedSpineBorrow(t soltype.Type) *soltype.RefType {
 	switch t := t.(type) {
 	case *soltype.RefType:
-		return false
+		return t
 	case *soltype.UnionType:
-		return negatableOperands(t.Types)
+		return firstSpineBorrow(t.Types)
 	case *soltype.IntersectionType:
-		return negatableOperands(t.Types)
+		return firstSpineBorrow(t.Types)
 	case *soltype.NegationType:
-		return negatableOperand(t.Inner)
+		return negatedSpineBorrow(t.Inner)
 	default:
-		return true
+		return nil
 	}
+}
+
+// firstSpineBorrow returns the first borrow negatedSpineBorrow finds across these types, or nil.
+func firstSpineBorrow(types []soltype.Type) *soltype.RefType {
+	for _, t := range types {
+		if r := negatedSpineBorrow(t); r != nil {
+			return r
+		}
+	}
+	return nil
 }
 
 // nativeDifference rewrites a distributive conditional that filters its own operand into the set

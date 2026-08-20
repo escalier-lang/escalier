@@ -245,6 +245,9 @@ func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	case *ast.KeyOfTypeAnn:
 		tt.Type = r.rewrite(tt.Type)
 		return tt
+	case *ast.NegationTypeAnn:
+		tt.Type = r.rewrite(tt.Type)
+		return tt
 	case *ast.IndexTypeAnn:
 		tt.Target = r.rewrite(tt.Target)
 		tt.Index = r.rewrite(tt.Index)
