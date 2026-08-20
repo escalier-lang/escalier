@@ -163,6 +163,7 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 //     singletons. The FromAST skip alone would miss them: the first annotation to
 //     fold to a singleton would record against the shared address, and every later
 //     use of that singleton would then resolve its blame to that first annotation.
+//     #1171 weighs making these atoms distinct pointers so they could carry blame.
 //
 // recordProv keeps its strict unique-pointer contract for genuinely-minted types;
 // this wrapper is what the arms that cannot promise a fresh pointer call instead.
