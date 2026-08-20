@@ -738,6 +738,9 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		if a.Optional != b.Optional {
 			return boolOrder(a.Optional) - boolOrder(b.Optional)
 		}
+		if a.Readonly != b.Readonly {
+			return boolOrder(a.Readonly) - boolOrder(b.Readonly)
+		}
 		return compareType(a.Type, b.Type)
 	case *soltype.MethodElem:
 		b := b.(*soltype.MethodElem)

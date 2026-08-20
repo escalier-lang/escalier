@@ -215,7 +215,7 @@ func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTy
 			} else {
 				ft = &soltype.UnknownType{}
 			}
-			elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: e.Optional})
+			elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: e.Optional, Readonly: e.Readonly})
 		case *ast.MethodTypeAnn:
 			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
 			elems = append(elems, &soltype.MethodElem{Name: objKeyNameReq(t, e.Name), Signatures: []*soltype.FuncType{fn}})

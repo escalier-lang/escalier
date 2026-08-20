@@ -84,6 +84,11 @@ func TestObjectMemberMeet(t *testing.T) {
 			want: "{foo: number} & {foo(self) -> number}",
 		},
 		{
+			name: "a readonly and a writable field of one name keep both atoms",
+			in:   "{readonly x: number} & {x: number}",
+			want: "{x: number} & {readonly x: number}",
+		},
+		{
 			name: "an exact object meets an exact object lacking its method: never",
 			in:   "{foo(self) -> number} & {bar(self) -> number}",
 			want: "never",
@@ -146,6 +151,11 @@ func TestObjectMemberJoin(t *testing.T) {
 			in:   "{new () -> number} | {new () -> string}",
 			want: "{new () -> number} | {new () -> string}",
 		},
+		{
+			name: "a readonly and a writable field of one name keep both atoms",
+			in:   "{readonly x: number} | {x: string}",
+			want: "{x: string} | {readonly x: number}",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -172,4 +182,20 @@ func TestIndexSignatureObjectStaysUnfused(t *testing.T) {
 	require.False(t, ok, "meetObjects keeps an index-signature object unfused")
 	_, ok = c.joinObjects(withIndexSig(), withIndexSig())
 	require.False(t, ok, "joinObjects keeps an index-signature object unfused")
+}
+
+// TestStaticMethodMismatchStaysUnfused covers meetMethods' Static bail. A static
+// method lives on the constructor value and an instance method on the instance, so
+// two methods of one name that disagree on Static are not the same member and the
+// objects stay apart. Object type annotations have no static-member syntax, so this
+// builds the objects directly.
+func TestStaticMethodMismatchStaysUnfused(t *testing.T) {
+	c := &Context{}
+	method := func(static bool) *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.MethodElem{Name: "foo", Static: static, Signatures: []*soltype.FuncType{{Ret: num()}}},
+		}}
+	}
+	_, ok := c.meetObjects(method(true), method(false))
+	require.False(t, ok, "a static and an instance method of one name keep both atoms")
 }
