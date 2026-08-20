@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -194,27 +195,147 @@ func envLookup(t *testing.T, env map[string]soltype.Type, ta *ast.TypeRefTypeAnn
 	return bound
 }
 
-// objectToSoltype lowers an ObjectTypeAnn into a soltype.ObjectType. Only
-// property elements (`name: T`, `name?: T`) are accepted, mirroring the
-// production resolveObjectTypeAnn arm. Method, getter, setter, index, and
-// spread elements fail the test since the lattice tests do not need them.
+// objectToSoltype lowers an ObjectTypeAnn into a soltype.ObjectType. It accepts
+// property, method, getter, setter, constructor, and mapped members, mirroring the
+// production resolveObjectTypeAnn arm for each. A method written more than once
+// under one name folds into a single MethodElem holding an overload set, the way
+// the production overload merge collapses repeated signatures. A spread and a
+// callable element fail the test, since the lattice tests do not author them.
 func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTypeAnn) *soltype.ObjectType {
 	t.Helper()
 	elems := make([]soltype.ObjTypeElem, 0, len(ta.Elems))
 	for _, e := range ta.Elems {
-		prop, ok := e.(*ast.PropertyTypeAnn)
-		require.True(t, ok, "parseType: unsupported object element %T", e)
-		name, ok := objKeyName(prop.Name)
-		require.True(t, ok, "parseType: unsupported object key %T", prop.Name)
-		var ft soltype.Type
-		if prop.Value != nil {
-			ft = toSoltype(t, env, prop.Value)
-		} else {
-			ft = &soltype.UnknownType{}
+		switch e := e.(type) {
+		case *ast.PropertyTypeAnn:
+			name, ok := objKeyName(e.Name)
+			require.True(t, ok, "parseType: unsupported object key %T", e.Name)
+			var ft soltype.Type
+			if e.Value != nil {
+				ft = toSoltype(t, env, e.Value)
+			} else {
+				ft = &soltype.UnknownType{}
+			}
+			elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: e.Optional, Readonly: e.Readonly})
+		case *ast.MethodTypeAnn:
+			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
+			elems = append(elems, &soltype.MethodElem{Name: objKeyNameReq(t, e.Name), Signatures: []*soltype.FuncType{fn}})
+		case *ast.GetterTypeAnn:
+			// A getter's Fn is `(self) -> T throws E`, so its return and throws are the
+			// value read and what reading raises.
+			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
+			elems = append(elems, &soltype.GetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Type: fn.Ret, Throws: fn.Throws})
+		case *ast.SetterTypeAnn:
+			// A setter's Fn is `(self, value: T) -> undefined throws E`, so its one value
+			// parameter is what the setter accepts and its throws is what writing raises.
+			fn := methodFuncToSoltype(t, env, e.Fn, e.Receiver)
+			require.Len(t, fn.Params, 1, "parseType: a setter takes one value parameter")
+			elems = append(elems, &soltype.SetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Param: fn.Params[0].Type, Throws: fn.Throws})
+		case *ast.ConstructorTypeAnn:
+			elems = append(elems, &soltype.ConstructorElem{Fn: funcToSoltype(t, env, e.Fn)})
+		case *ast.MappedTypeAnn:
+			elems = append(elems, mappedToSoltype(t, env, e))
+		default:
+			t.Fatalf("parseType: unsupported object element %T", e)
 		}
-		elems = append(elems, &soltype.PropertyElem{Name: name, Type: ft, Optional: prop.Optional})
 	}
-	return &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
+	return &soltype.ObjectType{Elems: mergeMethodOverloads(elems), Inexact: ta.Inexact}
+}
+
+// mappedKeyCounter mints the ids mappedToSoltype gives each mapped key, so a nested
+// mapped type's key stays distinct from the enclosing one's when both are written K,
+// the way freshMappedKey draws from the Context's counter in production.
+var mappedKeyCounter atomic.Int64
+
+// mappedToSoltype lowers a `[K: Keys]: V` mapped member to a soltype.MappedElem,
+// mirroring the production resolveMappedElem. The `for K in Keys` clause binds K, so
+// the value and the optional key-remapping and filter operands resolve in an
+// environment where K names the minted key. The `?` and `readonly` markers carry
+// through mappedModifier, which is what decides whether an index signature is
+// settled.
+func mappedToSoltype(t *testing.T, env map[string]soltype.Type, m *ast.MappedTypeAnn) *soltype.MappedElem {
+	t.Helper()
+	var keys soltype.Type = &soltype.UnknownType{}
+	if m.TypeParam.Constraint != nil {
+		keys = toSoltype(t, env, m.TypeParam.Constraint)
+	}
+	key := &soltype.MappedKeyType{ID: int(mappedKeyCounter.Add(1)), Name: m.TypeParam.Name}
+	inner := env
+	if m.TypeParam.Name != "" {
+		inner = make(map[string]soltype.Type, len(env)+1)
+		for name, ty := range env {
+			inner[name] = ty
+		}
+		inner[m.TypeParam.Name] = key
+	}
+	var name, check, extends soltype.Type
+	if m.Name != nil {
+		name = toSoltype(t, inner, m.Name)
+	}
+	// The parser fills Check and Extends together or leaves both nil, so a filter is
+	// resolved only when both halves are present.
+	if m.Check != nil && m.Extends != nil {
+		check = toSoltype(t, inner, m.Check)
+		extends = toSoltype(t, inner, m.Extends)
+	}
+	return &soltype.MappedElem{
+		Key:      key,
+		Keys:     keys,
+		Value:    toSoltype(t, inner, m.Value),
+		Name:     name,
+		Check:    check,
+		Extends:  extends,
+		Optional: mappedModifier(m.Optional),
+		Readonly: mappedModifier(m.ReadOnly),
+	}
+}
+
+// objKeyNameReq lowers an object key to its name, failing the test on a computed or
+// otherwise unsupported key. It is the must-succeed form of objKeyName, used where
+// only a named member is expected.
+func objKeyNameReq(t *testing.T, key ast.ObjKey) string {
+	t.Helper()
+	name, ok := objKeyName(key)
+	require.True(t, ok, "parseType: unsupported object key %T", key)
+	return name
+}
+
+// methodFuncToSoltype lowers a method, getter, or setter signature, attaching the
+// `self` receiver the FuncTypeAnn does not carry. The receiver's type is the same
+// marker on every member, so two members compare equal on their receiver the way
+// two instance members of one class body do.
+func methodFuncToSoltype(t *testing.T, env map[string]soltype.Type, fnAnn *ast.FuncTypeAnn, recv *ast.MethodReceiver) *soltype.FuncType {
+	t.Helper()
+	fn := funcToSoltype(t, env, fnAnn)
+	if recv != nil {
+		require.False(t, recv.Mut, "parseType: mut receiver")
+		require.Nil(t, recv.Lifetime, "parseType: receiver lifetime")
+		fn.SelfParam = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: &soltype.ClassType{Name: "Self"}}
+	}
+	return fn
+}
+
+// mergeMethodOverloads folds methods that repeat one name into a single MethodElem
+// whose Signatures slice carries every arm in source order, mirroring the production
+// overload merge. Members of other kinds pass through untouched. Two methods merge
+// only when their Static markers agree, since a static and an instance member are
+// distinct.
+func mergeMethodOverloads(elems []soltype.ObjTypeElem) []soltype.ObjTypeElem {
+	out := make([]soltype.ObjTypeElem, 0, len(elems))
+	byName := map[string]*soltype.MethodElem{}
+	for _, e := range elems {
+		m, ok := e.(*soltype.MethodElem)
+		if !ok {
+			out = append(out, e)
+			continue
+		}
+		if prev, seen := byName[m.Name]; seen && prev.Static == m.Static {
+			prev.Signatures = append(prev.Signatures, m.Signatures...)
+			continue
+		}
+		byName[m.Name] = m
+		out = append(out, m)
+	}
+	return out
 }
 
 // TestParseTypeHelperSmoke confirms parseType round-trips a variety of

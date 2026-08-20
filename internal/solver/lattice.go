@@ -695,42 +695,132 @@ func compareFuncParam(a, b *soltype.FuncParam) int {
 	return compareType(a.Type, b.Type)
 }
 
-// compareObjectFields orders two objects by property name, then by each
-// property's optional flag and type. Property order in the slice is
-// presentation only, so the comparator walks both objects in name-sorted
-// order.
+// compareObjectFields orders two objects member against member. Element order in
+// the slice is presentation only, so each object's members are sorted by
+// compareObjElem first, then compared position by position.
 func compareObjectFields(a, b *soltype.ObjectType) int {
 	if c := len(a.Elems) - len(b.Elems); c != 0 {
 		return c
 	}
-	an := sortedPropertyNames(a)
-	bn := sortedPropertyNames(b)
-	for i := range an {
-		if c := stringCompare(an[i], bn[i]); c != 0 {
-			return c
-		}
-		ap, _ := a.Prop(an[i])
-		bp, _ := b.Prop(bn[i])
-		if ap.Optional != bp.Optional {
-			return boolOrder(ap.Optional) - boolOrder(bp.Optional)
-		}
-		if c := compareType(ap.Type, bp.Type); c != 0 {
+	ae := sortedObjElems(a.Elems)
+	be := sortedObjElems(b.Elems)
+	for i := range ae {
+		if c := compareObjElem(ae[i], be[i]); c != 0 {
 			return c
 		}
 	}
 	return 0
 }
 
-func sortedPropertyNames(o *soltype.ObjectType) []string {
-	// A residual object's members are a spread or a mapped member, neither of which names a field.
-	// soltype.ObjElemName returns "" for both, so they sort together and compare equal, which leaves
-	// the caller's ordering decided by the members that do name something.
-	names := make([]string, len(o.Elems))
-	for i, e := range o.Elems {
-		names[i] = soltype.ObjElemName(e)
+// sortedObjElems returns a copy of the members ordered by compareObjElem, so a
+// comparison reads both objects in one canonical order without mutating either.
+func sortedObjElems(elems []soltype.ObjTypeElem) []soltype.ObjTypeElem {
+	out := append([]soltype.ObjTypeElem(nil), elems...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return compareObjElem(out[i], out[j]) < 0
+	})
+	return out
+}
+
+// compareObjElem orders two object members by name, then by kind, then by the
+// fields of that kind. Ordering a member by kind lets a getter and a setter that
+// share one name sort into a fixed order, which the name alone cannot settle.
+func compareObjElem(a, b soltype.ObjTypeElem) int {
+	if c := stringCompare(soltype.ObjElemName(a), soltype.ObjElemName(b)); c != 0 {
+		return c
 	}
-	sort.Strings(names)
-	return names
+	if c := objElemKindOrder(a) - objElemKindOrder(b); c != 0 {
+		return c
+	}
+	switch a := a.(type) {
+	case *soltype.PropertyElem:
+		b := b.(*soltype.PropertyElem)
+		if a.Optional != b.Optional {
+			return boolOrder(a.Optional) - boolOrder(b.Optional)
+		}
+		if a.Readonly != b.Readonly {
+			return boolOrder(a.Readonly) - boolOrder(b.Readonly)
+		}
+		return compareType(a.Type, b.Type)
+	case *soltype.MethodElem:
+		b := b.(*soltype.MethodElem)
+		if a.Static != b.Static {
+			return boolOrder(a.Static) - boolOrder(b.Static)
+		}
+		if c := len(a.Signatures) - len(b.Signatures); c != 0 {
+			return c
+		}
+		for i := range a.Signatures {
+			if c := compareType(a.Signatures[i], b.Signatures[i]); c != 0 {
+				return c
+			}
+		}
+		return 0
+	case *soltype.GetterElem:
+		b := b.(*soltype.GetterElem)
+		if c := compareSelfParam(a.SelfParam, b.SelfParam); c != 0 {
+			return c
+		}
+		if c := compareType(a.Type, b.Type); c != 0 {
+			return c
+		}
+		// ThrowsOrNever reads both sides through the nil-is-never collapse, so two
+		// getters differing only in whether the clause was written compare equal.
+		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
+	case *soltype.SetterElem:
+		b := b.(*soltype.SetterElem)
+		if c := compareSelfParam(a.SelfParam, b.SelfParam); c != 0 {
+			return c
+		}
+		if c := compareType(a.Param, b.Param); c != 0 {
+			return c
+		}
+		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
+	case *soltype.ConstructorElem:
+		return compareType(a.Fn, b.(*soltype.ConstructorElem).Fn)
+	case *soltype.SpreadElem:
+		return compareType(a.Type, b.(*soltype.SpreadElem).Type)
+	case *soltype.MappedElem:
+		// A mapped member computes the whole member list rather than naming one field.
+		// Ordering by its value type gives a stable key, and equalObjElem settles whether
+		// two are truly equal.
+		return compareType(a.Value, b.(*soltype.MappedElem).Value)
+	}
+	return 0
+}
+
+// objElemKindOrder ranks the member kinds so compareObjElem can order two members
+// that share a name but not a kind.
+func objElemKindOrder(e soltype.ObjTypeElem) int {
+	switch e.(type) {
+	case *soltype.PropertyElem:
+		return 0
+	case *soltype.MethodElem:
+		return 1
+	case *soltype.GetterElem:
+		return 2
+	case *soltype.SetterElem:
+		return 3
+	case *soltype.ConstructorElem:
+		return 4
+	case *soltype.SpreadElem:
+		return 5
+	case *soltype.MappedElem:
+		return 6
+	}
+	return 7
+}
+
+// compareSelfParam orders two method or accessor receivers. A missing receiver
+// sorts before a present one, and two present receivers order by compareFuncParam.
+func compareSelfParam(a, b *soltype.FuncParam) int {
+	if (a == nil) != (b == nil) {
+		return boolOrder(a != nil) - boolOrder(b != nil)
+	}
+	if a == nil {
+		return 0
+	}
+	return compareFuncParam(a, b)
 }
 
 func stringCompare(a, b string) int {
