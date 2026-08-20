@@ -178,7 +178,6 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 // excludeFrom settles one member of a difference's positive side against every excluded type. It
 // reports whether the member survives at all, and returns what is left of it: the member itself
 // when no exclusion cuts into it, and the member met with the complements of those that do.
-//
 func (e *typeEvaluator) excludeFrom(m soltype.Type, excluded []soltype.Type) (soltype.Type, bool) {
 	overlapping := make([]soltype.Type, 0, len(excluded))
 	for _, x := range excluded {
