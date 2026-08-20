@@ -224,13 +224,6 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		// consulting the merges, so the result is canonicalized afterwards.
 		negated := c.mkCNF(t.Inner, pol.Flip()).neg()
 		conjuncts := c.canonicalConjuncts(negated.Conjuncts)
-		// A borrow lands in a conjunct's Rnf exactly when the complement names it, so
-		// scanning the result is what enforces the ¬Ref exclusion invariant. The scan
-		// reads the result rather than t.Inner because a borrow reaches a negated part
-		// from two shapes, not one. `¬(mut 'a T)` names the borrow directly, and
-		// `¬(A | mut 'a T)` reaches it through De Morgan's law, which turns the
-		// complement of a join into a meet of complements.
-		assertBorrowFreeNegatedParts(conjuncts, func(a Conjunct) []soltype.Type { return a.Rnf.Atoms })
 		return DNF{Conjuncts: conjuncts}
 	case *soltype.TypeVarType:
 		return DNF{Conjuncts: []Conjunct{newConjunct().withVar(t)}}
@@ -267,12 +260,9 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
-		// The dual of the mkDNF arm. A disjunct holds its negated part in Lnf, so that
-		// is the list the ¬Ref scan reads.
+		// The dual of the mkDNF arm.
 		negated := c.mkDNF(t.Inner, pol.Flip()).neg()
-		disjuncts := c.canonicalDisjuncts(negated.Disjuncts)
-		assertBorrowFreeNegatedParts(disjuncts, func(a Disjunct) []soltype.Type { return a.Lnf.Atoms })
-		return CNF{Disjuncts: disjuncts}
+		return CNF{Disjuncts: c.canonicalDisjuncts(negated.Disjuncts)}
 	case *soltype.TypeVarType:
 		return CNF{Disjuncts: []Disjunct{newDisjunct().withVar(t)}}
 	default:
@@ -344,18 +334,6 @@ func (n *deepNormalizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 
 func (n *deepNormalizer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return n.ctx.mkDNF(t, pol).toType()
-}
-
-// assertBorrowFreeNegatedParts enforces the ¬Ref exclusion invariant over a
-// normalized complement. A borrow in a negated part is a `¬(mut 'a T)` however the
-// source wrote it. negatedPart reads that part off one member, Rnf for a conjunct
-// and Lnf for a disjunct.
-func assertBorrowFreeNegatedParts[T any](members []T, negatedPart func(T) []soltype.Type) {
-	for _, member := range members {
-		for _, atom := range negatedPart(member) {
-			soltype.AssertNegatable(atom)
-		}
-	}
 }
 
 // dnfTop is `unknown` as a DNF: one conjunct with nothing in it, since an empty

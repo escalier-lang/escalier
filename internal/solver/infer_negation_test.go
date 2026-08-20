@@ -185,51 +185,55 @@ func TestInferNegationInTemplateLit(t *testing.T) {
 	*/
 }
 
-// The ¬Ref exclusion invariant forbids a complement from naming a borrow. A written `¬T` routes
-// through the resolver's spine walk, so the diagnostic surfaces at the annotation rather than as a
-// panic deeper in normalization. A borrow reached only under a union or an intersection is caught
-// too, since De Morgan turns `¬(&Point | number)` into `¬(&Point) ∩ ¬number`, which still names the
-// borrow. The message names the offending borrow with its `&` and `mut`; the plain `soltype.Print`
-// used here carries no lifetime names, so no borrow lifetime appears even when the source wrote one.
-func TestInferNegationOfBorrowRejected(t *testing.T) {
+// A complement may name a borrow. `¬(&Point)` denotes every value that is not a borrow of
+// Point, so it admits a borrow of another type, a borrow of Point under a different
+// lifetime, and every value that is not a borrow at all.
+//
+// A borrow reached only under a union or an intersection resolves the same way, since a
+// complement over a lattice spine is just a complement over what that spine names.
+//
+// The rendered forms carry no lifetime, because plain soltype.Print names none. The
+// lifetime is still part of the type; renderScheme is what surfaces it, as
+// TestComplementedBorrowKeepsLifetimeName shows.
+func TestInferNegationOfBorrowResolves(t *testing.T) {
 	tests := []struct {
-		name    string
-		src     string
-		wantErr string
+		name string
+		src  string
+		want string
 	}{
 		{
-			name:    "SharedBorrowOfClass",
-			src:     "class Point { x: number }\ntype Bad = ¬&Point",
-			wantErr: "cannot negate a borrow: &Point",
+			name: "SharedBorrowOfClass",
+			src:  "class Point { x: number }\ntype Result = ¬&Point",
+			want: "¬&Point",
 		},
 		{
-			name:    "MutBorrowOfObject",
-			src:     "type Bad = ¬&mut {x: number}",
-			wantErr: "cannot negate a borrow: &mut {x: number}",
+			name: "MutBorrowOfObject",
+			src:  "type Result = ¬&mut {x: number}",
+			want: "¬&mut {x: number}",
 		},
 		{
-			name:    "BorrowUnderUnion",
-			src:     "class Point { x: number }\ntype Bad = ¬(&Point | number)",
-			wantErr: "cannot negate a borrow: &Point",
+			name: "BorrowUnderUnion",
+			src:  "class Point { x: number }\ntype Result = ¬(&Point | number)",
+			want: "¬(number | &Point)",
 		},
 		{
-			name:    "BorrowUnderIntersection",
-			src:     "class Point { x: number }\ntype Bad = ¬(number & &Point)",
-			wantErr: "cannot negate a borrow: &Point",
+			name: "BorrowUnderIntersection",
+			src:  "class Point { x: number }\ntype Result = ¬(number & &Point)",
+			want: "¬(number & &Point)",
 		},
 		{
-			// A named lifetime the source wrote is still omitted, since plain soltype.Print
+			// A lifetime the source wrote is omitted here, since plain soltype.Print
 			// carries no lifetime names.
-			name:    "BorrowWithNamedLifetime",
-			src:     "class Point { x: number }\ntype Bad<'a> = ¬(&'a Point)",
-			wantErr: "cannot negate a borrow: &Point",
+			name: "BorrowWithNamedLifetime",
+			src:  "class Point { x: number }\ntype Result<'a> = ¬(&'a Point)",
+			want: "¬&Point",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, _, errs := inferSource(t, tt.src)
-			require.Len(t, errs, 1)
-			require.Equal(t, tt.wantErr, errs[0].Message())
+			nodes, _, errs := inferTypeNodes(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
 		})
 	}
 }

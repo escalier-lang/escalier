@@ -64,34 +64,26 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   `RefType.Accept` not walking the lifetime turns out not to matter, because no pass
   relies on `Accept` to reach it.
   `TestComplementFlipsExtrudedLifetimeDirection` pins both rows.
-- **`¬Ref` is excluded for two other reasons.** `soltype.AssertNegatable` panics on
-  a borrow operand, and the guard stays for now.
-  1. **The outlives lattice is not a Boolean algebra**, so `¬'a` names nothing. The
-     decision procedure never asks for one. In `constrainImplied` a negated atom
-     always crosses the `<:` and lands as a positive atom on the other side, where
-     it is met or joined, and `meetRefs` / `joinRefs` already provide both.
-  2. **A residual `¬Ref` often would not reduce.** Since #1138, `valueFamilyOf` draws
-     a borrow over an object, a tuple, or a class instance into `refCellFamily`, so
-     such a borrow is disjoint from every primitive and a complement of it does decide
-     against one. `refCellFamily` carries only the cross-family rule, because two
-     distinct borrows are not disjoint. So excluding one borrow from another still
-     yields back the same `T & ¬(&'a U)`. Objects, tuples, functions and class
-     instances remain absent from the families by choice, since keeping two such atoms
-     apart is already precise.
+- **A complement may name a borrow.** `¬(&'a T)` denotes every value that is not a
+  borrow of `T` under `'a`, so it admits a borrow of another type, a borrow of `T` under
+  a different lifetime, and every value that is not a borrow. The lifetime is part of
+  what the complement names, not something being complemented itself, so the absence of
+  `¬'a` costs nothing. The decision procedure never asks for one: in `constrainImplied` a
+  negated atom always crosses the `<:` and lands as a positive atom on the other side,
+  where it is met or joined, and `meetRefs` / `joinRefs` already provide both.
 
-     This reason is weaker than it was when the exclusion was written, and it is worth
-     re-examining whether the exclusion still earns its keep.
+  `Exclude<T, &'a Point>` reduces to `T & ¬(&'a Point)`. Two distinct borrows are not
+  disjoint — `refCellFamily` carries only the cross-family rule — so excluding one borrow
+  from another leaves that residual unreduced. An object behaves the same way, being
+  absent from the value families for the same reason, so the residual is the normal
+  outcome for a structural type rather than a special weakness of borrows.
 
-  Display-time lifetime classification was a third blocker, and it is fixed.
-  `coalesceLifetimes` needs a borrow's dataflow position, not the variance the walk's
-  polarity carries, so it converts one into the other.
-  `Negative` means the borrow originates at a parameter, so its lifetime is nameable.
-  `Positive` means the borrow reaches an output, so its lifetime is not elided. A
-  complement does not move a borrow between a parameter and an output, but it does flip
-  the polarity its operand is visited at, so reading position straight off the polarity
-  strips the name from every complemented borrow. That changes the type rather than
-  merely dropping a name, since `¬(&'a T)` rendered as `¬(&T)` is the complement of
-  *any* borrow of `T`.
+  Display-time lifetime classification was the blocker. `coalesceLifetimes` needs a
+  borrow's dataflow position, not the variance the walk's polarity carries, so it converts
+  one into the other. `Negative` means the borrow originates at a parameter, so its
+  lifetime is nameable. `Positive` means the borrow reaches an output, so its lifetime is
+  not elided. A complement does not move a borrow between a parameter and an output, but
+  it does flip the polarity its operand is visited at.
 
   `ltOccVisitor` therefore produces two facts rather than one:
 
@@ -112,8 +104,8 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   `TestComplementedBorrowGroupsLikeAnOrdinaryParam`.
 
   The same occurrence map feeds `checkDeclaredLifetimeBounds` through
-  `ltOutlivesRelation`, so the mis-reading reached the declared-bound check and not only
-  the printer.
+  `ltOutlivesRelation`, so the classification reaches the declared-bound check and not
+  only the printer.
 
 ---
 
@@ -297,14 +289,14 @@ now exception narrowing in `try` / `catch`. Wherever Escalier currently has a
 conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
-unchanged. `¬Ref` stays excluded, because the outlives lattice has no complement
-and excluding one borrow from another still leaves a residual, not because the
-polarity flip fails to reach the lifetime. Function overloading is the lone counter-current: there the
+unchanged. `¬Ref` is admitted: the polarity flip reaches a borrow's lifetime, and
+excluding one borrow from another leaves the same unreduced residual an object
+would. Function overloading is the lone counter-current: there the
 inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |
 |---|---|
-| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` stays excluded: `¬'a` names nothing, and excluding one borrow from another still leaves a residual because two distinct borrows are not disjoint. The polarity flip does reach the lifetime. |
+| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` is admitted. `¬'a` names nothing and nothing asks for one, since the lifetime is part of what the complement names. Excluding one borrow from another leaves an unreduced residual, as an object does. |
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
 | Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |

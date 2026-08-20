@@ -7,19 +7,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// negRef complements a borrow, building the `¬(&'a mut {x: number})` these tests need.
-// It assembles the NegationType node directly because neither route the language offers
-// yields one, so these tests cannot be written as Escalier source.
-//
-//   - soltype.NewNegation enforces the ¬Ref exclusion invariant and panics on a borrow
-//     operand.
-//   - A source annotation such as `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> number`
-//     parses, then the checker reports "cannot negate a borrow: &mut {x: number}" and
-//     leaves `unknown` where the complement was. infer_negation_test.go pins that
-//     diagnostic.
-//
-// The display passes must classify a complemented borrow correctly before the exclusion
-// can be lifted. Assembling the node here is what lets them be checked ahead of that.
+// negRef complements a borrow, building the `¬(&'a mut {x: number})` the graph-level tests
+// below need. Those tests wire a lifetime graph directly rather than inferring one from
+// source, so they assemble the type to match.
 func negRef(lt soltype.Lifetime) soltype.Type {
 	return &soltype.NegationType{Inner: mutPointRef(lt)}
 }
@@ -45,44 +35,33 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 // TestComplementedBorrowGroupsLikeAnOrdinaryParam, where position decides which component
 // counts as output-reaching.
 func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
-	num := &soltype.PrimType{Prim: soltype.NumPrim}
-
 	tests := []struct {
 		name string
-		// build returns the signature under test, given one param lifetime to hang
-		// borrows off.
-		build func(a *soltype.LifetimeVar) *soltype.FuncType
-		want  string
+		src  string
+		want string
 	}{
 		{
 			// The uncomplemented baseline: a borrow in and the same borrow out, which
 			// already renders under one name.
-			name:  "borrow param to borrow return",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType { return borrowFn(mutPointRef(a), a) },
-			want:  "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+			name: "borrow param to borrow return",
+			src:  `declare fn f<'a>(p: &'a mut {x: number}) -> &'a mut {x: number}`,
+			want: "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
 		},
 		{
 			// The complement sits in the return, so the parameter's lifetime still
 			// reaches an output and the signature must keep recording that connection.
-			name:  "borrow param to complemented return",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType { return borrowFn(negRef(a), a) },
-			want:  "fn <'a>(p: &'a mut {x: number}) -> ¬&'a mut {x: number}",
+			name: "borrow param to complemented return",
+			src:  `declare fn f<'a>(p: &'a mut {x: number}) -> ¬(&'a mut {x: number})`,
+			want: "fn <'a>(p: &'a mut {x: number}) -> ¬&'a mut {x: number}",
 		},
 		{
 			name: "complemented return with no param",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
-				return &soltype.FuncType{Ret: negRef(a)}
-			},
+			src:  `declare fn f<'a>() -> ¬(&'a mut {x: number})`,
 			want: "fn <'a>() -> ¬&'a mut {x: number}",
 		},
 		{
 			name: "complemented param to non-borrow return",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
-				return &soltype.FuncType{
-					Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: negRef(a)}},
-					Ret:    num,
-				}
-			},
+			src:  `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> number`,
 			want: "fn <'a>(p: ¬&'a mut {x: number}) -> number",
 		},
 		{
@@ -90,12 +69,7 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 			// named source, which is the outcome elision exists to prevent, since it
 			// hides a borrow at the call site.
 			name: "complemented param to borrow return",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
-				return &soltype.FuncType{
-					Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "p"}, Type: negRef(a)}},
-					Ret:    mutPointRef(a),
-				}
-			},
+			src:  `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> &'a mut {x: number}`,
 			want: "fn <'a>(p: ¬&'a mut {x: number}) -> &'a mut {x: number}",
 		},
 		{
@@ -103,18 +77,16 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 			// encloses, so an uncomplemented borrow reaching no output still renders
 			// with its lifetime elided.
 			name: "uncomplemented connect-nothing borrow still elides",
-			build: func(a *soltype.LifetimeVar) *soltype.FuncType {
-				return borrowFn(num, a)
-			},
+			src:  `declare fn f<'a>(p: &'a mut {x: number}) -> number`,
 			want: "fn (p: &mut {x: number}) -> number",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
-			a := c.ctx.freshLifetime(0)
-			require.Equal(t, tt.want, renderScheme(&MonoScheme{Ty: tt.build(a)}))
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
 		})
 	}
 }
@@ -128,6 +100,11 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // structurally sits in. Neither borrow reaches an output, so the name here comes from the
 // noElide set rather than from the position. This row passes with the position correction
 // disabled, so treat it as covering the nesting shape, not the parity rule.
+//
+// The type is assembled rather than written as source because a nested function
+// annotation opens its own lifetime scope. Writing `¬(fn (q: ¬(&'a mut {x: number})) -> number)`
+// inside f's return reports that 'a is undeclared, and declaring it on the inner function
+// would bind a second lifetime rather than the one f's parameter carries.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -147,13 +124,9 @@ func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 // reaches the lifetime pass with no complement around it at all and takes the ordinary
 // polarity reading.
 func TestDoubleComplementFoldsBeforeLifetimePass(t *testing.T) {
-	c := newChecker()
-	a := c.ctx.freshLifetime(0)
-	fn := borrowFn(&soltype.NegationType{Inner: negRef(a)}, a)
-
-	require.Equal(t,
-		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
-		renderScheme(&MonoScheme{Ty: fn}))
+	values, _, errs := inferSource(t, `declare fn f<'a>(p: &'a mut {x: number}) -> ¬¬(&'a mut {x: number})`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
 }
 
 // The polarity flip a complement applies does reach a borrow's lifetime, even though

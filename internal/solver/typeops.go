@@ -355,17 +355,6 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 		// the union already names. Normalizing fuses the meet so tailSubsumed can see it.
 		return e.ctx.normalizeDeep(e.reduce(diff), soltype.Positive)
 	}
-	if !negatableOperand(e.groundReduced(extends)) {
-		// The Else half is the values `¬extends` names, and an operand no complement may name
-		// has no such half. The tail comes back unbounded rather than half-decided.
-		//
-		// The check is asked of the grounded operand, because a name reveals nothing about
-		// what it stands for. `type Handle = &'static Point` is an AliasType, which
-		// negatableOperand reads as negatable, while the borrow its body names is the one
-		// thing a complement may not hold. nativeDifference grounds the same question for
-		// the same reason.
-		return nil
-	}
 	// The check splits the bound and the conditional is not a filter. Each part of the split takes
 	// its own branch, and the bound is what the two branches produce together.
 	// `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail may
@@ -1788,7 +1777,7 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // A tail's bound is not folded into a named result string, since it says the tail's choices are
 // strings without saying which, so no segment can absorb them. It becomes the result's own tail
 // bound instead, transformed by the same template: `on${"a" | ...string}` reduces to
-// `"ona" | ...`on${string}``, keeping the result to strings the template can spell rather than
+// `"ona" | ...`on${string}“, keeping the result to strings the template can spell rather than
 // widening to every `string`. templateTailBound assembles that bound. An interpolation that names
 // no choice at all, which is the shape a set difference leaves when it excludes every named one,
 // has nothing to run the product over and keeps the template symbolic.

@@ -636,19 +636,11 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 // folds `¬never` to `unknown`, `¬unknown` to `never`, `¬¬T` to `T`, and `¬(open union)` to `never`.
 // An unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 //
-// A borrow is the one atom a complement may not name, the ¬Ref exclusion invariant. The outlives
-// lattice a borrow's lifetime lives in has no complement, so `¬(&'a Point)` names nothing. The check
-// reaches a borrow anywhere on the operand's spine, not only at the top, because De Morgan turns
-// `¬(&'a Point | number)` into `¬(&'a Point) ∩ ¬number`, which still names the borrow. The solver
-// enforces this on the complements it builds itself; a written `¬` routes through the same spine walk
-// here so the diagnostic surfaces at the annotation rather than as a panic deeper in normalization.
+// A borrow is an ordinary operand. `¬(&'a Point)` names every value that is not that borrow.
 func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, lvl int) (soltype.Type, bool) {
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
-	}
-	if borrow := negatedSpineBorrow(operand); borrow != nil {
-		return c.report(&NegatedBorrowError{Ann: ta, Borrow: borrow}), false
 	}
 	t := newNegation(operand)
 	// newNegation can return a pointer that is not freshly minted: `¬¬T` folds to the
