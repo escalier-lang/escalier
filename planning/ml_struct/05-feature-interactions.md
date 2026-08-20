@@ -105,7 +105,7 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
      display-time elision rule drops those. `noElide` is what puts the name on a
      complemented borrow.
 
-  The two are kept separate so that correcting one cannot silently re-break the other.
+  The two are kept separate so that a change to one cannot silently break the other.
   They are also pinned by different tests: `noElide` by
   `TestComplementedBorrowKeepsLifetimeName`, the position correction by
   `TestComplementedBorrowAssertsNoOutlivesRelation` and

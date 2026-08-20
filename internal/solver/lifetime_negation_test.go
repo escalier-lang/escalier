@@ -8,11 +8,18 @@ import (
 )
 
 // negRef complements a borrow, building the `¬(&'a mut {x: number})` these tests need.
-// It builds the NegationType node directly rather than calling soltype.NewNegation,
-// which enforces the ¬Ref exclusion invariant and panics on a borrow operand. The
-// invariant holds for the solver, so no source program produces this shape. The
-// display passes must classify it correctly before the invariant can be lifted, and
-// building the node here is what lets these tests run ahead of that.
+// It assembles the NegationType node directly because neither route the language offers
+// yields one, so these tests cannot be written as Escalier source.
+//
+//   - soltype.NewNegation enforces the ¬Ref exclusion invariant and panics on a borrow
+//     operand.
+//   - A source annotation such as `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> number`
+//     parses, then the checker reports "cannot negate a borrow: &mut {x: number}" and
+//     leaves `unknown` where the complement was. infer_negation_test.go pins that
+//     diagnostic.
+//
+// The display passes must classify a complemented borrow correctly before the exclusion
+// can be lifted. Assembling the node here is what lets them be checked ahead of that.
 func negRef(lt soltype.Lifetime) soltype.Type {
 	return &soltype.NegationType{Inner: mutPointRef(lt)}
 }
