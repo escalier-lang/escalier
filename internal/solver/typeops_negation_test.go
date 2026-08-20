@@ -364,15 +364,6 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 	}
 }
 
-// No complement may name a borrow, which is the ¬Ref exclusion invariant in
-// `internal/soltype/negation.go`. A borrow carries a lifetime as well as a type, and the outlives
-// lattice has no complement, so `¬(&'a T)` names nothing.
-//
-// A set difference is the one reduction that chooses an operand to complement, so it is where the
-// invariant has to be honored rather than asserted. A difference whose excluded side would take a
-// borrow leaves the whole meet as it arrived, and the conditional it would have been rewritten from
-// stays symbolic. Neither loses anything that reduces today: the solver decides disjointness only
-// within the value families, so a borrow exclusion would leave an unsettled residual even if the
 // `Exclude` rewrites to a difference whatever the excluded operand names, including a borrow.
 // The residual `T & ¬(&'a Point)` is the complement of one particular borrow, so it admits a
 // borrow of another type and a borrow of Point under a different lifetime.

@@ -179,9 +179,6 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 // reports whether the member survives at all, and returns what is left of it: the member itself
 // when no exclusion cuts into it, and the member met with the complements of those that do.
 //
-// Every excluded type is one a complement may name, which reduceDifference checked before calling
-// this. soltype.NewNegation asserts that here, so a caller that skipped the check is caught at the
-// site that builds the forbidden node rather than deep inside normalization.
 func (e *typeEvaluator) excludeFrom(m soltype.Type, excluded []soltype.Type) (soltype.Type, bool) {
 	overlapping := make([]soltype.Type, 0, len(excluded))
 	for _, x := range excluded {

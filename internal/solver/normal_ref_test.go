@@ -8,8 +8,8 @@ import (
 )
 
 // The borrow half of the normal-form module: the ref-atom merge that splits its
-// work between the type sort and the lifetime sort, and the `¬Ref` exclusion
-// invariant that keeps a borrow out of every complement.
+// work between the type sort and the lifetime sort, and the complement that carries
+// a borrow through whole.
 //
 // A case builds its borrows directly rather than parsing an annotation, because
 // parseType does not accept a named lifetime. It renders the result with
@@ -338,8 +338,8 @@ func TestNegationInsideBorrowNormalizes(t *testing.T) {
 		soltype.PrintAsScheme(c.normalizeDeep(ref, soltype.Positive)))
 }
 
-// TestBorrowNarrowingKeepsBorrowsWhole pins the rule the `¬Ref` invariant rests
-// on: normalization never takes a borrow wrapper apart. A borrow reaches the
+// TestBorrowNarrowingKeepsBorrowsWhole pins the rule a complement over a borrow
+// rests on: normalization never takes a borrow wrapper apart. A borrow reaches the
 // normal-form layer as ONE atom and is handed straight back to the structural
 // rules, which is what keeps the RefType arm of constrain the only code that reads
 // a borrow's mutability and lifetime.

@@ -70,17 +70,21 @@ the **M12 flip** in milestone 1. #1152 tracks the shape they should take then: g
 built from inferred types rather than written annotations, with the arm order derived
 from the checker's own ranking rather than mirrored over annotations.
 
-## Finding 4 — `¬Ref` premises hold; the invariant is a construction-site guard (verified)
+## Finding 4 — `¬Ref` is admitted (resolved)
 
-`RefType.Accept` does not walk the lifetime, and `RefType` is already handled in the
-`rec`-layer structural switch (bypassing the lattice block). So `¬(mut 'a T)` has no
-sound lifetime and is forbidden by construction, while `mut 'a ¬T` (negation *inside*
-the inner) is fine.
+A complement may name a borrow. `¬(&'a T)` denotes every value that is not a borrow of
+`T` under `'a`, so the lifetime is part of what the complement names rather than
+something being complemented itself, and the absence of `¬'a` costs nothing.
 
-**Residual work:** enforce the panic + tests (`no NegationType over a RefType; refs
-bypass constrainNF`). Owned by **PR8 (#1065)**.
+The polarity flip does reach a borrow's lifetime: `NegationType.Accept` flips before
+descending, and every pass reads the lifetime off the `RefType` node in its own
+`EnterType`. `RefType.Accept` not walking `Lt` does not matter, because no pass relies on
+`Accept` to reach it. See [05-feature-interactions.md](05-feature-interactions.md)
+§Lifetimes for the display-time classification this needed and the two facts
+`ltOccVisitor` now produces.
 
----
+Negation *inside* a borrow, `mut 'a ¬T`, was always fine and still is.
+
 
 ## Owning-PR map
 
@@ -89,7 +93,7 @@ bypass constrainNF`). Owned by **PR8 (#1065)**.
 | 1 — record-union ⊤-widening | set-valued `RhsNf` vs exists-rule fallback | PR3 #1060 / PR5 #1062 |
 | 2 — naive arrow merge | FCB decomposition vs accept non-standard `<:` | PR5 #1062, PR3 #1060, PR10 #1067 |
 | 3 — dispatcher needs annotations | annotation-scope + static/runtime agreement | PR11 #1068 |
-| 4 — `¬Ref` guard | construction-site panic + tests | PR8 #1065 |
+| 4 — `¬Ref` admitted | complement over a borrow, display classification | #1127 |
 | (all) regression oracle | negative-position record + arrow-intersection rows | PR2 #1059 |
 
 The investigation is complete; the decisions above live in their owning PR issues.

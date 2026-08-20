@@ -123,10 +123,19 @@ func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 // The coalescer folds `¬¬T` to T, so a borrow under two immediately-nested complements
 // reaches the lifetime pass with no complement around it at all and takes the ordinary
 // polarity reading.
+//
+// The type is assembled rather than written as source because newNegation folds `¬¬T`
+// while resolving the annotation. A source spelling would therefore never hand the
+// coalescer the doubled form this test is about, and would pass whatever the coalescer
+// did with it.
 func TestDoubleComplementFoldsBeforeLifetimePass(t *testing.T) {
-	values, _, errs := inferSource(t, `declare fn f<'a>(p: &'a mut {x: number}) -> ¬¬(&'a mut {x: number})`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}", values["f"])
+	c := newChecker()
+	a := c.ctx.freshLifetime(0)
+	fn := borrowFn(&soltype.NegationType{Inner: negRef(a)}, a)
+
+	require.Equal(t,
+		"fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}",
+		renderScheme(&MonoScheme{Ty: fn}))
 }
 
 // The polarity flip a complement applies does reach a borrow's lifetime, even though
