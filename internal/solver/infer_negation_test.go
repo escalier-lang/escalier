@@ -192,9 +192,9 @@ func TestInferNegationInTemplateLit(t *testing.T) {
 // A borrow reached only under a union or an intersection resolves the same way, since a
 // complement over a lattice spine is just a complement over what that spine names.
 //
-// The rendered forms carry no lifetime, because plain soltype.Print names none. The
-// lifetime is still part of the type; renderScheme is what surfaces it, as
-// TestComplementedBorrowKeepsLifetimeName shows.
+// The last row renders its lifetime, since the alias declares one and the assertion passes
+// those names to the printer. The rows above declare none, so their borrows print as the
+// bare `&` an inferred lifetime falls back to.
 func TestInferNegationOfBorrowResolves(t *testing.T) {
 	tests := []struct {
 		name string
@@ -222,18 +222,20 @@ func TestInferNegationOfBorrowResolves(t *testing.T) {
 			want: "¬(number & &Point)",
 		},
 		{
-			// A lifetime the source wrote is omitted here, since plain soltype.Print
-			// carries no lifetime names.
+			// The complement names one particular borrow, so the lifetime is what says
+			// which. Rendering it is what distinguishes `¬(&'a Point)` from `¬(&Point)`,
+			// the complement of any borrow of Point.
 			name: "BorrowWithNamedLifetime",
 			src:  "class Point { x: number }\ntype Result<'a> = ¬(&'a Point)",
-			want: "¬&Point",
+			want: "¬&'a Point",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			nodes, _, errs := inferTypeNodes(t, tt.src)
+			nodes, ctx, errs := inferTypeNodes(t, tt.src)
 			require.Empty(t, errs)
-			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
+			got := soltype.PrintWithDeclaredParams(nodes["Result"], nil, aliasLifetimeParams(ctx, "Result"))
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

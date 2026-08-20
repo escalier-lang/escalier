@@ -182,8 +182,25 @@ func PrintAsScheme(t Type) string {
 // entry of `declared` points at keeps the `t{ID}` form, the fallback Print applies to every
 // variable.
 func PrintWithParams(t Type, declared []*TypeParam) string {
+	return PrintWithDeclaredParams(t, declared, nil)
+}
+
+// PrintWithDeclaredParams renders a type under the source names of a declaration's own
+// type AND lifetime parameters. It is PrintWithParams extended to the lifetime sort, for a
+// declaration that quantifies both.
+//
+// A borrow whose lifetime carries no name prints as a bare `&`, since an inferred borrow
+// has no name worth showing. That rule hides a lifetime the source did write: the body of
+// `type Result<'a> = ¬(&'a Point)` holds the variable 'a is bound to, and plain Print has
+// no way to know its name, so it renders `¬&Point` and the reader cannot tell which borrow
+// is excluded. Passing the alias's LifetimeParams here renders `¬&'a Point`.
+//
+// A variable no entry points at keeps its fallback form, `t{ID}` for a type variable and a
+// bare `&` for a borrow lifetime.
+func PrintWithDeclaredParams(t Type, declared []*TypeParam, declaredLts []*LifetimeParam) string {
 	p := &namedPrinter{}
 	p.bindTypeParams(declared)
+	p.nameLifetimeParams(declaredLts)
 	return p.printType(t)
 }
 

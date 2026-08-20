@@ -24,6 +24,18 @@ func notProductiveMsg(span, alias string) string {
 // alongside the checker's Context, so a test can reduce a stored residual instead of only reading
 // its printed form. An alias binding yields its definition body, the same node inferModule
 // prints. It is the raw-type twin of inferModule, test-only.
+// aliasLifetimeParams returns the lifetime parameters the alias `name` declares, or nil
+// when it declares none. A caller renders that alias's body with
+// soltype.PrintWithDeclaredParams so a borrow the source named keeps its name, rather than
+// printing as the bare `&` an un-named lifetime falls back to.
+func aliasLifetimeParams(ctx *Context, name string) []*soltype.LifetimeParam {
+	def, ok := ctx.aliasDef(name)
+	if !ok {
+		return nil
+	}
+	return def.LifetimeParams
+}
+
 func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context, []SolverError) {
 	t.Helper()
 	module := parseModule(t, src)
