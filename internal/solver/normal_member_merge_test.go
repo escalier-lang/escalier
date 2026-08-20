@@ -63,6 +63,22 @@ func TestObjectMemberMeet(t *testing.T) {
 			want: "{a: number, b: number, foo(self, x: number) -> number; foo(self, x: string) -> string, ...}",
 		},
 		{
+			name: "an exact object meets an inexact one requiring a member it caps out: never",
+			in:   "{foo(self) -> number} & {bar(self) -> number, ...}",
+			want: "never",
+		},
+		{
+			name: "an exact object meeting an inexact subset closes the result",
+			in:   "{bar(self) -> number, foo(self) -> number} & {foo(self) -> number, ...}",
+			want: "{bar(self) -> number, foo(self) -> number}",
+		},
+		{
+			name: "two inexact objects meet a shared method and keep disjoint fields open",
+			in: "{a: number, foo(self) -> number | string, ...} & " +
+				"{b: number, foo(self) -> string | boolean, ...}",
+			want: "{a: number, b: number, foo(self) -> string, ...}",
+		},
+		{
 			name: "a method and a property sharing a name keep both atoms",
 			in:   "{foo(self) -> number} & {foo: number}",
 			want: "{foo: number} & {foo(self) -> number}",
@@ -104,6 +120,16 @@ func TestObjectMemberJoin(t *testing.T) {
 			name: "objects differing only in a getter widen it",
 			in:   "{get x(self) -> number, foo(self) -> number} | {get x(self) -> string, foo(self) -> number}",
 			want: "{foo(self) -> number, get x(self) -> number | string}",
+		},
+		{
+			name: "two inexact objects differing in one property widen it and stay open",
+			in:   "{x: number, foo(self) -> number, ...} | {x: string, foo(self) -> number, ...}",
+			want: "{foo(self) -> number, x: number | string, ...}",
+		},
+		{
+			name: "a method-carrying object absorbs its own open version at the open one",
+			in:   "{foo(self) -> number} | {foo(self) -> number, ...}",
+			want: "{foo(self) -> number, ...}",
 		},
 		{
 			name: "objects differing in a method keep both atoms",
