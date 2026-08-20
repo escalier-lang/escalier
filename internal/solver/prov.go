@@ -143,6 +143,48 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 	c.prov[t] = FromAST{Node: n, Kind: kind}
 }
 
+// recordProvForResult records provenance for an annotation result whose smart
+// constructor may hand back a pointer that is not freshly minted. It is the one
+// choke point the annotation arms with that property route through, so the
+// may-not-be-fresh rule lives in one documented place instead of being re-derived
+// per arm. It records only when the result can carry blame of its own, and
+// otherwise skips:
+//
+//   - A result that already carries a FromAST origin. newUnion and newIntersection
+//     collapse to an input member's pointer on dedup or subsumption, and newNegation
+//     folds ¬¬T to the operand's inner T. That member or inner keeps its own narrower
+//     child-annotation blame rather than being overwritten by the enclosing
+//     annotation, and re-recording it would trip recordProv's debugProv guard.
+//   - A shared zero-size singleton such as NeverType or UnknownType. Go gives every
+//     &soltype.NeverType{} the same address, and Prov is keyed by pointer identity,
+//     so recording would file every such annotation in the module under one entry.
+//     This also covers newNegation's lattice-bound folds `¬never` ⇒ `unknown`,
+//     `¬unknown` ⇒ `never`, and `¬(open union)` ⇒ `never`, which return those
+//     singletons. The FromAST skip alone would miss them: the first annotation to
+//     fold to a singleton would record against the shared address, and every later
+//     use of that singleton would then resolve its blame to that first annotation.
+//
+// recordProv keeps its strict unique-pointer contract for genuinely-minted types;
+// this wrapper is what the arms that cannot promise a fresh pointer call instead.
+func (c *checker) recordProvForResult(t soltype.Type, n ast.Node, kind ASTOriginKind) {
+	if c.hasProv(t) || sharedSingleton(t) {
+		return
+	}
+	c.recordProv(t, n, kind)
+}
+
+// sharedSingleton reports whether t is one of the zero-size atom types Go gives a
+// shared address. Every &soltype.NeverType{}, &soltype.UnknownType{},
+// &soltype.NullType{}, and &soltype.UndefinedType{} in a module points at one
+// address, so the pointer-keyed Prov table cannot tell two of them apart.
+func sharedSingleton(t soltype.Type) bool {
+	switch t.(type) {
+	case *soltype.NeverType, *soltype.UnknownType, *soltype.NullType, *soltype.UndefinedType:
+		return true
+	}
+	return false
+}
+
 // recordFusionEdge records the FromNormalization interior edge a normal-form
 // fusion mints, installed on Context in newChecker so a fusion in normal.go or
 // classes.go can reach the table the checker owns. fused is the atom the merge
