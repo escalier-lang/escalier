@@ -83,7 +83,7 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // variance and wrong for reading position. Undoing that flip recovers the position.
 // Each enclosing complement inverts it once, so the parity of negDepth says whether to
 // flip back. The recovered position decides which connected component counts as
-// output-reaching, and that governs both which lifetimes survive elision and which
+// output-reaching. That in turn governs which lifetimes survive elision, and which
 // outlives bounds ltOutlivesRelation asserts.
 //
 // Position alone is not enough, because a complemented borrow reaching no output is
@@ -245,7 +245,7 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 //
 // A lifetime a complement encloses is never elided. It renders under its own name even
 // when it connects nothing, because dropping it would change the type rather than drop a
-// name. So `declare fn f<'a>() -> ¬(&'a T)` keeps `'a` in the quantifier prefix, where
+// name. So `declare fn f<'a>() -> ¬(&'a T)` keeps `'a` in the quantifier prefix, while
 // the same signature over a plain borrow elides it.
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {

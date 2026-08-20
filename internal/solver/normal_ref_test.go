@@ -306,8 +306,8 @@ func TestNegatedBorrowNormalizes(t *testing.T) {
 	})
 	// De Morgan's law turns the complement of a join into a meet of complements, so a
 	// borrow the source wrote as a union member reaches a negated part of its own. DNF
-	// keeps the union under one complement; CNF is where the law applies and the borrow
-	// surfaces as its own negated atom.
+	// keeps the union under one complement. CNF is where the law applies, so there the
+	// borrow surfaces as its own negated atom.
 	t.Run("a borrow inside a negated union splits under De Morgan", func(t *testing.T) {
 		joined := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), ref}, false)
 		require.Equal(t, "¬(&mut {x: number} | {a: number})",

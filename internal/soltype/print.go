@@ -190,13 +190,13 @@ func PrintWithParams(t Type, declared []*TypeParam) string {
 // declaration that quantifies both.
 //
 // A borrow whose lifetime carries no name prints as a bare `&`, since an inferred borrow
-// has no name worth showing. That rule hides a lifetime the source did write: the body of
-// `type Result<'a> = ¬(&'a Point)` holds the variable 'a is bound to, and plain Print has
-// no way to know its name, so it renders `¬&Point` and the reader cannot tell which borrow
-// is excluded. Passing the alias's LifetimeParams here renders `¬&'a Point`.
+// has no name worth showing. That rule also hides a lifetime the source did write. The
+// body of `type Result<'a> = ¬(&'a Point)` holds the variable `'a` binds, and plain Print
+// knows no name for it, so it renders `¬&Point`. A reader cannot tell from that which
+// borrow is excluded. Passing the alias's LifetimeParams here renders `¬&'a Point`.
 //
-// A variable no entry points at keeps its fallback form, `t{ID}` for a type variable and a
-// bare `&` for a borrow lifetime.
+// A variable that no entry names keeps its fallback form. That is `t{ID}` for a type
+// variable and a bare `&` for a borrow lifetime.
 func PrintWithDeclaredParams(t Type, declared []*TypeParam, declaredLts []*LifetimeParam) string {
 	p := &namedPrinter{}
 	p.bindTypeParams(declared)
@@ -280,8 +280,8 @@ func PrintAsSchemeWith(
 	// The third kind is named even when it reaches no parameter, so
 	// `declare fn f<'a>() -> ¬(&'a mut {x: number})` renders
 	// `fn <'a>() -> ¬&'a mut {x: number}`. The name comes from the signature, never from
-	// this pass: a lifetime a signature uses without declaring is reported as an
-	// UndeclaredLifetimeError, so there is no name here to invent.
+	// this pass. A signature that uses a lifetime it does not declare is rejected with an
+	// UndeclaredLifetimeError, so no name reaches here for this pass to invent.
 	//
 	// The same signature over a plain borrow renders `fn () -> &mut {x: number}`, since a
 	// borrow that connects nothing loses only a name by eliding. Eliding under a

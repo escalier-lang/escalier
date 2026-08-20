@@ -187,14 +187,14 @@ func TestInferNegationInTemplateLit(t *testing.T) {
 
 // A complement may name a borrow. `¬(&Point)` denotes every value that is not a borrow of
 // Point, so it admits a borrow of another type, a borrow of Point under a different
-// lifetime, and every value that is not a borrow at all.
+// lifetime, and every value that is not a borrow.
 //
 // A borrow reached only under a union or an intersection resolves the same way, since a
-// complement over a lattice spine is just a complement over what that spine names.
+// complement over a lattice spine is a complement over what that spine names.
 //
 // The last row renders its lifetime, since the alias declares one and the assertion passes
-// those names to the printer. The rows above declare none, so their borrows print as the
-// bare `&` an inferred lifetime falls back to.
+// those names to the printer. The rows above declare none, so their borrows print as a
+// bare `&`, the fallback for an inferred lifetime.
 func TestInferNegationOfBorrowResolves(t *testing.T) {
 	tests := []struct {
 		name string

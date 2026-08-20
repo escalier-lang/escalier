@@ -26,8 +26,8 @@ func notProductiveMsg(span, alias string) string {
 // prints. It is the raw-type twin of inferModule, test-only.
 // aliasLifetimeParams returns the lifetime parameters the alias `name` declares, or nil
 // when it declares none. A caller renders that alias's body with
-// soltype.PrintWithDeclaredParams so a borrow the source named keeps its name, rather than
-// printing as the bare `&` an un-named lifetime falls back to.
+// soltype.PrintWithDeclaredParams so a borrow the source named keeps its name. Without
+// those names it prints as a bare `&`, the fallback for an un-named lifetime.
 func aliasLifetimeParams(ctx *Context, name string) []*soltype.LifetimeParam {
 	def, ok := ctx.aliasDef(name)
 	if !ok {

@@ -288,8 +288,8 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 		tail.bound = &soltype.UnknownType{}
 	}
 	if tail.bound != nil {
-		// The bound is never dropped. An unbounded tail admits every value, which would make
-		// the whole result the top of the subtype lattice and a wider answer than the operand
+		// The bound is never dropped. An unbounded tail admits every value, which makes the
+		// whole result the top of the subtype lattice. That is a wider answer than the operand
 		// the conditional started from, so `Exclude<keyof {a: number, ...}, R>` would accept a
 		// `5`. A check the bound cannot decide comes back as a difference over it instead.
 		tail.bound = e.condOverTailBound(t, tail.bound)
@@ -369,7 +369,7 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 //
 // It asks the question as an empty meet rather than as the subtype check
 // `bound <: ¬extends`. The two agree wherever both apply, and the meet reaches the answer
-// without minting a complement. `...string` against `mut {x: number}` is the shape: no
+// without minting a complement. `...string` against `mut {x: number}` is the shape. No
 // string is a borrowed object, so `string ∩ mut {x: number}` is `never` and the whole tail
 // takes Else.
 //

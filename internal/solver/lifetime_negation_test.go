@@ -102,9 +102,10 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // disabled, so treat it as covering the nesting shape, not the parity rule.
 //
 // The type is assembled rather than written as source because a nested function
-// annotation opens its own lifetime scope. Writing `¬(fn (q: ¬(&'a mut {x: number})) -> number)`
-// inside f's return reports that 'a is undeclared, and declaring it on the inner function
-// would bind a second lifetime rather than the one f's parameter carries.
+// annotation opens its own lifetime scope. The checker rejects
+// `¬(fn (q: ¬(&'a mut {x: number})) -> number)` inside f's return, reporting `'a` as
+// undeclared. Declaring it on the inner function would bind a second lifetime rather than
+// the one f's parameter carries.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
@@ -121,7 +122,7 @@ func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 }
 
 // The coalescer folds `¬¬T` to T, so a borrow under two immediately-nested complements
-// reaches the lifetime pass with no complement around it at all and takes the ordinary
+// reaches the lifetime pass with no complement around it, and takes the ordinary
 // polarity reading.
 //
 // The type is assembled rather than written as source because newNegation folds `¬¬T`

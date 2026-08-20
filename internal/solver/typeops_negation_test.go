@@ -407,8 +407,8 @@ func TestSetDifferenceOverABorrow(t *testing.T) {
 			want: "t6 & ¬{a: &Point}",
 		},
 		{
-			// A borrow on the positive side rides through as a member; the complement
-			// names `string`.
+			// A borrow on the positive side rides through as a member, since the
+			// complement names `string`.
 			name: "BorrowOnThePositiveSide",
 			src:  `type Result<T, 'a> = Exclude<T | &'a Point, string>`,
 			want: "(t6 | &Point) & ¬string",

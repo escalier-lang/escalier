@@ -57,10 +57,10 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   the `RefType` node in its own `EnterType`, where the flip has already applied.
   `e.c.extrudeLt(r.Lt, pol, …)` in `internal/solver/constrain.go` is the clearest
   case. `extrudeLt` wires the origin lifetime to its fresh proxy through the bound
-  direction the polarity picks — an upper bound at `Positive`, a lower bound at
-  `Negative`. Extruding `&'a T` from level 5 to level 0 at root `Positive` leaves
-  `'a` with `lower=0 upper=1`; extruding `¬(&'a T)` at the same root polarity leaves
-  it with `lower=1 upper=0`. That is the outlives direction flipping.
+  direction the polarity picks. That is an upper bound at `Positive` and a lower bound
+  at `Negative`. Extruding `&'a T` from level 5 to level 0 at root `Positive` leaves
+  `'a` with `lower=0 upper=1`. Extruding `¬(&'a T)` at the same root polarity leaves it
+  with `lower=1 upper=0`. That is the outlives direction flipping.
   `RefType.Accept` not walking the lifetime turns out not to matter, because no pass
   relies on `Accept` to reach it.
   `TestComplementFlipsExtrudedLifetimeDirection` pins both rows.
@@ -68,14 +68,14 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   borrow of `T` under `'a`, so it admits a borrow of another type, a borrow of `T` under
   a different lifetime, and every value that is not a borrow. The lifetime is part of
   what the complement names, not something being complemented itself, so the absence of
-  `¬'a` costs nothing. The decision procedure never asks for one: in `constrainImplied` a
+  `¬'a` costs nothing. The decision procedure never asks for one. In `constrainImplied` a
   negated atom always crosses the `<:` and lands as a positive atom on the other side,
   where it is met or joined, and `meetRefs` / `joinRefs` already provide both.
 
   `Exclude<T, &'a Point>` reduces to `T & ¬(&'a Point)`. Two distinct borrows are not
-  disjoint — `refCellFamily` carries only the cross-family rule — so excluding one borrow
-  from another leaves that residual unreduced. An object behaves the same way, being
-  absent from the value families for the same reason, so the residual is the normal
+  disjoint, since `refCellFamily` carries only the cross-family rule, so excluding one
+  borrow from another leaves that residual unreduced. An object behaves the same way and
+  is absent from the value families for the same reason. So the residual is the normal
   outcome for a structural type rather than a special weakness of borrows.
 
   Display-time lifetime classification was the blocker. `coalesceLifetimes` needs a
@@ -85,7 +85,7 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   not elided. A complement does not move a borrow between a parameter and an output, but
   it does flip the polarity its operand is visited at.
 
-  `ltOccVisitor` therefore produces two facts rather than one:
+  `ltOccVisitor` therefore produces two separate facts:
 
   1. **Position**, recovered by undoing one polarity flip per enclosing complement.
      Only the parity matters, since two complements cancel. Position decides which
@@ -289,9 +289,9 @@ now exception narrowing in `try` / `catch`. Wherever Escalier currently has a
 conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
-unchanged. `¬Ref` is admitted: the polarity flip reaches a borrow's lifetime, and
-excluding one borrow from another leaves the same unreduced residual an object
-would. Function overloading is the lone counter-current: there the
+unchanged. `¬Ref` is admitted. The polarity flip reaches a borrow's lifetime, and
+excluding one borrow from another leaves an unreduced residual, exactly as excluding
+one object from another does. Function overloading is the lone counter-current: there the
 inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |

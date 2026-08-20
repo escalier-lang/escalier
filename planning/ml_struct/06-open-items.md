@@ -81,9 +81,9 @@ descending, and every pass reads the lifetime off the `RefType` node in its own
 `EnterType`. `RefType.Accept` not walking `Lt` does not matter, because no pass relies on
 `Accept` to reach it. See [05-feature-interactions.md](05-feature-interactions.md)
 §Lifetimes for the display-time classification this needed and the two facts
-`ltOccVisitor` now produces.
+`ltOccVisitor` produces.
 
-Negation *inside* a borrow, `mut 'a ¬T`, was always fine and still is.
+Negation *inside* a borrow, `mut 'a ¬T`, is unaffected.
 
 
 ## Owning-PR map

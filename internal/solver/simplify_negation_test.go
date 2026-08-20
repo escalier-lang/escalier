@@ -1007,8 +1007,8 @@ func maskVarIDs(printed string) string {
 //     complement drops and the tail is left with the operand's own bound. An alias naming
 //     that object decides the same way, since valueFamilyOf unfolds the reference.
 //
-// A number is not a member either way, which is the property that would break if a bound
-// were dropped rather than kept or discharged.
+// A number is not a member either way. That is the property a dropped bound would break,
+// where keeping the bound or discharging it both preserve it.
 func TestABorrowBoundIsKeptOrDischarged(t *testing.T) {
 	nodes, ctx, errs := inferTypeNodes(t, `
 		type Point = {x: number}

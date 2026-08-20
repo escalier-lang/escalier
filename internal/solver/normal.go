@@ -946,10 +946,10 @@ func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 // borrow as disjoint from `string` would be wrong.
 //
 // An alias is unfolded first, so `&mut Point` and `&mut {x: number}` draw the same family
-// when Point names that object. Classifying on the reference would make the answer depend on
-// how the pointee was spelled, and a complement is where that shows: `5 <: ¬(&mut Point)`
-// holds exactly when `5 <: ¬(&mut {x: number})` does. An unregistered or non-structural
-// alias body falls through to notValueAtom as any other carrier would.
+// when Point names that object. Classifying on the reference would instead make the answer
+// depend on how the pointee was spelled. A complement is where that shows, since
+// `5 <: ¬(&mut Point)` holds exactly when `5 <: ¬(&mut {x: number})` does. An unregistered
+// or non-structural alias body falls through to notValueAtom as any other carrier would.
 func (c *Context) refCellOrNot(carrier soltype.Type) valueFamily {
 	if ref, ok := carrier.(*soltype.AliasType); ok {
 		carrier = c.expandAlias(ref)
