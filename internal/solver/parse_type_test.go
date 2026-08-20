@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"sync/atomic"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -195,12 +196,11 @@ func envLookup(t *testing.T, env map[string]soltype.Type, ta *ast.TypeRefTypeAnn
 }
 
 // objectToSoltype lowers an ObjectTypeAnn into a soltype.ObjectType. It accepts
-// property, method, getter, setter, and constructor elements, mirroring the
+// property, method, getter, setter, constructor, and mapped members, mirroring the
 // production resolveObjectTypeAnn arm for each. A method written more than once
 // under one name folds into a single MethodElem holding an overload set, the way
-// the production overload merge collapses repeated signatures. An index signature,
-// a spread, and a callable element fail the test, since the lattice tests do not
-// author them.
+// the production overload merge collapses repeated signatures. A spread and a
+// callable element fail the test, since the lattice tests do not author them.
 func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTypeAnn) *soltype.ObjectType {
 	t.Helper()
 	elems := make([]soltype.ObjTypeElem, 0, len(ta.Elems))
@@ -232,11 +232,61 @@ func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTy
 			elems = append(elems, &soltype.SetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Param: fn.Params[0].Type, Throws: fn.Throws})
 		case *ast.ConstructorTypeAnn:
 			elems = append(elems, &soltype.ConstructorElem{Fn: funcToSoltype(t, env, e.Fn)})
+		case *ast.MappedTypeAnn:
+			elems = append(elems, mappedToSoltype(t, env, e))
 		default:
 			t.Fatalf("parseType: unsupported object element %T", e)
 		}
 	}
 	return &soltype.ObjectType{Elems: mergeMethodOverloads(elems), Inexact: ta.Inexact}
+}
+
+// mappedKeyCounter mints the ids mappedToSoltype gives each mapped key, so a nested
+// mapped type's key stays distinct from the enclosing one's when both are written K,
+// the way freshMappedKey draws from the Context's counter in production.
+var mappedKeyCounter atomic.Int64
+
+// mappedToSoltype lowers a `[K: Keys]: V` mapped member to a soltype.MappedElem,
+// mirroring the production resolveMappedElem. The `for K in Keys` clause binds K, so
+// the value and the optional key-remapping and filter operands resolve in an
+// environment where K names the minted key. The `?` and `readonly` markers carry
+// through mappedModifier, which is what decides whether an index signature is
+// settled.
+func mappedToSoltype(t *testing.T, env map[string]soltype.Type, m *ast.MappedTypeAnn) *soltype.MappedElem {
+	t.Helper()
+	var keys soltype.Type = &soltype.UnknownType{}
+	if m.TypeParam.Constraint != nil {
+		keys = toSoltype(t, env, m.TypeParam.Constraint)
+	}
+	key := &soltype.MappedKeyType{ID: int(mappedKeyCounter.Add(1)), Name: m.TypeParam.Name}
+	inner := env
+	if m.TypeParam.Name != "" {
+		inner = make(map[string]soltype.Type, len(env)+1)
+		for name, ty := range env {
+			inner[name] = ty
+		}
+		inner[m.TypeParam.Name] = key
+	}
+	var name, check, extends soltype.Type
+	if m.Name != nil {
+		name = toSoltype(t, inner, m.Name)
+	}
+	// The parser fills Check and Extends together or leaves both nil, so a filter is
+	// resolved only when both halves are present.
+	if m.Check != nil && m.Extends != nil {
+		check = toSoltype(t, inner, m.Check)
+		extends = toSoltype(t, inner, m.Extends)
+	}
+	return &soltype.MappedElem{
+		Key:      key,
+		Keys:     keys,
+		Value:    toSoltype(t, inner, m.Value),
+		Name:     name,
+		Check:    check,
+		Extends:  extends,
+		Optional: mappedModifier(m.Optional),
+		Readonly: mappedModifier(m.ReadOnly),
+	}
 }
 
 // objKeyNameReq lowers an object key to its name, failing the test on a computed or

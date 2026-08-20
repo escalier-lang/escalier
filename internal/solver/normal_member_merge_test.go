@@ -167,20 +167,18 @@ func TestObjectMemberJoin(t *testing.T) {
 
 // TestIndexSignatureObjectStaysUnfused guards the scope line of #1103: a mapped
 // member such as an index signature has no per-member merge rule, so an object
-// carrying one is kept as its own atom. parseType does not lower a mapped member,
-// so this builds the object directly. A settled index signature is not a residual,
-// so this checks fusableMember rather than the residual test alone keeps it out.
+// carrying one is kept as its own atom.
+//
+// The member is a settled index signature, `[K: string]?: number`. Settled means
+// not a residual, so this checks that fusableMember keeps it out rather than the
+// residual test alone. MappedElemSettled recognizes the settled form only when the
+// optional marker is present; the non-optional `[K: string]: number` is
+// uninhabited and stays an unsettled residual, which the residual test already
+// keeps out. The assertion pins that the source lowers to the settled form.
 func TestIndexSignatureObjectStaysUnfused(t *testing.T) {
 	c := &Context{}
-	// A settled index signature is `[K: string]?: number`, an optional member over an
-	// uncountable key set. MappedElemSettled recognizes it only when Optional is ModAdd.
-	// The non-optional `[K: string]: number` is uninhabited, so it stays an unsettled
-	// residual instead, which the residual check already keeps out.
 	withIndexSig := func() *soltype.ObjectType {
-		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
-			propElem("a", num()),
-			&soltype.MappedElem{Key: &soltype.MappedKeyType{ID: 0, Name: "K"}, Keys: str(), Value: num(), Optional: soltype.ModAdd},
-		}}
+		return parseType(t, "{a: number, [K: string]?: number}").(*soltype.ObjectType)
 	}
 	require.True(t, soltype.MappedElemSettled(withIndexSig().Elems[1].(*soltype.MappedElem)),
 		"the index signature must be settled for this test to exercise fusableMember")
