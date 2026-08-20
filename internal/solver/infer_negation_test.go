@@ -146,6 +146,43 @@ func TestInferNegationTypeAnnConstraint(t *testing.T) {
 	}
 }
 
+// DISABLED until #1164: a complement written inside a template-literal interpolation only matches
+// once the placeholder matcher gains negation and intersection arms. Today matchInterp in constrain.go
+// handles a string literal, the `string` primitive, and a union of those, so `on${string & ¬"a"}`
+// rejects every value, `"onb"` included. #1164 teaches the matcher to read a complement, after which
+// `on${string & ¬"a"}` admits every `on`-prefixed string but `"ona"`. When #1164 lands, remove the
+// /* */ wrapper.
+func TestInferNegationInTemplateLit(t *testing.T) {
+	/*
+		tests := []struct {
+			name    string
+			src     string
+			wantErr string // "" ⇒ expect no error
+		}{
+			{
+				name: "AdmittedValueAccepted",
+				src:  "val b: `on${string & ¬\"a\"}` = \"onb\"",
+			},
+			{
+				name:    "ExcludedValueRejected",
+				src:     "val a: `on${string & ¬\"a\"}` = \"ona\"",
+				wantErr: "cannot constrain \"ona\" <: `on${string & ¬\"a\"}`",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				_, _, errs := inferSource(t, tt.src)
+				if tt.wantErr == "" {
+					require.Empty(t, errs)
+					return
+				}
+				require.Len(t, errs, 1)
+				require.Equal(t, tt.wantErr, errs[0].Message())
+			})
+		}
+	*/
+}
+
 // The ¬Ref exclusion invariant forbids a complement from naming a borrow. A written `¬T` routes
 // through the resolver's spine walk, so the diagnostic surfaces at the annotation rather than as a
 // panic deeper in normalization. A borrow reached only under a union or an intersection is caught
