@@ -3539,13 +3539,14 @@ func (c *checker) inferTryCatch(scope *Scope, lvl int, e *ast.TryCatchExpr) solt
 		branches = append(branches, tryT)
 	}
 
-	// The caught type is this walk's scrutinee, and the arms are typed exactly as a `match`
-	// expression's are. It is already concrete, so it serves as both the narrowing shape and
-	// the bind target.
-	caught := c.caughtType(collected)
+	// A catch can catch any value the runtime throws, whatever the block's signature named, so the
+	// caught value is `unknown`. That is this walk's scrutinee, serving as both the narrowing shape
+	// and the bind target, and the arms are typed exactly as a `match` expression's are. The
+	// block's known throws drive rethrowUnhandled instead.
+	caught := soltype.Type(&soltype.UnknownType{})
 	branches = append(branches, c.inferMatchArms(scope, lvl, e, e.Catch, caught, caught, res)...)
 	c.checkUniformOwnership(e, branches)
-	c.rethrowUnhandled(scope, e, caught, enclosing)
+	c.rethrowUnhandled(scope, e, collected, enclosing)
 	c.recordType(e, res)
 	return res
 }
@@ -3569,58 +3570,37 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 	return t, diverges
 }
 
-// caughtType returns the type a catch arm's pattern binds against: what the try block
-// raised, reopened with a trailing `...`. The tail is there because a clause is a floor
-// rather than a ceiling, so a call can raise something its signature did not name. A block
-// with no known exceptional exit yields `unknown`, the tail on its own, since an inexact
-// union with no members carries no value to bind against.
-func (c *checker) caughtType(collected soltype.Type) soltype.Type {
-	shape := coalesce(collected, soltype.Positive)
-	if isNeverType(shape) {
-		return &soltype.UnknownType{}
-	}
-	return newUnion(c.ctx, []soltype.Type{shape}, true)
-}
-
-// rethrowUnhandled sends the part of the caught union no arm covers into the enclosing
+// rethrowUnhandled sends the part of the block's known throws no arm covers into the enclosing
 // throws sink. A value matching no arm is re-raised at runtime, so uncovered members draw a
-// rethrow rather than the non-exhaustiveness error the equivalent `match` would draw.
+// rethrow rather than the non-exhaustiveness error the equivalent `match` would draw. collected is
+// what the try block raised, before coalescing.
 //
-// What escapes is the set difference `caught ∩ ¬handled`, where handled is the type the arms
-// catch. The difference is taken one member at a time, which is exact because meeting a
-// complement distributes over a union: `(A | B) ∩ ¬H` is `(A ∩ ¬H) | (B ∩ ¬H)`. A member
-// survives when the meet still holds a value, which memberCaught decides.
+// What escapes is the set difference `known ∩ ¬handled`, where handled is the type the arms catch.
+// The difference is taken one member at a time, which is exact because meeting a complement
+// distributes over a union: `(A | B) ∩ ¬H` is `(A ∩ ¬H) | (B ∩ ¬H)`. A member survives when the
+// meet still holds a value, which memberCaught decides.
 //
-// A guarded arm can fail its guard, so it catches nothing and contributes nothing to handled.
-// An unguarded catch-all catches every value and is answered before the difference is taken.
-// Only the MEMBERS are rethrown: every throws type is open already, and only `unknown` could
-// carry the tail, so adding it would erase the named types the clause had.
-func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, caught, enclosing soltype.Type) {
+// A guarded arm can fail its guard, so it catches nothing and contributes nothing to handled. An
+// unguarded catch-all catches every value and is answered before the difference is taken. Only the
+// named throws are weighed: a value outside them can still be thrown and rethrown at runtime, but
+// no signature named its type, so recording it would widen the clause to `unknown`.
+func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, collected, enclosing soltype.Type) {
 	if ast.HasUnguardedCatchAll(e.Catch) {
 		return
 	}
 	handled := c.armsCatchType(scope, e.Catch)
-	// A non-union `caught` carries no named member to rethrow. It is `unknown`, the bare
-	// open tail caughtType renders for a block that raises nothing known, or the ErrorType
-	// recovery placeholder. Neither leaves anything for the enclosing clause to record.
-	var rethrown soltype.Type = &soltype.NeverType{}
-	if u, isUnion := caught.(*soltype.UnionType); isUnion {
-		uncovered := make([]soltype.Type, 0, len(u.Types))
-		for _, m := range u.Types {
-			for _, part := range c.caughtMembers(m) {
-				if c.memberCaught(part, handled, e.Catch) {
-					continue
-				}
-				uncovered = append(uncovered, part)
-			}
+	uncovered := make([]soltype.Type, 0)
+	for _, part := range c.caughtMembers(coalesce(collected, soltype.Positive)) {
+		if c.memberCaught(part, handled, e.Catch) {
+			continue
 		}
-		rethrown = newUnion(c.ctx, uncovered, false)
+		uncovered = append(uncovered, part)
 	}
+	rethrown := newUnion(c.ctx, uncovered, false)
 	if isNeverType(rethrown) {
-		// Every member an arm could name is covered. Codegen still emits a runtime rethrow
-		// for a value that matches no arm, but such a value came from the open tail, so no
-		// signature named its type. Recording it would mean widening the clause to
-		// `unknown` to state what is already true of every clause.
+		// Every known throw is covered. Codegen still emits a runtime rethrow for a value that
+		// matches no arm, but no signature named its type, so recording it would mean widening the
+		// clause to `unknown` to state what is already true of every clause.
 		return
 	}
 	// The engine runs directly rather than through c.constrain, so its errors are dropped

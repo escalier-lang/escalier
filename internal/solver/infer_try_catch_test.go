@@ -51,17 +51,18 @@ func TestInferTryCatchHandlesWithACatchAll(t *testing.T) {
 // This is the one place the tail is rendered. A rethrow drops it, since a throws clause is
 // open already and would gain nothing from carrying it, but a catch arm matches an actual
 // value and has to reckon with one the block did not predict.
-func TestInferTryCatchBindsAnInexactUnion(t *testing.T) {
+func TestInferTryCatchBindsUnknown(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
-			// The arm returns the caught binding, so the function's return type is the
-			// caught type.
-			name: "CaughtBindingCarriesAnOpenTail",
+			// The arm returns the caught binding, so the function's return type is the caught
+			// type. A catch can catch any value the runtime throws, so the caught value is
+			// `unknown` whatever the block's signature named.
+			name: "CaughtBindingIsUnknown",
 			src:  `fn f() { try { throw "boom" } catch { e => { return e } } }`,
-			want: `fn () -> "boom" | ...`,
+			want: `fn () -> unknown`,
 		},
 		{
-			name: "CaughtBindingUnionsEveryRaisedType",
+			name: "CaughtBindingIsUnknownWhateverIsRaised",
 			src: `
 				fn f(c: boolean) {
 					try {
@@ -71,11 +72,11 @@ func TestInferTryCatchBindsAnInexactUnion(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> 5 | "boom" | ...`,
+			want: `fn (c: boolean) -> unknown`,
 		},
 		{
-			// A block with no known exceptional exit still binds something, since the tail
-			// is what remains. `unknown` is that tail on its own.
+			// A block with no known exceptional exit binds `unknown` too, the same as one that
+			// raises a known type.
 			name: "CaughtBindingOfAQuietBlockIsUnknown",
 			src: `
 				fn f() {
@@ -91,16 +92,14 @@ func TestInferTryCatchBindsAnInexactUnion(t *testing.T) {
 	})
 }
 
-// Without a catch-all the arms leave part of the caught union unhandled, and the compiler
-// rethrows it rather than reporting the arms non-exhaustive. What reaches the enclosing
-// clause is the members no arm covers.
+// Without a catch-all the arms leave part of the block's known throws unhandled, and the
+// compiler rethrows it rather than reporting the arms non-exhaustive. What reaches the
+// enclosing clause is the members no arm covers.
 //
-// The caught union's open tail is NOT among them, even though no arm short of a catch-all
-// covers it. Every throws type is already open, since any call can raise something its
-// signature did not name, so carrying the tail into the clause would re-state that once per
-// `try` and, since only `unknown` can hold it, erase every named type the clause had. The
-// tail stays where it is observable, on the caught binding, which
-// TestInferTryCatchBindsAnInexactUnion covers.
+// Only the known throws are weighed. A value outside them can still be thrown and rethrown at
+// runtime, but no signature named its type, so recording it would widen the clause to
+// `unknown`. The caught binding, which the arms narrow, is `unknown`, which
+// TestInferTryCatchBindsUnknown covers.
 func TestInferTryCatchRethrowsWhatTheArmsLeave(t *testing.T) {
 	runThrowsCases(t, []throwsCase{
 		{
@@ -220,25 +219,25 @@ func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
 		want map[string]string
 	}{
 		{
-			name: "CaughtBindingCollectsTheBlocksThrows",
+			name: "CaughtBindingIsUnknown",
 			src:  `val caught = try { throw "fail" } catch { msg => msg }`,
-			want: map[string]string{"caught": `"fail" | ...`},
+			want: map[string]string{"caught": `unknown`},
 		},
 		{
 			// The install is undone when the block finishes, so a later `try` over a quiet
-			// block collects nothing rather than inheriting the earlier block's throws.
+			// block collects nothing rather than inheriting the earlier block's throws. Both
+			// caught bindings read `unknown`, whatever the block raised.
 			name: "TheSinkDoesNotLeakBetweenDecls",
 			src: `
 				val a = try { throw "one" } catch { e => e }
 				val b = try { val q = 1 } catch { e => e }
 			`,
-			want: map[string]string{"a": `"one" | ...`, "b": "unknown"},
+			want: map[string]string{"a": `unknown`, "b": "unknown"},
 		},
 		{
 			// throwsSink reads the module-level sink only when there is no funcCtx, so a
-			// function declared inside the block collects into its own signature. The block
-			// diverges, so the binding is the caught type alone, and `"inner"` is absent
-			// from it while the block's own `"outer"` is there.
+			// function declared inside the block collects into its own signature rather than
+			// the block's. The caught binding is `unknown` regardless.
 			name: "ANestedFunctionKeepsItsOwnSink",
 			src: `
 				val caught = try {
@@ -246,7 +245,7 @@ func TestInferTryCatchAtModuleTopLevel(t *testing.T) {
 					throw "outer"
 				} catch { e => e }
 			`,
-			want: map[string]string{"caught": `"outer" | ...`},
+			want: map[string]string{"caught": `unknown`},
 		},
 	}
 	for _, test := range tests {
@@ -279,7 +278,7 @@ func TestInferTryCatchNests(t *testing.T) {
 					}
 				}
 			`,
-			want: `fn (c: boolean) -> "boom" | ...`,
+			want: `fn (c: boolean) -> unknown`,
 		},
 		{
 			// The outer catch-all closes what the inner form left over, so the function
@@ -581,17 +580,13 @@ func TestInferTryCatchExpandsAliasedErrorTypes(t *testing.T) {
 	})
 }
 
-// A catch arm is a refutable context, so a structural pattern over a union of caught types
-// binds against only the members it can destructure. `[a, b]` keeps `[number, number]` and
-// drops `[string]`, which is what stops the arm from reporting a length mismatch against a
-// member it was never meant to match. One diagnostic remains. It comes from the open `...`
-// tail caughtType puts on every caught type, not from the dropped member. A fixed-arity tuple
-// pattern cannot destructure that tail, so `[a, b]` still fails against
-// `[number, number] | ...`.
+// The caught value is `unknown`, since a catch can catch any value the runtime throws. A
+// fixed-arity tuple pattern cannot destructure `unknown`, so `[a, b]` fails against it. The
+// catch-all arm below still binds the value, so only the tuple arm's diagnostic remains.
 func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			name: "TuplePatternKeepsOnlyTheMembersItDestructures",
+			name: "TuplePatternCannotDestructureUnknown",
 			src: `
 				fn f(b: boolean) {
 					return try {
@@ -603,7 +598,7 @@ func TestInferTryCatchArmNarrowsItsScrutinee(t *testing.T) {
 				}
 			`,
 			wantErrs: []string{
-				"6:7-6:13: cannot constrain tuple | ... <: tuple",
+				"6:7-6:13: cannot constrain unknown <: tuple",
 			},
 		},
 	})
