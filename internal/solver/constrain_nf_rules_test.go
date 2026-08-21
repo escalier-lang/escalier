@@ -7,6 +7,16 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// printedBounds renders a variable's bound list for comparison against Escalier type
+// syntax, which is what makes a bound assertion readable.
+func printedBounds(bounds []soltype.Type) []string {
+	out := make([]string, len(bounds))
+	for i, b := range bounds {
+		out[i] = soltype.Print(b)
+	}
+	return out
+}
+
 // --- The rules constrain routes through the normal-form layer ---
 //
 // constrain_nf_test.go states the conformance corpus, the verdicts the layer is
@@ -149,7 +159,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			name: "a subtype side with a positive part records the meet",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
-				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}, false), v, nil
+				return strLit("hi"), newUnion(nil, []soltype.Type{v, num()}), v, nil
 			},
 			wantBounds:  []string{`"hi"`},
 			wantSurface: `"hi"`,
@@ -172,7 +182,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			name: "a concrete candidate that holds leaves the variable unbounded",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
-				return numLit(5), newUnion(nil, []soltype.Type{v, num()}, false), v, nil
+				return numLit(5), newUnion(nil, []soltype.Type{v, num()}), v, nil
 			},
 			wantBounds:  []string{},
 			wantSurface: "never",
@@ -191,7 +201,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			name: "a top meet skips a variable sibling",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				other, v := c.freshVar(0), c.freshVar(0)
-				return negT(other), newUnion(nil, []soltype.Type{num(), v}, false), v, []*soltype.TypeVarType{other}
+				return negT(other), newUnion(nil, []soltype.Type{num(), v}), v, []*soltype.TypeVarType{other}
 			},
 			wantBounds:  []string{"¬number"},
 			wantSurface: "¬number",
@@ -205,7 +215,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			name: "a top meet whose siblings are all variables records unknown",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				other, v, third := c.freshVar(0), c.freshVar(0), c.freshVar(0)
-				return negT(other), newUnion(nil, []soltype.Type{v, third}, false), v, []*soltype.TypeVarType{other, third}
+				return negT(other), newUnion(nil, []soltype.Type{v, third}), v, []*soltype.TypeVarType{other, third}
 			},
 			wantBounds:  []string{"unknown"},
 			wantSurface: "unknown",
@@ -266,7 +276,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				sub := newIntersection(nil, []soltype.Type{rec(), numToStr()})
-				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+				return sub, newUnion(nil, []soltype.Type{str(), v}), v
 			},
 			later:      func() soltype.Type { return numToStr() },
 			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> string)"},
@@ -284,7 +294,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				v := c.freshVar(0)
 				sub := newIntersection(nil, []soltype.Type{numToStr(), strToNum()})
-				return sub, newUnion(nil, []soltype.Type{boolT(), v}, false), v
+				return sub, newUnion(nil, []soltype.Type{boolT(), v}), v
 			},
 			later:      func() soltype.Type { return strToNum() },
 			wantBounds: []string{"(fn (x: number) -> string) & (fn (x: string) -> number)"},
@@ -306,7 +316,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 				v := c.freshVar(0)
 				v.LowerBounds = []soltype.Type{numLit(5)}
 				sub := newIntersection(nil, []soltype.Type{v, rec()})
-				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+				return sub, newUnion(nil, []soltype.Type{str(), v}), v
 			},
 			wantBounds: []string{"5"},
 		},
@@ -321,7 +331,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType) {
 				tv, u := c.freshVar(0), c.freshVar(0)
 				sub := newIntersection(nil, []soltype.Type{u, rec()})
-				return sub, newUnion(nil, []soltype.Type{tv, u}, false), tv
+				return sub, newUnion(nil, []soltype.Type{tv, u}), tv
 			},
 			wantBounds: []string{},
 		},
@@ -341,7 +351,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 				v := c.freshVar(0)
 				v.LowerBounds = []soltype.Type{numLit(5)}
 				sub := newIntersection(nil, []soltype.Type{v, rec()})
-				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+				return sub, newUnion(nil, []soltype.Type{str(), v}), v
 			},
 			later:      func() soltype.Type { return str() },
 			wantBounds: []string{"5"},
@@ -361,7 +371,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 				v := c.freshVar(0)
 				v.UpperBounds = []soltype.Type{numToStr()}
 				sub := newIntersection(nil, []soltype.Type{rec(), numToStr()})
-				return sub, newUnion(nil, []soltype.Type{str(), v}, false), v
+				return sub, newUnion(nil, []soltype.Type{str(), v}), v
 			},
 			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> string)"},
 		},
@@ -379,7 +389,7 @@ func TestConstrainVarCandidateOverAMultiAtomMeet(t *testing.T) {
 				outer := c.freshVar(0)
 				deep := c.freshVar(1)
 				sub := newIntersection(nil, []soltype.Type{rec(), exactFn(deep, identParam("x", num()))})
-				return sub, newUnion(nil, []soltype.Type{str(), outer}, false), outer
+				return sub, newUnion(nil, []soltype.Type{str(), outer}), outer
 			},
 			wantBounds: []string{"{a: 1, ...} & (fn (x: number) -> t2)"},
 		},
@@ -456,59 +466,11 @@ func TestConstrainRecursiveListThroughNormalForm(t *testing.T) {
 			return newUnion(nil, []soltype.Type{
 				exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
 				exactObj(propElem("head", num()), propElem("tail", ref)),
-			}, false)
+			})
 		})
 	}
 	require.Empty(t, Messages((&Context{}).Constrain(list(0, "X0"), list(4, "X1"))))
 	require.Empty(t, Messages((&Context{}).Constrain(list(4, "X1"), list(0, "X0"))))
-}
-
-// TestConstrainInexactUnionSuperWeighsNamedMembers pins that an inexact union's
-// named members are weighed before its open tail absorbs anything. The tail has
-// no atom to stand for it, so such a union is one atom and the members would
-// otherwise never be reached, leaving the constraint accepted through the tail
-// with nothing recorded.
-//
-// A member that matches has to bind what it binds. Each row's matching member is
-// `{x: T}` for a fresh T, so a row that weighed it records the subtype's property
-// as T's lower bound and T coalesces to `5`.
-func TestConstrainInexactUnionSuperWeighsNamedMembers(t *testing.T) {
-	tests := []struct {
-		name string
-		// rest names the members beside `{x: T}`, and open says whether the union
-		// itself carries the tail.
-		rest []soltype.Type
-		open bool
-	}{
-		{
-			name: "beside another member",
-			rest: []soltype.Type{str()},
-			open: true,
-		},
-		{
-			// The union collapses to the one member, which is the member to weigh.
-			name: "the only member",
-			open: true,
-		},
-		{
-			// The tail rides on a member rather than on the union. Splicing the members
-			// out of the nested union is what keeps the outer one from inheriting it.
-			name: "the tail rides a nested union member",
-			rest: []soltype.Type{&soltype.UnionType{Types: []soltype.Type{str(), boolT()}, Inexact: true}},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := &Context{}
-			prop := c.freshVar(0)
-			members := append([]soltype.Type{exactObj(propElem("x", prop))}, tt.rest...)
-			super := &soltype.UnionType{Types: members, Inexact: tt.open}
-
-			require.Empty(t, Messages(c.Constrain(exactObj(propElem("x", numLit(5))), super)))
-			require.Len(t, prop.LowerBounds, 1)
-			require.Equal(t, "5", soltype.Print(coalesce(prop, soltype.Positive)))
-		})
-	}
 }
 
 // TestConstrainReportsOneDiagnosticPerFailure pins that a failure is reported
@@ -522,7 +484,7 @@ func TestConstrainReportsOneDiagnosticPerFailure(t *testing.T) {
 		newUnion(nil, []soltype.Type{
 			inexactObj(propElem("a", num())),
 			inexactObj(propElem("b", num())),
-		}, false),
+		}),
 		inexactObj(propElem("c", num())),
 	}}
 
@@ -541,7 +503,7 @@ func TestConstrainUnionCommitOnAFusedAtom(t *testing.T) {
 		exactObj(propElem("x", num())),
 		exactObj(propElem("x", str())),
 		catchAll,
-	}, false).(*soltype.UnionType)
+	}).(*soltype.UnionType)
 
 	errs := c.Constrain(exactObj(propElem("x", numLit(5))), super)
 	require.Equal(t, []string{

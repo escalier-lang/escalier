@@ -481,8 +481,8 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 	require.Equal(t, "fn (p: [string] | [number, number]) -> number | string", values["f"])
 }
 
-// The exact counterpart of the inexact case above still narrows soundly. With no open tail,
-// `{x}` binds against only the `{x: number}` member and reads `x` at `number` without error.
+// A match arm's object test narrows a union soundly. With `{x}` binding against only the
+// `{x: number}` member, it reads `x` at `number` without error.
 func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		fn g(p: {x: number} | {y: string}) {

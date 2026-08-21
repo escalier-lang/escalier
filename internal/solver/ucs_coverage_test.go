@@ -534,22 +534,22 @@ func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 		err  *NonExhaustiveMatchError
 		want string
 	}{
-		// One unmatched witness alongside an open tail. The sources above reach this pairing
-		// only with two or more witnesses.
-		"OneUnmatchedWithOpenTail": {
+		// One unmatched witness alongside the catch-all clause an infinite carrier draws. The
+		// sources above reach this pairing only with two or more witnesses.
+		"OneUnmatchedWithCatchAllClause": {
 			err: &NonExhaustiveMatchError{
 				Unmatched: []soltype.Type{numLit(1)},
-				OpenTail:  &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+				OpenTail:  num(),
 			},
-			want: "match is not exhaustive; add a branch for `1`; `1 | 2 | ...` admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; add a branch for `1`; `number` admits values no pattern names, so add a catch-all branch",
 		},
-		// The open-tail clause closes the message, after whatever the named witnesses ask for.
-		"GuardedWithOpenTail": {
+		// The catch-all clause closes the message, after whatever the named witnesses ask for.
+		"GuardedWithCatchAllClause": {
 			err: &NonExhaustiveMatchError{
 				Guarded:  []soltype.Type{numLit(1)},
-				OpenTail: &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
+				OpenTail: num(),
 			},
-			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `1 | 2 | ...` admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `number` admits values no pattern names, so add a catch-all branch",
 		},
 		"TwoRefutable": {
 			err:  &NonExhaustiveMatchError{Refutable: []soltype.Type{numLit(1), numLit(2)}},

@@ -177,7 +177,7 @@ func registerIteratorResultAliases(ctx *Context) {
 		Body: newUnion(ctx, []soltype.Type{
 			&soltype.AliasType{Name: iteratorYieldResultName, TypeArgs: []soltype.Type{t.Var}},
 			&soltype.AliasType{Name: iteratorReturnResultName, TypeArgs: []soltype.Type{tReturn.Var}},
-		}, false),
+		}),
 	})
 }
 

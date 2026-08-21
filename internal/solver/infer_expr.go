@@ -853,7 +853,7 @@ func (c *checker) joinBorrows(node ast.Node, lvl int, types []soltype.Type) (sol
 		// longer-lived one, so a later read could outlive the borrowed data. The
 		// distinct lifetimes must survive into the union for the borrow check to
 		// stay sound.
-		return newUnion(nil, types, false), true
+		return newUnion(nil, types), true
 	}
 	// Reconcilable fields: unite the input lifetimes under one join lifetime and return the
 	// single mutable carrier. Uniting them only here keeps the union path from minting a
@@ -944,7 +944,7 @@ func readCarrier(recv soltype.Type) soltype.Type {
 	if !sawBorrow {
 		return v
 	}
-	return newUnion(nil, members, false)
+	return newUnion(nil, members)
 }
 
 // peelBorrows strips the borrow wrapper off a concrete carrier, distributing through
@@ -960,13 +960,7 @@ func peelBorrows(t soltype.Type) soltype.Type {
 		for i, m := range t.Types {
 			members[i] = peelBorrows(m)
 		}
-		// The tail's bound is a member the union does not list, so it peels too. Dropping it
-		// would leave the peeled union unbounded, which is top.
-		tail := tailOf(t)
-		if tail.bound != nil {
-			tail.bound = peelBorrows(tail.bound)
-		}
-		return newUnionWithTail(nil, members, tail)
+		return newUnion(nil, members)
 	}
 	return t
 }
@@ -984,10 +978,7 @@ func hasBorrowShape(t soltype.Type) bool {
 				return true
 			}
 		}
-		// The tail's bound is an unlisted member, and peelBorrows peels it, so a borrow
-		// held only there has to count too. Without this readCarrier would peel the lower
-		// bound and then discard the peeled result, re-borrowing what the read had freed.
-		return t.TailBound != nil && hasBorrowShape(t.TailBound)
+		return false
 	}
 	return false
 }
@@ -2971,7 +2962,7 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 				nexts = append(nexts, next)
 			}
 		}
-		return newUnion(c.ctx, elems, u.Inexact), newUnion(c.ctx, rets, u.Inexact), c.meetNexts(nexts), true
+		return newUnion(c.ctx, elems), newUnion(c.ctx, rets), c.meetNexts(nexts), true
 	}
 	if g, isGen := carrier.(*soltype.GeneratorType); isGen {
 		if g.Async && (c.fn == nil || !c.fn.async) {
@@ -3596,7 +3587,7 @@ func (c *checker) rethrowUnhandled(scope *Scope, e *ast.TryCatchExpr, collected,
 		}
 		uncovered = append(uncovered, part)
 	}
-	rethrown := newUnion(c.ctx, uncovered, false)
+	rethrown := newUnion(c.ctx, uncovered)
 	if isNeverType(rethrown) {
 		// Every known throw is covered. Codegen still emits a runtime rethrow for a value that
 		// matches no arm, but no signature named its type, so recording it would mean widening the
@@ -3695,7 +3686,7 @@ func (c *checker) armsCatchType(scope *Scope, arms []*ast.MatchCase) soltype.Typ
 			parts = append(parts, caught)
 		}
 	}
-	return newUnion(c.ctx, parts, false)
+	return newUnion(c.ctx, parts)
 }
 
 // armCatchType returns the type one arm's pattern catches, and reports whether the pattern
@@ -3946,54 +3937,18 @@ func narrowUnionMembers(shape soltype.Type, keep func(soltype.Type) bool) (solty
 			kept = append(kept, m)
 		}
 	}
-	// An inexact union keeps its open `...` tail through narrowing. A tail member may carry
-	// the tested fields at any type, so the tail is retained and the field-read rule (D4)
-	// reads a narrowed inexact member's fields as `... | unknown`, i.e. `unknown`. An exact
-	// union narrows to precisely the members that matched.
-	tail := tailOf(u)
-	tailDropped := false
-	if tail.bound != nil && closedShape(tail.bound) && !keep(tail.bound) {
-		// No value the bound admits has the shape the test asks for, so the tail contributes
-		// no member to this branch and goes. See closedShape for which bounds may be decided
-		// this way: those whose own keys or arity pin every member drawn from them.
-		tail = unionTail{}
-		tailDropped = true
-	}
-	// Dropping the tail is narrowing even when every listed member matched, so the no-op
-	// return has to weigh it. `{a: number} | ...string` narrowed by `{a}` keeps its one
-	// member and sheds the string tail, which would be missed by a member count alone.
-	if len(kept) == 0 || (len(kept) == len(u.Types) && !tailDropped) {
+	// A union narrows to precisely the members that matched. No member matching, or every one
+	// matching, is no narrowing at all.
+	if len(kept) == 0 || len(kept) == len(u.Types) {
 		return nil, false
 	}
-	if len(kept) == 1 && !tail.open {
+	if len(kept) == 1 {
 		return kept[0], true
 	}
-	// Keep the structured inexact union rather than returning `unknown`. It is the bind
-	// target for the branch's leaves, and constrainUnionFieldRead needs the listed members to
-	// read each field before the tail widens it. Binding against bare `unknown` would leave
-	// nothing to destructure.
-	return &soltype.UnionType{Types: kept, Inexact: tail.open, TailBound: tail.bound}, true
-}
-
-// closedShape reports whether a `keep` test — which inspects only keys and arity, never field
-// values — answers the same for every value the bound admits, so the bound's own result settles
-// every member drawn from it. It reads through a borrow to the carrier first, matching how `keep`
-// peels one via CarrierOf. A primitive, a literal, an exact object, or an exact tuple qualifies:
-// each pins its members' keys exactly, so `{c: boolean}` lacking "a" means none of its inhabitants
-// has "a". An inexact object or tuple, a union, or a bare type variable does not, since a member
-// may carry a key the bound omits; deciding those needs a disjointness check narrowUnionMembers has
-// no Context to run, so it keeps the tail — the wider, safe answer.
-func closedShape(t soltype.Type) bool {
-	switch t := soltype.CarrierOf(t).(type) {
-	case *soltype.PrimType, *soltype.LitType:
-		return true
-	case *soltype.ObjectType:
-		return !t.Inexact
-	case *soltype.TupleType:
-		return !t.Inexact && !hasRestSpread(t.Elems)
-	default:
-		return false
-	}
+	// Keep the structured union rather than returning `unknown`. It is the bind target for the
+	// branch's leaves, and constrainUnionFieldRead needs the listed members to read each field.
+	// Binding against bare `unknown` would leave nothing to destructure.
+	return &soltype.UnionType{Types: kept}, true
 }
 
 // infiniteInhabitants reports whether a carrier admits infinitely many values, so no finite

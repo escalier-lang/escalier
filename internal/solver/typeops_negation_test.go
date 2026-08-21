@@ -98,15 +98,6 @@ func TestReduceSetDifference(t *testing.T) {
 			want: `number | string & ¬"a"`,
 		},
 		{
-			// `("a" | "b" | ...) & ¬"a"`
-			//
-			// An open tail names members the reduction cannot enumerate, so which of them the
-			// exclusion removes is undecided and the tail survives.
-			name: "InexactPositiveSideKeepsTail",
-			diff: meet(&soltype.UnionType{Types: []soltype.Type{strLit("a"), strLit("b")}, Inexact: true}, negate(strLit("a"))),
-			want: `"b" | ...`,
-		},
-		{
 			// `(string | null) & ¬(null | undefined)`
 			//
 			// `NonNullable<string | null>` written natively. Each member is settled against the
@@ -116,45 +107,6 @@ func TestReduceSetDifference(t *testing.T) {
 			name: "NonNullableDropsTheAbsenceMarkers",
 			diff: meet(join(str(), &soltype.NullType{}), negate(join(&soltype.NullType{}, &soltype.UndefinedType{}))),
 			want: "string",
-		},
-		{
-			// `("a" | ...) & ¬"a"`
-			//
-			// Every named member is excluded and the tail is undecided, so the difference stays
-			// as it stands. Building the union would answer `never`, which claims the tail is
-			// empty too.
-			name: "InexactPositiveSideWithNoSurvivorsStays",
-			diff: meet(&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true}, negate(strLit("a"))),
-			want: `("a" | ...) & ¬"a"`,
-		},
-		{
-			// `("a" | "b" | ...string) & ¬"a"`
-			//
-			// A bounded tail draws its members from `string`, so the exclusion applies to that
-			// bound the same way it applies to a named member. The tail comes through narrowed
-			// rather than undecided.
-			name: "BoundedTailNarrowsWithTheNamedMembers",
-			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a"), strLit("b")}, str()), negate(strLit("a"))),
-			want: `"b" | ... : (string & ¬"a")`,
-		},
-		{
-			// `("a" | ...string) & ¬"a"`
-			//
-			// The case InexactPositiveSideWithNoSurvivorsStays leaves standing, settled. The
-			// answer is the string keys other than "a", a union naming no member and drawing
-			// every one it has from `string & ¬"a"`.
-			name: "BoundedTailSurvivesWithNoNamedMember",
-			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()), negate(strLit("a"))),
-			want: `... : (string & ¬"a")`,
-		},
-		{
-			// `("a" | ...string) & ¬string`
-			//
-			// The exclusion empties the bound, so the tail contributes nothing, and it excludes
-			// the one named member too. Nothing is left.
-			name: "BoundedTailEmptiedByItsOwnBound",
-			diff: meet(newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()), negate(str())),
-			want: "never",
 		},
 		{
 			// `(("a" | "b") & ¬"a") & ¬"b"`

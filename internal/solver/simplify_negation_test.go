@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"regexp"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -16,7 +15,7 @@ func negT(inner soltype.Type) soltype.Type { return &soltype.NegationType{Inner:
 
 // unionT and interT mint the two lattice nodes the way coalesced output does, with no
 // Context, so the input to the simplifier is normalized exactly as coalescing leaves it.
-func unionT(parts ...soltype.Type) soltype.Type { return newUnion(nil, parts, false) }
+func unionT(parts ...soltype.Type) soltype.Type { return newUnion(nil, parts) }
 func interT(parts ...soltype.Type) soltype.Type { return newIntersection(nil, parts) }
 
 // A complement in a coalesced intersection collapses against the disjointness facts the
@@ -121,26 +120,23 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			want:         "unknown",
 		},
 		{
-			// An inexact union is the top of the subtype lattice, so nothing satisfies
-			// its complement and the meet is empty. Rendering `never` says that, where
-			// leaving the complement standing would read as a live constraint on a type
-			// no value inhabits.
-			name: "complement over an open union empties the meet",
+			// number is disjoint from the union, so its complement excludes nothing from
+			// number and drops, leaving number.
+			name: "complement over a disjoint union drops",
 			build: func(*checker) soltype.Type {
-				return interT(num(), negT(newUnion(nil, []soltype.Type{boolT(), str()}, true)))
+				return interT(num(), negT(newUnion(nil, []soltype.Type{boolT(), str()})))
 			},
-			unsimplified: "number & ¬(string | boolean | ...)",
-			want:         "never",
+			unsimplified: "number & ¬(string | boolean)",
+			want:         "number",
 		},
 		{
-			// The same holds with the open union on both sides. Here the complement folds
-			// to `never` on its own, before the meet is weighed at all.
-			name: "an open union meets its own complement",
+			// A union meets its own complement, which admits no value.
+			name: "a union meets its own complement",
 			build: func(*checker) soltype.Type {
-				open := func() soltype.Type { return newUnion(nil, []soltype.Type{str(), num()}, true) }
-				return interT(open(), negT(open()))
+				u := func() soltype.Type { return newUnion(nil, []soltype.Type{str(), num()}) }
+				return interT(u(), negT(u()))
 			},
-			unsimplified: "(number | string | ...) & ¬(number | string | ...)",
+			unsimplified: "(number | string) & ¬(number | string)",
 			want:         "never",
 		},
 	}
@@ -200,32 +196,6 @@ func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 		require.False(t, changed)
 		require.Equal(t, members, kept)
 	})
-
-	// `(string | number | ...) & ¬string`. An open tail admits values no arm names, so no
-	// arm is dropped and the complement stays as the only statement about what the tail
-	// excludes.
-	t.Run("inexact union keeps its arms", func(t *testing.T) {
-		open := newUnion(nil, []soltype.Type{str(), num()}, true)
-		members := []soltype.Type{open, negT(str())}
-		kept, changed, provedEmpty := simplifyNegations(c.ctx, members)
-		require.False(t, provedEmpty)
-		require.False(t, changed)
-		require.Equal(t, members, kept)
-	})
-
-	// `number & ¬(boolean | ...)`. An inexact union is the top of the subtype lattice, so
-	// nothing satisfies its complement and the meet has no inhabitant. The two subtype
-	// facts the derivation rests on are asserted first, so a change to either shows up
-	// here as well as in TestOpenUnionIsTopForSubtypingOnly.
-	t.Run("inexact union operand collapses the meet", func(t *testing.T) {
-		open := newUnion(nil, []soltype.Type{boolT()}, true)
-		require.True(t, subtypeHolds(c.ctx, num(), open), "every type is below an inexact union")
-		require.False(t, subtypeHolds(c.ctx, num(), negT(open)), "so nothing is below its complement")
-		kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{num(), negT(open)})
-		require.True(t, provedEmpty)
-		require.True(t, changed)
-		require.Empty(t, kept)
-	})
 }
 
 // newNegation collapses the three operands whose complement the surface type set already
@@ -239,420 +209,13 @@ func TestNewNegation(t *testing.T) {
 		{"never", &soltype.NeverType{}, "unknown"},
 		{"unknown", &soltype.UnknownType{}, "never"},
 		{"double complement", negT(str()), "string"},
-		// A union whose open tail carries no bound accepts every value, so its complement
-		// accepts none.
-		{"open union", newUnion(nil, []soltype.Type{boolT(), str()}, true), "never"},
 		{"primitive", str(), "¬string"},
-		// A closed union bounds its members, so its complement is a real type.
-		{"closed union", unionT(str(), num()), "¬(number | string)"},
-		// So does a bounded tail. `¬("a" | ... : string)` admits `5`, which is exactly what the
-		// fold above would have thrown away.
-		{
-			"bounded open union",
-			newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()),
-			`¬("a" | ... : string)`,
-		},
+		// A union bounds its members, so its complement is a real type.
+		{"union", unionT(str(), num()), "¬(number | string)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			require.Equal(t, tt.want, soltype.Print(newNegation(tt.inner)))
 		})
 	}
-}
-
-// Writing a bound on the open tail takes the union out of the top position
-// TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ... : string` names "a" and draws every
-// other member it has from `string`, so a value outside `string` is outside the union.
-//
-// Each probe below has a counterpart in that test that answers the other way, which is
-// what makes the bound the thing that changed rather than some difference in the shapes.
-func TestBoundedTailIsNotTop(t *testing.T) {
-	c := newChecker()
-	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str()) // "a" | ... : string
-
-	t.Run("the bound decides what is a subtype of the union", func(t *testing.T) {
-		probes := []struct {
-			name     string
-			sub, sup soltype.Type
-			want     bool
-		}{
-			// A value the bound admits may be one of the tail's members.
-			{"a named member is a subtype of it", strLit("a"), bounded, true},
-			{"another string is a subtype of it", strLit("z"), bounded, true},
-			{"the bound itself is a subtype of it", str(), bounded, true},
-			// A value the bound rejects cannot be, which is where the unbounded tail
-			// answered true for every sub.
-			{"a number literal is not a subtype of it", numLit(5), bounded, false},
-			{"a number is not a subtype of it", num(), bounded, false},
-			{"unknown is not a subtype of it", &soltype.UnknownType{}, bounded, false},
-		}
-		for _, p := range probes {
-			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
-		}
-	})
-
-	// The complement is inhabited, so newNegation has something to wrap. `5` is not a key of
-	// the object, so it satisfies `¬keyof {a: X, ...}`, while a string that could be one does
-	// not. An unbounded tail folds the whole complement to `never`, which nothing satisfies.
-	t.Run("its complement is inhabited", func(t *testing.T) {
-		require.True(t, subtypeHolds(c.ctx, numLit(5), negT(bounded)))
-		require.False(t, subtypeHolds(c.ctx, strLit("z"), negT(bounded)))
-	})
-
-	// The bound also decides what the union is a subtype of, which is the direction that
-	// carries the tail into a supertype rather than out of one. An unbounded tail is a
-	// subtype of nothing but `unknown`, since no closed type absorbs a tail that may hold
-	// anything.
-	t.Run("the bound decides what the union is a subtype of", func(t *testing.T) {
-		probes := []struct {
-			name     string
-			sub, sup soltype.Type
-			want     bool
-		}{
-			// Every member is a string, the named one included, so `string` absorbs the
-			// whole union.
-			{"a bounded tail is a subtype of its own bound", bounded, str(), true},
-			// The sub's tail may hold "zz", which the super's `number` tail rejects.
-			{
-				"a string tail is not a subtype of a number tail",
-				bounded, newBoundedUnion(nil, []soltype.Type{strLit("a")}, num()), false,
-			},
-			// The super's tail admits every string, so it absorbs the sub's whole tail.
-			{
-				"a narrower bound is a subtype of a wider one",
-				newBoundedUnion(nil, []soltype.Type{strLit("a")}, strLit("z")), bounded, true,
-			},
-			{"a bounded tail is not a subtype of a lone member", bounded, strLit("a"), false},
-			// The unbounded sub is top, so no bounded super absorbs it. This is the one
-			// pair where both operands carry a tail and only the sub's is unbounded.
-			{
-				"an unbounded tail is not a subtype of a bounded one",
-				newUnion(nil, []soltype.Type{strLit("a")}, true), bounded, false,
-			},
-			{
-				"a bounded tail is a subtype of an unbounded one",
-				bounded, newUnion(nil, []soltype.Type{strLit("a")}, true), true,
-			},
-		}
-		for _, p := range probes {
-			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
-		}
-	})
-}
-
-// The normalization layer reads a bounded tail as one more disjunct, so a decision about
-// which values the union admits sees the bound alongside the named members. The two probes
-// below are the two directions that reading is consulted from.
-func TestNormalizationReadsTheTailBound(t *testing.T) {
-	c := newChecker()
-	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
-
-	// `"a"` is one of the strings the bound admits, so the two fuse and the whole union
-	// normalizes to `string`. An unbounded tail has no atom to fuse and stays whole.
-	t.Run("a bounded tail joins the disjuncts", func(t *testing.T) {
-		require.Equal(t, "string", soltype.Print(c.ctx.mkCNF(bounded, soltype.Positive).toType()))
-		require.Equal(t, "string", soltype.Print(c.ctx.mkDNF(bounded, soltype.Positive).toType()))
-	})
-
-	t.Run("an unbounded tail stays one atom", func(t *testing.T) {
-		// mkDNF and mkCNF each carry their own unbounded-tail guard, so both are probed.
-		open := newUnion(nil, []soltype.Type{strLit("a")}, true)
-		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkCNF(open, soltype.Positive).toType()))
-		require.Equal(t, `"a" | ...`, soltype.Print(c.ctx.mkDNF(open, soltype.Positive).toType()))
-	})
-}
-
-// simplifyNegations weighs a bounded tail the way it weighs a named arm, so a complement that
-// rules out everything the bound admits empties the meet. An unbounded tail is top and no
-// complement can empty it, which TestSimplifyNegationsRefusesToCollapse pins on the other side.
-func TestSimplifyNegationsEmptiesABoundedTail(t *testing.T) {
-	c := newChecker()
-	bounded := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
-
-	// `("a" | ... : string) & ¬string`. Both the named member and every value the tail could
-	// hold is a string, so nothing survives.
-	kept, changed, provedEmpty := simplifyNegations(c.ctx, []soltype.Type{bounded, negT(str())})
-	require.True(t, provedEmpty)
-	require.True(t, changed)
-	require.Empty(t, kept)
-}
-
-// peelBorrows strips the borrow wrapper off every member a union has, and the tail's bound is
-// one of them. A dropped bound would leave the peeled union unbounded, which is top.
-func TestPeelBorrowsReachesTheTailBound(t *testing.T) {
-	inner := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}
-	peeled := peelBorrows(newBoundedUnion(nil, []soltype.Type{num()}, &soltype.RefType{Inner: inner}))
-	require.Equal(t, "number | ... : {x: number}", soltype.Print(peeled))
-}
-
-// Narrowing a union to the members a pattern can destructure weighs the tail's bound too, but
-// only where the bound answers for every member drawn from it. The `keep` predicate is a shape
-// test over one member, and a bound is the set its members come from, so the two coincide for
-// an atomic bound and part ways for a structured one.
-func TestNarrowUnionMembersWeighsTheTailBound(t *testing.T) {
-	objA := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("a", num())}}
-	objB := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("b", str())}}
-	// keepA stands for an object pattern `{a}`: it accepts a member carrying the key "a".
-	keepA := func(m soltype.Type) bool { return objectMemberHasKeys(m, []string{"a"}) }
-
-	t.Run("an atomic bound no member of which fits is dropped", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...string`. Every value the tail holds is a string, and
-		// no string carries the key "a", so the tail contributes nothing to this branch.
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, str())
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number}", soltype.Print(narrowed))
-	})
-
-	t.Run("every member matches and the atomic tail still drops", func(t *testing.T) {
-		// `{a: number} | ...string` narrowed by `{a}`. The one listed member matches, so a
-		// member count alone reads it as unchanged, but the string tail cannot carry "a" and
-		// goes. Weighing the tail before the no-op return is what narrows this to `{a: number}`
-		// rather than keeping the whole inexact union.
-		u := newBoundedUnion(nil, []soltype.Type{objA}, str())
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number}", soltype.Print(narrowed))
-	})
-
-	t.Run("an exact object bound no member of which fits is dropped", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...{c: boolean}`. The bound is exact, so its inhabitants
-		// carry exactly the key "c" and none carries "a". A key test over the bound settles every
-		// member drawn from it, exactly as it does for a primitive, so the tail drops.
-		objC := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("c", boolT())}}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objC)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number}", soltype.Print(narrowed))
-	})
-
-	t.Run("an inexact object bound is kept", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...{c: boolean, ...}`. The inexact bound admits a member
-		// such as `{c: boolean, a: number}` that carries "a", so the bound failing the key test
-		// does not settle the members drawn from it. Deciding the tail needs a disjointness
-		// question narrowUnionMembers cannot ask, so it keeps the tail — the wider answer.
-		objC := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("c", boolT())}, Inexact: true}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, objC)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number} | ... : {c: boolean, ...}", soltype.Print(narrowed))
-	})
-
-	t.Run("an exact tuple bound no member of which fits is dropped", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...[boolean, boolean]`. The bound is an exact tuple, so
-		// its inhabitants are all length-two tuples and none carries the object key "a". Arity
-		// pins every member drawn from it, exactly as an exact object's keys do, so the tail drops.
-		tup := &soltype.TupleType{Elems: []soltype.Type{boolT(), boolT()}}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, tup)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number}", soltype.Print(narrowed))
-	})
-
-	t.Run("a borrow of an exact object bound is dropped", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...&mut {x: number}`. closedShape reads through the borrow
-		// to its carrier the way `keep` does through CarrierOf. The carrier is an exact object
-		// with no "a", and a borrow of an exact object admits only borrows of that same object, so
-		// no member drawn from the tail carries "a" and the tail drops.
-		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}}}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, ref)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number}", soltype.Print(narrowed))
-	})
-
-	t.Run("a borrow of an inexact object bound is kept", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...&mut {x: number, ...}`. The carrier under the borrow is
-		// inexact, so it admits an object carrying "a", and the tail is kept just as a bare inexact
-		// object bound is.
-		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}, Inexact: true}}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, ref)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number} | ... : mut {x: number, ...}", soltype.Print(narrowed))
-	})
-
-	t.Run("a type-variable bound is kept", func(t *testing.T) {
-		// `{a: number} | {b: string} | ...t1`. A bare type variable stands for a carrier not yet
-		// known, so closedShape cannot settle whether a member drawn from it carries "a", and the
-		// tail is kept — the undecidable case CarrierOf leaves in place.
-		v := &soltype.TypeVarType{ID: 1, Level: 1}
-		u := newBoundedUnion(nil, []soltype.Type{objA, objB}, v)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number} | ... : t1", soltype.Print(narrowed))
-	})
-
-	t.Run("an unbounded tail is kept", func(t *testing.T) {
-		// Nothing says what the tail holds, so it survives every narrowing, which is the rule
-		// the field-read path already depends on.
-		u := newUnion(nil, []soltype.Type{objA, objB}, true)
-		narrowed, ok := narrowUnionMembers(u, keepA)
-		require.True(t, ok)
-		require.Equal(t, "{a: number} | ...", soltype.Print(narrowed))
-	})
-}
-
-// An indexed access over a key set or a target that names no member of its own. Both shapes
-// arrive from a set difference that excluded every named member, and neither may be read as
-// `never`, which would claim the union is empty when it is only unenumerated.
-func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
-	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("x", num())}, Inexact: true}
-
-	t.Run("a member-less key set leaves the access symbolic", func(t *testing.T) {
-		// There is no key to read the target at, since the bound says the keys are strings
-		// without saying which.
-		idx := &soltype.IndexType{Target: obj, Index: newBoundedUnion(nil, nil, str())}
-		require.Equal(t, `{x: number, ...}[... : string]`, soltype.Print(reduceType(idx)))
-	})
-
-	t.Run("a member-less target reads the key off its bound", func(t *testing.T) {
-		// The bound names every member the target has, so reading "x" off it reads "x" off
-		// all of them at once.
-		idx := &soltype.IndexType{Target: newBoundedUnion(nil, nil, obj), Index: strLit("x")}
-		require.Equal(t, "... : number", soltype.Print(reduceType(idx)))
-	})
-}
-
-// The two routes a complement can take past a variable, which the section comment above
-// simplifyNegations describes. They go opposite ways, and only the first leaves a
-// complement behind for that pass to find.
-func TestNegatedBoundReachesAVariable(t *testing.T) {
-	// A variable on the subtype side of a complement stores it whole. Constrain sends a
-	// goal to the normal-form layer only when neither operand is a variable, so this one
-	// falls through to the variable arm.
-	t.Run("a variable below a complement stores it", func(t *testing.T) {
-		c := &Context{}
-		a := c.freshVar(0)
-		require.Empty(t, Messages(c.Constrain(a, negT(str()))))
-		require.Equal(t, []string{"¬string"}, printedBounds(a.UpperBounds))
-		require.Empty(t, a.LowerBounds)
-	})
-
-	// The normal-form layer moves a negated part to the far side of the `<:` as a
-	// POSITIVE one, so `α ∩ ¬string <: number` becomes `α <: number | string`. A union in
-	// supertype position is an exists rule, so ONE member is kept, never both and never a
-	// complement. Recording both would read as the meet `number & string`, which is
-	// stronger than the goal.
-	//
-	// Which member survives depends on α's other bounds, so both outcomes are pinned. A
-	// `"hi"` lower bound fails the `number` trial and pushes the choice to `string`.
-	t.Run("a negated part crosses over positive", func(t *testing.T) {
-		cases := map[string]struct {
-			lower []soltype.Type
-			want  []string
-		}{
-			"unconstrained commits the first member": {want: []string{"number"}},
-			"a string lower bound commits string":    {lower: []soltype.Type{strLit("hi")}, want: []string{"string"}},
-		}
-		for name, tt := range cases {
-			t.Run(name, func(t *testing.T) {
-				c := &Context{}
-				a := c.freshVar(0)
-				a.LowerBounds = tt.lower
-				sub := newIntersection(nil, []soltype.Type{a, negT(str())})
-				require.Empty(t, Messages(c.Constrain(sub, num())))
-				require.Equal(t, tt.want, printedBounds(a.UpperBounds))
-			})
-		}
-	})
-
-	// The meet reading of the upper-bound list is what rules out recording both members.
-	t.Run("upper bounds are read as a meet", func(t *testing.T) {
-		c := &Context{}
-		a := c.freshVar(0)
-		a.UpperBounds = []soltype.Type{num(), str()}
-		require.Equal(t, "number & string", soltype.Print(coalesce(a, soltype.Negative)))
-	})
-}
-
-// printedBounds renders a variable's bound list for comparison against Escalier type
-// syntax, which is what makes a bound assertion readable.
-func printedBounds(bounds []soltype.Type) []string {
-	out := make([]string, len(bounds))
-	for i, b := range bounds {
-		out[i] = soltype.Print(b)
-	}
-	return out
-}
-
-// maskVarIDs replaces a rendered type variable's mint counter with a placeholder, so an
-// assertion over a residual holding a free variable does not break when an unrelated
-// declaration is added ahead of it. soltype.Print has no name map, so it renders such a
-// variable as `t{ID}`.
-func maskVarIDs(printed string) string {
-	return regexp.MustCompile(`\bt\d+\b`).ReplaceAllString(printed, "t{N}")
-}
-
-// Excluding the whole bound leaves a tail drawn from `never`, which holds nothing. The union
-// names no member either, so the answer is `never` rather than a union with an empty tail.
-// `...never` would read as a union with unlisted members and keep every rule that consults a
-// tail from seeing that there is nothing left.
-func TestExcludingTheWholeBoundEmptiesTheUnion(t *testing.T) {
-	nodes, ctx, errs := inferTypeNodes(t, `
-		type Obj = {a: number, ...}
-		type Drop<T, U> = if T : U { never } else { T }
-		type Result = Drop<keyof Obj, string>
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, `never`, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
-}
-
-// subsumeFinal rewrites a union's tail bound before the union itself, so a bound that only
-// becomes droppable on the way up still has to be noticed. Neither case below drops a member,
-// which is what makes them the cases a member count alone would miss.
-func TestFinalSubsumptionRereadsARewrittenTailBound(t *testing.T) {
-	tests := []struct {
-		name  string
-		parts []soltype.Type
-		bound soltype.Type
-		want  string
-	}{
-		{
-			// `¬string` admits nothing a `string` admits, so the meet is empty and the tail
-			// is drawn from `never`. A tail holding nothing leaves the union its named side,
-			// and there is none, so the answer is `never` rather than `...never`.
-			name:  "a bound that folds to never empties the union",
-			bound: newIntersection(nil, []soltype.Type{str(), not(str())}),
-			want:  "never",
-		},
-		{
-			// The bound folds to `"y"`, which the union already names. The tail then draws
-			// only members the union lists, so it contributes nothing and drops.
-			name:  "a bound that folds to a named member drops the tail",
-			parts: []soltype.Type{strLit("y")},
-			bound: newIntersection(nil, []soltype.Type{strLit("y"), not(strLit("n"))}),
-			want:  `"y"`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
-			in := &soltype.UnionType{Types: tt.parts, Inexact: true, TailBound: tt.bound}
-			require.Equal(t, tt.want, soltype.Print(c.subsumeFinal(in)))
-		})
-	}
-}
-
-// readCarrier peels a borrow held in a receiver variable's lower bounds so a field read does
-// not trip the borrow-escape guard. hasBorrowShape decides whether a lower bound carries a
-// borrow at all, and a bound whose only borrow sits in its open tail counts, since peelBorrows
-// peels that tail. Without it readCarrier would peel the bound and then hand back the bare
-// variable, re-borrowing what the read had freed.
-func TestReadCarrierPeelsATailOnlyBorrow(t *testing.T) {
-	c := newChecker()
-	ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
-		Elems: []soltype.ObjTypeElem{propElem("x", num())},
-	}}
-	// `{y: number} | ...&mut {x: number}`: no listed member is a borrow, only the tail bound is.
-	lb := newBoundedUnion(nil, []soltype.Type{
-		&soltype.ObjectType{Elems: []soltype.ObjTypeElem{propElem("y", num())}},
-	}, ref)
-	v := c.ctx.freshVar(0)
-	v.LowerBounds = []soltype.Type{lb}
-
-	carrier := readCarrier(v)
-	require.NotSame(t, soltype.Type(v), carrier, "a tail-only borrow must divert to the peeled carrier")
-	require.Equal(t, "{y: number} | ... : {x: number}", soltype.Print(carrier))
-	require.True(t, hasBorrowShape(lb), "the tail bound's borrow is a borrow shape")
 }

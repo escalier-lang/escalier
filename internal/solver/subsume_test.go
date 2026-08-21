@@ -152,7 +152,7 @@ func TestSubsumeFinalIntersectionObjects(t *testing.T) {
 func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
 	c := newChecker()
 	v := c.ctx.freshVar(0)
-	got := c.subsumeFinal(newUnion(nil, []soltype.Type{parseType(t, "number"), v}, false))
+	got := c.subsumeFinal(newUnion(nil, []soltype.Type{parseType(t, "number"), v}))
 	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
@@ -162,7 +162,7 @@ func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
 // subsumable member, so subsumeFinal returns the same union pointer.
 func TestSubsumeFinalPreservesIdentityWhenUnchanged(t *testing.T) {
 	c := newChecker()
-	in := newUnion(nil, parseTypes(t, "1", "2"), false)
+	in := newUnion(nil, parseTypes(t, "1", "2"))
 	require.IsType(t, &soltype.UnionType{}, in)
 	require.Same(t, in, c.subsumeFinal(in))
 }

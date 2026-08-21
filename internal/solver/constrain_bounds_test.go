@@ -24,7 +24,7 @@ func TestConstrainTopRule(t *testing.T) {
 
 	t.Run("a union is a subtype of unknown", func(t *testing.T) {
 		c := &Context{}
-		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
+		sub := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(sub, &soltype.UnknownType{}))
 	})
 
@@ -48,7 +48,7 @@ func TestConstrainBottomRule(t *testing.T) {
 
 	t.Run("never is a subtype of a union", func(t *testing.T) {
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(&soltype.NeverType{}, super))
 	})
 

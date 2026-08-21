@@ -175,7 +175,7 @@ func (c *Context) constrainImplied(
 		subCands = []soltype.Type{&soltype.UnknownType{}}
 	}
 
-	pairs := orderedPairs(subCands, superCands, sub, super, topMeet)
+	pairs := orderedPairs(subCands, superCands, topMeet)
 	if len(pairs) == 0 {
 		return nfDecision{errs: []SolverError{&CannotConstrainError{Sub: sub, Super: super}}}
 	}
@@ -303,7 +303,7 @@ func joinDomains(arms []*soltype.FuncType, group int) soltype.Type {
 			parts = append(parts, arm.Params[0].Type)
 		}
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts)
 }
 
 // meetCodomains is the intersection of the codomains of the arms in group, what a
@@ -361,9 +361,7 @@ type nfPair struct{ sub, super soltype.Type }
 
 // orderedPairs lists the pairs to trial, each side in specificity order and the
 // supertype candidates outermost, so the choice among union members is the one a
-// reader sees first. origSub and origSuper are the constraint the caller is
-// deciding; the pair repeating it against an inexact union is dropped, for the
-// reason constrainImplied gives.
+// reader sees first.
 //
 // A variable candidate gets ONE pair, against the whole meet, rather than one pair per
 // subtype candidate. Pairing a single candidate with it would drop the rest, and the
@@ -390,7 +388,7 @@ type nfPair struct{ sub, super soltype.Type }
 //
 // specificityOrder ranks a variable below every concrete type, so a variable
 // candidate's pair is trialled after every concrete candidate's.
-func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltype.Type, topMeet bool) []nfPair {
+func orderedPairs(subCands, superCands []soltype.Type, topMeet bool) []nfPair {
 	subOrder := specificityOrder(subCands)
 	pairs := make([]nfPair, 0, len(subCands)*len(superCands))
 	for _, j := range specificityOrder(superCands) {
@@ -409,9 +407,6 @@ func orderedPairs(subCands, superCands []soltype.Type, origSub, origSuper soltyp
 			continue
 		}
 		for _, i := range subOrder {
-			if hasUnboundedTail(superCands[j]) && equalType(subCands[i], origSub) && equalType(superCands[j], origSuper) {
-				continue
-			}
 			pairs = append(pairs, nfPair{sub: subCands[i], super: superCands[j]})
 		}
 	}
@@ -492,10 +487,3 @@ func isNegation(t soltype.Type) bool {
 	return ok
 }
 
-// hasUnboundedTail reports whether t is a union carrying an open tail that nothing bounds,
-// the one supertype normalization hands back whole. A bounded tail contributes its bound as
-// one more disjunct, so such a union is taken apart and never reaches a candidate list.
-func hasUnboundedTail(t soltype.Type) bool {
-	u, ok := t.(*soltype.UnionType)
-	return ok && u.Inexact && u.TailBound == nil
-}

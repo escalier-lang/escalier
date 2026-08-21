@@ -626,7 +626,7 @@ func TestGlbClassInNormalForm(t *testing.T) {
 		either := newUnion(nil, []soltype.Type{
 			meet(cls("Point", false), cls("Vec", false)),
 			cls("Line", false),
-		}, false)
+		})
 		require.Equal(t, "Line", normDNF(c, either))
 	})
 }

@@ -12,10 +12,9 @@ import (
 // ErrorType elision, dedup, canonical order, or collapse.
 func TestNewUnionNormalization(t *testing.T) {
 	tests := []struct {
-		name    string
-		parts   []soltype.Type
-		inexact bool
-		want    soltype.Type
+		name  string
+		parts []soltype.Type
+		want  soltype.Type
 	}{
 		{
 			name:  "nested union splices in, canonical order",
@@ -23,16 +22,6 @@ func TestNewUnionNormalization(t *testing.T) {
 			// PrimType members sort by the Prim enum order NumPrim, StrPrim,
 			// BoolPrim.
 			want: parseType(t, "number | string | boolean"),
-		},
-		{
-			name: "inexact nested member makes outer inexact",
-			// A nested inexact UnionType carries the inexact flag out to the
-			// outer mint. parseType cannot author an inexact union literal
-			// today (PR4 lands the surface marker), so the nested member is
-			// built from a parsed exact union with Inexact flipped.
-			parts:   []soltype.Type{&soltype.UnionType{Types: []soltype.Type{num()}, Inexact: true}, parseType(t, "string")},
-			inexact: false,
-			want:    &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true},
 		},
 		{
 			name: "doubly-nested union splices fully",
@@ -45,18 +34,6 @@ func TestNewUnionNormalization(t *testing.T) {
 				parseType(t, "boolean"),
 			}}},
 			want: parseType(t, "number | string | boolean"),
-		},
-		{
-			name: "inexact propagates from a deeply nested member",
-			// `number | ((string | ...))` — the inexact tail lives two levels
-			// down and still makes the outer union inexact.
-			parts: []soltype.Type{
-				parseType(t, "number"),
-				&soltype.UnionType{Types: []soltype.Type{
-					&soltype.UnionType{Types: parseTypes(t, "string"), Inexact: true},
-				}},
-			},
-			want: &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true},
 		},
 		{
 			name:  "never drops from union",
@@ -94,20 +71,14 @@ func TestNewUnionNormalization(t *testing.T) {
 			want:  parseType(t, "never"),
 		},
 		{
-			name:  "single exact member collapses to that member",
+			name:  "single member collapses to that member",
 			parts: parseTypes(t, "number"),
 			want:  parseType(t, "number"),
-		},
-		{
-			name:    "inexact single member keeps the wrapper",
-			parts:   parseTypes(t, "number"),
-			inexact: true,
-			want:    &soltype.UnionType{Types: parseTypes(t, "number"), Inexact: true},
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newUnion(nil, tt.parts, tt.inexact)
+			got := newUnion(nil, tt.parts)
 			require.True(t, equalType(tt.want, got), "want %s, got %s", soltype.Print(tt.want), soltype.Print(got))
 		})
 	}
@@ -189,8 +160,8 @@ func TestNewIntersectionNormalization(t *testing.T) {
 // drift. A union of a member list and of its shuffle must render identically
 // and compare equalType-equal.
 func TestNewUnionCanonicalOrder(t *testing.T) {
-	a := newUnion(nil, parseTypes(t, "number", "string"), false)
-	b := newUnion(nil, parseTypes(t, "string", "number"), false)
+	a := newUnion(nil, parseTypes(t, "number", "string"))
+	b := newUnion(nil, parseTypes(t, "string", "number"))
 	require.True(t, equalType(a, b), "expected canonical order to equate both shuffles")
 	require.Equal(t, soltype.Print(a), soltype.Print(b))
 }
@@ -202,177 +173,12 @@ func TestNewIntersectionCanonicalOrder(t *testing.T) {
 	require.Equal(t, soltype.Print(a), soltype.Print(b))
 }
 
-// TestNewUnionInexactPrintRoundTrip pins the printer's trailing `...` rendering
-// for an inexact union, so the flag round-trips to surface syntax.
-func TestNewUnionInexactPrintRoundTrip(t *testing.T) {
-	u := newUnion(nil, parseTypes(t, "number", "string"), true)
-	require.Equal(t, "number | string | ...", soltype.Print(u))
-}
-
-// Splicing a nested union carries its tail out to the outer union, and the two tails
-// merge. The bound says what the tail's unnamed members may be, so a union that swallows
-// another inherits whatever the swallowed one could hold.
-func TestFlattenUnionMergesTailBounds(t *testing.T) {
-	strTail := func(parts ...soltype.Type) soltype.Type { return newBoundedUnion(nil, parts, str()) }
-	numTail := func(parts ...soltype.Type) soltype.Type { return newBoundedUnion(nil, parts, num()) }
-
-	tests := []struct {
-		name  string
-		parts []soltype.Type
-		want  string
-	}{
-		{
-			// A nested bounded tail with no other tail to meet comes through as written.
-			name:  "a lone bounded tail carries out",
-			parts: []soltype.Type{numLit(1), strTail(strLit("a"))},
-			want:  `1 | "a" | ... : string`,
-		},
-		{
-			// Two bounded tails join their bounds, since a member of either could be in the
-			// result.
-			name:  "two bounded tails join their bounds",
-			parts: []soltype.Type{strTail(strLit("a")), numTail(numLit(1))},
-			want:  `1 | "a" | ... : (number | string)`,
-		},
-		{
-			// Nothing says what an unbounded tail holds, so meeting one loses the bound.
-			name:  "an unbounded tail absorbs a bounded one",
-			parts: []soltype.Type{strTail(strLit("a")), newUnion(nil, []soltype.Type{numLit(1)}, true)},
-			want:  `1 | "a" | ...`,
-		},
-		{
-			// An exact nested union brings no tail, so the outer one is untouched.
-			name:  "an exact nested union leaves the tail alone",
-			parts: []soltype.Type{strTail(strLit("a")), unionT(numLit(1), numLit(2))},
-			want:  `1 | 2 | "a" | ... : string`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, soltype.Print(newUnion(nil, tt.parts, false)))
-		})
-	}
-}
-
-// A tail whose bound the union already names as a member contributes no value that member
-// does not, so it drops and the union closes. This is subsumption applied to the tail rather
-// than to a member, and equality decides it, so no Context is needed.
-func TestCollapseUnionDropsASubsumedTail(t *testing.T) {
-	tests := []struct {
-		name  string
-		build func() soltype.Type
-		want  string
-	}{
-		{
-			// `"y" | ..."y"`. Every value the tail could hold is a `"y"`, which the named
-			// member already admits, so the union is exactly `"y"` and collapses to it. This
-			// is what a distributive conditional leaves when every member and the bound
-			// select the same branch.
-			name:  "a bound equal to the only member closes the union",
-			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, strLit("y")) },
-			want:  `"y"`,
-		},
-		{
-			// `string | ... : string`, the same rule over a primitive.
-			name:  "a bound equal to a primitive member closes the union",
-			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{str()}, str()) },
-			want:  "string",
-		},
-		{
-			// The tail drops but other members remain, so the union stays a union and only
-			// loses its `...`.
-			name: "the union keeps its other members",
-			build: func() soltype.Type {
-				return newBoundedUnion(nil, []soltype.Type{strLit("y"), numLit(1)}, strLit("y"))
-			},
-			want: `1 | "y"`,
-		},
-		{
-			// A union bound is subsumed when every one of its members is named, which is the
-			// shape a conditional that reaches both branches leaves behind.
-			name: "a union bound whose every member is named closes the union",
-			build: func() soltype.Type {
-				return newBoundedUnion(nil, []soltype.Type{numLit(1), numLit(2)},
-					unionT(numLit(1), numLit(2)))
-			},
-			want: "1 | 2",
-		},
-		{
-			// A bound that only partly overlaps the named members is narrowed to the part the
-			// union does not already admit. `1 | ... : (1 | 2)` and `1 | ... : 2` both admit `1`
-			// alone or `1 | 2`, so this tightens how the type reads without changing what it
-			// denotes.
-			name: "a union bound is narrowed to its unnamed members",
-			build: func() soltype.Type {
-				return newBoundedUnion(nil, []soltype.Type{numLit(1)}, unionT(numLit(1), numLit(2)))
-			},
-			want: "1 | ... : 2",
-		},
-		{
-			// Narrowing down to a single member leaves that member as the bound rather than a
-			// one-member union, since newUnion collapses it.
-			name: "a bound narrowed to one member drops its union wrapper",
-			build: func() soltype.Type {
-				return newBoundedUnion(nil, []soltype.Type{numLit(1), numLit(2)},
-					unionT(numLit(1), numLit(2), numLit(3)))
-			},
-			want: "1 | 2 | ... : 3",
-		},
-		{
-			// A bound naming values no member does is not subsumed, so the tail stays.
-			name:  "an unrelated bound is kept",
-			build: func() soltype.Type { return newBoundedUnion(nil, []soltype.Type{strLit("y")}, str()) },
-			want:  `"y" | ... : string`,
-		},
-		{
-			// Subsumption needs a member to be subsumed by. A tail with none stays whole.
-			name:  "a member-less tail is kept",
-			build: func() soltype.Type { return newBoundedUnion(nil, nil, str()) },
-			want:  "... : string",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, soltype.Print(tt.build()))
-		})
-	}
-}
-
-// A bound is part of a union's identity, so two unions that differ only in what their
-// tails admit are neither equal nor deduped into one, and they hold a stable place in
-// canonical order. compareType is what sortTypes consults, so an unstable answer there
-// would let one member list render two ways.
-func TestBoundedTailsCompareByTheirBound(t *testing.T) {
-	strBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())
-	numBound := newBoundedUnion(nil, []soltype.Type{strLit("a")}, num())
-	unbounded := newUnion(nil, []soltype.Type{strLit("a")}, true)
-
-	t.Run("equality reads the bound", func(t *testing.T) {
-		require.True(t, equalType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
-		require.False(t, equalType(strBound, numBound))
-		require.False(t, equalType(strBound, unbounded))
-		require.False(t, equalType(strBound, unionT(strLit("a"))))
-	})
-
-	t.Run("canonical order reads the bound", func(t *testing.T) {
-		// An unbounded tail sorts before a bounded one, so the two never compare equal and
-		// whichever way a caller hands them over they come back in one order.
-		require.Equal(t, -1, compareType(unbounded, strBound))
-		require.Equal(t, 1, compareType(strBound, unbounded))
-		// Two bounded tails order by their bounds, `number` before `string`.
-		require.Equal(t, 1, compareType(strBound, numBound))
-		require.Equal(t, -1, compareType(numBound, strBound))
-		// Identical bounds tie, which is what lets dedup drop one of them.
-		require.Equal(t, 0, compareType(strBound, newBoundedUnion(nil, []soltype.Type{strLit("a")}, str())))
-	})
-}
-
 // TestNewUnionSubsumeWithContext covers the Context-gated subsumption step.
 // A member that is a subtype of another member is dropped, so `number | 1`
 // reduces to `number`.
 func TestNewUnionSubsumeWithContext(t *testing.T) {
 	c := &Context{}
-	got := newUnion(c, parseTypes(t, "number", "1"), false)
+	got := newUnion(c, parseTypes(t, "number", "1"))
 	require.True(t, equalType(parseType(t, "number"), got), "got %s", soltype.Print(got))
 }
 
@@ -418,8 +224,8 @@ func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 	require.Empty(t, c.Constrain(inexactFn, restFn), "precondition: inexactFn <: restFn")
 
 	t.Run("union order-independent", func(t *testing.T) {
-		forward := newUnion(c, []soltype.Type{restFn, inexactFn}, false)
-		reverse := newUnion(c, []soltype.Type{inexactFn, restFn}, false)
+		forward := newUnion(c, []soltype.Type{restFn, inexactFn})
+		reverse := newUnion(c, []soltype.Type{inexactFn, restFn})
 		require.True(t, equalType(forward, reverse), "forward %s, reverse %s", soltype.Print(forward), soltype.Print(reverse))
 	})
 	t.Run("intersection order-independent", func(t *testing.T) {
@@ -435,7 +241,7 @@ func TestSubsumeMutualPicksCanonicalSurvivor(t *testing.T) {
 // lattice-pruned but not subsumed. PR8 closes this gap at the finalization
 // boundaries.
 func TestNewUnionNoSubsumeWithoutContext(t *testing.T) {
-	got := newUnion(nil, parseTypes(t, "number", "1"), false)
+	got := newUnion(nil, parseTypes(t, "number", "1"))
 	// PrimType ranks before LitType in the kind table, so number leads.
 	want := parseType(t, "number | 1")
 	require.True(t, equalType(want, got), "got %s", soltype.Print(got))
@@ -455,7 +261,7 @@ func TestNewIntersectionNoSubsumeWithoutContext(t *testing.T) {
 func TestNewUnionSubsumptionSkipsVar(t *testing.T) {
 	c := &Context{}
 	v := c.freshVar(0)
-	got := newUnion(c, []soltype.Type{parseType(t, "number"), v}, false)
+	got := newUnion(c, []soltype.Type{parseType(t, "number"), v})
 	require.IsType(t, &soltype.UnionType{}, got)
 	u := got.(*soltype.UnionType)
 	require.Len(t, u.Types, 2)
@@ -469,7 +275,7 @@ func TestNewUnionSubsumptionSkipsLifetimeVar(t *testing.T) {
 	b := &soltype.RefType{Mut: true, Lt: &soltype.LifetimeVar{ID: 1}, Inner: exactObj(propElem("x", num()))}
 	require.Empty(t, c.Constrain(a, b), "precondition: a <: b")
 	require.Empty(t, c.Constrain(b, a), "precondition: b <: a")
-	got := newUnion(c, []soltype.Type{a, b}, false)
+	got := newUnion(c, []soltype.Type{a, b})
 	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
 	require.Len(t, got.(*soltype.UnionType).Types, 2)
 }
@@ -507,7 +313,7 @@ func TestUndefinedAndNullSortLast(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := newUnion(nil, tt.parts, false)
+			got := newUnion(nil, tt.parts)
 			require.Equal(t, tt.want, soltype.Print(got))
 		})
 	}

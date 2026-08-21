@@ -854,7 +854,7 @@ func combine(pol soltype.Polarity, parts []soltype.Type, open bool) soltype.Type
 	// Coalesced unions are exact by default. An inferred shape is closed
 	// unless PR4 threads an inexact source flag through to here.
 	if pol == soltype.Positive {
-		return newUnion(nil, parts, false)
+		return newUnion(nil, parts)
 	}
 	return newIntersection(nil, parts)
 }
@@ -1499,16 +1499,10 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		return ok && a.Mut == b.Mut && ctx.sameLifetime(a.Lt, b.Lt) && equalTypeWith(a.Inner, b.Inner, ctx)
 	case *soltype.UnionType:
 		b, ok := b.(*soltype.UnionType)
-		// Inexact flags must match, since an open union never equals a closed
-		// one, and so must the tails' bounds, since `"a" | ... : string` admits values
-		// `"a" | ... : number` rejects. newUnion imposes canonical member order at
-		// construction, so the positional equalTypeSliceWith is order-stable and two
-		// unions over the same member set compare equal whatever order their members
-		// were minted in.
-		if !ok || a.Inexact != b.Inexact || (a.TailBound == nil) != (b.TailBound == nil) {
-			return false
-		}
-		if a.TailBound != nil && !equalTypeWith(a.TailBound, b.TailBound, ctx) {
+		// newUnion imposes canonical member order at construction, so the positional
+		// equalTypeSliceWith is order-stable and two unions over the same member set compare equal
+		// whatever order their members were minted in.
+		if !ok {
 			return false
 		}
 		return equalTypeSliceWith(a.Types, b.Types, ctx)

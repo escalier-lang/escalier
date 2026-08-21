@@ -2,7 +2,6 @@ package solver
 
 import (
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -266,34 +265,7 @@ func (e *typeEvaluator) reduceBranch(branch soltype.Type) soltype.Type {
 //
 // Each member reduces through a copy of the conditional with Distribute cleared: the member is no
 // longer a union, and clearing it states that this pass already applied the rule.
-//
-// An inexact Check union names only some of its members. The rest sit in a tail whose values are
-// not enumerated, so which branch each takes cannot be worked out one at a time. What each produces
-// is still one of the two branches, though, so the result's tail is bounded by what the branches
-// produce over the tail — the same split condOverTailBound runs for a bounded tail. Over
-// `"a" | "b" | ...`, `type Wrap<T> = if T : string { "yes" } else { "no" }` reduces to
-// `"yes" | ..."no"` (exact-types §7.4.3): the named members take Then, and an unnamed member takes
-// either branch, so the tail is bounded by `"yes" | "no"`, narrowed to `"no"` once the named
-// `"yes"` is dropped.
 func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.UnionType) soltype.Type {
-	// The bound is decided before the members are reduced. A member reduction can append a
-	// diagnostic or set the truncation flag on the evaluator, and constrain reads those after
-	// reduction, so reducing members whose results are then discarded would surface a
-	// diagnostic for a conditional that did not reduce.
-	tail := tailOf(check)
-	if tail.open && tail.bound == nil {
-		// An unbounded tail admits any value, so it behaves as a bound of `unknown`: the check
-		// splits it, each unnamed member takes Then or Else, and the result is bounded by what
-		// those branches produce. condOverTailBound runs that split below.
-		tail.bound = &soltype.UnknownType{}
-	}
-	if tail.bound != nil {
-		// The bound is never dropped. An unbounded tail admits every value, which makes the
-		// whole result the top of the subtype lattice. That is a wider answer than the operand
-		// the conditional started from, so `Exclude<keyof {a: number, ...}, R>` would accept a
-		// `5`. A check the bound cannot decide comes back as a difference over it instead.
-		tail.bound = e.condOverTailBound(t, tail.bound)
-	}
 	parts := make([]soltype.Type, len(check.Types))
 	for i, member := range check.Types {
 		parts[i] = e.reduceCond(&soltype.CondType{
@@ -303,82 +275,7 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 			Else:    substituteOccurrences(t.Else, t.Check, member),
 		})
 	}
-	return newUnionWithTail(nil, parts, tail)
-}
-
-// condOverTailBound applies a distributive conditional to a tail's bound and returns the bound
-// the result's tail takes. Every check has an answer over a bound, either by deciding it or by
-// carrying the undecided part as a difference, so the result is never nil.
-//
-// A bound stands for a SET of members rather than one, so the member-at-a-time rule the named
-// members take does not carry over. Running the conditional once over the whole bound would
-// answer as though every value the bound admits took the same branch, and a check that some
-// satisfy and others do not splits it instead. The blocks below handle, in order, a bound every
-// value of which takes one branch, a split the conditional filters, and a split it does not.
-//
-// The split bounds rather than enumerates. A tail member is somewhere in `bound ∩ Extends` or in
-// `bound ∩ ¬Extends`, so what it produces is inside what those two parts produce, which is what
-// makes the split-and-not-a-filter block sound. That block also subsumes the filter block, since
-// a filter's branches are `never` and the check itself, leaving `never | (bound ∩ ¬Extends)`. The
-// filter block runs first anyway, because nativeDifference returns the `∩ ¬` form that
-// reduceDifference recognizes.
-func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Type) soltype.Type {
-	extends := substituteOccurrences(t.Extends, t.Check, bound)
-	// Every value of the bound takes the same branch: all satisfy the check, so every tail member
-	// takes Then, or none satisfy it, so every member takes Else. boundDisjointFrom decides the
-	// Else case, reading an empty meet as "no value satisfies". Either way the conditional runs on
-	// the whole bound the way it runs on a named member. Over `"a" | ...string`,
-	// `type Yes<T> = if T : string { "y" } else { "n" }` gives a tail bounded by `"y"`.
-	uniform := e.ctx.condExtends(bound, extends, e.seen) || e.boundDisjointFrom(bound, extends)
-	if uniform {
-		return e.reduceCond(&soltype.CondType{
-			Check:   bound,
-			Extends: extends,
-			Then:    substituteOccurrences(t.Then, t.Check, bound),
-			Else:    substituteOccurrences(t.Else, t.Check, bound),
-		})
-	}
-	// The check splits the bound and the conditional is a filter, which denotes a set difference.
-	// That cuts inside the bound and answers exactly. `Exclude<"a" | ...string, "a">` gives a tail
-	// bounded by `string & ¬"a"`, the same answer reduceDifference computes for that set, so the
-	// filter and the difference agree on this operand as the file header requires.
-	if diff, ok := e.nativeDifference(t, bound, extends); ok {
-		// The difference is a meet, and nothing downstream normalizes one built here. The
-		// `Extract` shape leaves `bound ∩ extends`, so `Extract<"a" | ...string, "a">` would
-		// keep a tail bounded by `string & "a"` and never notice that it is just `"a"`, which
-		// the union already names. Normalizing fuses the meet so tailSubsumed can see it.
-		return e.ctx.normalizeDeep(e.reduce(diff), soltype.Positive)
-	}
-	// The check splits the bound and the conditional is not a filter. Each part of the split takes
-	// its own branch, and the bound is what the two branches produce together.
-	// `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail may
-	// hold a "b", a string that is not one, both, or neither.
-	//
-	// The meets are normalized so a branch that names the parameter sees `"b"` rather than
-	// `string & "b"`, the same fusion the difference path above applies through normalizeDeep.
-	matched := e.ctx.normalizeDeep(newIntersection(nil, []soltype.Type{bound, extends}), soltype.Positive)
-	unmatched := e.ctx.normalizeDeep(newIntersection(nil, []soltype.Type{bound, newNegation(extends)}), soltype.Positive)
-	return newUnion(nil, []soltype.Type{
-		e.reduceBranch(substituteOccurrences(t.Then, t.Check, matched)),
-		e.reduceBranch(substituteOccurrences(t.Else, t.Check, unmatched)),
-	}, false)
-}
-
-// boundDisjointFrom reports whether no value the bound admits satisfies the check, which
-// puts every tail member in the Else branch.
-//
-// It asks the question as an empty meet rather than as the subtype check
-// `bound <: ¬extends`. The two agree wherever both apply, and the meet reaches the answer
-// without minting a complement. `...string` against `mut {x: number}` is the shape. No
-// string is a borrowed object, so `string ∩ mut {x: number}` is `never` and the whole tail
-// takes Else.
-//
-// A `never` bound never reaches here. It is a subtype of every check, so the caller's
-// first test already answers uniform for it.
-func (e *typeEvaluator) boundDisjointFrom(bound, extends soltype.Type) bool {
-	met := newIntersection(nil, []soltype.Type{bound, extends})
-	_, disjoint := e.ctx.normalizeDeep(met, soltype.Positive).(*soltype.NeverType)
-	return disjoint
+	return newUnion(nil, parts)
 }
 
 // substituteOccurrences rewrites every occurrence of the from type inside in to the to type,
@@ -866,7 +763,7 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 	}
 	return &soltype.PropertyElem{
 		Name:     ep.Name,
-		Type:     newUnion(nil, []soltype.Type{ep.Type, lp.Type}, false),
+		Type:     newUnion(nil, []soltype.Type{ep.Type, lp.Type}),
 		Optional: ep.Optional && lp.Optional,
 		Readonly: lp.Readonly,
 	}
@@ -903,10 +800,10 @@ func mergeSpreadElem(earlier, later soltype.ObjTypeElem) soltype.ObjTypeElem {
 // Two keys that remap to one name merge into a single field whose type is their union, so no key's
 // contribution is lost. See mergeMappedField.
 //
-// inexactKeys reports that the key union was itself inexact, as `keyof {a: number, ...}` is. The
-// caller folds it into the object's inexact marker, so the fields for the known keys are listed and
-// the object stays inexact for the rest. A filter narrows which of the known keys survive but cannot
-// rule out the unlisted ones, so the result stays inexact there too.
+// inexactKeys reports that the key set kept the named keys of an inexact object, as
+// `{[K]: V for K in keyof {x: X, ...}}` does. The caller folds it into the object's inexact marker,
+// so the fields for the named keys are listed and the object stays inexact for the rest. It comes
+// only from the `keyof T` special case below, since every other key set is a closed union.
 func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.MappedElem, fields []soltype.ObjTypeElem, inexactKeys bool, ok bool) {
 	keys := e.groundOperand(t.Keys)
 	// The unexpanded form keeps the reduced key set, so a later pass resumes from the ground it
@@ -928,26 +825,18 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	if !condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
-	if hasNoEnumerableKeys(keys) {
-		if u, ok := keys.(*soltype.UnionType); ok && len(u.Types) == 0 && u.Inexact {
-			// A bare tail is an existential key set: `...(string & ¬"a")` is some unknown
-			// subset of non-"a" strings, so a value at any given key may be absent. The index
-			// signature is therefore optional, whatever the source wrote, and carries the tail
-			// as its key domain, printed `{[K: ...R]?: V}`.
-			reduced.Optional = soltype.ModAdd
-			return reduced, nil, false, false
-		}
-		// A key set with nothing to enumerate leaves the member unexpanded, so it is itself the
-		// index signature. The required form over such a key set is uninhabited and is rejected.
-		// A rename or filter over one has no enumerable keys to run over, so it stays symbolic
-		// with no diagnostic. That gap is #930.
+	if soltype.UncountableKeys(keys) {
+		// An uncountable key set such as `string` has no key to emit a field for, so the member is
+		// left unexpanded and is itself the index signature. The required form over such a key set
+		// is uninhabited and is rejected. A rename or filter over one has no enumerable keys to run
+		// over, so it stays symbolic with no diagnostic. That gap is #930.
 		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
 			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
 		}
 		return reduced, nil, false, false
 	}
 	source, homomorphic := e.homomorphicSource(t.Keys)
-	members, keyTail := unionMembers(keys)
+	members := unionMembers(keys)
 	pos := make(map[string]int, len(members))
 	for _, member := range members {
 		built, ok := e.mappedFields(t, member, source, homomorphic)
@@ -963,7 +852,7 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 			fields = append(fields, field)
 		}
 	}
-	return reduced, fields, keyTail.open || srcInexact, true
+	return reduced, fields, srcInexact, true
 }
 
 // mappedKeyofSource detects a mapped type's `K in keyof T` constraint over a ground object or
@@ -995,35 +884,20 @@ func (e *typeEvaluator) mappedKeyofSource(keys soltype.Type) (obj *soltype.Objec
 	return nil, false, false
 }
 
-// hasNoEnumerableKeys reports whether a mapped type's key set has no key to emit a field for at
-// all: an uncountable set such as `string`, or an open set naming no key of its own, such as the
-// `...(string & ¬"a")` a difference leaves after excluding every named key. Its bound says what
-// the keys are drawn from, not which the set holds. A set that DOES name a key is not this, even
-// with an open tail: each named key gets a field and the tail becomes the result's own inexactness
-// marker, so `{[K]: T[K] for K in keyof {x: X, ...}}` expands to `{x: X, ...}`.
-func hasNoEnumerableKeys(keys soltype.Type) bool {
-	if soltype.UncountableKeys(keys) {
-		return true
-	}
-	u, ok := keys.(*soltype.UnionType)
-	return ok && len(u.Types) == 0 && u.TailBound != nil
-}
-
-// unionMembers splits a reduced type into the members a rule runs over one at a time, and returns
-// the open tail holding whatever it could not enumerate. A union contributes its members and
-// carries its own tail through; `never` is the empty set, so it contributes none; any other type is
-// a single member under no tail.
+// unionMembers splits a reduced type into the members a rule runs over one at a time. A union
+// contributes its members; `never` is the empty set, so it contributes none; any other type is a
+// single member.
 //
 // A mapped type splits its key set this way to emit one field per key, and a set difference splits
 // its positive side this way to settle one member at a time against what is excluded.
-func unionMembers(t soltype.Type) ([]soltype.Type, unionTail) {
+func unionMembers(t soltype.Type) []soltype.Type {
 	switch t := t.(type) {
 	case *soltype.UnionType:
-		return t.Types, tailOf(t)
+		return t.Types
 	case *soltype.NeverType:
-		return nil, unionTail{}
+		return nil
 	default:
-		return []soltype.Type{t}, unionTail{}
+		return []soltype.Type{t}
 	}
 }
 
@@ -1035,7 +909,7 @@ func unionMembers(t soltype.Type) ([]soltype.Type, unionTail) {
 func mergeMappedField(earlier, later *soltype.PropertyElem) *soltype.PropertyElem {
 	return &soltype.PropertyElem{
 		Name:     earlier.Name,
-		Type:     newUnion(nil, []soltype.Type{earlier.Type, later.Type}, false),
+		Type:     newUnion(nil, []soltype.Type{earlier.Type, later.Type}),
 		Optional: earlier.Optional || later.Optional,
 		Readonly: earlier.Readonly || later.Readonly,
 	}
@@ -1101,7 +975,7 @@ func (e *typeEvaluator) mappedFields(t *soltype.MappedElem, key soltype.Type, so
 // name position reduces to something that cannot name a field, which keeps the mapped type symbolic.
 func (e *typeEvaluator) remappedNames(t *soltype.MappedElem, key soltype.Type) ([]string, bool) {
 	remapped := e.groundOperand(substituteMappedKey(t.Name, t.Key, key))
-	members, _ := unionMembers(remapped)
+	members := unionMembers(remapped)
 	names := make([]string, 0, len(members))
 	for _, member := range members {
 		if _, dropped := member.(*soltype.NeverType); dropped {
@@ -1375,7 +1249,7 @@ func keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 			keys = append(keys, strLitType(elem.Name))
 		}
 	}
-	return newUnion(nil, keys, false)
+	return newUnion(nil, keys)
 }
 
 // keyofTuple yields a tuple's own keys: one number-literal type per positional element, the
@@ -1396,7 +1270,7 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
 	}
-	return newUnion(nil, keys, false)
+	return newUnion(nil, keys)
 }
 
 // keyofUnion intersects the keys of a union operand's members. A value typed `A | B` is either
@@ -1404,21 +1278,12 @@ func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
 // | {b: boolean, shared: string})` reduces to `"shared"`. This is the mirror of the
 // IntersectionType arm, which unions its members' keys through keyofIntersection.
 //
-// An inexact key set is open, so it can carry keys its written members do not name. That makes
-// the result inexact whenever the operand union is inexact or any member's key set is. Take
-// `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})`, which reduces to
-// `"shared" | ... : string`. Only "shared" is written on both members, so only "shared" is definitely
-// a key, but the second member's open tail may carry "a" too. Intersecting the written keys keeps
-// every key the result names one that every member definitely carries, and the trailing `...`
-// records that the true key set may be larger.
-//
-// The tail's bound is wider than the operand allows. This reduction is a MEET of key sets, so an
-// unnamed shared key has to be a key of every member. The example above bounds its tail by
-// `string` where only "a" is possible. Its first member is exact, so no key outside "a" and
-// "shared" is a key of that member, and "shared" is already named. Bounding the tail by the exact
-// members' key sets is what would close the gap. The bound still admits less than the unbounded
-// tail the reduction leaves without it, which admits every value at all, so this is an imprecise
-// answer rather than a useless one. escalier-lang/escalier#1126 tracks tightening it.
+// A member with an open key set is one whose keyof reduces to a primitive top — `string` for an
+// inexact object, `number` for an inexact tuple. That primitive is an upper bound of the member's
+// keys, not the keys themselves, so it cannot confirm which literal keys the other members share.
+// literalKeys reports false for it, so it joins the residuals and the meet keeps it as an
+// intersection: `keyof ({a: number, shared: string} | {b: boolean, shared: string, ...})` reduces to
+// `("a" | "shared") ∩ string`. escalier-lang/escalier#1126 tracks tightening this.
 //
 // Some members have no key set to enumerate. A type parameter is one, and so is an operator whose
 // own operands are not ground. Such a member reduces to a `keyof` residual, and the rule this whole
@@ -1434,21 +1299,13 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 	var shared []soltype.Type
 	var residuals []soltype.Type
 	seeded := false
-	// The result's tail is open when the operand union's is, since an unlisted member
-	// carries keys the reduction cannot read. It takes no bound from that member. The
-	// operand's own bound is over VALUES where this tail is over KEYS, and an unlisted
-	// member could be an object or a tuple, so nothing says whether its keys are names
-	// or positions. Each member's own key set then merges in, and a member that is an
-	// inexact object brings the `string` bound its keys carry.
-	sharedTail := unionTail{open: op.Inexact}
 	for _, m := range op.Types {
 		reduced := e.reduceKeyof(m, inexact)
-		keys, memberTail, ok := literalKeys(reduced)
+		keys, ok := literalKeys(reduced)
 		if !ok {
 			residuals = append(residuals, reduced)
 			continue
 		}
-		sharedTail = sharedTail.merge(memberTail)
 		if seeded {
 			shared = intersectTypes(shared, keys)
 		} else {
@@ -1466,44 +1323,37 @@ func (e *typeEvaluator) keyofUnion(op *soltype.UnionType, inexact bool) soltype.
 		}
 	}
 	if len(residuals) == 0 {
-		return newUnionWithTail(nil, shared, sharedTail)
+		return newUnion(nil, shared)
 	}
 	if !seeded {
-		// Every member left a residual, so there are no literal keys to meet them with. An
-		// intersection carries no exactness marker, and with no key union among its members there
-		// is nothing to hang the open tail on, so an open key set keeps the whole operator
-		// symbolic rather than dropping what the tail stands for.
-		if sharedTail.open {
-			return &soltype.KeyofType{Operand: op, Inexact: inexact}
-		}
+		// Every member left a residual, so there are no literal keys to meet them with.
 		return newIntersection(nil, residuals)
 	}
-	return newIntersection(nil, append([]soltype.Type{newUnionWithTail(nil, shared, sharedTail)}, residuals...))
+	return newIntersection(nil, append([]soltype.Type{newUnion(nil, shared)}, residuals...))
 }
 
-// literalKeys decomposes a reduced `keyof` result into the literal keys it names and the open tail
-// carrying the rest. It reports false for a result that names no enumerable key set, such as the
-// `keyof T` residual over a type parameter, so a caller that needs the keys can fall back to
-// leaving its own operator symbolic.
+// literalKeys decomposes a reduced `keyof` result into the literal keys it names. It reports false
+// for a result that names no enumerable key set, such as the `keyof T` residual over a type
+// parameter, so a caller that needs the keys can fall back to leaving its own operator symbolic.
 //
-// `never` decomposes to an empty exact set, a lone literal to that one key, and a union to its
-// members under the union's own tail. A union carrying a non-literal member is not a key set
-// the reduction produced, so it reports false rather than silently dropping that member.
-func literalKeys(reduced soltype.Type) (keys []soltype.Type, tail unionTail, ok bool) {
+// `never` decomposes to an empty set, a lone literal to that one key, and a union to its members.
+// A union carrying a non-literal member is not a key set the reduction produced, so it reports
+// false rather than silently dropping that member.
+func literalKeys(reduced soltype.Type) (keys []soltype.Type, ok bool) {
 	switch t := reduced.(type) {
 	case *soltype.NeverType:
-		return nil, unionTail{}, true
+		return nil, true
 	case *soltype.LitType:
-		return []soltype.Type{t}, unionTail{}, true
+		return []soltype.Type{t}, true
 	case *soltype.UnionType:
 		for _, m := range t.Types {
 			if _, isLit := m.(*soltype.LitType); !isLit {
-				return nil, unionTail{}, false
+				return nil, false
 			}
 		}
-		return t.Types, tailOf(t), true
+		return t.Types, true
 	default:
-		return nil, unionTail{}, false
+		return nil, false
 	}
 }
 
@@ -1534,7 +1384,7 @@ func (e *typeEvaluator) keyofIntersection(members []soltype.Type, inexact bool) 
 	for i, m := range members {
 		parts[i] = e.reduceKeyof(m, inexact)
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts)
 }
 
 // reduceIndex reduces `target[index]` to the type stored at that key, mirroring the old
@@ -1561,28 +1411,15 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 	// A union index distributes member-wise. `T[keyof T]` rides this once `keyof T` reduces to
 	// its `"a" | "b"` key union, so the access yields the union of the members' value types.
 	//
-	// An inexact key union names keys the access cannot enumerate. Each key it does not name holds
-	// a value the result does not list, so the result union is open too (exact-types §7.3). This is
-	// what carries an inexact object's openness into `T[keyof T]`. Over `type Obj = {a: number, ...}`,
-	// `keyof Obj` reduces to `"a" | ...` and `Obj[keyof Obj]` to `number | ...`.
+	// An open key set is not a union but a primitive top — `string` for an object, `number` for a
+	// tuple. That is not this arm's shape, so `Obj[keyof Obj]` over an inexact `Obj` reads the index
+	// signature the primitive selects rather than distributing.
 	if u, ok := idx.(*soltype.UnionType); ok {
-		// TODO(#1155): reduce `T[...R]` to the values the target stores at the keys in R
-		// rather than leaving the access symbolic.
-		if len(u.Types) == 0 {
-			// An open key set naming no key of its own, such as the `...string` a set
-			// difference leaves when it excludes every named key. There is no key to read
-			// the target at, so the access stays symbolic. Distributing over no member
-			// would answer `never`, claiming the key set is empty when it is only unread.
-			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
-		}
 		parts := make([]soltype.Type, len(u.Types))
 		for i, m := range u.Types {
 			parts[i] = e.reduceIndex(target, m, inexact)
 		}
-		// The result's tail stays unbounded whatever bounds the key tail. The bound says
-		// what the unread KEYS are, and this union holds the VALUES stored at them, which
-		// nothing here has read.
-		return newUnion(nil, parts, u.Inexact)
+		return newUnion(nil, parts)
 	}
 	switch tgt := target.(type) {
 	case *soltype.AliasType:
@@ -1629,27 +1466,11 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		// operand. A union value is one of its members, so every member must carry K — a member
 		// lacking it records its own absence diagnostic through reduceIndex. Each member indexes
 		// with the same reduced key.
-		//
-		// An inexact target union has unlisted members whose value at K the access did not read,
-		// so the result is open too (exact-types §7.6). A bounded tail says what those members are,
-		// so reading K off the bound reads it off all of them at once and the result's tail keeps
-		// that. A target naming no member of its own has only the bound to read.
 		parts := make([]soltype.Type, len(tgt.Types))
 		for i, m := range tgt.Types {
 			parts[i] = e.reduceIndex(m, idx, inexact)
 		}
-		tail := tailOf(tgt)
-		if tail.bound != nil {
-			tail.bound = e.reduceIndex(tail.bound, idx, inexact)
-			if containsResidualOp(tail.bound) {
-				// The read off the bound did not ground, so it comes back as an unreduced
-				// access. A union carrying one reads as residual and would be decided against
-				// the operator rather than the union, and an access has no wider bound to fall
-				// back on. Stay symbolic and reduce once the target grounds.
-				return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
-			}
-		}
-		return newUnionWithTail(nil, parts, tail)
+		return newUnion(nil, parts)
 	case *soltype.IntersectionType:
 		return e.reduceIndexIntersection(tgt, idx, inexact)
 	default:
@@ -1776,7 +1597,7 @@ func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltyp
 		e.errs = append(e.errs, &IndexSignatureKeyError{Object: obj, Index: index})
 		return &soltype.ErrorType{}
 	}
-	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}}, false)
+	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}})
 }
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
@@ -1792,7 +1613,7 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 			// every position with that tail is `unknown`.
 			return &soltype.UnknownType{}
 		}
-		return newUnion(nil, tup.Elems, false)
+		return newUnion(nil, tup.Elems)
 	}
 	lit, ok := index.(*soltype.LitType)
 	if !ok {
@@ -1821,34 +1642,17 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // so the whole template reduces later once the interpolation grounds. A product that would exceed
 // maxTemplateLitCombinations is rejected with a diagnostic rather than materialized.
 //
-// The result is exact only when every interpolation is, since an interpolation that names an open
-// set of choices produces an open set of strings (exact-types §5.6). `on${"a" | "b"}` reduces to
-// the exact `"ona" | "onb"`, while `on${"a" | "b" | ...}` reduces to `"ona" | "onb" | ...`.
-//
-// A tail's bound is not folded into a named result string, since it says the tail's choices are
-// strings without saying which, so no segment can absorb them. It becomes the result's own tail
-// bound instead, transformed by the same template: `on${"a" | ...string}` reduces to
-// `"ona" | ...`on${string}``, keeping the result to strings the template can spell rather than
-// widening to every `string`. templateTailBound assembles that bound. An interpolation that names
-// no choice at all, which is the shape a set difference leaves when it excludes every named one,
-// has nothing to run the product over and keeps the template symbolic.
+// Openness comes from a `string` interpolation, not a union. A `string` hole grounds to the
+// primitive rather than a union of choices, so it stays symbolic through the product and
+// foldTemplatePart carries it as a residual interpolation, leaving an open template such as
+// `` `on${string}` ``. A union interpolation is always a closed set of choices, so the product over
+// it is a closed union: `on${"a" | "b"}` reduces to the exact `"ona" | "onb"`.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
-	interpBound := make([]soltype.Type, len(t.Interps))
 	combinations := 1
-	openChoices := false
 	for i, interp := range t.Interps {
 		reduced := e.groundOperand(interp)
 		if u, ok := reduced.(*soltype.UnionType); ok {
-			openChoices = openChoices || u.Inexact
-			if len(u.Types) == 0 {
-				// An interpolation naming no choice of its own, such as the `...string` a set
-				// difference leaves when it excludes every named key. Its bound says the
-				// choices are strings without saying which, so there is nothing to fold into
-				// the surrounding segments and the template stays symbolic. Running the
-				// product over no choice would empty it and answer `never`.
-				return &soltype.TemplateLitType{Quasis: t.Quasis, Interps: t.Interps}
-			}
 			// Ground each union member too, so a reducible member — an alias to a literal, or a
 			// nested operator such as `keyof O` — collapses to its string literal before the product
 			// rather than surviving as a residual interpolation.
@@ -1857,17 +1661,6 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 				members[j] = e.groundOperand(m)
 			}
 			interpChoices[i] = members
-			if u.Inexact {
-				// The interp has unnamed choices the tail draws from, so record the bound they come
-				// from; a non-nil entry marks this interp open. A bounded tail says which strings
-				// those are; an unbounded `...` says only that they are strings, so the bound is
-				// `string`. Either way the result's tail ranges over the template applied to it.
-				if u.TailBound != nil {
-					interpBound[i] = e.groundOperand(u.TailBound)
-				} else {
-					interpBound[i] = &soltype.PrimType{Prim: soltype.StrPrim}
-				}
-			}
 		} else {
 			interpChoices[i] = []soltype.Type{reduced}
 		}
@@ -1884,32 +1677,7 @@ func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Ty
 	for _, combo := range combos {
 		parts = append(parts, foldTemplatePart(t.Quasis, combo))
 	}
-	if openChoices {
-		return newBoundedUnion(nil, parts, e.templateTailBound(t.Quasis, interpChoices, interpBound))
-	}
-	return newUnion(nil, parts, false)
-}
-
-// templateTailBound builds the bound on an open template's tail: the strings a combination drawing at
-// least one interpolation from an open interp's bound can spell. It is a template whose interpolations
-// range over each interp's full set of choices — its named ones, and its bound where the interp is
-// open, marked by a non-nil bound[i]. A tail string may pair one interp's named choice with another's
-// bound, so both are kept. Reducing the assembled template enumerates every combination, the all-named
-// one included; newBoundedUnion's narrowing then strips the combinations the outer union already lists
-// as members, leaving just what the tail adds — `on${string}` for a lone open interp, and the cross
-// combinations when several are open. A `string` interpolation stays symbolic through the reduction,
-// which the literal-vs-template subtyping rule then decides a member against.
-func (e *typeEvaluator) templateTailBound(quasis []string, choices [][]soltype.Type, bound []soltype.Type) soltype.Type {
-	interps := make([]soltype.Type, len(choices))
-	for i := range choices {
-		reps := choices[i]
-		if bound[i] != nil {
-			reps = append(slices.Clone(choices[i]), bound[i])
-		}
-		// newUnion collapses a lone choice to itself, so a closed interp keeps its single value.
-		interps[i] = newUnion(nil, reps, false)
-	}
-	return e.reduceTemplateLit(&soltype.TemplateLitType{Quasis: quasis, Interps: interps})
+	return newUnion(nil, parts)
 }
 
 // foldTemplatePart folds one cartesian-product combination into a single template result. It
@@ -2004,22 +1772,7 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 		for i, m := range op.Types {
 			parts[i] = e.reduceStringIntrinsic(kind, m)
 		}
-		// The intrinsic reaches the tail's bound too, since the tail's unnamed members are
-		// drawn from it and each is transformed the way a named member is. A bound of `"a"`
-		// becomes `"A"` exactly as a named member does.
-		//
-		// Only a string LITERAL has a case to change, so a bound the transform cannot fold
-		// comes back as an unreduced operator. `Uppercase<string>` is one, and it is kept as
-		// the tail's bound rather than widened. It names the exact set the tail draws from,
-		// the strings a round trip through the intrinsic leaves unchanged, so
-		// `val u: Uppercase<keyof {a: number, ...}> = "A"` holds and `= "a"` is rejected.
-		// Constraint solving folds the bound in as a disjunct and decides a literal against
-		// it through the fixed-point test `applyStringIntrinsic(kind, v) == v`.
-		tail := tailOf(op)
-		if tail.bound != nil {
-			tail.bound = e.reduceStringIntrinsic(kind, tail.bound)
-		}
-		return newUnionWithTail(nil, parts, tail)
+		return newUnion(nil, parts)
 	case *soltype.LitType:
 		if s, ok := op.Lit.(*soltype.StrLit); ok {
 			return strLitType(applyStringIntrinsic(kind, s.Value))
@@ -2033,6 +1786,10 @@ func (e *typeEvaluator) reduceStringIntrinsic(kind soltype.StringIntrinsicKind, 
 // `Exact<{x: number, ...}>` back to `{x: number}` (exact-types §6.1, §6.2). Grounding first expands
 // a named alias to its body. A type with no marker to rewrite reduces to itself, and an operand
 // that never grounds keeps the operator symbolic.
+//
+// A union has no exactness marker, so `Exact` and `Inexact` are both the identity over one, the
+// same way they are over `never` or `unknown`. Its openness is a member of its own, a `string` or
+// `number` written in, not a flag the operator could flip.
 func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand soltype.Type) soltype.Type {
 	reduced := e.groundOperand(operand)
 	inexact := kind == soltype.MakeInexact
@@ -2056,7 +1813,6 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		return &rewritten
 	case *soltype.UnionType:
 		// A union carries no exactness marker to rewrite, so the operator is the identity over one.
-		// Its openness is a member of its own, a `string` or `number` written in, not a flag.
 		return op
 	case *soltype.IntersectionType:
 		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).

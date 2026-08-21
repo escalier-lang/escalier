@@ -160,7 +160,7 @@ func (c *checker) scrutineeBinding(lvl int, scrutinee soltype.Type) (soltype.Typ
 // `&mut {x: …} | &{y: …}` testing for `x` binds immutable leaves and rejects a legal write.
 func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMode, bool) {
 	u, isUnion := t.(*soltype.UnionType)
-	if !isUnion || u.Inexact {
+	if !isUnion {
 		return nil, bindMode{}, false
 	}
 	inners, lts, allMut, ok := soltype.UnwrapRefs(u.Types)
@@ -178,7 +178,7 @@ func (c *checker) peelBorrowUnion(lvl int, t soltype.Type) (soltype.Type, bindMo
 	//
 	// No Context, so subsumption does not run. It trials one member against another under a
 	// probe and drops the subtype, which would change the member set narrowing reads.
-	peeled := newUnion(nil, inners, false)
+	peeled := newUnion(nil, inners)
 	return peeled, bindMode{borrow: borrow, lt: c.ctx.joinLifetimes(lvl, lts)}, true
 }
 
@@ -537,13 +537,13 @@ func (c *checker) restTupleShape(scrutinee soltype.Type, scrutTup, concreteTup *
 // `{p: number} | {q: number}` and borrows it rather than moving it out.
 //
 // The members must agree on arity, since one element position has to name one type. An
-// inexact member or union fixes no arity at all.
+// inexact member fixes no arity at all.
 func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
 	if tup, ok := c.groundedTuple(t); ok {
 		return tup
 	}
 	u, isUnion := t.(*soltype.UnionType)
-	if !isUnion || u.Inexact || len(u.Types) == 0 {
+	if !isUnion || len(u.Types) == 0 {
 		return nil
 	}
 	members := make([]*soltype.TupleType, len(u.Types))
@@ -564,7 +564,7 @@ func (c *checker) concreteTupleShape(t soltype.Type) *soltype.TupleType {
 			at[j] = m.Elems[i]
 		}
 		// No Context, so subsumption does not run. See peelBorrowUnion.
-		elems[i] = newUnion(nil, at, false)
+		elems[i] = newUnion(nil, at)
 	}
 	return &soltype.TupleType{Elems: elems}
 }
@@ -1098,11 +1098,7 @@ func fieldConcrete(t soltype.Type, name string) soltype.Type {
 	case *soltype.UnionType:
 		// A union of objects knows the field's shape as the union of what each member holds
 		// there. Reading it is what lets a leaf still decide whether to borrow when narrowing
-		// left the scrutinee as several members. An inexact union's open tail may carry the
-		// field at any type, so its shape is not known and the read answers nil.
-		if t.Inexact {
-			return nil
-		}
+		// left the scrutinee as several members.
 		fields := make([]soltype.Type, len(t.Types))
 		for i, member := range t.Types {
 			field := fieldConcrete(member, name)
@@ -1115,7 +1111,7 @@ func fieldConcrete(t soltype.Type, name string) soltype.Type {
 			return nil
 		}
 		// No Context, so subsumption does not run. See peelBorrowUnion.
-		return newUnion(nil, fields, false)
+		return newUnion(nil, fields)
 	}
 	return nil
 }

@@ -24,7 +24,7 @@ func TestConstrainUnionSubForAll(t *testing.T) {
 		// concrete object-typed super where each branch fails for a different
 		// reason; the rule should report BOTH branch failures.
 		c := &Context{}
-		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
+		sub := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(sub, sub)) // every union is its own subtype
 	})
 
@@ -32,7 +32,7 @@ func TestConstrainUnionSubForAll(t *testing.T) {
 		// (number | string) <: number. number <: number ok, string <: number
 		// fails. The for-all rule reports the failed branch.
 		c := &Context{}
-		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
+		sub := newUnion(nil, parseTypes(t, "number", "string"))
 		errs := c.Constrain(sub, num())
 		require.Equal(t, []string{"cannot constrain string <: number"}, Messages(errs))
 	})
@@ -41,12 +41,10 @@ func TestConstrainUnionSubForAll(t *testing.T) {
 		// (number | string) <: α. The for-all rule defers when super is a
 		// TypeVar so the WHOLE union is recorded as one lower bound on α.
 		// Coalesce builds the same `number | string` either way, but the
-		// deferral preserves the union shape on the bound list. It also
-		// preserves the inexact flag when present. See
-		// TestConstrainInexactUnionIntoVarDefers for the soundness payoff.
+		// deferral preserves the union shape on the bound list.
 		c := &Context{}
 		a := c.freshVar(0)
-		sub := newUnion(nil, parseTypes(t, "number", "string"), false)
+		sub := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(sub, a))
 		require.Len(t, a.LowerBounds, 1)
 		_, isUnion := a.LowerBounds[0].(*soltype.UnionType)
@@ -97,13 +95,13 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// number <: (number | string). The first branch matches; the rule
 		// returns nil without trialling the second.
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(num(), super))
 	})
 
 	t.Run("concrete sub matches the second branch", func(t *testing.T) {
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(str(), super))
 	})
 
@@ -111,7 +109,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// boolean <: (number | string). No branch matches; report the
 		// union-level mismatch rather than the last-branch failure.
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		errs := c.Constrain(boolT(), super)
 		require.Equal(t, []string{"cannot constrain boolean <: number | string"}, Messages(errs))
 	})
@@ -120,7 +118,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// 5 <: (number | string). The literal-to-primitive rule fires inside
 		// the trial and commits the number branch.
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(numLit(5), super))
 	})
 
@@ -131,7 +129,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// speculative-pinning avoidance the design calls for.
 		c := &Context{}
 		a := c.freshVar(0)
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(a, super))
 		require.Len(t, a.UpperBounds, 1)
 		_, isUnion := a.UpperBounds[0].(*soltype.UnionType)
@@ -148,7 +146,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// a speculative first pin, because it is reached only when no concrete member matches.
 		c := &Context{}
 		extra := c.freshVar(0)
-		super := newUnion(nil, []soltype.Type{extra, num()}, false)
+		super := newUnion(nil, []soltype.Type{extra, num()})
 
 		hi := strLit("hi")
 		require.Empty(t, c.Constrain(hi, super))
@@ -166,7 +164,7 @@ func TestConstrainUnionSuperExists(t *testing.T) {
 		// AmbiguousUnionCommitWarning surfaces while the constraint still succeeds.
 		c := &Context{}
 		tv := c.freshVar(0)
-		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+		super := newUnion(nil, []soltype.Type{tv, num()})
 
 		errs := c.Constrain(numLit(5), super)
 		require.Equal(t, []string{
@@ -189,7 +187,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		// "hi". No other member matches, so the commit is unambiguous and reports nothing.
 		c := &Context{}
 		tv := c.freshVar(0)
-		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+		super := newUnion(nil, []soltype.Type{tv, num()})
 
 		require.Empty(t, c.Constrain(strLit("hi"), super))
 		require.Len(t, tv.LowerBounds, 1)
@@ -207,7 +205,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		// 5, so the choice is ambiguous and a warning surfaces while the constraint succeeds.
 		c := &Context{}
 		tv := c.freshVar(0)
-		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+		super := newUnion(nil, []soltype.Type{tv, num()})
 
 		errs := c.Constrain(numLit(5), super)
 		require.Equal(t, []string{
@@ -220,7 +218,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		// 5 <: (number | string). The number member commits and no other member matches, so
 		// nothing is ambiguous and no warning surfaces.
 		c := &Context{}
-		super := newUnion(nil, parseTypes(t, "number", "string"), false)
+		super := newUnion(nil, parseTypes(t, "number", "string"))
 		require.Empty(t, c.Constrain(numLit(5), super))
 	})
 
@@ -229,7 +227,7 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		// discards the commit leaves neither behind.
 		c := &Context{}
 		tv := c.freshVar(0)
-		super := newUnion(nil, []soltype.Type{tv, num()}, false)
+		super := newUnion(nil, []soltype.Type{tv, num()})
 
 		p := newProbe(c, c.probe)
 		c.probe = p
@@ -241,29 +239,6 @@ func TestConstrainUnionCommitDiagnostics(t *testing.T) {
 		p.Discard()
 		require.NotContains(t, c.unionCommits, tv)
 		require.Empty(t, tv.LowerBounds)
-	})
-}
-
-// TestConstrainInexactUnionSuperAcceptsViaTail covers the union-super exists rule for
-// an INEXACT super. The open tail is unknown-typed, so a concrete sub that matches no
-// named member is still subsumed by the tail and accepted, rather than reported as a
-// union-level CannotConstrainError.
-//
-//	boolean <: (number | string | ...)    accepted via the open tail
-//
-// This is the dual of TestConstrainInexactUnionIntoClosedRejects, where an inexact SUB
-// into a closed super is rejected because that tail can't be absorbed. The parser surface
-// for `A | B | ...` lands in PR4, so until then the rule fires only against an
-// internally-built inexact union, minted directly through the smart constructor.
-func TestConstrainInexactUnionSuperAcceptsViaTail(t *testing.T) {
-	c := &Context{}
-	t.Run("non-member accepted via the open tail", func(t *testing.T) {
-		super := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-		require.Empty(t, c.Constrain(boolT(), super))
-	})
-	t.Run("a named member still commits its branch", func(t *testing.T) {
-		super := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-		require.Empty(t, c.Constrain(num(), super))
 	})
 }
 
@@ -281,40 +256,10 @@ func TestConstrainUnionPrecedesRefArm(t *testing.T) {
 	c := &Context{}
 	mutXNum := &soltype.RefType{Mut: true, Inner: exactObj(propElem("x", num()))}
 	mutYStr := &soltype.RefType{Mut: true, Inner: exactObj(propElem("y", str()))}
-	super := newUnion(nil, []soltype.Type{mutXNum, mutYStr}, false)
+	super := newUnion(nil, []soltype.Type{mutXNum, mutYStr})
 
 	sub := &soltype.RefType{Mut: true, Inner: exactObj(propElem("x", num()))}
 	require.Empty(t, c.Constrain(sub, super))
-}
-
-// TestConstrainInexactUnionIntoClosedRejects covers the inexact-into-closed
-// rule. An inexact sub union carries an open `unknown` tail that a closed
-// super cannot absorb. A closed super here is any super that is not an
-// inexact union, not unknown, and not a TypeVar.
-//
-// The rule accumulates BOTH the union-level inexact error AND the per-member
-// failures, mirroring the object arm. The open tail and an explicit member
-// that doesn't subtype super are independent bugs. Surfacing only the
-// inexact error would hide the member mismatch the user would otherwise
-// discover on the next compile.
-//
-//	(number | string | ...) <: number    rejects with:
-//	  - InexactUnionIntoExactError    the open tail can't fit number
-//	  - CannotConstrainError          string <: number
-//	  number <: number succeeds and contributes nothing
-//
-// The flag and the parser surface for `A | B | ...` land in PR4. Until then
-// the rule fires only against an internally-built inexact union, which the
-// test mints directly through the smart constructor.
-func TestConstrainInexactUnionIntoClosedRejects(t *testing.T) {
-	c := &Context{}
-	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-	errs := c.Constrain(sub, num())
-	require.Len(t, errs, 2)
-	require.IsType(t, &InexactUnionIntoExactError{}, errs[0])
-	require.Equal(t, "cannot constrain number | string | ... <: number", errs[0].Message())
-	require.IsType(t, &CannotConstrainError{}, errs[1])
-	require.Equal(t, "cannot constrain string <: number", errs[1].Message())
 }
 
 // Regression: a borrow with a lifetime that would satisfy a union member once
@@ -333,7 +278,7 @@ func TestConstrainUnionSuperPreservesBorrowEscape(t *testing.T) {
 	c := &Context{}
 	lt := c.freshLifetime(0)
 	borrow := &soltype.RefType{Mut: false, Lt: lt, Inner: exactObj(propElem("x", num()))}
-	super := newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))}, false)
+	super := newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))})
 
 	errs := c.Constrain(borrow, super)
 	require.Len(t, errs, 1)
@@ -377,14 +322,14 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 		{
 			// Every union branch is a shape mismatch — the lifetime is incidental.
 			name:  "union with no matching branch surfaces the shape error",
-			super: func() soltype.Type { return newUnion(nil, []soltype.Type{num(), str()}, false) },
+			super: func() soltype.Type { return newUnion(nil, []soltype.Type{num(), str()}) },
 			want:  "cannot constrain object <: number | string",
 		},
 		{
 			// Branch 2 matches the inner — the lifetime IS the blocker.
 			name:  "union with a matching branch keeps BorrowEscape",
 			super: func() soltype.Type {
-				return newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))}, false)
+				return newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))})
 			},
 			want: "borrowed value object does not live long enough to satisfy number | object",
 		},
@@ -400,41 +345,3 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 	}
 }
 
-// Regression: an inexact union flowing into a free inference variable must
-// be recorded as a single whole-union lower bound on the variable so the
-// inexact flag rides through coalesce.
-//
-//	(number | string | ...) <: α    α gains the whole inexact union as one lower bound
-//
-// The union-sub for-all rule defers to the superVar arm when super is a
-// TypeVar. Decomposing per-member would record only `number` and `string`
-// bounds. The `...` is a flag on UnionType, not a member of Types, so a
-// per-member loop silently drops it and α coalesces as the EXACT
-// `number | string`. That would break the soundness of any downstream match
-// against α. The inexact tail could carry a value of any type at runtime
-// that no member arm covers.
-func TestConstrainInexactUnionIntoVarDefers(t *testing.T) {
-	c := &Context{}
-	alpha := c.freshVar(0)
-	sub := &soltype.UnionType{Types: []soltype.Type{num(), str()}, Inexact: true}
-
-	require.Empty(t, c.Constrain(sub, alpha))
-	require.Len(t, alpha.LowerBounds, 1)
-	lb, ok := alpha.LowerBounds[0].(*soltype.UnionType)
-	require.True(t, ok, "expected the whole inexact union as one bound, got %T", alpha.LowerBounds[0])
-	require.True(t, lb.Inexact, "inexact flag must survive the bound record")
-}
-
-// TestConstrainInexactUnionIntoUnknownAccepts covers the other accepting super for
-// an inexact sub union. unknown is the lattice top, so it absorbs the open tail.
-//
-//	(number | string | ...) <: unknown    accepted with no error
-//
-// The `_ <: unknown` rule short-circuits any sub against an unknown super, so the
-// constraint succeeds before the inexact-into-closed gate is reached. The gate
-// must not fire against unknown, since unknown accepts the open tail.
-func TestConstrainInexactUnionIntoUnknownAccepts(t *testing.T) {
-	c := &Context{}
-	sub := &soltype.UnionType{Types: parseTypes(t, "number", "string"), Inexact: true}
-	require.Empty(t, c.Constrain(sub, &soltype.UnknownType{}))
-}
