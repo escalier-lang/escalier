@@ -2055,17 +2055,9 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		rewritten.Inexact = inexact
 		return &rewritten
 	case *soltype.UnionType:
-		// newUnionWithTail rather than a direct rebuild, so clearing the marker on a one-member
-		// union collapses it to that member: `Exact<"only" | ...>` reduces to `"only"`.
-		//
-		// Opening a union keeps whatever bound the operand's tail carried, so `Inexact<T>` over
-		// an already-inexact T is the identity `Inexact<keyof {a: X, ...}>` needs. Dropping the
-		// bound would widen `"a" | ...string` to `"a" | ...`, which is top.
-		tail := unionTail{open: inexact}
-		if inexact {
-			tail.bound = op.TailBound
-		}
-		return newUnionWithTail(nil, op.Types, tail)
+		// A union carries no exactness marker to rewrite, so the operator is the identity over one.
+		// Its openness is a member of its own, a `string` or `number` written in, not a flag.
+		return op
 	case *soltype.IntersectionType:
 		// An intersection's exactness is its members', so the operator reaches each of them (§7.7).
 		parts := make([]soltype.Type, len(op.Types))
