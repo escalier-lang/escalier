@@ -1100,7 +1100,7 @@ func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, y: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, y: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An inexact-object scrutinee with an unguarded catch-all arm is exhaustive.
@@ -1188,7 +1188,7 @@ func TestInferMatchInexactUnionNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-7:5: match is not exhaustive; add branches for `number`, `string`; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-7:5: match is not exhaustive; add branches for `number`, `string`; `number | string | ...` admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // An inexact union scrutinee with an unguarded catch-all arm is exhaustive.
@@ -1200,6 +1200,50 @@ func TestInferMatchInexactUnionWithCatchAll(t *testing.T) {
 				1 => 1,
 				"b" => 2,
 				_ => 0
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// A bare `number` scrutinee has infinitely many values, so literal arms alone leave it
+// non-exhaustive. An unguarded catch-all covers the values no literal names, so the match is
+// exhaustive.
+func TestInferMatchBareNumberWithCatchAll(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(n: number) {
+			return match n {
+				1 => "one",
+				_ => "other"
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// An arm whose type pattern admits the whole `number` scrutinee covers every value, exactly
+// as a catch-all does, so no separate catch-all is needed.
+func TestInferMatchBareNumberTypePatternCovers(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(n: number) {
+			return match n {
+				x: number => x
+			}
+		}
+	`)
+	require.Empty(t, errs)
+}
+
+// A `boolean` scrutinee is finite, so the infinite-carrier rule must not fire on it. A match
+// enumerating `true` and `false` stays exhaustive with no catch-all. This guards against
+// `infiniteInhabitants` widening to `boolean`, which would wrongly demand a catch-all here. It
+// does not assert that boolean coverage is checked at all, which the checker does not yet do.
+func TestInferMatchBooleanEnumeratedNotFlagged(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		fn f(b: boolean) {
+			return match b {
+				true => 1,
+				false => 2
 			}
 		}
 	`)
@@ -1235,7 +1279,7 @@ func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
 }
 
 // A guard is typed as a boolean over the arm's bindings, so a non-boolean guard is

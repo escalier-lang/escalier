@@ -4016,6 +4016,22 @@ func closedShape(t soltype.Type) bool {
 	}
 }
 
+// infiniteInhabitants reports whether a carrier admits infinitely many values, so no finite
+// set of value patterns ever covers it and only a catch-all arm makes a match over it
+// exhaustive. A bare `number` or `string` and `unknown` are such carriers. `boolean`, a
+// literal, `null`, and `undefined` each admit finitely many values that finite arms can
+// enumerate, so they are not.
+func infiniteInhabitants(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		return t.Prim == soltype.NumPrim || t.Prim == soltype.StrPrim
+	case *soltype.UnknownType:
+		return true
+	default:
+		return false
+	}
+}
+
 // structuralInexact returns the Inexact flag of an object or tuple type and whether
 // the type is one of those structural forms at all. M4's match exhaustiveness reads
 // nothing else off the scrutinee.

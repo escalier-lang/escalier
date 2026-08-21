@@ -33,7 +33,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
 		// A guarded arm can always fail its guard, so it covers nothing and the same
 		// wording applies.
@@ -45,7 +45,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "3:13-5:7: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
 		// An exact union takes an arm per member. The uncovered member leaves the match
 		// non-exhaustive, and the message names the `match` as well as that member.

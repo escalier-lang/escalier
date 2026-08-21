@@ -53,7 +53,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal below a field is refutable and the plain arm below it reaches only the
 		// values the scrutinee's fields describe, so the open tail stays uncovered.
@@ -66,7 +66,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 					}
 				}
 			`,
-			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "3:13-6:7: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
 		// A literal arm covers only its own value, so a union member no literal names is
 		// uncovered however many arms the form has.
@@ -473,7 +473,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; `{x: number, ...}` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
 		// An inexact union's tail takes a catch-all whatever its members, and its uncovered
 		// members each still take a branch. The message asks for both. A literal arm covers
@@ -488,7 +488,7 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; add branches for `number`, `string`; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; add branches for `number`, `string`; `number | string | ...` admits values no pattern names, so add a catch-all branch",
 		},
 		// The same inexact union with every member covered. Only the tail is left, so the
 		// catch-all is the whole of the advice.
@@ -502,7 +502,47 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 					}
 				}
 			`,
-			want: "match is not exhaustive; `number | string | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; `number | string | ...` admits values no pattern names, so add a catch-all branch",
+		},
+		// A bare `number` has infinitely many values, so the literal arms cover only a finite
+		// subset and the rest escapes. No discrete member is left to name, so the whole carrier
+		// is the open tail the catch-all covers.
+		"BareNumberCoveredByLiterals": {
+			src: `
+				fn f(n: number) {
+					return match n {
+						1 => "one",
+						2 => "two"
+					}
+				}
+			`,
+			want: "match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
+		},
+		// A bare `string` is infinite the same way, so string-literal arms leave the rest
+		// uncovered.
+		"BareStringCoveredByLiterals": {
+			src: `
+				fn g(s: string) {
+					return match s {
+						"a" => 1,
+						"b" => 2
+					}
+				}
+			`,
+			want: "match is not exhaustive; `string` admits values no pattern names, so add a catch-all branch",
+		},
+		// `unknown` admits every value, so the `number` and `string` type-pattern arms leave
+		// booleans, objects, and everything else uncovered.
+		"UnknownCoveredByTypePatterns": {
+			src: `
+				fn h(u: unknown) {
+					return match u {
+						x: number => x,
+						y: string => y
+					}
+				}
+			`,
+			want: "match is not exhaustive; `unknown` admits values no pattern names, so add a catch-all branch",
 		},
 	}
 
@@ -530,7 +570,7 @@ func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 				Unmatched: []soltype.Type{numLit(1)},
 				OpenTail:  &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
 			},
-			want: "match is not exhaustive; add a branch for `1`; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; add a branch for `1`; `1 | 2 | ...` admits values no pattern names, so add a catch-all branch",
 		},
 		// The open-tail clause closes the message, after whatever the named witnesses ask for.
 		"GuardedWithOpenTail": {
@@ -538,7 +578,7 @@ func TestNonExhaustiveMessagePluralForms(t *testing.T) {
 				Guarded:  []soltype.Type{numLit(1)},
 				OpenTail: &soltype.UnionType{Types: []soltype.Type{numLit(1), numLit(2)}, Inexact: true},
 			},
-			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `1 | 2 | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			want: "match is not exhaustive; `1` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it; `1 | 2 | ...` admits values no pattern names, so add a catch-all branch",
 		},
 		"TwoRefutable": {
 			err:  &NonExhaustiveMatchError{Refutable: []soltype.Type{numLit(1), numLit(2)}},
@@ -618,7 +658,7 @@ func TestMatchCoverageExactUnionNeedsNoDefault(t *testing.T) {
 		`)
 		require.Len(t, errs, 1)
 		require.Equal(t,
-			"3:10-6:4: match is not exhaustive; `{x: number} | {y: number} | ...` is inexact and admits values no pattern names, so add a catch-all branch",
+			"3:10-6:4: match is not exhaustive; `{x: number} | {y: number} | ...` admits values no pattern names, so add a catch-all branch",
 			msgWithSpan(errs[0]))
 	})
 }

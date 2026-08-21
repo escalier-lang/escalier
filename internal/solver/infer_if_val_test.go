@@ -754,14 +754,18 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 			// the narrowing constraint fails. Two things in the message say it is a narrowing
 			// failure rather than a failed assertion on the bound value. The direction is
 			// `number <: string`, the annotation into the scrutinee, and the span is the
-			// annotation rather than the value the arm binds.
+			// annotation rather than the value the arm binds. The bare `string` scrutinee is
+			// left non-exhaustive by the one arm that cannot run, so the coverage check names it.
 			name: "an annotation no member fits is rejected",
 			src: `fn f(s: string) {
 					return match s {
 						x: number => x,
 					}
 				}`,
-			wantErrs: []string{"3:10-3:16: cannot constrain number <: string"},
+			wantErrs: []string{
+				"3:10-3:16: cannot constrain number <: string",
+				"2:13-4:7: match is not exhaustive; `string` admits values no pattern names, so add a catch-all branch",
+			},
 		},
 	}
 
@@ -823,10 +827,10 @@ func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 		src string
 		// binding is the name whose printed type is checked.
 		binding string
-		// want is that name's printed type, checked when wantErr is empty.
+		// want is that name's printed type, checked when wantErrs is empty.
 		want string
-		// wantErr, when non-empty, is the one message expected.
-		wantErr string
+		// wantErrs, when non-empty, is the full set of expected messages.
+		wantErrs []string
 	}{
 		// Both members fit the annotation, so the arm runs for either and `x` is a `number`.
 		// The literal members do not reach the return type.
@@ -898,7 +902,8 @@ func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 			want:    "fn (u: number | string) -> 0 | 1",
 		},
 		// No value of the scrutinee is a number and no member holds one, so neither rule
-		// accepts the annotation and the arm can never run.
+		// accepts the annotation and the arm can never run. The bare `string` scrutinee is left
+		// non-exhaustive by that one arm, so the coverage check names it too.
 		"AdmitsNothing": {
 			src: `fn f(s: string) {
 					return match s {
@@ -906,15 +911,18 @@ func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 					}
 				}`,
 			binding: "f",
-			wantErr: "3:10-3:16: cannot constrain number <: string",
+			wantErrs: []string{
+				"3:10-3:16: cannot constrain number <: string",
+				"2:13-4:7: match is not exhaustive; `string` admits values no pattern names, so add a catch-all branch",
+			},
 		},
 	}
 
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			if tt.wantErr != "" {
-				require.Equal(t, []string{tt.wantErr}, messagesWithSpan(errs))
+			if tt.wantErrs != nil {
+				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
 				return
 			}
 			require.Empty(t, errs)

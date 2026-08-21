@@ -191,7 +191,8 @@ func TestInferExtractorPatWrongArity(t *testing.T) {
 
 // An instance pattern whose name resolves to no class is an InstancePatternNotClassError.
 // The inner fields still bind against a fresh var, so the arm body does not cascade into
-// unknown-identifier errors.
+// unknown-identifier errors. The bare `number` scrutinee is left non-exhaustive by the one
+// invalid arm, so the coverage check names it too.
 func TestInferInstancePatNotAClass(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(p: number) {
@@ -200,12 +201,16 @@ func TestInferInstancePatNotAClass(t *testing.T) {
 			}
 		}
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "4:5-4:18: `Missing` does not name a class and cannot be used as an instance pattern.", msgWithSpan(errs[0]))
+	require.Equal(t, []string{
+		"4:5-4:18: `Missing` does not name a class and cannot be used as an instance pattern.",
+		"3:11-5:5: match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
+	}, messagesWithSpan(errs))
 }
 
 // An extractor pattern whose name resolves to no constructor is an
-// ExtractorPatternNotCtorError. A plain value binding is not callable as a constructor.
+// ExtractorPatternNotCtorError. A plain value binding is not callable as a constructor. The
+// bare `number` scrutinee is left non-exhaustive by the one invalid arm, so the coverage
+// check names it too.
 func TestInferExtractorPatNotAConstructor(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		val g = 5
@@ -215,8 +220,10 @@ func TestInferExtractorPatNotAConstructor(t *testing.T) {
 			}
 		}
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "5:5-5:9: `g` is not a constructor and cannot be used as an extractor pattern.", msgWithSpan(errs[0]))
+	require.Equal(t, []string{
+		"5:5-5:9: `g` is not a constructor and cannot be used as an extractor pattern.",
+		"4:11-6:5: match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
+	}, messagesWithSpan(errs))
 }
 
 // An instance pattern narrows the scrutinee to the named class. A scrutinee that is a
