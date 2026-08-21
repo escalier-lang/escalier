@@ -15,20 +15,8 @@ func negRef(lt soltype.Lifetime) soltype.Type {
 }
 
 // A complemented borrow keeps its lifetime name in the rendered signature, wherever the
-// complement sits.
-//
-// The Accept walk threads one polarity and it means variance. coalesceLifetimes needs a
-// different fact, the dataflow position saying whether a borrow sits in a parameter or in
-// an output. The two agree at every former whose flip is a real position change, such as
-// a function parameter. They disagree under a complement, which inverts variance without
-// moving the borrow, so ltOccVisitor in lifetime_coalesce.go undoes that flip to recover
-// the position.
-//
-// ltOccVisitor also adds the borrow's lifetime to its noElide set. That set holds every
-// lifetime a complement encloses, and resolveLt consults it at each point it would
-// otherwise drop a lifetime, so a lifetime in the set survives whatever its position.
-// Eliding one under a complement yields a different type, since `¬(&'a T)` rendered as
-// `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
+// complement sits. ltOccVisitor in lifetime_coalesce.go carries the design: keeping the
+// name takes two separate facts, a recovered dataflow position and the noElide set.
 //
 // The noElide set alone carries every row below, so none of them guards the position
 // correction. That is pinned by TestComplementedBorrowAssertsNoOutlivesRelation and
@@ -188,19 +176,15 @@ func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 	}
 }
 
-// ltOutlivesRelation feeds the declared-bound check as well as the printer, so the
-// mis-classification reaches further than rendering. A lifetime read as an output-only
-// lifetime is taken for a multi-source join, and componentParams then reports every
-// param in the join's connected component as outliving it. That invents outlives
-// relations inference never proved.
+// ltOutlivesRelation feeds the declared-bound check as well as the printer, so a
+// mis-read position reaches further than rendering.
 //
 // Below, `m`, `a`, `b` and `d` name the lifetime variables the test builds, not the
 // names they render under. `m` is an instantiation intermediary outliving `a`, `b` and
 // `d`, which puts all four in one connected component while leaving no directed edge
 // among `a`, `b` and `d`. Reading the complemented `d` as a join over `a` and `b` would
 // assert that `a` and `b` outlive `d`, and checkDeclaredLifetimeBounds would accept a
-// declared bound the body never establishes. Classifying `d` as a param instead leaves
-// the relation empty.
+// declared bound the body never establishes.
 //
 // The graph is wired directly rather than inferred from source because `m` names no
 // borrow, and a signature declaring a lifetime it never borrows under is rejected with
@@ -246,21 +230,15 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// Classifying a complemented borrow's lifetime as a param puts it on the same footing
-// as an uncomplemented one, including where the connectivity-based grouping is loose.
 // componentParams gathers every kept param in a join's connected component, so a param
 // linked to the join only through an instantiation intermediary is still reported as a
 // source. That looseness is deliberate, since an intermediary is exactly how a call's
-// argument lifetime reaches the join it feeds. It applies to a complemented borrow and
-// a plain one alike, which is what this test pins.
+// argument lifetime reaches the join it feeds. This test pins that a complemented borrow
+// meets it on the same footing as a plain one.
 //
 // The graph below wires `m` as an intermediary outliving `a` and `b`, and `j` as a
 // genuine join over `a` and `x`. `b` reaches `j` only through `m`, and both signatures
-// still bound it to the join. Reading `b` as an output-only lifetime instead would make
-// it a join over `a` and `x` and assert the reverse, that `a` and `x` outlive `b`,
-// neither of which inference proves.
-//
-// Those are the variables the test builds, not the names they render under. The printer
+// still bound it to the join. Those are the variables the test builds, and the printer
 // assigns display names in first-appearance order, so `a`, `b`, `x` and `j` render as
 // `'a`, `'b`, `'c` and `'d`.
 //

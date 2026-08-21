@@ -86,12 +86,10 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // output-reaching. That in turn governs which lifetimes survive elision, and which
 // outlives bounds ltOutlivesRelation asserts.
 //
-// Position alone is not enough, because a complemented borrow reaching no output is
-// genuinely connect-nothing, and the elision rule above drops those. Eliding under a
-// complement changes the type rather than merely dropping a name, since `¬(&'a T)`
+// noElide exists because position alone is not enough. A complemented borrow reaching no
+// output is genuinely connect-nothing, and the elision rule above drops those. Eliding
+// under a complement changes the type rather than merely dropping a name, since `¬(&'a T)`
 // rendered as `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
-// noElide is what keeps the name in exactly that case. It stays independent of position
-// so that a change to one cannot silently break the other.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]

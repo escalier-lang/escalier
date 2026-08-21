@@ -279,14 +279,8 @@ func PrintAsSchemeWith(
 	//
 	// The third kind is named even when it reaches no parameter, so
 	// `declare fn f<'a>() -> ¬(&'a mut {x: number})` renders
-	// `fn <'a>() -> ¬&'a mut {x: number}`. The name comes from the signature, never from
-	// this pass. A signature that uses a lifetime it does not declare is rejected with an
-	// UndeclaredLifetimeError, so no name reaches here for this pass to invent.
-	//
-	// The same signature over a plain borrow renders `fn () -> &mut {x: number}`, since a
-	// borrow that connects nothing loses only a name by eliding. Eliding under a
-	// complement changes the type instead, because `¬(&T)` is the complement of any
-	// borrow of T rather than of the `'a` one, so the complemented case keeps its name.
+	// `fn <'a>() -> ¬&'a mut {x: number}`, while the same signature over a plain borrow
+	// renders `fn () -> &mut {x: number}`. resolveLt carries the reason.
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
 	// after the type parameters.
