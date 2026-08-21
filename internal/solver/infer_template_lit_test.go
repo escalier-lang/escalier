@@ -412,63 +412,74 @@ func TestInferTemplateLitTooComplex(t *testing.T) {
 	require.Equal(t, "template literal type `${D}${D}${D}` is too complex to reduce; it expands to more than 10000 members", errs[0].Message())
 }
 
-// templateMatchesString decides a string literal against a template pattern, extracting each
-// interpolation's span left to right and deciding it against the interpolation's type. It is the rule
-// behind `"onb" <: `on${string}``, and the cases below drive every interpolation kind it reads: a
-// literal that must appear verbatim, the `string`/`number`/`boolean` primitives that consume a span of
-// their own shape, a union or intersection that combines its members, a complement that excludes a
-// span, and the bare type variable it leaves undecided, which fails the match rather than guesses.
+// templateMatchesString decides a string literal against a template literal type. Each case drives a
+// `val x: <template> = <literal>` binding through inferSource, so the whole reduce-and-constrain path
+// runs, and its `wantErr` is empty when the assignment type-checks and the reported message when it
+// does not. The cases cover every interpolation kind the matcher reads: the `string`, `number`, and
+// `boolean` primitives, a union, an intersection carrying a complement, and a residual string
+// intrinsic, alongside a literal and a bare segment that fold during reduction before the matcher sees
+// them.
 func TestTemplateMatchesString(t *testing.T) {
-	// stringAndNotA is the interpolation `string & ¬"a"`, the shape a set difference over `string`
-	// leaves. It admits every string span but `"a"`.
-	stringAndNotA := &soltype.IntersectionType{Types: []soltype.Type{str(), &soltype.NegationType{Inner: strLit("a")}}}
 	tests := []struct {
 		name    string
-		s       string
-		quasis  []string
-		interps []soltype.Type
-		want    bool
+		src     string
+		wantErr string // "" ⇒ expect no error
 	}{
-		{"no quasis is not a template", "x", nil, nil, false},
-		{"a bare segment matches exactly", "hi", []string{"hi"}, nil, true},
-		{"a bare segment rejects a longer string", "hix", []string{"hi"}, nil, false},
-		{"a string interp takes any middle", "onb", []string{"on", ""}, []soltype.Type{str()}, true},
-		{"a string interp needs the prefix", "xyz", []string{"on", ""}, []soltype.Type{str()}, false},
-		{"a string interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{str()}, true},
-		{"a string interp matches up to a trailing quasi", "onbz", []string{"on", "z"}, []soltype.Type{str()}, true},
-		{"a literal interp matches its own text", "onax", []string{"on", "x"}, []soltype.Type{strLit("a")}, true},
-		{"a literal interp rejects other text", "onbx", []string{"on", "x"}, []soltype.Type{strLit("a")}, false},
-		{"a numeric literal interp matches its rendered text", "on5", []string{"on", ""}, []soltype.Type{numLit(5)}, true},
-		{"a number interp matches a numeric span", "n5", []string{"n", ""}, []soltype.Type{num()}, true},
-		{"a number interp matches a signed decimal span", "n-1.5", []string{"n", ""}, []soltype.Type{num()}, true},
-		{"a number interp rejects a non-numeric span", "nx", []string{"n", ""}, []soltype.Type{num()}, false},
-		{"a number interp matches negative zero", "n-0", []string{"n", ""}, []soltype.Type{num()}, true},
-		{"a boolean interp matches true", "on-true", []string{"on-", ""}, []soltype.Type{boolT()}, true},
-		{"a boolean interp matches false", "on-false", []string{"on-", ""}, []soltype.Type{boolT()}, true},
-		{"a boolean interp rejects another word", "on-maybe", []string{"on-", ""}, []soltype.Type{boolT()}, false},
-		{"a union interp matches through its string member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), str()})}, true},
-		{"a union interp matches a literal member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")})}, true},
-		{"a union interp rejects a non-member", "onc", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")})}, false},
-		{"an intersection with a complement matches an allowed span", "onb", []string{"on", ""}, []soltype.Type{stringAndNotA}, true},
-		{"an intersection with a complement rejects the excluded span", "ona", []string{"on", ""}, []soltype.Type{stringAndNotA}, false},
-		{"a type-variable interp is left undecided", "onx", []string{"on", ""}, []soltype.Type{&soltype.TypeVarType{ID: 1, Level: 1}}, false},
-		{"two string interps split at the delimiter", "a-b", []string{"", "-", ""}, []soltype.Type{str(), str()}, true},
-		{"an Uppercase<string> interp admits an uppercase span", "onA", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp admits a caseless span", "on5", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp rejects a lowercase span", "onb", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, false},
-		{"an Uppercase<string> interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp matches up to a trailing quasi", "onAz", []string{"on", "z"}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"a Lowercase<string> interp admits a lowercase span", "onb", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Lowercase)}, true},
-		{"a Lowercase<string> interp rejects an uppercase span", "onA", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Lowercase)}, false},
-		{"a Capitalize<string> interp admits a leading-upper span", "onAbc", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Capitalize)}, true},
-		{"a Capitalize<string> interp rejects a leading-lower span", "onaBC", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Capitalize)}, false},
-		{"an Uncapitalize<string> interp admits a leading-lower span", "onaBC", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uncapitalize)}, true},
-		{"an Uncapitalize<string> interp rejects a leading-upper span", "onAbc", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uncapitalize)}, false},
-		{"an intrinsic over a type variable is left undecided", "onA", []string{"on", ""}, []soltype.Type{&soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: &soltype.TypeVarType{ID: 1, Level: 1}}}, false},
+		{"a bare segment matches exactly", "val x: `hi` = \"hi\"", ""},
+		{"a bare segment rejects a longer string", "val x: `hi` = \"hix\"", "cannot constrain \"hix\" <: \"hi\""},
+		{"a string interp takes any middle", "val x: `on${string}` = \"onb\"", ""},
+		{"a string interp needs the prefix", "val x: `on${string}` = \"xyz\"", "cannot constrain \"xyz\" <: `on${string}`"},
+		{"a string interp allows an empty middle", "val x: `on${string}` = \"on\"", ""},
+		{"a string interp matches up to a trailing quasi", "val x: `on${string}z` = \"onbz\"", ""},
+		// A bare literal or numeric interpolation folds into the surrounding text during reduction,
+		// so its rejection names the folded string rather than the template.
+		{"a literal interp folds and matches its text", "val x: `on${\"a\"}x` = \"onax\"", ""},
+		{"a literal interp folds and rejects other text", "val x: `on${\"a\"}x` = \"onbx\"", "cannot constrain \"onbx\" <: \"onax\""},
+		{"a numeric literal interp folds to its rendered text", "val x: `on${5}` = \"on5\"", ""},
+		// A primitive, intrinsic, or complement interpolation keeps the template symbolic, so the
+		// matcher decides the span and a rejection names the template.
+		{"a number interp matches a numeric span", "val x: `n${number}` = \"n5\"", ""},
+		{"a number interp rejects a non-numeric span", "val x: `n${number}` = \"nx\"", "cannot constrain \"nx\" <: `n${number}`"},
+		{"a boolean interp matches a boolean word", "val x: `on-${boolean}` = \"on-true\"", ""},
+		{"a boolean interp rejects another word", "val x: `on-${boolean}` = \"on-maybe\"", "cannot constrain \"on-maybe\" <: `on-${boolean}`"},
+		{"a union interp matches through its string member", "val x: `on${\"a\" | string}` = \"onb\"", ""},
+		{"a union interp folds and matches a literal member", "val x: `on${\"a\" | \"b\"}` = \"onb\"", ""},
+		{"a union interp folds and rejects a non-member", "val x: `on${\"a\" | \"b\"}` = \"onc\"", "cannot constrain \"onc\" <: \"ona\" | \"onb\""},
+		{"an intersection with a complement matches an allowed span", "val x: `on${string & ¬\"a\"}` = \"onb\"", ""},
+		{"an intersection with a complement rejects the excluded span", "val x: `on${string & ¬\"a\"}` = \"ona\"", "cannot constrain \"ona\" <: `on${string & ¬\"a\"}`"},
+		{"an intrinsic interp admits a fixed-point span", "val x: `on${Uppercase<string>}` = \"onA\"", ""},
+		{"an intrinsic interp rejects a non-fixed-point span", "val x: `on${Uppercase<string>}` = \"onb\"", "cannot constrain \"onb\" <: `on${Uppercase<string>}`"},
+		{"two string interps split at the delimiter", "val x: `${string}-${string}` = \"a-b\"", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, templateMatchesString(tt.s, tt.quasis, tt.interps))
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// An interpolation the matcher cannot decide, a bare type parameter or an intrinsic over one, admits
+// no span, so templateMatchesString fails the match rather than guesses. Such an interpolation keeps
+// the whole template symbolic, so no `val` binding ever grounds it to reach the matcher; these cases
+// call templateMatchesString directly.
+func TestTemplateMatcherRejectsAbstractInterp(t *testing.T) {
+	typeVar := &soltype.TypeVarType{ID: 1, Level: 1}
+	tests := []struct {
+		name   string
+		interp soltype.Type
+	}{
+		{"a bare type variable", typeVar},
+		{"an intrinsic over a type variable", &soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: typeVar}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.False(t, templateMatchesString("onx", []string{"on", ""}, []soltype.Type{tt.interp}))
 		})
 	}
 }
