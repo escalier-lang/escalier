@@ -298,18 +298,18 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: "fn (a: number, ...) -> string",
 		},
 		{
-			// `Inexact` over a union opens it: the marker rides the union node until later work
-			// removes union exactness.
+			// A union carries no exactness marker, so `Inexact` over one is the identity. Openness
+			// is a `string`, `number`, or `unknown` member written in, not a flag the operator flips.
 			name: "InexactUnion",
 			src: `
 				type Color = "red" | "green" | "blue"
 				type Result = Inexact<Color>
 			`,
 			wantSymbolic: "Inexact<Color>",
-			wantExpanded: `"blue" | "green" | "red" | ...`,
+			wantExpanded: `"blue" | "green" | "red"`,
 		},
 		{
-			// `Exact` over a union is the identity.
+			// `Exact` over a union is likewise the identity.
 			name: "ExactUnion",
 			src: `
 				type Color = "red" | "green" | "blue"

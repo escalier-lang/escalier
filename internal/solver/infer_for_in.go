@@ -183,12 +183,9 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 // generator yields its Yield slot. Every other type — a primitive, an object, a
 // class instance without the M7 iterator protocol — is not iterable.
 //
-// Inexactness carries through. An inexact tuple `[number, ...]` has an open tail
-// of unknown additional elements, and an inexact union `[number] | ...` an open
-// tail of unknown additional branches, so either yields an inexact element union:
-// the loop variable may also be some unlisted element, so `[number, ...]` yields
-// `number | ...` rather than a bare `number`. The precise type of the tail needs
-// the Array<T> the tuple approximates, which lands in M7.
+// An inexact tuple `[number, ...]` has an open tail of unknown additional elements, so its
+// element type is the join of its listed elements with that unknown tail, which is `unknown`.
+// The precise type of the tail needs the Array<T> the tuple approximates, which lands in M7.
 func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = groundedCarrier(t)
 	switch t := t.(type) {
@@ -200,7 +197,10 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return t.Yield, true
 	case *soltype.TupleType:
-		return newUnion(c.ctx, t.Elems, t.Inexact), true
+		if t.Inexact {
+			return &soltype.UnknownType{}, true
+		}
+		return newUnion(c.ctx, t.Elems, false), true
 	case *soltype.UnionType:
 		elems := make([]soltype.Type, 0, len(t.Types))
 		for _, branch := range t.Types {
