@@ -1,1 +1,0 @@
-{"version":3,"file":"./index.js","sources":["../../lib/index.esc"],"sourcesContent":["declare val foo: symbol\ndeclare val bar: unique symbol\n"],"names":[],"mappings":""}

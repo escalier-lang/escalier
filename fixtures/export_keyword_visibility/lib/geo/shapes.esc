@@ -1,8 +1,8 @@
 // The same pair inside a namespace, for values and functions alike.
-// The .d.ts writer marks only the `export`ed members as exported. The JS
-// emitter assigns every member to the `geo` namespace object, so `geo.priv`
-// and `geo.privVal` are reachable at runtime even though the types say they
-// are not.
+// The internal bundle assigns every member to the `geo` namespace object, so a
+// bin script reaches `geo.priv` and `geo.privVal`. The public wrapper rebuilds
+// `geo` from the members marked `export`, so neither reaches a consumer, and
+// the .d.ts marks only those members as exported.
 export fn pub() -> number {
     return 1
 }

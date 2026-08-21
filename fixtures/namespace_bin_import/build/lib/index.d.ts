@@ -1,5 +1,5 @@
 declare namespace geo {
-  export type Point = {x: number, y: number};
-  export const Point: {new (x: number, y: number): Point};
-  export function makeOrigin(): Point;
+  type Point = {x: number, y: number};
+  const Point: {new (x: number, y: number): Point};
+  function makeOrigin(): Point;
 }
