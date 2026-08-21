@@ -1,0 +1,5 @@
+// A namespace nested inside another. The public wrapper projects every level that
+// survives, so `geo` comes out holding an `inner` object built from the members
+// `inner` marked `export`.
+export val deepPub = 100
+val deepPriv = 200
