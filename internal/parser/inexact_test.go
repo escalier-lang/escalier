@@ -51,27 +51,16 @@ func TestParseInexactMarker(t *testing.T) {
 		require.True(t, fn.Inexact)
 		require.Empty(t, fn.Params)
 	})
-
-	t.Run("union type annotation", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, "number | string | ...")
-		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-		require.True(t, u.Inexact)
-		require.Len(t, u.Types, 2) // the `...` does not become a member
-	})
 }
 
-// A trailing `...` is only meaningful on a union of two or more members. After a
-// single member, or after a higher-precedence operator that leaves a non-union at
-// the top, no UnionTypeAnn carries the flag, so the parser reports an error rather
-// than silently dropping the marker and reducing the annotation to the bare member.
-func TestParseInexactUnionMarkerRequiresUnion(t *testing.T) {
+// A union is always closed, so a trailing `...` after a `|` is rejected. Openness is written as
+// `string`, `number`, or `unknown` in a member instead.
+func TestParseUnionTrailingDotsRejected(t *testing.T) {
 	ctx := context.Background()
-	for _, src := range []string{"number | ...", "number & string | ..."} {
+	for _, src := range []string{"number | ...", "number | string | ...", "number & string | ..."} {
 		_, errs := ParseTypeAnn(ctx, src)
 		require.Len(t, errs, 1, "input %q", src)
-		require.Equal(t, "a trailing `...` must follow two or more union members, as in `A | B | ...`", errs[0].Message)
+		require.Equal(t, "a union cannot have a trailing `...`; write `string`, `number`, or `unknown` for an open set of members", errs[0].Message)
 	}
 }
 
@@ -97,72 +86,10 @@ func TestParseExactAndRestAreNotInexact(t *testing.T) {
 		require.True(t, isRest)
 	})
 
-	t.Run("bare union is exact", func(t *testing.T) {
+	t.Run("bare union parses", func(t *testing.T) {
 		ta, errs := ParseTypeAnn(ctx, "number | string")
 		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
+		_, ok := ta.(*ast.UnionTypeAnn)
 		require.True(t, ok)
-		require.False(t, u.Inexact)
-	})
-}
-
-// A `... : R` tail bounds the open tail: `A | ... : string` stores string on TailBound. A
-// bound also makes a tail meaningful after a single member, which the bare `...` marker
-// rejects. The bound sits behind a `:` so `...T` stays a tuple spread alone.
-func TestParseBoundedUnionTail(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("bound after several members", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ... : string`)
-		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-		require.True(t, u.Inexact)
-		require.Len(t, u.Types, 2)
-		_, ok = u.TailBound.(*ast.StringTypeAnn)
-		require.True(t, ok)
-		// The union's span reaches through the bound, so it ends at the end of `string`.
-		require.Equal(t, u.TailBound.Span().End, u.Span().End)
-	})
-
-	t.Run("bound after a single member wraps in a one-member union", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | ... : string`)
-		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-		require.True(t, u.Inexact)
-		require.Len(t, u.Types, 1)
-		require.NotNil(t, u.TailBound)
-	})
-
-	t.Run("a parenthesized bound is a full type", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | ... : (string | number)`)
-		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-		require.True(t, u.Inexact)
-		_, ok = u.TailBound.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-	})
-
-	t.Run("an unbounded tail leaves TailBound nil", func(t *testing.T) {
-		ta, errs := ParseTypeAnn(ctx, `"a" | "b" | ...`)
-		require.Empty(t, errs)
-		u, ok := ta.(*ast.UnionTypeAnn)
-		require.True(t, ok)
-		require.True(t, u.Inexact)
-		require.Nil(t, u.TailBound)
-	})
-
-	t.Run("a `... :` with no type after it is an error", func(t *testing.T) {
-		_, errs := ParseTypeAnn(ctx, `"a" | "b" | ... :`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "expected a type annotation after `... :`", errs[0].Message)
-	})
-
-	t.Run("a single member with no bound is still an error", func(t *testing.T) {
-		_, errs := ParseTypeAnn(ctx, `number | ...`)
-		require.Len(t, errs, 1)
-		require.Equal(t, "a trailing `...` must follow two or more union members, as in `A | B | ...`", errs[0].Message)
 	})
 }

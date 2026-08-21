@@ -85,17 +85,6 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: "number | string",
 		},
 		{
-			// An inexact target union has unlisted members, and the value each holds at K is not
-			// among the ones the access read.
-			name: "IndexInexactUnionTarget",
-			src: `
-				type U = {k: number} | {k: string} | ...
-				type Result = U["k"]
-			`,
-			wantSymbolic: `U["k"]`,
-			wantExpanded: "number | string | ...",
-		},
-		{
 			// A conditional over an exact union decides every member, so the branches those members
 			// selected are the only results. Each member wraps itself, so the two results differ and
 			// neither absorbs the other.
@@ -106,19 +95,6 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			`,
 			wantSymbolic: `Wrap<"a" | "b">`,
 			wantExpanded: `["a"] | ["b"]`,
-		},
-		{
-			// An inexact union's tail is unknown-typed, so which branch each unnamed member takes
-			// cannot be worked out one at a time. What each produces is still one of the branches,
-			// so the tail is bounded by what Then and Else produce over it: a member that is a
-			// string takes Then as `[string]`, one that is not takes Else as `boolean`.
-			name: "CondDistributeInexactUnion",
-			src: `
-				type Wrap<T> = if T : string { [T] } else { boolean }
-				type Result = Wrap<"a" | "b" | ...>
-			`,
-			wantSymbolic: `Wrap<"a" | "b" | ...>`,
-			wantExpanded: `["a"] | ["b"] | ... : (boolean | [string])`,
 		},
 		{
 			// Every interpolation names a closed set of choices, so the strings the template
@@ -132,19 +108,6 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: `"pad-left" | "pad-right"`,
 		},
 		{
-			// An interpolation naming an open set of choices produces an open set of strings.
-			// The tail is bounded by the template applied to the interpolation's own bound —
-			// `string` for an unbounded `...` — so it holds only strings the template can spell,
-			// `pad-${string}`, rather than every `string`. An open tail would accept a `5`.
-			name: "TemplateLitInexactInterp",
-			src: `
-				type Side = "left" | "right" | ...
-				type Result = ` + "`pad-${Side}`" + `
-			`,
-			wantSymbolic: "`pad-${Side}`",
-			wantExpanded: `"pad-left" | "pad-right" | ... : ` + "`pad-${string}`",
-		},
-		{
 			// A string intrinsic maps each member of a closed operand union, and that is every
 			// string the operand names.
 			name: "StringIntrinsicExactOperand",
@@ -154,16 +117,6 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			`,
 			wantSymbolic: "Uppercase<Names>",
 			wantExpanded: `"A" | "B"`,
-		},
-		{
-			// An open operand union names strings the transform never sees, so the result is open.
-			name: "StringIntrinsicInexactOperand",
-			src: `
-				type Names = "a" | "b" | ...
-				type Result = Uppercase<Names>
-			`,
-			wantSymbolic: "Uppercase<Names>",
-			wantExpanded: `"A" | "B" | ...`,
 		},
 		{
 			// An intersection carries both operands' members, so its key sets union. An inexact
@@ -340,15 +293,6 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			`,
 			wantSymbolic: "Inexact<Color>",
 			wantExpanded: `"blue" | "green" | "red" | ...`,
-		},
-		{
-			name: "ExactUnion",
-			src: `
-				type Color = "red" | "green" | "blue" | ...
-				type Result = Exact<Color>
-			`,
-			wantSymbolic: "Exact<Color>",
-			wantExpanded: `"blue" | "green" | "red"`,
 		},
 		{
 			// Closing a one-member union collapses it to that member, since the wrapper only ever

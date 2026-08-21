@@ -569,9 +569,9 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 
 // resolveUnionTypeAnn lowers `A | B | …` through newUnion. An unsupported
 // member recovers to a fresh var so the union shape survives, mirroring the
-// Promise<bad> and object/tuple cascade-safe recovery. A trailing `...` in the
-// source sets ta.Inexact, which carries onto the resolved union, and a `... : R`
-// tail sets ta.TailBound, which bounds it through newBoundedUnion.
+// Promise<bad> and object/tuple cascade-safe recovery. A union is always closed:
+// openness is written as `string`, `number`, or `unknown` in a member, not as a
+// trailing `...` on the union.
 func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl int) (soltype.Type, bool) {
 	members := make([]soltype.Type, len(ta.Types))
 	for i, m := range ta.Types {
@@ -584,18 +584,7 @@ func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl in
 			members[i] = c.freshAt(lvl)
 		}
 	}
-	var t soltype.Type
-	if ta.TailBound != nil {
-		bound, ok := c.resolveTypeAnn(scope, ta.TailBound, lvl)
-		if !ok {
-			// An unsupported bound recovers to a fresh var, the same as an
-			// unsupported member, so the bounded shape survives.
-			bound = c.freshAt(lvl)
-		}
-		t = newBoundedUnion(c.ctx, members, bound)
-	} else {
-		t = newUnion(c.ctx, members, ta.Inexact)
-	}
+	t := newUnion(c.ctx, members, false)
 	// newUnion can collapse to an input member's pointer on single-member dedup or
 	// subsumption, so the result may already carry that member's blame. recordProvForResult
 	// records only a fresh, uniquely-owned result.

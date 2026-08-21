@@ -209,17 +209,6 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"shared" | ... : string`,
 		},
 		{
-			// An inexact union has an unlisted member whose keys are unknown, so it cannot close
-			// the key set either. The written members still intersect to "shared", left open.
-			name: "InexactUnion",
-			src: `
-				type U = {a: number, shared: string} | {b: boolean, shared: string} | ...
-				type Result = keyof U
-			`,
-			wantSymbolic: "keyof U",
-			wantExpanded: `"shared" | ...`,
-		},
-		{
 			// An empty intersection is never even when a member was inexact. The open tail marks
 			// a key set that may be larger than its written keys, but a union with no member is
 			// never whatever its exactness, so nothing survives to carry the tail.

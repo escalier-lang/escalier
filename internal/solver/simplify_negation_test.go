@@ -260,66 +260,6 @@ func TestNewNegation(t *testing.T) {
 	}
 }
 
-// A union whose open tail carries no bound is the top of the subtype lattice, and two
-// passes depend on that. newNegation folds `¬(A | B | ...)` to `never`, and
-// simplifyNegations collapses a meet carrying such a complement. Both rest on the probes
-// below, so they are pinned here rather than left to a comment.
-//
-// TestBoundedTailIsNotTop is the counterpart. Writing a bound on the tail is what takes
-// the union out of the top position these probes put it in.
-//
-// The second subtest is the step from top-ness to the fold: if `boolean | ...` accepts
-// every value then nothing satisfies `¬(boolean | ...)`.
-//
-// The third records where an open union and `unknown` part ways. A property read answers
-// from the open union's named members and is rejected outright on `unknown`. That is the
-// one place the named members still carry weight, and it is why an open union is top for
-// SUBTYPING rather than identical to `unknown` outright.
-func TestOpenUnionIsTopForSubtypingOnly(t *testing.T) {
-	c := newChecker()
-	open := newUnion(nil, []soltype.Type{boolT()}, true) // boolean | ...
-	unknownT := func() soltype.Type { return &soltype.UnknownType{} }
-
-	// For subtyping the two are interchangeable in both directions.
-	t.Run("indistinguishable from unknown", func(t *testing.T) {
-		probes := []struct {
-			name     string
-			sub, sup soltype.Type
-			want     bool
-		}{
-			{"every type is below an open union", num(), open, true},
-			{"every type is below unknown", num(), unknownT(), true},
-			{"an open union is not below a primitive", open, num(), false},
-			{"unknown is not below a primitive", unknownT(), num(), false},
-			{"an open union is not below its own member", open, boolT(), false},
-			{"unknown is not below boolean", unknownT(), boolT(), false},
-			{"unknown is below an open union", unknownT(), open, true},
-			{"an open union is below unknown", open, unknownT(), true},
-		}
-		for _, p := range probes {
-			require.Equal(t, p.want, subtypeHolds(c.ctx, p.sub, p.sup), p.name)
-		}
-	})
-
-	// Nothing inhabits the complement of a type every value is below, which is what makes
-	// the refused collapse consistent with the rules above.
-	t.Run("nothing is below an open union's complement", func(t *testing.T) {
-		require.False(t, subtypeHolds(c.ctx, num(), negT(open)))
-		require.False(t, subtypeHolds(c.ctx, numLit(5), negT(open)))
-	})
-
-	// A property read is where the two part ways. The open union answers from its named
-	// members, widened by the tail; unknown has no members to answer from at all.
-	t.Run("a property read tells them apart", func(t *testing.T) {
-		values, _, errs := inferSource(t, `fn f(u: {x: number} | {x: string} | ...) { return u.x }`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn (u: {x: number} | {x: string} | ...) -> unknown", values["f"])
-
-		_, _, errs = inferSource(t, `fn g(u: unknown) { return u.x }`)
-		require.Equal(t, []string{"1:27-1:30: cannot constrain unknown <: object"}, messagesWithSpan(errs))
-	})
-}
-
 // Writing a bound on the open tail takes the union out of the top position
 // TestOpenUnionIsTopForSubtypingOnly pins. `"a" | ... : string` names "a" and draws every
 // other member it has from `string`, so a value outside `string` is outside the union.
@@ -823,70 +763,6 @@ func TestIndexOverAMemberlessBoundedUnion(t *testing.T) {
 		// all of them at once.
 		idx := &soltype.IndexType{Target: newBoundedUnion(nil, nil, obj), Index: strLit("x")}
 		require.Equal(t, "... : number", soltype.Print(reduceType(idx)))
-	})
-}
-
-// Five predicates and rewriters reach a union's members through soltype's visitor, so each
-// reaches the tail's bound too. None of them names the bound itself, which is what makes a walk
-// that stopped at the member list invisible: `condOperandGround` would call an ungrounded union
-// ground, and a capture written in the bound would never be filled.
-//
-// The `A | ... : R` syntax writes a bound directly, so an `infer` in the bound is reachable
-// from source. The bound is an ordinary type position and every one of these rides the same
-// walk.
-func TestVisitorRidersReachTheTailBound(t *testing.T) {
-	// Each case reduces a top-level conditional whose check is the concrete bounded union
-	// `"a" | ... : string`. A concrete union check does not distribute, so the whole union is
-	// matched against the extends as a unit, and `reduceCondInfer` rides the visitor to declare
-	// and capture `infer` binders. The check's only named member is `"a"` and its bound is
-	// `string`, so a capture of `string` can only have come from the bound. A walk that stopped
-	// at the member list would leave the binder undeclared and take the Else branch.
-	reduce := func(src string) string {
-		nodes, ctx, errs := inferTypeNodes(t, `type Result = `+src)
-		require.Empty(t, errs)
-		return soltype.Print(expandAliasResidual(ctx, nodes["Result"]))
-	}
-
-	t.Run("a binder in the bound captures the check's bound", func(t *testing.T) {
-		require.Equal(t, "string",
-			reduce(`if "a" | ... : string : "a" | ... : infer U { U } else { boolean }`))
-	})
-
-	t.Run("the capture reaches a compound branch", func(t *testing.T) {
-		// The answer shows substituteInfer filling a position inside the branch rather than the
-		// branch being the binder itself.
-		require.Equal(t, "[string]",
-			reduce(`if "a" | ... : string : "a" | ... : infer U { [U] } else { boolean }`))
-	})
-
-	t.Run("a concrete bound the check fits takes the Then branch", func(t *testing.T) {
-		// No binder anywhere. The bounds still have to meet for the branch to be selected, so
-		// this and the case below are what show the bound is matched against rather than carried
-		// along.
-		require.Equal(t, "9",
-			reduce(`if "a" | ... : string : "a" | ... : string { 9 } else { boolean }`))
-	})
-
-	t.Run("a bound the check does not fit takes the Else branch", func(t *testing.T) {
-		require.Equal(t, "boolean",
-			reduce(`if "a" | ... : string : "a" | ... : number { 9 } else { boolean }`))
-	})
-
-	// The last two cases call a predicate on the union directly, so they build it by hand rather
-	// than through the pipeline.
-	t.Run("a residual operator in the bound leaves the union ungrounded", func(t *testing.T) {
-		// `"a" | ...keyof T`. condOperandGround reads containsResidualOp, so a `keyof` reachable
-		// only through the bound has to keep a conditional over this union symbolic.
-		u := newBoundedUnion(nil, []soltype.Type{strLit("a")},
-			&soltype.KeyofType{Operand: &soltype.TypeVarType{ID: 1, Level: 1}})
-		require.True(t, containsResidualOp(u))
-		require.False(t, condOperandGround(u))
-	})
-
-	t.Run("a free variable in the bound is found", func(t *testing.T) {
-		// `"a" | ...T`.
-		u := newBoundedUnion(nil, []soltype.Type{strLit("a")}, &soltype.TypeVarType{ID: 2, Level: 1})
-		require.True(t, containsFreeVar(u))
 	})
 }
 

@@ -475,35 +475,6 @@ func TestNonExhaustiveMessageNamesWhatEscapes(t *testing.T) {
 			`,
 			want: "match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch",
 		},
-		// An inexact union's tail takes a catch-all whatever its members, and its uncovered
-		// members each still take a branch. The message asks for both. A literal arm covers
-		// only its own value, so neither `number` nor `string` is covered here.
-		"InexactUnionNamesMembersAndCatchAll": {
-			src: `
-				fn f(b: boolean) {
-					val x: number | string | ... = if b { 1 } else { "b" }
-					return match x {
-						1 => 1,
-						"b" => 2
-					}
-				}
-			`,
-			want: "match is not exhaustive; add branches for `number`, `string`; `number | string | ...` admits values no pattern names, so add a catch-all branch",
-		},
-		// The same inexact union with every member covered. Only the tail is left, so the
-		// catch-all is the whole of the advice.
-		"InexactUnionWithEveryMemberCovered": {
-			src: `
-				fn f(b: boolean) {
-					val x: number | string | ... = if b { 1 } else { "b" }
-					return match x {
-						n: number => 1,
-						s: string => 2
-					}
-				}
-			`,
-			want: "match is not exhaustive; `number | string | ...` admits values no pattern names, so add a catch-all branch",
-		},
 		// A bare `number` has infinitely many values, so the literal arms cover only a finite
 		// subset and the rest escapes. No discrete member is left to name, so the whole carrier
 		// is the open tail the catch-all covers.
@@ -624,13 +595,10 @@ func TestNonExhaustiveMessageNamesTheConstruct(t *testing.T) {
 	}
 }
 
-// TestMatchCoverageExactUnionNeedsNoDefault covers what exactness buys a `match`. A union
-// written without a trailing `...` is closed, so its members are the whole set of values a
-// scrutinee of that type can take. Arms covering each member therefore leave nothing for a
-// default arm to catch, and asking for one would name a branch that could never run.
-//
-// The inexact union of the same members is the contrast. Its open tail admits values no
-// arm names, so the same arms are not exhaustive there.
+// TestMatchCoverageExactUnionNeedsNoDefault covers what a closed union buys a `match`. A union's
+// members are the whole set of values a scrutinee of that type can take, so arms covering each
+// member leave nothing for a default arm to catch, and asking for one would name a branch that
+// could never run.
 //
 // The arms below discriminate by field NAME. Discriminating a closed union by a literal
 // tag field, the `{kind: "circle"}` shape, is not credited yet. A literal inside an object
@@ -644,21 +612,9 @@ func TestMatchCoverageExactUnionNeedsNoDefault(t *testing.T) {
 		}
 	`
 
-	t.Run("Exact", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			fn pick(s: {x: number} | {y: number}) {`+arms+`}
-		`)
-		require.Empty(t, errs)
-		require.Equal(t, "fn (s: {x: number} | {y: number}) -> number", values["pick"])
-	})
-
-	t.Run("Inexact", func(t *testing.T) {
-		_, _, errs := inferSource(t, `
-			fn pick(s: {x: number} | {y: number} | ...) {`+arms+`}
-		`)
-		require.Len(t, errs, 1)
-		require.Equal(t,
-			"3:10-6:4: match is not exhaustive; `{x: number} | {y: number} | ...` admits values no pattern names, so add a catch-all branch",
-			msgWithSpan(errs[0]))
-	})
+	values, _, errs := inferSource(t, `
+		fn pick(s: {x: number} | {y: number}) {`+arms+`}
+	`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (s: {x: number} | {y: number}) -> number", values["pick"])
 }

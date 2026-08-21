@@ -481,24 +481,6 @@ func TestInferMatchTupleRestPattern(t *testing.T) {
 	require.Equal(t, "fn (p: [string] | [number, number]) -> number | string", values["f"])
 }
 
-// An inexact union's open `...` tail survives match-arm narrowing. The `{x}` branch's object
-// test narrows `{x: number} | {y: string} | ...` to `{x: number} | ...`, keeping the tail. The
-// field-read rule (M5 D4) then reads `x` off that narrowed inexact union as `number | unknown`,
-// which collapses to `unknown`, so the arm type-checks and `x` binds `unknown`. The `_` arm
-// keeps the match exhaustive, which an inexact union still requires.
-func TestInferMatchInexactUnionNarrowsKeepingTail(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string} | ...) {
-			return match p {
-				{x} => x,
-				_ => 0
-			}
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
-}
-
 // The exact counterpart of the inexact case above still narrows soundly. With no open tail,
 // `{x}` binds against only the `{x: number}` member and reads `x` at `number` without error.
 func TestInferMatchExactUnionNarrowsCleanly(t *testing.T) {
@@ -530,34 +512,6 @@ func TestValDestructureUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
 }
 
-// An irrefutable `val {x} = p` over an inexact union reads `x` off the whole union, tail
-// included (M5 D4). The `{x: number}` member contributes `number`, `{y: string}` contributes
-// undefined, and the open tail contributes unknown, so the join collapses to `unknown`.
-func TestValDestructureInexactUnionPartialFieldIsUnknown(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string} | ...) {
-			val {x} = p
-			return x
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
-}
-
-// A field absent from every listed member of an inexact union is not an error, unlike the
-// exact case (M5 D4). The open tail may carry the field at any type, so `val {z} = p` reads
-// `z` as unknown through the tail rather than reporting a missing property.
-func TestValDestructureInexactUnionAbsentFieldIsUnknown(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string} | ...) {
-			val {z} = p
-			return z
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
-}
-
 // A direct field read `p.x` takes the same partial-union path as a destructure (M5 D4), so
 // reading `x` off `{x: number} | {y: string}` yields `number | undefined` rather than
 // rejecting on the `{y: string}` member that lacks `x`.
@@ -569,20 +523,6 @@ func TestInferMemberUnionReadsPartialFieldAsUndefined(t *testing.T) {
 	`)
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number | undefined", values["f"])
-}
-
-// A direct field read `p.x` over an inexact union reads through the open tail (M5 D4), the
-// member-access counterpart of the destructure case. The `{x: number}` member contributes
-// `number`, `{y: string}` contributes undefined, and the tail contributes unknown, so the
-// read collapses to `unknown`.
-func TestInferMemberInexactUnionReadsThroughTail(t *testing.T) {
-	values, _, errs := inferSource(t, `
-		fn f(p: {x: number} | {y: string} | ...) {
-			return p.x
-		}
-	`)
-	require.Empty(t, errs)
-	require.Equal(t, "fn (p: {x: number} | {y: string} | ...) -> unknown", values["f"])
 }
 
 // A property every member carries at a different type reads as the join of those types (M5

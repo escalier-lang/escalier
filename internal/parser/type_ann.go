@@ -69,9 +69,6 @@ func (p *Parser) throwsClause() ast.TypeAnn {
 func (p *Parser) typeAnn() ast.TypeAnn {
 	typeAnns := NewStack[ast.TypeAnn]()
 	ops := NewStack[*TypeAnnOp]()
-	unionInexact := false
-	var unionInexactSpan ast.Span
-	var unionTailBound ast.TypeAnn
 
 	token := p.lexer.peek()
 	//nolint: exhaustive
@@ -125,28 +122,11 @@ loop:
 
 		p.lexer.consume()
 
-		// A trailing `...` after a `|` marks the union inexact. An inexact union
-		// holds at least the members listed, plus an unknown-typed tail. The
-		// marker ends the operand loop, so the operator stack drains over the
-		// members already collected. The flag is applied to the popped top-level
-		// union below, or reported as an error when no union was built.
+		// A union is always closed, so a trailing `...` after a `|` is rejected. Openness is
+		// written as `string`, `number`, or `unknown` in a member instead.
 		if nextOp.Kind == Union && p.lexer.peek().Type == DotDotDot {
-			unionInexactSpan = p.lexer.peek().Span
+			p.reportError(p.lexer.peek().Span, "a union cannot have a trailing `...`; write `string`, `number`, or `unknown` for an open set of members")
 			p.lexer.consume() // consume '...'
-			unionInexact = true
-			// A `... : R` bounds the tail: the union holds its named members plus
-			// unknown values drawn from R, as in `"a" | ... : string`. The bound sits
-			// behind a `:` so `...T` stays a tuple spread and only a tuple spread. A
-			// bare `... ` with no `:` leaves the tail unbounded.
-			if p.lexer.peek().Type == Colon {
-				p.lexer.consume() // consume ':'
-				unionTailBound = p.primaryTypeAnn()
-				if unionTailBound == nil {
-					token := p.lexer.peek()
-					p.reportError(token.Span, "expected a type annotation after `... :`")
-					unionTailBound = ast.NewErrorTypeAnn(token.Span)
-				}
-			}
 			break loop
 		}
 
@@ -229,36 +209,7 @@ loop:
 		p.reportError(span, "internal error: type annotation stack invariant violated")
 		return ast.NewErrorTypeAnn(span)
 	}
-	result := typeAnns.Pop()
-	if unionInexact {
-		u, isUnion := result.(*ast.UnionTypeAnn)
-		switch {
-		case isUnion && unionTailBound == nil:
-			u.Inexact = true
-		case isUnion:
-			// A bounded tail rebuilds the union so its span reaches through the bound.
-			result = boundedUnionTypeAnn(u.Types, unionTailBound)
-		case unionTailBound != nil:
-			// A lone member followed by a bounded tail, where the member is not itself a
-			// union: a primary as in `"a" | ... : string`, or a higher-precedence compound as
-			// in `number & string | ... : string`. The bound makes the tail meaningful with
-			// one member, so wrap it rather than rejecting the marker.
-			result = boundedUnionTypeAnn([]ast.TypeAnn{result}, unionTailBound)
-		default:
-			// An unbounded `...` after a single member carries no union to mark.
-			p.reportError(unionInexactSpan, "a trailing `...` must follow two or more union members, as in `A | B | ...`")
-		}
-	}
-	return result
-}
-
-// boundedUnionTypeAnn builds an inexact union carrying a `... : R` tail bound, spanning from
-// the first member through the bound.
-func boundedUnionTypeAnn(types []ast.TypeAnn, bound ast.TypeAnn) *ast.UnionTypeAnn {
-	u := ast.NewUnionTypeAnn(types, ast.MergeSpans(types[0].Span(), bound.Span()))
-	u.Inexact = true
-	u.TailBound = bound
-	return u
+	return typeAnns.Pop()
 }
 
 // funcTypeAnnTail parses a function signature once its leading keyword has been consumed:
