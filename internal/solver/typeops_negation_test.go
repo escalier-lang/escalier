@@ -366,7 +366,9 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 
 // `Exclude` rewrites to a difference whatever the excluded operand names, including a borrow.
 // The residual `T & ¬(&'a Point)` is the complement of one particular borrow, so it admits a
-// borrow of another type and a borrow of Point under a different lifetime.
+// borrow of another type and a borrow of Point under a different lifetime. The assertions
+// pass the alias's declared lifetimes to the printer, so that `'a` is visible rather than
+// collapsing to the bare `&` an un-named lifetime falls back to.
 //
 // Two distinct borrows are not disjoint, so a residual naming one does not reduce further.
 // That matches an object, which is absent from the value families for the same reason.
@@ -384,14 +386,14 @@ func TestSetDifferenceOverABorrow(t *testing.T) {
 		{
 			name: "BorrowExclusion",
 			src:  `type Result<T, 'a> = Exclude<T, &'a Point>`,
-			want: "t6 & ¬&Point",
+			want: "t6 & ¬&'a Point",
 		},
 		{
 			// De Morgan puts the borrow in a negated part of its own once the complement
 			// distributes, which is an ordinary meet of complements.
 			name: "BorrowInExcludedUnion",
 			src:  `type Result<T, 'a> = Exclude<T, &'a Point | string>`,
-			want: "t6 & ¬(string | &Point)",
+			want: "t6 & ¬(string | &'a Point)",
 		},
 		{
 			// An alias naming a borrow reduces the same way. The residual keeps the alias
@@ -404,21 +406,23 @@ func TestSetDifferenceOverABorrow(t *testing.T) {
 			// A borrow inside an atom is a field of the object the negated part names.
 			name: "BorrowInsideAnExcludedAtom",
 			src:  `type Result<T, 'a> = Exclude<T, {a: &'a Point}>`,
-			want: "t6 & ¬{a: &Point}",
+			want: "t6 & ¬{a: &'a Point}",
 		},
 		{
 			// A borrow on the positive side rides through as a member, since the
 			// complement names `string`.
 			name: "BorrowOnThePositiveSide",
 			src:  `type Result<T, 'a> = Exclude<T | &'a Point, string>`,
-			want: "(t6 | &Point) & ¬string",
+			want: "(t6 | &'a Point) & ¬string",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, decls+tt.src)
 			require.Empty(t, errs)
-			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+			residual := expandAliasResidual(ctx, nodes["Result"])
+			got := soltype.PrintWithDeclaredParams(residual, nil, aliasLifetimeParams(ctx, "Result"))
+			require.Equal(t, tt.want, got)
 		})
 	}
 }
