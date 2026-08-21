@@ -182,8 +182,25 @@ func PrintAsScheme(t Type) string {
 // entry of `declared` points at keeps the `t{ID}` form, the fallback Print applies to every
 // variable.
 func PrintWithParams(t Type, declared []*TypeParam) string {
+	return PrintWithDeclaredParams(t, declared, nil)
+}
+
+// PrintWithDeclaredParams renders a type under the source names of a declaration's own
+// type AND lifetime parameters. It is PrintWithParams extended to the lifetime sort, for a
+// declaration that quantifies both.
+//
+// A borrow whose lifetime carries no name prints as a bare `&`, since an inferred borrow
+// has no name worth showing. That rule also hides a lifetime the source did write. The
+// body of `type Result<'a> = ¬(&'a Point)` holds the variable `'a` binds, and plain Print
+// knows no name for it, so it renders `¬&Point`. A reader cannot tell from that which
+// borrow is excluded. Passing the alias's LifetimeParams here renders `¬&'a Point`.
+//
+// A variable that no entry names keeps its fallback form. That is `t{ID}` for a type
+// variable and a bare `&` for a borrow lifetime.
+func PrintWithDeclaredParams(t Type, declared []*TypeParam, declaredLts []*LifetimeParam) string {
 	p := &namedPrinter{}
 	p.bindTypeParams(declared)
+	p.nameLifetimeParams(declaredLts)
 	return p.printType(t)
 }
 
@@ -255,10 +272,18 @@ func PrintAsSchemeWith(
 		next++
 		labels = append(labels, p.bindTypeParam(v, name))
 	}
-	// Borrow lifetimes left in the coalesced type by D4's coalesceLifetimes are all
-	// nameable. A connect-nothing one was already elided; a param lifetime and a kept
-	// join lifetime both survive here. Name each 'a, 'b, … in first-appearance order
-	// and add it to the quantifier prefix after the type parameters.
+	// Borrow lifetimes left in the coalesced type by coalesceLifetimes are all
+	// nameable. A connect-nothing one was already elided unless a complement encloses
+	// it. Three kinds survive to here: a param lifetime, a kept join lifetime, and a
+	// lifetime occurring under a complement.
+	//
+	// The third kind is named even when it reaches no parameter, so
+	// `declare fn f<'a>() -> ¬(&'a mut {x: number})` renders
+	// `fn <'a>() -> ¬&'a mut {x: number}`, while the same signature over a plain borrow
+	// renders `fn () -> &mut {x: number}`. resolveLt carries the reason.
+	//
+	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
+	// after the type parameters.
 	ltVars := freeLifetimeVars(t)
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
@@ -616,7 +641,7 @@ type namedPrinter struct {
 	names map[*TypeVarType]string
 	// ltNames maps a retained lifetime variable to its surface name (`'a`, `'b`,
 	// …). It is nil for plain Print, where a lifetime var renders as the raw
-	// `'l{ID}` debug form; D4's display-time coalescing populates it so a
+	// `'l{ID}` debug form. Display-time lifetime coalescing populates it so a
 	// param-originated lifetime renders under its quantified name.
 	ltNames map[*LifetimeVar]string
 	// qualify renders a ClassType or AliasType under its full dep_graph-qualified name

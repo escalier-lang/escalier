@@ -288,18 +288,11 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 		tail.bound = &soltype.UnknownType{}
 	}
 	if tail.bound != nil {
+		// The bound is never dropped. An unbounded tail admits every value, which makes the
+		// whole result the top of the subtype lattice. That is a wider answer than the operand
+		// the conditional started from, so `Exclude<keyof {a: number, ...}, R>` would accept a
+		// `5`. A check the bound cannot decide comes back as a difference over it instead.
 		tail.bound = e.condOverTailBound(t, tail.bound)
-		if tail.bound == nil {
-			// The conditional failed to answer over the bound. Carrying on would drop the
-			// bound and leave the tail unbounded, and an unbounded tail admits every value,
-			// which makes the whole result the top of the subtype lattice. That is a wider
-			// answer than the operand the conditional started from, so
-			// `Exclude<keyof {a: number, ...}, R>` would accept a `5`. Stay symbolic
-			// instead, and reduce once the bound grounds enough to decide.
-			return &soltype.CondType{
-				Check: check, Extends: t.Extends, Then: t.Then, Else: t.Else, Distribute: t.Distribute,
-			}
-		}
 	}
 	parts := make([]soltype.Type, len(check.Types))
 	for i, member := range check.Types {
@@ -314,7 +307,8 @@ func (e *typeEvaluator) distributeCond(t *soltype.CondType, check *soltype.Union
 }
 
 // condOverTailBound applies a distributive conditional to a tail's bound and returns the bound
-// the result's tail takes, nil when the conditional has no answer over it.
+// the result's tail takes. Every check has an answer over a bound, either by deciding it or by
+// carrying the undecided part as a difference, so the result is never nil.
 //
 // A bound stands for a SET of members rather than one, so the member-at-a-time rule the named
 // members take does not carry over. Running the conditional once over the whole bound would
@@ -355,17 +349,6 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 		// the union already names. Normalizing fuses the meet so tailSubsumed can see it.
 		return e.ctx.normalizeDeep(e.reduce(diff), soltype.Positive)
 	}
-	if !negatableOperand(e.groundReduced(extends)) {
-		// The Else half is the values `¬extends` names, and an operand no complement may name
-		// has no such half. The tail comes back unbounded rather than half-decided.
-		//
-		// The check is asked of the grounded operand, because a name reveals nothing about
-		// what it stands for. `type Handle = &'static Point` is an AliasType, which
-		// negatableOperand reads as negatable, while the borrow its body names is the one
-		// thing a complement may not hold. nativeDifference grounds the same question for
-		// the same reason.
-		return nil
-	}
 	// The check splits the bound and the conditional is not a filter. Each part of the split takes
 	// its own branch, and the bound is what the two branches produce together.
 	// `if (...string) : "b" { 1 } else { 2 }` gives a tail bounded by `1 | 2`, since the tail may
@@ -385,10 +368,10 @@ func (e *typeEvaluator) condOverTailBound(t *soltype.CondType, bound soltype.Typ
 // puts every tail member in the Else branch.
 //
 // It asks the question as an empty meet rather than as the subtype check
-// `bound <: ¬extends`. The two agree wherever both apply, and the meet also answers over a
-// check the ¬Ref exclusion invariant forbids naming under a complement. `...string` against
-// `mut {x: number}` is that case. No string is a borrowed object, so
-// `string ∩ mut {x: number}` is `never` and the whole tail takes Else.
+// `bound <: ¬extends`. The two agree wherever both apply, and the meet reaches the answer
+// without minting a complement. `...string` against `mut {x: number}` is the shape. No
+// string is a borrowed object, so `string ∩ mut {x: number}` is `never` and the whole tail
+// takes Else.
 //
 // A `never` bound never reaches here. It is a subtype of every check, so the caller's
 // first test already answers uniform for it.

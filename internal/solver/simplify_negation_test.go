@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"regexp"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -621,15 +622,14 @@ func TestOperatorsOverAMemberlessBoundedUnion(t *testing.T) {
 	})
 
 	// `if (...string) : mut {x: number} { 1 } else { 2 }`, using the syntax #1131 asks for.
-	t.Run("an unnegatable check still decides a disjoint bound", func(t *testing.T) {
+	t.Run("a borrow check decides a disjoint bound through the meet", func(t *testing.T) {
 		// No string is a borrowed object, so every value the bound admits takes Else and the
 		// tail is bounded by `2`. The uniform-Else test reaches that answer through the meet
 		// `string ∩ mut {x: number}`, which normalization reports `never`.
 		//
-		// The complement `¬(mut {x: number})` would answer the same question, and the ¬Ref
-		// exclusion invariant forbids writing it. Asking through the meet is what keeps this
-		// case decidable, and it also spares the split below, which has no Else half to give
-		// an operand no complement may name.
+		// The complement `¬(mut {x: number})` answers the same question. Asking through the
+		// meet reaches it without minting one, which is what lets the uniform test settle the
+		// case before the split below runs.
 		ref := &soltype.RefType{Mut: true, Inner: &soltype.ObjectType{
 			Elems: []soltype.ObjTypeElem{propElem("x", num())},
 		}}
@@ -986,33 +986,56 @@ func printedBounds(bounds []soltype.Type) []string {
 	return out
 }
 
+// maskVarIDs replaces a rendered type variable's mint counter with a placeholder, so an
+// assertion over a residual holding a free variable does not break when an unrelated
+// declaration is added ahead of it. soltype.Print has no name map, so it renders such a
+// variable as `t{ID}`.
+func maskVarIDs(printed string) string {
+	return regexp.MustCompile(`\bt\d+\b`).ReplaceAllString(printed, "t{N}")
+}
+
 // A bound the conditional cannot decide must not be dropped. An unbounded tail admits every
 // value, so a union that loses its bound becomes the top of the subtype lattice, which is a
-// wider answer than the operand the conditional started from. Staying symbolic keeps the
-// operand's own bound reachable and lets the reduction run again once it grounds.
+// wider answer than the operand the conditional started from.
 //
-// A borrow is the check that reaches this. The ¬Ref exclusion invariant forbids naming one
-// under a complement, so the split has no Else half to give it, and the bound `string` is not
-// disjoint from a borrow over an object either, so the uniform tests do not answer.
-func TestAnUndecidableBoundKeepsTheConditionalSymbolic(t *testing.T) {
+// A borrow check reaches both sides of that. `keyof Obj` is a union with a tail bounded by
+// `string`, and the difference against a borrow either decides or does not:
+//
+//   - Over a type variable the pointee is unknown, so the borrow draws no value family and
+//     the tail keeps `string & ¬(mut V)` as its bound.
+//   - Over an object the borrow draws refCellFamily, which is disjoint from `string`, so the
+//     complement drops and the tail is left with the operand's own bound. An alias naming
+//     that object decides the same way, since valueFamilyOf unfolds the reference.
+//
+// A number is not a member either way. That is the property a dropped bound would break,
+// where keeping the bound or discharging it both preserve it.
+func TestABorrowBoundIsKeptOrDischarged(t *testing.T) {
 	nodes, ctx, errs := inferTypeNodes(t, `
 		type Point = {x: number}
 		type Obj = {a: number, ...}
-		type Drop<T, U> = if T : U { never } else { T }
-		type Direct = Drop<keyof Obj, mut Point>
-		type Named = Drop<keyof Obj, Handle>
 		type Handle = mut Point
+		type Drop<T, U> = if T : U { never } else { T }
+		type OverVar<V> = Drop<keyof Obj, mut V>
+		type OverObject = Drop<keyof Obj, mut {x: number}>
+		type OverAlias = Drop<keyof Obj, Handle>
 	`)
 	require.Empty(t, errs)
 
-	for _, name := range []string{"Direct", "Named"} {
-		t.Run(name, func(t *testing.T) {
-			rest := expandAliasResidual(ctx, nodes[name])
+	tests := []struct {
+		name string
+		want string
+	}{
+		{name: "OverVar", want: `("a" | ... : string) & ¬mut t{N}`},
+		{name: "OverObject", want: `"a" | ... : string`},
+		{name: "OverAlias", want: `"a" | ... : string`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rest := expandAliasResidual(ctx, nodes[tt.name])
 			c := newChecker()
 			require.False(t, subtypeHolds(c.ctx, numLit(5), rest),
 				"a lost bound would leave the tail unbounded, which accepts every value")
-			require.NotContains(t, soltype.Print(rest), "¬",
-				"no complement may name a borrow, however the check spells it")
+			require.Equal(t, tt.want, maskVarIDs(soltype.Print(rest)))
 		})
 	}
 }

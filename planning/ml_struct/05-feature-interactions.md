@@ -49,17 +49,63 @@ solved by `constrainLt` over `LifetimeVar` bounds, and carried on the
   (`(mut 'a T) | (mut 'b T)`) is the M6 permissive-borrow-join case; it factors to
   `mut ('a | 'b) T` via the existing M4 D4 single-carrier logic, and normalization
   must reuse that rather than treating the two refs as un-mergeable.
-- **One subtle soundness watch-item: `¬Ref` and lifetime polarity.** Negation is
-  contravariant, so `¬(mut 'b T) <: ¬(mut 'a T)` when `'a` outlives `'b` — the
-  lifetime's outlives-direction should flip under negation. But the
-  `RefType.Accept` visitor deliberately does *not* walk the lifetime (it is a
-  separate sort handled by the lifetime passes), so the polarity-flip from
-  `NegationType.Accept` ([03-graft-sketch.md](03-graft-sketch.md) §4) would not
-  reach it. If `¬Ref` ever participates in constraint solving, the lifetime needs
-  its polarity flipped explicitly. Escalier's binding-based narrowing makes `¬Ref`
-  rare in practice — you narrow by rebinding, not by complementing a borrow — so
-  this is a "rule it out or handle it specially" item, not a pervasive hazard. Add
-  a guard either way.
+- **The lifetime polarity-flip under `¬Ref` already works.** Negation is
+  contravariant, so `¬(mut 'b T) <: ¬(mut 'a T)` when `'a` outlives `'b`, and the
+  lifetime's outlives-direction must flip under negation. It does.
+  `NegationType.Accept` ([03-graft-sketch.md](03-graft-sketch.md) §4) flips the
+  polarity *before* descending, and every pass that reads a lifetime reads it off
+  the `RefType` node in its own `EnterType`, where the flip has already applied.
+  `e.c.extrudeLt(r.Lt, pol, …)` in `internal/solver/constrain.go` is the clearest
+  case. `extrudeLt` wires the origin lifetime to its fresh proxy through the bound
+  direction the polarity picks. That is an upper bound at `Positive` and a lower bound
+  at `Negative`. Extruding `&'a T` from level 5 to level 0 at root `Positive` leaves
+  `'a` with `lower=0 upper=1`. Extruding `¬(&'a T)` at the same root polarity leaves it
+  with `lower=1 upper=0`. That is the outlives direction flipping.
+  `RefType.Accept` not walking the lifetime turns out not to matter, because no pass
+  relies on `Accept` to reach it.
+  `TestComplementFlipsExtrudedLifetimeDirection` pins both rows.
+- **A complement may name a borrow.** `¬(&'a T)` denotes every value that is not a
+  borrow of `T` under `'a`, so it admits a borrow of another type, a borrow of `T` under
+  a different lifetime, and every value that is not a borrow. The lifetime is part of
+  what the complement names, not something being complemented itself, so the absence of
+  `¬'a` costs nothing. The decision procedure never asks for one. In `constrainImplied` a
+  negated atom always crosses the `<:` and lands as a positive atom on the other side,
+  where it is met or joined, and `meetRefs` / `joinRefs` already provide both.
+
+  `Exclude<T, &'a Point>` reduces to `T & ¬(&'a Point)`. Two distinct borrows are not
+  disjoint, since `refCellFamily` carries only the cross-family rule, so excluding one
+  borrow from another leaves that residual unreduced. An object behaves the same way and
+  is absent from the value families for the same reason. So the residual is the normal
+  outcome for a structural type rather than a special weakness of borrows.
+
+  Display-time lifetime classification was the blocker. `coalesceLifetimes` needs a
+  borrow's dataflow position, not the variance the walk's polarity carries, so it converts
+  one into the other. `Negative` means the borrow originates at a parameter, so its
+  lifetime is nameable. `Positive` means the borrow reaches an output, so its lifetime is
+  not elided. A complement does not move a borrow between a parameter and an output, but
+  it does flip the polarity its operand is visited at.
+
+  `ltOccVisitor` therefore produces two separate facts:
+
+  1. **Position**, recovered by undoing one polarity flip per enclosing complement.
+     Only the parity matters, since two complements cancel. Position decides which
+     connected component counts as output-reaching, so a mis-read position keeps
+     unrelated lifetimes named and invents outlives bounds.
+  2. **The `noElide` set**, holding every lifetime a complement encloses. A lifetime in
+     it is never elided, whatever its position. Position alone is not enough, because a
+     complemented borrow reaching no output is genuinely connect-nothing, and the
+     display-time elision rule drops those. `noElide` is what puts the name on a
+     complemented borrow.
+
+  The two are kept separate so that a change to one cannot silently break the other.
+  They are also pinned by different tests: `noElide` by
+  `TestComplementedBorrowKeepsLifetimeName`, the position correction by
+  `TestComplementedBorrowAssertsNoOutlivesRelation` and
+  `TestComplementedBorrowGroupsLikeAnOrdinaryParam`.
+
+  The same occurrence map feeds `checkDeclaredLifetimeBounds` through
+  `ltOutlivesRelation`, so the classification reaches the declared-bound check and not
+  only the printer.
 
 ---
 
@@ -243,13 +289,14 @@ now exception narrowing in `try` / `catch`. Wherever Escalier currently has a
 conservative "distribute over a ground union" or "two-variable encoding"
 workaround, MLstruct replaces it with an exact `& ¬`. Meanwhile the non-Boolean
 sort (lifetimes) and the orthogonal former-flags (exactness) thread through
-unchanged — with the single `¬Ref`-lifetime-polarity guard as the one soundness
-item to verify. Function overloading is the lone counter-current: there the
+unchanged. `¬Ref` is admitted. The polarity flip reaches a borrow's lifetime, and
+excluding one borrow from another leaves an unreduced residual, exactly as excluding
+one object from another does. Function overloading is the lone counter-current: there the
 inference win does not reach codegen, so MLstruct complicates rather than upgrades.
 
 | Feature | Interaction with MLstruct |
 |---|---|
-| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). Watch-item: `¬Ref` must flip lifetime polarity, which `Accept` does not walk. |
+| Lifetimes (second sort) | Orthogonal — negation does not extend to the outlives lattice. `Ref`-atom normalization splits inner (type algebra) from lifetime (lifetime meet). `¬Ref` is admitted. `¬'a` names nothing and nothing asks for one, since the lifetime is part of what the complement names. Excluding one borrow from another leaves an unreduced residual, as an object does. |
 | Exact / inexact | Flag threads through; the merge must stay exactness-aware (exact `{x} & {y}` is `never`, not `{x, y}`) by reusing `newIntersection`. Exact unions + tag negation give `match` exhaustiveness. |
 | `throws` | Rides parallel to `Ret` as a covariant field. **Upgrade** — try/catch narrowing becomes native `body_throws & ¬caught`, resolving M9's open question. |
 | Function overloading | **Complication** — trigger 3 infers recursive-group overloads without annotations, but the set-theoretic type does not round-trip to a TS overload table and the inference win does not reach codegen. Implemented overloads still need per-arm annotations for deterministic dispatch. |

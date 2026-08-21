@@ -864,16 +864,6 @@ type UnsupportedFeatureError struct {
 	Feature string
 }
 
-// NegatedBorrowError fires when a written `¬T` names a borrow on its operand's spine. A complement
-// may not name a borrow, the ¬Ref exclusion invariant. The outlives lattice a borrow's lifetime
-// lives in has a join and a meet but no complement, so `¬(&'a Point)` names nothing. Borrow is the
-// offending borrow, which may sit under a union or an intersection as in `¬(&'a Point | number)`,
-// not only at the top. The solver enforces the same rule on the complements it builds itself.
-type NegatedBorrowError struct {
-	Ann    *ast.NegationTypeAnn
-	Borrow *soltype.RefType
-}
-
 // BodyDeclNotAllowedError fires when a statement-level declaration in a function
 // body is anything other than a VarDecl. This is a permanent language rule
 // (§3.2), not the temporary subset gate above: body decls are VarDecl-only.
@@ -1229,7 +1219,6 @@ func (*TooManyArgsError) isSolverError()                    {}
 func (*NotEnoughArgsError) isSolverError()                  {}
 func (*UnsupportedNodeError) isSolverError()                {}
 func (*UnsupportedFeatureError) isSolverError()             {}
-func (*NegatedBorrowError) isSolverError()                  {}
 func (*BodyDeclNotAllowedError) isSolverError()             {}
 func (*MissingInitializerError) isSolverError()             {}
 func (*DuplicateDeclarationError) isSolverError()           {}
@@ -2385,15 +2374,6 @@ func (e *UnsupportedFeatureError) Span() ast.Span      { return e.Node.Span() }
 func (e *UnsupportedFeatureError) Related() []ast.Span { return nil }
 func (e *UnsupportedFeatureError) Message() string {
 	return "Unsupported: " + e.Feature
-}
-
-func (e *NegatedBorrowError) Span() ast.Span      { return e.Ann.Span() }
-func (e *NegatedBorrowError) Related() []ast.Span { return nil }
-func (e *NegatedBorrowError) Message() string {
-	// soltype.Print renders the borrow with its `&` and `mut`, so the message names the offending
-	// borrow directly, as `&Point` or `&mut {x: number}`, whether it sat at the top of the operand
-	// or under a union or an intersection.
-	return "cannot negate a borrow: " + soltype.Print(e.Borrow)
 }
 
 func (e *BodyDeclNotAllowedError) Span() ast.Span      { return e.Decl.Span() }

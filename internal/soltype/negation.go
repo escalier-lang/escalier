@@ -1,34 +1,25 @@
 package soltype
 
-import "fmt"
-
-// The ¬Ref exclusion invariant: no complement ever names a borrow.
+// A complement may name a borrow. `¬(&'a T)` denotes every value that is not a borrow
+// of T under `'a`, so it admits a borrow of another type, a borrow of T under a different
+// lifetime, and every value that is not a borrow.
 //
-// A borrow carries two sorts, and only the type sort is a Boolean algebra. The
-// outlives lattice has a join and a meet but no complement, so `¬'a` names nothing.
-// Lifetime coalescing also mis-classifies a borrow under a complement and drops its
-// name from the rendered signature. See escalier-lang/escalier#1125, which carries
-// the measurements and a fix for the second half.
+// The lifetime is part of what the complement names, not something being complemented
+// itself. The outlives lattice has a join and a meet but no complement, so `¬'a` names
+// nothing, and nothing asks for one. In constrainImplied a negated atom always crosses
+// the `<:` and lands as a positive atom on the other side, where it is met or joined,
+// and meetRefs and joinRefs already provide both.
 //
-// Negation INSIDE a borrow is allowed. A NegationType is not a RefInner, so the
+// Excluding one borrow from another leaves an unreduced residual, since refCellFamily
+// carries only the cross-family rule and two distinct borrows are not disjoint. So
+// `Exclude<&'a T, &'b T>` keeps the shape `&'a T & ¬(&'b T)`, as excluding one object
+// from another does.
+//
+// Negation INSIDE a borrow is allowed too. A NegationType is not a RefInner, so the
 // complement sits under a union or an intersection, as in
 // `mut 'a ({x: number} | ¬{y: string})`, and normalizes by the ordinary rules.
 
-// AssertNegatable panics when t is a borrow, the one operand a complement may not
-// name. It panics rather than reporting an error, following AsProperty. Call it
-// wherever a complement is built or taken apart.
-func AssertNegatable(t Type) {
-	if r, ok := t.(*RefType); ok {
-		panic(fmt.Sprintf("AssertNegatable: forbidden complement of the borrow %s", Print(r)))
-	}
-}
-
-// NewNegation builds the complement ¬t, enforcing the invariant where the operand is
-// chosen. A site that RE-MINTS an existing complement around a rewritten operand
-// chooses nothing and does not go through it. NegationType.Accept and the solver's
-// foldNegation are both that shape, and coalescing a `¬α` whose α inlines to a
-// borrow lands there.
+// NewNegation builds the complement ¬t.
 func NewNegation(t Type) Type {
-	AssertNegatable(t)
 	return &NegationType{Inner: t}
 }

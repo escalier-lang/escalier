@@ -91,11 +91,10 @@ import (
 // lifetimes combine in the outlives lattice. meetRefs and joinRefs are that split,
 // and the comment above them states which lifetime pairs combine exactly.
 //
-// A borrow is also the one atom a complement may not name, the `¬Ref` exclusion
-// invariant. soltype.AssertNegatable states it and the two NegationType arms of
-// mkDNF and mkCNF enforce it. Negation INSIDE a borrow is a different node and
-// normalizes by the ordinary rules, so `mut 'a ({x: number} | ¬{y: string})` is
-// fine.
+// A complement may name a borrow, and because the wrapper stays whole the complement
+// carries the borrow through as one atom rather than distributing into its lifetime.
+// Negation INSIDE a borrow is a different node and normalizes by the ordinary rules,
+// so `mut 'a ({x: number} | ¬{y: string})` is fine.
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -224,13 +223,6 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		// consulting the merges, so the result is canonicalized afterwards.
 		negated := c.mkCNF(t.Inner, pol.Flip()).neg()
 		conjuncts := c.canonicalConjuncts(negated.Conjuncts)
-		// A borrow lands in a conjunct's Rnf exactly when the complement names it, so
-		// scanning the result is what enforces the ¬Ref exclusion invariant. The scan
-		// reads the result rather than t.Inner because a borrow reaches a negated part
-		// from two shapes, not one. `¬(mut 'a T)` names the borrow directly, and
-		// `¬(A | mut 'a T)` reaches it through De Morgan's law, which turns the
-		// complement of a join into a meet of complements.
-		assertBorrowFreeNegatedParts(conjuncts, func(a Conjunct) []soltype.Type { return a.Rnf.Atoms })
 		return DNF{Conjuncts: conjuncts}
 	case *soltype.TypeVarType:
 		return DNF{Conjuncts: []Conjunct{newConjunct().withVar(t)}}
@@ -267,12 +259,9 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
-		// The dual of the mkDNF arm. A disjunct holds its negated part in Lnf, so that
-		// is the list the ¬Ref scan reads.
+		// The dual of the mkDNF arm.
 		negated := c.mkDNF(t.Inner, pol.Flip()).neg()
-		disjuncts := c.canonicalDisjuncts(negated.Disjuncts)
-		assertBorrowFreeNegatedParts(disjuncts, func(a Disjunct) []soltype.Type { return a.Lnf.Atoms })
-		return CNF{Disjuncts: disjuncts}
+		return CNF{Disjuncts: c.canonicalDisjuncts(negated.Disjuncts)}
 	case *soltype.TypeVarType:
 		return CNF{Disjuncts: []Disjunct{newDisjunct().withVar(t)}}
 	default:
@@ -344,18 +333,6 @@ func (n *deepNormalizer) EnterType(t soltype.Type, pol soltype.Polarity) soltype
 
 func (n *deepNormalizer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	return n.ctx.mkDNF(t, pol).toType()
-}
-
-// assertBorrowFreeNegatedParts enforces the ¬Ref exclusion invariant over a
-// normalized complement. A borrow in a negated part is a `¬(mut 'a T)` however the
-// source wrote it. negatedPart reads that part off one member, Rnf for a conjunct
-// and Lnf for a disjunct.
-func assertBorrowFreeNegatedParts[T any](members []T, negatedPart func(T) []soltype.Type) {
-	for _, member := range members {
-		for _, atom := range negatedPart(member) {
-			soltype.AssertNegatable(atom)
-		}
-	}
 }
 
 // dnfTop is `unknown` as a DNF: one conjunct with nothing in it, since an empty
@@ -725,7 +702,7 @@ func (c *Context) meetFusedAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if carriesKnot(a) || carriesKnot(b) {
 		return nil, false
 	}
-	if fused, ok := meetValueAtoms(a, b); ok {
+	if fused, ok := c.meetValueAtoms(a, b); ok {
 		return fused, true
 	}
 	switch a := a.(type) {
@@ -779,7 +756,7 @@ func (c *Context) joinFusedAtoms(a, b soltype.Type) (soltype.Type, bool) {
 	if wider, ok := widerByExactness(a, b); ok {
 		return wider, true
 	}
-	if fused, ok := joinValueAtoms(a, b); ok {
+	if fused, ok := c.joinValueAtoms(a, b); ok {
 		return fused, true
 	}
 	switch a := a.(type) {
@@ -942,7 +919,7 @@ const (
 
 // valueFamilyOf returns the family t draws its values from, and notValueAtom for
 // a kind the families do not cover.
-func valueFamilyOf(t soltype.Type) valueFamily {
+func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 	switch t := t.(type) {
 	case *soltype.PrimType:
 		return primFamily(t.Prim)
@@ -953,7 +930,7 @@ func valueFamilyOf(t soltype.Type) valueFamily {
 	case *soltype.UndefinedType:
 		return undefinedFamily
 	case *soltype.RefType:
-		return refCellOrNot(t.Inner)
+		return c.refCellOrNot(t.Inner)
 	}
 	return notValueAtom
 }
@@ -965,9 +942,18 @@ func valueFamilyOf(t soltype.Type) valueFamily {
 // Those three kinds stay themselves under every rewrite, so a borrow over one admits no
 // primitive. The kinds it turns away can leave the RefInner set, and RefType.Accept peels a
 // borrow whose inner does: a `mut β` whose β inlines to `string` becomes `string`, and a
-// union, an intersection, or an alias can reduce to a bare primitive the same way. Reading
-// such a borrow as disjoint from `string` would be wrong.
-func refCellOrNot(carrier soltype.Type) valueFamily {
+// union or an intersection can reduce to a bare primitive the same way. Reading such a
+// borrow as disjoint from `string` would be wrong.
+//
+// An alias is unfolded first, so `&mut Point` and `&mut {x: number}` draw the same family
+// when Point names that object. Classifying on the reference would instead make the answer
+// depend on how the pointee was spelled. A complement is where that shows, since
+// `5 <: ¬(&mut Point)` holds exactly when `5 <: ¬(&mut {x: number})` does. An unregistered
+// or non-structural alias body falls through to notValueAtom as any other carrier would.
+func (c *Context) refCellOrNot(carrier soltype.Type) valueFamily {
+	if ref, ok := carrier.(*soltype.AliasType); ok {
+		carrier = c.expandAlias(ref)
+	}
 	switch carrier.(type) {
 	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType:
 		return refCellFamily
@@ -1014,8 +1000,8 @@ func litFamily(l soltype.Lit) valueFamily {
 // first. The overlap is deliberate. Without it `"hello"` met with `"hello"` would
 // fall to the last rule and collapse to `never`, so the function would be right
 // only for a caller that filters equal atoms out beforehand.
-func meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
-	fa, fb := valueFamilyOf(a), valueFamilyOf(b)
+func (c *Context) meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fa, fb := c.valueFamilyOf(a), c.valueFamilyOf(b)
 	if fa == notValueAtom || fb == notValueAtom {
 		return nil, false
 	}
@@ -1048,8 +1034,8 @@ func meetValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
 // Equal atoms are answered here too, for the reason meetValueAtoms gives. Without
 // it two equal literals would read as un-fusable and stay two atoms, which is
 // sound but needlessly imprecise.
-func joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
-	fa, fb := valueFamilyOf(a), valueFamilyOf(b)
+func (c *Context) joinValueAtoms(a, b soltype.Type) (soltype.Type, bool) {
+	fa, fb := c.valueFamilyOf(a), c.valueFamilyOf(b)
 	if fa == notValueAtom || fb == notValueAtom || fa != fb {
 		return nil, false
 	}
@@ -2373,11 +2359,7 @@ func (r RhsNf) toType() soltype.Type {
 // and mkDNF decomposes every negation it meets, so no atom is itself a complement
 // that a second one would cancel.
 //
-// It goes through soltype.NewNegation, which enforces the ¬Ref exclusion
-// invariant. Nothing is expected to trip that check here, since the parts rendered
-// below come from a normal form whose negated side mkDNF already scanned for a
-// borrow. It is the construction-site gate, applied wherever a complement is
-// built.
+// It goes through soltype.NewNegation, the shared constructor.
 func negate(t soltype.Type) soltype.Type {
 	return soltype.NewNegation(t)
 }

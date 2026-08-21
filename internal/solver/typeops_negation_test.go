@@ -364,19 +364,15 @@ func TestNativeSetDifferenceOverTypeVariable(t *testing.T) {
 	}
 }
 
-// No complement may name a borrow, which is the ¬Ref exclusion invariant in
-// `internal/soltype/negation.go`. A borrow carries a lifetime as well as a type, and the outlives
-// lattice has no complement, so `¬(&'a T)` names nothing.
+// `Exclude` rewrites to a difference whatever the excluded operand names, including a borrow.
+// The residual `T & ¬(&'a Point)` is the complement of one particular borrow, so it admits a
+// borrow of another type and a borrow of Point under a different lifetime. The assertions
+// pass the alias's declared lifetimes to the printer, so that `'a` is visible rather than
+// collapsing to the bare `&` an un-named lifetime falls back to.
 //
-// A set difference is the one reduction that chooses an operand to complement, so it is where the
-// invariant has to be honored rather than asserted. A difference whose excluded side would take a
-// borrow leaves the whole meet as it arrived, and the conditional it would have been rewritten from
-// stays symbolic. Neither loses anything that reduces today: the solver decides disjointness only
-// within the value families, so a borrow exclusion would leave an unsettled residual even if the
-// complement were allowed. #1125 carries the work to lift the exclusion.
-func TestSetDifferenceDeclinesToComplementABorrow(t *testing.T) {
-	// Every case applies `Exclude` to an operand the reduction cannot filter, so the rewrite to a
-	// difference is what would mint the complement.
+// Two distinct borrows are not disjoint, so a residual naming one does not reduce further.
+// That matches an object, which is absent from the value families for the same reason.
+func TestSetDifferenceOverABorrow(t *testing.T) {
 	const decls = `
 		type Exclude<U, V> = if U : V { never } else { U }
 		type Point = {x: number}
@@ -388,46 +384,45 @@ func TestSetDifferenceDeclinesToComplementABorrow(t *testing.T) {
 		want string
 	}{
 		{
-			// `Exclude<T, &'a Point>` has no difference form, so it keeps the shape the source
-			// wrote instead of reducing to `T & ¬(&'a Point)`.
 			name: "BorrowExclusion",
 			src:  `type Result<T, 'a> = Exclude<T, &'a Point>`,
-			want: "if t6 : &Point { never } else { t6 }",
+			want: "t6 & ¬&'a Point",
 		},
 		{
-			// De Morgan would put the borrow in a negated part of its own, so a borrow anywhere in
-			// the excluded side's lattice spine stops the rewrite, not only one at the top.
+			// De Morgan puts the borrow in a negated part of its own once the complement
+			// distributes, which is an ordinary meet of complements.
 			name: "BorrowInExcludedUnion",
 			src:  `type Result<T, 'a> = Exclude<T, &'a Point | string>`,
-			want: "if t6 : string | &Point { never } else { t6 }",
+			want: "t6 & ¬(string | &'a Point)",
 		},
 		{
-			// An alias naming a borrow is the same forbidden complement with a name in front of
-			// it, so the test reads the grounded operand and this stays symbolic too.
+			// An alias naming a borrow reduces the same way. The residual keeps the alias
+			// name, since the difference is taken over what the name stands for.
 			name: "AliasNamingABorrow",
 			src:  `type Result<T> = Exclude<T, Handle>`,
-			want: "if t6 : Handle { never } else { t6 }",
+			want: "t6 & ¬Handle",
 		},
 		{
-			// A borrow inside an atom is allowed. The negated part names the object, and the
-			// borrow is one of its fields rather than a negated part of its own.
+			// A borrow inside an atom is a field of the object the negated part names.
 			name: "BorrowInsideAnExcludedAtom",
 			src:  `type Result<T, 'a> = Exclude<T, {a: &'a Point}>`,
-			want: "t6 & ¬{a: &Point}",
+			want: "t6 & ¬{a: &'a Point}",
 		},
 		{
-			// A borrow on the positive side is allowed too. The complement names `string`, so the
-			// invariant has nothing to say and the borrow rides through as a member.
+			// A borrow on the positive side rides through as a member, since the
+			// complement names `string`.
 			name: "BorrowOnThePositiveSide",
 			src:  `type Result<T, 'a> = Exclude<T | &'a Point, string>`,
-			want: "(t6 | &Point) & ¬string",
+			want: "(t6 | &'a Point) & ¬string",
 		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, ctx, errs := inferTypeNodes(t, decls+tt.src)
 			require.Empty(t, errs)
-			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, nodes["Result"])))
+			residual := expandAliasResidual(ctx, nodes["Result"])
+			got := soltype.PrintWithDeclaredParams(residual, nil, aliasLifetimeParams(ctx, "Result"))
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

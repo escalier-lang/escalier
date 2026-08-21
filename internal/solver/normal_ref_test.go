@@ -8,8 +8,8 @@ import (
 )
 
 // The borrow half of the normal-form module: the ref-atom merge that splits its
-// work between the type sort and the lifetime sort, and the `¬Ref` exclusion
-// invariant that keeps a borrow out of every complement.
+// work between the type sort and the lifetime sort, and the complement that carries
+// a borrow through whole.
 //
 // A case builds its borrows directly rather than parsing an annotation, because
 // parseType does not accept a named lifetime. It renders the result with
@@ -286,29 +286,34 @@ func TestRefMergeRecordsNoLifetimeBound(t *testing.T) {
 	require.Equal(t, 2, c.lifetimeCounter, "no merge minted a lifetime")
 }
 
-// TestNegatedBorrowPanics pins the `¬Ref` exclusion invariant. A complement of a
-// borrow has no sound lifetime, so it is rejected at construction and again where
-// normalization would take it apart, rather than being given a reading.
-func TestNegatedBorrowPanics(t *testing.T) {
+// A complemented borrow survives construction and normalization as an ordinary atom.
+// Normalization never takes a borrow wrapper apart, so the complement carries the whole
+// borrow through DNF and CNF rather than distributing into its lifetime, which the
+// outlives lattice could not express.
+func TestNegatedBorrowNormalizes(t *testing.T) {
 	c := &Context{}
 	ref := borrow(true, c.freshLifetime(0), refObj(t, "{x: number}"))
-	message := "AssertNegatable: forbidden complement of the borrow &mut {x: number}"
+	const negRef = "¬&mut {x: number}"
 
-	t.Run("the smart constructor rejects it", func(t *testing.T) {
-		require.PanicsWithValue(t, message, func() { soltype.NewNegation(ref) })
+	t.Run("the smart constructor builds it", func(t *testing.T) {
+		require.Equal(t, negRef, soltype.Print(soltype.NewNegation(ref)))
 	})
-	t.Run("pushing it into DNF rejects it", func(t *testing.T) {
-		require.PanicsWithValue(t, message, func() { c.mkDNF(not(ref), soltype.Positive) })
+	t.Run("pushing it into DNF keeps it whole", func(t *testing.T) {
+		require.Equal(t, negRef, soltype.Print(c.mkDNF(not(ref), soltype.Positive).toType()))
 	})
-	t.Run("pushing it into CNF rejects it", func(t *testing.T) {
-		require.PanicsWithValue(t, message, func() { c.mkCNF(not(ref), soltype.Negative) })
+	t.Run("pushing it into CNF keeps it whole", func(t *testing.T) {
+		require.Equal(t, negRef, soltype.Print(c.mkCNF(not(ref), soltype.Negative).toType()))
 	})
-	// De Morgan's law turns the complement of a join into a meet of complements, so
-	// a borrow the source wrote as a union member still reaches a negated part.
-	t.Run("a borrow inside a negated union is rejected", func(t *testing.T) {
+	// De Morgan's law turns the complement of a join into a meet of complements, so a
+	// borrow the source wrote as a union member reaches a negated part of its own. DNF
+	// keeps the union under one complement. CNF is where the law applies, so there the
+	// borrow surfaces as its own negated atom.
+	t.Run("a borrow inside a negated union splits under De Morgan", func(t *testing.T) {
 		joined := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), ref}, false)
-		require.PanicsWithValue(t, message, func() { c.mkDNF(not(joined), soltype.Positive) })
-		require.PanicsWithValue(t, message, func() { c.mkCNF(not(joined), soltype.Negative) })
+		require.Equal(t, "¬(&mut {x: number} | {a: number})",
+			soltype.Print(c.mkDNF(not(joined), soltype.Positive).toType()))
+		require.Equal(t, "¬&mut {x: number} & ¬{a: number}",
+			soltype.Print(c.mkCNF(not(joined), soltype.Negative).toType()))
 	})
 }
 
@@ -333,8 +338,8 @@ func TestNegationInsideBorrowNormalizes(t *testing.T) {
 		soltype.PrintAsScheme(c.normalizeDeep(ref, soltype.Positive)))
 }
 
-// TestBorrowNarrowingKeepsBorrowsWhole pins the rule the `¬Ref` invariant rests
-// on: normalization never takes a borrow wrapper apart. A borrow reaches the
+// TestBorrowNarrowingKeepsBorrowsWhole pins the rule a complement over a borrow
+// rests on: normalization never takes a borrow wrapper apart. A borrow reaches the
 // normal-form layer as ONE atom and is handed straight back to the structural
 // rules, which is what keeps the RefType arm of constrain the only code that reads
 // a borrow's mutability and lifetime.

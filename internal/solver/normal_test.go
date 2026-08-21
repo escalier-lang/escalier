@@ -692,11 +692,11 @@ func TestValueAtomsAnswerEqualAtoms(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			a, b := tt.atom(), tt.atom()
 
-			met, ok := meetValueAtoms(a, b)
+			met, ok := (&Context{}).meetValueAtoms(a, b)
 			require.True(t, ok, "an atom met with itself fuses")
 			require.True(t, equalType(a, met), "met to %s", soltype.Print(met))
 
-			joined, ok := joinValueAtoms(a, b)
+			joined, ok := (&Context{}).joinValueAtoms(a, b)
 			require.True(t, ok, "an atom joined with itself fuses")
 			require.True(t, equalType(a, joined), "joined to %s", soltype.Print(joined))
 		})
