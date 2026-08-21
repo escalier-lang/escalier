@@ -148,41 +148,37 @@ func TestInferNegationTypeAnnConstraint(t *testing.T) {
 	}
 }
 
-// DISABLED until #1164: a complement written inside a template-literal interpolation only matches
-// once the placeholder matcher gains negation and intersection arms. Today matchInterp in constrain.go
-// handles a string literal, the `string` primitive, and a union of those, so `on${string & ¬"a"}`
-// rejects every value, `"onb"` included. #1164 teaches the matcher to read a complement, after which
-// `on${string & ¬"a"}` admits every `on`-prefixed string but `"ona"`. When #1164 lands, remove the
-// /* */ wrapper.
+// A complement written inside a template-literal interpolation matches through the placeholder
+// matcher's negation and intersection arms in constrain.go. `on${string & ¬"a"}` denotes every
+// `on`-prefixed string whose interpolated span is a string other than `"a"`, so `"onb"` conforms
+// and `"ona"` does not.
 func TestInferNegationInTemplateLit(t *testing.T) {
-	/*
-		tests := []struct {
-			name    string
-			src     string
-			wantErr string // "" ⇒ expect no error
-		}{
-			{
-				name: "AdmittedValueAccepted",
-				src:  "val b: `on${string & ¬\"a\"}` = \"onb\"",
-			},
-			{
-				name:    "ExcludedValueRejected",
-				src:     "val a: `on${string & ¬\"a\"}` = \"ona\"",
-				wantErr: "cannot constrain \"ona\" <: `on${string & ¬\"a\"}`",
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				_, _, errs := inferSource(t, tt.src)
-				if tt.wantErr == "" {
-					require.Empty(t, errs)
-					return
-				}
-				require.Len(t, errs, 1)
-				require.Equal(t, tt.wantErr, errs[0].Message())
-			})
-		}
-	*/
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{
+			name: "AdmittedValueAccepted",
+			src:  "val b: `on${string & ¬\"a\"}` = \"onb\"",
+		},
+		{
+			name:    "ExcludedValueRejected",
+			src:     "val a: `on${string & ¬\"a\"}` = \"ona\"",
+			wantErr: "cannot constrain \"ona\" <: `on${string & ¬\"a\"}`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
 }
 
 // A complement may name a borrow. `¬(&Point)` denotes every value that is not a borrow of
