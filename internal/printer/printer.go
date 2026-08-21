@@ -1679,20 +1679,6 @@ func (p *Printer) printUnionTypeAnn(typ *ast.UnionTypeAnn) {
 		}
 		p.printTypeAnnAt(t, precTypeUnion)
 	}
-	// An inexact union renders a trailing `...` entry, so `A | B | ...` round-trips. A
-	// bounded tail renders its bound after a `:`, as in `A | ... : string`. The bound
-	// prints at precTypePrefix, so a looser bound such as a union or intersection is
-	// parenthesized, matching the primary the parser reads after the `:`.
-	if typ.Inexact {
-		if len(typ.Types) > 0 {
-			p.writeString(" | ")
-		}
-		p.writeString("...")
-		if typ.TailBound != nil {
-			p.writeString(" : ")
-			p.printTypeAnnAt(typ.TailBound, precTypePrefix)
-		}
-	}
 }
 
 func (p *Printer) printIntersectionTypeAnn(typ *ast.IntersectionTypeAnn) {

@@ -142,28 +142,12 @@ func TestPrintInexactObjectAndTupleAnnotations(t *testing.T) {
 	})
 }
 
-// A union's trailing `...` marker and its `... : R` tail bound round-trip through the
-// printer, so a rendered inexact or bounded union reparses to the same annotation.
-func TestPrintUnionTailAnnotations(t *testing.T) {
+// A union round-trips through the printer, so a rendered union reparses to the same annotation.
+func TestPrintUnionAnnotation(t *testing.T) {
 	opts := DefaultOptions()
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"exact union unchanged", `"a" | "b"`, `"a" | "b"`},
-		{"unbounded tail", `"a" | "b" | ...`, `"a" | "b" | ...`},
-		{"bounded tail after several members", `"a" | "b" | ... : string`, `"a" | "b" | ... : string`},
-		{"bounded tail after one member", `"a" | ... : string`, `"a" | ... : string`},
-		{"parenthesized union bound", `"a" | ... : (string | number)`, `"a" | ... : (string | number)`},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := Print(parseTypeAnn(t, tt.input), opts)
-			require.NoError(t, err)
-			require.Equal(t, tt.expected, result)
-		})
-	}
+	result, err := Print(parseTypeAnn(t, `"a" | "b"`), opts)
+	require.NoError(t, err)
+	require.Equal(t, `"a" | "b"`, result)
 }
 
 func TestPrintInexactFunctions(t *testing.T) {

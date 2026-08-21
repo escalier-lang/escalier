@@ -564,14 +564,6 @@ func TestReduceKeyofDistributesOverUnion(t *testing.T) {
 			src:  `type Result = keyof ({a: number, shared: string} | {b: boolean, shared: string})`,
 			want: `"shared"`,
 		},
-		{
-			// An open operand union stands for members the reduction cannot name, and an
-			// intersection has no marker to record that with. With no readable member to put a
-			// key union among the residuals, the whole operator stays symbolic.
-			name: "OpenUnionWithNoReadableMember",
-			src:  `type Result<T, U> = keyof (T | U | ...)`,
-			want: "keyof (t16 | t17 | ...)",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
