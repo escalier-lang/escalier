@@ -1,9 +1,13 @@
 package solver
 
 import (
+	"errors"
 	"maps"
 	"math"
+	"regexp"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -1464,8 +1468,8 @@ func (c *Context) constrainStrLitToStringIntrinsic(sub *soltype.LitType, super *
 // match reads the literal left to right: each quasi must appear in order, and each interpolation
 // consumes a span the interpolation type admits. `"onb"` matches ``on${string}`` because it starts
 // with `on` and `b` is a string; `"xyz"` does not, since it lacks the `on` prefix. An interpolation
-// type templateMatchesString cannot decide — anything but a string literal, the `string` primitive,
-// or a union of those — makes the whole match fail, which reports the mismatch rather than guessing.
+// spanInInterp cannot decide, such as a type parameter, admits no span, so the whole match fails and
+// the mismatch is reported rather than guessed.
 func (c *Context) constrainStrLitToTemplateLit(sub *soltype.LitType, super *soltype.TemplateLitType) []SolverError {
 	strLit, ok := sub.Lit.(*soltype.StrLit)
 	if !ok {
@@ -1479,77 +1483,226 @@ func (c *Context) constrainStrLitToTemplateLit(sub *soltype.LitType, super *solt
 
 // templateMatchesString reports whether s is one of the strings the template spells out. quasis holds
 // the fixed segments and interps the interpolations between them, so quasis is one longer than interps.
-// s must begin with the leading quasi; what remains is handed to the first interpolation, which peels
-// off the span it admits before the next quasi is matched. With no interpolations left, s matches only
-// when it has been consumed down to the empty string.
+//
+// The span each interpolation consumes is extracted left to right the way TypeScript's template-literal
+// inference does, deterministically rather than by trying every split. s must begin with the leading
+// quasi and end with the trailing one, and each is then decided against its interpolation by
+// spanInInterp:
+//
+//   - A non-empty quasi after an interpolation ends that interpolation's span at the quasi's first
+//     occurrence, so `${number}-${number}` reads "12-34" as "12" and "34".
+//   - An empty quasi between two adjacent interpolations gives the earlier interpolation exactly one
+//     character, so `${number}${number}` reads "12" as "1" and "2" and rejects "-12", whose first
+//     span "-" is no number. This is what makes matching greedy: an earlier interpolation never
+//     reaches back across the boundary to claim a span a later split would have given it.
+//   - The last interpolation takes everything up to the trailing quasi, so a single `${number}`
+//     consumes the whole remaining string.
 func templateMatchesString(s string, quasis []string, interps []soltype.Type) bool {
-	if len(quasis) == 0 {
+	if len(quasis) != len(interps)+1 {
 		return false
 	}
-	if !strings.HasPrefix(s, quasis[0]) {
-		return false
-	}
-	rest := s[len(quasis[0]):]
+	start, end := quasis[0], quasis[len(quasis)-1]
 	if len(interps) == 0 {
-		return rest == ""
+		return s == start
 	}
-	return matchInterp(rest, interps[0], quasis[1:], interps[1:])
+	// The leading and trailing quasis must both be present and not overlap in s. limit is where the
+	// trailing quasi begins, so every span lives in s[pos:limit].
+	if len(s) < len(start)+len(end) || !strings.HasPrefix(s, start) || !strings.HasSuffix(s, end) {
+		return false
+	}
+	limit := len(s) - len(end)
+	pos := len(start)
+	// Every interpolation but the last is bounded on the right by the quasi that follows it.
+	for i := 0; i < len(interps)-1; i++ {
+		delim := quasis[i+1]
+		if delim == "" {
+			// Adjacent interpolations: this one takes exactly one character. Decode a whole rune
+			// rather than one byte, so a multibyte character is not split into an invalid span.
+			if pos >= limit {
+				return false
+			}
+			_, width := utf8.DecodeRuneInString(s[pos:limit])
+			if !spanInInterp(s[pos:pos+width], interps[i]) {
+				return false
+			}
+			pos += width
+			continue
+		}
+		off := strings.Index(s[pos:limit], delim)
+		if off < 0 || !spanInInterp(s[pos:pos+off], interps[i]) {
+			return false
+		}
+		pos += off + len(delim)
+	}
+	// The last interpolation takes everything up to the trailing quasi.
+	return spanInInterp(s[pos:limit], interps[len(interps)-1])
 }
 
-// matchInterp reports whether some prefix of s is a value interp admits and the leftover matches the
-// rest of the template, quasis and interps. A string literal or a literal that renders as a string
-// consumes exactly its own characters. The `string` primitive consumes any prefix, so each split point
-// is tried until one lets the rest match. A residual string intrinsic over `string`, such as
-// `Uppercase<string>`, consumes a prefix its transform leaves unchanged. A union admits a prefix any
-// member does. Any other interpolation type is left undecided and fails the match.
-func matchInterp(s string, interp soltype.Type, quasis []string, interps []soltype.Type) bool {
+// spanInInterp reports whether the string span is one value the interpolation type admits, reading
+// span as a whole rather than matching a template against it. It decides the placeholder kinds the
+// matcher understands and returns false for any it cannot, so an interpolation it cannot decide
+// rejects every span and fails the enclosing match.
+//
+//   - A string literal admits only its own characters, and a numeric or boolean literal admits its
+//     rendered form.
+//   - The `string` primitive admits any span. The `number` primitive admits a numeric span, the
+//     characters a number stringifies to, decided by isTemplateNumberSpan. The `boolean` primitive
+//     admits `true` and `false`.
+//   - A residual string intrinsic over `string`, such as `Uppercase<string>`, admits a span its
+//     transform leaves unchanged, the fixed points that make up its image.
+//   - A union admits a span any member does; an intersection admits one every member does. A
+//     complement `¬X` admits a span its operand rejects, so `string & ¬"a"` admits every string
+//     span but `"a"`. This is the shape the template bound `` `on${string & ¬"a"}` `` carries, which
+//     is why the matcher decides it.
+func spanInInterp(span string, interp soltype.Type) bool {
 	switch it := interp.(type) {
 	case *soltype.LitType:
-		lit, ok := it.Lit.(*soltype.StrLit)
-		if !ok {
-			return false
-		}
-		if !strings.HasPrefix(s, lit.Value) {
-			return false
-		}
-		return templateMatchesString(s[len(lit.Value):], quasis, interps)
+		rendered, ok := stringifyLit(it)
+		return ok && span == rendered
 	case *soltype.PrimType:
-		if it.Prim != soltype.StrPrim {
-			return false
-		}
-		for k := 0; k <= len(s); k++ {
-			if templateMatchesString(s[k:], quasis, interps) {
-				return true
-			}
+		switch it.Prim {
+		case soltype.StrPrim:
+			return true
+		case soltype.NumPrim:
+			return isTemplateNumberSpan(span)
+		case soltype.BoolPrim:
+			return span == "true" || span == "false"
 		}
 		return false
 	case *soltype.StringIntrinsicType:
-		// A residual intrinsic such as `Uppercase<string>` denotes the strings its transform
-		// leaves unchanged, since each of the four transforms is idempotent, so its image over
-		// `string` is exactly its fixed points. Try each split point and admit the prefix when
-		// the transform maps it to itself, the same fixed-point rule
-		// constrainStrLitToStringIntrinsic uses for the direct `"A" <: Uppercase<string>` path.
-		// An operand that is not `string`, such as a type parameter, leaves the operator symbolic,
-		// so no prefix lands in its image and the placeholder matches nothing.
+		// A residual intrinsic such as `Uppercase<string>` denotes the strings its transform leaves
+		// unchanged, since each of the four transforms is idempotent, so its image over `string` is
+		// exactly its fixed points. The span is admitted when the transform maps it to itself, the
+		// same fixed-point rule constrainStrLitToStringIntrinsic uses for the direct
+		// `"A" <: Uppercase<string>` path. An operand that is not `string`, such as a type
+		// parameter, leaves the operator symbolic, so no span lands in its image.
 		if prim, ok := it.Operand.(*soltype.PrimType); !ok || prim.Prim != soltype.StrPrim {
 			return false
 		}
-		for k := 0; k <= len(s); k++ {
-			if applyStringIntrinsic(it.Kind, s[:k]) == s[:k] && templateMatchesString(s[k:], quasis, interps) {
-				return true
-			}
-		}
-		return false
+		return applyStringIntrinsic(it.Kind, span) == span
 	case *soltype.UnionType:
 		for _, member := range it.Types {
-			if matchInterp(s, member, quasis, interps) {
+			if spanInInterp(span, member) {
 				return true
 			}
 		}
 		return false
+	case *soltype.IntersectionType:
+		for _, member := range it.Types {
+			if !spanInInterp(span, member) {
+				return false
+			}
+		}
+		return true
+	case *soltype.NegationType:
+		return !spanInInterp(span, it.Inner)
 	default:
 		return false
 	}
+}
+
+// isTemplateNumberSpan reports whether s is a span the `${number}` placeholder admits: a non-empty
+// string whose form jsToNumber reads as a finite number. A hex literal like `0x1f`, scientific
+// notation like `1e10`, a leading-zero run like `007`, and a signed or bare-fraction form like `-0`
+// or `.5` all conform, while `Infinity`, `1.2.3`, and `1px` do not. This admits strings outside the
+// image of a `number` value's own `String()` form, such as `0x1f`, following TypeScript.
+//
+// It parts from TypeScript on whitespace. TypeScript decides the placeholder by JavaScript's Number(),
+// which trims surrounding whitespace and reads a whitespace-only span as 0, so TypeScript admits
+// `" 12 "` and `"   "`. A span carrying whitespace is no number here, since a number's textual form
+// never has any and a whitespace-only string is not a number.
+func isTemplateNumberSpan(s string) bool {
+	if s == "" {
+		return false
+	}
+	n, numeric := jsToNumber(s)
+	return numeric && !math.IsInf(n, 0) && !math.IsNaN(n)
+}
+
+// jsDecimalNumeral matches a JavaScript decimal numeric literal: an optional sign, then an integer
+// part with an optional fraction or a bare fraction, and an optional exponent. It rejects the forms
+// strconv.ParseFloat accepts that JavaScript's decimal grammar does not, such as a hex float, an
+// underscore separator, or the words `inf` and `nan`.
+var jsDecimalNumeral = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$`)
+
+// jsToNumber decides whether s is the textual form of a number and returns its value. Its numeric
+// grammar follows JavaScript's Number(s) coercion, so a hex, octal, or binary literal, scientific
+// notation, a leading-zero run, and a signed or bare-fraction form all coerce. It departs from
+// Number() on one point: it never trims or accepts whitespace. JavaScript's Number() strips
+// surrounding whitespace and reads an all-whitespace string as 0, so `" 12 "` and `"   "` are numbers
+// to it, but a number's own textual form carries no whitespace and a whitespace-only string is no
+// number, so a span with whitespace is not a number here. numeric is false for such a span and for
+// any other string JavaScript would coerce to NaN. s coerces to a number in these forms:
+//
+//   - A hex, octal, or binary integer literal such as `0x1f`, `0o17`, or `0b101`, which carries no
+//     sign.
+//   - `Infinity` with an optional sign, which the caller then rejects as non-finite.
+//   - A decimal numeral, jsDecimalNumeral above.
+func jsToNumber(s string) (value float64, numeric bool) {
+	if len(s) >= 3 && s[0] == '0' {
+		base := 0
+		switch s[1] {
+		case 'x', 'X':
+			base = 16
+		case 'o', 'O':
+			base = 8
+		case 'b', 'B':
+			base = 2
+		}
+		if base != 0 {
+			return parseRadixDigits(s[2:], base)
+		}
+	}
+	switch s {
+	case "Infinity", "+Infinity":
+		return math.Inf(1), true
+	case "-Infinity":
+		return math.Inf(-1), true
+	}
+	if !jsDecimalNumeral.MatchString(s) {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
+	}
+	// A range error still yields the coerced value: an overflow gives ±Inf and an underflow gives 0.
+	// Only a syntax error, which the numeral regex above already rules out, would mean the span is
+	// not a number.
+	return v, true
+}
+
+// parseRadixDigits reads a run of base-base digits into a float64 the way JavaScript's Number()
+// coerces a hex, octal, or binary literal. It accumulates in float64 rather than an integer, so a run
+// too large for 64 bits saturates to +Inf, which the caller then rejects as non-finite, matching
+// JavaScript. An empty run, or a digit outside the base, is not a number.
+func parseRadixDigits(digits string, base int) (float64, bool) {
+	if digits == "" {
+		return 0, false
+	}
+	v := 0.0
+	for i := 0; i < len(digits); i++ {
+		d := hexDigitValue(digits[i])
+		if d < 0 || d >= base {
+			return 0, false
+		}
+		v = v*float64(base) + float64(d)
+	}
+	return v, true
+}
+
+// hexDigitValue returns the value of a hexadecimal digit byte, covering the octal and binary ranges
+// as a subset, or -1 when the byte is not a hex digit.
+func hexDigitValue(b byte) int {
+	switch {
+	case b >= '0' && b <= '9':
+		return int(b - '0')
+	case b >= 'a' && b <= 'f':
+		return int(b-'a') + 10
+	case b >= 'A' && b <= 'F':
+		return int(b-'A') + 10
+	}
+	return -1
 }
 
 // ambiguousAlternate returns a union member, other than the one the decision committed to,

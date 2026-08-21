@@ -111,6 +111,29 @@ func TestInferTemplateLitConstraint(t *testing.T) {
 			src:     "val r: `on${\"a\" | \"b\"}` = \"onc\"",
 			wantErr: `cannot constrain "onc" <: "ona" | "onb"`,
 		},
+		{
+			// A `number` placeholder admits a numeric span, so `"id-5"` conforms
+			// (escalier-lang/escalier#1153).
+			name: "NumberPlaceholderAccepted",
+			src:  "val r: `id-${number}` = \"id-5\"",
+		},
+		{
+			// A non-numeric span in the placeholder position is rejected. The template stays a
+			// residual, so the diagnostic names it rather than an enumerated union.
+			name:    "NumberPlaceholderRejected",
+			src:     "val r: `id-${number}` = \"id-x\"",
+			wantErr: "cannot constrain \"id-x\" <: `id-${number}`",
+		},
+		{
+			// A `boolean` placeholder admits `true` and `false`.
+			name: "BooleanPlaceholderAccepted",
+			src:  "val r: `flag-${boolean}` = \"flag-true\"",
+		},
+		{
+			name:    "BooleanPlaceholderRejected",
+			src:     "val r: `flag-${boolean}` = \"flag-maybe\"",
+			wantErr: "cannot constrain \"flag-maybe\" <: `flag-${boolean}`",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -389,52 +412,153 @@ func TestInferTemplateLitTooComplex(t *testing.T) {
 	require.Equal(t, "template literal type `${D}${D}${D}` is too complex to reduce; it expands to more than 10000 members", errs[0].Message())
 }
 
-// templateMatchesString decides a string literal against a template pattern character by character,
-// matching each quasi in order and letting each interpolation consume a span its type admits. It is
-// the rule behind `"onb" <: `on${string}``, and the cases below drive every interpolation kind it
-// reads: a literal that must appear verbatim, the `string` primitive that consumes any span, a union
-// that matches when a member does, and the kinds it leaves undecided — a non-string primitive and a
-// bare type variable — which fail the match rather than guess.
+// templateMatchesString decides a string literal against a template literal type. Each case drives a
+// `val x: <template> = <literal>` binding through inferSource, so the whole reduce-and-constrain path
+// runs, and its `wantErr` is empty when the assignment type-checks and the reported message when it
+// does not. The cases cover every interpolation kind the matcher reads: the `string`, `number`, and
+// `boolean` primitives, a union, an intersection carrying a complement, and a residual string
+// intrinsic, alongside a literal and a bare segment that fold during reduction before the matcher sees
+// them.
 func TestTemplateMatchesString(t *testing.T) {
 	tests := []struct {
 		name    string
-		s       string
-		quasis  []string
-		interps []soltype.Type
-		want    bool
+		src     string
+		wantErr string // "" ⇒ expect no error
 	}{
-		{"no quasis is not a template", "x", nil, nil, false},
-		{"a bare segment matches exactly", "hi", []string{"hi"}, nil, true},
-		{"a bare segment rejects a longer string", "hix", []string{"hi"}, nil, false},
-		{"a string interp takes any middle", "onb", []string{"on", ""}, []soltype.Type{str()}, true},
-		{"a string interp needs the prefix", "xyz", []string{"on", ""}, []soltype.Type{str()}, false},
-		{"a string interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{str()}, true},
-		{"a string interp matches up to a trailing quasi", "onbz", []string{"on", "z"}, []soltype.Type{str()}, true},
-		{"a literal interp matches its own text", "onax", []string{"on", "x"}, []soltype.Type{strLit("a")}, true},
-		{"a literal interp rejects other text", "onbx", []string{"on", "x"}, []soltype.Type{strLit("a")}, false},
-		{"a non-string literal interp is left undecided", "on5", []string{"on", ""}, []soltype.Type{numLit(5)}, false},
-		{"a number interp is left undecided", "n5", []string{"n", ""}, []soltype.Type{num()}, false},
-		{"a union interp matches through its string member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), str()})}, true},
-		{"a union interp matches a literal member", "onb", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")})}, true},
-		{"a union interp rejects a non-member", "onc", []string{"on", ""}, []soltype.Type{newUnion(nil, []soltype.Type{strLit("a"), strLit("b")})}, false},
-		{"a type-variable interp is left undecided", "onx", []string{"on", ""}, []soltype.Type{&soltype.TypeVarType{ID: 1, Level: 1}}, false},
-		{"two string interps backtrack to a split", "a-b", []string{"", "-", ""}, []soltype.Type{str(), str()}, true},
-		{"an Uppercase<string> interp admits an uppercase span", "onA", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp admits a caseless span", "on5", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp rejects a lowercase span", "onb", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, false},
-		{"an Uppercase<string> interp allows an empty middle", "on", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"an Uppercase<string> interp matches up to a trailing quasi", "onAz", []string{"on", "z"}, []soltype.Type{intrinsicOverStr(soltype.Uppercase)}, true},
-		{"a Lowercase<string> interp admits a lowercase span", "onb", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Lowercase)}, true},
-		{"a Lowercase<string> interp rejects an uppercase span", "onA", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Lowercase)}, false},
-		{"a Capitalize<string> interp admits a leading-upper span", "onAbc", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Capitalize)}, true},
-		{"a Capitalize<string> interp rejects a leading-lower span", "onaBC", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Capitalize)}, false},
-		{"an Uncapitalize<string> interp admits a leading-lower span", "onaBC", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uncapitalize)}, true},
-		{"an Uncapitalize<string> interp rejects a leading-upper span", "onAbc", []string{"on", ""}, []soltype.Type{intrinsicOverStr(soltype.Uncapitalize)}, false},
-		{"an intrinsic over a type variable is left undecided", "onA", []string{"on", ""}, []soltype.Type{&soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: &soltype.TypeVarType{ID: 1, Level: 1}}}, false},
+		{"a bare segment matches exactly", "val x: `hi` = \"hi\"", ""},
+		{"a bare segment rejects a longer string", "val x: `hi` = \"hix\"", "cannot constrain \"hix\" <: \"hi\""},
+		{"a string interp takes any middle", "val x: `on${string}` = \"onb\"", ""},
+		{"a string interp needs the prefix", "val x: `on${string}` = \"xyz\"", "cannot constrain \"xyz\" <: `on${string}`"},
+		{"a string interp allows an empty middle", "val x: `on${string}` = \"on\"", ""},
+		{"a string interp matches up to a trailing quasi", "val x: `on${string}z` = \"onbz\"", ""},
+		// A bare literal or numeric interpolation folds into the surrounding text during reduction,
+		// so its rejection names the folded string rather than the template.
+		{"a literal interp folds and matches its text", "val x: `on${\"a\"}x` = \"onax\"", ""},
+		{"a literal interp folds and rejects other text", "val x: `on${\"a\"}x` = \"onbx\"", "cannot constrain \"onbx\" <: \"onax\""},
+		{"a numeric literal interp folds to its rendered text", "val x: `on${5}` = \"on5\"", ""},
+		// A primitive, intrinsic, or complement interpolation keeps the template symbolic, so the
+		// matcher decides the span and a rejection names the template.
+		{"a number interp matches a numeric span", "val x: `n${number}` = \"n5\"", ""},
+		{"a number interp rejects a non-numeric span", "val x: `n${number}` = \"nx\"", "cannot constrain \"nx\" <: `n${number}`"},
+		{"a boolean interp matches a boolean word", "val x: `on-${boolean}` = \"on-true\"", ""},
+		{"a boolean interp rejects another word", "val x: `on-${boolean}` = \"on-maybe\"", "cannot constrain \"on-maybe\" <: `on-${boolean}`"},
+		{"a union interp matches through its string member", "val x: `on${\"a\" | string}` = \"onb\"", ""},
+		{"a union interp folds and matches a literal member", "val x: `on${\"a\" | \"b\"}` = \"onb\"", ""},
+		{"a union interp folds and rejects a non-member", "val x: `on${\"a\" | \"b\"}` = \"onc\"", "cannot constrain \"onc\" <: \"ona\" | \"onb\""},
+		{"an intersection with a complement matches an allowed span", "val x: `on${string & ¬\"a\"}` = \"onb\"", ""},
+		{"an intersection with a complement rejects the excluded span", "val x: `on${string & ¬\"a\"}` = \"ona\"", "cannot constrain \"ona\" <: `on${string & ¬\"a\"}`"},
+		{"an intrinsic interp admits a fixed-point span", "val x: `on${Uppercase<string>}` = \"onA\"", ""},
+		{"an intrinsic interp rejects a non-fixed-point span", "val x: `on${Uppercase<string>}` = \"onb\"", "cannot constrain \"onb\" <: `on${Uppercase<string>}`"},
+		{"two string interps split at the delimiter", "val x: `${string}-${string}` = \"a-b\"", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, templateMatchesString(tt.s, tt.quasis, tt.interps))
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// An interpolation the matcher cannot decide, a bare type parameter or an intrinsic over one, admits
+// no span, so templateMatchesString fails the match rather than guesses. Such an interpolation keeps
+// the whole template symbolic, so no `val` binding ever grounds it to reach the matcher; these cases
+// call templateMatchesString directly.
+func TestTemplateMatcherRejectsAbstractInterp(t *testing.T) {
+	typeVar := &soltype.TypeVarType{ID: 1, Level: 1}
+	tests := []struct {
+		name   string
+		interp soltype.Type
+	}{
+		{"a bare type variable", typeVar},
+		{"an intrinsic over a type variable", &soltype.StringIntrinsicType{Kind: soltype.Uppercase, Operand: typeVar}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.False(t, templateMatchesString("onx", []string{"on", ""}, []soltype.Type{tt.interp}))
+		})
+	}
+}
+
+// A `${number}` placeholder is decided by JavaScript's Number() coercion: a span conforms when it is
+// non-empty and Number(span) is finite. Each case drives a `val x: <template> = <literal>` binding, so
+// the whole matcher runs, and its `wantErr` is the verdict tsc 5.8 gives for that assignment, empty
+// when it type-checks and the reported message when it does not. The table pins Escalier to TypeScript
+// across the number grammar and the multidigit, greedy, and multi-placeholder cases.
+//
+// The grammar admits more than a `number` value's own `String()` form: a hex, octal, or binary
+// literal, scientific notation, a leading-zero run, a bare or trailing fraction, and a signed value all
+// conform, since Number() coerces each to a finite number. `Infinity` and a non-numeric span do not. A
+// number placeholder consumes greedily up to what follows it, so `${number}0` reads "100" as the
+// number "10" and the literal "0".
+func TestNumberPlaceholderMatchesTypeScript(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string // "" ⇒ expect no error
+	}{
+		{"multidigit integer", "val x: `${number}` = \"1000000\"", ""},
+		{"leading zeros", "val x: `${number}` = \"007\"", ""},
+		{"decimal", "val x: `${number}` = \"12.34\"", ""},
+		{"bare fraction", "val x: `${number}` = \".5\"", ""},
+		{"trailing dot", "val x: `${number}` = \"1.\"", ""},
+		{"negative multidigit", "val x: `${number}` = \"-12\"", ""},
+		{"negative zero", "val x: `${number}` = \"-0\"", ""},
+		{"leading plus", "val x: `${number}` = \"+5\"", ""},
+		{"scientific", "val x: `${number}` = \"1e10\"", ""},
+		{"scientific signed exponent", "val x: `${number}` = \"1.5e-3\"", ""},
+		{"hex literal", "val x: `${number}` = \"0x1f\"", ""},
+		{"octal literal", "val x: `${number}` = \"0o17\"", ""},
+		{"binary literal", "val x: `${number}` = \"0b101\"", ""},
+		{"infinity rejected", "val x: `${number}` = \"Infinity\"", "cannot constrain \"Infinity\" <: `${number}`"},
+		{"dotted non-number rejected", "val x: `${number}` = \"1.2.3\"", "cannot constrain \"1.2.3\" <: `${number}`"},
+		{"trailing letters rejected", "val x: `${number}` = \"1px\"", "cannot constrain \"1px\" <: `${number}`"},
+		{"empty span rejected", "val x: `${number}` = \"\"", "cannot constrain \"\" <: `${number}`"},
+		// A digit quasi after the placeholder: the number consumes greedily up to the final "0".
+		{"greedy up to a digit suffix", "val x: `${number}0` = \"100\"", ""},
+		{"digit suffix must be present", "val x: `${number}0` = \"12\"", "cannot constrain \"12\" <: `${number}0`"},
+		// A unit suffix quasi.
+		{"multidigit before a unit suffix", "val x: `${number}px` = \"120px\"", ""},
+		// Numbers separated by fixed text, the common multi-placeholder shape.
+		{"dash-separated pair", "val x: `${number}-${number}` = \"12-34\"", ""},
+		{"dash pair needs the dash", "val x: `${number}-${number}` = \"1234\"", "cannot constrain \"1234\" <: `${number}-${number}`"},
+		{"semver triple", "val x: `v${number}.${number}.${number}` = \"v10.20.30\"", ""},
+		// Adjacent placeholders with no separator. The earlier number takes exactly one character,
+		// so a split a later boundary would allow is not reached: "12" reads as "1" and "2", while
+		// "-12" reads as "-" and "12" and is rejected because "-" is no number.
+		{"adjacent numbers take one digit each", "val x: `${number}${number}` = \"12\"", ""},
+		{"adjacent numbers reject a leading sign", "val x: `${number}${number}` = \"-12\"", "cannot constrain \"-12\" <: `${number}${number}`"},
+		{"adjacent numbers reject an interior dash", "val x: `${number}${number}` = \"12-34\"", "cannot constrain \"12-34\" <: `${number}${number}`"},
+		{"adjacent numbers keep a sign on the second", "val x: `${number}${number}` = \"1-2\"", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
+		})
+	}
+}
+
+// Escalier's `${number}` parts from TypeScript on whitespace. TypeScript decides the placeholder by
+// JavaScript's Number(), which strips surrounding whitespace and reads a whitespace-only span as 0, so
+// it admits "  12  " and "   ". A number's textual form carries no whitespace, and a whitespace-only
+// string is not a number, so `${number}` rejects any span with whitespace rather than mimic that
+// coercion. These are the spans where the two disagree; each is a number to TypeScript and is rejected
+// here.
+func TestNumberPlaceholderRejectsWhitespace(t *testing.T) {
+	numQuasis, numInterps := []string{"", ""}, []soltype.Type{num()}
+	for _, s := range []string{"  12  ", " 12", "12 ", "   ", " ", "\t5", "5\n"} {
+		t.Run(fmt.Sprintf("rejects %q", s), func(t *testing.T) {
+			require.False(t, templateMatchesString(s, numQuasis, numInterps))
 		})
 	}
 }
