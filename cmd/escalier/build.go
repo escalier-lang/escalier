@@ -114,8 +114,8 @@ func formatTypeError(err checker.Error, source *ast.Source) string {
 
 // writeOutputFile writes content to a file in the build directory with the given extension.
 // Empty content means the module has nothing of that kind to say, so the file is removed
-// rather than written. That also clears one left by an earlier build, which this command does
-// not otherwise clean.
+// rather than written. A module that stops producing one kind of output keeps no stale file
+// for it.
 func writeOutputFile(stderr io.Writer, moduleName, extension, content string) error {
 	filePath := filepath.Join("build", moduleName+extension)
 
