@@ -17,6 +17,13 @@ import (
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
+// internalBundleName is the base name of the module holding every declaration in lib/. It is
+// not the package entry point. `main` in package.json points at the public wrapper emitted as
+// index.js, which re-exports the part of this bundle the source marked `export`. Scripts under
+// bin/ are part of the package and import the bundle directly, so they reach members the
+// package keeps to itself.
+const internalBundleName = "internal"
+
 type CompUnitOutput struct {
 	JS        string
 	SourceMap string
@@ -260,26 +267,46 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 		libNS = inferCtx.Scope.Namespace
 
 		builder := &codegen.Builder{}
-		jsMod := builder.BuildTopLevelDecls(depGraph)
+		internalMod := builder.BuildTopLevelDecls(depGraph)
 		dtsMod := builder.BuildDefinitions(depGraph, libNS)
 
 		printer := codegen.NewPrinter()
-		jsOutput := printer.PrintModule(jsMod)
+		internalJS := printer.PrintModule(internalMod)
 
-		jsFile := "./index.js"
-		sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+		internalFile := "./" + internalBundleName + ".js"
+		internalSourceMap := codegen.GenerateSourceMap(sources, internalMod, internalFile)
+		internalJS += "//# sourceMappingURL=" + internalFile + ".map\n"
 
-		outmap := "./index.js.map"
-		jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+		// The public wrapper re-exports the internal bundle rather than holding a second copy
+		// of the code, so a class has one definition and `instanceof` agrees across both entry
+		// points.
+		//
+		// Every statement in it is generated, so it carries no source map. A package that
+		// exports nothing needs no public entry point either, and the empty JS keeps the
+		// file off disk.
+		wrapperMod := codegen.BuildPublicWrapper(depGraph, internalFile)
+		wrapperJS := ""
+		if len(wrapperMod.Stmts) > 0 {
+			printer = codegen.NewPrinter()
+			wrapperJS = printer.PrintModule(wrapperMod)
+		}
 
 		printer = codegen.NewPrinter()
 		dtsOutput := printer.PrintModule(dtsMod)
 
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
 		output.TypeErrors = append(output.TypeErrors, typeErrors...)
+		output.CompUnits["lib/"+internalBundleName] = CompUnitOutput{
+			JS:        internalJS,
+			SourceMap: internalSourceMap,
+			DTS:       "",
+		}
+		// The .d.ts sits beside the public entry point, which is what `main` in
+		// package.json points at. It marks a declaration as exported when the source
+		// marked it `export`, matching what the wrapper forwards.
 		output.CompUnits["lib/index"] = CompUnitOutput{
-			JS:        jsOutput,
-			SourceMap: sourceMap,
+			JS:        wrapperJS,
+			SourceMap: "",
 			DTS:       dtsOutput,
 		}
 	}
@@ -378,8 +405,9 @@ func CompileScript(libNS *type_system.Namespace, source *ast.Source) CompilerOut
 	// Collect used library symbols and add import statement if needed
 	usedSymbols := collectUsedLibSymbols(inMod, libNS)
 	if len(usedSymbols) > 0 {
-		// Create an import declaration for the used symbols
-		importDecl := codegen.NewImportDecl(usedSymbols, "../lib/index.js", nil)
+		// A script is part of the package, so it imports the internal bundle and reaches
+		// declarations the source did not mark `export`.
+		importDecl := codegen.NewImportDecl(usedSymbols, "../lib/"+internalBundleName+".js", nil)
 		importStmt := &codegen.DeclStmt{
 			Decl: importDecl,
 			// span and source are nil, which is fine

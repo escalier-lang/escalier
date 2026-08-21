@@ -112,9 +112,20 @@ func formatTypeError(err checker.Error, source *ast.Source) string {
 	return message.String()
 }
 
-// writeOutputFile writes content to a file in the build directory with the given extension
+// writeOutputFile writes content to a file in the build directory with the given extension.
+// Empty content means the module has nothing of that kind to say, so the file is removed
+// rather than written. A module that stops producing one kind of output keeps no stale file
+// for it.
 func writeOutputFile(stderr io.Writer, moduleName, extension, content string) error {
 	filePath := filepath.Join("build", moduleName+extension)
+
+	if content == "" {
+		if err := os.Remove(filePath); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("failed to remove stale %s file", extension)
+		}
+		return nil
+	}
+
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("failed to create %s file", extension)
@@ -129,7 +140,10 @@ func writeOutputFile(stderr io.Writer, moduleName, extension, content string) er
 	return nil
 }
 
-// writeModuleOutputs writes all module outputs (JS, DTS, sourcemap) to the build directory
+// writeModuleOutputs writes all module outputs (JS, DTS, sourcemap) to the build directory.
+// A package that exports nothing gets no public entry point, and a module with no definitions
+// gets no .d.ts. TypeScript reads a sibling .d.ts in place of the .js it sits next to, so an
+// empty one would describe the module as exporting nothing.
 func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.CompUnitOutput) error {
 	// Create directory structure
 	dir := filepath.Join("build", filepath.Dir(moduleName))
