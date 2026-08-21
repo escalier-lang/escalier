@@ -152,14 +152,14 @@ func (c *checker) recordProv(t soltype.Type, n ast.Node, kind ASTOriginKind) {
 //
 //   - A result that already carries a FromAST origin. newUnion and newIntersection
 //     collapse to an input member's pointer on dedup or subsumption, and newNegation
-//     folds ¬¬T to the operand's inner T. That member or inner keeps its own narrower
+//     folds ~~T to the operand's inner T. That member or inner keeps its own narrower
 //     child-annotation blame rather than being overwritten by the enclosing
 //     annotation, and re-recording it would trip recordProv's debugProv guard.
 //   - A shared zero-size singleton such as NeverType or UnknownType. Go gives every
 //     &soltype.NeverType{} the same address, and Prov is keyed by pointer identity,
 //     so recording would file every such annotation in the module under one entry.
-//     This also covers newNegation's lattice-bound folds `¬never` ⇒ `unknown`,
-//     `¬unknown` ⇒ `never`, and `¬(open union)` ⇒ `never`, which return those
+//     This also covers newNegation's lattice-bound folds `~never` ⇒ `unknown`,
+//     `~unknown` ⇒ `never`, and `~(open union)` ⇒ `never`, which return those
 //     singletons. The FromAST skip alone would miss them: the first annotation to
 //     fold to a singleton would record against the shared address, and every later
 //     use of that singleton would then resolve its blame to that first annotation.

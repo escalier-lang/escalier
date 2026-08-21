@@ -370,7 +370,7 @@ func TestCompareTypeNegation(t *testing.T) {
 	// Two complements order by their operands, so the order over negated members mirrors
 	// the order over the members themselves.
 	require.Less(t, compareType(num(), str()), 0, "precondition: number < string")
-	require.Less(t, compareType(negNum, negStr), 0, "¬number < ¬string")
+	require.Less(t, compareType(negNum, negStr), 0, "~number < ~string")
 
 	// The kind slot sits after the union and intersection forms and before the absence
 	// markers, so a mixed list renders its data members before `null` and `undefined`.
@@ -390,8 +390,8 @@ func TestCompareTypeNegation(t *testing.T) {
 		require.True(t, equalType(forward[i], reverse[i]),
 			"position %d: %s vs %s", i, soltype.Print(forward[i]), soltype.Print(reverse[i]))
 	}
-	require.True(t, equalType(negNum, forward[2]), "¬number sorts after the intersection")
-	require.True(t, equalType(negStr, forward[3]), "¬string sorts after ¬number")
+	require.True(t, equalType(negNum, forward[2]), "~number sorts after the intersection")
+	require.True(t, equalType(negStr, forward[3]), "~string sorts after ~number")
 }
 
 // TestCompareTypeDistinctRefsWithUnnamedLifetimes pins the structural

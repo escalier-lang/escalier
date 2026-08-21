@@ -32,7 +32,7 @@ func typePrec(t Type) int {
 	case *IntersectionType:
 		return precIntersection
 	case *NegationType:
-		// `¬T` leads with a prefix operator, so it binds like the `mut` borrow and `keyof`
+		// `~T` leads with a prefix operator, so it binds like the `mut` borrow and `keyof`
 		// forms. It is tighter than `|` and `&` and looser than an atom.
 		return precPrefix
 	case *RefType:
@@ -191,9 +191,9 @@ func PrintWithParams(t Type, declared []*TypeParam) string {
 //
 // A borrow whose lifetime carries no name prints as a bare `&`, since an inferred borrow
 // has no name worth showing. That rule also hides a lifetime the source did write. The
-// body of `type Result<'a> = ¬(&'a Point)` holds the variable `'a` binds, and plain Print
-// knows no name for it, so it renders `¬&Point`. A reader cannot tell from that which
-// borrow is excluded. Passing the alias's LifetimeParams here renders `¬&'a Point`.
+// body of `type Result<'a> = ~(&'a Point)` holds the variable `'a` binds, and plain Print
+// knows no name for it, so it renders `~&Point`. A reader cannot tell from that which
+// borrow is excluded. Passing the alias's LifetimeParams here renders `~&'a Point`.
 //
 // A variable that no entry names keeps its fallback form. That is `t{ID}` for a type
 // variable and a bare `&` for a borrow lifetime.
@@ -278,8 +278,8 @@ func PrintAsSchemeWith(
 	// lifetime occurring under a complement.
 	//
 	// The third kind is named even when it reaches no parameter, so
-	// `declare fn f<'a>() -> ¬(&'a mut {x: number})` renders
-	// `fn <'a>() -> ¬&'a mut {x: number}`, while the same signature over a plain borrow
+	// `declare fn f<'a>() -> ~(&'a mut {x: number})` renders
+	// `fn <'a>() -> ~&'a mut {x: number}`, while the same signature over a plain borrow
 	// renders `fn () -> &mut {x: number}`. resolveLt carries the reason.
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
@@ -1032,11 +1032,11 @@ func (p *namedPrinter) printType(t Type) string {
 		}
 		return strings.Join(parts, " & ")
 	case *NegationType:
-		// `¬T`, the standard set-theoretic notation, matching the `¬` surface syntax the parser
+		// `~T`, the standard set-theoretic notation, matching the `~` surface syntax the parser
 		// reads and the AST printer writes. The operand prints at precPrefix, so a union renders
-		// `¬(A | B)`, an intersection `¬(A & B)`, a function `¬(fn () -> number)`, and an atom
-		// stays bare as `¬number`.
-		return "¬" + p.printTypeMinPrec(t.Inner, precPrefix)
+		// `~(A | B)`, an intersection `~(A & B)`, a function `~(fn () -> number)`, and an atom
+		// stays bare as `~number`.
+		return "~" + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *SkolemType:
 		// A skolem renders under its source parameter name. It is transient to a
 		// checking-mode pass and does not survive into a displayed type, so this arm is

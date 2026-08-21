@@ -501,7 +501,7 @@ func (t *KeyOfTypeAnn) Accept(v Visitor) {
 	v.ExitTypeAnn(t)
 }
 
-// NegationTypeAnn is the prefix `¬T`, the set-theoretic complement admitting every value
+// NegationTypeAnn is the prefix `~T`, the set-theoretic complement admitting every value
 // its operand rejects. It resolves to a soltype.NegationType.
 type NegationTypeAnn struct {
 	Type         TypeAnn

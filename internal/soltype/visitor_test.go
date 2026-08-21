@@ -311,7 +311,7 @@ func TestAcceptNegationFlipsPolarity(t *testing.T) {
 	ret := &PrimType{Prim: NumPrim}
 	atom := &PrimType{Prim: StrPrim}
 
-	// [¬(fn (x: param) -> ret), ¬¬atom], walked from Positive. A tuple element is
+	// [~(fn (x: param) -> ret), ~~atom], walked from Positive. A tuple element is
 	// covariant, so each negation is entered at the root polarity.
 	fn := &FuncType{
 		Params: []*FuncParam{{Pattern: &IdentPat{Name: "x"}, Type: param}},

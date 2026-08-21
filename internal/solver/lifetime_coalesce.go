@@ -88,8 +88,8 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 //
 // noElide exists because position alone is not enough. A complemented borrow reaching no
 // output is genuinely connect-nothing, and the elision rule above drops those. Eliding
-// under a complement changes the type rather than merely dropping a name, since `¬(&'a T)`
-// rendered as `¬(&T)` is the complement of any borrow of T rather than of the `'a` one.
+// under a complement changes the type rather than merely dropping a name, since `~(&'a T)`
+// rendered as `~(&T)` is the complement of any borrow of T rather than of the `'a` one.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]
@@ -243,7 +243,7 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 //
 // A lifetime a complement encloses is never elided. It renders under its own name even
 // when it connects nothing, because dropping it would change the type rather than drop a
-// name. So `declare fn f<'a>() -> ¬(&'a T)` keeps `'a` in the quantifier prefix, while
+// name. So `declare fn f<'a>() -> ~(&'a T)` keeps `'a` in the quantifier prefix, while
 // the same signature over a plain borrow elides it.
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {

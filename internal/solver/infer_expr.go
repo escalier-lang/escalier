@@ -3566,9 +3566,9 @@ func (c *checker) walkTryBlock(scope *Scope, lvl int, b *ast.Block, sink soltype
 // rethrow rather than the non-exhaustiveness error the equivalent `match` would draw. collected is
 // what the try block raised, before coalescing.
 //
-// What escapes is the set difference `known ∩ ¬handled`, where handled is the type the arms catch.
+// What escapes is the set difference `known ∩ ~handled`, where handled is the type the arms catch.
 // The difference is taken one member at a time, which is exact because meeting a complement
-// distributes over a union: `(A | B) ∩ ¬H` is `(A ∩ ¬H) | (B ∩ ¬H)`. A member survives when the
+// distributes over a union: `(A | B) ∩ ~H` is `(A ∩ ~H) | (B ∩ ~H)`. A member survives when the
 // meet still holds a value, which memberCaught decides.
 //
 // A guarded arm can fail its guard, so it catches nothing and contributes nothing to handled. An
@@ -3661,7 +3661,7 @@ func unionParts(t soltype.Type) []soltype.Type {
 
 // memberCaught reports whether the catch arms catch every value of one member of the caught
 // type, which keeps that member out of the rethrow. Either of two rules answers it. The set
-// difference catches the member when `member ∩ ¬handled` holds no value, reading through
+// difference catches the member when `member ∩ ~handled` holds no value, reading through
 // subtyping so a base-class arm catches a subclass member. structuralMemberCovered reads an
 // object or tuple pattern's shape, which names no type and so has no entry in handled.
 func (c *checker) memberCaught(member, handled soltype.Type, arms []*ast.MatchCase) bool {
@@ -3741,7 +3741,7 @@ func allIrrefutable(pats []ast.Pat) bool {
 }
 
 // memberSubtracted reports whether handled leaves nothing of one caught member. The complement
-// states that question to the solver, which moves `¬handled` to the supertype side and runs the
+// states that question to the solver, which moves `~handled` to the supertype side and runs the
 // trial as `member <: handled`. Only the member's OWN type variables are watched. Binding one
 // settles what the member stands for, so the member is kept. Binding the arm's is the arm doing
 // its job, and is what lets `catch { Failure{payload} => … }` catch a `Timeout<number>` member.

@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// negRef complements a borrow, building the `¬(&'a mut {x: number})` the graph-level tests
+// negRef complements a borrow, building the `~(&'a mut {x: number})` the graph-level tests
 // below need. Those tests wire a lifetime graph directly rather than inferring one from
 // source, so they assemble the type to match.
 func negRef(lt soltype.Lifetime) soltype.Type {
@@ -39,26 +39,26 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 			// The complement sits in the return, so the parameter's lifetime still
 			// reaches an output and the signature must keep recording that connection.
 			name: "borrow param to complemented return",
-			src:  `declare fn f<'a>(p: &'a mut {x: number}) -> ¬(&'a mut {x: number})`,
-			want: "fn <'a>(p: &'a mut {x: number}) -> ¬&'a mut {x: number}",
+			src:  `declare fn f<'a>(p: &'a mut {x: number}) -> ~(&'a mut {x: number})`,
+			want: "fn <'a>(p: &'a mut {x: number}) -> ~&'a mut {x: number}",
 		},
 		{
 			name: "complemented return with no param",
-			src:  `declare fn f<'a>() -> ¬(&'a mut {x: number})`,
-			want: "fn <'a>() -> ¬&'a mut {x: number}",
+			src:  `declare fn f<'a>() -> ~(&'a mut {x: number})`,
+			want: "fn <'a>() -> ~&'a mut {x: number}",
 		},
 		{
 			name: "complemented param to non-borrow return",
-			src:  `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> number`,
-			want: "fn <'a>(p: ¬&'a mut {x: number}) -> number",
+			src:  `declare fn f<'a>(p: ~(&'a mut {x: number})) -> number`,
+			want: "fn <'a>(p: ~&'a mut {x: number}) -> number",
 		},
 		{
 			// The worst row. Stripping the name here leaves a returned borrow with no
 			// named source, which is the outcome elision exists to prevent, since it
 			// hides a borrow at the call site.
 			name: "complemented param to borrow return",
-			src:  `declare fn f<'a>(p: ¬(&'a mut {x: number})) -> &'a mut {x: number}`,
-			want: "fn <'a>(p: ¬&'a mut {x: number}) -> &'a mut {x: number}",
+			src:  `declare fn f<'a>(p: ~(&'a mut {x: number})) -> &'a mut {x: number}`,
+			want: "fn <'a>(p: ~&'a mut {x: number}) -> &'a mut {x: number}",
 		},
 		{
 			// The control. The noElide set holds only the borrows a complement
@@ -79,7 +79,7 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 	}
 }
 
-// Two complements around one borrow cancel, and the coalescer folds `¬¬T` to T before
+// Two complements around one borrow cancel, and the coalescer folds `~~T` to T before
 // the lifetime pass runs, so that shape never reaches the occurrence walk. Nesting does
 // reach it through an intervening former. Here a complement encloses a function whose
 // parameter is itself a complemented borrow, so the walk sees two complements.
@@ -94,7 +94,7 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // `'a` on the inner borrow reports it undeclared there, and declaring `<'b>` on the inner
 // function binds a second lifetime. Either spelling renders
 //
-//	fn <'a>(p: &mut {x: number}) -> ¬(fn (q: ¬&'a mut {x: number}) -> number)
+//	fn <'a>(p: &mut {x: number}) -> ~(fn (q: ~&'a mut {x: number}) -> number)
 //
 // where the parameter's borrow has elided, because with two independent lifetimes it
 // reaches no output. The assertion below carries one lifetime across both positions, so
@@ -110,15 +110,15 @@ func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	fn := borrowFn(&soltype.NegationType{Inner: inner}, a)
 
 	require.Equal(t,
-		"fn <'a>(p: &'a mut {x: number}) -> ¬(fn (q: ¬&'a mut {x: number}) -> number)",
+		"fn <'a>(p: &'a mut {x: number}) -> ~(fn (q: ~&'a mut {x: number}) -> number)",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
-// The coalescer folds `¬¬T` to T, so a borrow under two immediately-nested complements
+// The coalescer folds `~~T` to T, so a borrow under two immediately-nested complements
 // reaches the lifetime pass with no complement around it, and takes the ordinary
 // polarity reading.
 //
-// The type is assembled rather than written as source because newNegation folds `¬¬T`
+// The type is assembled rather than written as source because newNegation folds `~~T`
 // while resolving the annotation. A source spelling would therefore never hand the
 // coalescer the doubled form this test is about, and would pass whatever the coalescer
 // did with it.
@@ -231,7 +231,7 @@ func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
 	// the noElide set, which overrides the same verdict for it. It is the sole surviving
 	// lifetime, so the printer gives it the first display name, `'a`.
 	require.Equal(t,
-		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ¬&'a mut {x: number}) -> number",
+		"fn <'a>(p: &mut {x: number}, q: &mut {x: number}, r: ~&'a mut {x: number}) -> number",
 		renderScheme(&MonoScheme{Ty: fn}))
 }
 
@@ -283,6 +283,6 @@ func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
 		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: &'b mut {x: number}, s: &'c mut {x: number}) -> &'d mut {x: number}",
 		renderScheme(&MonoScheme{Ty: build(false)}))
 	require.Equal(t,
-		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: ¬&'b mut {x: number}, s: &'c mut {x: number}) -> &'d mut {x: number}",
+		"fn <'a: 'd, 'b: 'd, 'c: 'd, 'd>(p: &'a mut {x: number}, q: ~&'b mut {x: number}, s: &'c mut {x: number}) -> &'d mut {x: number}",
 		renderScheme(&MonoScheme{Ty: build(true)}))
 }

@@ -24,10 +24,10 @@ import (
 // # The two shapes
 //
 // A DNF is a union of Conjuncts and a CNF is an intersection of Disjuncts. A
-// Conjunct is a meet of four parts, written `Lnf ∩ (⋂Vars) ∩ ¬Rnf ∩ (⋂¬NVars)`:
+// Conjunct is a meet of four parts, written `Lnf ∩ (⋂Vars) ∩ ~Rnf ∩ (⋂~NVars)`:
 // a positive structural part, positive type variables, a negated structural part,
 // and negated type variables. A Disjunct is the exact dual, a join written
-// `Rnf ∪ (⋃Vars) ∪ ¬Lnf ∪ (⋃¬NVars)`. Negating one produces the other by
+// `Rnf ∪ (⋃Vars) ∪ ~Lnf ∪ (⋃~NVars)`. Negating one produces the other by
 // permuting those four fields, which is De Morgan's law with no traversal.
 //
 // # Merge or keep separate
@@ -94,7 +94,7 @@ import (
 // A complement may name a borrow, and because the wrapper stays whole the complement
 // carries the borrow through as one atom rather than distributing into its lifetime.
 // Negation INSIDE a borrow is a different node and normalizes by the ordinary rules,
-// so `mut 'a ({x: number} | ¬{y: string})` is fine.
+// so `mut 'a ({x: number} | ~{y: string})` is fine.
 
 // DNF is a union of conjuncts, the disjunctive normal form of a type. An empty
 // conjunct list is `never`, the identity of `|`.
@@ -104,7 +104,7 @@ type DNF struct{ Conjuncts []Conjunct }
 // empty disjunct list is `unknown`, the identity of `&`.
 type CNF struct{ Disjuncts []Disjunct }
 
-// Conjunct is one meet of a DNF, reading `Lnf ∩ (⋂Vars) ∩ ¬Rnf ∩ (⋂¬NVars)`. All
+// Conjunct is one meet of a DNF, reading `Lnf ∩ (⋂Vars) ∩ ~Rnf ∩ (⋂~NVars)`. All
 // four parts may be empty, and a Conjunct with all four empty is `unknown`.
 type Conjunct struct {
 	Lnf   LhsNf
@@ -114,7 +114,7 @@ type Conjunct struct {
 }
 
 // Disjunct is one join of a CNF and the dual of Conjunct, reading
-// `Rnf ∪ (⋃Vars) ∪ ¬Lnf ∪ (⋃¬NVars)`. A Disjunct with all four parts empty is
+// `Rnf ∪ (⋃Vars) ∪ ~Lnf ∪ (⋃~NVars)`. A Disjunct with all four parts empty is
 // `never`. Conjunct.neg and Disjunct.neg convert between the two by permuting the
 // four fields.
 type Disjunct struct {
@@ -188,7 +188,7 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 		}
 		return DNF{Conjuncts: c.canonicalConjuncts(out.Conjuncts)}
 	case *soltype.NegationType:
-		// ¬T at pol is the complement of T at the flipped polarity, and the complement
+		// ~T at pol is the complement of T at the flipped polarity, and the complement
 		// of an intersection of joins is a union of meets. So normalize the operand to a
 		// CNF and negate each disjunct into a conjunct. Negating permutes fields without
 		// consulting the merges, so the result is canonicalized afterwards.
@@ -363,7 +363,7 @@ func (a Disjunct) withVar(v *soltype.TypeVarType) Disjunct {
 
 // --- Negation ---
 
-// neg complements a DNF into a CNF. `¬(C₁ ∪ … ∪ Cₙ)` is `¬C₁ ∩ … ∩ ¬Cₙ`, so the
+// neg complements a DNF into a CNF. `~(C₁ ∪ … ∪ Cₙ)` is `~C₁ ∩ … ∩ ~Cₙ`, so the
 // conjuncts negate one for one into disjuncts and no atom is traversed. An empty
 // DNF is `never`, and it negates to an empty CNF, which is `unknown`.
 func (d DNF) neg() CNF {
@@ -383,8 +383,8 @@ func (n CNF) neg() DNF {
 	return DNF{Conjuncts: out}
 }
 
-// neg complements a conjunct into a disjunct. `¬(L ∩ V ∩ ¬R ∩ ¬N)` is
-// `R ∪ N ∪ ¬L ∪ ¬V`, which is the same four parts in the dual slots: the two
+// neg complements a conjunct into a disjunct. `~(L ∩ V ∩ ~R ∩ ~N)` is
+// `R ∪ N ∪ ~L ∪ ~V`, which is the same four parts in the dual slots: the two
 // structural parts swap roles and so do the two variable sets. De Morgan's law is
 // therefore a field permutation here rather than a rewrite.
 func (a Conjunct) neg() Disjunct {
@@ -452,8 +452,8 @@ func cnfOr(a, b CNF) CNF {
 }
 
 // conjunctAnd intersects two conjuncts. The positive structural parts pool as one
-// intersection, the negated ones pool as one union, since `¬R₁ ∩ ¬R₂` is
-// `¬(R₁ ∪ R₂)`, and the two variable sets union. ok is false when a variable is
+// intersection, the negated ones pool as one union, since `~R₁ ∩ ~R₂` is
+// `~(R₁ ∪ R₂)`, and the two variable sets union. ok is false when a variable is
 // held both positively and negatively.
 //
 // Whether the pooled structural parts are inhabited is settled later, by
@@ -462,7 +462,7 @@ func cnfOr(a, b CNF) CNF {
 func conjunctAnd(a, b Conjunct) (Conjunct, bool) {
 	vars := a.Vars.Union(b.Vars)
 	nvars := a.NVars.Union(b.NVars)
-	// The same variable held both ways makes the conjunct `v ∩ ¬v`, which no value
+	// The same variable held both ways makes the conjunct `v ∩ ~v`, which no value
 	// inhabits under any instantiation, so no bound has to be consulted. Dropping
 	// the conjunct rather than reporting an error is right because `never` is the
 	// identity of the union its DNF is. The two sets are keyed by pointer, so this
@@ -485,7 +485,7 @@ func disjunctOr(a, b Disjunct) (Disjunct, bool) {
 	vars := a.Vars.Union(b.Vars)
 	nvars := a.NVars.Union(b.NVars)
 	// The dual of the conjunct case. The same variable held both ways makes the
-	// disjunct `v ∪ ¬v`, which every value inhabits under any instantiation, and it
+	// disjunct `v ∪ ~v`, which every value inhabits under any instantiation, and it
 	// is dropped because `unknown` is the identity of the intersection its CNF is.
 	// The pointer keying is the same, so two distinct variables that solving later
 	// makes equal do not fire this.
@@ -618,7 +618,7 @@ func compareAtom(a, b soltype.Type) int {
 // It compares with equalType rather than by checking compareAtoms for a zero.
 // compareType returns zero both for equal types and for two types it has no
 // structural arm to tell apart, such as two different class tags, so a merge
-// keying off a zero would treat `¬Point` and `¬Line` as the same negated part and
+// keying off a zero would treat `~Point` and `~Line` as the same negated part and
 // drop one of them.
 func equalAtomLists(a, b []soltype.Type) bool {
 	if len(a) != len(b) {
@@ -911,7 +911,7 @@ func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 // An alias is unfolded first, so `&mut Point` and `&mut {x: number}` draw the same family
 // when Point names that object. Classifying on the reference would instead make the answer
 // depend on how the pointee was spelled. A complement is where that shows, since
-// `5 <: ¬(&mut Point)` holds exactly when `5 <: ¬(&mut {x: number})` does. An unregistered
+// `5 <: ~(&mut Point)` holds exactly when `5 <: ~(&mut {x: number})` does. An unregistered
 // or non-structural alias body falls through to notValueAtom as any other carrier would.
 func (c *Context) refCellOrNot(carrier soltype.Type) valueFamily {
 	if ref, ok := carrier.(*soltype.AliasType); ok {
@@ -2021,7 +2021,7 @@ func equalDisjunct(a, b Disjunct) bool {
 // them agrees too, so the union reduces to combining the other:
 //
 //	(L ∩ X) ∪ (L' ∩ X)  is  (L ∪ L') ∩ X          when the negated parts agree
-//	(X ∩ ¬R) ∪ (X ∩ ¬R') is  X ∩ ¬(R ∩ R')        when the positive parts agree
+//	(X ∩ ~R) ∪ (X ∩ ~R') is  X ∩ ~(R ∩ R')        when the positive parts agree
 //
 // So the positive parts combine under a union and the negated ones under an
 // intersection, which is the flip De Morgan's law puts on the negated side.
@@ -2056,7 +2056,7 @@ func (c *Context) tryMergeUnion(a, b Conjunct) (Conjunct, bool) {
 // this time, so the roles swap:
 //
 //	(R ∪ X) ∩ (R' ∪ X)   is  (R ∩ R') ∪ X         when the negated parts agree
-//	(X ∪ ¬L) ∩ (X ∪ ¬L') is  X ∪ ¬(L ∪ L')        when the positive parts agree
+//	(X ∪ ~L) ∩ (X ∪ ~L') is  X ∪ ~(L ∪ L')        when the positive parts agree
 func (c *Context) tryMergeInter(a, b Disjunct) (Disjunct, bool) {
 	if !a.Vars.Equals(b.Vars) || !a.NVars.Equals(b.NVars) {
 		return Disjunct{}, false
@@ -2144,7 +2144,7 @@ func (c *Context) combineAtoms(a, b []soltype.Type, role atomRole) ([]soltype.Ty
 	if _, isNever := fused.(*soltype.NeverType); isNever {
 		// The combined atom is uninhabited, and `never` is the identity of the union
 		// the atom sits in, so the position drops rather than being replaced. This is
-		// what collapses `¬number | ¬string` to `unknown`: the two conjuncts agree on
+		// what collapses `~number | ~string` to `unknown`: the two conjuncts agree on
 		// their positive parts, their negated parts meet to `never`, and a conjunct
 		// negating `never` admits every value.
 		return withoutIndex(a, diff), true
@@ -2270,9 +2270,9 @@ func (n CNF) toType() soltype.Type {
 	return newIntersection(nil, parts)
 }
 
-// toType renders a conjunct as `Lnf ∩ (⋂Vars) ∩ ¬Rnf ∩ (⋂¬NVars)`. An empty part
+// toType renders a conjunct as `Lnf ∩ (⋂Vars) ∩ ~Rnf ∩ (⋂~NVars)`. An empty part
 // contributes nothing: an empty Lnf is `unknown` and an empty Rnf makes the
-// negated part `¬never`, and both are the identity of the intersection.
+// negated part `~never`, and both are the identity of the intersection.
 func (a Conjunct) toType() soltype.Type {
 	parts := make([]soltype.Type, 0, len(a.Lnf.Atoms)+a.Vars.Len()+1+a.NVars.Len())
 	parts = append(parts, a.Lnf.Atoms...)
@@ -2288,8 +2288,8 @@ func (a Conjunct) toType() soltype.Type {
 	return newIntersection(nil, parts)
 }
 
-// toType renders a disjunct as `Rnf ∪ (⋃Vars) ∪ ¬Lnf ∪ (⋃¬NVars)`, the dual of
-// Conjunct.toType. An empty Lnf makes the negated part `¬unknown`, which is
+// toType renders a disjunct as `Rnf ∪ (⋃Vars) ∪ ~Lnf ∪ (⋃~NVars)`, the dual of
+// Conjunct.toType. An empty Lnf makes the negated part `~unknown`, which is
 // `never`, the identity of the union.
 func (a Disjunct) toType() soltype.Type {
 	parts := make([]soltype.Type, 0, len(a.Rnf.Atoms)+a.Vars.Len()+1+a.NVars.Len())

@@ -621,18 +621,18 @@ func (c *checker) resolveKeyOfTypeAnn(scope *Scope, ta *ast.KeyOfTypeAnn, lvl in
 	return t, true
 }
 
-// resolveNegationTypeAnn lowers `¬T` to the complement of its operand through newNegation, which
-// folds `¬never` to `unknown`, `¬unknown` to `never`, `¬¬T` to `T`, and `¬(open union)` to `never`.
+// resolveNegationTypeAnn lowers `~T` to the complement of its operand through newNegation, which
+// folds `~never` to `unknown`, `~unknown` to `never`, `~~T` to `T`, and `~(open union)` to `never`.
 // An unsupported operand recovers to a fresh var, cascade-safe like the Promise<bad> recovery.
 //
-// A borrow is an ordinary operand. `¬(&'a Point)` names every value that is not that borrow.
+// A borrow is an ordinary operand. `~(&'a Point)` names every value that is not that borrow.
 func (c *checker) resolveNegationTypeAnn(scope *Scope, ta *ast.NegationTypeAnn, lvl int) (soltype.Type, bool) {
 	operand, ok := c.resolveTypeAnn(scope, ta.Type, lvl)
 	if !ok {
 		operand = c.freshAt(lvl)
 	}
 	t := newNegation(operand)
-	// newNegation can return a pointer that is not freshly minted: `¬¬T` folds to the
+	// newNegation can return a pointer that is not freshly minted: `~~T` folds to the
 	// operand's inner T, and the lattice-bound folds return the shared zero-size
 	// NeverType/UnknownType singletons. recordProvForResult skips both the already-blamed
 	// inner and the module-shared singleton, mirroring resolveUnionTypeAnn.

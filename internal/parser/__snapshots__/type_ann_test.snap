@@ -2980,7 +2980,7 @@
 []*parser.Error{
     &parser.Error{
         Span: 1:1-1:2,
-        Message: "expected a type annotation after '¬'",
+        Message: "expected a type annotation after '~'",
     },
 }
 ---

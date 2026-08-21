@@ -9,11 +9,11 @@ import (
 // Complements in the operator layer.
 //
 // The operator reducers meet the same surface union and intersection nodes they always have, plus
-// one more kind, the complement `¬T`. This file holds the three places a complement changes what a
+// one more kind, the complement `~T`. This file holds the three places a complement changes what a
 // reduction produces.
 //
 //  1. A meet carrying a complement is a set difference. reduceDifference computes it, so a key set
-//     written `keyof T ∩ ¬K` enumerates the keys of T other than K.
+//     written `keyof T ∩ ~K` enumerates the keys of T other than K.
 //  2. A distributive conditional that filters its own operand is a set difference too.
 //     nativeDifference rewrites one whose operand is not ground into that meet, which is what makes
 //     `Exclude`, `Omit`, and `NonNullable` total over a type variable.
@@ -24,10 +24,10 @@ import (
 // # Which reading each utility type takes
 //
 // TypeScript defines `Exclude<U, V>` as the distributive conditional `U extends V ? never : U`,
-// which filters whole members of a union. The set difference `U ∩ ¬V` cuts inside a member as well.
+// which filters whole members of a union. The set difference `U ∩ ~V` cuts inside a member as well.
 // The two agree whenever every member of U is either wholly inside V or disjoint from it, and
 // diverge otherwise. `Exclude<string, "a">` is `string` under the filter, since `string` is not a
-// subtype of `"a"`, and `string ∩ ¬"a"` under the difference.
+// subtype of `"a"`, and `string ∩ ~"a"` under the difference.
 //
 // Escalier takes the filter when the operand is ground and the difference when it is not:
 //
@@ -105,32 +105,32 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 	return newUnion(nil, shared), true
 }
 
-// reduceDifference settles a meet carrying at least one complement — `A ∩ ¬B`, the values of A that
+// reduceDifference settles a meet carrying at least one complement — `A ∩ ~B`, the values of A that
 // are not values of B. It is the reduction behind every Boolean key set: `Omit<T, "b">` maps over
-// `keyof T ∩ ¬"b"`, which reduces to `"a" | "c"` for `type T = {a: X, b: Y, c: Z}` so the mapped
+// `keyof T ∩ ~"b"`, which reduces to `"a" | "c"` for `type T = {a: X, b: Y, c: Z}` so the mapped
 // type has keys to iterate.
 //
 // Each member of the meet is already reduced and grounds through groundReduced, so an alias named
 // on either side expands to the type whose values the difference is taken over.
 //
-// The difference distributes over the positive side's members, `(A | B) ∩ ¬X` being
-// `(A ∩ ¬X) | (B ∩ ¬X)`, and each member is settled against each excluded type by two subtype
+// The difference distributes over the positive side's members, `(A | B) ∩ ~X` being
+// `(A ∩ ~X) | (B ∩ ~X)`, and each member is settled against each excluded type by two subtype
 // questions the normal-form layer decides:
 //
 //   - `m <: x` means every value of m is excluded, so m contributes nothing.
-//   - `m <: ¬x` means the two are disjoint, so x removes nothing from m and the complement is
+//   - `m <: ~x` means the two are disjoint, so x removes nothing from m and the complement is
 //     dropped from m's result.
 //   - Neither holds when x removes part of m, and that part is not expressible as a union of the
-//     members at hand, so m keeps the complement and renders as `m ∩ ¬x`.
+//     members at hand, so m keeps the complement and renders as `m ∩ ~x`.
 //
 // An operand that is not ground leaves the whole difference standing, so it reduces later once the
-// operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
+// operand grounds. That residual is the `∩ ~` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
 // The positive side is a closed union or a single member. Each member is settled against the
-// exclusion on its own, and the survivors union. `("a" | "b") ∩ ¬"a"` reduces to `"b"`, and a
-// single member that the exclusion cuts into entirely, such as `string ∩ ¬"a"` where the base is
-// the whole `string`, keeps the complement as `string & ¬"a"`.
+// exclusion on its own, and the survivors union. `("a" | "b") ∩ ~"a"` reduces to `"b"`, and a
+// single member that the exclusion cuts into entirely, such as `string ∩ ~"a"` where the base is
+// the whole `string`, keeps the complement as `string & ~"a"`.
 func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type
@@ -207,11 +207,11 @@ func complementsOf(types []soltype.Type) []soltype.Type {
 // nativeDifference rewrites a distributive conditional that filters its own operand into the set
 // difference or intersection it denotes, and reports whether the conditional had that shape.
 //
-//	if U : V { never } else { U }   ⟹  U ∩ ¬V
+//	if U : V { never } else { U }   ⟹  U ∩ ~V
 //	if U : V { U } else { never }   ⟹  U ∩ V
 //
 // Both meets are minted through the lattice constructors, so a V whose complement the surface type
-// set already names comes back under that name. `Exclude<T, never>` is `T ∩ ¬never`, which is
+// set already names comes back under that name. `Exclude<T, never>` is `T ∩ ~never`, which is
 // `T ∩ unknown` and then `T`.
 //
 // Those are `Exclude<U, V>` and `Extract<U, V>` as TypeScript's library writes them, and the same
@@ -236,7 +236,7 @@ func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends sol
 		return nil, false
 	}
 	// Ground the Check so an alias operand expands to the type the difference is taken over.
-	// groundReduced leaves a type variable untouched, so `Exclude<T, string>` stays `T ∩ ¬string`.
+	// groundReduced leaves a type variable untouched, so `Exclude<T, string>` stays `T ∩ ~string`.
 	check = e.groundReduced(check)
 	switch {
 	case isNeverType(t.Then) && equalType(t.Check, t.Else):
@@ -250,8 +250,8 @@ func (e *typeEvaluator) nativeDifference(t *soltype.CondType, check, extends sol
 // positiveSkeleton returns the part of a conditional's Check an `infer` pattern matches against,
 // and reports whether any of it is left to match. A pattern binds a capture by aligning against
 // structure the scrutinee carries, and a complement names the values its operand rejects rather
-// than any structure of its own. So `¬X` matches no pattern position, and a meet contributes only
-// its positive members. Matching `Array<number> ∩ ¬X` against the pattern `Array<infer R>` binds R
+// than any structure of its own. So `~X` matches no pattern position, and a meet contributes only
+// its positive members. Matching `Array<number> ∩ ~X` against the pattern `Array<infer R>` binds R
 // to number.
 //
 // A Check that is nothing but complements has no skeleton to align, so the match fails and the

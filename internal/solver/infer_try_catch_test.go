@@ -358,7 +358,7 @@ func TestInferTryCatchOverClassErrors(t *testing.T) {
 	})
 }
 
-// What escapes a `try` is the set difference `caught & ¬handled`, where handled is the type
+// What escapes a `try` is the set difference `caught & ~handled`, where handled is the type
 // the arms catch. Taking a difference rather than matching each member against each pattern
 // by name is what lets an arm subtract more than the one type it spells: an arm naming a base
 // class catches every value of a subclass, so a subclass member is subtracted too.

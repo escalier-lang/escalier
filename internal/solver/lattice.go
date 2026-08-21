@@ -61,12 +61,12 @@ func newIntersection(c *Context, parts []soltype.Type) soltype.Type {
 // complement the surface type set already names. It returns that name for them and
 // wraps everything else.
 //
-//   - `¬never` is `unknown`, since `never` admits no value and `unknown` admits
+//   - `~never` is `unknown`, since `never` admits no value and `unknown` admits
 //     every one.
-//   - `¬unknown` is `never`, the same identity read the other way.
-//   - `¬¬T` is T, since complementing twice returns the original set.
+//   - `~unknown` is `never`, the same identity read the other way.
+//   - `~~T` is T, since complementing twice returns the original set.
 //
-// It does NOT push the complement through a union or an intersection. `¬(A | B)`
+// It does NOT push the complement through a union or an intersection. `~(A | B)`
 // is a faithful render of what the bound says, and De Morgan's law would only
 // trade one node for two.
 //
@@ -397,7 +397,7 @@ func (s *finalSubsumer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.T
 	case *soltype.NegationType:
 		// The operand was already rewritten by this walk, so a complement whose
 		// operand collapsed to a lattice bound is folded here rather than left as the
-		// meaningless `¬never`. `¬(string & ¬string)` reads `unknown`.
+		// meaningless `~never`. `~(string & ~string)` reads `unknown`.
 		return foldNegation(t)
 	}
 	return t
@@ -529,7 +529,7 @@ func compareSameKind(a, b soltype.Type) int {
 		return compareTypeSlice(a.Types, b.Types)
 	case *soltype.NegationType:
 		// Two complements order by their operands, so the order over negated members mirrors
-		// the order over the members themselves and `¬number` precedes `¬string`.
+		// the order over the members themselves and `~number` precedes `~string`.
 		return compareType(a.Inner, b.(*soltype.NegationType).Inner)
 	}
 	return 0
@@ -784,7 +784,7 @@ func lifetimeKindOrder(lt soltype.Lifetime) int {
 //
 // NegationType is ranked with UnionType and IntersectionType among the
 // lattice forms. The slot makes the order over member lists holding
-// negations stable, so `¬A` sorts to one position whatever order the members
+// negations stable, so `~A` sorts to one position whatever order the members
 // were minted in.
 func typeKindOrder(t soltype.Type) int {
 	switch t.(type) {

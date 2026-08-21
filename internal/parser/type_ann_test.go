@@ -211,18 +211,18 @@ func TestParseTypeAnnNoErrors(t *testing.T) {
 			input: "keyof T & U",
 		},
 		"NegationType": {
-			input: "¬T",
+			input: "~T",
 		},
 		"NegationOfLiteral": {
-			input: "¬\"a\"",
+			input: "~\"a\"",
 		},
-		// `¬` binds tighter than `&`, so this parses as `string & (¬"a")`.
+		// `~` binds tighter than `&`, so this parses as `string & (~"a")`.
 		"IntersectionTypeWithNegation": {
-			input: "string & ¬\"a\"",
+			input: "string & ~\"a\"",
 		},
-		// `¬` binds tighter than `|`, so this parses as `(¬T) | U`.
+		// `~` binds tighter than `|`, so this parses as `(~T) | U`.
 		"UnionTypeWithNegation": {
-			input: "¬T | U",
+			input: "~T | U",
 		},
 		"TypeOfIdent": {
 			input: "typeof x",
@@ -341,7 +341,7 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 			input: "keyof",
 		},
 		"NegationMissingType": {
-			input: "¬",
+			input: "~",
 		},
 		"FuncTypeMissingReturnType": {
 			input: "fn() ->",

@@ -889,9 +889,9 @@ type UnionType struct {
 }
 type IntersectionType struct{ Types []Type }
 
-// NegationType is the set-theoretic complement ¬Inner, the type admitting every value Inner
+// NegationType is the set-theoretic complement ~Inner, the type admitting every value Inner
 // rejects. It stands beside UnionType and IntersectionType, which supply joins and meets, and
-// completes the three into a Boolean algebra. `A & ¬A` is `never` and `A | ¬A` is `unknown`.
+// completes the three into a Boolean algebra. `A & ~A` is `never` and `A | ~A` is `unknown`.
 //
 // It is the one node that inverts polarity on its child, because a complement shrinks as its
 // operand grows. Accept visits Inner at the flipped polarity, and every structural rewriter
@@ -901,7 +901,7 @@ type IntersectionType struct{ Types []Type }
 // normalization layer is the only producer of a negation.
 //
 // It is not a RefInner. A borrow points at a value someone allocated and a complement names
-// no such value, so `&¬T` would point at nothing.
+// no such value, so `&~T` would point at nothing.
 type NegationType struct{ Inner Type }
 
 // ErrorType is the error-recovery sentinel (M3 PR8) — a childless atom distinct
@@ -1469,7 +1469,7 @@ func LevelOf(t Type) int {
 		return maxMemberLevel(t.Types)
 	case *NegationType:
 		// A complement's level is its operand's, the single-child rule the KeyofType arm
-		// follows. A `¬T` over an out-of-level variable therefore lifts the level, and the
+		// follows. A `~T` over an out-of-level variable therefore lifts the level, and the
 		// freshener/extruder prune descends to freshen that variable.
 		return LevelOf(t.Inner)
 	default:

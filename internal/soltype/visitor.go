@@ -469,7 +469,7 @@ func (t *NegationType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// ¬Inner shrinks as Inner grows, so the operand walks at the flipped polarity, the flip
+	// ~Inner shrinks as Inner grows, so the operand walks at the flipped polarity, the flip
 	// acceptParams applies to a function's parameters. This is the only node that inverts,
 	// and every rewriter rides on Accept, so the single flip here is what gives coalesce,
 	// extrude, and freshenAbove their variance under a negation.
