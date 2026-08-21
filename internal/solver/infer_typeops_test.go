@@ -109,28 +109,25 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"only"`,
 		},
 		{
-			// An inexact object's key union is inexact too: the known keys plus a trailing `...`
-			// standing for the unlisted ones. The tail is bounded by `string`, since a key the
-			// object did not list is still a property name.
+			// An inexact object's key set is open, so its keyof is the open key domain `string`.
 			name: "InexactObject",
 			src: `
 				type Obj = {x: number, y: string, ...}
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"x" | "y" | ... : string`,
+			wantExpanded: `string`,
 		},
 		{
-			// A single-key inexact object keeps the union wrapper rather than collapsing to the lone
-			// literal, since the open tail makes `"only" | ... : string` strictly weaker than bare
-			// `"only"`.
+			// A single-key inexact object's key set is open too, so its keyof is `string` whatever
+			// key it names.
 			name: "InexactSingleKeyObject",
 			src: `
 				type Obj = {only: number, ...}
 				type Result = keyof Obj
 			`,
 			wantSymbolic: "keyof Obj",
-			wantExpanded: `"only" | ... : string`,
+			wantExpanded: `string`,
 		},
 		{
 			// A key is readable from a union only when every member carries it, so the members'
@@ -197,28 +194,29 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 			wantExpanded: `"a" | "b" | "shared"`,
 		},
 		{
-			// An inexact member's open key set may carry "a" as well, so the intersection cannot
-			// rule "a" out. The written keys intersect to "shared" and the result stays open,
-			// carrying the `string` bound that member's own key set had.
+			// An inexact member's keyof is the primitive `string`, which cannot confirm which of the
+			// other member's literal keys are shared. The written keys of the first member meet that
+			// `string` as an intersection, so the result over-approximates to `string & ("a" |
+			// "shared")`, which denotes `"a" | "shared"`. #1126 tracks tightening this to `"shared"`.
 			name: "UnionInexactMember",
 			src: `
 				type U = {a: number, shared: string} | {b: boolean, shared: string, ...}
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: `"shared" | ... : string`,
+			wantExpanded: `string & ("a" | "shared")`,
 		},
 		{
-			// An empty intersection is never even when a member was inexact. The open tail marks
-			// a key set that may be larger than its written keys, but a union with no member is
-			// never whatever its exactness, so nothing survives to carry the tail.
-			name: "UnionInexactMemberDisjoint",
+			// One member's keyof is the primitive `string` from its open key set, and the other names
+			// `"b"`. The meet keeps `"b"` as a key `string` might share, so the result is `string &
+			// "b"`, which denotes `"b"`, rather than `never`.
+			name: "UnionInexactMemberKeepsAName",
 			src: `
 				type U = {a: number, ...} | {b: boolean}
 				type Result = keyof U
 			`,
 			wantSymbolic: "keyof U",
-			wantExpanded: "never",
+			wantExpanded: `string & "b"`,
 		},
 		{
 			// A primitive member has no keys, so the intersection with it is empty however many
@@ -296,7 +294,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 		},
 		{
 			// A non-final class projects to an inexact instance body, since a subclass may add
-			// members, so its key union is open: `"x" | "y" | ... : string`.
+			// members, so its key set is open and its keyof is `string`.
 			name: "Class",
 			src: `
 				class Point {
@@ -306,7 +304,7 @@ func TestInferKeyofNamedTypeStaysSymbolic(t *testing.T) {
 				type Result = keyof Point
 			`,
 			wantSymbolic: "keyof Point",
-			wantExpanded: `"x" | "y" | ... : string`,
+			wantExpanded: `string`,
 		},
 		{
 			// A final class has no subclasses to widen it, so its instance body is exact and its
@@ -1289,6 +1287,18 @@ func TestInferIndexReductionError(t *testing.T) {
 			`,
 			wantErr: `object {x: number} has no property "z"`,
 			wantTyp: &UnknownObjectKeyError{},
+		},
+		{
+			// An inexact object's open tail is string-keyed, so `Obj[string]` reads it as `unknown`,
+			// but a `number` index names no key of the object and there is no index signature to
+			// read, so it draws a missing-index-signature error.
+			name: "InexactObjectNumericIndex",
+			src: `
+				type Obj = {a: number, ...}
+				val v: Obj[number] = 5
+			`,
+			wantErr: "object {a: number, ...} has no index signature to read a key of type number",
+			wantTyp: &NoIndexSignatureError{},
 		},
 	}
 	for _, tt := range tests {

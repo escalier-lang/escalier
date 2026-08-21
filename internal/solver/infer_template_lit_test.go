@@ -439,21 +439,19 @@ func TestTemplateMatchesString(t *testing.T) {
 	}
 }
 
-// A template with two open interpolations builds a tail bound where each interp ranges over its named
-// choices and its bound, since a tail string may pair one interp's named choice with the other's
-// bound. `${keyof Obj}-${keyof Obj}` over `{a: number, ...}` keeps the named "a-a" and bounds the tail
-// by the three combinations that draw at least one side from `string`.
-func TestTemplateOverTwoOpenInterpsBoundsEachSide(t *testing.T) {
+// A template with two `string` interpolations stays open on both sides. `keyof Obj` over an
+// inexact `{a: number, ...}` reduces to `string`, so `${keyof Obj}-${keyof Obj}` reduces to the
+// open template `${string}-${string}`, which admits any string the template can spell.
+func TestTemplateOverTwoOpenInterps(t *testing.T) {
 	nodes, ctx, errs := inferTypeNodes(t, `
 		type Obj = {a: number, ...}
 		type Result = `+"`${keyof Obj}-${keyof Obj}`"+`
 	`)
 	require.Empty(t, errs)
 	result := expandAliasResidual(ctx, nodes["Result"])
-	require.Equal(t, "\"a-a\" | ... : (`${string}-${string}` | `${string}-a` | `a-${string}`)", soltype.Print(result))
+	require.Equal(t, "`${string}-${string}`", soltype.Print(result))
 
-	require.True(t, subtypeHolds(ctx, strLit("a-a"), result), "the named pairing is a member")
-	require.True(t, subtypeHolds(ctx, strLit("b-c"), result), "so is a pairing the tail bounds")
-	require.True(t, subtypeHolds(ctx, strLit("b-a"), result), "and one pairing a name with a bound string")
+	require.True(t, subtypeHolds(ctx, strLit("a-a"), result), "a dashed pairing is a member")
+	require.True(t, subtypeHolds(ctx, strLit("b-c"), result), "so is any dashed pairing of strings")
 	require.False(t, subtypeHolds(ctx, strLit("xyz"), result), "a string the template cannot spell is not")
 }
