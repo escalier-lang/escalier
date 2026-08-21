@@ -90,10 +90,15 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // disabled, so treat it as covering the nesting shape, not the parity rule.
 //
 // The type is assembled rather than written as source because a nested function
-// annotation opens its own lifetime scope. The checker rejects
-// `¬(fn (q: ¬(&'a mut {x: number})) -> number)` inside f's return, reporting `'a` as
-// undeclared. Declaring it on the inner function would bind a second lifetime rather than
-// the one f's parameter carries.
+// annotation opens its own lifetime scope, which f's `<'a>` does not reach into. Naming
+// `'a` on the inner borrow reports it undeclared there, and declaring `<'b>` on the inner
+// function binds a second lifetime. Either spelling renders
+//
+//	fn <'a>(p: &mut {x: number}) -> ¬(fn (q: ¬&'a mut {x: number}) -> number)
+//
+// where the parameter's borrow has elided, because with two independent lifetimes it
+// reaches no output. The assertion below carries one lifetime across both positions, so
+// the parameter keeps its name. That shared lifetime is the shape under test.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 	c := newChecker()
 	a := c.ctx.freshLifetime(0)
