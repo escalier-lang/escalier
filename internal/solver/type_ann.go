@@ -584,7 +584,7 @@ func (c *checker) resolveUnionTypeAnn(scope *Scope, ta *ast.UnionTypeAnn, lvl in
 			members[i] = c.freshAt(lvl)
 		}
 	}
-	t := newUnion(c.ctx, members, false)
+	t := newUnion(c.ctx, members)
 	// newUnion can collapse to an input member's pointer on single-member dedup or
 	// subsumption, so the result may already carry that member's blame. recordProvForResult
 	// records only a fresh, uniquely-owned result.

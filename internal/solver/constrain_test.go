@@ -1219,52 +1219,6 @@ func TestDescribeNegation(t *testing.T) {
 	}
 }
 
-// A diagnostic naming an inexact union has to say what its tail admits, since the bound is
-// the reason the constraint failed. `5 <: ("a" | ... : string)` is rejected where
-// `5 <: ("a" | ...)` holds, and a message rendering both as `"a" | ...` leaves the reader
-// with no way to tell which rule fired.
-func TestDescribeOpenUnionTail(t *testing.T) {
-	tests := []struct {
-		name string
-		in   soltype.Type
-		want string
-	}{
-		{
-			"unbounded tail",
-			&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true},
-			`"a" | ...`,
-		},
-		{
-			"bounded tail",
-			&soltype.UnionType{Types: []soltype.Type{strLit("a")}, Inexact: true, TailBound: str()},
-			`"a" | ... : string`,
-		},
-		{
-			// An intersection bound is parenthesized, so its `&` does not read as binding
-			// past the `...` into the enclosing union.
-			"compound bound is parenthesized",
-			&soltype.UnionType{
-				Types:     []soltype.Type{strLit("a")},
-				Inexact:   true,
-				TailBound: &soltype.IntersectionType{Types: []soltype.Type{str(), num()}},
-			},
-			`"a" | ... : (string & number)`,
-		},
-		{
-			// The shape a set difference leaves when it excludes every named member. A
-			// leading `" | "` would read as an empty first member, so the marker stands alone.
-			"bounded tail with no named member",
-			&soltype.UnionType{Inexact: true, TailBound: str()},
-			"... : string",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, describe(tt.in))
-		})
-	}
-}
-
 // --- The coinductive seen-set's two records ---
 
 // nestedRecursiveObj builds the cyclic object type `{p: pt, next: {q: <the outer object>}}` and

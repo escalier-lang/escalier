@@ -211,7 +211,7 @@ func TestRefAtomMerge(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := &Context{}
 			a, b := tt.build(t, c)
-			require.Equal(t, tt.union, normScheme(c, newUnion(nil, []soltype.Type{a, b}, false)))
+			require.Equal(t, tt.union, normScheme(c, newUnion(nil, []soltype.Type{a, b})))
 
 			c = &Context{}
 			a, b = tt.build(t, c)
@@ -276,7 +276,7 @@ func TestRefMergeRecordsNoLifetimeBound(t *testing.T) {
 	c := &Context{}
 	obj := refObj(t, "{x: number}")
 	first, second := c.freshLifetime(0), c.freshLifetime(0)
-	union := newUnion(nil, []soltype.Type{borrow(true, first, obj), borrow(true, second, obj)}, false)
+	union := newUnion(nil, []soltype.Type{borrow(true, first, obj), borrow(true, second, obj)})
 
 	c.mkDNF(union, soltype.Positive)
 	for _, lt := range []*soltype.LifetimeVar{first, second} {
@@ -309,7 +309,7 @@ func TestNegatedBorrowNormalizes(t *testing.T) {
 	// keeps the union under one complement. CNF is where the law applies, so there the
 	// borrow surfaces as its own negated atom.
 	t.Run("a borrow inside a negated union splits under De Morgan", func(t *testing.T) {
-		joined := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), ref}, false)
+		joined := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), ref})
 		require.Equal(t, "¬(&mut {x: number} | {a: number})",
 			soltype.Print(c.mkDNF(not(joined), soltype.Positive).toType()))
 		require.Equal(t, "¬&mut {x: number} & ¬{a: number}",
@@ -329,7 +329,7 @@ func TestNegationInsideBorrowNormalizes(t *testing.T) {
 	// sits inside a borrow. RefInner admits UnionType, and NegationType is not a
 	// RefInner.
 	doubled := not(not(parseType(t, "{x: number}")))
-	inner, ok := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), doubled}, false).(soltype.RefInner)
+	inner, ok := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), doubled}).(soltype.RefInner)
 	require.True(t, ok)
 	ref := borrow(false, c.freshLifetime(0), inner)
 
@@ -357,7 +357,7 @@ func TestBorrowNarrowingKeepsBorrowsWhole(t *testing.T) {
 	c := &Context{}
 	first := borrow(true, c.freshLifetime(0), refObj(t, "{x: number}"))
 	second := borrow(true, c.freshLifetime(0), refObj(t, "{x: string}"))
-	scrutinee := newUnion(nil, []soltype.Type{first, second}, false)
+	scrutinee := newUnion(nil, []soltype.Type{first, second})
 	// The narrowing annotation `mut {x: number}` is an owned mutable cell, a borrow
 	// wrapper with no lifetime.
 	annotation := borrow(true, nil, refObj(t, "{x: number}"))
@@ -443,7 +443,7 @@ func TestBorrowDisjointFromValueAtoms(t *testing.T) {
 // inhabited. A union carrier can reduce to a bare primitive the same way.
 func TestBorrowOverAnUnsettledCarrierIsNotDisjoint(t *testing.T) {
 	c := &Context{}
-	union := newUnion(nil, []soltype.Type{str(), numLit(5)}, false).(soltype.RefInner)
+	union := newUnion(nil, []soltype.Type{str(), numLit(5)}).(soltype.RefInner)
 
 	tests := []struct {
 		name    string
@@ -467,7 +467,7 @@ func TestBorrowOverAnUnsettledCarrierIsNotDisjoint(t *testing.T) {
 func TestBorrowAndPrimitiveJoinKeepsBothMembers(t *testing.T) {
 	c := &Context{}
 	obj := parseType(t, "{x: number}").(soltype.RefInner)
-	joined := newUnion(nil, []soltype.Type{str(), borrow(true, nil, obj)}, false)
+	joined := newUnion(nil, []soltype.Type{str(), borrow(true, nil, obj)})
 	require.Equal(t, "string | mut {x: number}",
 		soltype.PrintAsScheme(c.normalizeDeep(joined, soltype.Positive)))
 }

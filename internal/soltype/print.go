@@ -619,9 +619,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			for _, m := range t.Types {
 				walk(m)
 			}
-			if t.TailBound != nil {
-				walk(t.TailBound)
-			}
 		case *IntersectionType:
 			for _, m := range t.Types {
 				walk(m)
@@ -1023,25 +1020,9 @@ func (p *namedPrinter) printType(t Type) string {
 		// bare shape the user wrote, so it prints verbatim with no elision pass.
 		return p.refBorrowPrefix(t) + p.printTypeMinPrec(t.Inner, precPrefix)
 	case *UnionType:
-		// An inexact union renders a trailing `...` entry, so a union typed
-		// `A | B | ...` round-trips to surface syntax. The inexact tuple,
-		// object, and function arms render their flag the same way.
-		//
-		// A bounded tail renders its bound after a `:`, so `"a" | ... : string`
-		// says the unnamed members are strings. The bound prints at precPrefix, so a
-		// looser bound such as an intersection is parenthesized: `"a" | ... : (string & ¬"a")`.
-		// The `... : R` form round-trips through the parser, which reads the bound as
-		// a primary type after the `:`.
-		parts := make([]string, 0, len(t.Types)+1)
+		parts := make([]string, 0, len(t.Types))
 		for _, m := range t.Types {
 			parts = append(parts, p.printTypeMinPrec(m, precUnion))
-		}
-		if t.Inexact {
-			marker := "..."
-			if t.TailBound != nil {
-				marker += " : " + p.printTypeMinPrec(t.TailBound, precPrefix)
-			}
-			parts = append(parts, marker)
 		}
 		return strings.Join(parts, " | ")
 	case *IntersectionType:

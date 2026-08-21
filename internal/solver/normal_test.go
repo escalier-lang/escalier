@@ -416,7 +416,7 @@ func TestNegationRoundTrip(t *testing.T) {
 			// least one of them.
 			name: "a union of two complements whose operands are disjoint is the top",
 			in: func(t *testing.T) soltype.Type {
-				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")}, false)
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")})
 			},
 			want: "unknown",
 		},
@@ -452,7 +452,7 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 		{
 			name: "a complement beside a positive atom",
 			in: func(t *testing.T) soltype.Type {
-				return newUnion(nil, []soltype.Type{parseType(t, "number"), notSrc(t, "{x: number}")}, false)
+				return newUnion(nil, []soltype.Type{parseType(t, "number"), notSrc(t, "{x: number}")})
 			},
 			want: "number | ¬{x: number}",
 		},
@@ -462,7 +462,7 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 			// the surface type is a join. ¬number | ¬5 is ¬(number & 5).
 			name: "two complements of one family narrow inside the negated part",
 			in: func(t *testing.T) soltype.Type {
-				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "5")}, false)
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "5")})
 			},
 			want: "¬5",
 		},
@@ -474,7 +474,7 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 				return newUnion(nil, []soltype.Type{
 					notSrc(t, "{x: number, ...}"),
 					notSrc(t, "{y: number, ...}"),
-				}, false)
+				})
 			},
 			want: "¬{x: number, y: number, ...}",
 		},
@@ -485,7 +485,7 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 			// disjunct drops and an empty CNF is the top.
 			name: "a disjunct whose negated part is uninhabited drops",
 			in: func(t *testing.T) soltype.Type {
-				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")}, false)
+				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "string")})
 			},
 			want: "unknown",
 		},
@@ -541,11 +541,11 @@ func TestDeMorgan(t *testing.T) {
 			a, b := tt.operands(t, c)
 
 			meet := newIntersection(nil, []soltype.Type{a, b})
-			join := newUnion(nil, []soltype.Type{a, b}, false)
+			join := newUnion(nil, []soltype.Type{a, b})
 			negA, negB := not(a), not(b)
 
 			require.Equal(t,
-				normDNF(c, newUnion(nil, []soltype.Type{negA, negB}, false)),
+				normDNF(c, newUnion(nil, []soltype.Type{negA, negB})),
 				normDNF(c, not(meet)),
 				"¬(A & B) and ¬A | ¬B normalize alike")
 			require.Equal(t,
@@ -554,41 +554,6 @@ func TestDeMorgan(t *testing.T) {
 				"¬(A | B) and ¬A & ¬B normalize alike")
 		})
 	}
-}
-
-// TestDeMorganOverAnInexactUnion pins the one shape the law above does not cover.
-//
-// An inexact union `A | B | ...` denotes A, B, and an open tail of unknown
-// content, so complementing it excludes that tail too:
-//
-//	¬(A | B | ...)  is  ¬A ∩ ¬B ∩ ¬tail
-//
-// which is strictly narrower than `¬A & ¬B`. The two are therefore different
-// types, and no flag on the intersection would make them agree. Inexactness on a
-// union WIDENS it by an unknown member, and the complement of that is a
-// NARROWING by an unknown set — something an intersection has no slot for.
-// IntersectionType carries no exactness marker at all, since exactness is a
-// property of the result rather than of the meet.
-//
-// So the complement keeps the whole union as one negated atom, tail and all,
-// rather than distributing over its members and silently dropping the tail.
-// Threading the marker through normalization is PR7's remit (#1064).
-func TestDeMorganOverAnInexactUnion(t *testing.T) {
-	c := &Context{}
-	a, b := parseType(t, "{x: number}"), parseType(t, "{y: number}")
-	meetOfComplements := normDNF(c, newIntersection(nil, []soltype.Type{not(a), not(b)}))
-	require.Equal(t, "¬({x: number} | {y: number})", meetOfComplements)
-
-	// The exact union obeys the law, which is what TestDeMorgan states over its
-	// record row. Repeating it here is what makes the rows below a statement about
-	// the marker rather than about the members.
-	closed := newUnion(nil, []soltype.Type{a, b}, false)
-	require.Equal(t, meetOfComplements, normDNF(c, not(closed)))
-
-	// The inexact union does not, and its complement still carries the tail.
-	open := newUnion(nil, []soltype.Type{a, b}, true)
-	require.Equal(t, "¬({x: number} | {y: number} | ...)", normDNF(c, not(open)))
-	require.NotEqual(t, meetOfComplements, normDNF(c, not(open)))
 }
 
 // TestUnreducedAtomsKeepTheirOpenMarkerApart guards the one pair widerByExactness must
@@ -643,28 +608,19 @@ func TestComplementsKeepTheOpenMarker(t *testing.T) {
 	require.Equal(t, "¬{x: number, ...}",
 		normDNF(c, newIntersection(nil, []soltype.Type{not(closed), not(open)})))
 	require.Equal(t, "¬{x: number}",
-		normDNF(c, newUnion(nil, []soltype.Type{not(closed), not(open)}, false)))
+		normDNF(c, newUnion(nil, []soltype.Type{not(closed), not(open)})))
 }
 
-// TestExactUnionNormalizesClosed contrasts a closed union with the open union of
-// the same members. `"a" | "b"` names its whole member set, so normalization takes
-// it apart into one conjunct per member. `"a" | "b" | ...` also admits an open tail
-// that no atom stands for, so it stays whole.
-//
-// The conjunct counts are the substantive half. A meet distributes over the closed
-// union's members and cannot distribute over the open one, which is the cost the
-// mkDNF arm's comment weighs.
+// TestExactUnionNormalizesClosed pins that a union names its whole member set, so
+// normalization takes it apart into one conjunct per member and a meet distributes over
+// those members. `"a" | "b"` becomes two conjuncts.
 func TestExactUnionNormalizesClosed(t *testing.T) {
 	c := &Context{}
 	members := parseTypes(t, `"a"`, `"b"`)
-	closed := newUnion(nil, members, false)
-	open := newUnion(nil, members, true)
+	closed := newUnion(nil, members)
 
 	require.Equal(t, `"a" | "b"`, normDNF(c, closed))
 	require.Len(t, c.mkDNF(closed, soltype.Positive).Conjuncts, 2)
-
-	require.Equal(t, `"a" | "b" | ...`, normDNF(c, open))
-	require.Len(t, c.mkDNF(open, soltype.Positive).Conjuncts, 1)
 }
 
 // TestValueAtomsAnswerEqualAtoms checks the value-family merges on their own,
@@ -727,29 +683,6 @@ func TestUnionKeepsUnmergeableRecords(t *testing.T) {
 	require.Equal(t, "{x: number} | {y: number}", soltype.Print(n.toType()))
 }
 
-// TestInexactUnionStaysOneAtom covers the open tail an `A | B | ...` carries. The
-// tail has no atom to stand for it, so the union is not taken apart and the DNF
-// holds one conjunct rather than one per written member.
-func TestInexactUnionStaysOneAtom(t *testing.T) {
-	c := &Context{}
-	open := newUnion(nil, parseTypes(t, "number", "string"), true)
-
-	d := c.mkDNF(open, soltype.Positive)
-	require.Len(t, d.Conjuncts, 1)
-	require.Len(t, d.Conjuncts[0].Lnf.Atoms, 1)
-	require.Equal(t, "number | string | ...", soltype.Print(d.toType()))
-
-	n := c.mkCNF(open, soltype.Negative)
-	require.Len(t, n.Disjuncts, 1)
-	require.Len(t, n.Disjuncts[0].Rnf.Atoms, 1)
-	require.Equal(t, "number | string | ...", soltype.Print(n.toType()))
-
-	// The exact union of the same members IS taken apart, which is what makes the
-	// two rows above a statement about the marker rather than about the members.
-	closed := newUnion(nil, parseTypes(t, "number", "string"), false)
-	require.Len(t, c.mkDNF(closed, soltype.Positive).Conjuncts, 2)
-}
-
 // TestVariablesStayInTheirSlots checks that a type variable is recorded as a
 // variable rather than as a structural atom, positively or negatively, and that
 // holding one in both slots makes the conjunct uninhabited.
@@ -773,7 +706,7 @@ func TestVariablesStayInTheirSlots(t *testing.T) {
 	require.Equal(t, "never", normDNF(c, both))
 
 	// `v ∪ ¬v` admits every value, so the disjunct is dropped and the CNF is empty.
-	either := newUnion(nil, []soltype.Type{v, not(v)}, false)
+	either := newUnion(nil, []soltype.Type{v, not(v)})
 	require.Empty(t, c.mkCNF(either, soltype.Negative).Disjuncts)
 	require.Equal(t, "unknown", normCNF(c, either))
 }
@@ -828,7 +761,7 @@ func TestNominalAtomsStayDistinct(t *testing.T) {
 			for i, name := range order {
 				members[i] = classTag(name)
 			}
-			d := c.mkDNF(&soltype.UnionType{Types: members, Inexact: false}, soltype.Positive)
+			d := c.mkDNF(&soltype.UnionType{Types: members}, soltype.Positive)
 			require.Len(t, d.Conjuncts, 3, "order %v", order)
 			require.Equal(t, "Arc | Line | Point", soltype.Print(d.toType()), "order %v", order)
 		}
@@ -840,7 +773,7 @@ func TestNominalAtomsStayDistinct(t *testing.T) {
 		withoutPoint := newIntersection(nil, []soltype.Type{shape, not(point)})
 		withoutLine := newIntersection(nil, []soltype.Type{shape, not(line)})
 
-		d := c.mkDNF(newUnion(nil, []soltype.Type{withoutPoint, withoutLine}, false), soltype.Positive)
+		d := c.mkDNF(newUnion(nil, []soltype.Type{withoutPoint, withoutLine}), soltype.Positive)
 		require.Len(t, d.Conjuncts, 2)
 		require.Equal(t,
 			"{a: number, ...} & ¬Line | {a: number, ...} & ¬Point",
@@ -957,8 +890,8 @@ func TestCNFFusesDisjuncts(t *testing.T) {
 		// atom, string against boolean, and those meet to `never`, which is the
 		// identity of the union the atom sits in, so the position drops.
 		in := newIntersection(nil, []soltype.Type{
-			newUnion(nil, parseTypes(t, "number", "string"), false),
-			newUnion(nil, parseTypes(t, "number", "boolean"), false),
+			newUnion(nil, parseTypes(t, "number", "string")),
+			newUnion(nil, parseTypes(t, "number", "boolean")),
 		})
 		require.Equal(t, "number", normCNF(c, in))
 	})
@@ -971,8 +904,8 @@ func TestCNFFusesDisjuncts(t *testing.T) {
 		x := parseType(t, "{x: number}")
 		y := parseType(t, "{y: number}")
 		in := newIntersection(nil, []soltype.Type{
-			newUnion(nil, []soltype.Type{not(x), parseType(t, "number")}, false),
-			newUnion(nil, []soltype.Type{not(newIntersection(nil, []soltype.Type{x, y})), parseType(t, "number")}, false),
+			newUnion(nil, []soltype.Type{not(x), parseType(t, "number")}),
+			newUnion(nil, []soltype.Type{not(newIntersection(nil, []soltype.Type{x, y})), parseType(t, "number")}),
 		})
 		require.Equal(t, "number | ¬{x: number}", normCNF(c, in))
 	})
@@ -1060,7 +993,7 @@ func TestCanonicalOrderIsPermutationStable(t *testing.T) {
 				parts := parseTypes(t, order...)
 				var raw soltype.Type
 				if tt.union {
-					raw = &soltype.UnionType{Types: parts, Inexact: false}
+					raw = &soltype.UnionType{Types: parts}
 				} else {
 					raw = &soltype.IntersectionType{Types: parts}
 				}
@@ -1146,14 +1079,14 @@ func TestDeepNormalizeKeepsBorrows(t *testing.T) {
 		{
 			name: "an inner that normalizes to a borrowable type is rewritten",
 			build: func(t *testing.T) soltype.Type {
-				return mutRef(newUnion(nil, parseTypes(t, "{x: number, ...}", "{y: number, ...}"), false).(soltype.RefInner))
+				return mutRef(newUnion(nil, parseTypes(t, "{x: number, ...}", "{y: number, ...}")).(soltype.RefInner))
 			},
 			want: "mut ({x: number, ...} | {y: number, ...})",
 		},
 		{
 			name: "an inner that normalizes to a bare primitive keeps the borrow as written",
 			build: func(t *testing.T) soltype.Type {
-				return mutRef(newUnion(nil, parseTypes(t, "number", "5"), false).(soltype.RefInner))
+				return mutRef(newUnion(nil, parseTypes(t, "number", "5")).(soltype.RefInner))
 			},
 			want: "mut (number | 5)",
 		},
@@ -1199,7 +1132,7 @@ func TestDeepNormalizeKeepsKnots(t *testing.T) {
 		return newUnion(nil, []soltype.Type{
 			exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
 			exactObj(propElem("head", num()), propElem("tail", ref)),
-		}, false)
+		})
 	})
 
 	t.Run("the knot itself is handed back", func(t *testing.T) {
@@ -1214,7 +1147,7 @@ func TestDeepNormalizeKeepsKnots(t *testing.T) {
 		members := newUnion(nil, []soltype.Type{
 			exactObj(propElem("head", num()), propElem("tail", &soltype.UndefinedType{})),
 			exactObj(propElem("head", num()), propElem("tail", knot)),
-		}, false)
+		})
 		require.Equal(t,
 			"{head: number, tail: undefined} | {head: number, tail: μX0.({head: number, tail: undefined} | {head: number, tail: X0})}",
 			soltype.Print(c.mkDeepDNF(members, soltype.Positive).toType()))

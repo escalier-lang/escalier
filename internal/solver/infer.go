@@ -524,8 +524,6 @@ func (c *checker) blameConstraintErrors(n ast.Node, errs []SolverError) {
 			err.prov, err.site = c.prov, n
 		case *InexactTupleIntoExactError:
 			err.prov, err.site = c.prov, n
-		case *InexactUnionIntoExactError:
-			err.prov, err.site = c.prov, n
 		case *ExtraPropertyError:
 			err.prov, err.site = c.prov, n
 		case *OptionalPropertyError:

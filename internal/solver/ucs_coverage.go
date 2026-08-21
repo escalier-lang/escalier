@@ -284,17 +284,13 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	}
 	if u, isUnion := carrier.(*soltype.UnionType); isUnion {
 		uncovered := c.uncoveredMembers(scope, u, cov)
-		// An inexact union carries an open tail no tag names, so it needs a catch-all whatever
-		// its members. The members it does name are still worth reporting, since each one takes
-		// a branch of its own that the catch-all would otherwise swallow.
-		if uncovered.empty() && !u.Inexact {
+		// A closed union is exhaustive once its members are covered. Openness is carried by a
+		// primitive scrutinee instead, whose catch-all requirement the infiniteInhabitants rule
+		// below handles.
+		if uncovered.empty() {
 			return
 		}
-		err := uncovered.errorAt(split.Origin)
-		if u.Inexact {
-			err.OpenTail = u
-		}
-		c.report(err)
+		c.report(uncovered.errorAt(split.Origin))
 		return
 	}
 	inexact, isStructural := structuralInexact(carrier)

@@ -176,38 +176,9 @@ func (c *Context) mkDNF(t soltype.Type, pol soltype.Polarity) DNF {
 	case *soltype.UnknownType:
 		return dnfTop()
 	case *soltype.UnionType:
-		if t.Inexact && t.TailBound == nil {
-			// `A | B | ...` names A, B, and an open tail nothing bounds. The tail has
-			// no atom to stand for it, so taking the union apart would drop it and hand
-			// back a type narrower than the source wrote. The whole node stays one atom,
-			// which round-trips exactly and keeps the flag.
-			//
-			// The opaque atom is the final shape rather than a placeholder, and it costs
-			// only DISTRIBUTION. `(A | B | ...) & C` stays a two-atom meet instead of
-			// becoming `(A & C) | (B & C) | ...`. Two alternatives were weighed and both
-			// are worse. An atom of its own for the tail would have to denote ⊤, which
-			// absorbs the named members and turns `A | B | ...` into `unknown`, losing
-			// exactly what the diagnostics print. An `Open` flag on the DNF would
-			// distribute, but nothing says what the tail meets C to, so the mark would
-			// have to be polarity-aware to stay sound. Neither buys a verdict the opaque
-			// atom gets wrong. The full comparison is on escalier-lang/escalier#1064.
-			return dnfAtom(t)
-		}
 		out := DNF{Conjuncts: nil}
 		for _, m := range t.Types {
 			out = dnfOr(out, c.mkDNF(m, pol))
-		}
-		if t.TailBound != nil {
-			// A bounded tail holds some unknown set of the bound's values, so no value
-			// outside the bound reaches the union and every value inside it might. That
-			// makes the bound one more disjunct for a decision about which values the
-			// union admits. `5 <: ("a" | ... : string)` fails and `"z" <: ("a" | ... : string)`
-			// holds, both by the ordinary union rule once the bound joins the members.
-			//
-			// The bound joins the DNF rather than the member list, so the named members
-			// stay enumerable for keyof and mapped types. Adding it to the members would
-			// let subsumption drop `"a"` against `string` and leave nothing to iterate.
-			out = dnfOr(out, c.mkDNF(t.TailBound, pol))
 		}
 		return DNF{Conjuncts: c.canonicalConjuncts(out.Conjuncts)}
 	case *soltype.IntersectionType:
@@ -245,17 +216,9 @@ func (c *Context) mkCNF(t soltype.Type, pol soltype.Polarity) CNF {
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.UnionType:
-		if t.Inexact && t.TailBound == nil {
-			// An unbounded tail has no atom to stand for it; see the mkDNF arm.
-			return cnfAtom(t)
-		}
 		out := cnfBot()
 		for _, m := range t.Types {
 			out = cnfOr(out, c.mkCNF(m, pol))
-		}
-		if t.TailBound != nil {
-			// A bounded tail contributes its bound; see the mkDNF arm.
-			out = cnfOr(out, c.mkCNF(t.TailBound, pol))
 		}
 		return CNF{Disjuncts: c.canonicalDisjuncts(out.Disjuncts)}
 	case *soltype.NegationType:
@@ -1597,7 +1560,7 @@ func (c *Context) meetTypes(a, b soltype.Type) soltype.Type {
 // joinTypes is the join twin of meetTypes, the one a fused arrow's domain and a
 // widened record field are written from.
 func (c *Context) joinTypes(a, b soltype.Type) soltype.Type {
-	joined := c.mkDNF(newUnion(nil, []soltype.Type{a, b}, false), soltype.Positive).toType()
+	joined := c.mkDNF(newUnion(nil, []soltype.Type{a, b}), soltype.Positive).toType()
 	c.recordFusion(joined, a, b)
 	return joined
 }
@@ -2294,7 +2257,7 @@ func (d DNF) toType() soltype.Type {
 	for i, conj := range d.Conjuncts {
 		parts[i] = conj.toType()
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts)
 }
 
 // toType renders a CNF as the intersection its disjuncts denote. An empty CNF is
@@ -2340,7 +2303,7 @@ func (a Disjunct) toType() soltype.Type {
 	for _, v := range sortedVars(a.NVars) {
 		parts = append(parts, negate(v))
 	}
-	return newUnion(nil, parts, false)
+	return newUnion(nil, parts)
 }
 
 // toType renders an intersection of atoms. An empty list is `unknown`.
@@ -2350,7 +2313,7 @@ func (l LhsNf) toType() soltype.Type {
 
 // toType renders a union of atoms. An empty list is `never`.
 func (r RhsNf) toType() soltype.Type {
-	return newUnion(nil, r.Atoms, false)
+	return newUnion(nil, r.Atoms)
 }
 
 // negate wraps a rendered part in a complement. No simplification is needed at

@@ -80,18 +80,18 @@ func (e *typeEvaluator) reduceIntersection(t *soltype.IntersectionType) soltype.
 // `"a" ∩ keyof T`. Once T grounds to an object carrying "a" and "b", that meet reads
 // `"a" ∩ ("a" | "b")`. Folding it to `"a"` is what leaves a mapped type over it a key to iterate.
 //
-// A member with an open key set stops the fold. Such a set names some of its keys and leaves the
-// rest to a tail, so a key the other members name may or may not be among them, and the meet is
-// undecided. The whole meet stays as it is in that case, which is what an undecided key set reduces
-// to elsewhere too.
+// A member with an open key set stops the fold. Such a set is a primitive top — `string` or
+// `number` — for which literalKeys reports false, so a key the other members name may or may not
+// be among the values it admits, and the meet is undecided. The whole meet stays as it is in that
+// case, which is what an undecided key set reduces to elsewhere too.
 func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 	if len(members) < 2 {
 		return nil, false
 	}
 	var shared []soltype.Type
 	for i, m := range members {
-		keys, tail, ok := literalKeys(m)
-		if !ok || tail.open {
+		keys, ok := literalKeys(m)
+		if !ok {
 			return nil, false
 		}
 		if i == 0 {
@@ -102,7 +102,7 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 		}
 		shared = intersectTypes(shared, keys)
 	}
-	return newUnion(nil, shared, false), true
+	return newUnion(nil, shared), true
 }
 
 // reduceDifference settles a meet carrying at least one complement — `A ∩ ¬B`, the values of A that
@@ -127,16 +127,10 @@ func meetKeySets(members []soltype.Type) (soltype.Type, bool) {
 // operand grounds. That residual is the `∩ ¬` form itself rather than a stuck operator, which is
 // what a caller such as a mapped-type key set or a constraint reads.
 //
-// An inexact positive side names only some members; the rest sit in an open tail, and what the
-// exclusion takes from them depends on the tail's bound.
-//
-// An unbounded tail says nothing about its members, so the exclusion cannot be worked out. The
-// result keeps the tail, so `("a" | "b" | ...) ∩ ¬"a"` reduces to `"b" | ...`. With no named member
-// surviving either, the difference stays as it arrived rather than collapsing to `never`.
-//
-// A bounded tail draws its members from its bound, so excluding from the bound excludes from every
-// member at once. `keyof {a: X, ...}` is `"a" | ...string`, so `∩ ¬"a"` reduces to
-// `...(string & ¬"a")`. A bound the exclusion empties leaves an exact union of the survivors.
+// The positive side is a closed union or a single member. Each member is settled against the
+// exclusion on its own, and the survivors union. `("a" | "b") ∩ ¬"a"` reduces to `"b"`, and a
+// single member that the exclusion cuts into entirely, such as `string ∩ ¬"a"` where the base is
+// the whole `string`, keeps the complement as `string & ¬"a"`.
 func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 	positives := make([]soltype.Type, 0, len(members))
 	var excluded []soltype.Type
@@ -152,25 +146,14 @@ func (e *typeEvaluator) reduceDifference(members []soltype.Type) soltype.Type {
 		base = newIntersection(nil, positives)
 	}
 	if groundDifference(base, excluded) {
-		baseMembers, tail := unionMembers(base)
-		survivors := make([]soltype.Type, 0, len(baseMembers))
-		for _, m := range baseMembers {
+		members := unionMembers(base)
+		survivors := make([]soltype.Type, 0, len(members))
+		for _, m := range members {
 			if narrowed, keep := e.excludeFrom(m, excluded); keep {
 				survivors = append(survivors, narrowed)
 			}
 		}
-		if tail.bound != nil && condOperandGround(tail.bound) {
-			if narrowed, keep := e.excludeFrom(tail.bound, excluded); keep {
-				tail.bound = narrowed
-			} else {
-				tail = unionTail{}
-			}
-		}
-		// An unbounded tail with no surviving member to ride on falls through to the residual
-		// below. A bounded one needs no member, since its bound says what it holds.
-		if len(survivors) > 0 || !tail.open || tail.bound != nil {
-			return newUnionWithTail(nil, survivors, tail)
-		}
+		return newUnion(nil, survivors)
 	}
 	return newIntersection(nil, append([]soltype.Type{base}, complementsOf(excluded)...))
 }

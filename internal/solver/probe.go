@@ -414,7 +414,7 @@ func (c *Context) trialCaptures(sub, super soltype.Type, vars []*soltype.TypeVar
 // calls constrain while a trial is still open.
 func capturedBound(v *soltype.TypeVarType) soltype.Type {
 	if len(v.LowerBounds) > 0 {
-		return newUnion(nil, v.LowerBounds, false)
+		return newUnion(nil, v.LowerBounds)
 	}
 	if len(v.UpperBounds) > 0 {
 		return newIntersection(nil, v.UpperBounds)

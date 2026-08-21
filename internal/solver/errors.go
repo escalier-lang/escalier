@@ -157,20 +157,6 @@ type InexactTupleIntoExactError struct {
 	site       ast.Node
 }
 
-// InexactUnionIntoExactError is the union twin of InexactIntoExactError. An
-// inexact union `A | B | ...` carries an open tail of unknown additional
-// members, so it cannot flow into a closed target. A closed target is either
-// an exact union or any non-union concrete the open tail could violate. The
-// base form lands in M6 PR2. The flag itself and the parser surface for
-// `A | B | ...` land in PR4. Until then the rule fires only against an
-// internally-built inexact union.
-type InexactUnionIntoExactError struct {
-	Sub   *soltype.UnionType
-	Super soltype.Type
-	prov  NodeResolver
-	site  ast.Node
-}
-
 // ExtraPropertyError fires on ObjectType <: ObjectType when the super is exact and
 // the sub carries a property the super does not declare — width is rejected against
 // an exact target. One error fires per extra property, carrying its name.
@@ -533,7 +519,6 @@ func (*SpreadNotObjectError) isSolverError()         {}
 func (*MissingPropertyError) isSolverError()         {}
 func (*InexactIntoExactError) isSolverError()        {}
 func (*InexactTupleIntoExactError) isSolverError()   {}
-func (*InexactUnionIntoExactError) isSolverError()   {}
 func (*ExtraPropertyError) isSolverError()           {}
 func (*ExtraElementError) isSolverError()            {}
 func (*OptionalPropertyError) isSolverError()        {}
@@ -596,11 +581,6 @@ func (e *InexactIntoExactError) Span() ast.Span {
 	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
 }
 func (e *InexactIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
-
-func (e *InexactUnionIntoExactError) Span() ast.Span {
-	return spanOfFirst(e.prov, e.site, e.Sub, e.Super)
-}
-func (e *InexactUnionIntoExactError) Related() []ast.Span { return relatedOf(e.prov, e.Super) }
 
 func (e *ExtraPropertyError) Span() ast.Span {
 	// The extra property lives on the sub (source); blame it, degrade to the super
@@ -2592,10 +2572,6 @@ func (e *InexactTupleIntoExactError) Message() string {
 	return "cannot constrain inexact tuple <: exact tuple"
 }
 
-func (e *InexactUnionIntoExactError) Message() string {
-	return fmt.Sprintf("cannot constrain %s <: %s", describe(e.Sub), describe(e.Super))
-}
-
 func (e *ExtraPropertyError) Message() string {
 	return "object has extra property: " + e.Name
 }
@@ -3000,34 +2976,7 @@ func describe(t soltype.Type) string {
 	case *soltype.ErrorType:
 		return "error"
 	case *soltype.UnionType:
-		s := joinDescribe(t.Types, " | ")
-		if !t.Inexact {
-			return s
-		}
-		// An inexact union has an open tail. The marker follows the members so a
-		// diagnostic naming the union matches the printer's surface form. The tail's
-		// bound follows the marker after a `:`, since the bound is what decides the
-		// constraint. `"a" | ... : string` rejects `5` where `"a" | ...` accepts it, and
-		// a message rendering both the same way leaves the reader no way to tell which
-		// rule fired. A union with no named member renders as the marker alone, since a
-		// leading `" | "` would read as an empty first member.
-		marker := "..."
-		if t.TailBound != nil {
-			// A union or intersection bound is parenthesized, since its `|` or `&` would
-			// otherwise bind past the `... :` and `... : string & ¬"a"` read back as a
-			// member of the enclosing union. The NegationType arm below parenthesizes for
-			// the same reason.
-			bound := describe(t.TailBound)
-			switch t.TailBound.(type) {
-			case *soltype.UnionType, *soltype.IntersectionType:
-				bound = "(" + bound + ")"
-			}
-			marker += " : " + bound
-		}
-		if len(t.Types) == 0 {
-			return marker
-		}
-		return s + " | " + marker
+		return joinDescribe(t.Types, " | ")
 	case *soltype.IntersectionType:
 		return joinDescribe(t.Types, " & ")
 	case *soltype.NegationType:

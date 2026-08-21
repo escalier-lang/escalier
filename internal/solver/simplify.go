@@ -587,22 +587,12 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 // whether anything was removed. A union loses each arm that is a subtype of n,
 // since meeting such an arm with ¬n leaves no value. A non-union p that is itself a
 // subtype of n leaves nothing at all, which excludeArms returns as `never`.
-//
-// A union whose open tail carries no bound is left as written. It is top, so none of
-// its arms bounds the type and dropping one would discard a named member for no gain.
-//
-// A bounded tail does bound the type, so it is weighed like an arm. The tail goes away
-// when ¬n rules out every value its bound admits, and otherwise stays as written, since
-// excludeArms only ever drops parts.
 func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 	u, isUnion := p.(*soltype.UnionType)
 	if !isUnion {
 		if concreteMember(p) && subtypeHolds(c, p, n) {
 			return &soltype.NeverType{}, true
 		}
-		return p, false
-	}
-	if u.Inexact && u.TailBound == nil {
 		return p, false
 	}
 	arms := make([]soltype.Type, 0, len(u.Types))
@@ -612,14 +602,10 @@ func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 		}
 		arms = append(arms, arm)
 	}
-	tail := tailOf(u)
-	if tail.bound != nil && concreteMember(tail.bound) && subtypeHolds(c, tail.bound, n) {
-		tail = unionTail{}
-	}
-	if len(arms) == len(u.Types) && tail.open == u.Inexact {
+	if len(arms) == len(u.Types) {
 		return p, false
 	}
-	// collapseUnion returns `never` for an empty arm list under a tail that dropped,
-	// which is the caller's signal that the whole meet is uninhabited.
-	return collapseUnion(arms, tail, false), true
+	// collapseUnion returns `never` for an empty arm list, which is the caller's signal that the
+	// whole meet is uninhabited.
+	return collapseUnion(arms, false), true
 }

@@ -119,10 +119,10 @@ func joinGenerators(c *Context, gs []*soltype.GeneratorType) (*soltype.Generator
 		throws[i] = g.ThrowsOrNever()
 	}
 	return &soltype.GeneratorType{
-		Yield:  newUnion(c, yields, false),
-		Ret:    newUnion(c, rets, false),
+		Yield:  newUnion(c, yields),
+		Ret:    newUnion(c, rets),
 		Next:   newIntersection(c, nexts),
-		Throws: newUnion(c, throws, false),
+		Throws: newUnion(c, throws),
 		Async:  gs[0].Async,
 	}, true
 }

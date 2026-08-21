@@ -122,7 +122,7 @@ func (c *checker) iterationRaise(t soltype.Type) (soltype.Type, bool) {
 		if len(raises) == 0 {
 			return nil, false
 		}
-		return newUnion(c.ctx, raises, false), true
+		return newUnion(c.ctx, raises), true
 	}
 	return nil, false
 }
@@ -168,7 +168,7 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 			}
 			elems = append(elems, e)
 		}
-		return newUnion(c.ctx, elems, t.Inexact), true
+		return newUnion(c.ctx, elems), true
 	}
 	return nil, false
 }
@@ -200,7 +200,7 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		if t.Inexact {
 			return &soltype.UnknownType{}, true
 		}
-		return newUnion(c.ctx, t.Elems, false), true
+		return newUnion(c.ctx, t.Elems), true
 	case *soltype.UnionType:
 		elems := make([]soltype.Type, 0, len(t.Types))
 		for _, branch := range t.Types {
@@ -210,7 +210,7 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 			}
 			elems = append(elems, e)
 		}
-		return newUnion(c.ctx, elems, t.Inexact), true
+		return newUnion(c.ctx, elems), true
 	}
 	return nil, false
 }

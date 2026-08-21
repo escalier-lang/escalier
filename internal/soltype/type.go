@@ -878,31 +878,14 @@ type UnknownType struct{}
 // legal `constrain` inputs (M6 PR2), writable annotations (M6 PR2), and the
 // subjects of a normalization pass (M6 PR1).
 //
-// UnionType.Inexact flags whether the union is open. A bare `A | B` is
-// exact, so its inhabitants are exactly A ∪ B. An `A | B | ...` written with
-// a trailing `...` is inexact: at least these, with an open tail standing for
-// members the type does not name. The flag is Inexact rather than Exact so the
-// zero value is exact, matching the ObjectType, TupleType, and FuncType
-// convention. IntersectionType carries no exactness flag, since exactness is a
-// property of the result rather than the meet.
-//
-// TailBound says what the tail's unnamed members may be. See the field comment.
+// A union is always closed: its inhabitants are exactly the union of its
+// members, so `A | B` admits an A or a B and nothing else. Openness — a value
+// that may fall outside the named members — is written with the primitive top of
+// the domain instead: `string` for object keys, `number` for tuple indices,
+// `unknown` for arbitrary values. IntersectionType likewise carries no exactness
+// flag, since exactness is a property of the result rather than the meet.
 type UnionType struct {
 	Types []Type
-	// Inexact tracks the trailing `...` marker. The zero value is exact.
-	Inexact bool
-	// TailBound names the type the tail's unnamed members are drawn from, so
-	// `"a" | ... : string` reads as `"a"` together with some unknown set of strings.
-	// It is nil on an exact union and may be nil on an inexact one, which leaves
-	// the tail unbounded. An unbounded tail admits every value, which makes the
-	// whole union the top of the subtype lattice.
-	//
-	// A bound keeps the named members enumerable while still saying what the rest
-	// can be. `keyof {a: X, ...}` is `"a" | ... : string`, so a mapped type still has
-	// "a" to iterate and the key set still rejects `5`. Flattening the bound into
-	// the member list instead would give `"a" | string`, which subsumes to `string`
-	// and loses both.
-	TailBound Type
 }
 type IntersectionType struct{ Types []Type }
 
@@ -990,7 +973,7 @@ type AliasType struct {
 // until then a `keyof T` over a type parameter stays symbolic and renders `keyof T`.
 // Inexact records whether the operand's key set is open, the seed for exactness
 // propagation through reduction (M9 PR8). The flag is Inexact rather than Exact so the
-// zero value is exact, matching the ObjectType, TupleType, FuncType, and UnionType
+// zero value is exact, matching the ObjectType, TupleType, and FuncType
 // convention. It is carried through the visitor and left unread until that work lands.
 type KeyofType struct {
 	Operand Type
@@ -1481,9 +1464,7 @@ func LevelOf(t Type) int {
 	// union annotation). Coalesced-output unions/intersections hold no live vars, so
 	// both arms still return 0 for them.
 	case *UnionType:
-		// The tail's bound is a member the union does not list, so it counts toward the
-		// level the same way a written member does.
-		return max(maxMemberLevel(t.Types), LevelOf(t.TailBound))
+		return maxMemberLevel(t.Types)
 	case *IntersectionType:
 		return maxMemberLevel(t.Types)
 	case *NegationType:

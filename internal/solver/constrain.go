@@ -130,7 +130,7 @@ func gatherRestParams(params []*soltype.FuncParam) []soltype.Type {
 	for i, p := range params {
 		elems[i] = p.Type
 		if p.Optional {
-			elems[i] = newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}}, false)
+			elems[i] = newUnion(nil, []soltype.Type{p.Type, &soltype.UndefinedType{}})
 		}
 	}
 	return elems
@@ -695,12 +695,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// falls through to the var arms instead of decomposing, so the whole
 	// union/intersection is recorded as one bound.
 
-	// (A | B) <: super ⟹ A <: super AND B <: super. An inexact sub against a
-	// closed super also emits one InexactUnionIntoExactError for the open tail.
-	// The unknown rule above already handled an unknown super, so the only open super
-	// reachable here is an inexact union. When super is a TypeVar, fall through to the
-	// superVar arm so the whole union, including its Inexact flag, is recorded as one
-	// lower bound on the var.
+	// (A | B) <: super ⟹ A <: super AND B <: super. When super is a TypeVar, fall through to
+	// the superVar arm so the whole union is recorded as one lower bound on the var.
 	if subU, ok := sub.(*soltype.UnionType); ok {
 		if _, superIsVar := super.(*soltype.TypeVarType); !superIsVar {
 			// M5 D4: a field-read or destructure requirement against a union reads the
@@ -711,29 +707,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return errs
 			}
 			var errs []SolverError
-			if subU.Inexact && subU.TailBound == nil {
-				// Nothing says what an unbounded tail holds, so a closed super cannot
-				// absorb it and the mismatch is reported once for the whole union.
-				// Only a super whose own tail is unbounded can absorb this one, since a
-				// bounded tail admits just its bound and an unbounded sub tail may hold
-				// anything. `("a" | ...) <: ("a" | "b" | ... : string)` is therefore rejected.
-				closed := true
-				if s, ok := super.(*soltype.UnionType); ok {
-					closed = !s.Inexact || s.TailBound != nil
-				}
-				if closed {
-					errs = append(errs, &InexactUnionIntoExactError{Sub: subU, Super: super})
-				}
-			}
 			for _, m := range subU.Types {
 				errs = append(errs, c.constrain(m, super, seen, mutCtx)...)
-			}
-			if subU.TailBound != nil {
-				// A bounded tail holds only values of its bound, so the super absorbs the
-				// whole tail exactly when it absorbs that bound. Checking it is what makes
-				// `("a" | ... : string) <: string` hold and `("a" | ... : string) <: ("a" | ... : number)`
-				// fail, the latter because the sub's tail may hold a string the super rejects.
-				errs = append(errs, c.constrain(subU.TailBound, super, seen, mutCtx)...)
 			}
 			return errs
 		}
@@ -775,28 +750,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	// commits `number` and never touches T. `"hi" <: (T | number)` finds no concrete
 	// match and falls through to `"hi" <: T`, recording "hi" as T's lower bound.
 	if supU, ok := super.(*soltype.UnionType); ok {
-		// The second disjunct is what admits a union naming no member of its own. `...string`
-		// still has something to weigh, since its bound admits every string. A union that does
-		// name members enters through the first disjunct, and constrainNF weighs its bound
-		// alongside those members either way.
-		hasCandidate := len(supU.Types) > 0 || supU.TailBound != nil
-		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && hasCandidate {
-			// An unbounded tail has no atom to stand for it, so normalization keeps such a
-			// union whole rather than splitting it into its members. The only pair the layer
-			// could form is then the original goal against itself, which pairPlan skips as
-			// circular, so it returns having weighed nothing. Dropping the tail first gives
-			// the layer an exact union whose members it does take apart, and the tail rule
-			// below covers a sub that matches none of them. Splicing the members out of any
-			// nested union is what keeps a nested tail from putting the flag straight back.
-			//
-			// A bounded tail stays on, since the normal-form layer takes it apart into one
-			// more disjunct and so decides the whole union in one go.
-			named := super
-			if supU.Inexact && supU.TailBound == nil {
-				flat, _ := flattenUnion(supU.Types, unionTail{})
-				named = newUnion(nil, flat, false)
-			}
-			decision := c.constrainNF(sub, named, seen, mutCtx)
+		if _, subIsVar := sub.(*soltype.TypeVarType); !subIsVar && len(supU.Types) > 0 {
+			decision := c.constrainNF(sub, super, seen, mutCtx)
 			if !hasHardError(decision.errs) {
 				// The decision carries any warning a nested trial emitted. Propagate it so a
 				// nested ambiguous union is not silently swallowed.
@@ -824,17 +779,6 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					}
 				}
 				return diags
-			}
-			if supU.Inexact && supU.TailBound == nil {
-				// An unbounded tail admits every value, so a sub that matches no named
-				// member is subsumed by that tail and the constraint holds. This is the
-				// dual of the union-sub arm above, which rejects an inexact sub into a
-				// closed super because that open tail can't be absorbed.
-				//
-				// A bounded tail admits only what its bound does, and the decision above
-				// already weighed the bound, so a sub that got here is outside it. Fall
-				// through to the error.
-				return nil
 			}
 			// No candidate holds, the var members included, and the decomposition's own
 			// diagnostics are dropped for one that names the union the user wrote. Promote
@@ -1768,18 +1712,15 @@ func (c *Context) constrainUnionFieldRead(sub *soltype.UnionType, super soltype.
 				anyUndefined = true
 			}
 		}
-		if !anyValue && !sub.Inexact {
-			// No listed member yields a readable value and there is no open tail to carry the
-			// property, so the read is a constant undefined. Report it like an absent field on a
-			// single object. members is non-empty here, so members[0] is a valid receiver to blame.
+		if !anyValue {
+			// No listed member yields a readable value, so the read is a constant undefined. Report
+			// it like an absent field on a single object. members is non-empty here, so members[0]
+			// is a valid receiver to blame.
 			errs = append(errs, &MissingPropertyError{Sub: members[0], Super: req, Name: prop.Name})
 			continue
 		}
 		if anyUndefined {
 			errs = append(errs, c.constrain(&soltype.UndefinedType{}, prop.Type, seen, mutCtx)...)
-		}
-		if sub.Inexact {
-			errs = append(errs, c.constrain(&soltype.UnknownType{}, prop.Type, seen, mutCtx)...)
 		}
 	}
 	return errs, true

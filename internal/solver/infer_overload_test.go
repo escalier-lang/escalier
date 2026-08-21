@@ -383,7 +383,7 @@ func TestResolveOverloadSurfacesWinningArmWarning(t *testing.T) {
 	// match is ambiguous.
 	tv := c.freshAt(0)
 	arm := &soltype.FuncType{
-		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: newUnion(nil, []soltype.Type{tv, num()}, false)}},
+		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: newUnion(nil, []soltype.Type{tv, num()})}},
 		Ret:    num(),
 	}
 	b := ValueBinding{Schemes: []TypeScheme{monoScheme(arm)}}

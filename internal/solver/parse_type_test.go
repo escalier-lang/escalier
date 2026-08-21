@@ -30,7 +30,7 @@ import (
 // Context, so the result is normalized exactly as the production combine path
 // would produce it. ast.UnionTypeAnn carries no Inexact flag today (that
 // arrives with M6 PR4), so parseType always produces an exact union. A test
-// that needs an inexact union mints one through newUnion(..., true).
+// that needs an inexact union mints one through newUnion(...).
 func parseType(t *testing.T, s string) soltype.Type {
 	t.Helper()
 	return parseTypeIn(t, nil, s)
@@ -52,7 +52,7 @@ func parseTypeIn(t *testing.T, env map[string]soltype.Type, s string) soltype.Ty
 
 // parseTypes is the slice-input variant. It threads each string through
 // parseType and returns the resulting members in input order, so a test can
-// write `newUnion(nil, parseTypes(t, "number", "string"), false)`.
+// write `newUnion(nil, parseTypes(t, "number", "string"))`.
 func parseTypes(t *testing.T, parts ...string) []soltype.Type {
 	t.Helper()
 	out := make([]soltype.Type, len(parts))
@@ -86,7 +86,7 @@ func toSoltype(t *testing.T, env map[string]soltype.Type, ta ast.TypeAnn) soltyp
 		for i, m := range ta.Types {
 			members[i] = toSoltype(t, env, m)
 		}
-		return newUnion(nil, members, false)
+		return newUnion(nil, members)
 	case *ast.IntersectionTypeAnn:
 		members := make([]soltype.Type, len(ta.Types))
 		for i, m := range ta.Types {
