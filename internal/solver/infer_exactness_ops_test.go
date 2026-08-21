@@ -30,16 +30,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: "0 | 1",
 		},
 		{
-			// An inexact tuple has unknown trailing positions, so its index set is open and carries
-			// the indices those positions occupy in a trailing `...`. Those indices are positions,
-			// so the tail is bounded by `number`.
+			// An inexact tuple has unknown trailing positions, so its index set is open. An open set
+			// of positions is exactly `number`, the top of the index domain.
 			name: "KeyofInexactTuple",
 			src: `
 				type Tup = [number, string, ...]
 				type Result = keyof Tup
 			`,
 			wantSymbolic: "keyof Tup",
-			wantExpanded: "0 | 1 | ... : number",
+			wantExpanded: "number",
 		},
 		{
 			// `T[keyof T]` over an exact object reads every key the object declares, and those are
@@ -53,25 +52,27 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: "number | string",
 		},
 		{
-			// `keyof` over an inexact object yields an open key set, and each key the access could
-			// not enumerate holds a value the union does not list, so the value union is open too.
+			// `keyof` over an inexact object yields the open key domain `string`. Reading the object
+			// at a bare `string` reads a key its open tail may hold, so the result is the join of the
+			// named value types with the unknown tail, which is `unknown`.
 			name: "IndexEveryKeyOfInexactObject",
 			src: `
 				type Obj = {a: number, b: string, ...}
 				type Result = Obj[keyof Obj]
 			`,
 			wantSymbolic: "Obj[keyof Obj]",
-			wantExpanded: "number | string | ...",
+			wantExpanded: "unknown",
 		},
 		{
-			// The tuple twin: an inexact tuple's open index set carries into the element union.
+			// The tuple twin: `keyof` of an inexact tuple is `number`, and reading the tuple at a
+			// bare `number` joins its unlisted trailing positions in as `unknown`.
 			name: "IndexEveryIndexOfInexactTuple",
 			src: `
 				type Tup = [number, string, ...]
 				type Result = Tup[keyof Tup]
 			`,
 			wantSymbolic: "Tup[keyof Tup]",
-			wantExpanded: "number | string | ...",
+			wantExpanded: "unknown",
 		},
 		{
 			// An exact target union lists every member, so reading K off each reads every value K
@@ -108,6 +109,17 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 			wantExpanded: `"pad-left" | "pad-right"`,
 		},
 		{
+			// Openness comes from a `string` hole, which stays symbolic through the product and
+			// leaves an open template rather than a union. `pad-${string}` spells every padded
+			// string.
+			name: "TemplateLitStringInterp",
+			src: `
+				type Result = ` + "`pad-${string}`" + `
+			`,
+			wantSymbolic: "`pad-${string}`",
+			wantExpanded: "`pad-${string}`",
+		},
+		{
 			// A string intrinsic maps each member of a closed operand union, and that is every
 			// string the operand names.
 			name: "StringIntrinsicExactOperand",
@@ -120,15 +132,15 @@ func TestInferOperatorExactnessPropagates(t *testing.T) {
 		},
 		{
 			// An intersection carries both operands' members, so its key sets union. An inexact
-			// operand's open key set leaves the whole union open, bounded by `string` because the
-			// keys it did not list are still property names.
+			// operand's open key set is `string`, and unioning that with the other member's named
+			// key leaves `string | "a"`, which denotes `string`.
 			name: "KeyofIntersectionWithInexactMember",
 			src: `
 				type I = {a: number} & {b: string, ...}
 				type Result = keyof I
 			`,
 			wantSymbolic: "keyof I",
-			wantExpanded: `"a" | "b" | ... : string`,
+			wantExpanded: `string | "a"`,
 		},
 		{
 			// `Exact` and `Inexact` are the two operators that run the other way. Every case above
@@ -286,6 +298,8 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: "fn (a: number, ...) -> string",
 		},
 		{
+			// `Inexact` over a union opens it: the marker rides the union node until later work
+			// removes union exactness.
 			name: "InexactUnion",
 			src: `
 				type Color = "red" | "green" | "blue"
@@ -295,15 +309,25 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: `"blue" | "green" | "red" | ...`,
 		},
 		{
-			// Closing a one-member union collapses it to that member, since the wrapper only ever
-			// carried the open tail.
-			name: "ExactSingleMemberUnion",
+			// `Exact` over a union is the identity.
+			name: "ExactUnion",
+			src: `
+				type Color = "red" | "green" | "blue"
+				type Result = Exact<Color>
+			`,
+			wantSymbolic: "Exact<Color>",
+			wantExpanded: `"blue" | "green" | "red"`,
+		},
+		{
+			// An open key set is the primitive `string`, which carries no exactness marker, so
+			// `Exact` over it is the identity.
+			name: "ExactOverOpenKeySet",
 			src: `
 				type Obj = {only: number, ...}
 				type Result = Exact<keyof Obj>
 			`,
 			wantSymbolic: "Exact<keyof Obj>",
-			wantExpanded: `"only"`,
+			wantExpanded: `string`,
 		},
 		{
 			// A primitive names one kind of value with no member list to close, so neither
@@ -386,14 +410,15 @@ func TestInferExactnessIntrinsics(t *testing.T) {
 			wantExpanded: `"a" | "b"`,
 		},
 		{
-			// The dual composition: opening an object's key set opens the key union.
+			// The dual composition: opening an object's key set makes its keyof the open key
+			// domain `string`.
 			name: "KeyofOverInexactOperand",
 			src: `
 				type Obj = {a: number, b: string}
 				type Result = keyof Inexact<Obj>
 			`,
 			wantSymbolic: "keyof Inexact<Obj>",
-			wantExpanded: `"a" | "b" | ... : string`,
+			wantExpanded: `string`,
 		},
 	}
 	for _, tt := range tests {

@@ -915,6 +915,16 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 		Key: t.Key, Keys: keys, Value: t.Value, Name: t.Name, Check: t.Check, Extends: t.Extends,
 		Optional: t.Optional, Readonly: t.Readonly,
 	}
+	// `K in keyof T` over a ground object or non-final class keeps T's named keys and its object
+	// exactness. keyof reduces an inexact object's keys to `string`, which would turn the mapped
+	// type into an index-signature bag and drop the named keys, so read the named keys and the
+	// exactness off T directly, before that reduction. srcInexact folds into the result's inexact
+	// marker below, so `{[K]: V for K in keyof {x: X, y: Y, ...}}` expands to `{x: V, y: V, ...}`.
+	srcInexact := false
+	if src, si, isKeyof := e.mappedKeyofSource(t.Keys); isKeyof {
+		keys = keyofObjectNamed(src)
+		srcInexact = si
+	}
 	if !condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
@@ -953,7 +963,36 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 			fields = append(fields, field)
 		}
 	}
-	return reduced, fields, keyTail.open, true
+	return reduced, fields, keyTail.open || srcInexact, true
+}
+
+// mappedKeyofSource detects a mapped type's `K in keyof T` constraint over a ground object or
+// non-final class, and returns that object together with whether its member set is open. It reads
+// the exactness straight off the object or class, never off a key union, so the mapped type keeps
+// T's named keys and exactness where reducing `keyof T` would collapse an inexact object's keys to
+// `string`. It reports false when the constraint is not `keyof T`, or T is not a ground object or
+// class.
+func (e *typeEvaluator) mappedKeyofSource(keys soltype.Type) (obj *soltype.ObjectType, inexact, ok bool) {
+	ko, isKeyof := keys.(*soltype.KeyofType)
+	if !isKeyof {
+		return nil, false, false
+	}
+	switch op := e.groundOperand(ko.Operand).(type) {
+	case *soltype.ObjectType:
+		if soltype.HasResidualElem(op.Elems) {
+			return nil, false, false
+		}
+		return op, op.Inexact, true
+	case *soltype.ClassType:
+		body, projected := e.ctx.projectClassBody(op)
+		if !projected {
+			return nil, false, false
+		}
+		// A non-final class's instance is open the way an inexact object is, since a subclass may
+		// add members; a final class is closed.
+		return body, !op.Final, true
+	}
+	return nil, false, false
 }
 
 // hasNoEnumerableKeys reports whether a mapped type's key set has no key to emit a field for at
@@ -1302,19 +1341,10 @@ func (e *typeEvaluator) expandAliasGuarded(op *soltype.AliasType, fallback func(
 // grounding walks keep the reference unchanged when expandAliasGuarded declines to expand it.
 func aliasItself(op *soltype.AliasType) soltype.Type { return op }
 
-// keyofObject projects an object's property, getter, and setter names as string-literal types
-// and unions them. An empty projection collapses to `never`, the union identity newUnion returns
-// for no members.
-//
-// An inexact object carries an unknown-keyed tail, so its key set is open:
-// `keyof {a: number, ...}` is `"a" | ... : string`, an inexact union whose members are the known keys
-// and whose tail stands for the unlisted ones. keyofObject seeds the union's exactness from the
-// object's, so an exact object yields an exact key union and an inexact object an inexact one.
-//
-// The tail is bounded by `string`, since the unlisted keys are property names whatever else is
-// unknown about them. That one fact is what makes the tail tractable. `¬keyof {a: number, ...}`
-// rejects every string and admits `5`, where an unbounded tail would be top and leave the
-// complement empty.
+// keyofObject reduces `keyof` of an object to its key set. An inexact object carries an
+// unknown-keyed tail, so its key set is open, and an open set of property names is exactly
+// `string`, the top of the key domain. `keyof {a: number, ...}` is `string`. An exact object's
+// key set is the union of its named keys, which keyofObjectNamed builds.
 //
 // It omits methods, which is correct for a class instance whose methods live on the prototype
 // and so are absent from Object.keys, but wrong for a bare object whose methods are own
@@ -1322,6 +1352,18 @@ func aliasItself(op *soltype.AliasType) soltype.Type { return op }
 // under-approximates the bare-object case. Issue #916 tracks deciding how keyof should account
 // for own vs inherited members.
 func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
+	if obj.Inexact {
+		return &soltype.PrimType{Prim: soltype.StrPrim}
+	}
+	return keyofObjectNamed(obj)
+}
+
+// keyofObjectNamed unions an object's property, getter, and setter names as string-literal types.
+// An empty projection collapses to `never`, the union identity newUnion returns for no members.
+// It reads only the named keys, so keyofObject uses it for an exact object and expandMapped reads
+// the named keys of a `keyof T` mapped-type constraint through it, keeping those keys whatever the
+// object's exactness.
+func keyofObjectNamed(obj *soltype.ObjectType) soltype.Type {
 	keys := make([]soltype.Type, 0, len(obj.Elems))
 	for _, elem := range obj.Elems {
 		switch elem := elem.(type) {
@@ -1333,9 +1375,6 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 			keys = append(keys, strLitType(elem.Name))
 		}
 	}
-	if obj.Inexact {
-		return newBoundedUnion(nil, keys, &soltype.PrimType{Prim: soltype.StrPrim})
-	}
 	return newUnion(nil, keys, false)
 }
 
@@ -1346,16 +1385,16 @@ func (e *typeEvaluator) keyofObject(obj *soltype.ObjectType) soltype.Type {
 // TODO: decide how keyof should account for inherited prototype members once interop is designed.
 //
 // An inexact tuple has unknown trailing positions, so its index set is open the same way an inexact
-// object's key set is. `keyof [number, string, ...]` reduces to `0 | 1 | ... : number`, where the tail
-// stands for the indices those unknown positions occupy (exact-types §7.1). The bound is `number`
-// rather than the `string` an object's tail takes, since an index is a position and not a name.
+// object's key set is. An open set of positions is exactly `number`, the top of the index domain,
+// so `keyof [number, string, ...]` reduces to `number`. The domain top is `number` rather than the
+// `string` an object's open key set takes, since an index is a position and not a name.
 func (e *typeEvaluator) keyofTuple(tup *soltype.TupleType) soltype.Type {
+	if tup.Inexact {
+		return &soltype.PrimType{Prim: soltype.NumPrim}
+	}
 	keys := make([]soltype.Type, 0, len(tup.Elems))
 	for i := range tup.Elems {
 		keys = append(keys, &soltype.LitType{Lit: &soltype.NumLit{Value: float64(i)}})
-	}
-	if tup.Inexact {
-		return newBoundedUnion(nil, keys, &soltype.PrimType{Prim: soltype.NumPrim})
 	}
 	return newUnion(nil, keys, false)
 }
@@ -1487,9 +1526,9 @@ func intersectTypes(a, b []soltype.Type) []soltype.Type {
 // keyofIntersection unions the keys of each member of an intersection operand: `keyof (A & B)`
 // reduces to `keyof A | keyof B`, since an intersection carries the members of all its operands.
 //
-// Exactness needs no seed here. An inexact member reduces to an inexact key union, and newUnion
-// carries a member union's marker out to the union it splices that member into. So
-// `keyof ({a: number} & {b: string, ...})` reduces to `"a" | "b" | ...` on its own.
+// An inexact member's keys are open, so its keyof is the primitive top `string`, and unioning that
+// with the other members' named keys leaves the open set. `keyof ({a: number} & {b: string, ...})`
+// reduces to `string | "a"`, which denotes `string` since `"a"` is one of its values.
 func (e *typeEvaluator) keyofIntersection(members []soltype.Type, inexact bool) soltype.Type {
 	parts := make([]soltype.Type, len(members))
 	for i, m := range members {
@@ -1694,6 +1733,14 @@ func (e *typeEvaluator) indexObject(obj *soltype.ObjectType, index soltype.Type,
 		if hasIdx {
 			return e.indexSignatureRead(obj, index, inexact)
 		}
+		if prim, isPrim := index.(*soltype.PrimType); obj.Inexact && isPrim && prim.Prim == soltype.StrPrim {
+			// An inexact object has unlisted string keys of unknown value type, so reading it at a
+			// bare `string` — the key domain its open tail draws from, as `Obj[keyof Obj]` gives for
+			// an inexact `Obj` — yields the join of the named value types with the unknown tail,
+			// which is `unknown`. A key outside that domain, such as a `number`, names no key of the
+			// object and falls through to the missing-index-signature diagnostic below.
+			return &soltype.UnknownType{}
+		}
 		if condOperandGround(index) {
 			e.errs = append(e.errs, &NoIndexSignatureError{Object: obj, Index: index})
 			return &soltype.ErrorType{}
@@ -1734,9 +1781,19 @@ func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltyp
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
 // that position. An index outside `[0, len)`, or a non-integer or negative literal, records a
-// TupleIndexOutOfRangeError and reduces to the error sentinel. A non-numeric-literal index has no
-// positional slot to select, so the access stays symbolic.
+// TupleIndexOutOfRangeError and reduces to the error sentinel. A bare `number` key names no single
+// position, so it reads the join of every element type, and an inexact tuple joins its unlisted
+// trailing positions in as `unknown`, so `[number, string, ...][number]` reduces to `unknown`. Any
+// other non-numeric-literal key leaves the access symbolic.
 func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, inexact bool) soltype.Type {
+	if prim, ok := index.(*soltype.PrimType); ok && prim.Prim == soltype.NumPrim {
+		if tup.Inexact {
+			// An inexact tuple's unlisted trailing positions have unknown type, so the join of
+			// every position with that tail is `unknown`.
+			return &soltype.UnknownType{}
+		}
+		return newUnion(nil, tup.Elems, false)
+	}
 	lit, ok := index.(*soltype.LitType)
 	if !ok {
 		return &soltype.IndexType{Target: tup, Index: index, Inexact: inexact}
