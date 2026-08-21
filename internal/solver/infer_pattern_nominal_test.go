@@ -207,10 +207,9 @@ func TestInferInstancePatNotAClass(t *testing.T) {
 	}, messagesWithSpan(errs))
 }
 
-// An extractor pattern whose name resolves to no constructor is an
-// ExtractorPatternNotCtorError. A plain value binding is not callable as a constructor. The
-// bare `number` scrutinee is left non-exhaustive by the one invalid arm, so the coverage
-// check names it too.
+// An extractor pattern naming a value binding rather than a constructor is invalid, and that
+// one invalid arm leaves the `number` scrutinee non-exhaustive, so the coverage check reports
+// it too.
 func TestInferExtractorPatNotAConstructor(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		val g = 5

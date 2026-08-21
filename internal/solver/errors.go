@@ -1141,13 +1141,10 @@ type NonExhaustiveMatchError struct {
 	// `Color.RGB(0, g, b)` of a `match` over `Color` names the variant but matches only when
 	// the first field is 0.
 	Refutable []soltype.Type
-	// OpenTail is the scrutinee whose values only a catch-all arm reaches, and nil when the
-	// scrutinee has no such tail. Two kinds of carrier set it. One is an inexact union,
-	// object, or tuple, whose open tail holds values no tag names. The other is a carrier
-	// with infinitely many inhabitants that no finite set of arms covers, a bare `number` or
-	// `string` or `unknown`. The message names it so the reader can see why a catch-all is
-	// being asked for. An inexact union sets it alongside its uncovered members, since
-	// covering every member still leaves the tail.
+	// OpenTail is the scrutinee a catch-all arm would cover, set for an inexact union, object,
+	// or tuple, and for an infinite carrier such as a bare `number`, `string`, or `unknown`.
+	// An inexact union sets it alongside its uncovered members, since covering every member
+	// still leaves the tail.
 	OpenTail soltype.Type
 }
 

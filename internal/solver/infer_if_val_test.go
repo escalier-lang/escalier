@@ -750,12 +750,8 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 			want: "fn (u: number | string) -> number",
 		},
 		{
-			// The scrutinee holds no value the annotation admits, so the arm can never run and
-			// the narrowing constraint fails. Two things in the message say it is a narrowing
-			// failure rather than a failed assertion on the bound value. The direction is
-			// `number <: string`, the annotation into the scrutinee, and the span is the
-			// annotation rather than the value the arm binds. The bare `string` scrutinee is
-			// left non-exhaustive by the one arm that cannot run, so the coverage check names it.
+			// The `number` annotation cannot constrain the `string` scrutinee, so the arm can
+			// never run, and that one arm leaves `string` non-exhaustive, so both errors fire.
 			name: "an annotation no member fits is rejected",
 			src: `fn f(s: string) {
 					return match s {

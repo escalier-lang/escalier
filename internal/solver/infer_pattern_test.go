@@ -1234,10 +1234,8 @@ func TestInferMatchBareNumberTypePatternCovers(t *testing.T) {
 	require.Empty(t, errs)
 }
 
-// A `boolean` scrutinee is finite, so the infinite-carrier rule must not fire on it. A match
-// enumerating `true` and `false` stays exhaustive with no catch-all. This guards against
-// `infiniteInhabitants` widening to `boolean`, which would wrongly demand a catch-all here. It
-// does not assert that boolean coverage is checked at all, which the checker does not yet do.
+// Guards against `infiniteInhabitants` widening to `boolean`: a finite `boolean` enumerated by
+// `true` and `false` is exhaustive and must not be flagged for a catch-all.
 func TestInferMatchBooleanEnumeratedNotFlagged(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		fn f(b: boolean) {
