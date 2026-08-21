@@ -825,11 +825,11 @@ func (e *typeEvaluator) expandMapped(t *soltype.MappedElem) (reduced *soltype.Ma
 	if !condOperandGround(keys) {
 		return reduced, nil, false, false
 	}
-	if hasNoEnumerableKeys(keys) {
-		// A key set with nothing to enumerate leaves the member unexpanded, so it is itself the
-		// index signature. The required form over such a key set is uninhabited and is rejected.
-		// A rename or filter over one has no enumerable keys to run over, so it stays symbolic
-		// with no diagnostic. That gap is #930.
+	if soltype.UncountableKeys(keys) {
+		// An uncountable key set such as `string` has no key to emit a field for, so the member is
+		// left unexpanded and is itself the index signature. The required form over such a key set
+		// is uninhabited and is rejected. A rename or filter over one has no enumerable keys to run
+		// over, so it stays symbolic with no diagnostic. That gap is #930.
 		if soltype.IsIndexSignature(reduced) && reduced.Optional != soltype.ModAdd {
 			e.errs = append(e.errs, &RequiredUncountableKeysError{Mapped: reduced})
 		}
@@ -882,13 +882,6 @@ func (e *typeEvaluator) mappedKeyofSource(keys soltype.Type) (obj *soltype.Objec
 		return body, !op.Final, true
 	}
 	return nil, false, false
-}
-
-// hasNoEnumerableKeys reports whether a mapped type's key set has no key to emit a field for at
-// all: an uncountable set such as `string`. A set that DOES name a key is not this, so
-// `{[K]: T[K] for K in {x: X}}` has a key to iterate.
-func hasNoEnumerableKeys(keys soltype.Type) bool {
-	return soltype.UncountableKeys(keys)
 }
 
 // unionMembers splits a reduced type into the members a rule runs over one at a time. A union
