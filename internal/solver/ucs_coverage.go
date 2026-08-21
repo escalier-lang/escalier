@@ -299,6 +299,13 @@ func (c *checker) checkCondExhaustive(scope *Scope, lvl int, norm ucs.Norm, shap
 	}
 	inexact, isStructural := structuralInexact(carrier)
 	if !isStructural {
+		// A carrier admitting infinitely many values, a bare `number` or `string` or
+		// `unknown`, is covered by no finite set of value patterns, so it needs a catch-all
+		// arm exactly as an inexact union does. The whole carrier is the open tail no arm
+		// names, so it is the witness the diagnostic reports.
+		if infiniteInhabitants(carrier) {
+			c.report(&NonExhaustiveMatchError{Origin: split.Origin, OpenTail: carrier})
+		}
 		return
 	}
 	// An exact object or tuple is covered by a branch that destructures its shape. An inexact
