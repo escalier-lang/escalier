@@ -1144,7 +1144,7 @@ func TestConstrainExtrusionBothPolarities(t *testing.T) {
 // bound in Positive position and a lower bound in Negative. The direction the original gains
 // therefore reads back the polarity the walk reached it at.
 //
-// `¬(fn (x: a) -> number)` walked from Positive flips twice, so `a` is reached at Positive
+// `~(fn (x: a) -> number)` walked from Positive flips twice, so `a` is reached at Positive
 // and gains an UPPER bound. Reaching it at Negative would wire a lower bound instead and
 // invert every constraint extruded through a negation.
 //
@@ -1187,23 +1187,23 @@ func TestDescribeNegation(t *testing.T) {
 		in   soltype.Type
 		want string
 	}{
-		{"primitive operand", &soltype.NegationType{Inner: num()}, "¬number"},
-		{"double negation", &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}}, "¬¬number"},
+		{"primitive operand", &soltype.NegationType{Inner: num()}, "~number"},
+		{"double negation", &soltype.NegationType{Inner: &soltype.NegationType{Inner: num()}}, "~~number"},
 		{
 			"union operand is parenthesized",
 			&soltype.NegationType{Inner: &soltype.UnionType{Types: []soltype.Type{num(), str()}}},
-			"¬(number | string)",
+			"~(number | string)",
 		},
 		{
 			"intersection operand is parenthesized",
 			&soltype.NegationType{Inner: &soltype.IntersectionType{Types: []soltype.Type{num(), str()}}},
-			"¬(number & string)",
+			"~(number & string)",
 		},
 		{
 			// A function collapses to the bare kind word, which cannot run on, so it stays bare.
 			"function operand stays bare",
 			&soltype.NegationType{Inner: &soltype.FuncType{Ret: num()}},
-			"¬function",
+			"~function",
 		},
 	}
 	for _, tt := range tests {

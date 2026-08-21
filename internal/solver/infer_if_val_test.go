@@ -1046,7 +1046,7 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 // NO COMPLEMENT ARISES ALONG THE WAY. Narrowing drops the union members a guard's
 // annotation cannot admit, so the chain below reaches `boolean` as a plain member list and
 // the negation simplifier in simplify.go is never reached. A solver that re-typed one
-// long-lived variable would instead accumulate `& ¬string & ¬number` on it and need that
+// long-lived variable would instead accumulate `& ~string & ~number` on it and need that
 // simplifier to read `boolean` back out. These cases pin that the accumulating form never
 // arises, which is what keeps the simplifier's input small when a complement does show up
 // from somewhere else.
@@ -1080,7 +1080,7 @@ func TestInferChainedGuardsRenderSimplifiedBindings(t *testing.T) {
 		},
 		// Two guards that between them exclude two of the three members. This is the
 		// chain a flow-narrowing solver would render as
-		// `(number | string | boolean) & ¬string & ¬number`; here the first guard binds
+		// `(number | string | boolean) & ~string & ~number`; here the first guard binds
 		// `number | boolean` and the second binds `boolean`, with no complement built.
 		"TwoGuardsReachingTheThirdMember": {
 			src: `fn f(u: number | string | boolean) {

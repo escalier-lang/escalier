@@ -212,9 +212,9 @@ func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
 // A resolver arm whose result is a shared zero-size singleton records no provenance.
 // Every &UnknownType{} shares one address, so an entry would file every such annotation
 // in the module under one node. This is the mis-blame the guarded record path let
-// through for `¬never`: it folds to the shared `unknown` singleton, and the first such
+// through for `~never`: it folds to the shared `unknown` singleton, and the first such
 // annotation would capture the address, after which every later `unknown` — a bare
-// `unknown` annotation included — would resolve its blame to that first `¬never`.
+// `unknown` annotation included — would resolve its blame to that first `~never`.
 // recordProvForResult's singleton skip records nothing, so Prov stays empty. debugProv
 // is on so a stray record against a singleton already blamed by an earlier case would
 // also panic.
@@ -225,10 +225,10 @@ func TestProvSharedSingletonRecordsNothing(t *testing.T) {
 	}{
 		{"never", func() ast.TypeAnn { return ast.NewNeverTypeAnn(testSpan()) }},
 		{"unknown", func() ast.TypeAnn { return ast.NewUnknownTypeAnn(testSpan()) }},
-		{"¬never folds to unknown", func() ast.TypeAnn {
+		{"~never folds to unknown", func() ast.TypeAnn {
 			return ast.NewNegationTypeAnn(ast.NewNeverTypeAnn(testSpan()), testSpan())
 		}},
-		{"¬unknown folds to never", func() ast.TypeAnn {
+		{"~unknown folds to never", func() ast.TypeAnn {
 			return ast.NewNegationTypeAnn(ast.NewUnknownTypeAnn(testSpan()), testSpan())
 		}},
 		{"null", func() ast.TypeAnn { return ast.NewLitTypeAnn(ast.NewNull(testSpan()), testSpan()) }},

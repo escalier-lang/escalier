@@ -37,13 +37,13 @@ import (
 // decomposition: no member is guessed, and each implied goal is settled on its
 // own.
 //
-// One implied goal reads `Lc ∩ ⋂Vc ∩ ¬Rc ∩ ⋂¬Nc <: Rd ∪ ⋃Vd ∪ ¬Ld ∪ ⋃¬Nd`. Every
+// One implied goal reads `Lc ∩ ⋂Vc ∩ ~Rc ∩ ⋂~Nc <: Rd ∪ ⋃Vd ∪ ~Ld ∪ ⋃~Nd`. Every
 // negated part moves to the other side of the `<:`, which is where negation
 // enters the decision without any node having to be guessed:
 //
-//   - `X ∩ ¬R <: Y` is `X <: Y ∪ R`, so a conjunct's negated part joins the
+//   - `X ∩ ~R <: Y` is `X <: Y ∪ R`, so a conjunct's negated part joins the
 //     supertype side.
-//   - `X <: Y ∪ ¬L` is `X ∩ L <: Y`, so a disjunct's negated part joins the
+//   - `X <: Y ∪ ~L` is `X ∩ L <: Y`, so a disjunct's negated part joins the
 //     subtype side.
 //
 // The two variable sets move the same way. What is left is a meet of atoms and
@@ -127,7 +127,7 @@ func (c *Context) constrainNF(sub, super soltype.Type, seen *seenPairs, mutCtx b
 //   - A variable on the supertype side picks up the whole meet as a lower bound,
 //     which is stronger than the goal asks for. The goal asks only for the meet
 //     with the other supertype candidates subtracted, so `"hi" <: (T | number)`
-//     records `"hi"` under T where `"hi" ∩ ¬number` would do. That is sound, and a
+//     records `"hi"` under T where `"hi" ∩ ~number` would do. That is sound, and a
 //     variable is reached only after every concrete candidate failed. weakestBound
 //     subtracts for the one subtype side where the stronger bound does damage,
 //     `unknown`, and says why it goes no further.
@@ -141,11 +141,11 @@ func (c *Context) constrainImplied(
 	meet, inhabited := c.fuseAtoms(pooled(conj.Lnf.Atoms, disj.Lnf.Atoms), meetOfAtoms)
 	if !inhabited {
 		// No value inhabits the subtype side, so the goal holds however the supertype
-		// side reads. `5 <: ¬string` reaches this: the complement moves `string` to the
+		// side reads. `5 <: ~string` reaches this: the complement moves `string` to the
 		// subtype side as a positive atom, and `5 ∩ string` is `never`, since a literal
 		// and a primitive of another family are disjoint.
 		//
-		// `5 <: ¬number` does not reach it. That meet is `5 ∩ number`, which is `5`, so
+		// `5 <: ~number` does not reach it. That meet is `5 ∩ number`, which is `5`, so
 		// the goal goes on to the trial below and fails there against an empty join.
 		return nfDecision{}
 	}
@@ -418,17 +418,17 @@ func orderedPairs(subCands, superCands []soltype.Type, topMeet bool) []nfPair {
 // variable-free supertype candidates, by the move-across-the-`<:` rewrite the file
 // header states for a negated part:
 //
-//	unknown <: p₁ ∪ … ∪ pₙ ∪ v    is    ¬p₁ ∩ … ∩ ¬pₙ <: v
+//	unknown <: p₁ ∪ … ∪ pₙ ∪ v    is    ~p₁ ∩ … ∩ ~pₙ <: v
 //
 // That asks of v what the goal asks and nothing more. Recording `unknown` instead pins v
-// to the top of the lattice, so `¬T <: number`, which normalizes to
-// `unknown <: number ∪ T`, would give T `unknown` and collapse `¬T` to `never` where
-// `¬number` is what the goal asks for.
+// to the top of the lattice, so `~T <: number`, which normalizes to
+// `unknown <: number ∪ T`, would give T `unknown` and collapse `~T` to `never` where
+// `~number` is what the goal asks for.
 //
 // A candidate is subtracted only when it is variable-free, and only from a subtype side
 // of `unknown`. Both gates keep out a complement no later pass can clear.
 // simplifyNegations decides disjointness through the meet of two atoms, so it drops
-// `¬number` against `"hi"` but not `¬{b: number, ...}` against `{a: 1, ...}`, which can
+// `~number` against `"hi"` but not `~{b: number, ...}` against `{a: 1, ...}`, which can
 // share a value, and it refuses a complement over a variable outright. Subtracting past
 // either gate is sound and leaves the complement in the rendered type, which
 // constrainImplied's third bullet records.

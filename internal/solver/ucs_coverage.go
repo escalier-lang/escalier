@@ -15,7 +15,7 @@ import (
 // The rules are M4's and M6's. An inexact scrutinee takes a catch-all, an exact union is
 // covered once every member has a covering branch, and an arm that can fail its guard covers
 // nothing on its own. Phase 2 (#883) replaces all three with
-// `residual = scrutinee ∧ ¬covered ; exhaustive iff residual <: ⊥`.
+// `residual = scrutinee ∧ ~covered ; exhaustive iff residual <: ⊥`.
 //
 // The check also collects witnesses. A witness is a type the form leaves uncovered, which a
 // message names so it can ask for the branch that would cover it. A union scrutinee's

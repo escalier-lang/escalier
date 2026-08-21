@@ -1413,7 +1413,7 @@ func (p *Printer) printTypeAnn(typ ast.TypeAnn) {
 		p.writeString("keyof ")
 		p.printPrefixTypeAnnOperand(t.Type)
 	case *ast.NegationTypeAnn:
-		p.writeString("¬")
+		p.writeString("~")
 		p.printPrefixTypeAnnOperand(t.Type)
 	case *ast.TypeOfTypeAnn:
 		p.writeString("typeof ")
@@ -1633,7 +1633,7 @@ const (
 	precTypeOpenEnded    = 1
 	precTypeUnion        = 2
 	precTypeIntersection = 3
-	// precTypePrefix covers `keyof A`, `mut A`, `&A`, `infer A`, and `¬A`. Each takes the
+	// precTypePrefix covers `keyof A`, `mut A`, `&A`, `infer A`, and `~A`. Each takes the
 	// whole annotation that follows it.
 	precTypePrefix = 4
 	// precTypePrimary is for an annotation that nothing can regroup, such as a type

@@ -227,7 +227,7 @@ func (c *Checker) inferTypeAnn(
 	case *ast.NegationTypeAnn:
 		// The complement type lives only in the SimpleSub-based solver, which has a
 		// NegationType this checker's type_system has no counterpart for. Report cleanly
-		// rather than panicking on the default arm so a stray `¬T` can't crash the CLI or LSP,
+		// rather than panicking on the default arm so a stray `~T` can't crash the CLI or LSP,
 		// mirroring the RefTypeAnn arm below.
 		errors = append(errors, &UnimplementedError{
 			message: "negation types are unsupported in the legacy checker",

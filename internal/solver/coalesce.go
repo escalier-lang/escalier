@@ -253,8 +253,8 @@ func (c *coalescer) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type 
 // its own rewrites can turn an operand into a lattice bound.
 //
 // The re-mint is what keeps a complement over an empty variable readable. Take a var
-// whose single upper bound is `¬β`, over a β with no lower bounds. Coalescing inlines
-// β to `never`, so the bare rebuild would render the meaningless `¬never` where the
+// whose single upper bound is `~β`, over a β with no lower bounds. Coalescing inlines
+// β to `never`, so the bare rebuild would render the meaningless `~never` where the
 // bound really says `unknown`.
 //
 // A complement that newNegation does not collapse is returned as the caller passed
@@ -1510,8 +1510,8 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 		b, ok := b.(*soltype.IntersectionType)
 		return ok && equalTypeSliceWith(a.Types, b.Types, ctx)
 	case *soltype.NegationType:
-		// Two complements are equal when their operands are, so `¬A` equals `¬A` and differs
-		// from `¬B`. That is what lets a member list dedup a negated member the same way it
+		// Two complements are equal when their operands are, so `~A` equals `~A` and differs
+		// from `~B`. That is what lets a member list dedup a negated member the same way it
 		// dedups a plain one.
 		b, ok := b.(*soltype.NegationType)
 		return ok && equalTypeWith(a.Inner, b.Inner, ctx)

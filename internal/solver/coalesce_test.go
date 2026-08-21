@@ -376,8 +376,8 @@ func TestEqualTypeRef(t *testing.T) {
 	}
 }
 
-// equalType compares two complements by their operands, so `¬A` equals `¬A`, differs from
-// `¬B`, and never equals the type it negates.
+// equalType compares two complements by their operands, so `~A` equals `~A`, differs from
+// `~B`, and never equals the type it negates.
 func TestEqualTypeNegation(t *testing.T) {
 	tests := []struct {
 		name string
@@ -1083,7 +1083,7 @@ func TestBijectionRebindKeepsOneToOne(t *testing.T) {
 	}
 }
 
-// A complement on a variable's bounds survives coalescing and renders as `¬T`. The
+// A complement on a variable's bounds survives coalescing and renders as `~T`. The
 // operand is coalesced first, at the flipped polarity NegationType.Accept walks it
 // at, and the result is re-minted through newNegation so a complement over a
 // lattice bound reads as the bound it really names.
@@ -1104,7 +1104,7 @@ func TestCoalesceNegatedBound(t *testing.T) {
 				return a
 			},
 			pol:  soltype.Negative,
-			want: "¬string",
+			want: "~string",
 		},
 		{
 			// The operand is a variable, so it coalesces before the complement is
@@ -1118,11 +1118,11 @@ func TestCoalesceNegatedBound(t *testing.T) {
 				return a
 			},
 			pol:  soltype.Negative,
-			want: "¬string",
+			want: "~string",
 		},
 		{
 			// An operand with no lower bounds coalesces to `never`, and the complement
-			// of `never` is unknown. The re-mint is what keeps `¬never` off the display.
+			// of `never` is unknown. The re-mint is what keeps `~never` off the display.
 			name: "operand with no bounds",
 			build: func(c *Context) *soltype.TypeVarType {
 				a := c.freshVar(0)
@@ -1154,7 +1154,7 @@ func TestCoalesceNegatedBound(t *testing.T) {
 				return a
 			},
 			pol:  soltype.Negative,
-			want: "{x: ¬string}",
+			want: "{x: ~string}",
 		},
 	}
 	for _, tt := range tests {

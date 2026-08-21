@@ -446,11 +446,11 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 				typ,
 				ast.NewSpan(token.Span.Start, typ.Span().End, p.lexer.source.ID),
 			)
-		case Negation: // ¬T complement type
-			p.lexer.consume() // consume '¬'
+		case Negation: // ~T complement type
+			p.lexer.consume() // consume '~'
 			typ := p.primaryTypeAnn()
 			if typ == nil {
-				p.reportError(token.Span, "expected a type annotation after '¬'")
+				p.reportError(token.Span, "expected a type annotation after '~'")
 				typ = ast.NewErrorTypeAnn(token.Span)
 			}
 			typeAnn = ast.NewNegationTypeAnn(

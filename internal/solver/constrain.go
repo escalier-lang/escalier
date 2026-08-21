@@ -732,10 +732,10 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 	}
 
 	// A complement on either side is decided by the normal-form layer, which is the
-	// only rule that reads one. Moving `¬T` across the `<:` turns it into an ordinary
-	// meet or join, so `5 <: ¬string` holds through `5 ∩ string` being uninhabited
-	// while `5 <: ¬number` fails. A variable operand falls through to the var arms
-	// instead, so `α <: ¬T` records the whole complement as one upper bound and keeps
+	// only rule that reads one. Moving `~T` across the `<:` turns it into an ordinary
+	// meet or join, so `5 <: ~string` holds through `5 ∩ string` being uninhabited
+	// while `5 <: ~number` fails. A variable operand falls through to the var arms
+	// instead, so `α <: ~T` records the whole complement as one upper bound and keeps
 	// it on the coalesced binding.
 	if isNegation(sub) || isNegation(super) {
 		_, subIsVar := sub.(*soltype.TypeVarType)
@@ -1551,8 +1551,8 @@ func templateMatchesString(s string, quasis []string, interps []soltype.Type) bo
 //   - A residual string intrinsic over `string`, such as `Uppercase<string>`, admits a span its
 //     transform leaves unchanged, the fixed points that make up its image.
 //   - A union admits a span any member does; an intersection admits one every member does. A
-//     complement `¬X` admits a span its operand rejects, so `string & ¬"a"` admits every string
-//     span but `"a"`. This is the shape the template bound `` `on${string & ¬"a"}` `` carries, which
+//     complement `~X` admits a span its operand rejects, so `string & ~"a"` admits every string
+//     span but `"a"`. This is the shape the template bound `` `on${string & ~"a"}` `` carries, which
 //     is why the matcher decides it.
 func spanInInterp(span string, interp soltype.Type) bool {
 	switch it := interp.(type) {

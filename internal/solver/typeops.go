@@ -194,7 +194,7 @@ func (e *typeEvaluator) reduce(t soltype.Type) soltype.Type {
 //     they ground. Then and Else stay unreduced in the symbolic form, since neither is selected yet.
 //     One family of undecidable conditional has an answer even so. A distributive conditional whose
 //     branches drop or keep the operand itself is a set difference, so `Exclude<T, string>` over a
-//     type parameter reduces to `T ∩ ¬string` rather than staying symbolic. See nativeDifference.
+//     type parameter reduces to `T ∩ ~string` rather than staying symbolic. See nativeDifference.
 //
 // A conditional written over a naked type parameter distributes: a Check that grounds to a union is
 // decided one member at a time and the branch results union, so `type Wrap<T> = if T : string { [T] }
@@ -318,7 +318,7 @@ func (s *occurrenceSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.T
 // Else, which covers a shape mismatch and a pattern whose written positions reject the Check alike.
 //
 // The Check is matched through positiveSkeleton, so a complement it carries takes no part in the
-// match. `¬X` names the values X rejects rather than any structure of its own, so no pattern
+// match. `~X` names the values X rejects rather than any structure of its own, so no pattern
 // position aligns with it.
 func (e *typeEvaluator) reduceCondInfer(t *soltype.CondType, check, extends soltype.Type) soltype.Type {
 	skeleton, matchable := positiveSkeleton(check)

@@ -17,12 +17,12 @@ import (
 // of the solver's tests are written. Negation has no surface syntax, so the two
 // helpers below build one.
 
-// not is `¬t`, the complement no annotation can spell.
+// not is `~t`, the complement no annotation can spell.
 func not(t soltype.Type) soltype.Type {
 	return &soltype.NegationType{Inner: t}
 }
 
-// notSrc parses an annotation and complements it, so a case can write `¬number`
+// notSrc parses an annotation and complements it, so a case can write `~number`
 // as notSrc(t, "number").
 func notSrc(t *testing.T, src string) soltype.Type {
 	t.Helper()
@@ -336,7 +336,7 @@ func TestCNFRoundTrip(t *testing.T) {
 	}
 }
 
-// TestNegationRoundTrip pins how a complement normalizes. The `¬` cases a reader
+// TestNegationRoundTrip pins how a complement normalizes. The `~` cases a reader
 // should never see — a double negation and a complement of a lattice bound — are
 // gone by the time the form is read back.
 func TestNegationRoundTrip(t *testing.T) {
@@ -348,7 +348,7 @@ func TestNegationRoundTrip(t *testing.T) {
 		{
 			name: "a complemented primitive",
 			in:   func(t *testing.T) soltype.Type { return notSrc(t, "number") },
-			want: "¬number",
+			want: "~number",
 		},
 		{
 			name: "a double complement cancels",
@@ -368,36 +368,36 @@ func TestNegationRoundTrip(t *testing.T) {
 		{
 			name: "a complemented union stays one negated atom list",
 			in:   func(t *testing.T) soltype.Type { return notSrc(t, "number | string") },
-			want: "¬(number | string)",
+			want: "~(number | string)",
 		},
 		{
 			name: "a complemented record",
 			in:   func(t *testing.T) soltype.Type { return notSrc(t, "{x: number}") },
-			want: "¬{x: number}",
+			want: "~{x: number}",
 		},
 		{
 			name: "a complement beside a positive atom",
 			in: func(t *testing.T) soltype.Type {
 				return newIntersection(nil, []soltype.Type{parseType(t, "{x: number, ...}"), notSrc(t, "{y: number}")})
 			},
-			want: "{x: number, ...} & ¬{y: number}",
+			want: "{x: number, ...} & ~{y: number}",
 		},
 		{
 			// The two atoms sit in Rnf, which the conjunct reads under a union, so
 			// they fuse by the JOIN rules even though the surface type is a meet.
-			// ¬5 & ¬number is ¬(5 | number), and the literal is absorbed.
+			// ~5 & ~number is ~(5 | number), and the literal is absorbed.
 			name: "two complements of one family absorb inside the negated part",
 			in: func(t *testing.T) soltype.Type {
 				return newIntersection(nil, []soltype.Type{notSrc(t, "5"), notSrc(t, "number")})
 			},
-			want: "¬number",
+			want: "~number",
 		},
 		{
 			name: "the same holds for the boolean family",
 			in: func(t *testing.T) soltype.Type {
 				return newIntersection(nil, []soltype.Type{notSrc(t, "true"), notSrc(t, "boolean")})
 			},
-			want: "¬boolean",
+			want: "~boolean",
 		},
 		{
 			// The join rules reach records too, so the field the two disagree on is
@@ -409,7 +409,7 @@ func TestNegationRoundTrip(t *testing.T) {
 					notSrc(t, "{x: string, y: boolean}"),
 				})
 			},
-			want: "¬{x: number | string, y: boolean}",
+			want: "~{x: number | string, y: boolean}",
 		},
 		{
 			// No value is both a number and a string, so every value fails to be at
@@ -440,31 +440,31 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 		{
 			name: "a complemented record",
 			in:   func(t *testing.T) soltype.Type { return notSrc(t, "{x: number}") },
-			want: "¬{x: number}",
+			want: "~{x: number}",
 		},
 		{
 			name: "a complemented intersection is one disjunct negating both atoms",
 			in: func(t *testing.T) soltype.Type {
 				return notSrc(t, "[number] & {x: number}")
 			},
-			want: "¬([number] & {x: number})",
+			want: "~([number] & {x: number})",
 		},
 		{
 			name: "a complement beside a positive atom",
 			in: func(t *testing.T) soltype.Type {
 				return newUnion(nil, []soltype.Type{parseType(t, "number"), notSrc(t, "{x: number}")})
 			},
-			want: "number | ¬{x: number}",
+			want: "number | ~{x: number}",
 		},
 		{
 			// The dual of the DNF row: the two atoms sit in Lnf, which the disjunct
 			// reads under an intersection, so they fuse by the MEET rules even though
-			// the surface type is a join. ¬number | ¬5 is ¬(number & 5).
+			// the surface type is a join. ~number | ~5 is ~(number & 5).
 			name: "two complements of one family narrow inside the negated part",
 			in: func(t *testing.T) soltype.Type {
 				return newUnion(nil, []soltype.Type{notSrc(t, "number"), notSrc(t, "5")})
 			},
-			want: "¬5",
+			want: "~5",
 		},
 		{
 			// The meet rules reach records too, so the two open records merge
@@ -476,7 +476,7 @@ func TestCNFNegationRoundTrip(t *testing.T) {
 					notSrc(t, "{y: number, ...}"),
 				})
 			},
-			want: "¬{x: number, y: number, ...}",
+			want: "~{x: number, y: number, ...}",
 		},
 		{
 			// No value is both a number and a string, so every value fails to be at
@@ -547,11 +547,11 @@ func TestDeMorgan(t *testing.T) {
 			require.Equal(t,
 				normDNF(c, newUnion(nil, []soltype.Type{negA, negB})),
 				normDNF(c, not(meet)),
-				"¬(A & B) and ¬A | ¬B normalize alike")
+				"~(A & B) and ~A | ~B normalize alike")
 			require.Equal(t,
 				normDNF(c, newIntersection(nil, []soltype.Type{negA, negB})),
 				normDNF(c, not(join)),
-				"¬(A | B) and ¬A & ¬B normalize alike")
+				"~(A | B) and ~A & ~B normalize alike")
 		})
 	}
 }
@@ -584,7 +584,7 @@ func TestUnreducedAtomsKeepTheirOpenMarkerApart(t *testing.T) {
 // easy to break. A change that gets either one right on its own can still drop the
 // other where they cross.
 //
-// `¬{x: number}` excludes the records whose only field is an x. `¬{x: number, ...}`
+// `~{x: number}` excludes the records whose only field is an x. `~{x: number, ...}`
 // excludes every record carrying an x, which is a strictly larger set, so the two
 // complements denote different types. Normalization has to keep them apart as atoms
 // and still apply the containment between them when they meet or join.
@@ -593,8 +593,8 @@ func TestComplementsKeepTheOpenMarker(t *testing.T) {
 	closed, open := parseType(t, "{x: number}"), parseType(t, "{x: number, ...}")
 
 	// Each complement round-trips with its marker intact.
-	require.Equal(t, "¬{x: number}", normDNF(c, not(closed)))
-	require.Equal(t, "¬{x: number, ...}", normDNF(c, not(open)))
+	require.Equal(t, "~{x: number}", normDNF(c, not(closed)))
+	require.Equal(t, "~{x: number, ...}", normDNF(c, not(open)))
 
 	// The two complements are distinct types, so nothing downstream may dedup one
 	// into the other. compareType is checked alongside equalType because the merges
@@ -605,9 +605,9 @@ func TestComplementsKeepTheOpenMarker(t *testing.T) {
 	// `{x: number}` is contained in `{x: number, ...}`, so complementing flips which
 	// side absorbs. The meet of the complements excludes the larger set and the join
 	// of them excludes the smaller one.
-	require.Equal(t, "¬{x: number, ...}",
+	require.Equal(t, "~{x: number, ...}",
 		normDNF(c, newIntersection(nil, []soltype.Type{not(closed), not(open)})))
-	require.Equal(t, "¬{x: number}",
+	require.Equal(t, "~{x: number}",
 		normDNF(c, newUnion(nil, []soltype.Type{not(closed), not(open)})))
 }
 
@@ -700,12 +700,12 @@ func TestVariablesStayInTheirSlots(t *testing.T) {
 	require.True(t, negative.Conjuncts[0].NVars.Contains(v))
 	require.Empty(t, negative.Conjuncts[0].Rnf.Atoms)
 
-	// `v ∩ ¬v` admits no value, so the conjunct is dropped and the DNF is empty.
+	// `v ∩ ~v` admits no value, so the conjunct is dropped and the DNF is empty.
 	both := newIntersection(nil, []soltype.Type{v, not(v)})
 	require.Empty(t, c.mkDNF(both, soltype.Positive).Conjuncts)
 	require.Equal(t, "never", normDNF(c, both))
 
-	// `v ∪ ¬v` admits every value, so the disjunct is dropped and the CNF is empty.
+	// `v ∪ ~v` admits every value, so the disjunct is dropped and the CNF is empty.
 	either := newUnion(nil, []soltype.Type{v, not(v)})
 	require.Empty(t, c.mkCNF(either, soltype.Negative).Disjuncts)
 	require.Equal(t, "unknown", normCNF(c, either))
@@ -776,7 +776,7 @@ func TestNominalAtomsStayDistinct(t *testing.T) {
 		d := c.mkDNF(newUnion(nil, []soltype.Type{withoutPoint, withoutLine}), soltype.Positive)
 		require.Len(t, d.Conjuncts, 2)
 		require.Equal(t,
-			"{a: number, ...} & ¬Line | {a: number, ...} & ¬Point",
+			"{a: number, ...} & ~Line | {a: number, ...} & ~Point",
 			soltype.Print(d.toType()))
 	})
 
@@ -898,8 +898,8 @@ func TestCNFFusesDisjuncts(t *testing.T) {
 
 	t.Run("disjuncts agreeing on their positive part join their negated parts", func(t *testing.T) {
 		c := &Context{}
-		// (¬{x} | number) & (¬({x} & {y}) | number). The first disjunct's negated
-		// part is the narrower of the two, since ¬{x} implies ¬({x} & {y}), so it
+		// (~{x} | number) & (~({x} & {y}) | number). The first disjunct's negated
+		// part is the narrower of the two, since ~{x} implies ~({x} & {y}), so it
 		// stands for both.
 		x := parseType(t, "{x: number}")
 		y := parseType(t, "{y: number}")
@@ -907,7 +907,7 @@ func TestCNFFusesDisjuncts(t *testing.T) {
 			newUnion(nil, []soltype.Type{not(x), parseType(t, "number")}),
 			newUnion(nil, []soltype.Type{not(newIntersection(nil, []soltype.Type{x, y})), parseType(t, "number")}),
 		})
-		require.Equal(t, "number | ¬{x: number}", normCNF(c, in))
+		require.Equal(t, "number | ~{x: number}", normCNF(c, in))
 	})
 }
 
@@ -1028,7 +1028,7 @@ func TestMkDeepNormalizesChildren(t *testing.T) {
 					Throws:    nil, Inexact: false, TypeParams: nil, LifetimeParams: nil,
 				}
 			},
-			shallow: "fn (x: number) -> ¬¬string",
+			shallow: "fn (x: number) -> ~~string",
 			deep:    "fn (x: number) -> string",
 		},
 		{
@@ -1041,7 +1041,7 @@ func TestMkDeepNormalizesChildren(t *testing.T) {
 					Throws:    nil, Inexact: false, TypeParams: nil, LifetimeParams: nil,
 				}
 			},
-			shallow: "fn (x: ¬¬number) -> string",
+			shallow: "fn (x: ~~number) -> string",
 			deep:    "fn (x: number) -> string",
 		},
 		{

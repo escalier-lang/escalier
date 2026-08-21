@@ -51,7 +51,7 @@ func TestConstrainNegation(t *testing.T) {
 			name:     "a literal against the complement of its own primitive",
 			sub:      numLit(5),
 			super:    negate(num()),
-			wantErrs: []string{"cannot constrain 5 <: ¬number"},
+			wantErrs: []string{"cannot constrain 5 <: ~number"},
 		},
 		{
 			name:  "a primitive against the complement of another primitive",
@@ -67,7 +67,7 @@ func TestConstrainNegation(t *testing.T) {
 			wantErrs: []string{"cannot constrain unknown <: string"},
 		},
 		{
-			// De Morgan: `¬(number | string)` normalizes to the two goals `boolean ∩ number`
+			// De Morgan: `~(number | string)` normalizes to the two goals `boolean ∩ number`
 			// and `boolean ∩ string`, and neither meet is inhabited.
 			name:  "a primitive against the complement of a union",
 			sub:   boolT(),
@@ -86,7 +86,7 @@ func TestConstrainNegation(t *testing.T) {
 			super: negate(negate(num())),
 		},
 		{
-			// The union super is `number ∪ ¬number`, which every value inhabits. The
+			// The union super is `number ∪ ~number`, which every value inhabits. The
 			// complement moves to the subtype side, so the goal becomes `string ∩ number <:
 			// number` and the meet is uninhabited.
 			name:  "a primitive against a union of a type and its complement",
@@ -103,7 +103,7 @@ func TestConstrainNegation(t *testing.T) {
 			name:     "an object against the complement of a primitive",
 			sub:      exactObj(propElem("x", num())),
 			super:    negate(num()),
-			wantErrs: []string{"cannot constrain object <: ¬number"},
+			wantErrs: []string{"cannot constrain object <: ~number"},
 		},
 	}
 	for _, tt := range tests {
@@ -125,14 +125,14 @@ func TestConstrainNegationIntoVarRecordsBound(t *testing.T) {
 	require.Empty(t, Messages(c.Constrain(a, &soltype.NegationType{Inner: str()})))
 	require.Len(t, a.UpperBounds, 1)
 	require.Empty(t, a.LowerBounds)
-	require.Equal(t, "¬string", soltype.Print(coalesce(a, soltype.Negative)))
+	require.Equal(t, "~string", soltype.Print(coalesce(a, soltype.Negative)))
 }
 
 // TestConstrainRecordsWeakestBoundOnVarCandidate pins what a goal the normal-form
 // layer settles on a supertype-side variable records under that variable. The goal asks
 // only for what the other supertype candidates leave uncovered:
 //
-//	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ¬p₁ ∩ … ∩ ¬pₙ <: v
+//	⋂subCands <: p₁ ∪ … ∪ pₙ ∪ v    is    ⋂subCands ∩ ~p₁ ∩ … ∩ ~pₙ <: v
 //
 // weakestBound in constrain_nf.go builds the left-hand side, and only where `⋂subCands`
 // is `unknown`. Everywhere else the variable records the whole meet, which is sound and
@@ -154,7 +154,7 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 		{
 			// `"hi" <: (T | number)`. The number candidate is trialled first and fails, so the
 			// goal settles on T. The subtype side carries a positive part, so T takes the meet
-			// rather than the `"hi" ∩ ¬number` the goal asks for. The two admit the same values
+			// rather than the `"hi" ∩ ~number` the goal asks for. The two admit the same values
 			// here, since `"hi"` and `number` share none.
 			name: "a subtype side with a positive part records the meet",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
@@ -165,16 +165,16 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			wantSurface: `"hi"`,
 		},
 		{
-			// `¬T <: number`. The layer moves both complements across the `<:`, which reads
+			// `~T <: number`. The layer moves both complements across the `<:`, which reads
 			// `unknown <: number ∪ T`. Recording `unknown` would force `T = unknown` and so
-			// collapse `¬T` to `never`, which the goal never asks for.
+			// collapse `~T` to `never`, which the goal never asks for.
 			name: "a top meet subtracts its concrete siblings",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				v := c.freshVar(0)
 				return negT(v), num(), v, nil
 			},
-			wantBounds:  []string{"¬number"},
-			wantSurface: "¬number",
+			wantBounds:  []string{"~number"},
+			wantSurface: "~number",
 		},
 		{
 			// `5 <: (T | number)`. The number candidate holds, so the trial commits it and
@@ -188,26 +188,26 @@ func TestConstrainRecordsWeakestBoundOnVarCandidate(t *testing.T) {
 			wantSurface: "never",
 		},
 		{
-			// `¬T <: (number | U)`. The negated variable crosses the `<:` as a positive one,
+			// `~T <: (number | U)`. The negated variable crosses the `<:` as a positive one,
 			// which empties the subtype side and makes this a top meet. The goal reads
 			// `unknown <: number ∪ U ∪ T`, and U is settled on first, since two variables
 			// keep their list order.
 			//
 			// T is dropped twice over. weakestBound skips it on concreteMember's gate, so U
-			// takes `¬number` rather than the weakest `¬number ∩ ¬T`. U's pair then discharges
+			// takes `~number` rather than the weakest `~number ∩ ~T`. U's pair then discharges
 			// the goal on its own, so T's own pair is never trialled and T ends unbounded.
-			// That is the right answer here, since `number ∪ ¬number` already admits every
-			// value `¬T` could hold, whatever T turns out to be.
+			// That is the right answer here, since `number ∪ ~number` already admits every
+			// value `~T` could hold, whatever T turns out to be.
 			name: "a top meet skips a variable sibling",
 			goal: func(c *Context) (soltype.Type, soltype.Type, *soltype.TypeVarType, []*soltype.TypeVarType) {
 				other, v := c.freshVar(0), c.freshVar(0)
 				return negT(other), newUnion(nil, []soltype.Type{num(), v}), v, []*soltype.TypeVarType{other}
 			},
-			wantBounds:  []string{"¬number"},
-			wantSurface: "¬number",
+			wantBounds:  []string{"~number"},
+			wantSurface: "~number",
 		},
 		{
-			// `¬T <: (U | V)`, which reads `unknown <: U ∪ V ∪ T`. The super has to be the
+			// `~T <: (U | V)`, which reads `unknown <: U ∪ V ∪ T`. The super has to be the
 			// union rather than a bare variable, since a variable operand falls through to the
 			// variable arm and never reaches this layer. U is settled on first. Every sibling
 			// is a variable, so every one is skipped and the meet is empty. newIntersection
@@ -518,7 +518,7 @@ func TestConstrainUnionCommitOnAFusedAtom(t *testing.T) {
 // pair on every unfolding. The coinductive cache closes that pair, which is what
 // keeps the comparison finite.
 //
-//	μX.{next: X, tag: string | ¬number}
+//	μX.{next: X, tag: string | ~number}
 //
 // The two knots number their binders differently, so a comparison that only
 // succeeded on identical operands would not settle either direction.

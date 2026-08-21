@@ -293,7 +293,7 @@ func TestRefMergeRecordsNoLifetimeBound(t *testing.T) {
 func TestNegatedBorrowNormalizes(t *testing.T) {
 	c := &Context{}
 	ref := borrow(true, c.freshLifetime(0), refObj(t, "{x: number}"))
-	const negRef = "¬&mut {x: number}"
+	const negRef = "~&mut {x: number}"
 
 	t.Run("the smart constructor builds it", func(t *testing.T) {
 		require.Equal(t, negRef, soltype.Print(soltype.NewNegation(ref)))
@@ -310,9 +310,9 @@ func TestNegatedBorrowNormalizes(t *testing.T) {
 	// borrow surfaces as its own negated atom.
 	t.Run("a borrow inside a negated union splits under De Morgan", func(t *testing.T) {
 		joined := newUnion(nil, []soltype.Type{parseType(t, "{a: number}"), ref})
-		require.Equal(t, "¬(&mut {x: number} | {a: number})",
+		require.Equal(t, "~(&mut {x: number} | {a: number})",
 			soltype.Print(c.mkDNF(not(joined), soltype.Positive).toType()))
-		require.Equal(t, "¬&mut {x: number} & ¬{a: number}",
+		require.Equal(t, "~&mut {x: number} & ~{a: number}",
 			soltype.Print(c.mkCNF(not(joined), soltype.Negative).toType()))
 	})
 }
@@ -323,7 +323,7 @@ func TestNegatedBorrowNormalizes(t *testing.T) {
 // rules while the wrapper stays opaque.
 func TestNegationInsideBorrowNormalizes(t *testing.T) {
 	c := &Context{}
-	// `&'a ({a: number} | ¬¬{x: number})`. Complementing twice returns the original
+	// `&'a ({a: number} | ~~{x: number})`. Complementing twice returns the original
 	// set, so the pointee normalizes to `{a: number} | {x: number}` while the borrow
 	// stands as written. The complement sits under a union, which is the only way one
 	// sits inside a borrow. RefInner admits UnionType, and NegationType is not a
@@ -374,7 +374,7 @@ func TestBorrowNarrowingKeepsBorrowsWhole(t *testing.T) {
 }
 
 // TestNegationIsNotBorrowable pins the other half of the invariant: no borrow can
-// point AT a complement either, so `&¬T` cannot be built in the first place. A
+// point AT a complement either, so `&~T` cannot be built in the first place. A
 // complement names no allocated value, so there is nothing there to borrow.
 func TestNegationIsNotBorrowable(t *testing.T) {
 	var complement soltype.Type = &soltype.NegationType{Inner: parseType(t, "{x: number}")}

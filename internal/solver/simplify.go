@@ -462,13 +462,13 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // operand falls through to the ordinary variable arm and the complement is stored
 // whole:
 //
-//	α <: ¬string        ⟹   α.UpperBounds = [¬string]
+//	α <: ~string        ⟹   α.UpperBounds = [~string]
 //
 // The normal-form layer's move-across-`<:` rewrite does the opposite, which is worth
 // knowing when tracking down where a complement came from. It turns a negated part
 // into a positive one on the far side:
 //
-//	α ∩ ¬string <: number   ⟹   α <: number | string
+//	α ∩ ~string <: number   ⟹   α <: number | string
 //
 // α ends up with ONE positive upper bound there, never a complement and never both
 // members. A variable's upper bounds are read as a meet, so recording both would say
@@ -480,18 +480,18 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 //
 // TestNegatedBoundReachesAVariable pins both. The literal stored form is faithful but
 // unreadable. Narrowing a `string | number` against "not a string" coalesces to
-// `(string | number) & ¬string`, where the user means `number`.
+// `(string | number) & ~string`, where the user means `number`.
 //
 // Two facts the solver already decides collapse that form, and both are asked
 // through subtypeHolds, which trials under a discarding probe:
 //
-//  1. An arm the complement rules out contributes nothing. `string & ¬string`
-//     admits no value, so the arm is dropped and `(string | number) & ¬string`
-//     becomes `number & ¬string`.
+//  1. An arm the complement rules out contributes nothing. `string & ~string`
+//     admits no value, so the arm is dropped and `(string | number) & ~string`
+//     becomes `number & ~string`.
 //  2. A complement whose operand shares no value with what is left states nothing
-//     more. `number` and `string` are disjoint, so `number & ¬string` is `number`.
+//     more. `number` and `string` are disjoint, so `number & ~string` is `number`.
 //
-// Disjointness is decided by `T <: ¬U`, which the normal-form layer settles by
+// Disjointness is decided by `T <: ~U`, which the normal-form layer settles by
 // moving `U` back to the subtype side and finding `T ∩ U` uninhabited. That reads
 // the same class-tag and literal/primitive facts the meet of two atoms reads, so
 // this pass adds no disjointness knowledge of its own.
@@ -502,7 +502,7 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 //
 // Its input stays small because Escalier rebinds on refinement rather than
 // re-typing the scrutinee. Each guard computes a fresh binding whose type is
-// simplified and frozen at that site, so nested guards do not pile `& ¬A & ¬B` onto
+// simplified and frozen at that site, so nested guards do not pile `& ~A & ~B` onto
 // one long-lived variable.
 
 // simplifyNegations applies the two rewrites above to one intersection's members.
@@ -514,7 +514,7 @@ func simplifyScheme(body soltype.Type, genLevel int, keep set.Set[*soltype.TypeV
 // `never`".
 //
 // A member carrying a free variable is left alone, on concreteMember's gate. That is
-// what keeps `T & ¬Tag` over an abstract T intact. An inexact operand is weighed like
+// what keeps `T & ~Tag` over an abstract T intact. An inexact operand is weighed like
 // any other, since `A | B | ...` is top and nothing satisfies its complement.
 // TestOpenUnionIsTopForSubtypingOnly pins that reading.
 func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type, changed, provedEmpty bool) {
@@ -539,7 +539,7 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 
 	// Rewrite 1, over every (complement, positive member) pair. Each excluded arm
 	// is written back in place, so a later complement narrows what the earlier one
-	// left and `(string | number | boolean) & ¬string & ¬number` reaches `boolean`.
+	// left and `(string | number | boolean) & ~string & ~number` reaches `boolean`.
 	for _, ni := range negIdx {
 		n := out[ni].(*soltype.NegationType).Inner
 		for _, pi := range posIdx {
@@ -583,9 +583,9 @@ func simplifyNegations(c *Context, members []soltype.Type) (kept []soltype.Type,
 	return kept, true, false
 }
 
-// excludeArms returns p with every part that ¬n rules out removed, and reports
+// excludeArms returns p with every part that ~n rules out removed, and reports
 // whether anything was removed. A union loses each arm that is a subtype of n,
-// since meeting such an arm with ¬n leaves no value. A non-union p that is itself a
+// since meeting such an arm with ~n leaves no value. A non-union p that is itself a
 // subtype of n leaves nothing at all, which excludeArms returns as `never`.
 func excludeArms(c *Context, p, n soltype.Type) (soltype.Type, bool) {
 	u, isUnion := p.(*soltype.UnionType)

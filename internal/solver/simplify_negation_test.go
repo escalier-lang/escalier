@@ -37,11 +37,11 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 		want string
 	}{
 		{
-			// One guard over a two-member union. `string` cannot survive `¬string`, and
+			// One guard over a two-member union. `string` cannot survive `~string`, and
 			// what is left is disjoint from `string`, so the complement goes too.
 			name:         "one guard over a union",
 			build:        func(*checker) soltype.Type { return interT(unionT(str(), num()), negT(str())) },
-			unsimplified: "(number | string) & ¬string",
+			unsimplified: "(number | string) & ~string",
 			want:         "number",
 		},
 		{
@@ -51,7 +51,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			build: func(*checker) soltype.Type {
 				return interT(unionT(str(), num(), boolT()), negT(str()), negT(num()))
 			},
-			unsimplified: "(number | string | boolean) & ¬number & ¬string",
+			unsimplified: "(number | string | boolean) & ~number & ~string",
 			want:         "boolean",
 		},
 		{
@@ -59,7 +59,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			// `"a" <: string`.
 			name:         "literal arm excluded by its primitive",
 			build:        func(*checker) soltype.Type { return interT(unionT(numLit(5), strLit("a")), negT(str())) },
-			unsimplified: `(5 | "a") & ¬string`,
+			unsimplified: `(5 | "a") & ~string`,
 			want:         "5",
 		},
 		{
@@ -67,14 +67,14 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			// operand, so only the complement drops.
 			name:         "already-disjoint positive drops the complement",
 			build:        func(*checker) soltype.Type { return interT(num(), negT(str())) },
-			unsimplified: "number & ¬string",
+			unsimplified: "number & ~string",
 			want:         "number",
 		},
 		{
 			// The positive part is entirely excluded, so the meet admits no value.
 			name:         "complement excludes the whole positive part",
 			build:        func(*checker) soltype.Type { return interT(str(), negT(str())) },
-			unsimplified: "string & ¬string",
+			unsimplified: "string & ~string",
 			want:         "never",
 		},
 		{
@@ -87,7 +87,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Dog", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Dog | Cat) & ¬Dog",
+			unsimplified: "(Dog | Cat) & ~Dog",
 			want:         "Cat",
 		},
 		{
@@ -100,7 +100,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Puppy", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Puppy | Cat) & ¬Dog",
+			unsimplified: "(Puppy | Cat) & ~Dog",
 			want:         "Cat",
 		},
 		{
@@ -108,15 +108,15 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			// it is left as written.
 			name:         "bare complement is left alone",
 			build:        func(*checker) soltype.Type { return negT(str()) },
-			unsimplified: "¬string",
-			want:         "¬string",
+			unsimplified: "~string",
+			want:         "~string",
 		},
 		{
 			// The operand is rewritten before the complement over it, so an operand this
-			// pass empties is folded rather than left as the meaningless `¬never`.
+			// pass empties is folded rather than left as the meaningless `~never`.
 			name:         "complement over an emptied operand",
 			build:        func(*checker) soltype.Type { return negT(interT(str(), negT(str()))) },
-			unsimplified: "¬(string & ¬string)",
+			unsimplified: "~(string & ~string)",
 			want:         "unknown",
 		},
 		{
@@ -126,7 +126,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 			build: func(*checker) soltype.Type {
 				return interT(num(), negT(newUnion(nil, []soltype.Type{boolT(), str()})))
 			},
-			unsimplified: "number & ¬(string | boolean)",
+			unsimplified: "number & ~(string | boolean)",
 			want:         "number",
 		},
 		{
@@ -136,7 +136,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				u := func() soltype.Type { return newUnion(nil, []soltype.Type{str(), num()}) }
 				return interT(u(), negT(u()))
 			},
-			unsimplified: "(number | string) & ¬(number | string)",
+			unsimplified: "(number | string) & ~(number | string)",
 			want:         "never",
 		},
 	}
@@ -157,14 +157,14 @@ func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
 	c := newChecker()
 	c.ctx.registerClass("Tag", &ClassDef{})
 	param := c.freshAt(1)
-	// The unsimplified body is `fn (x: T) -> T & ¬Tag`. T occurs in both polarities, so
+	// The unsimplified body is `fn (x: T) -> T & ~Tag`. T occurs in both polarities, so
 	// it is retained as a type parameter rather than inlined to its bounds, and the
 	// return keeps both members because nothing proves T disjoint from Tag.
 	body := &soltype.FuncType{
 		Params: []*soltype.FuncParam{fparam("x", param)},
 		Ret:    interT(param, negT(cls("Tag", false))),
 	}
-	require.Equal(t, "fn <T0>(x: T0) -> T0 & ¬Tag", renderScheme(c.generalize(body, 0)))
+	require.Equal(t, "fn <T0>(x: T0) -> T0 & ~Tag", renderScheme(c.generalize(body, 0)))
 }
 
 // The cases the pass answers through its return values rather than through the type it
@@ -177,7 +177,7 @@ func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
 func TestSimplifyNegationsMemberRewrites(t *testing.T) {
 	c := newChecker()
 
-	// `string & ¬string` admits no value and the pass derives it. The empty meet is
+	// `string & ~string` admits no value and the pass derives it. The empty meet is
 	// reported rather than returned as a `never` member, so the caller decides what an
 	// empty intersection renders as.
 	t.Run("excluded positive part is proved empty", func(t *testing.T) {
@@ -209,9 +209,9 @@ func TestNewNegation(t *testing.T) {
 		{"never", &soltype.NeverType{}, "unknown"},
 		{"unknown", &soltype.UnknownType{}, "never"},
 		{"double complement", negT(str()), "string"},
-		{"primitive", str(), "¬string"},
+		{"primitive", str(), "~string"},
 		// A union bounds its members, so its complement is a real type.
-		{"union", unionT(str(), num()), "¬(number | string)"},
+		{"union", unionT(str(), num()), "~(number | string)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
