@@ -473,64 +473,66 @@ func TestTemplateMatchesString(t *testing.T) {
 	}
 }
 
-// TypeScript decides a `${number}` placeholder by JavaScript's Number() coercion: a span conforms
-// when it is non-empty and Number(span) is finite. templateMatchesString matches that. Every `want`
-// below is the verdict tsc 5.8 gives for `const x: <template> = <literal>`, so the table pins Escalier
-// to TypeScript across the number grammar and the multidigit, greedy, and multi-placeholder cases.
+// A `${number}` placeholder is decided by JavaScript's Number() coercion: a span conforms when it is
+// non-empty and Number(span) is finite. Each case drives a `val x: <template> = <literal>` binding, so
+// the whole matcher runs, and its `wantErr` is the verdict tsc 5.8 gives for that assignment, empty
+// when it type-checks and the reported message when it does not. The table pins Escalier to TypeScript
+// across the number grammar and the multidigit, greedy, and multi-placeholder cases.
 //
 // The grammar admits more than a `number` value's own `String()` form: a hex, octal, or binary
-// literal, scientific notation, a leading-zero run, a bare or trailing fraction, and a signed value
-// all conform, since Number() coerces each to a finite number. `Infinity` and a non-numeric span do
-// not. A number placeholder consumes greedily up to what follows it, so `${number}0` reads "100" as
-// the number "10" and the literal "0".
+// literal, scientific notation, a leading-zero run, a bare or trailing fraction, and a signed value all
+// conform, since Number() coerces each to a finite number. `Infinity` and a non-numeric span do not. A
+// number placeholder consumes greedily up to what follows it, so `${number}0` reads "100" as the
+// number "10" and the literal "0".
 func TestNumberPlaceholderMatchesTypeScript(t *testing.T) {
-	number := func() soltype.Type { return num() }
-	// numTemplate is `${number}`, the plain single-placeholder template the grammar cases drive.
-	numQuasis, numInterps := []string{"", ""}, []soltype.Type{number()}
 	tests := []struct {
 		name    string
-		quasis  []string
-		interps []soltype.Type
-		s       string
-		want    bool
+		src     string
+		wantErr string // "" ⇒ expect no error
 	}{
-		{"multidigit integer", numQuasis, numInterps, "1000000", true},
-		{"leading zeros", numQuasis, numInterps, "007", true},
-		{"decimal", numQuasis, numInterps, "12.34", true},
-		{"bare fraction", numQuasis, numInterps, ".5", true},
-		{"trailing dot", numQuasis, numInterps, "1.", true},
-		{"negative multidigit", numQuasis, numInterps, "-12", true},
-		{"negative zero", numQuasis, numInterps, "-0", true},
-		{"leading plus", numQuasis, numInterps, "+5", true},
-		{"scientific", numQuasis, numInterps, "1e10", true},
-		{"scientific signed exponent", numQuasis, numInterps, "1.5e-3", true},
-		{"hex literal", numQuasis, numInterps, "0x1f", true},
-		{"octal literal", numQuasis, numInterps, "0o17", true},
-		{"binary literal", numQuasis, numInterps, "0b101", true},
-		{"infinity rejected", numQuasis, numInterps, "Infinity", false},
-		{"dotted non-number rejected", numQuasis, numInterps, "1.2.3", false},
-		{"trailing letters rejected", numQuasis, numInterps, "1px", false},
-		{"empty span rejected", numQuasis, numInterps, "", false},
+		{"multidigit integer", "val x: `${number}` = \"1000000\"", ""},
+		{"leading zeros", "val x: `${number}` = \"007\"", ""},
+		{"decimal", "val x: `${number}` = \"12.34\"", ""},
+		{"bare fraction", "val x: `${number}` = \".5\"", ""},
+		{"trailing dot", "val x: `${number}` = \"1.\"", ""},
+		{"negative multidigit", "val x: `${number}` = \"-12\"", ""},
+		{"negative zero", "val x: `${number}` = \"-0\"", ""},
+		{"leading plus", "val x: `${number}` = \"+5\"", ""},
+		{"scientific", "val x: `${number}` = \"1e10\"", ""},
+		{"scientific signed exponent", "val x: `${number}` = \"1.5e-3\"", ""},
+		{"hex literal", "val x: `${number}` = \"0x1f\"", ""},
+		{"octal literal", "val x: `${number}` = \"0o17\"", ""},
+		{"binary literal", "val x: `${number}` = \"0b101\"", ""},
+		{"infinity rejected", "val x: `${number}` = \"Infinity\"", "cannot constrain \"Infinity\" <: `${number}`"},
+		{"dotted non-number rejected", "val x: `${number}` = \"1.2.3\"", "cannot constrain \"1.2.3\" <: `${number}`"},
+		{"trailing letters rejected", "val x: `${number}` = \"1px\"", "cannot constrain \"1px\" <: `${number}`"},
+		{"empty span rejected", "val x: `${number}` = \"\"", "cannot constrain \"\" <: `${number}`"},
 		// A digit quasi after the placeholder: the number consumes greedily up to the final "0".
-		{"greedy up to a digit suffix", []string{"", "0"}, []soltype.Type{number()}, "100", true},
-		{"digit suffix must be present", []string{"", "0"}, []soltype.Type{number()}, "12", false},
+		{"greedy up to a digit suffix", "val x: `${number}0` = \"100\"", ""},
+		{"digit suffix must be present", "val x: `${number}0` = \"12\"", "cannot constrain \"12\" <: `${number}0`"},
 		// A unit suffix quasi.
-		{"multidigit before a unit suffix", []string{"", "px"}, []soltype.Type{number()}, "120px", true},
+		{"multidigit before a unit suffix", "val x: `${number}px` = \"120px\"", ""},
 		// Numbers separated by fixed text, the common multi-placeholder shape.
-		{"dash-separated pair", []string{"", "-", ""}, []soltype.Type{number(), number()}, "12-34", true},
-		{"dash pair needs the dash", []string{"", "-", ""}, []soltype.Type{number(), number()}, "1234", false},
-		{"semver triple", []string{"v", ".", ".", ""}, []soltype.Type{number(), number(), number()}, "v10.20.30", true},
+		{"dash-separated pair", "val x: `${number}-${number}` = \"12-34\"", ""},
+		{"dash pair needs the dash", "val x: `${number}-${number}` = \"1234\"", "cannot constrain \"1234\" <: `${number}-${number}`"},
+		{"semver triple", "val x: `v${number}.${number}.${number}` = \"v10.20.30\"", ""},
 		// Adjacent placeholders with no separator. The earlier number takes exactly one character,
-		// so a split that a later boundary would allow is not reached: "12" reads as "1" and "2",
-		// while "-12" reads as "-" and "12" and is rejected because "-" is no number.
-		{"adjacent numbers take one digit each", []string{"", "", ""}, []soltype.Type{number(), number()}, "12", true},
-		{"adjacent numbers reject a leading sign", []string{"", "", ""}, []soltype.Type{number(), number()}, "-12", false},
-		{"adjacent numbers reject an interior dash", []string{"", "", ""}, []soltype.Type{number(), number()}, "12-34", false},
-		{"adjacent numbers keep a sign on the second", []string{"", "", ""}, []soltype.Type{number(), number()}, "1-2", true},
+		// so a split a later boundary would allow is not reached: "12" reads as "1" and "2", while
+		// "-12" reads as "-" and "12" and is rejected because "-" is no number.
+		{"adjacent numbers take one digit each", "val x: `${number}${number}` = \"12\"", ""},
+		{"adjacent numbers reject a leading sign", "val x: `${number}${number}` = \"-12\"", "cannot constrain \"-12\" <: `${number}${number}`"},
+		{"adjacent numbers reject an interior dash", "val x: `${number}${number}` = \"12-34\"", "cannot constrain \"12-34\" <: `${number}${number}`"},
+		{"adjacent numbers keep a sign on the second", "val x: `${number}${number}` = \"1-2\"", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, templateMatchesString(tt.s, tt.quasis, tt.interps))
+			_, _, errs := inferSource(t, tt.src)
+			if tt.wantErr == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.wantErr, errs[0].Message())
 		})
 	}
 }
