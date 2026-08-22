@@ -88,8 +88,12 @@ that would introduce new PRs:
 - **Applying the non-receiver facts.** §7 auto-applies only receiver
   mutability, the high-confidence determination. Parameter disposition
   (§8), the return-borrow seed (§8.2), `throws` (§9), and `rejects` (§9.3)
-  are produced into `facts.json` but **consumed as curation input**, not
-  auto-written into the `.esc`. These are not permanently curation-grade,
+  are produced into `facts.json` but reach the `.esc` **through the
+  hand-curated override layer**, not the trusted auto-apply path — a human
+  review sits between the fact and the committed annotation (see §7 "Two
+  application paths"; `throws`/`rejects` and the `&`/lifetime annotations
+  are added by the curator, disposition gets a provisional baseline the
+  curator corrects). These are not permanently curation-grade,
   though: `throws`/`rejects` have a defined graduation path — §9.4
   measures the false-negative rate, and a measured zero flips them to
   auto-apply (FR14). Whether disposition is confident enough to auto-apply
@@ -565,6 +569,46 @@ entry. This is the gate that authorizes removing override entries in §7.
 - Remove the `mutabilityOverrides` entries that §6 proved redundant for
   `std:*`. Keep entries the facts source does not cover, such as `web:*`
   classes, untouched.
+
+**Two application paths.** `facts.json` reaches the generated `.esc` two
+ways, and the split is per determination, not per method:
+
+```
+facts.json ─┬─ receiver mutability ──────────────────▶ generated .esc   (auto, trusted)
+            └─ disposition / return-borrow /
+               throws / rejects ──▶ review ──▶ override layer ──▶ generated .esc
+.d.ts ─── types ─────────────────────────────────────▶ generated .esc
+```
+
+- **Auto-applied (trusted).** Receiver mutability is read straight from a
+  classified fact and written into the `.esc` — no human in the loop. It
+  is the only determination §6 has validated (FR9) as trustworthy.
+- **Curation-grade (reviewed).** Parameter disposition, the return-borrow
+  seed, `throws`, and `rejects` reach the `.esc` only through a
+  **hand-curated override layer** — a committed data file keyed by
+  canonical spec name that a human populates by reviewing the
+  corresponding fields of `facts.json`, and that generation **re-applies
+  automatically** (per FR7, it is re-applied, not edited into the output).
+  A human is in the loop once per builtin, then only for deltas — new
+  methods, or a spec bump that surfaces new candidate throws; the
+  committed override layer means regeneration needs no manual step.
+
+**What "not auto-written" means, precisely** — it differs by determination:
+
+- `throws` / `rejects` and the `&` / lifetime annotations are **omitted**
+  from the generated `.esc` unless the override layer supplies them (an
+  absent `throws` clause is `never`), so the human genuinely *adds* them.
+- Parameter **disposition** is the exception: every parameter must carry a
+  disposition for the signature to be valid, so the converter writes a
+  **provisional baseline** — the analyzed disposition for a classified
+  method, the FR5 `&mut` default when uncertain — which the override
+  layer, if present, corrects. That is review-and-**correct**, not
+  author-from-scratch. So disposition is written but not trusted; the
+  other three are not written until curated.
+
+Once §9.4's FR14 gate measures a zero false-negative rate, `throws` /
+`rejects` graduate from the reviewed path to the auto-applied one for the
+covered subset.
 
 **Gate.** Converter output for `std:*` matches the facts for every
 classified method; the removed override entries cause no regression in
