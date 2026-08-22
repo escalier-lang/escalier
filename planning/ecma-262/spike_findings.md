@@ -167,7 +167,7 @@ serializer keys `BackingStoreSlots` by the bare name.
 ### Completion guards `?` / `!` / plain
 
 The guards are **lowered into control flow, not kept as a flag on the call**.
-This is the first fact that shapes §3. The compiled forms are stereotyped and
+This is the first fact that shapes §3. The compiled forms are fixed and
 deterministic, so the serializer reconstructs the guard from the shape that
 follows a `Call`:
 
@@ -229,7 +229,7 @@ return-alias classifier reads `receiver` (`return O` / `NormalCompletion(O)`),
 1. **Guards are lowered, not flagged (§3).** The `?`/`!`/plain distinction
    lives in the post-call branch shape, not a call attribute. §3's Appendix A
    `Node.Call` still records one guard field, but the serializer must compute
-   it by matching the stereotyped abrupt-check / assert-normal patterns above.
+   it by matching the fixed abrupt-check / assert-normal patterns above.
    This is a lowering rule in the serializer, not a scope cut.
 
 2. **Property writes dispatch through dynamic `[[Set]]` (§4.1 seed).** The

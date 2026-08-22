@@ -262,7 +262,7 @@ resolves onto the happy-path side of the §1 branches below. It sharpens one
 §3 stays a structural dumper that makes no mutability or alias decision.
 
 - **§3 (serializer).** The compiled IR carries no `?`/`!` flag; the guard is
-  lowered into a stereotyped post-call branch — an abrupt-check that returns
+  lowered into a fixed post-call branch — an abrupt-check that returns
   the completion for `?`, a normal assertion for `!`. §3 populates the
   completion-guard field the Appendix A schema already defines, and that §9
   reads as `node.Guard`, by matching that branch shape. This recovers spec
