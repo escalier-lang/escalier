@@ -544,18 +544,20 @@ showed this parameter is only read," whereas the FR5 default applies to an
   element, `Map.prototype.set` stores both key and value (FR12). Whether
   `escape` is spelled a move or a lifetime-bounded borrow is settled at
   the FR7 join from the container's element type.
-- The `throws` array holds the synchronous domain exceptions that survive
-  the coercion filter (FR11). `Number.prototype.toFixed` throws
-  `RangeError` when `fractionDigits` is out of the 0–100 range — a domain
-  throw the type system cannot preclude — while the `TypeError` from
-  coercing a non-number receiver is filtered out.
+- The `throws` array holds the synchronous exceptions that survive the
+  coercion filter (FR11). `Number.prototype.toFixed` throws `RangeError`
+  when `fractionDigits` is out of the 0–100 range — a domain throw the
+  type system cannot preclude — while the `TypeError` from coercing a
+  non-number receiver is filtered out. Each entry is a standard error-class
+  name, an origin ref (`param:k` / `receiver`), or `"unknown"` (FR13).
 - The `rejects` array holds the asynchronous reject types for a
   promise-returning method, the candidate for `Promise<T, E>`'s `E`
-  (FR13). It is empty for a non-promise method. For ECMA-262 `std:*` it
-  is usually empty or a propagated generic, because the core language has
-  few builtins with a concrete domain rejection; the channel matters more
-  for the future `web:*` extractor, where `fetch` and friends reject with
-  concrete types.
+  (FR13), in the same entry forms as `throws`. It is empty for a
+  non-promise method. For ECMA-262 `std:*` it is usually empty or a
+  forwarded element `E` (recorded as an origin), because the core language
+  has few builtins with a concrete domain rejection; the channel matters
+  more for the future `web:*` extractor, where `fetch` and friends reject
+  with concrete types.
 
 The host portion of a key may be a **namespace-qualified dotted path**,
 not just a single class name. Three forms arise:
@@ -699,9 +701,11 @@ the algorithm can raise, by the same inter-procedural fixpoint as the
 mutation summary (FR2) over the same control-flow graph, with a throw
 transfer function:
 
-- a `Throw a *T* exception` step contributes `T` to the function's throw
-  set, where `T` is one of `TypeError`, `RangeError`, `SyntaxError`,
-  `ReferenceError`, `URIError`, `AggregateError`;
+- a `Throw a *T* exception` step contributes the named error class `T`
+  (one of `TypeError`, `RangeError`, `SyntaxError`, `ReferenceError`,
+  `URIError`, `AggregateError`); a `throw` of a non-constructed value
+  (`throw <arg>`) instead contributes that value's **origin** — `param:k`
+  or `receiver` — by the FR13 origin rule, resolved to a type at the join;
 - a call guarded by `?` contributes the callee's entire throw set,
   because `?` propagates any abrupt completion;
 - a call guarded by `!` contributes nothing, because `!` asserts the
@@ -832,29 +836,57 @@ coercion filter (FR11) applies to the reject channel, since a rejection
 that merely propagates a receiver/parameter coercion `TypeError` is
 precluded by static typing just as a synchronous one is.
 
-**Thrown and rejected values are Escalier types, not only error names.**
-Both `throws` and `rejects` are Escalier types in the type system, and a
-promise may reject with any value, not just an `Error` subclass. But
-every ECMA-262 `Throw a *T* exception` step names one of the six standard
-error constructors, so an *extracted* synchronous throw is always an
-error-class name, and the string form is faithful there. The values the
-string form cannot name are the ones ECMA-262 propagates rather than
-constructs — `Promise.reject(x)` forwarding its argument, a combinator
-forwarding an element promise's `E`, `AggregateError`'s aggregated list.
-For those the fact records the sentinel `"unknown"` (the checker's top
-type) rather than a name, and the concrete reject type is filled from the
-typed signature at curation. So a value in `throws` or `rejects` is
-either a standard error-class name or `"unknown"`; FR13 is deliberately
-not restricted to error-only facts.
+**Thrown and rejected values are recorded by origin, not only by name.**
+Both `throws` and `rejects` are Escalier types, and a promise may reject
+with any value, not just an `Error` subclass. Every ECMA-262 `Throw a *T*
+exception` step names one of the six standard error constructors, so an
+extracted value the spec **constructs** is an error-class name and the
+string form is faithful. The values the string form cannot name are the
+ones ECMA-262 **propagates** rather than constructs — and for those the
+fact records the value's **origin**, so the FR7 join substitutes the real
+type instead of collapsing to a bare `"unknown"`:
 
-For ECMA-262 `std:*` this channel is usually empty or a propagated
-generic: the core language's promise combinators reject by forwarding the
-element promises' own `E`, and their argument-validation failures are
-coercion type-guards the filter drops. Concrete domain rejections are a
-`web:*` concern — `fetch` rejecting with a network `TypeError`,
-`Response.prototype.json` rejecting with a `SyntaxError` — so FR13 is
-specified here for completeness and to fix the `throws`-versus-`rejects`
-split, but it delivers most of its value once the WebIDL extractor lands.
+- **Direct propagation of a parameter or the receiver** — `Promise.reject(r)`
+  rejecting with its argument, or a synchronous `throw <arg>`. The raised
+  value's origin is `Param(k)` or `Receiver` by the same origin tagging
+  the mutation and disposition analyses use (FR2), applied to the
+  raised-value operand. The fact records `param:k` / `receiver`, and the
+  join resolves it to that formal's declared type — `Promise.reject<E>(reason:
+  E)` becomes `Promise<never, E>`. It is only as precise as that declared
+  type — `.d.ts` types `Promise.reject`'s `reason` as `any`, lowered to
+  `unknown` (FR17), so the immediate result is still `unknown` there — but
+  recording the origin makes the curation upgrade mechanical: generalize
+  the parameter to `E` and the reject follows automatically.
+- **Promise combinators, hand-modeled** — `Promise.all`, `Promise.race`,
+  `Promise.any`, and `Promise.allSettled` forward the reject type of their
+  *element* promises, but that value arrives through the promise-resolution
+  machinery, not a traceable origin, so origin tagging alone cannot see it.
+  Each is a hand-modeled rule (the same class of hand-modeling §9.3 uses
+  for `IfAbruptRejectPromise`):
+  - `Promise.all` and `Promise.race` reject with the **union of the element
+    promises' `E`** — `all<T, E>(Iterable<Promise<T, E>>) -> Promise<T[], E>`;
+  - `Promise.any` rejects with an **`AggregateError` aggregating the element
+    promises' `E`** — its `errors` list is `E[]`, a parameterized
+    `AggregateError<E>` if the surface is generalized;
+  - `Promise.allSettled` **never** rejects from element rejections — it
+    captures each as `{status, value/reason}` data, so its element channel
+    is `never`.
+- **Unresolvable origin** — a propagated value the analysis can neither name
+  nor trace falls back to the sentinel `"unknown"`, filled from the typed
+  signature at curation.
+
+So a value in `throws` or `rejects` is a standard error-class name, an
+origin ref (`param:k`, `receiver`, or a combinator's element-`E` form), or
+`"unknown"`; FR13 is deliberately not restricted to error-only facts.
+
+For ECMA-262 `std:*` the reject channel is usually empty or a forwarded
+element `E` (now recorded as an origin, above); argument-validation
+failures are coercion type-guards the filter drops. Concrete domain
+rejections are a `web:*` concern — `fetch` rejecting with a network
+`TypeError`, `Response.prototype.json` rejecting with a `SyntaxError` — so
+FR13 is specified here for completeness and to fix the
+`throws`-versus-`rejects` split, but it delivers most of its value once
+the WebIDL extractor lands.
 
 ### FR14. Throws validation and the auto-apply gate
 

@@ -655,20 +655,23 @@ type-guard noise.
 
 ### §9.1. Throw-set fixpoint (FR10)
 
-Compute `Throws(F) ⊆ ErrorType`, the exception types `F` can raise,
+Compute `Throws(F) ⊆ Raised`, the exceptions `F` can raise (a constructed
+error class, or a `Param(k)`/`Receiver` origin for a propagated value),
 directly or transitively. The structure is identical to the §4.1
 mutation-summary fixpoint: a worklist over the call graph, a per-call
 transfer, re-enqueue callers on change. The transfer differs and depends
 on each call's completion guard, which §3 now records on the `Node`.
 
 ```
-Throws : map[FuncName] Set[ErrorType]   // {TypeError, RangeError, ...}
+Throws : map[FuncName] Set[Raised]      // Class(TypeError), Origin(Param(k)), Unknown, ...
 ThrowSites : map[FuncName] []ThrowSite  // provenance chains for §9.2 / §9.3
 
 // A site preserves where the value ULTIMATELY came from, so a coercion
 // throw stays recognizable however many `?`-hops it propagates through.
 type ThrowSite:
-    Type : ErrorType
+    Raised : Class(name)                 // a constructed error class (Throw a T exception)
+           | Origin(Param(k) | Receiver) // a propagated value, resolved to a type at the join (FR13)
+           | Unknown                     // a propagated value that could not be traced
     Root : Direct(node)                  // raised here (domain check, coercion AO, or plain)
          | Propagated(callee, inner)     // via ? from `callee`'s own site `inner`
     Node : node in F                     // the raising/propagating node; §9.3 reads it for the sink
@@ -679,19 +682,29 @@ while worklist nonempty:
     before = Throws[F].copy()
     for node in F.Nodes:
         switch node.Kind:
-        case Throw:                                 // explicit "Throw a T exception"
-            Throws[F].add(node.ErrorType)
-            ThrowSites[F].append(ThrowSite{ Type: node.ErrorType,
-                                            Root: Direct(node), Node: node })
+        case Throw:
+            raised = node.ErrorType ? Class(node.ErrorType)   // "Throw a T exception" → class
+                                    : raisedOf(F, node.Value)  // "throw <value>" → origin (rare in std:*)
+            Throws[F].add(raised)
+            ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
         case Call where node.Guard == GuardQuestion:   // ? propagates the callee's throws
             for s in ThrowSites[node.Callee]:          // carry the callee's OWN site, not just its name
-                Throws[F].add(s.Type)
-                ThrowSites[F].append(ThrowSite{ Type: s.Type,
+                Throws[F].add(s.Raised)
+                ThrowSites[F].append(ThrowSite{ Raised: s.Raised,
                                                 Root: Propagated(node.Callee, s), Node: node })
         // GuardBang (! asserts no abrupt completion) and GuardPlain
         // (result not completion-checked) contribute nothing.
     if Throws[F] != before: worklist.push(callers(F))
 ```
+
+`raisedOf(F, expr)` is the §4.2 origin map read against a raised value: a
+`Param(k)` or `Receiver` origin becomes `Origin(...)` (the FR13 parametric
+form), anything else becomes `Unknown`. Named-class throws dominate the
+synchronous channel — ECMA-262 `Throw a *T* exception` steps always name a
+constructor — so `Origin` sites are almost entirely a reject-channel
+phenomenon (§9.3). When `?`-propagated, the callee's `Param(k)` origin is
+re-mapped through the call's arguments to the caller's own formals, the
+same threading `precludedCoercion` (§9.2) does for coercion arguments.
 
 `ThrowSite.Root` threads the full chain back to the ultimate source
 rather than collapsing to the immediate callee: `Propagated` nests the
@@ -713,12 +726,12 @@ unreachable.
 CoercionAOs = { ToObject, RequireObjectCoercible,
                 ToString, ToNumber, ToNumeric, ToPrimitive }
 
-func filterThrows(M) []ErrorType:
+func filterThrows(M) []Raised:
     kept = {}
     for site in syncSites(M):                        // §9.3: sites reaching the synchronous exit
-        if site.Type == TypeError and precludedCoercion(M, site):
+        if site.Raised == Class(TypeError) and precludedCoercion(M, site):
             continue                                  // statically unreachable
-        kept.add(site.Type)
+        kept.add(site.Raised)                         // a class name, an Origin, or Unknown
     return sorted(kept)
 
 // precludedCoercion: the throw's Root bottoms out at a coercion AO whose
@@ -763,25 +776,41 @@ feeds `rejects` (the `Promise<T, E>` reject type). The two use the same
 fixpoint; they differ only in classifying the site:
 
 ```
-func rejectSet(M) []ErrorType:
+func rejectSet(M) []Raised:
     if not returnsPromise(M): return []          // no async channel (source below)
+    if M in PromiseCombinators: return combinatorRejects(M)   // hand-modeled (below)
     kept = {}
-    for site in rejectSites(M):                  // sites reaching the promise reject sink
-        if not (site.Type == TypeError and precludedCoercion(M, site)):
-            kept.add(site.Type)                  // same coercion filter as §9.2
+    // (a) abrupt completions routed to the reject sink — IfAbruptRejectPromise,
+    //     or a throw value reaching [[Reject]]. These ARE ThrowSites.
+    for site in rejectSites(M):
+        if not (site.Raised == Class(TypeError) and precludedCoercion(M, site)):
+            kept.add(site.Raised)                // a class name, an Origin, or Unknown
+    // (b) direct rejections — Call(cap.[[Reject]], reason) whose reason is a
+    //     plain value, not an abrupt completion, as in Promise.reject(r).
+    //     These are NOT ThrowSites; scan them and record the reason's origin.
+    for node in directRejectCalls(M):            // Call(cap.[[Reject]], reason)
+        kept.add(raisedOf(M, node.reasonArg))    // Param(k)/Receiver → Origin; else Unknown
     return sorted(kept)
 
-// A method's throw sites PARTITION by which exit each reaches, so channel
+// combinatorRejects: the four Promise combinators forward their ELEMENT
+// promises' reject type, which arrives through the resolution machinery,
+// not a CFG-visible origin — so they are hand-modeled per FR13, keyed by
+// name, against the iterable parameter's element-promise E:
+//   Promise.all, Promise.race → [ ElementErrOf(iterableParam) ]  // union of elements' E
+//   Promise.any               → [ AggregateError over ElementErrOf(iterableParam) ]
+//   Promise.allSettled        → [ ]                              // never rejects from elements
+
+// A method's throw sites partition by which exit each reaches, so channel
 // assignment is per-site:
 //   rejectSites(M) — ThrowSite.Node flows into the created promise
-//     capability's [[Reject]]: a Call whose callee is `cap.[[Reject]]`,
-//     an IfAbruptRejectPromise step, or a Return of an already-rejected
-//     promise.
-//   syncSites(M)   — every other site: the value leaves M as a synchronous
-//     abrupt completion.
-// The two are disjoint and together cover ThrowSites[M], so each site
-// lands in exactly one channel; a single error TYPE may still appear in
-// both `throws` and `rejects` when raised on both a sync and an async path.
+//     capability's [[Reject]]: an IfAbruptRejectPromise step or a throw
+//     value routed there.
+//   syncSites(M)   — every other throw site: the value leaves M as a
+//     synchronous abrupt completion.
+// The two are disjoint and cover ThrowSites[M]; direct [[Reject]] calls
+// (source b) and the combinator model (above) add to `rejects` only. A
+// single error type may appear in both `throws` and `rejects` when raised
+// on both a sync and an async path.
 
 // returnsPromise(M): read from the serialized CFG marker Func.Promise
 // (Appendix A), which the serializer sets when M's algorithm builds a
@@ -796,18 +825,24 @@ func rejectSet(M) []ErrorType:
 ```
 
 Recognizing a rejection site needs the CFG to represent the promise
-capability and its `[[Reject]]` field access; whether ESMeta's CFG
-surfaces `IfAbruptRejectPromise` as an inlined reject or an opaque helper
-is a **§1 spike question** — if it is opaque, seed the classification by
-treating `IfAbruptRejectPromise(x, cap)` as a reject of `cap` with `x`'s
-type, the one hand-modeled combinator step.
+capability and its `[[Reject]]` field access, and — for the direct-reject
+source (b) — the argument passed to `[[Reject]]`, so `raisedOf` can read
+its origin. Whether ESMeta's CFG surfaces `IfAbruptRejectPromise` as an
+inlined reject or an opaque helper is a **§1 spike question**; if opaque,
+hand-model `IfAbruptRejectPromise(x, cap)` as a reject of `cap` with `x`'s
+raised value. The four combinators are hand-modeled unconditionally
+(`combinatorRejects`), and that model needs the CFG only to identify the
+iterable parameter whose element-promise `E` is forwarded, not to trace
+the value through the resolution machinery.
 
 **Gate.** `Promise`-returning methods carry a `rejects` field distinct
 from `throws`; a synchronous validation `Throw` in a promise combinator
-lands in `throws` while an `IfAbruptRejectPromise` lands in `rejects`.
-Because concrete `std:*` domain rejections are rare (FR13), the honest
-expected outcome is that most `std:*` `rejects` sets are empty or a
-propagated generic, and that is recorded, not hidden.
+lands in `throws` while an `IfAbruptRejectPromise` lands in `rejects`;
+`Promise.reject`'s argument is recorded as `param:0` (source b), and
+`Promise.all`/`race`/`any`/`allSettled` produce the hand-modeled
+element-`E` / `AggregateError` / `never` rejects. Because concrete `std:*`
+domain rejections are rare (FR13), most `std:*` `rejects` sets are empty
+or a forwarded element `E`, and that is recorded as an origin, not hidden.
 
 ### §9.4. Throws validation and the auto-apply gate (FR14)
 
@@ -920,10 +955,12 @@ type Node struct {
     Guard     Guard    `json:"guard,omitempty"`     // Call: ? / ! / plain
     Object    *Expr    `json:"object,omitempty"`    // SlotWrite: the written object
     Slot      string   `json:"slot,omitempty"`      // SlotWrite, e.g. "[[MapData]]"
-    ErrorType string   `json:"errorType,omitempty"` // Throw: "TypeError", "RangeError", ...
+    ErrorType string   `json:"errorType,omitempty"` // Throw of a constructed error: "TypeError", ...
     Value     *Expr    `json:"value,omitempty"`     // Return: the returned expression;
                                                     // SlotWrite: the stored value (needed by §8.1
-                                                    // escape detection — the V in "Append V to O.[[slot]]")
+                                                    // escape detection — the V in "Append V to O.[[slot]]");
+                                                    // Throw of a non-constructed value: the thrown expr,
+                                                    // whose origin §9.1 reads (rare in std:*)
 }
 
 type ExprKind string
@@ -1009,11 +1046,14 @@ type MethodFact struct {
 }
 ```
 
-Each entry in `Throws` / `Rejects` is a standard error-class name
-(`TypeError`, `RangeError`, …) or the sentinel `"unknown"` for a
-propagated or arbitrary rejected value the spec does not construct
-(`Promise.reject`'s argument, combinator forwarding, `AggregateError`);
-requirements FR13. A `classified: false` entry carries no receiver,
+Each entry in `Throws` / `Rejects` is one of (requirements FR13): a
+standard error-class name the spec constructs (`TypeError`, `RangeError`,
+…); an **origin ref** for a value the spec propagates rather than
+constructs — `"param:k"` or `"receiver"` for a directly-forwarded value
+(`Promise.reject`'s argument, `throw <arg>`), or a combinator's element-`E`
+form (`Promise.all`/`race`/`any` forwarding their element promises' `E`),
+resolved to a type at the FR7 join; or the sentinel `"unknown"` for a
+propagated value the analysis can neither name nor trace. A `classified: false` entry carries no receiver,
 disposition, throw, or reject claim — those fields are absent, not empty —
 so the converter cannot mistake "unanalyzed" for "proven none"; it applies
 the FR5 defaults itself and falls the method through to the name
