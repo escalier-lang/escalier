@@ -34,6 +34,11 @@ Reproduced with the following, which §2 will pin exactly:
 functions total, of which 517 are builtin methods and statics named
 `INTRINSICS.<path>`.
 
+[reproduce_spike.sh](reproduce_spike.sh) automates these steps end to end.
+The representative-method dumps this document reads from are committed under
+[spike_evidence/](spike_evidence/), so the per-method claims below are
+checkable without building ESMeta.
+
 ## What the CFG carries
 
 `build-cfg` lowers each algorithm to `esmeta.cfg.CFG`, a graph of three node
