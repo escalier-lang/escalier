@@ -131,16 +131,18 @@ ranking.
 
 2. **Parameter disposition — medium confidence.** The same analysis
    aimed at parameter-origin values, sorting each parameter into borrow,
-   mutable borrow, or escape (FR12). In-place parameter mutation is rare
-   in ECMA-262, so `&mut` parameters are few; the escape case — a
-   parameter stored into the receiver, as in `Array.prototype.push` and
-   `Map.prototype.set` — is common and cleanly detectable from the same
-   store analysis. A `&mut` parameter requires a mutable argument at the
-   call site — an owned-mutable value or an existing `&mut` borrow, but
-   never an immutable one — so an over-eager `&mut` classification is more
-   disruptive than an over-eager escape; bias toward the read-only borrow
-   default and require positive spec evidence to raise a parameter to
-   `&mut` or escape.
+   mutable borrow, or escape (FR12). Where the analysis positively proves a
+   parameter read-only it is `borrow`; where it proves in-place mutation it
+   is `&mut`; the escape case — a parameter stored into the receiver, as in
+   `Array.prototype.push` and `Map.prototype.set` — is common and cleanly
+   detectable from the same store analysis. When the mutation of a
+   parameter is *uncertain*, the default is `&mut`, the conservative
+   direction (FR5): marking a mutating parameter `&` would let an immutable
+   value be mutated at runtime, and the failure of an over-eager `&mut` is
+   loud and self-correcting rather than silently unsound. Escape is the one
+   axis not defaulted conservatively — it requires positive evidence of a
+   store — because assuming an uncertain parameter is consumed is
+   disproportionate.
 
 3. **Return aliasing — low confidence as a generator, useful as a
    seed.** The algorithm reveals whether the return aliases an input:
@@ -442,15 +444,18 @@ already covers `receiver` and `fresh`, so FR4 mainly informs the rare
 
 ### FR5. Soundness bias
 
-The bias is **conservative where a default is auto-applied and permissive
-where it is curation-grade** (reviewed before it reaches the `.esc`). That
-asymmetry is deliberate: only the receiver default ships unreviewed, so it
-is the one that must over-constrain; the rest are reviewed, so they can sit
-at the least-disruptive default while the fact is checked. Two of the four
-defaults below are therefore genuinely sound, and two are considered
-deviations.
+When the analysis has no signal, the default is **conservative — assume
+the effect** — so that a wrong default fails *loudly* rather than
+*silently*. A wrong conservative default (say, `&mut` on a read-only
+parameter) surfaces as call-site friction: a caller that cannot pass an
+immutable value asks for the type to be corrected, which drives the
+annotation toward accuracy. A wrong permissive default (say, `&` on a
+mutating parameter) fails silently as latent unsoundness that surfaces
+much later as a bug. Loud beats silent. There are exactly two documented
+exceptions, where the conservative direction is impractical rather than
+merely stricter.
 
-**Conservative defaults — over-constrain when uncertain:**
+**Conservative defaults — assume the effect when uncertain:**
 
 - A method the analysis cannot classify — prose-only algorithm, host-
   defined behavior, an unrecognized mutation phrasing — is emitted as
@@ -460,33 +465,38 @@ deviations.
   unclassified, consistent with the interop core principle "default to
   mutating"
   ([../interop_mutability/requirements.md](../interop_mutability/requirements.md)).
-  This is the sound direction — an immutable Escalier value can never call
-  a method the analysis failed to prove non-mutating — and receiver
-  mutability is the only determination §7 auto-applies, so it must be
-  conservative.
+  An immutable Escalier value can never call a method the analysis failed
+  to prove non-mutating.
+- Parameter mutability defaults to **mutable borrow** (`&mut`) when
+  uncertain — the same conservative direction as the receiver, and for the
+  same soundness reason: marking a mutating parameter `&` would let an
+  immutable value be passed and mutated at runtime. `&mut` refuses that by
+  demanding a mutable argument. The cost is real — most parameters are
+  read-only, so this default is wrong more often than right and imposes
+  friction across the un-analyzed surface (`web:*`, `node:*`, third-party,
+  any `.d.ts`-only method) where it, not a real signal, decides the
+  disposition — but the failure is loud and self-correcting, and it keeps
+  the policy uniformly conservative, matching the receiver.
 
-**Deviations toward ergonomics — under-constrain when uncertain:**
+**Documented exceptions — where the conservative direction is
+impractical:**
 
-- Parameter disposition defaults to **read-only borrow** (`&`) when
-  unclassified. This is *not* the sound direction: the conservative choice
-  would be `&mut` or escape, so a method that really does mutate or store a
-  parameter could not be handed an immutable or non-outliving argument. We
-  deviate because non-receiver parameter mutation and storage are rare in
-  ECMA-262 — the conservative default would be pervasively noisy for a
-  guarantee almost never needed — and because disposition is curation-grade
-  (§7 does not auto-apply it), so a wrong permissive default is caught at
-  review, not shipped. A `&mut` or escape classification also constrains
-  the call site more than a borrow — a `&mut` parameter demands a mutable
-  argument and refuses an immutable one, an escape makes the caller give
-  the value up or outlive the receiver — so `&` is the least-disruptive
-  place to sit while the fact is reviewed.
-- The asynchronous reject set (FR13), and the synchronous throw set under
-  the same logic (FR10), default toward **under-reporting**. Under-
-  reporting a throw or rejection is likewise the unsound direction — a
-  caller is not forced to handle an exception that can occur — and is
-  justified the same way: over-reporting the coercion noise would be
-  pervasive, and both sets are curation-grade, gated by the FR14
-  validation before they could ever auto-apply.
+- **The `escape` disposition is gated on positive evidence, not
+  defaulted.** Full conservatism would assume an uncertain parameter is
+  stored into the receiver and mark it `escape` (owned/consuming), but that
+  is disproportionate — it makes the caller give the value up entirely — so
+  `escape` requires the store analysis to actually find the parameter
+  written into a longer-lived place (FR12). This leaves a small residual
+  unsoundness on the escape axis for uncertain parameters, accepted
+  deliberately; the mutable-borrow default above still protects the more
+  common mutation case.
+- **The throw and reject sets default toward under-reporting.** The
+  conservative direction here would be to *over*-report — but that means
+  every `this`-touching method carries `throws TypeError` from its
+  receiver coercion, pervasive noise a parameter default does not produce.
+  So the throw set (FR10) and reject set (FR13) under-report instead,
+  accepting that this is the unsound direction, and both are curation-grade
+  and gated by the FR14 validation before they could ever auto-apply.
 
 These defaults are applied by the **converter**, not serialized as
 facts. A `classified: false` record omits its effect fields — `receiver`,
@@ -506,9 +516,13 @@ The extractor emits a committed JSON facts file keyed by canonical spec
 name. Each entry records the five determinations and the tier-relevant
 provenance. `receiver` is `borrow` (`&self`), `mutBorrow` (`&mut self`),
 or `none` (a static or namespace function with no receiver). `params`
-lists only the parameters whose disposition is not the default read-only
-borrow; each is `mutBorrow` (`&mut`) or `escape` (stored into the
-receiver, spelled at curation — see FR12).
+lists only the parameters the analysis found `mutBorrow` (`&mut`) or
+`escape` (stored into the receiver, spelled at curation — see FR12); a
+parameter omitted from a *classified* method's entry was proven read-only
+(`borrow`). That proven-read-only omission is distinct from the FR5
+uncertain default, which is `&mut`: the omission means "the analysis
+showed this parameter is only read," whereas the FR5 default applies to an
+*unclassified* method whose parameters are absent entirely.
 
 ```json
 {
@@ -773,7 +787,9 @@ algorithm, so the choice is made at the FR7 join, not by the extractor.
 `escape` records the raw constraint; curation picks the spelling. The
 default is `move`, and the affine checker currently implements that
 spelling; borrow-into-container tracking is deferred there, so the
-lifetime-borrow spelling is partly future work.
+lifetime-borrow spelling is partly future work — tracked as an external
+dependency in the implementation plan's "Discovery phases may grow the
+plan" list.
 
 The disposition reuses the FR1–FR3 store analysis: it is the mutation
 detector run against parameter-origin values, plus a check of *where* the
@@ -786,11 +802,14 @@ resolves copy-versus-move-versus-borrow per instantiation (see the
 ownership-model section above), so the fact records `escape` without
 committing to a spelling.
 
-Disposition follows the FR5 default for an unclassified or uncertain
-parameter: `borrow`, the least constraining choice at the call site.
-As FR5 notes, this is a deliberate deviation from the soundness bias
-toward ergonomics, safe because disposition is curation-grade rather than
-auto-applied.
+Disposition follows the FR5 defaults for an uncertain parameter: the
+mutation axis defaults to `&mut` (the conservative direction — a wrong
+`&mut` fails loudly at the call site and is corrected, where a wrong `&`
+would be silently unsound), while `escape` is gated on positive evidence
+of a store rather than defaulted, since assuming an uncertain parameter is
+consumed is disproportionate. Being curation-grade does not make a default
+safe; it only means a wrong default is *reviewed* before it ships, so the
+default still points the conservative way on the mutation axis.
 
 ### FR13. Asynchronous reject channel
 

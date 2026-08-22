@@ -607,10 +607,12 @@ the call:
   array it then returns; the arguments escape into the returned array).
 - `dest` origin is `Fresh` and does not escape → does **not** escape; the
   value enters an object `M` drops, so no escape.
-- `dest` origin is `Unknown` → cannot be proven to escape, so **not** an
-  escape; the parameter stays at the `borrow` default and the site is
-  listed for review (FR5 keeps the least-constraining choice, and this is
-  not treated as `Incomplete`).
+- `dest` origin is `Unknown` → cannot be proven to escape, so the
+  parameter is **not** marked `escape` and the site is listed for review.
+  FR5 gates `escape` on positive evidence of a store, so an unprovable
+  destination does not raise the disposition; this is the one axis FR5
+  does not default conservatively, and it is not treated as `Incomplete`.
+  The parameter's mutation axis is decided separately by `MutArgs`.
 
 Escape is **transitive** by the same fixpoint as FR2. Define, per abstract
 operation `G`, `StoreEdges(G) ⊆ {(k, m)}` meaning `G` stores its `k`-th
