@@ -853,11 +853,32 @@ finished, unreviewed annotation" non-goal.
 
 **Work.**
 
-- Hand-curate a ground-truth `throws`/`rejects` sample over the
-  high-value methods (`JSON.parse`, `decodeURIComponent`,
-  `Number.prototype.toFixed`, `BigInt`, the `Promise` combinators, …),
-  applying the documented host-throws exclusion so stack-overflow
-  `RangeError` and OOM never appear in the ground truth.
+- Build the ground-truth sample so it is **independent of the spec
+  extraction**. A corpus a human reads out of the same ECMA-262 algorithm
+  the extractor reads would agree by construction — it would validate only
+  faithfulness, not correctness, and share the extractor's blind spots.
+  Seed it empirically instead:
+  - **Dynamic observation** in a real engine — V8 / Node, *not* engine262,
+    which is itself a spec mechanization and would reintroduce the shared
+    source. For each high-value method (`JSON.parse`, `decodeURIComponent`,
+    `Number.prototype.toFixed`, `BigInt`, the `Promise` combinators, …) run
+    an adversarial argument matrix (null/undefined, wrong types,
+    out-of-range values) and record the constructor of what it throws
+    (`try`/`catch`) or rejects with (`.then(null, …)`). This is
+    behavior-based ground truth; its coverage is input-dependent, so a
+    missed path surfaces as a *false positive* against the extractor
+    (triage: extend the fuzz inputs), never a silent gap.
+  - **Independent docs** (MDN, JSDoc) as a second cross-check — again not
+    the spec.
+  - **Hand-authored origin and combinator entries.** Dynamic observation
+    yields concrete error classes well but not the parametric forms, so the
+    `param:k` / `receiver` structure (visible only by varying the argument
+    across runs) and the combinator element-`E` / `AggregateError<E>` /
+    `never` forms are modeled into the corpus by hand.
+
+  Apply the documented host-throws exclusion throughout, so stack-overflow
+  `RangeError` and OOM are filtered from the observations and never enter
+  the ground truth. A human verifies and commits the result.
 - Diff the extracted sets against it and report two rates (FR14):
   - the **false-negative rate** — real throws the emitted set omits —
     measured in two layers: against the *raw* FR10 set (should be zero

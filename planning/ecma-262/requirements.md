@@ -893,8 +893,13 @@ the WebIDL extractor lands.
 Whether the extracted `throws`/`rejects` are trustworthy without review is
 an empirical question, settled by measurement, not asserted. FR14 is the
 throws counterpart of FR9's mutability validation: diff the extracted
-throw sets against a hand-curated ground-truth sample of high-value
-methods and measure two rates.
+throw sets against a ground-truth sample of high-value methods and measure
+two rates. The sample must be **independent of the spec extraction** — a
+corpus read out of the same algorithm would agree by construction, so it
+is seeded by dynamic observation in a real engine (fuzzing each method and
+recording what it throws or rejects with) rather than by re-reading the
+spec, with only the parametric and combinator entries hand-authored (the
+plan's §9.4 gives the mechanics).
 
 - **False-negative rate — the soundness metric.** Real throws that the
   method can raise but the emitted set omits, almost always because the
