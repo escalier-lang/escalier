@@ -1,8 +1,11 @@
 # ECMA-262-Derived Builtin Annotations: Implementation Plan
 
-This plan implements [requirements.md](requirements.md). Each phase
-lists the touch points and the gate that proves it done. The pipeline
-has three stages and the phases build them in dependency order:
+This plan implements [requirements.md](requirements.md). The whole
+ECMA-262 workstream is tracked by a **single milestone**; the table below
+breaks it into PRs. A section with numbered sub-sections lands as **one PR
+per sub-section** (§4.1, §4.2, …); a section without sub-sections is a
+single PR. Each PR lists its touch points and the gate that proves it
+done. The pipeline has three stages the PRs build in dependency order:
 
 ```
 ECMA-262 spec.html
@@ -22,25 +25,37 @@ is JVM/Scala and runs only on a spec bump. Everything right of it is Go
 and runs in the normal build. The Scala component is a serializer with
 no analysis; all Escalier-specific intelligence lives in the Go stages.
 
-## Implementation order and status
+## PRs
 
-Status legend: ✅ done, 🚧 partial, ⬜ not started.
+One milestone, the PRs below — each section is a PR, and a section with
+sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
+⬜ not started.
 
-| §   | Phase                                      | FRs        | Status | Depends on | Gate |
-| --- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
-| 1   | Feasibility spike                          | FR1–FR4    | ⬜      | —          | ESMeta CFG for ~10 representative methods shows the call nodes, args, slot writes, and returns the analysis needs |
-| 2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
-| 3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` emitted for the full `std:*` surface, pinned spec, round-trips a schema check |
-| 4   | Go analysis: mutation + alias              | FR1–FR5    | ⬜      | §3         | `facts.json` produced from `cfg.json`; spot-checked methods classify correctly |
-| 5   | Keying and join                            | FR7, FR15  | ⬜      | §4         | Normalizer joins facts to converter declarations; overload sets share algorithm-level facts and resolve the type-dependent parts per signature; unmatched on both sides reported |
-| 6   | Validation diff                            | FR9        | ⬜      | §5         | Receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
-| 7   | Integration as classification source       | FR8        | ⬜      | §6         | Converter ranks facts above name tiers; redundant `mutabilityOverrides` entries removed |
-| 8   | Parameter disposition + return-borrow outputs | FR12, FR4 | ⬜     | §7         | Per-parameter borrow/mutBorrow/escape from the store analysis; `escape` when a parameter is stored into the receiver (move vs lifetime-borrow spelled at curation); return-borrow seed documented |
-| 9   | Throw + reject extraction, filter, validation | FR10, FR11, FR13, FR14 | ⬜ | §4, §7 | Sync throws and async rejections split by sink; coercion filter prunes type-guard `TypeError`s; `throws`/`rejects` land in `facts.json`; §9.4 measures the false-negative rate that gates auto-apply |
-| 10  | Maintenance workflow                       | NFR        | ⬜      | §7         | Spec-bump runbook; `--check`-style drift report in CI |
-| 11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | ⬜ | §7, §8, §9 | Override layer populated per pseudo-package by review; each candidate cross-checked against the §9.4 ground truth, disagreements triaged; fans out into per-package PRs |
+| PR   | Work                                       | FRs        | Status | Depends on | Gate |
+| ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
+| §1   | Feasibility spike                          | FR1–FR4    | ⬜      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs |
+| §2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
+| §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
+| §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
+| §4.2 | Origin map                                 | FR2, FR4   | ⬜      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown |
+| §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
+| §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
+| §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
+| §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
+| §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
+| §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
+| §9.1 | Throw-set fixpoint                          | FR10       | ⬜      | §4.2       | raw throw sets, `Raised` = class / origin / callback-effect / unknown |
+| §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | filtered throws — toFixed keeps RangeError, drops the receiver-coercion TypeError; param branch runs post-join |
+| §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ⬜ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled |
+| §9.4 | Throws validation + auto-apply gate        | FR14       | ⬜      | §9.1–§9.3, §7 | spec-independent (dynamically-observed) ground truth; false-negative rate report gates auto-apply |
+| §10  | Maintenance workflow                       | NFR        | ⬜      | §7         | spec-bump runbook; `--check`-style drift report in CI |
+| §11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | ⬜ | §7, §8, §9 | override layer populated per pseudo-package by review; fans out into per-package PRs |
 
-**Dependency graph** (edges are "must land before"):
+Within a section the sub-section PRs sequence per the "Depends on" column —
+`§4.1` reads the origin map, so `§4.2` lands first despite the numbering.
+
+**Dependency graph** (section-level; sub-section PRs sequence within per
+the table):
 
 ```
 §1 ── §2 ── §3 ── §4 ── §5 ── §6 ── §7 ──┬── §8 ─┐
@@ -48,8 +63,8 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
                                           └── §10 (maintenance)
 ```
 
-§11 is a *content* phase, not a code phase: it fans out into a series of
-per-package PRs and recurs as deltas on spec bumps. It is numbered so the
+§11 is a *content* PR series, not code: it fans out into a series of
+per-package PRs and recurs as deltas on spec bumps. It is listed so the
 work is explicit and scheduled, but it is unlike §1–§10 in kind.
 
 ### Discovery phases may grow the plan
