@@ -849,6 +849,24 @@ A one-time seeding tool. A Go binary that:
      one-directional (Escalier-side may be stricter than TS-side,
      not looser). Intended for CI on TS-version bumps.
 
+**Emitting inter-package imports.** After partitioning (step 4), a
+declaration in package P may reference a type owned by another
+pseudo-package Q — `std:intl`'s `DateTimeFormat` referencing `Date` from
+`std:date`, `std:async`'s `Promise` referencing `Iterable` from
+`std:iterator`. The converter emits the explicit imports FR6 requires:
+for each such cross-package reference it (a) adds an `import "std:Q"`
+(or `web:` / reserved `node:` scheme) at the top of P's `.esc` file,
+(b) qualifies the reference through the resulting binding per the binding
+shape (FR4 / FR5), and (c) resolves which package owns the referenced
+type via the same partition table that drove step 4. Imports are
+deduplicated per file. The resolver's pseudo-package cycle exemption
+(FR6) means a P↔Q reference cycle needs no special handling here. A
+referenced type absent from the partition table is the same
+unmapped-symbol error as step 4.
+
+**Type lowering — no `any`.** The emitted `.esc` never contains `any`;
+the converter rewrites every `.d.ts` `any` by position per FR17.
+
 **One-time seeding.** After the initial bootstrap commit, the
 pseudo-package `.esc` files are first-class Escalier source. Hand-edits add `throws`, lifetimes, and any
 structural refinements — written inline like `self` and `mut self`,
@@ -1092,6 +1110,47 @@ The implementation depends on:
 - A binding-shape preference per file (default `?local`; user-
   configurable). The quick-fix uses the file's existing convention
   if any of its imports already pick a flag.
+
+### FR17. Type-lowering policy (no `any`)
+
+The converter never emits `any`. TypeScript's `any` is both top and
+bottom and defeats soundness, so every `.d.ts` `any` is rewritten by the
+position it occurs in. This runs during the AST-to-AST conversion (FR10
+step 2), before mutability seeding and partitioning.
+
+- **`_` (the wildcard) in constraint positions**, where `any` means "no
+  constraint / matches anything":
+  - a type-parameter **bound** — `<T extends any>` → `<T extends _>`,
+    equivalent to an omitted bound;
+  - the **`extends` clause of a conditional type** — `X extends any ? A :
+    B` → `X extends _ ? A : B` — including nested wildcard positions such
+    as `T extends readonly any[] ? …` → `T extends readonly _[] ? …`.
+- **`unknown` (the sound top type) everywhere else.** It accepts any
+  value but forces narrowing before use, restoring the soundness `any`
+  bypassed. This covers function **parameters**, **property** types,
+  **type arguments** (`Array<any>` → `Array<unknown>`), array and tuple
+  **elements**, index signatures, `thisArg`, and callback shapes
+  (`(...args: any[]) => any` → `(...args: unknown[]) => unknown`).
+
+**Return-position `any` lowers to `unknown` but is flagged for curation.**
+It is sound, but it forces every caller to narrow, and a builtin that
+`.d.ts` types `any` in return position often has a precise type
+recoverable from the spec or JSDoc — `JSON.parse(): any` is honestly
+`unknown`, but many others are not. So the converter lowers it to
+`unknown` and records it in a review list, the same curation channel as
+`throws` and lifetimes, so a better type can replace it.
+
+**Default type arguments lower to `unknown`, not `_`.** `<T = any>` is a
+value default, not a bound, so it becomes `<T = unknown>`. The `_` rule
+applies only to the constraint (`extends`) slot, never the default (`=`)
+slot.
+
+**`Function` and `object` are out of scope for this rule.** They are
+TypeScript wide-types, not `any`, and need their own converter lowering
+policy — `Function` to a generic callable shape, `object` to a
+non-primitive bound. Until that policy is set they are an explicit
+converter TODO, not silently passed through and not collapsed to
+`unknown`.
 
 ## Non-functional requirements
 
