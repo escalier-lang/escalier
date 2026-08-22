@@ -152,7 +152,11 @@ analysis needs before committing to the toolchain.
   - promise rejection, a `Promise` combinator such as `Promise.all` or
     `Promise.race` — the CFG must let the analysis tell an
     `IfAbruptRejectPromise` / capability `[[Reject]]` site from a
-    synchronous `Throw` (§9.3).
+    synchronous `Throw` (§9.3);
+  - callback propagation, `Array.prototype.forEach` or `map` — the CFG must
+    let the analysis tell a `?`-guarded call whose callee is a **callback
+    parameter** (`? Call(callbackfn, …)`) from one whose callee is a
+    resolvable abstract operation, for the `throwsOf:param:k` rule (§9.1).
 
 **Gate.** For each method above, confirm the CFG exposes: the abstract-
 operation call nodes with their argument variables **including the
@@ -774,6 +778,8 @@ ThrowSites : map[FuncName] []ThrowSite  // provenance chains for §9.2 / §9.3
 type ThrowSite:
     Raised : Class(name)                 // a constructed error class (Throw a T exception)
            | Origin(Param(k) | Receiver) // a propagated value, resolved to a type at the join (FR13)
+           | CallbackThrows(Param(k))    // throwsOf:param:k — the method throws whatever the
+                                         // function-typed parameter k throws (FR13); throws polymorphism
            | Unknown                     // a propagated value that could not be traced
     Root : Direct(node)                  // raised here (domain check, coercion AO, or plain)
          | Propagated(callee, inner)     // via ? from `callee`'s own site `inner`
@@ -791,7 +797,11 @@ while worklist nonempty:
             Throws[F].add(raised)
             ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
         case Call where node.Guard == GuardQuestion:   // ? propagates the callee's throws
-            for s in ThrowSites[node.Callee]:          // carry the callee's OWN site, not just its name
+            if node.Callee is a function-typed Param(k):   // ? Call(callbackfn, …) → the callback's throws
+                raised = CallbackThrows(Param(k))          // throwsOf:param:k (FR13)
+                Throws[F].add(raised)
+                ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
+            else for s in ThrowSites[node.Callee]:         // resolvable AO: carry its OWN sites, by name
                 Throws[F].add(s.Raised)
                 ThrowSites[F].append(ThrowSite{ Raised: s.Raised,
                                                 Root: Propagated(node.Callee, s), Node: node })
@@ -808,6 +818,17 @@ constructor — so `Origin` sites are almost entirely a reject-channel
 phenomenon (§9.3). When `?`-propagated, the callee's `Param(k)` origin is
 re-mapped through the call's arguments to the caller's own formals, the
 same threading `precludedCoercion` (§9.2) does for coercion arguments.
+
+`CallbackThrows(Param(k))` covers the higher-order case — `?
+Call(callbackfn, …)` where the callee is a function-typed parameter, as in
+`Array.prototype.forEach`/`map`/`reduce`/`sort` — so the method throws
+whatever that callback throws (requirements FR13, "callback effects"). It
+needs the CFG to distinguish a `?`-guarded call whose callee is a formal
+parameter from one whose callee is a resolvable abstract operation — a
+**§1 spike / §3 serializer** question. At the FR7 join `throwsOf:param:k`
+becomes throws polymorphism (`<E>(cb: … throws E) … throws E`), a curation
+enrichment (§11) since `.d.ts` carries no throws to thread; unlike a value
+`Origin`, it names the parameter's *effect*, not its value.
 
 `ThrowSite.Root` threads the full chain back to the ultimate source
 rather than collapsing to the immediate callee: `Propagated` nests the
@@ -1131,7 +1152,11 @@ type Node struct {
     Kind      NodeKind `json:"kind"`
     Target    string   `json:"target,omitempty"`    // Let target, or Call result binding
     Source    *Expr    `json:"source,omitempty"`    // Let
-    Callee    string   `json:"callee,omitempty"`    // Call: abstract-operation name
+    Callee    string   `json:"callee,omitempty"`    // Call: the callee's name — an abstract-operation
+                                                    // name (resolvable in the CFG) OR a formal parameter
+                                                    // holding a function (a callback: `? Call(callbackfn,…)`).
+                                                    // The analysis tells them apart via the §4.2 origin map:
+                                                    // a callee bound to Param(k) drives CallbackThrows (§9.1).
     Args      []Expr   `json:"args,omitempty"`      // Call
     Guard     Guard    `json:"guard,omitempty"`     // Call: ? / ! / plain
     Object    *Expr    `json:"object,omitempty"`    // SlotWrite: the written object
@@ -1234,9 +1259,12 @@ standard error-class name the spec constructs (`TypeError`, `RangeError`,
 …); an **origin ref** for a value the spec propagates rather than
 constructs — `"param:k"` or `"receiver"` for a directly-forwarded value
 (`Promise.reject`'s argument, `throw <arg>`), or a combinator's element-`E`
-form (`Promise.all`/`race`/`any` forwarding their element promises' `E`),
-resolved to a type at the FR7 join; or the sentinel `"unknown"` for a
-propagated value the analysis can neither name nor trace. A `classified: false` entry carries no receiver,
+form (`Promise.all`/`race`/`any` forwarding their element promises' `E`);
+the **effect ref** `"throwsOf:param:k"` for a method that propagates a
+callback parameter's throws (`Array.prototype.forEach`/`map`/…), resolved
+at the FR7 join to throws polymorphism; or the sentinel `"unknown"` for a
+propagated value the analysis can neither name nor trace. All origin and
+effect refs resolve to types at the FR7 join. A `classified: false` entry carries no receiver,
 disposition, throw, or reject claim — those fields are absent, not empty —
 so the converter cannot mistake "unanalyzed" for "proven none"; it applies
 the FR5 defaults itself and falls the method through to the name

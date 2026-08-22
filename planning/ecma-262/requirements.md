@@ -708,7 +708,11 @@ transfer function:
   (`throw <arg>`) instead contributes that value's **origin** — `param:k`
   or `receiver` — by the FR13 origin rule, resolved to a type at the join;
 - a call guarded by `?` contributes the callee's entire throw set,
-  because `?` propagates any abrupt completion;
+  because `?` propagates any abrupt completion; when the callee is a
+  **function-typed parameter** (a callback, e.g. `? Call(callbackfn, …)`)
+  it has no throw set in the CFG, so the call instead contributes
+  `throwsOf:param:k` — the callback's throws, resolved at the join to
+  throws polymorphism (FR13);
 - a call guarded by `!` contributes nothing, because `!` asserts the
   operation never returns an abrupt completion;
 - a plain unguarded call whose result is not completion-checked
@@ -874,13 +878,29 @@ type instead of collapsing to a bare `"unknown"`:
   - `Promise.allSettled` **never** rejects from element rejections — it
     captures each as `{status, value/reason}` data, so its element channel
     is `never`.
+- **Callback effects, parametric** — a method that `?`-calls a
+  function-typed parameter propagates *that callback's throws*, not a
+  value. `Array.prototype.forEach` / `map` / `filter` / `reduce` /
+  `sort` do `? Call(callbackfn, …)`, so the method throws whatever the
+  callback throws. The fact records `throwsOf:param:k` — an *effect*
+  origin naming the callback parameter, the higher-order analogue of the
+  value origins above. At curation this becomes **throws polymorphism**: a
+  type parameter `E` on the callback's throws, threaded to the method's own
+  throws — `map<U, E>(cb: (…) -> U throws E) -> [U] throws E`. A
+  non-throwing callback instantiates `E = never` (the method is
+  non-throwing at that call), a throwing one propagates its type — the
+  precise "may or may not throw" behavior, without the over-approximation
+  of `throws unknown` or the unsoundness of dropping it. `.d.ts` carries no
+  throws, so the throws-polymorphic signature is a curation enrichment
+  (§11) that the `throwsOf:param:k` fact makes mechanical.
 - **Unresolvable origin** — a propagated value the analysis can neither name
   nor trace falls back to the sentinel `"unknown"`, filled from the typed
   signature at curation.
 
 So a value in `throws` or `rejects` is a standard error-class name, an
-origin ref (`param:k`, `receiver`, or a combinator's element-`E` form), or
-`"unknown"`; FR13 is deliberately not restricted to error-only facts.
+origin ref (`param:k`, `receiver`, a combinator's element-`E` form, or the
+callback-effect `throwsOf:param:k`), or `"unknown"`; FR13 is deliberately
+not restricted to error-only facts.
 
 For ECMA-262 `std:*` the reject channel is usually empty or a forwarded
 element `E` (now recorded as an origin, above); argument-validation
