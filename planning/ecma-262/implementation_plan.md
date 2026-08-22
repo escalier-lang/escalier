@@ -54,13 +54,51 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 Within a section the sub-section PRs sequence per the "Depends on" column —
 `§4.1` reads the origin map, so `§4.2` lands first despite the numbering.
 
-**Dependency graph** (section-level; sub-section PRs sequence within per
-the table):
+**Dependency graph** (all PRs; edges are "must land before"):
 
-```
-§1 ── §2 ── §3 ── §4 ── §5 ── §6 ── §7 ──┬── §8 ─┐
-                                          ├── §9 ─┴── §11 (curation, per-package PRs)
-                                          └── §10 (maintenance)
+```mermaid
+flowchart TD
+    S1["§1 Feasibility spike"]
+    S2["§2 Toolchain scoping"]
+    S3["§3 CFG→JSON serializer"]
+    S42["§4.2 Origin map"]
+    S41["§4.1 Mutation-summary fixpoint"]
+    S43["§4.3 Method classification"]
+    S5["§5 Keying and join"]
+    S6["§6 Validation diff"]
+    S7["§7 Integration"]
+    S81["§8.1 Parameter disposition"]
+    S82["§8.2 Return-borrow seed"]
+    S91["§9.1 Throw-set fixpoint"]
+    S92["§9.2 Coercion filter"]
+    S93["§9.3 Throw/reject split, origins, combinators"]
+    S94["§9.4 Throws validation + auto-apply gate"]
+    S10["§10 Maintenance"]
+    S11["§11 Curation (per-package PRs)"]
+
+    S1 --> S2 --> S3
+    S3 --> S42
+    S3 --> S41
+    S42 --> S41
+    S41 --> S43
+    S42 --> S43
+    S43 --> S5 --> S6 --> S7
+    S41 --> S81
+    S7 --> S81
+    S43 --> S82
+    S42 --> S91
+    S91 --> S92
+    S5 --> S92
+    S91 --> S93
+    S92 --> S94
+    S93 --> S94
+    S7 --> S94
+    S7 --> S10
+    S81 --> S11
+    S82 --> S11
+    S93 --> S11
+    S94 --> S11
+    S7 --> S11
 ```
 
 §11 is a *content* PR series, not code: it fans out into a series of
