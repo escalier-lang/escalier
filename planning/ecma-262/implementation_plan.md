@@ -38,14 +38,19 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 8   | Parameter disposition + return-borrow outputs | FR12, FR4 | ⬜     | §7         | Per-parameter borrow/mutBorrow/escape from the store analysis; `escape` when a parameter is stored into the receiver (move vs lifetime-borrow spelled at curation); return-borrow seed documented |
 | 9   | Throw + reject extraction, filter, validation | FR10, FR11, FR13, FR14 | ⬜ | §4, §7 | Sync throws and async rejections split by sink; coercion filter prunes type-guard `TypeError`s; `throws`/`rejects` land in `facts.json`; §9.4 measures the false-negative rate that gates auto-apply |
 | 10  | Maintenance workflow                       | NFR        | ⬜      | §7         | Spec-bump runbook; `--check`-style drift report in CI |
+| 11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | ⬜ | §7, §8, §9 | Override layer populated per pseudo-package by review; each candidate cross-checked against the §9.4 ground truth, disagreements triaged; fans out into per-package PRs |
 
 **Dependency graph** (edges are "must land before"):
 
 ```
-§1 ── §2 ── §3 ── §4 ── §5 ── §6 ── §7 ──┬── §8
-                                          ├── §9  (throws)
+§1 ── §2 ── §3 ── §4 ── §5 ── §6 ── §7 ──┬── §8 ─┐
+                                          ├── §9 ─┴── §11 (curation, per-package PRs)
                                           └── §10 (maintenance)
 ```
+
+§11 is a *content* phase, not a code phase: it fans out into a series of
+per-package PRs and recurs as deltas on spec bumps. It is numbered so the
+work is explicit and scheduled, but it is unlike §1–§10 in kind.
 
 ### Discovery phases may grow the plan
 
@@ -605,8 +610,9 @@ facts.json ─┬─ receiver mutability ─────────────
   seed, `throws`, and `rejects` reach the `.esc` only through a
   **hand-curated override layer** — a committed data file keyed by
   canonical spec name that a human populates by reviewing the
-  corresponding fields of `facts.json`, and that generation **re-applies
-  automatically** (per FR7, it is re-applied, not edited into the output).
+  corresponding fields of `facts.json` (that is §11), and that generation
+  **re-applies automatically** (per FR7, it is re-applied, not edited into
+  the output).
   A human is in the loop once per builtin, then only for deltas — new
   methods, or a spec bump that surfaces new candidate throws; the
   committed override layer means regeneration needs no manual step.
@@ -991,14 +997,19 @@ auto-apply, mirroring how §6 authorizes trusting the mutability facts.
 
 **Gate.** A bump runbook exists and a stale-facts CI check is green.
 
-## Curation as a content workstream
+## §11. Curation of the override layer (FR12, FR4, FR13, FR14)
 
-The §1–§10 phases build the pipeline that *produces* `facts.json` and
-*applies* the override layer (§7). **Populating** that override layer —
-reviewing the curation-grade fields of `facts.json` and recording the
-accepted or corrected annotations — is a separate, ongoing content effort,
-not one of the numbered phases. It is data work, not code, and treating it
-as such keeps it reviewable.
+**Goal.** Populate the override layer (§7) with reviewed curation-grade
+annotations — parameter disposition, the return-borrow / lifetime seed,
+`throws`, and `rejects` — so the generated `.esc` carries trustworthy
+effects for everything the facts cannot auto-apply.
+
+This is a **content phase, not a code phase.** §1–§10 build the pipeline
+that *produces* `facts.json` and *applies* the override layer; §11
+*populates* it, by reviewing the curation-grade fields of `facts.json` and
+recording the accepted or corrected annotations. It is data work, and
+treating it as such — its own PRs, reviewed on their own terms — keeps it
+legible.
 
 **Sequencing.** Curation cannot begin until the facts exist (§4, §8, §9)
 and the override-layer path is wired (§7 plus the builtins converter that
@@ -1036,6 +1047,12 @@ correctness — the same circularity FR14's ground truth avoids by being
 observed rather than re-read from the spec. So the assistant proposes and
 explains; independent verification — a human, or the empirical corpus —
 approves the deltas.
+
+**Gate.** Each pseudo-package's curation PR commits the reviewed override
+entries; every candidate was cross-checked against the §9.4 ground truth
+with disagreements triaged; the package's generated `.esc` carries the
+reviewed annotations, not the raw facts. The phase is "done" per package,
+never globally — new methods and spec bumps reopen it as deltas (§10).
 
 ---
 
