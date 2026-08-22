@@ -593,15 +593,23 @@ entry. This is the gate that authorizes removing override entries in §7.
   `std:*`. Keep entries the facts source does not cover, such as `web:*`
   classes, untouched.
 
-**Two application paths.** `facts.json` reaches the generated `.esc` two
-ways, and the split is per determination, not per method:
+**How a method's `.esc` is assembled.** Each generated method declaration
+is a **merge** of its type shape with its effects, combined per method —
+not three routes to pick among. The `.d.ts` types are *always* part of the
+merge, because `facts.json` is deliberately typeless (FR7) and carries no
+generics, parameter/return types, or overloads:
 
 ```
-facts.json ─┬─ receiver mutability ──────────────────▶ generated .esc   (auto, trusted)
-            └─ disposition / return-borrow /
-               throws / rejects ──▶ review ──▶ override layer ──▶ generated .esc
-.d.ts ─── types ─────────────────────────────────────▶ generated .esc
+per method, the .esc declaration = merge of
+  .d.ts       ── type shape: generics, parameter/return types, overloads   [always]
+  facts.json  ── receiver mutability                                       [auto, trusted]
+  facts.json  ── disposition / return-borrow / throws / rejects
+                   └─ review ─▶ override layer ─▶ merged in                 [curated]
 ```
+
+The `.d.ts` line is not a bypass — a method that *has* a fact never skips
+it. What differs is only how the two `facts.json` contributions reach the
+merge; that split is per determination, not per method:
 
 - **Auto-applied (trusted).** Receiver mutability is read straight from a
   classified fact and written into the `.esc` — no human in the loop. It
@@ -633,6 +641,17 @@ facts.json ─┬─ receiver mutability ─────────────
 Once §9.4's FR14 gate measures a zero false-negative rate, `throws` /
 `rejects` graduate from the reviewed path to the auto-applied one for the
 covered subset.
+
+**A method absent from `facts.json` falls back to types plus defaults.**
+When a `std:*` method has no fact — unclassified (§4.3) or unmatched by
+the join (§5) — its declaration is `.d.ts` types plus the FR5 defaults
+(`&mut self`, `&mut` parameters, empty `throws`/`rejects`), carrying no
+spec-derived effects. This is the degraded path, not a preferred one: FR5
+lists every unclassified method and §5 reports every unmatched
+declaration, precisely so these are visible gaps to close, not a silent
+route. (`web:*` / `node:*` methods have no `facts.json` entry by
+construction — out of ECMA-262 scope — and take the same
+types-plus-curation route until the WebIDL extractor lands.)
 
 **Gate.** Converter output for `std:*` matches the facts for every
 classified method; the removed override entries cause no regression in
