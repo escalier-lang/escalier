@@ -854,7 +854,9 @@ type instead of collapsing to a bare `"unknown"`:
   join resolves it to that formal's declared type — `Promise.reject<E>(reason:
   E)` becomes `Promise<never, E>`. It is only as precise as that declared
   type — `.d.ts` types `Promise.reject`'s `reason` as `any`, lowered to
-  `unknown` (FR17), so the immediate result is still `unknown` there — but
+  `unknown` by the builtins converter's `any`-lowering policy
+  ([../builtins/requirements.md](../builtins/requirements.md) FR17), so
+  the immediate result is still `unknown` there — but
   recording the origin makes the curation upgrade mechanical: generalize
   the parameter to `E` and the reject follows automatically.
 - **Promise combinators, hand-modeled** — `Promise.all`, `Promise.race`,

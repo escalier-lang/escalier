@@ -32,7 +32,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
 | 3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` emitted for the full `std:*` surface, pinned spec, round-trips a schema check |
 | 4   | Go analysis: mutation + alias              | FR1–FR5    | ⬜      | §3         | `facts.json` produced from `cfg.json`; spot-checked methods classify correctly |
-| 5   | Keying and join                            | FR7        | ⬜      | §4         | Normalizer joins facts to converter declarations; unmatched on both sides reported |
+| 5   | Keying and join                            | FR7, FR15  | ⬜      | §4         | Normalizer joins facts to converter declarations; overload sets share algorithm-level facts and resolve the type-dependent parts per signature; unmatched on both sides reported |
 | 6   | Validation diff                            | FR9        | ⬜      | §5         | Receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | 7   | Integration as classification source       | FR8        | ⬜      | §6         | Converter ranks facts above name tiers; redundant `mutabilityOverrides` entries removed |
 | 8   | Parameter disposition + return-borrow outputs | FR12, FR4 | ⬜     | §7         | Per-parameter borrow/mutBorrow/escape from the store analysis; `escape` when a parameter is stored into the receiver (move vs lifetime-borrow spelled at curation); return-borrow seed documented |
@@ -449,7 +449,7 @@ soundness-bearing claim.
 
 Unclassified methods are listed.
 
-## §5. Keying and join (FR7)
+## §5. Keying and join (FR7, FR15)
 
 **Goal.** Join spec-keyed facts to the converter's class+method
 declarations.
@@ -546,6 +546,15 @@ entry. This is the gate that authorizes removing override entries in §7.
   heuristics.
 - Set receiver mutability from a classified fact; leave unclassified
   methods to the existing tiers.
+- Apply the FR5 defaults for what a `classified: false` record omits (its
+  effect fields are absent). Receiver mutability falls through to the name
+  tiers, defaulting to `&mut self`. For the curation-grade determinations
+  the converter writes a baseline and flags it for review rather than
+  trusting it — parameter mutation defaults to **`&mut`** (FR5's flipped
+  conservative default, not `&`), `escape` is written only where the
+  analysis found a store (never defaulted), and `throws`/`rejects` default
+  to empty (under-report). Only receiver mutability is auto-applied; the
+  rest are curation input, per "Applying the non-receiver facts" above.
 - Remove the `mutabilityOverrides` entries that §6 proved redundant for
   `std:*`. Keep entries the facts source does not cover, such as `web:*`
   classes, untouched.
@@ -647,7 +656,7 @@ and `Map.prototype.set` mark their stored parameters `escape`,
 `returns` → annotation mapping for the receiver-returning methods
 (`fill`, `sort`, `reverse`, `Map.set`).
 
-## §9. Throw-set extraction and coercion filter (FR10, FR11)
+## §9. Throw-set extraction, filter, and validation (FR10, FR11, FR13, FR14)
 
 **Goal.** Produce the `throws` candidate set for each method, reusing the
 §4 machinery with a throw transfer function and then pruning the
@@ -1036,7 +1045,9 @@ const (
     DispMutBorrow Disposition = "mutBorrow" // &mut: parameter object mutated in place (FR12)
     DispEscape    Disposition = "escape"    // stored into the receiver ⇒ must outlive it; spelled a
                                             // move or a lifetime-bounded borrow at curation (FR12)
-    // read-only borrow (&) is the default and is omitted from Params.
+    // A parameter the analysis PROVED read-only (&) is omitted from Params.
+    // That omission is distinct from the FR5 uncertain default (&mut): it
+    // means "shown read-only", and applies only to a classified method.
 )
 
 type ParamFact struct {
@@ -1080,8 +1091,10 @@ so the converter cannot mistake "unanalyzed" for "proven none"; it applies
 the FR5 defaults itself and falls the method through to the name
 heuristics. Such methods are also collected into a separate
 `unclassified` report alongside `facts.json` for auditing
-(FR5). A parameter absent from `Params` is a read-only borrow (`&`); the
-receiver-returning and fresh-returning alias kinds carry the return's
+(FR5). In a *classified* method's entry, a parameter absent from `Params`
+was proven read-only (`&`) — not to be confused with the FR5 `&mut`
+default the converter applies to an *unclassified* method's parameters.
+The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
 
 ## Appendix C. Canonical spec keys
