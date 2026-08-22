@@ -54,7 +54,8 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 Within a section the sub-section PRs sequence per the "Depends on" column —
 `§4.1` reads the origin map, so `§4.2` lands first despite the numbering.
 
-**Dependency graph** (all PRs; edges are "must land before"):
+**Dependency graph** (all PRs plus the external dependencies this plan
+names in other planning docs; edges are "must land before"):
 
 ```mermaid
 flowchart TD
@@ -99,7 +100,35 @@ flowchart TD
     S93 --> S11
     S94 --> S11
     S7 --> S11
+
+    subgraph external["External — other planning docs"]
+        EXT_CONV["builtins converter<br/>(planning/builtins FR10)"]
+        EXT_M75["M7.5 Library type resolution<br/>(planning/simple_sub)"]
+        EXT_AFFINE["container-method borrow tracking<br/>(planning/affine_semantics)"]
+    end
+    subgraph followons["Follow-ons — not numbered PRs"]
+        FO_SOLVER["Solver-side application"]
+        FO_ESCLB["escape lifetime-borrow spelling"]
+    end
+
+    EXT_CONV --> S5
+    EXT_CONV --> S7
+    EXT_M75 --> EXT_AFFINE
+    S7 --> FO_SOLVER
+    EXT_M75 --> FO_SOLVER
+    S11 --> FO_ESCLB
+    EXT_AFFINE --> FO_ESCLB
 ```
+
+The **external** group is work in other workstreams that this plan
+depends on: the builtins converter (planning/builtins FR10) that §5 and
+§7 wire into; M7.5 library-type resolution (planning/simple_sub); and the
+affine container-method borrow tracking (planning/affine_semantics),
+which is itself blocked on M7.5's `Array` ingestion. The **follow-ons**
+are ecma-262 work this plan names but does not number as PRs, because each
+waits on an external dependency: the solver-side application needs §7 and
+M7.5, and the `escape` lifetime-borrow spelling needs §11 and the affine
+work. Both are detailed in "Discovery phases may grow the plan" below.
 
 §11 is a *content* PR series, not code: it fans out into a series of
 per-package PRs and recurs as deltas on spec bumps. It is listed so the
