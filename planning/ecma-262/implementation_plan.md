@@ -991,6 +991,52 @@ auto-apply, mirroring how §6 authorizes trusting the mutability facts.
 
 **Gate.** A bump runbook exists and a stale-facts CI check is green.
 
+## Curation as a content workstream
+
+The §1–§10 phases build the pipeline that *produces* `facts.json` and
+*applies* the override layer (§7). **Populating** that override layer —
+reviewing the curation-grade fields of `facts.json` and recording the
+accepted or corrected annotations — is a separate, ongoing content effort,
+not one of the numbered phases. It is data work, not code, and treating it
+as such keeps it reviewable.
+
+**Sequencing.** Curation cannot begin until the facts exist (§4, §8, §9)
+and the override-layer path is wired (§7 plus the builtins converter that
+generates `.esc`). It is independent of the M7.5 solver-side application —
+the override layer can be populated against the converter's output before
+the active checker ingests it. Some curation-adjacent review is embedded
+earlier: §6 triages the receiver-mutability diff, and §9.4 builds the FR14
+ground-truth corpus.
+
+**PR shape.** Curation lands as its own PRs, separate from the infra
+phases and incremental — one per pseudo-package or batch (`std:array`,
+then `std:string`, …), each a self-contained diff against the override
+layer, plus the §9.4 ground-truth corpus PR. It is kept out of the infra
+PRs because a diff of hand-reviewed annotations reviews on different terms
+than a diff that changes the analyzer, and because the volume is large and
+recurs as deltas on spec bumps.
+
+**A shrinking surface.** Receiver mutability is already auto-applied (no
+curation). Once §9.4's FR14 gate measures a zero false-negative rate,
+`throws`/`rejects` graduate to auto-apply for the covered subset. So the
+curation surface contracts over time toward mostly disposition and
+lifetime annotations.
+
+**Where an assistant can and cannot stand in.** The labor is largely
+mechanical and an assistant (including Claude) can take much of it on:
+drafting override entries from the facts plus MDN/spec, triaging the FR11
+filter's false positives, cross-referencing each candidate against the
+FR14 ground truth and surfacing only the disagreements, batching per
+package, and — most valuably — running the §9.4 dynamic-observation
+harness, which is empirical and spec-independent and so free of the
+circularity below. What must **not** collapse onto the assistant is the
+trusted sign-off: an automated reviewer of automatically-extracted facts
+shares the extractor's blind spots, so it would validate faithfulness, not
+correctness — the same circularity FR14's ground truth avoids by being
+observed rather than re-read from the spec. So the assistant proposes and
+explains; independent verification — a human, or the empirical corpus —
+approves the deltas.
+
 ---
 
 ## Appendix A. `cfg.json` schema
