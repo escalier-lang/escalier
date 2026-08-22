@@ -467,8 +467,21 @@ Unclassified methods are listed.
 
 ## §5. Keying and join (FR7, FR15)
 
-**Goal.** Join spec-keyed facts to the converter's class+method
-declarations.
+**Goal.** Join the two inputs the generated `.esc` is built from (FR7):
+
+- the **type declarations** from the pinned TypeScript `.d.ts` that ships
+  with TypeScript — the shapes the spec cannot supply: generics, parameter
+  and return types, typed overloads. This is the type source per FR7.
+- the **effect facts** in `facts.json`, produced by §4 / §8 / §9 from the
+  ECMA-262 spec — receiver mutability, parameter disposition, the
+  return-borrow seed, `throws`, and `rejects`.
+
+The `.d.ts` declarations are keyed by owner + member; the facts are keyed
+by canonical spec name (Appendix C). This phase is the **name-based match**
+between them, so each `.d.ts`-derived method element picks up its ECMA-262
+effects. The join is deliberately shape-blind — it carries no types — so it
+holds whether the type declarations come from `.d.ts` today or committed
+`.esc` later (FR7).
 
 **Work.**
 
