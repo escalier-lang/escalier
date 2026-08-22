@@ -101,14 +101,19 @@ that would introduce new PRs:
 - **`escape` spelling depends on external affine work.** §8 records the
   `escape` disposition; curation spells it a `move` (owning container) or
   a lifetime-bounded borrow (borrow-holding container), per requirements
-  FR12. The lifetime-borrow spelling needs the affine checker's
-  borrow-into-container tracking (`.push` of a borrow), which the
-  affine_semantics workstream
-  ([../affine_semantics/requirements.md](../affine_semantics/requirements.md))
-  defers to post-M7. That is **not this workstream's work** — until it
-  lands, curation applies only the `move` spelling, and the `escape` facts
-  for borrow-holding containers wait on it. Tracked here as an external
-  dependency, like the M7.5 solver-side application above.
+  FR12. The affine *core* — moves, use-after-move, borrows, escape forcing
+  — has landed, but the lifetime-borrow spelling needs one piece that has
+  not: **borrow tracking through container methods** (`.push` of a borrow,
+  `a.peers.push(&mut b)`), which the affine plan
+  ([../affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md))
+  lists as deferred and out of scope. It is blocked on two things: the
+  stdlib `Array` type and method surface (M7.5 ingestion, the same blocker
+  as the solver-side application above) and a container-method lifetime
+  annotation expressing "the argument-borrow is stored into the receiver."
+  That is **not this workstream's work** — until it lands, curation
+  applies only the `move` spelling, and the `escape` facts for
+  borrow-holding containers wait on it. Tracked here as an external
+  dependency.
 
 Re-scope the table once §1 and §2 report, splitting any of the above into
 their own rows before starting §4.
