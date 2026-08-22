@@ -193,9 +193,10 @@ superseded and is not the integration target. Where earlier sections of this doc
 (`internal/checker/prelude.go`, `internal/checker/unify_mut.go`), read
 them as naming the *concept*, not the final home — the facts apply to
 whichever checker owns builtin ingestion. Real stdlib ingestion into the
-solver is a later milestone (M7), so the concrete point where the facts
-are consumed tracks wherever the builtins workstream lands that
-ingestion. The interop-layer classifier `interop.Classify`
+solver is milestone M7.5 (Library type resolution), not yet landed — the
+solver prelude still seeds stdlib types as opaque placeholders — so the
+concrete point where the facts are consumed tracks wherever the builtins
+workstream lands that ingestion. The interop-layer classifier `interop.Classify`
 ([../../internal/interop/mutability.go](../../internal/interop/mutability.go))
 operates on `dts_parser` declarations and is checker-agnostic, so FR8's
 integration there holds across both.

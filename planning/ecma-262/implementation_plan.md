@@ -74,10 +74,17 @@ that would introduce new PRs:
 - **Solver-side application (new, not yet a numbered phase).** §7
   integrates the facts into the interop-layer `interop.Classify` and
   removes the legacy `internal/checker/prelude.go` overrides. The active
-  checker's own builtin ingestion is milestone M7 in the solver
-  (`internal/solver`), not yet landed; wiring the facts into that
-  ingestion is a **dependent PR that cannot be written until M7 exists**,
-  tracked here as a known follow-on rather than a scheduled phase.
+  checker's own builtin ingestion is milestone **M7.5 — Library type
+  resolution** in the solver (`internal/solver`), **not yet landed**: its
+  prelude still seeds stdlib types as opaque `unknown` placeholders
+  (`addStdlibTypePlaceholders`), pending real `.esc` ingestion. (The
+  underlying **M7 — Type aliases** milestone that M7.5 builds on has
+  largely landed — `soltype.AliasType` and scope-driven `TypeRef`
+  resolution exist — so M7 is the wrong milestone to name here; the
+  blocker is M7.5's ingestion, not the alias representation.) Wiring the
+  facts into that ingestion is a **dependent PR that cannot be written
+  until M7.5 lands**, tracked here as a known follow-on rather than a
+  scheduled phase.
 - **Applying the non-receiver facts.** §7 auto-applies only receiver
   mutability, the high-confidence determination. Parameter disposition
   (§8), the return-borrow seed (§8.2), `throws` (§9), and `rejects` (§9.3)
@@ -97,7 +104,7 @@ that would introduce new PRs:
   defers to post-M7. That is **not this workstream's work** — until it
   lands, curation applies only the `move` spelling, and the `escape` facts
   for borrow-holding containers wait on it. Tracked here as an external
-  dependency, like the M7 solver-side application above.
+  dependency, like the M7.5 solver-side application above.
 
 Re-scope the table once §1 and §2 report, splitting any of the above into
 their own rows before starting §4.
