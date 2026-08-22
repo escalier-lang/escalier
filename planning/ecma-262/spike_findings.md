@@ -77,7 +77,8 @@ that stores a parameter into the receiver, the signal §8.1 needs.
 | ------ | ----- | ---------------- |
 | `Array.prototype.push` | direct receiver mutation + escape | `Set(O, %6, E, true)` where `O = ToObject(this)`, `E` from `ArgumentsList`; receiver mutation and escape operand `E` (arg 2) both exposed; `RangeError` domain throw explicit; returns `fresh` |
 | `Array.prototype.fill` | receiver mutation returning receiver | `Set(O, Pk, value, true)`; returns `O` (receiver) |
-| `Array.prototype.sort` | receiver mutation returning receiver | writes back via `Set(obj, %7, sortedList[j], true)`; returns `obj`; comparator reached through `SortIndexedProperties` helper |
+| `Array.prototype.sort` | receiver mutation returning receiver | writes back **directly** via `Set(obj, %7, sortedList[j], true)`; returns `obj`; `SortIndexedProperties` only reads `obj` via `Get` and returns a fresh sorted list, so it supplies the ordering, not the write — this is not the helper-mediated case |
+| `Object.freeze` (and `Object.seal`) | transitive mutation through a helper AO | no write in its own body; mutates only by `SetIntegrityLevel(O, ~frozen~)` on param 0; the mutation is discovered by the FR2 fixpoint, not read off `freeze` directly; `receiver: none`, param 0 `mutBorrow`, returns `param:0` |
 | `Array.prototype.slice` | fresh allocation, no receiver mutation | `ArraySpeciesCreate(O, count) → A`; writes target `A` via `CreateDataPropertyOrThrow(A, …)`; receiver only read via `Get`/`HasProperty`; returns `A` (fresh) |
 | `Array.prototype.map` | fresh allocation + callback | `ArraySpeciesCreate(O, len) → A`; `Call(callback, …)`; `CreateDataPropertyOrThrow(A, Pk, mappedValue)`; returns `A` (fresh) |
 | `Map.prototype.set` | internal-slot mutation + escape | `push M.MapData < p` with `p = record{Key: key, Value: value}`; also `p.Value = value`; both params escape into `[[MapData]]`; returns `M` (receiver) |
@@ -111,6 +112,49 @@ through the chain. In `push`, `let O = %0` follows `%0 = %0.Value` following
 `call %0 = clo<"ToObject">(this)`, so `O` is receiver-origin; `let E = %5[%4]`
 with `%5 = items = ArgumentsList` is parameter-origin. Fresh origins are the
 allocation expressions: `slice` and `map` bind `let A = <ArraySpeciesCreate…>`.
+
+### Transitive mutation through a helper abstract operation
+
+The FR2 mutation summary is an inter-procedural fixpoint, so the gate needs
+the CFG to carry two things beyond a single method's own writes: every helper
+abstract operation as a first-class function with its body, and each call
+node's argument operands, so an origin at a caller's argument can be matched
+to the helper's mutated parameter. Both hold. Every abstract operation the
+representative methods call is dumped as its own `.cfg` function — `Set`,
+`CreateDataPropertyOrThrow`, `DefinePropertyOrThrow`, `SetIntegrityLevel`,
+`SortIndexedProperties`, `PerformPromiseAll`, and the rest — so the call graph
+is complete and `MutArgs` can propagate along it.
+
+`Object.freeze` is the representative that exercises the propagation rather
+than a direct write. Its body performs no write of its own; its only effect on
+the argument is one call:
+
+```
+INTRINSICS.Object.freeze:
+  pop O < ArgumentsList                        // O is param 0
+  call %1 = clo<"SetIntegrityLevel">(O, ~frozen~)
+  … return O                                   // returns param 0
+
+SetIntegrityLevel(O, level):
+  … call %5  = clo<"DefinePropertyOrThrow">(O, k, «Configurable: false»)   // sealed branch
+  … call %10 = clo<"DefinePropertyOrThrow">(O, k, desc)                    // frozen branch
+```
+
+`DefinePropertyOrThrow` is an FR1 seed mutator of argument 0. The fixpoint
+then resolves two hops with no direct write at either caller:
+
+- `MutArgs[DefinePropertyOrThrow] = {0}` — the seed.
+- `SetIntegrityLevel` passes its own parameter `O` as argument 0 of
+  `DefinePropertyOrThrow`, so `MutArgs[SetIntegrityLevel] = {0}`.
+- `Object.freeze` passes its own parameter `O` as argument 0 of
+  `SetIntegrityLevel`, so `MutArgs[Object.freeze] = {0}`.
+
+`Object.freeze` is a static, so it has `receiver: none`; the mutated argument
+0 is `mutBorrow`, and the return is `param:0`. `Object.seal` has the identical
+shape with `~sealed~`. This is the helper-mediated case sort does not cover:
+`Array.prototype.sort` performs its receiver write-back directly with
+`Set(obj, …)` in its own body, and `SortIndexedProperties` only reads the
+receiver, so sort exercises a direct write, not the fixpoint.
 
 ### Internal-slot writes
 

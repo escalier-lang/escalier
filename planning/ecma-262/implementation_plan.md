@@ -257,14 +257,28 @@ the plan" below.
 **Outcome.** The gate is met — [spike_findings.md](spike_findings.md)
 records the per-method evidence. The CFG carries every signal, so no
 shallow-parser fallback is needed and §8/§9 keep their scope. The spike
-resolves onto the happy-path side of the §1 branches below, and hands §3
-three lowering rules the serializer must apply: reconstruct the `?`/`!`
-completion guard from the post-call branch shape rather than a call
-attribute, seed the FR1 property-write mutators as direct because the `Set`
-family dispatches through a dynamic `[[Set]]` the fixpoint cannot resolve by
-name, and key internal slots by their bare name since the CFG drops the
-`[[ ]]` brackets. It also confirms `yet` incompleteness is per-step, so the
-FR5 fallback applies per signal rather than per method.
+resolves onto the happy-path side of the §1 branches below. It sharpens one
+§3 detail and confirms two §4 ones, and it leaves the §3/§4 boundary intact —
+§3 stays a structural dumper that makes no mutability or alias decision.
+
+- **§3 (serializer).** The compiled IR carries no `?`/`!` flag; the guard is
+  lowered into a stereotyped post-call branch — an abrupt-check that returns
+  the completion for `?`, a normal assertion for `!`. §3 populates the
+  completion-guard field the Appendix A schema already defines, and that §9
+  reads as `node.Guard`, by matching that branch shape. This recovers spec
+  control flow structurally, not by any Escalier-level decision, so it stays
+  within §3's remit. §3 also copies each internal-slot name verbatim from the
+  CFG, which is the bare `MapData`, not the bracketed `[[MapData]]` the
+  Appendix A example shows.
+- **§4.1 (Go).** The FR1 property-write seed is load-bearing, not an
+  optimization: `Set` and its kin dispatch through a dynamic `[[Set]]`
+  internal method the mutation fixpoint cannot resolve by callee name, so
+  without the seed those writes are invisible to it. §4.1's
+  `BackingStoreSlots` set must match the bare slot names §3 emits, since the
+  CFG drops the `[[ ]]` brackets.
+- **§4 / §9 (Go).** `yet` incompleteness is per-step, not per-method, so the
+  FR5 conservative fallback applies per signal — a determination is left
+  unclassified only when a `yet` sits on a step it reads.
 
 ## §2. Toolchain scoping
 

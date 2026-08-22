@@ -47,6 +47,8 @@ REPRESENTATIVE=(
   "INTRINSICS.Array.prototype.forEach"              # callback propagation
   "INTRINSICS.Map.prototype.set"                    # internal-slot mutation + escape
   "INTRINSICS.Set.prototype.add"                    # internal-slot mutation + escape
+  "INTRINSICS.Object.freeze"                        # transitive mutation through a helper AO
+  "SetIntegrityLevel"                               # the helper freeze delegates its write to
   "INTRINSICS.Reflect.set"                          # namespace fn, param mutation + escape
   "INTRINSICS.String.prototype.charAt"              # immutable primitive
   "INTRINSICS.String.prototype.replace"             # immutable primitive + callback

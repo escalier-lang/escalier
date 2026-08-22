@@ -21,6 +21,8 @@ bump, diff the fresh dumps against these to confirm the findings still hold.
 | `INTRINSICS.Array.prototype.forEach.cfg` | callback propagation (`Call` on a param) |
 | `INTRINSICS.Map.prototype.set.cfg` | internal-slot mutation + escape into `[[MapData]]` |
 | `INTRINSICS.Set.prototype.add.cfg` | internal-slot mutation + escape into `[[SetData]]` |
+| `INTRINSICS.Object.freeze.cfg` | transitive mutation: delegates its whole write to `SetIntegrityLevel` |
+| `SetIntegrityLevel.cfg` | the helper `Object.freeze` calls; writes the argument via seeded `DefinePropertyOrThrow` |
 | `INTRINSICS.Reflect.set.cfg` | namespace function, param mutation + escape |
 | `INTRINSICS.String.prototype.charAt.cfg` | immutable primitive, read-only receiver |
 | `INTRINSICS.String.prototype.replace.cfg` | immutable primitive + callback |
