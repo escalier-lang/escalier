@@ -33,7 +33,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 
 | PR   | Work                                       | FRs        | Status | Depends on | Gate |
 | ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
-| §1   | Feasibility spike                          | FR1–FR4    | ⬜      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs |
+| §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
 | §2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
@@ -253,6 +253,18 @@ noted in §3 alternatives.
 **This spike can grow the plan.** §1 and §2 are discovery phases; their
 findings feed back into the later phases. See "Discovery phases may grow
 the plan" below.
+
+**Outcome.** The gate is met — [spike_findings.md](spike_findings.md)
+records the per-method evidence. The CFG carries every signal, so no
+shallow-parser fallback is needed and §8/§9 keep their scope. The spike
+resolves onto the happy-path side of the §1 branches below, and hands §3
+three lowering rules the serializer must apply: reconstruct the `?`/`!`
+completion guard from the post-call branch shape rather than a call
+attribute, seed the FR1 property-write mutators as direct because the `Set`
+family dispatches through a dynamic `[[Set]]` the fixpoint cannot resolve by
+name, and key internal slots by their bare name since the CFG drops the
+`[[ ]]` brackets. It also confirms `yet` incompleteness is per-step, so the
+FR5 fallback applies per signal rather than per method.
 
 ## §2. Toolchain scoping
 
