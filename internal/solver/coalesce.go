@@ -38,7 +38,7 @@ func coalesce(t soltype.Type, pol soltype.Polarity) soltype.Type {
 	// symbolic keeps a rank-2 callback type such as `<T>(x: T) -> T` intact instead of
 	// inlining its `T` binder to never. acceptTypeParamVar panics on a non-variable binder.
 	// funcTypeParamVars is empty for a monomorphic type, so this is inert on the common path.
-	return coalesceKeeping(t, pol, funcTypeParamVars(t), nil)
+	return coalesceKeeping(t, pol, funcTypeParamVars(t), nil, nil)
 }
 
 // groundedCarrier reports the shape of t, looking through any borrow and resolving t if it is
@@ -78,10 +78,19 @@ func carrierIsVar(t soltype.Type) bool {
 // `read`'s return as `T` rather than collapsing the intermediate var to `never`.
 // projectClassMember then substitutes `T` for the instance's argument. A nil keep and nil
 // flow reduce it to the plain uniform-inlining coalesce.
-func coalesceKeeping(t soltype.Type, pol soltype.Polarity, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) soltype.Type {
+func coalesceKeeping(
+	t soltype.Type,
+	pol soltype.Polarity,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+	keepLts set.Set[*soltype.LifetimeVar],
+) soltype.Type {
 	c := t.Accept(&coalescer{seen: set.NewSet[*soltype.TypeVarType](), keep: keep, flow: flow}, pol)
-	c = bubbleOwnedMut(c)            // #779: lift an owned-mut cell out of an immutable container
-	return coalesceLifetimes(c, pol) // D4: resolve borrow lifetimes to their display form
+	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
+	// D4: resolve borrow lifetimes to their display form, holding keepLts under their own
+	// names so a lifetime the enclosing declaration quantifies survives the member's own
+	// occurrence count.
+	return coalesceLifetimes(c, pol, keepLts)
 }
 
 // muBinders turns a cycle in the bound graph into a finite μ-knot. Both coalescers embed it, so
@@ -429,7 +438,7 @@ func coalesceScheme(t soltype.Type, genLevel int) soltype.Type {
 	}, soltype.Positive)
 	c = bubbleOwnedMut(c) // #779: lift an owned-mut cell out of an immutable container
 	// A scheme display is always coalesced from the Positive root.
-	return coalesceLifetimes(c, soltype.Positive) // D4: resolve borrow lifetimes to their display form
+	return coalesceLifetimes(c, soltype.Positive, nil) // D4: resolve borrow lifetimes to their display form
 }
 
 // funcTypeParamVars collects every generic function's own TypeParams binder var
@@ -731,6 +740,57 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 		}
 	}
 	return nil
+}
+
+// declaredLifetimeParams returns the lifetime parameters written by the declaration a display
+// type stands for, or nil when it stands for none. It is the lifetime-sort twin of
+// declaredTypeParams and reads the same three carriers: a class handle, an alias handle, and
+// the class-value object whose constructor returns the handle.
+func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimeParam {
+	switch t := t.(type) {
+	case *soltype.ClassType:
+		if def, ok := c.ctx.classDef(t.Name); ok {
+			return ltParamsForArgs(def.LifetimeParams, t.LifetimeArgs)
+		}
+	case *soltype.AliasType:
+		if def, ok := c.ctx.aliasDef(t.Name); ok {
+			return ltParamsForArgs(def.LifetimeParams, t.LifetimeArgs)
+		}
+	case *soltype.ObjectType:
+		for _, elem := range t.Elems {
+			ctor, isCtor := elem.(*soltype.ConstructorElem)
+			if !isCtor {
+				continue
+			}
+			if cls, isClass := ctor.Fn.Ret.(*soltype.ClassType); isClass {
+				return c.declaredLifetimeParams(cls)
+			}
+			return nil
+		}
+	}
+	return nil
+}
+
+// ltParamsForArgs returns lps with each parameter's variable replaced by the variable a
+// reference passes in that argument position, the lifetime-sort twin of paramsForArgs and
+// for the reason it gives. A position holding 'static or an anonymous lifetime keeps the
+// parameter as declared, as does a reference whose argument count does not match.
+func ltParamsForArgs(lps []*soltype.LifetimeParam, args []soltype.Lifetime) []*soltype.LifetimeParam {
+	if len(args) != len(lps) {
+		return lps
+	}
+	out := make([]*soltype.LifetimeParam, len(lps))
+	for i, lp := range lps {
+		v, isVar := args[i].(*soltype.LifetimeVar)
+		if !isVar || v == lp.Var {
+			out[i] = lp
+			continue
+		}
+		cp := *lp
+		cp.Var = v
+		out[i] = &cp
+	}
+	return out
 }
 
 // paramsForArgs returns tps with each parameter's variable replaced by the variable a
