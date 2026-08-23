@@ -195,21 +195,20 @@ type lifetimeWalk struct {
 //     field of its own descends at base, attributing what it holds to the enclosing object,
 //     the approximation recordBorrowSources makes for a computed key. walkObjElem says which
 //     members those are.
-//   - A tuple element and a class type argument descend at base unchanged. Neither
-//     contributes a name: the place model has no index segment, and a class type argument is
-//     not addressable as a field at all. `&'c mut Box<&'a mut B>` therefore stores at the
-//     whole Box, which is where a class holding a borrowed element lands.
+//   - A tuple element, an array element, a class type argument, and a promise or generator
+//     payload descend at base unchanged. None of them contributes a name: the place model
+//     has no index segment, and neither a class type argument nor a payload is addressable
+//     as a field at all. `&'c mut Box<&'a mut B>` therefore stores at the whole Box, which
+//     is where a class holding a borrowed element lands.
 //   - A union or intersection descends each member at base, since a borrow any member holds
 //     is reachable through the whole.
 //   - An alias descends its expansion at base. An alias is transparent, so a referent
 //     written as `Holder<'a>` is searched the way the object the alias names is.
 //
-// Any other kind stops the walk, so the call reads as storing nothing through it. Two kinds
-// are worth naming, since both are the container shapes the stdlib ingestion milestone
-// brings and each wants an arm here once it can be written. An `Array<T>` element is
-// unreachable because `&mut Array<T>` is not a borrowable type. A class lifetime argument —
-// the `'a` of `Box<'a, T>`, as opposed to the type argument this walk does descend — is
-// unreachable because a class declares no lifetime parameters.
+// Any other kind stops the walk, so the call reads as storing nothing through it. One is
+// worth naming. A class LIFETIME argument — the `'a` of `Box<'a, T>`, as opposed to the type
+// argument this walk does descend — is unreachable because a class declares no lifetime
+// parameters, and it wants an arm here once one can be written.
 func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 	if t == nil || w.budget <= 0 || w.onPath.Contains(t) {
 		return
@@ -237,6 +236,15 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 		for _, elem := range t.Elems {
 			w.walk(elem, base)
 		}
+	case *soltype.ArrayType:
+		w.walk(t.Elem, base)
+	case *soltype.PromiseType:
+		w.walk(t.Inner, base)
+		w.walk(t.Err, base)
+	case *soltype.GeneratorType:
+		w.walk(t.Yield, base)
+		w.walk(t.Ret, base)
+		w.walk(t.Next, base)
 	case *soltype.ClassType:
 		for _, arg := range t.TypeArgs {
 			w.walk(arg, base)
