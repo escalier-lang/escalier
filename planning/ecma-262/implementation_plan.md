@@ -35,7 +35,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
 | §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
 | §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
-| §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
+| §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
 | §4.2 | Origin map                                 | FR2, FR4   | ⬜      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown |
 | §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
@@ -360,21 +360,22 @@ spelling. This is the only Scala we write, and it contains no analysis.
 **Work.**
 
 - Add a small Scala main in `tools/spec-extract/` that depends on the
-  vendored ESMeta build, runs `extract → compile → build-cfg` with
-  `-extract:target` set to a pinned ECMA-262 **commit** — a full SHA, not
-  a branch or a floating tag — and walks each `cfg.Func`.
+  vendored ESMeta build, runs `extract → compile → build-cfg`, and walks
+  each `cfg.Func`. The ECMA-262 revision is pinned by ESMeta's own
+  `ecma262` submodule, so the run records the revision it extracted rather
+  than naming one; §2's findings cover why.
 - Lower each ESMeta IR node to the flat, analysis-ready schema in
   [Appendix A](#appendix-a-cfgjson-schema). The serializer's only job is
   this lowering. It pattern-matches ESMeta IR instruction types onto the
   `Node` and `Expr` variants and copies structure; it makes no
   mutability or alias decision. The shape it must surface per function:
-  the formal parameters in order, with the receiver as index 0 for
-  builtin methods; every `Let` binding's target and source; every
-  abstract-operation call with its callee name, argument expressions,
-  and completion guard (`?` / `!` / plain, needed for the throw-set
-  fixpoint in §9); every internal-slot write with its object expression
-  and slot name; every explicit `Throw` step with its exception type;
-  every return with its value expression.
+  the declared parameters in order, with a method's receiver kept out of
+  that index space and referenced as `ExprThis`; every `Let` binding's
+  target and source; every abstract-operation call with its callee name,
+  argument expressions, and completion guard (`?` / `!` / plain, needed
+  for the throw-set fixpoint in §9); every internal-slot write with its
+  object expression and slot name; every explicit `Throw` step with its
+  exception type; every return with its value expression.
 - Write the result to `tools/spec-extract/cfg.json` and commit it. The
   file is large; it is an intermediate regenerated only on a spec bump,
   and committing it is what keeps the JVM out of the normal build.
@@ -418,6 +419,70 @@ to validate the shallow parser's output.
 **Gate.** `cfg.json` covers the full `std:*` method surface and
 round-trips a schema validation. The schema is the contract the Go stage
 reads.
+
+**Outcome.** Done. `tools/spec-extract/` holds an sbt wrapper build that
+names the vendored ESMeta checkout as a source dependency, and a Scala main
+that runs `extract → compile → build-cfg` in process and lowers the result.
+One run takes about 20 seconds and writes a 1.6 MB
+[cfg.json](../../tools/spec-extract/cfg.json), committed. It holds 1202
+functions: all 501 builtin algorithms and the 701 abstract operations,
+closures, internal methods, and numeric methods reachable from them. The
+1746 syntax-directed operations are the runtime semantics of the language
+rather than a library surface, so they are dropped. The run ends by reading
+the file back with an independent parser and checking every kind, every
+field, and the builtin count against the graph, which is the gate.
+[tools/spec-extract/README.md](../../tools/spec-extract/README.md) is the
+maintainer runbook. Four findings shape the sections downstream.
+
+- **The completion unwrap has to be absorbed into the guard, not emitted.**
+  §1 established that `?` and `!` are lowered into control flow, and the
+  serializer matches those shapes to recover the guard. What the shape also
+  contains is the unwrap `x = x.Value`, which reads a field. Emitting it
+  would make the guarded call's result a container read, and Appendix A
+  resolves a read to an unknown origin, so `Let O be ? ToObject(this)` would
+  stop tracing to the receiver and `Array.prototype.push` would lose its
+  receiver mutation. The serializer drops the assertion, the unwrap, and the
+  abrupt branch that forwards the completion, and records the guard on the
+  call. §9.1 reads `guard`, never the branch. The drop is pinned to the edge
+  the guard puts its unwrap on, because `x = x.Value` is also a step some
+  algorithms write for themselves, and dropping those would lose real bindings
+  in `IteratorStep`, `ToBigInt`, and the promise combinators.
+- **Allocation operands are a signal Appendix A could not hold.** The
+  schema had no expression for an allocation, and lowering one to a literal
+  would have dropped what it stores. `Map.prototype.set` appends
+  `record { Key: key, Value: value }` to `[[MapData]]`, and on that path the
+  record is the only place `key` escapes through, so §8.1 would have missed
+  it. Appendix A gains `ExprAlloc`, whose `Args` holds the stored operands.
+- **A builtin's parameters come from its algorithm head, and the calling
+  convention has to be lowered away.** ESMeta compiles every builtin with
+  the same three IR parameters, `this`, `ArgumentsList`, and `NewTarget`,
+  and generates a prologue that takes each declared formal out of the
+  argument list, defaulting a missing one to `undefined`. `Params` is read
+  off the algorithm head instead, and the prologue is dropped, so a formal
+  is named only there and §4.2 reads its index by name. Keeping the prologue
+  would have bound each formal to the argument list and to `undefined`,
+  neither of which carries a parameter origin.
+- **Eight builtins have no algorithm head.** ESMeta supplies
+  `String.prototype.toUpperCase`, `Math.random`, the `toLocaleString`
+  family, `Function.prototype`, and its own `print` from manual sources
+  rather than from `spec.html`. Six of the eight have a body that is a
+  single `yet`, so the analysis reads them as unclassified, which is the
+  right answer. They are keyed from the compiled function's name so the
+  surface stays complete.
+
+Two limits are worth naming for §9.3. `Promise` is set from the shape
+Appendix A describes, an algorithm that builds a promise capability and
+returns either that capability's `[[Promise]]` or the result of an
+operation the capability was handed to. That covers `Promise.reject`,
+`Promise.prototype.then`, and the four combinators, and correctly leaves
+`Promise.withResolvers` unset, since it returns a plain object holding the
+capability's three pieces. It does not cover a method that returns a
+promise built elsewhere. `Promise.prototype.catch` delegates to `then`
+through a dynamic invoke, so proving it returns a promise needs the
+inter-procedural pass rather than this serializer. Separately, ECMA-262 does not
+define `Intl`, so the `Intl.*` forms in
+[Appendix C](#appendix-c-canonical-spec-keys) match nothing here; they
+describe ECMA-402, which a later spec source would have to supply.
 
 ## §4. Go analysis: mutation and alias
 
@@ -1315,7 +1380,7 @@ const (
     BuiltinMethod  FuncKind = "builtin-method"  // X.prototype.method; has a `this` value (ExprThis)
     BuiltinStatic  FuncKind = "builtin-static"  // X.method; no receiver
     AbstractOp     FuncKind = "abstract-op"     // Set, ToObject, ArrayCreate, ...
-    SyntaxDirected FuncKind = "syntax-directed" // evaluation semantics; mostly unused here
+    SyntaxDirected FuncKind = "syntax-directed" // evaluation semantics; not emitted
 )
 
 type Func struct {
@@ -1361,7 +1426,8 @@ type Node struct {
     Args      []Expr   `json:"args,omitempty"`      // Call
     Guard     Guard    `json:"guard,omitempty"`     // Call: ? / ! / plain
     Object    *Expr    `json:"object,omitempty"`    // SlotWrite: the written object
-    Slot      string   `json:"slot,omitempty"`      // SlotWrite, e.g. "[[MapData]]"
+    Slot      string   `json:"slot,omitempty"`      // SlotWrite: the slot name without its
+                                                    // brackets, so [[MapData]] is "MapData"
     ErrorType string   `json:"errorType,omitempty"` // Throw of a constructed error: "TypeError", ...
     Value     *Expr    `json:"value,omitempty"`     // Return: the returned expression;
                                                     // SlotWrite: the stored value (needed by §8.1
@@ -1378,13 +1444,18 @@ const (
     ExprCall ExprKind = "call" // nested AO call, e.g. ToObject(x)
     ExprSlot ExprKind = "slot" // READ of Object.Slot
     ExprProp ExprKind = "prop" // READ via Get(Object, Key) etc.
+    ExprAlloc ExprKind = "alloc" // a record, list, or map the algorithm allocates, or a copy
+                                 // of one. The value is fresh, and Args holds the operands
+                                 // stored into it — a parameter appearing there escapes into
+                                 // whatever the allocation is then stored in (§8.1).
 )
 
 type Expr struct {
     Kind   ExprKind `json:"kind"`
-    Var    string   `json:"var,omitempty"`    // ExprVar
+    Var    string   `json:"var,omitempty"`    // ExprVar; also names a closure passed as a value,
+                                              // which resolves against Funcs like a Callee does
     Callee string   `json:"callee,omitempty"` // ExprCall
-    Args   []Expr   `json:"args,omitempty"`   // ExprCall
+    Args   []Expr   `json:"args,omitempty"`   // ExprCall / ExprAlloc
     Object *Expr    `json:"object,omitempty"` // ExprSlot / ExprProp
     Slot   string   `json:"slot,omitempty"`   // ExprSlot
 }
@@ -1398,6 +1469,14 @@ that structure here first. `ExprSlot` and `ExprProp` are *reads* and
 deliberately resolve to `Unknown` origin, so the origin chain breaks at a
 container access — this is what keeps deep mutation through reads from
 being mis-attributed to the receiver.
+
+`Name` lives in two spaces that a lookup has to keep apart. A builtin is
+keyed by its canonical spec key and an `abstract-op` by the name a call
+names it under, and those overlap: `Set` is both the property-write
+abstract operation and the `Set` constructor. A `Callee`, and a closure
+named by an `ExprVar`, resolve against the `abstract-op` functions only.
+`ExprCall` is reserved: the compiled IR states every call as its own node,
+so a call never appears nested inside an expression.
 
 ## Appendix B. `facts.json` schema
 
@@ -1507,6 +1586,16 @@ distinction, because parameter mutation (`Reflect.set` writing its
 
 Abstract operations referenced inside algorithms — `Set`, `ToObject`,
 `ArrayCreate`, and the like — appear in `cfg.json` as `Func`s with
-`Kind: abstract-op` keyed by their plain spec name. They feed the §4.1
+`Kind: abstract-op` keyed by their plain spec name. So do three other
+categories of function JavaScript cannot call: the closures an algorithm
+defines, keyed `INTRINSICS.Promise.prototype.finally:clo0`; the internal
+methods, keyed `Record[OrdinaryObject].Set`; and the numeric methods,
+keyed `Number::toString`. Each is keyed by the name a call to it names,
+so a `Callee` resolves by string equality. All of them feed the §4.1
 fixpoint but never appear in `facts.json`, which holds only builtin
 methods.
+
+A prototype with no name of its own in the language is the root of the
+path rather than a `prototype` segment, so `%ArrayIteratorPrototype%`'s
+`next` is keyed `ArrayIteratorPrototype.next`. It still has a receiver
+and carries `Kind: builtin-method`.
