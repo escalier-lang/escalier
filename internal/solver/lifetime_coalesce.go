@@ -29,11 +29,14 @@ import (
 //     output. The printer assigns it 'a, 'b, … from the variables this pass leaves
 //     in the type.
 //
-//  2. Elision. A param lifetime whose borrow never reaches an output connects
-//     nothing. It occurs in no positive position, and its connected component in the
-//     condensed graph holds no output lifetime, so it is dropped. This is the
-//     lifetime-sort analogue of single-polarity type-variable elimination. The drop
-//     branches on the borrow's Mut flag:
+//  2. Elision. A param lifetime connects nothing when it is written at one borrow and
+//     never reaches an output. It occurs in no positive position, its connected
+//     component in the condensed graph holds no output lifetime, and no second borrow
+//     shares its name, so it is dropped. This is the lifetime-sort analogue of
+//     single-polarity type-variable elimination. A lifetime written at two or more
+//     borrows survives, since repeating one name across borrows says the regions are
+//     the same, which is a constraint on the caller whether or not it reaches an
+//     output. The drop branches on the borrow's Mut flag:
 //     - A mutable borrow becomes owned-mutable, RefType{Mut: true, Lt: nil}.
 //     - An immutable borrow drops the RefType wrapper entirely and returns its
 //     bare inner, because RefType{Mut: false, Lt: nil} is the forbidden
@@ -90,9 +93,17 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // output is genuinely connect-nothing, and the elision rule above drops those. Eliding
 // under a complement changes the type rather than merely dropping a name, since `~(&'a T)`
 // rendered as `~(&T)` is the complement of any borrow of T rather than of the `'a` one.
+//
+// shared holds the param lifetimes written at two or more borrows. One name repeated
+// across borrows is a constraint the caller has to satisfy — the two regions must be the
+// same — so it is named even when it reaches no output. `fn f<'a>(x: &'a mut B, y: &'a
+// mut B)` renders its `'a` for that reason, while the single-borrow `fn f(x: &mut B)`
+// elides. negSeen is the running count the set is derived from.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]
+	shared   set.Set[*soltype.LifetimeVar]
+	negSeen  map[*soltype.LifetimeVar]int
 	negDepth int
 }
 
@@ -100,25 +111,53 @@ func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.E
 	if _, isNeg := t.(*soltype.NegationType); isNeg {
 		v.negDepth++
 	}
-	if r, ok := t.(*soltype.RefType); ok {
-		if lv, ok := r.Lt.(*soltype.LifetimeVar); ok {
-			// Undo one polarity flip per enclosing complement to recover the position the
-			// borrow structurally sits in. Two complements cancel, so only the parity counts.
-			position := pol
-			if v.negDepth%2 == 1 {
-				position = position.Flip()
-			}
-			if position == soltype.Positive {
-				v.occ[lv] |= occPos
-			} else {
-				v.occ[lv] |= occNeg
-			}
-			if v.negDepth > 0 {
-				v.noElide.Add(lv)
-			}
+	// A lifetime is written at three kinds of node: the lifetime slot of a borrow, and the
+	// lifetime-argument list of an alias or class reference. `&'b mut Holder<'a>` writes 'a
+	// as an alias argument, and a signature that also writes it at a borrow ties the two
+	// together, so all three positions have to be recorded for the relation to be visible.
+	switch t := t.(type) {
+	case *soltype.RefType:
+		v.record(t.Lt, pol)
+	case *soltype.AliasType:
+		for _, arg := range t.LifetimeArgs {
+			v.record(arg, pol)
+		}
+	case *soltype.ClassType:
+		for _, arg := range t.LifetimeArgs {
+			v.record(arg, pol)
 		}
 	}
 	return soltype.EnterResult{}
+}
+
+// record notes one written occurrence of lt at the walk polarity pol, ignoring 'static and
+// an already-resolved display lifetime, neither of which is a variable to name. It converts
+// the walk's variance into the structural position the write sits in, tallies the negative
+// writes so a name repeated across borrows lands in shared, and marks a write a complement
+// encloses as never-elidable.
+func (v *ltOccVisitor) record(lt soltype.Lifetime, pol soltype.Polarity) {
+	lv, ok := lt.(*soltype.LifetimeVar)
+	if !ok {
+		return
+	}
+	// Undo one polarity flip per enclosing complement to recover the position the write
+	// structurally sits in. Two complements cancel, so only the parity counts.
+	position := pol
+	if v.negDepth%2 == 1 {
+		position = position.Flip()
+	}
+	if position == soltype.Positive {
+		v.occ[lv] |= occPos
+	} else {
+		v.occ[lv] |= occNeg
+		v.negSeen[lv]++
+		if v.negSeen[lv] > 1 {
+			v.shared.Add(lv)
+		}
+	}
+	if v.negDepth > 0 {
+		v.noElide.Add(lv)
+	}
 }
 
 // ExitType pops the complement EnterType pushed. The two stay balanced because this
@@ -131,14 +170,21 @@ func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type
 }
 
 // walkLtOcc runs the occurrence walk over t from the root polarity pol, returning the
-// structural positions and the set of lifetimes a complement encloses.
-func walkLtOcc(t soltype.Type, pol soltype.Polarity) (map[*soltype.LifetimeVar]occPolarity, set.Set[*soltype.LifetimeVar]) {
+// structural positions, the set of lifetimes a complement encloses, and the set written
+// at two or more borrows.
+func walkLtOcc(t soltype.Type, pol soltype.Polarity) (
+	map[*soltype.LifetimeVar]occPolarity,
+	set.Set[*soltype.LifetimeVar],
+	set.Set[*soltype.LifetimeVar],
+) {
 	v := &ltOccVisitor{
 		occ:     map[*soltype.LifetimeVar]occPolarity{},
 		noElide: set.NewSet[*soltype.LifetimeVar](),
+		shared:  set.NewSet[*soltype.LifetimeVar](),
+		negSeen: map[*soltype.LifetimeVar]int{},
 	}
 	t.Accept(v, pol)
-	return v.occ, v.noElide
+	return v.occ, v.noElide, v.shared
 }
 
 // ltAnalysis is the precomputed input the rewriter reads: per-variable structural
@@ -148,6 +194,7 @@ func walkLtOcc(t soltype.Type, pol soltype.Polarity) (map[*soltype.LifetimeVar]o
 type ltAnalysis struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar] // lifetimes a complement encloses; never elided
+	shared   set.Set[*soltype.LifetimeVar] // lifetimes written at two or more borrows; never elided
 	bs       *ltBoundSet                   // condensed outlives graph; rep IDs collapse mutual-outlives cycles
 	comp     map[int]int                   // representative ID -> connected-component leader ID in bs
 	posComps set.Set[int]                  // component leaders reaching a positive occurrence
@@ -168,7 +215,10 @@ type ltAnalysis struct {
 // the other along outlives edges. Condensing mutual-outlives cycles to one
 // representative first is what leaves a DAG for reduce and for the directional bound
 // rendering that layers on top.
-func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity, noElide set.Set[*soltype.LifetimeVar]) *ltAnalysis {
+func newLtAnalysis(
+	occ map[*soltype.LifetimeVar]occPolarity,
+	noElide, shared set.Set[*soltype.LifetimeVar],
+) *ltAnalysis {
 	bs := buildLtBoundSet(occ)
 	comp := bs.weakComponents()
 
@@ -182,7 +232,7 @@ func newLtAnalysis(occ map[*soltype.LifetimeVar]occPolarity, noElide set.Set[*so
 			posComps.Add(comp[bs.repOf(v.ID)])
 		}
 	}
-	return &ltAnalysis{occ: occ, noElide: noElide, bs: bs, comp: comp, posComps: posComps}
+	return &ltAnalysis{occ: occ, noElide: noElide, shared: shared, bs: bs, comp: comp, posComps: posComps}
 }
 
 // isParam reports whether v is a param lifetime: one that originates at a borrow
@@ -250,7 +300,7 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 		return soltype.Static, false
 	}
 	if a.isParam(v) {
-		if a.kept(v) || a.noElide.Contains(v) {
+		if a.kept(v) || a.noElide.Contains(v) || a.shared.Contains(v) {
 			return v, false // a named param renders under its own quantified name
 		}
 		return nil, true // connect-nothing param: elide
@@ -295,11 +345,11 @@ func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, eli
 // relation between them. pol is the polarity t was built at, threaded so the occurrence
 // walk starts from the same root.
 func ltOutlivesRelation(t soltype.Type, pol soltype.Polarity) (*ltAnalysis, []*soltype.LifetimeVar, func(u, w *soltype.LifetimeVar) bool) {
-	occ, noElide := walkLtOcc(t, pol)
+	occ, noElide, shared := walkLtOcc(t, pol)
 	if len(occ) == 0 {
 		return nil, nil, nil
 	}
-	a := newLtAnalysis(occ, noElide)
+	a := newLtAnalysis(occ, noElide, shared)
 	bs := a.bs
 
 	survivors := slices.Collect(maps.Keys(occ))

@@ -151,10 +151,9 @@ func (c *checker) resolveComponentEscapes(
 // so it sees every alias the recording sites listed at the top of this file record. An alias
 // formed by a path none of them covers is invisible here exactly as it is to the escape check.
 // `a.peers.push(&mut b)` is such a path. The store recorder reads a callee's explicit
-// parameters and matches the two sides of a store by a shared lifetime variable, and a method
-// call supplies neither: its receiver is stripped off the signature the call site sees, and
-// its lifetimes reach that signature anonymized. It is tracked under "Deferred and out of
-// scope" in planning/affine_semantics/implementation_plan.md.
+// parameters, and `.push` stores into the receiver, which memberValue strips off the
+// signature the call site sees. It is tracked under "Deferred and out of scope" in
+// planning/affine_semantics/implementation_plan.md.
 func (c *checker) componentMoveCovers(
 	e ast.Expr, escaping set.Set[liveness.VarID],
 	stmtRef liveness.StmtRef,

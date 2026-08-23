@@ -117,6 +117,11 @@ func TestInferLifetimeGenericAliasKeepsLifetimesDistinct(t *testing.T) {
 // expanded borrow are interchangeable under subtyping. A `Ref<'a, {x: number}>` value flows
 // into a plain `&'a {x: number}` target, and a plain borrow flows back into the alias, so the
 // alias expands to exactly the borrow its body writes.
+//
+// Both signatures write `'a` twice, once at a borrow and once as the alias's lifetime
+// argument, so the name survives on both sides. Counting only the borrow would leave `'a`
+// quantified while eliding it from the half that wrote it as an alias argument, rendering an
+// `f` whose return names no lifetime its parameter supplies.
 func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
 	src := `
 		type Ref<'a, T> = &'a T
@@ -125,8 +130,8 @@ func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> &{x: number}", values["f"])
-	require.Equal(t, "fn <'a>(p: &{x: number}) -> Ref<'a, {x: number}>", values["g"])
+	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> &'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a {x: number}) -> Ref<'a, {x: number}>", values["g"])
 }
 
 // TestInferLifetimeGenericAliasArityErrors covers the lifetime-argument arity checks. A
