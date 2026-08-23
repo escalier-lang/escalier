@@ -18,11 +18,11 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `interop.ConvertToStandaloneModule` ([internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/interop/dts_to_esc_test.go](../../internal/interop/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
-| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/interop/partition.go](../../internal/interop/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/interop/partition_writer.go](../../internal/interop/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; `dts_to_esc partition <lib-dir> <out-dir>` subcommand. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's `--check` mode will close). PR B (`--check` + re-run semantics) and PR C (TS-version-bump workflow) still outstanding. |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
-| 8   | Internal fixture migration                           | (precedes §9) | ⬜ | §4, §7    | Migrate Escalier's own fixtures to `import "std:*"`. Must land **before §9** so the prelude switchover doesn't break the test suite. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The legacy prelude still resolves previously-ambient names side-by-side until §9 deletes it. |
-| 9   | Prelude switchover + override deletion               | FR11, FR12  | ⬜      | §2, §4, §7, §8 | Replace `lib.*.d.ts` walking in [prelude.go](../../internal/checker/prelude.go) with the per-file shape loader. Delete the legacy `BuildBuiltinStore` / `loadGlobalDefinitions` / `populateSelfParams` / `UpdateMethodMutability` / `mergeReadonlyVariant` / `mutabilityOverrides` paths in the same PR — pre-1.0, no deprecation cycle. Also migrate loader rule §3.4(4) (`@js` arg validation): move it out of the loader (currently reads `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go)) into a CI-only test under [internal/checker/tests/](../../internal/checker/tests/) that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Delete `js_globals.go` and the rule-4 branch in [js_decorator.go](../../internal/checker/js_decorator.go) in the same PR. Same CI-only test should add **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` (or `get`), never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable (today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime). Rule 5 shares the lib parser with rule 4, so doing them separately would duplicate the parse. |
-| 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | §9      | Implement adaptive diagnostic rendering (FR15) and the auto-import quick-fix (FR16); verify `Awaited<T>` source-level definition with documented-fallback policy; confirm intrinsic handlers stay checker-resident (FR13).                                                                                                          |
+| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/interop/partition.go](../../internal/interop/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/interop/partition_writer.go](../../internal/interop/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; `dts_to_esc partition <lib-dir> <out-dir>` subcommand. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's `--check` mode will close). PR B (`--check` + re-run semantics), PR C (TS-version-bump workflow), and PR D (split the converter out of the `type_system`-importing half of `internal/interop`) still outstanding; PR B's assignability check runs on the solver's `constrain` over `soltype`, so it lands after SimpleSub M7.5. |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
+| 8   | Internal fixture migration                           | (before M12)  | ⬜ | §4, §7, M7.5 | Migrate Escalier's own fixtures to `import "std:*"`. The solver has no ambient surface, so this is what lets SimpleSub M8's second fixture harness run the `fixtures/` tree at all. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The old checker keeps resolving previously-ambient names while it exists, so the added imports are additive and both harnesses stay green. |
+| 9   | Per-file shape loading in `internal/solver`          | FR11, FR12  | ⬜      | §2, §4, §7, §8, M7.5 | Add the FR11 trigger map on top of M7.5's import ingestion, so a file gets a literal's or language feature's method surface without naming the owning package. There is no switchover: the solver never had an ambient lib, and the legacy `internal/checker/` machinery goes out with the M12 flip, so §9.3 is an audit rather than a deletion PR. Re-home the §3.4 loader rules: rules 1–3 are AST-only and move to the pseudo-package load path; rule 4 (`@js` arg validation) needs a parsed TS lib, which only the old checker has via `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go), so it becomes a CI-only test that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Same test adds **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` or `get`, never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable. Today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime. Rule 5 shares the lib parse with rule 4, so doing them separately would duplicate it. |
+| 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | M7.5, M9, M11, M11.5 | Implement adaptive diagnostic rendering (FR15) over the `soltype` printer and the auto-import quick-fix (FR16) on the solver-backed LSP (SimpleSub M11); verify the `Awaited<T>` source-level definition with documented-fallback policy; confirm the intrinsic handlers stay solver-resident (FR13). |
 
 **Dependency graph** (edges are "must land before"; only direct
 edges shown — transitive deps omitted for clarity):
@@ -41,8 +41,8 @@ lane (§3 → §5 → §6 → §7) builds the decorator parser, the
 converter, and the committed `.esc` files. §8 needs both lanes
 — fixtures import the `.esc` files via the resolver, and any
 cross-package-typed fixture relies on §4.2b qualified type
-references. §9 cuts over the prelude; §10 adds LSP/diagnostic
-tooling on top.
+references. §9 adds the per-file shape loader; §10 adds
+LSP/diagnostic tooling on top.
 
 **Step ordering rationale.** §1 is first because a failed audit
 forces parser work that gates everything else. §2 (resolver),
@@ -55,23 +55,88 @@ emission step; §3 must also land before any fixture exercises
 codegen end-to-end. §4 lands after §2 because the inter-package
 import / cycle tests need real `import` statements. §7 produces
 the source-of-truth
-`.esc` files. §8 migrates internal fixtures to `import "std:*"`
-while the legacy prelude is still live; §9 then swaps the prelude
-and deletes the legacy paths in a single cut (pre-1.0, no
-deprecation cycle); §10 adds the LSP / diagnostic tooling on top.
+`.esc` files. §8 gives every fixture explicit `import "std:*"`
+statements, which the solver requires and the old checker
+tolerates; §9 adds the lazy shape-load path so a file gets a
+literal's method surface without importing it; §10 adds the LSP /
+diagnostic tooling on top.
 
-**Why §8 precedes §9.** §9 deletes the legacy path in the same
-change that swaps the prelude, so existing fixtures must already
-be migrated to `import "std:*"`. §8 is feasible once §7 has
-committed the `.esc` files (so imports actually resolve) and §4
-has landed (so any DOM-touching fixture can use the
-single-`web:dom` package + cross-package type references); the
-resolver from §2 is in place transitively via §7. The legacy
-prelude still resolves previously-ambient names side-by-side
-during the fixture-rewriting commit, then §9 removes it. §10
-(LSP, adaptive rendering, intrinsic verification) has no
-ordering constraint relative to §9 other than building on the
-post-switchover code.
+**Why §8 precedes §9.** §9's trigger map is only observable once
+fixtures stop leaning on ambient names. A fixture that still
+expects a bare `Math` fails on the solver whether or not the
+trigger map exists, and that failure masks the trigger map's own
+bugs. §8 is feasible once §7 has committed the `.esc` files so
+imports resolve and §4 has landed so any DOM-touching fixture can
+use the single-`web:dom` package plus cross-package type
+references; the resolver from §2 is in place transitively via §7.
+The old checker still resolves previously-ambient names during the
+fixture-rewriting commit, so added imports are additive and both
+checkers stay green. §10 (LSP, adaptive rendering, intrinsic
+verification) does not depend on §9 at all — nothing in it needs
+the trigger map. Its constraints are milestone-shaped instead:
+M7.5 so a diagnostic has a real stdlib type to render, M9 for the
+type-level operators behind the intrinsic surface, and M11 for the
+solver-backed LSP the quick-fix attaches to. §9 and §10 can
+therefore proceed in either order or in parallel.
+
+## Target checker: `internal/solver`
+
+Everything from §6 PR B onward lands against
+[internal/solver](../../internal/solver/), not
+[internal/checker](../../internal/checker/). The SimpleSub
+migration ([planning/simple_sub/](../simple_sub/)) replaces the
+unification-based checker with an algebraic-subtyping one, and its
+M12 flip deletes `internal/checker/` and `internal/type_system/`
+wholesale. §1 through §6 PR A landed against the old checker
+because it was the only checker at the time; they are done and are
+not revisited here. Every phase below assumes the solver is the
+only checker.
+
+Three consequences shape the remaining phases.
+
+1. **There is no ambient global lib to switch away from.** The
+   solver does not walk `lib.*.d.ts` and has no `globalThis`
+   surface. A stdlib type is reached through a `std:` / `web:` /
+   `node:` import, or through the handle the solver holds on the
+   fixed well-known protocol set — `Promise` for `await`,
+   `Iterable` for `for (x in xs)`, `Generator` for `yield`. See
+   [01-milestones.md](../simple_sub/01-milestones.md) §M7.5. FR1's
+   no-ambient-set requirement is the solver's starting posture
+   rather than a cut-over, so §9 shrinks from "swap the prelude and
+   delete the legacy paths" to "add the per-file shape-load trigger
+   map on top of M7.5's ingestion".
+2. **The legacy builtin machinery is deleted by the M12 flip, not
+   by this workstream.** `loadGlobalDefinitions`,
+   `populateSelfParams`, `UpdateMethodMutability`,
+   `mergeReadonlyVariant`, the `mutabilityOverrides` map,
+   `BuildBuiltinStore`, and `js_globals.go` all live in
+   `internal/checker/` and go out with that tree. §9.3 keeps the
+   list as an audit that nothing in it grew a solver-side twin.
+3. **`type_system.Type` is not a target representation.** The
+   converter emits `*ast.Module`, which both checkers consume, so
+   §5 and §6 PR A need no rework at the source level. It does still
+   *link* against `type_system`, because `internal/interop` holds
+   the runtime override store in the same package — §6.7 PR D
+   splits that. Everything downstream of the AST is written against
+   `soltype` and the solver's `constrain`: `--check` assignability
+   (§6.4), shape loading (§9), and type rendering (§10.2).
+
+**SimpleSub milestone dependencies.** The remaining builtins phases
+sequence against the milestones in
+[01-milestones.md](../simple_sub/01-milestones.md):
+
+| Builtins phase | Needs                | Why                                                                                                                             |
+| -------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| §6 PR B        | M7.5                 | The signature-drift check compares two declaration modules through the solver's `constrain`, which needs stdlib ingestion (§6.4). |
+| §6 PR C        | —                    | CLI subcommands and docs over PR A and PR B's behavior.                                                                          |
+| §6 PR D        | before M12           | The converter links against `type_system` through `internal/interop`, and M12 deletes it (§6.7 PR D).                            |
+| §7             | M9 for `Awaited<T>`  | Committing `.esc` files is checker-independent; the recursive conditional needs the type-level operators from M9 (§7 step 3).    |
+| §8             | M7.5, M8             | The second fixture harness runs the solver over `fixtures/`, where imports are mandatory because nothing is ambient.             |
+| §9             | M7.5, §8             | The trigger map loads packages through M7.5's ingestion path.                                                                    |
+| §10            | M7.5, M9, M11, M11.5 | A real stdlib type to render, type-level operators for the intrinsic surface, the LSP on the solver, and the diagnostics-rendering capstone. Not gated on §9. |
+
+§7 is the one phase that can land well ahead of its consumer: it
+commits source files that nothing type-checks until M7.5 arrives.
 
 ---
 
@@ -1639,7 +1704,11 @@ ReadonlyArray<T>`) are *not* merged by this pass — they are
 separate TS types and stay distinct after routing. The Readonly-
 twin pass below handles them.
 
-**Readonly-twin fusion (mirrors `mergeReadonlyVariant`).** Per-class
+**Readonly-twin fusion (mirrors `mergeReadonlyVariant`).** This
+runs in the converter, not the checker, so it survives the deletion
+of `internal/checker/` — the mutability it bakes into the emitted
+`.esc` files is what replaces the legacy prelude's merge pass.
+Per-class
 buckets often contain a `Readonly<X>` companion (`ReadonlyArray`,
 `ReadonlyMap`, `ReadonlySet`, …). The legacy prelude
 [`mergeReadonlyVariant`](../../internal/checker/prelude.go) treated
@@ -1668,6 +1737,22 @@ not mutate; the new converter does the same at emission time:
 See `fuseReadonlyTwins` / `applyReadonlyTwinReceivers` /
 `appendReadonlyAliases` in
 [internal/interop/partition_writer.go](../../internal/interop/partition_writer.go).
+
+**Known gap: the alias in step 3 keeps no readonly restriction.**
+`type ReadonlyArray<T> = Array<T>` makes the two names one type, so
+a `ReadonlyArray<T>` value accepts `push` and every other
+mutable-only member. Step 4's receiver flip is narrower than it
+looks: it decides whether a method on the fused `Foo` takes
+`self` or `mut self`, which stops a mutation through an immutable
+binding, but it does not remove a member from the readonly name's
+surface. Resolving this needs one of two things, and the §7 review
+is where the choice gets made and recorded: emit `ReadonlyFoo` as
+its own declaration carrying only the twin's members, or keep the
+alias and restrict it at the type level once the operator
+machinery exists. Fixtures for whichever route is picked must
+cover a mutable-only member on both `ReadonlyArray` and
+`ReadonlyMap` — `push` and `set` are the obvious ones — and assert
+it is rejected through the readonly name.
 
 ### 6.2 Registry routing
 
@@ -1738,15 +1823,32 @@ refinements) must survive a re-run.
 any of:
 
 1. **Missing declarations.** A `.d.ts` declaration with no
-   corresponding `.esc` declaration in the partition's target file.
+   corresponding `.esc` declaration in the partition's target
+   file. Declarations the converter drops on purpose are exempt:
+   `globalThis`, `eval`, and every `intrinsic`-typed declaration
+   per the Drops subsection in §6.1. `--check` consults the same
+   drop list the routing pass uses rather than a second copy, so
+   the two cannot disagree, and a regression test runs `--check`
+   over converter output containing those declarations and
+   asserts it passes.
 2. **Incompatible signature drift.** An `.esc` function / method
    signature whose param or return types are not assignable to /
-   from the `.d.ts` original (per the checker's assignability
-   rules, applied to the converted-from-TS form). Catches
-   accidental hand-edits that change the meaning of a signature
-   rather than refining it.
+   from the `.d.ts` original, applied to the converted-from-TS
+   form. Catches accidental hand-edits that change the meaning of
+   a signature rather than refining it.
 3. **Incompatible property-type drift.** Same check for properties
    on classes / interfaces.
+
+**Assignability runs through the solver.** Checks 2 and 3 infer
+both sides — the committed `.esc` declaration and the freshly
+converted `.d.ts` one — into `soltype` and ask
+[internal/solver](../../internal/solver/)'s `constrain` whether one
+is a subtype of the other. That needs the solver to ingest a
+declaration module, which is SimpleSub M7.5, so PR B lands after
+that milestone. Check 1 is structural name matching over the parsed
+modules and depends on no checker, so PR B may ship check 1 first
+and add checks 2 and 3 when M7.5 arrives — say so in the PR rather
+than letting a name-only `--check` read as full drift coverage.
 
 Adding `throws`, lifetimes, mutability, or narrowing a parameter /
 return type within the `.d.ts` shape is **not** incompatible and
@@ -1805,10 +1907,10 @@ member-for-member.
 
 ### 6.7 PR sequencing
 
-§6 lands as three PRs after §5 is in. The split keeps each
-review surface focused; bundling is possible but loses the
-isolation between partition-routing churn and the `--check`
-assignability logic that touches checker rules.
+§6 lands as four PRs after §5 is in. The split keeps each review
+surface focused; bundling is possible but loses the isolation
+between partition-routing churn and the `--check` assignability
+logic that consumes the solver.
 
 A. **Partition table + routing + output layout** (6.1, 6.2, 6.3) ✅.
    Takes the §5 converter from "stdout, one file" to "full
@@ -1828,16 +1930,36 @@ B. **`--check` mode + re-run semantics** (6.4). Adds additive
    write mode (sticky hand-edits, add-only for new TS-side
    declarations / members) and the CI-facing read-only check
    (missing declarations, signature / property-type drift via
-   the checker's assignability rules). Reviewable on its own
-   once A has produced a committed tree to check against;
-   touches checker internals that are unrelated to partition
-   routing.
+   the solver's `constrain`). Reviewable on its own once A has
+   produced a committed tree to check against; the drift checks
+   consume solver internals that are unrelated to partition
+   routing, and they gate on SimpleSub M7.5 per §6.4.
 
 C. **TS-version-bump workflow** (6.6). Wires the
    `bootstrap` / `regenerate` / `check` subcommands on
    `tools/dts_to_esc/` and adds `tools/dts_to_esc/README.md`
    documenting the bump steps. Small; lands after A and B
    have settled the underlying behaviors.
+
+D. **Free the converter of `internal/type_system`.** Every file
+   on the converter's path is already type-system-free —
+   `dts_to_esc.go`, `partition.go`, `partition_writer.go`,
+   `module.go`, `decl.go`, `helper.go`, `twin_rewrite.go`. What
+   couples them is the package boundary: `internal/interop` also
+   holds the runtime override store (`store.go`,
+   `class_shapes.go`, `extract.go`, `merge.go`, `mutability.go`,
+   `consistency.go`, `loader.go`), which imports `type_system`, so
+   `go list -deps ./tools/dts_to_esc` reports `type_system` today.
+   The SimpleSub M12 flip deletes that package, which would break
+   the converter build. Split the two halves — move the
+   AST-producing conversion into its own package, or move the
+   store half out — so the converter depends only on `ast`,
+   `parser`, `printer`, and `dts_parser`. Mechanical, no behavior
+   change, and it can land any time after PR A; do it before M12
+   rather than as part of the flip, so the flip is not blocked on
+   converter surgery. Removing the runtime override store itself
+   is the third-party workstream's call, not this one — PR D only
+   moves the boundary.
 
 6.5 (`throws` bootstrap policy) is scope/policy rather than
 code — fold into whichever PR is convenient, or defer to §7
@@ -1880,12 +2002,19 @@ files as the source of truth.
      check catches them at compile time but humans should catch
      obvious cases here.
 3. **`Awaited<T>` source-level definition.** Write `Awaited<T>`
-   in `std:async` as the recursive conditional type (the same
-   shape as TypeScript's definition). Exercise against a
-   representative fixture (nested promises, thenables, mixed
-   `T | Promise<T>`, generic propagation). If a concrete
-   blocker surfaces, fall back to a checker-resident intrinsic
-   and document the specific failure.
+   in `std:async` as the recursive conditional type, the same
+   shape as TypeScript's definition. Exercise against a
+   representative fixture: nested promises, thenables, mixed
+   `T | Promise<T>`, generic propagation. The solver already
+   reduces recursive conditionals and has a productivity check
+   that stops non-terminating ones
+   ([productivity.go](../../internal/solver/productivity.go),
+   [typeops.go](../../internal/solver/typeops.go)), so the
+   remaining risk is the definition itself rather than missing
+   machinery. Verification waits on SimpleSub M9, which turns on
+   type-level operators. If a concrete blocker surfaces, fall
+   back to a solver-resident intrinsic and document the specific
+   failure.
 4. **FR5 finalization — non-class package exports as namespace
    members.** §2's single-class shortcut binds the class itself
    when activated; the FR5 spec also calls for other package
@@ -1894,16 +2023,20 @@ files as the source of truth.
    The §2 implementation left this as a TODO in
    [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go)
    because the §2-era stubs (`std:math`, `std:array`) have only
-   a single export. Once the §7 bootstrap produces real packages
-   that pair a class with non-class exports (e.g. `std:array`
-   gaining helper functions or constants alongside `Array`),
-   wire the merge: copy `pkgNs.Values` and `pkgNs.Types` onto
-   the class binding's static surface, and add a unit test pinning
-   the static-method-wins tiebreaker.
-4. Commit. After this point, the converter persists only as
+   a single export. That binding code is old-checker code and is
+   not the thing to finish. The §7 bootstrap is what produces the
+   first package pairing a class with non-class exports — say
+   `std:array` gaining helper functions or constants alongside
+   `Array` — so record the requirement here and implement the
+   merge once in the solver's stdlib binding path when M7.5 ports
+   it: copy the package namespace's values and types onto the
+   class binding's static surface, with a unit test pinning the
+   static-method-wins tiebreaker. Do not port the old checker's
+   TODO forward.
+5. Commit. After this point, the converter persists only as
    `--check` review tool; ongoing edits are direct to the
    committed `.esc` files.
-5. **§3.5 codegen fixtures deferred from §3.** Once `std:number`
+6. **§3.5 codegen fixtures deferred from §3.** Once `std:number`
    and `std:iterator` exist as committed packages, add the
    fixtures §3 couldn't author without them:
    - Hoisted global: `parseInt(s)` → `parseInt(s)`.
@@ -1912,35 +2045,60 @@ files as the source of truth.
      invisible to importers — referencing it from outside the
      pseudo-package errors as unbound.
 
-**Gate.** Humans review the committed files; `go test ./...`
-passes — the existing checker still resolves these declarations
-through the legacy `lib.*.d.ts`-walking prelude. §8 then
-migrates fixtures and tests to `import "std:*"` while both
-resolution paths are live, and §9 deletes the legacy path in a
-single PR. The §7 commit on its own changes no checker
-behavior; it just lands the source-of-truth `.esc` files.
+**Gate.** Humans review the committed files; every emitted file
+parses and round-trips through the printer per §1; `go test ./...`
+passes. This phase changes no checker behavior in either checker —
+it lands the source-of-truth `.esc` files and nothing more. The
+solver does not type-check them until SimpleSub M7.5 ingests
+`std:*` / `web:*`, so §7 can land well ahead of its consumer. Two
+items wait on later milestones: the `Awaited<T>` verification in
+step 3 needs M9, and step 6's package-private-invisibility fixture
+asserts a resolution rule, so it holds on the solver only once §9.3
+re-homes the loader rules. The other step 6 fixtures assert emitted
+JS and run on whichever checker the fixture harness is wired to.
 
 ---
 
 ## §8. Internal fixture migration
 
-**Goal.** Migrate Escalier's own fixtures and tests to
-`import "std:*"` so that §9 can delete the legacy lib-walking
-prelude without breaking the suite.
+**Goal.** Give every fixture and test explicit `import "std:*"`
+statements, so the corpus expresses where each stdlib name comes
+from instead of relying on an ambient surface that the solver does
+not have.
 
-**Prerequisites.** §7 (the `.esc` files must be committed for
-imports to resolve) and §4 (the single-`web:dom` package +
-cross-package type references must be in place if any fixture
-touches DOM). §2's resolver is in place transitively via §7.
+**Why it is required.** The solver reaches a stdlib type only
+through an import or through its handle on the fixed well-known
+protocol set, per "Target checker" above. A fixture that writes
+`Math.max(a, b)` with no import is an unbound-name error there, no
+matter what else has landed. This phase is what has to complete
+before the SimpleSub M12 flip deletes `internal/checker`: until
+then an unmigrated fixture still passes on the old checker and its
+breakage stays invisible. So this phase is what lets SimpleSub
+M8's second fixture harness run the `fixtures/` tree at all — it
+is a precondition for the solver's real-package regression net,
+not a step in a prelude cut-over.
 
-Update every fixture and test under
-[fixtures/](../../fixtures/) and
-[internal/checker/tests/](../../internal/checker/tests/) that
-relied on previously-ambient symbols (`Math`, `JSON`, `console`,
+**Prerequisites.** §7, because imports resolve against the
+committed `.esc` files. §4, because a fixture that touches DOM
+needs the single-`web:dom` package and cross-package type
+references. SimpleSub M7.5, because the migrated fixtures do not
+type-check on the solver until it ingests those files. §2's
+resolver is in place transitively via §7, and the rewriting itself
+can start as soon as §7 and §4 are in.
+
+Update every fixture under [fixtures/](../../fixtures/) that
+relies on previously-ambient symbols (`Math`, `JSON`, `console`,
 `Promise`, `Error`, `Array.from`, `parseInt`, …) to use
-`import "std:*"` statements. The legacy prelude is still live
-during this phase, so the migrated and not-yet-migrated files
-type-check side-by-side until §9 removes the legacy path.
+`import "std:*"` statements. Do the same for the inline-source
+tests under [internal/checker/tests/](../../internal/checker/tests/)
+for as long as that tree exists. Tests under
+[internal/solver/](../../internal/solver/) need no migration pass:
+they are authored against intended semantics, so any that names a
+stdlib type writes the import when it is written. The old checker resolves those names
+ambiently for as long as it exists, and an explicit import
+resolves through §2's resolver on the same tree, so each rewritten
+file type-checks under both checkers and the migration can proceed
+file by file.
 
 The auto-import quick-fix from §10.3 is the migration aid when
 it is available; otherwise migration is by hand. Ordering between
@@ -1952,6 +2110,9 @@ rely on.
 **Gate.** `go test ./...` passes with every fixture using
 explicit `import "std:*"` statements; no fixture relies on
 ambient resolution — except for the third-party carve-out below.
+Once M7.5 and M8 are both in, the same corpus runs green on the
+solver harness, which is the real proof that nothing ambient is
+left.
 
 **Carries-over from §2.** §2 landed three binding-shape fixtures
 under [fixtures/](../../fixtures/) (`stdlib_import_local`,
@@ -1978,7 +2139,10 @@ injection (third-party FR7), which is gated behind the entire
 builtins workstream and therefore not yet available.
 
 See [../third_party/requirements.md § Tests broken by the builtins → third-party gap](../third_party/requirements.md#tests-broken-by-the-builtins--third-party-gap)
-for the authoritative statement. The mechanics required here:
+for the authoritative statement. These fixtures keep working on the
+old checker until it is deleted; what they cannot do is run on the
+solver, which resolves nothing ambiently. The mechanics required
+here:
 
 - **Skip helper.** Add a single `testutil.SkipUntilFR7(t, reason
   string)` helper (concrete package path TBD; likely
@@ -1987,12 +2151,13 @@ for the authoritative statement. The mechanics required here:
   site for this gap — every affected test calls it, no scattered
   `t.Skip(...)` strings. Re-enabling is one grep + one deletion.
 - **Audit pass.** Before §9 lands, walk every fixture and test
-  that loads a third-party `.d.ts` (the existing runtime interop
-  pipeline's consumers — `interop.ConvertModule` call sites and
-  fixtures with `.d.ts` payloads). Anything that would fail with
-  the legacy prelude removed gets `SkipUntilFR7`. Do not try to
-  rewrite these to `import "std:*"`; the right migration path
-  for them lives in third-party Phase 1.
+  that loads a third-party `.d.ts` — the existing runtime interop
+  pipeline's consumers, meaning `interop.ConvertModule` call sites
+  and fixtures with `.d.ts` payloads. Anything that resolves a
+  stdlib name ambiently through the converted `.d.ts` gets
+  `SkipUntilFR7`, since that is exactly what fails on the solver.
+  Do not try to rewrite these to `import "std:*"`; the right
+  migration path for them lives in third-party Phase 1.
 - **CI guard.** Add a one-line CI check (a `grep -r
   SkipUntilFR7` in the pre-merge job) that fails the build if
   the helper is still referenced after third-party FR7's
@@ -2005,51 +2170,56 @@ for the authoritative statement. The mechanics required here:
   it has no permanent home in the test infrastructure.
 
 The audit is not zero-cost — somebody has to enumerate the
-affected tests — but it is strictly cheaper than building a
-compatibility shim in the prelude that keeps the legacy lib-walking
-alive solely for the runtime interop pipeline. The skip approach
-also keeps §9's cut-over PR clean: any remaining ambient-resolution
-failures in CI are genuine §8 misses, not third-party fallout.
+affected tests — but it is strictly cheaper than teaching the
+solver an ambient resolution path that exists solely for the
+runtime interop pipeline. The skip approach also keeps the solver
+harness readable: any remaining ambient-resolution failure in CI is
+a genuine §8 miss, not third-party fallout.
 
 ---
 
-## §9. Prelude switchover + override deletion (FR11)
+## §9. Per-file shape loading in `internal/solver` (FR11)
 
-**Goal.** Replace the `lib.*.d.ts`-walking prelude with the lazy
-per-file shape loader, and delete the legacy override / builtin
-machinery in the same change. Pre-1.0; no deprecation cycle, no
-build flag, no parallel paths.
+**Goal.** Add FR11's lazy per-file shape loader to the solver, so
+a file gets the method surface of the literals and language
+features it uses — `"abc".toUpperCase()`, `xs.map(f)`, `await p` —
+without naming the owning package in an import. Explicit
+`import "std:*"` ingestion is SimpleSub M7.5's job; this phase
+adds the trigger-driven load on top of it.
 
-**Hard prerequisite: §8 lands first.** Deleting the legacy
-prelude removes the resolution path that previously made `Math`,
-`JSON`, `console`, `Promise`, `Error`, `Array.from`, `parseInt`,
-… visible without imports. Every fixture and test that names
-those symbols must already be rewritten to use
-`import "std:*"` — that is §8's job. §8 is feasible after §3 and
-§4 land (resolver + closed registries + cross-package type
-references in place) and runs while the
-legacy prelude is still live, so migrated and not-yet-migrated
-files type-check side-by-side throughout the §8 work. §9 is the
-cut-over: the PR that opens §9 must have a green test suite on
-`HEAD` *with* the legacy prelude still active, and must keep it
-green *without* it once the legacy paths come out. If a fixture
-slipped past §8, the §9 PR will fail CI on the unbound-name
-diagnostics for the previously-ambient symbols.
+**No cut-over.** The solver never walked `lib.*.d.ts` and has no
+ambient global surface, so there is no resolution path to swap and
+nothing to delete here. FR11's "the prelude stops walking
+`node_modules/typescript/lib/*.d.ts`" clause is satisfied by
+construction; the legacy machinery it names is deleted with
+`internal/checker/` at the SimpleSub M12 flip. What remains for
+this phase is the trigger map, the loader-rule re-homing, and the
+audit in §9.3.
+
+**Prerequisites.** SimpleSub M7.5, which makes the solver ingest
+`std:*` / `web:*` into `soltype`, and §8, which gives every
+fixture explicit imports. §8 matters for observability rather than
+correctness: a fixture still expecting a bare `Math` fails on the
+solver with or without the trigger map, and that failure masks
+trigger-map bugs.
 
 Note: fixtures that load **third-party `.d.ts`** content are
 intentionally not migrated in §8 — they are marked
-`SkipUntilFR7` per §8.1 and stay skipped through §9. The §9 PR
-should not attempt to un-skip or migrate them; that work belongs
-to third-party FR7. See §8.1 for the helper and CI guard.
+`SkipUntilFR7` per §8.1 and stay skipped through this phase. Do
+not un-skip or migrate them here; that work belongs to third-party
+FR7. See §8.1 for the helper and CI guard.
 
 ### 9.1 Lazy shape-loader
 
-Touch point:
-[internal/checker/prelude.go](../../internal/checker/prelude.go).
+Touch points:
+[internal/solver/prelude.go](../../internal/solver/prelude.go) and
+M7.5's stdlib ingestion path.
 
-For each file F being checked, the checker inspects F's syntax
-and shape-loads only the needed `std:*` packages (no name
-bindings added to scope). Trigger map per FR11:
+For each file F being checked, the solver inspects F's syntax and
+shape-loads only the needed `std:*` packages. Shape-loaded
+declarations are reachable to the inference walk but bind no names
+into F's scope, so `"abc".toUpperCase()` resolves while a bare
+`String` in F stays an unbound name. Trigger map per FR11:
 
 | Trigger                                                            | Shape-loaded package(s)              |
 | ------------------------------------------------------------------ | ------------------------------------ |
@@ -2063,15 +2233,45 @@ bindings added to scope). Trigger map per FR11:
 Multiple files share one parsed copy of each package.
 Shape-loading is idempotent and additive.
 
+**Open item: re-derive the `std:error` row.** That row triggers on
+a `std:error` class *name* appearing in a `try` / `catch` /
+`throw` / `throws` position, which presumes the name resolves
+without an import. It does not on the solver: writing `TypeError`
+requires importing `std:error`, which ingests the package anyway,
+so the trigger is redundant for the written-name case. The
+remaining question is whether an *unwritten* error type needs the
+package — and the solver binds a caught value as `unknown` rather
+than a union of the block's known throws
+([#1181](https://github.com/escalier-lang/escalier/pull/1181)), so
+a bare `try`/`catch` may need nothing from `std:error` at all.
+Settle this when the phase lands: either drop the row or restate
+its trigger in terms of a concrete type the walk needs and cannot
+otherwise reach. The other rows are unaffected — they fire on
+literal and language-feature syntax that names nothing.
+
+**Overlap with M7.5's well-known-type handles.** M7.5 gives the
+solver a direct handle on the fixed protocol set — `Promise` for
+`await`, `Iterable` for `for (x in xs)`, `Generator` for `yield` —
+so those desugaring rules fire in a file that imports nothing. The
+trigger map covers the wider case: member access on a value whose
+type the file never names, such as `"abc".toUpperCase()` or
+`xs.map(f)`. The two overlap in an `async fn` body that also calls
+`p.then(…)`, where the handle resolves the rule and the trigger map
+loads `std:async`. Both are idempotent, so the overlap costs
+nothing beyond one memoized parse.
+
 ### 9.2 Explicit import loading
 
-Reuses §2's resolver path. The shape-load and named-import paths
-share the same parsed declarations; they differ only in whether
+Reuses §2's resolver path and M7.5's ingestion. The shape-load and
+named-import paths share the same parsed declarations and the same
+inferred `soltype` structures; they differ only in whether
 identifiers land in F's scope. Multiple files in a compilation
-share **one parsed copy** of each `std:*` package; the
-shape-loader memoizes by package URI. No bootstrap cycle: each
-`std:*` package contains only declarations (no value-level
-expressions needing their own prelude).
+share **one parsed copy** of each `std:*` package; the memoization
+is keyed by package URI and shared between the two paths, so a file
+that imports `std:array` and a file that only writes an array
+literal reach the same ingested package. No bootstrap cycle: each
+`std:*` package contains only declarations, so nothing in one needs
+a prelude of its own.
 
 ### 9.2a Cross-package references between pseudo-packages
 
@@ -2106,64 +2306,122 @@ shape-loading magically pulled `std:iterator` into F's scope.
 A mutual-import fixture between two `std:*` packages confirms
 the cycle-allowance rule.
 
-### 9.3 Delete the legacy paths (same PR)
+### 9.3 Legacy-path audit and loader-rule re-homing
 
-Delete in the same change that swaps the prelude — no flag, no
-parallel paths, no waiting. The compiler is pre-1.0; the
-breaking change lands cleanly. Internal fixtures must already
-have been migrated to `import "std:*"` (§8) before this PR
-opens, otherwise the test suite breaks.
-
-Touch points to delete or empty out:
+The legacy builtin machinery lives in `internal/checker/` and is
+deleted with that tree at the SimpleSub M12 flip, not here. What
+this phase owes is an audit that no entry below grew a solver-side
+twin during the migration. Each one is either absent from
+`internal/solver/` already or has a named source-level
+replacement:
 
 - `loadGlobalDefinitions` ([prelude.go](../../internal/checker/prelude.go))
-- `populateSelfParams`
-- `UpdateMethodMutability`
-- `mergeReadonlyVariant`
-- the `mutabilityOverrides` Go map
-- `BuildBuiltinStore` (empty the function body; delete the call
-  site; delete the function in a follow-up if no callers
-  remain)
+  — replaced by import ingestion (M7.5) plus §9.1's trigger map
+- `populateSelfParams` — replaced by the `self` receivers the
+  converter emits into the `.esc` files (§6.1)
+- `UpdateMethodMutability` and the `mutabilityOverrides` Go map —
+  replaced by the converter's receiver classification plus the
+  hand-edited mutability refinements committed in §7
+- `mergeReadonlyVariant` — replaced by the converter's
+  readonly-twin fusion (§6.1)
+- `BuildBuiltinStore`
 - `internal/interop/data/builtins/` (if present) — no override
   fragments for builtins remain
-- The Escalier-specific
-  `SymbolConstructor.customMatcher` injection at
+- the Escalier-specific `SymbolConstructor.customMatcher`
+  injection at
   [prelude.go:804–836](../../internal/checker/prelude.go#L804-L836)
-  (now sourced from `std:symbol` per §7 step 2)
+  — replaced by the hand-authored declaration in `std:symbol`
+  (§7 step 2)
+
+**Loader rules re-homed.** §3.4's rules are enforced today by
+`validateJsDecorators` in
+[js_decorator.go](../../internal/checker/js_decorator.go), a
+`*Checker` method. Rules 1 through 3 read only the parsed
+pseudo-package module and its decorators, so they move to the
+pseudo-package load path alongside M7.5's ingestion, or to a
+checker-agnostic loader package both callers share. Rule 4, the
+`@js` argument check, is the one that needs a type-system:
+`knownJSGlobals` in
+[js_globals.go](../../internal/checker/js_globals.go) reads
+`GlobalScope.Namespace.Values`, which exists only in the old
+checker. Re-home it as a CI-only test that freshly parses the
+pinned `lib.*.d.ts` through
+[internal/dts_parser/](../../internal/dts_parser/) and validates
+every `@js("...")` argument across the committed stdlib. That also
+drops the compiler's startup dependency on a parsed TS lib.
+
+Carry §3.4's allow-list across with the rule. `Symbol.customMatcher`
+is Escalier's own and appears in no `lib.*.d.ts`, so §7 step 2
+hand-authors it and the lib lookup will not find it. The allow-list
+names it and any later Escalier-only target explicitly; every other
+`@js` argument must still resolve to a real lib member, so the
+check keeps its teeth.
+
+**Rule 5: `@js` decl shape matches lib target.** Add to the same
+CI-only test. Locate the lib member each `@js("...")` names and
+assert that a `readonly` or getter-only member has an Escalier
+`val` or `get` declaration and never `var`, a setter-only member
+has `set`, and a method has `fn`. An allow-listed target has no
+lib member to compare against, so rule 5 skips it and rule 4's
+allow-list is the only thing vouching for it. This catches a stub
+that silently makes a readonly thing writable:
+`@js("Math.PI") export declare var PI: number` compiles and lowers
+to a `Math.PI = …` that TypeErrors at runtime. Rules 4 and 5 share
+the lib parse, so they land together.
 
 **No `override declare` for builtins.** That syntax stays
 reserved for the third-party workstream's override mechanism;
 no builtin pseudo-package uses it.
 
-**Gate.** `go test ./...` passes on the new path alone; the
-legacy code is gone, not behind a flag.
+**Gate.** A fixture with no `import` calls a string method, an
+array method, and `await`s a promise, and type-checks on the
+solver through the trigger map alone; a fixture that names `String`
+or `Array` without importing it still errors as unbound, proving
+shape-loading binds nothing. The audit list is discharged — every
+entry is absent from `internal/solver/` or has a named replacement
+— and the CI-only rules 4 + 5 test passes over the committed
+stdlib.
 
 ---
 
 ## §10. Intrinsics; adaptive rendering; LSP support (FR13, FR15, FR16)
 
 **Goal.** Ship the diagnostic + LSP tooling users need under the
-new model, and confirm intrinsic handlers stay checker-resident.
+new model, and confirm the intrinsic handlers stay solver-resident.
+
+This phase runs against the solver's own surfaces: the `soltype`
+printer for rendering, the solver's diagnostics for suggestions,
+and the solver-backed LSP that SimpleSub M11 stands up. Its
+rendering work is adjacent to SimpleSub M11.5, the
+diagnostics-quality capstone — M11.5 owns provenance chains,
+related spans, and cascade suppression across every diagnostic,
+while §10.2 below owns one narrow question, which surface form a
+stdlib type takes in a given file. Land them in either order and
+keep the split at that boundary.
 
 ### 10.1 Intrinsic types (FR13)
 
 Confirm that `Uppercase`, `Lowercase`, `Capitalize`,
-`Uncapitalize`, `NoInfer` remain checker-resident handlers — no
+`Uncapitalize`, `NoInfer` remain solver-resident handlers — no
 source file under `internal/interop/data/`. The four string-case
 utilities are pure `Type → Type` resolvers; `NoInfer` is an
-inference-machinery hook. Tracked in escalier-lang/escalier#631.
+inference-machinery hook. On the solver side the string four are
+already representational, as `soltype.StringIntrinsicType` with a
+`StringIntrinsicKind`, so what this phase confirms is that the
+partition emits no `.esc` file for them and that no bootstrap
+output tries to define one. Tracked in escalier-lang/escalier#631.
 
-`Awaited<T>` source-level definition lives in `std:async` per
-§7 step 3 (the recursive conditional type matching TS's
-definition; tracked in escalier-lang/escalier#630). Fallback to
-a checker-resident intrinsic only on documented blocker —
-recursive conditionals don't reduce correctly, pathological
-performance, or a soundness issue. **The fallback decision
-must be committed with a documented description of the specific
-failure that motivated it.** Concretely: a Go doc comment on the
-checker-resident `Awaited` handler citing the failing fixture
-under `internal/checker/tests/` (or `fixtures/`) that motivated
-the fallback. Not duplicated in this plan.
+`Awaited<T>` source-level definition lives in `std:async` per §7
+step 3 — the recursive conditional type matching TS's definition,
+tracked in escalier-lang/escalier#630. It is verified once SimpleSub
+M9 turns on type-level operators. Fall back to a solver-resident
+intrinsic only on a documented blocker: recursive conditionals do
+not reduce correctly, pathological performance, or a soundness
+issue. **The fallback decision must be committed with a documented
+description of the specific failure that motivated it.**
+Concretely, a Go doc comment on the solver-resident `Awaited`
+handler citing the failing test under `internal/solver/` or the
+failing fixture under `fixtures/`. Not duplicated in this plan.
 
 The bootstrap converter strips `intrinsic`-typed declarations
 encountered in TS source (FR13) — no `.esc` output is produced
@@ -2174,10 +2432,16 @@ parser still rejects `intrinsic` after this workstream lands
 
 ### 10.2 Adaptive diagnostic rendering (FR15)
 
-Replace the global `renderType(t)` with
-`renderTypeForLocation(t, scope)`. The renderer picks the
-shortest unambiguous form for `t` given the bindings in scope at
-the diagnostic's source location:
+Add a location-aware rendering mode beside the existing
+`soltype` printers. Today [print.go](../../internal/soltype/print.go) exposes three:
+`Print` renders the user-facing surface form with the namespace
+stripped, `PrintQualified` renders a collision-free identity key
+that is not a surface form, and `PrintElided` truncates deep
+subtrees. The solver's `describe` renders raw mid-constrain types
+alongside them. FR15 needs a fourth mode — call it
+`PrintForLocation(t, scope)` — that picks the shortest unambiguous
+form for `t` given the bindings in scope at the diagnostic's
+source location:
 
 1. **Single-class shortcut.** If the file has a `?local` import
    whose package qualifies for the single-class shortcut (FR5),
@@ -2190,25 +2454,35 @@ the diagnostic's source location:
    `import "std:array"`?" hint pointing at the FR16 quick-fix.
 
 **Tie-breaking.** When multiple forms are simultaneously in
-scope (e.g. the file has both `import "std:array"` and
-`import "std:array?nested"`), the renderer picks the shortest;
+scope — say the file has both `import "std:array"` and
+`import "std:array?nested"` — the renderer picks the shortest;
 ties break in the order 1 → 2 → 3 above. The rendering is
-per-diagnostic, not per-compilation — same type can render
+per-diagnostic, not per-compilation, so the same type can render
 differently in two files.
 
-(Named imports from pseudo-packages are out of scope per
-Non-goals, so the renderer has no "bare name" case to handle.)
+Named imports from pseudo-packages are out of scope per Non-goals,
+so the renderer has no "bare name" case to handle.
 
-Touch points: every diagnostic site that currently calls
-`renderType(t)` needs threading of the file scope through the
-diagnostic pipeline.
+Touch points: the solver's error structs
+([errors.go](../../internal/solver/errors.go)) carry typed
+`soltype` references and build their text in `Message()` at report
+time, so the change is to thread the file's scope into that step
+rather than to rewrite each construction site. Only the sites that
+render a *coalesced* surface form are in scope; `describe`'s raw
+mid-constrain rendering (`t0`, `function`) names no stdlib type and
+stays as it is. `Print` remains the default wherever there is no
+scope to consult, such as snapshot tests and LSP hovers before M11
+threads scope through, and `PrintQualified` remains the identity
+key.
 
 ### 10.2a Diagnostic-assisted migration
 
-When a name that used to be ambient is referenced without an
-import under the new default, the **unbound-name diagnostic**
-includes a suggestion ("did you mean to `import "std:async"`?")
-whenever the unbound name matches a known pseudo-package export.
+When a stdlib name is referenced without an import, the solver's
+**unbound-name diagnostic** includes a suggestion ("did you mean to
+`import "std:async"`?") whenever the unbound name matches a known
+pseudo-package export. This is the common case rather than a
+migration artifact — the solver resolves nothing ambiently, so
+every forgotten import lands here.
 The suggestion list is derived mechanically from the LSP
 name-index (§10.3); the diagnostic path reuses the same index.
 This is the **fallback for command-line use** — users in a
@@ -2218,18 +2492,32 @@ point at the bare reference, not the surrounding statement.
 
 ### 10.3 Auto-import quick-fix (FR16)
 
-LSP first-class. Quick-fix on an unbound-name diagnostic that:
+LSP first-class, so it lands on the solver-backed LSP from
+SimpleSub M11. Both this quick-fix and §10.2a's suggestion hang off
+an unbound-name diagnostic for a stdlib name, and only the solver
+emits one — the old checker resolves `Math` ambiently and reports
+nothing, so there is no diagnostic to attach a suggestion to and
+no old-checker integration worth defining. The name index below is
+the one piece that can land early: it walks `.esc` files and reads
+no checker state, so building it ahead of M11 shortens the later
+PR without shipping anything user-visible.
+
+Quick-fix on an unbound-name diagnostic that:
 
 1. Adds the appropriate namespace import statement
    (`import "std:async"`, `import "std:math"`, …).
 2. **Single-class shortcut packages:** leaves the bare reference
-   unchanged (`Array.isArray`, `Date.now`, `Error(...)` already
-   match the imported binding name).
+   unchanged. `Array.isArray` and `Date.now` already match the
+   imported binding name. The eligible packages are the ones §6.1
+   enumerates, and only those.
 3. **Other packages:** rewrites the bare reference to qualify
-   through the resulting namespace (`sin(x)` → `math.sin(x)`;
-   `Promise.all([...])` → `async.Promise.all([...])` since
-   `Promise` lives in `std:async`, which is not a single-class
-   shortcut package).
+   through the resulting namespace. `sin(x)` becomes
+   `math.sin(x)`; `Promise.all([...])` becomes
+   `async.Promise.all([...])`, since `Promise` lives in the
+   bundled `std:async`; `Error(...)` becomes `error.Error(...)`,
+   since `std:error` bundles `Error` with `TypeError`,
+   `RangeError`, and the rest and so has no shortcut either. A
+   bundled package never leaves its names bare.
 
 Named imports are out of scope. Quick-fix only adds namespace
 imports.
@@ -2254,9 +2542,9 @@ Implementation:
   candidate as a separate fix; ranking by canonical
   alphabetical order, with `std:*` ranked before `web:*`.
 
-Touch points: [cmd/lsp-server/](../../cmd/lsp-server/),
-[internal/lsp/](../../internal/lsp/) (or wherever the LSP code
-actually lives).
+Touch points: [cmd/lsp-server/](../../cmd/lsp-server/) and
+wherever the LSP's request handlers live, on the post-M11
+solver-backed path.
 
 ### 10.4 `--explain-type` diagnostic refinement
 
@@ -2291,8 +2579,9 @@ stdlib pseudo-packages":
 
 Touch points: span construction in
 [internal/parser/parser.go](../../internal/parser/parser.go)
-already takes a filename; the resolver passes the resolved
-path through unchanged.
+already takes a filename; the resolver passes the resolved path
+through unchanged, and the solver's diagnostics carry those spans
+like any other.
 
 **Gate.** LSP quick-fix integration test green; renderer fixture
 per case (`?local` shortcut, `?local` non-shortcut, `?nested`,
@@ -2328,11 +2617,15 @@ Per requirements §"Testing strategy":
 - Closed registries, cross-package type references, inter-package
   cycles (§4); Symbol re-export aliases via `@js` (§3.5 codegen
   fixtures + §7 bootstrap review).
-- Prelude switchover (§9) — internal fixtures, migrated to
-  `import "std:*"` ahead of the switchover commit (§8), keep
-  type-checking under the new resolver. No parity check against
-  the legacy path: the legacy path is deleted in the same PR
-  rather than kept behind a flag (pre-1.0).
+- Shape loading (§9) — a fixture with no `import` calls a string
+  method, an array method, and `await`s a promise, and type-checks
+  on the solver through the trigger map alone; a fixture naming
+  `String` or `Array` without importing it still errors as
+  unbound. Fixtures migrated to `import "std:*"` in §8 keep
+  type-checking on both checkers while both exist. No parity check
+  against the old checker's ambient path: it is deleted with
+  `internal/checker/` at the SimpleSub M12 flip, and SimpleSub M8's
+  differential harness is where old-vs-new divergence is triaged.
 - Adaptive diagnostic rendering (§10.2), auto-import quick-fix
   (§10.3), named-import rejection (§2 parser/resolver).
 - Snapshot tests on converter output via `go-snaps`;
@@ -2369,7 +2662,11 @@ phasing above:
   diagnostics (FR15/§10.2), and the single-class shortcut
   (FR5/§2.4).
 - **Initial bootstrap quality** — mitigated by human review
-  pass at §7 and by `--check` mode at §6.4.
+  pass at §7 and by `--check` mode at §6.4. Note the sequencing
+  risk this creates: §7's files are committed before SimpleSub
+  M7.5 type-checks them, so review and the §1 round-trip gate are
+  the only signal until then. Expect a correction pass when M7.5
+  first ingests the tree.
 - **Cross-package augmentation mechanism** — investigated by
   §4.1 spike; the conclusion was to deferred FR7 and ship
   closed registries (§4.2) for MVP. Risk re-emerges only when
@@ -2380,12 +2677,19 @@ phasing above:
 
 ### Backwards-compatibility
 
-**Not applicable — pre-1.0.** Escalier has no released compiler
-yet, so there are no external users to migrate and no
-deprecation cycle to manage. §9 swaps the prelude and deletes
-the legacy paths in one PR; internal fixtures are migrated
-(§8) in the commit immediately preceding so the suite stays
-green.
+**No released-user compatibility obligation — pre-1.0.** Escalier
+has no released compiler yet, so there are no external users to
+migrate and no deprecation cycle to manage.
+
+There is still a behavior change, and it is worth naming: source
+that reaches `Math`, `Array`, `console`, and the rest without an
+import type-checks today on `internal/checker` and stops
+type-checking the moment that tree is deleted. The solver resolves
+no name ambiently. Nothing in the builtins phases themselves flips
+that — the solver has no ambient surface to remove, and §8 adds
+imports both checkers accept — but the SimpleSub M12 flip does.
+**§8 must therefore complete before M12**, not merely before §9:
+an unmigrated fixture survives §9 and breaks at the flip.
 
 Diagnostic-assisted migration (§10.2a) and the FR16 auto-import
 quick-fix (§10.3) are still implemented — not for migration, but
@@ -2407,7 +2711,7 @@ or more phases above.
 
 | FR    | Topic                                      | Covered in                  |
 | ----- | ------------------------------------------ | --------------------------- |
-| FR1   | No ambient set; two-mode loading           | §6.1 (partition), §9 (lazy shape-load + legacy-path deletion), Drops subsection in §6.1 (`globalThis`/`eval`/`EvalError`) |
+| FR1   | No ambient set; two-mode loading           | §6.1 (partition), §9 (lazy shape-load; the no-ambient half is the solver's starting posture, so §9.3 is an audit rather than a deletion), Drops subsection in §6.1 (`globalThis`/`eval`/`EvalError`) |
 | FR2   | Pseudo-package layout                      | §2.2 (resolver mapping + underscore convention), §2.2a (stdlib data directory discovery), §6.1 (full enumeration), §6.3 (output layout + distribution) |
 | FR3   | URI-scheme import grammar; runtime erasure | §2.1 (parser), §2.2 (resolver), §3 (decorator-based lowering + import erasure)                                |
 | FR4   | Binding-shape flags                        | §2.3 (both shapes, mutual exclusion, extensibility, URI-keyed bookkeeping) |
@@ -2417,9 +2721,9 @@ or more phases above.
 | FR8   | Well-known symbol re-exports               | §7 step 2 (hand-authored re-export aliases with `@js("Symbol.<name>")`), §3 (decorator semantics carry the alias) |
 | FR9   | Augmentation activation semantics          | N/A for MVP — single-`web:dom` partition (§4.2) requires no activation semantics. Original spec preserved in [requirements.md appendix](requirements.md#appendix-deferred-fr9-spec) for the deferred custom-elements work. |
 | FR10  | Bootstrap converter                        | §5 (MVP, trio idiom, namespace flattening), §5.0 (JSDoc precursor), §6.1 (partition), §6.2 (routing), §6.4 (`--check`), §6.5 (`throws`), §6.6 (TS-bump workflow) |
-| FR11  | Prelude changes; lazy shape loading        | §9.1 (trigger map), §9.2 (shared parsed copies), §9.2a (cross-package verification), §9.3 (legacy-path deletion in same PR) |
+| FR11  | Prelude changes; lazy shape loading        | §9.1 (trigger map), §9.2 (shared parsed copies), §9.2a (cross-package verification), §9.3 (legacy-path audit + loader-rule re-homing) |
 | FR12  | Always-current API; polyfills at lowering  | Acknowledged as out-of-scope dependency in cross-cutting; type checker sees modern surface unconditionally       |
-| FR13  | Intrinsic types checker-resident           | §10.1 (handlers stay, `Awaited<T>` source-first with documented-fallback requirement, parser rejects `intrinsic`) |
+| FR13  | Intrinsic types solver-resident            | §10.1 (handlers stay in `internal/solver`, `Awaited<T>` source-first with documented-fallback requirement, parser rejects `intrinsic`) |
 | FR14  | Declaration printer audit                  | §1 (entire phase)                                                                                                |
 | FR15  | Adaptive diagnostic rendering              | §10.2 (renderer + tie-breaking), §10.2a (migration suggestions)                                                    |
 | FR16  | Auto-import (LSP first-class)              | §10.3 (quick-fix, name-index, binding-shape preference, name-collision ordering)                                  |
