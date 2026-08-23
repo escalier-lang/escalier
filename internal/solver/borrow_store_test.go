@@ -608,3 +608,27 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 		t.Fatal("inference did not finish: the lifetime walk did not stay within its node budget")
 	}
 }
+
+// TestCallStoreEdgeCutWalkStaysSound covers what a walk that runs out of alias fuel records.
+// The borrow sits deeper in the chain than the fuel reaches, so the exact field path is
+// unknown; recording no store would drop the escape that borrow raises. The store lands at
+// the whole target instead, which every field read through it follows.
+func TestCallStoreEdgeCutWalkStaysSound(t *testing.T) {
+	// One alias per level, each naming the next, with the borrow past maxAliasExpansionDepth.
+	depth := maxAliasExpansionDepth * 2
+	var b strings.Builder
+	for i := 1; i < depth; i++ {
+		fmt.Fprintf(&b, "type A%d<'a> = {x: A%d<'a>}\n", i, i+1)
+	}
+	fmt.Fprintf(&b, "type A%d<'a> = {peer: &'a mut {value: number}}\n", depth)
+	b.WriteString("declare fn store<'a, 'c>(target: &'c mut A1<'a>, item: &'a mut {value: number}) -> undefined\n")
+	b.WriteString("fn build(t: mut A1<'static>) -> undefined {\n")
+	b.WriteString("\tval mut b = {value: 2}\n")
+	b.WriteString("\tstore(&mut t, &mut b)\n")
+	b.WriteString("}\n")
+
+	_, _, errs := inferSource(t, b.String())
+	require.Equal(t, []string{
+		"20:16-20:22: borrowed value 'b' does not live long enough to escape the function",
+	}, messagesWithSpan(errs))
+}

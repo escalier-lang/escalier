@@ -1075,7 +1075,7 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
   referent declares that the call writes the borrow there, and the recorder turns that into a
   `receiver → referent` edge at the call site. `store(&mut a, &mut b)` against
 
-  ```
+  ```text
   declare fn store<'a, 'b>(target: &'b mut {peer: &'a mut B}, item: &'a mut B)
   ```
 
@@ -1084,8 +1084,8 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
   `a.peers.push(&mut b)`, the canonical container case, is not covered. No method call records
   a store today, and four pieces are missing. First, `Array<T>` and its method surface:
   `internal/solver` has no `Array` type and no array/tuple method calls, and both arrive with
-  the M7 stdlib ingestion
-  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7). Second, a
+  the M7.5 library-type ingestion
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). Second, a
   lifetime parameter on the container type, so `Array<'a, T>` can tie the element borrow to the
   receiver; a class declares no lifetime parameters today, and neither can an object type's
   method signature name a lifetime its enclosing signature binds. Third, the receiver type at

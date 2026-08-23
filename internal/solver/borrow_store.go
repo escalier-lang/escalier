@@ -67,6 +67,12 @@ type storeEdge struct {
 // source's lifetimes are collected before the target loop, and a target's referent is
 // searched into a map from lifetime to the paths it sits at rather than once per source
 // lifetime.
+//
+// A walk that runs out of budget or alias fuel saw only part of its type, so a lifetime the
+// two sides share may sit past where it stopped. Such a pair takes a store at the whole
+// target rather than none: dropping the edge would drop the escape a borrow written there
+// raises, and the widest position is the sound reading when the exact one is unknown. Only a
+// signature far past anything hand-written reaches either limit.
 func callStoreEdges(ctx *Context, fn *soltype.FuncType) []storeEdge {
 	var sources, targets []int
 	for i, p := range fn.Params {
@@ -85,19 +91,29 @@ func callStoreEdges(ctx *Context, fn *soltype.FuncType) []storeEdge {
 		return nil
 	}
 	sourceLts := map[int][]*soltype.LifetimeVar{}
+	sourceCut := map[int]bool{}
 	for _, i := range sources {
-		sourceLts[i] = lifetimeVarsIn(ctx, fn.Params[i].Type)
+		sourceLts[i], sourceCut[i] = lifetimeVarsIn(ctx, fn.Params[i].Type)
 	}
 
 	var out []storeEdge
 	for _, j := range targets {
 		dst := fn.Params[j].Type.(*soltype.RefType)
-		sites := lifetimeSites(ctx, dst.Inner)
-		if len(sites) == 0 {
+		sites, targetCut := lifetimeSites(ctx, dst.Inner)
+		if len(sites) == 0 && !targetCut {
 			continue
 		}
 		for _, i := range sources {
 			if i == j {
+				continue
+			}
+			// A walk that stopped short saw a subset of the type's lifetimes, so a shared one
+			// may sit past where it stopped. Reading that as "no store" would drop the edge
+			// and with it the escape a dangling borrow written there would raise, so record
+			// the store at the whole target instead: an unnamed path is the widest position
+			// the recorder can name, and every field read through the target follows it.
+			if targetCut || sourceCut[i] {
+				out = append(out, storeEdge{arg: i, target: j})
 				continue
 			}
 			for _, lv := range sourceLts[i] {
@@ -113,33 +129,36 @@ func callStoreEdges(ctx *Context, fn *soltype.FuncType) []storeEdge {
 // lifetimeSites maps each lifetime variable occurring in t to the field paths within t it
 // occurs at. Reading the map by lifetime is what lets one walk of a target's referent answer
 // for every source lifetime.
-func lifetimeSites(ctx *Context, t soltype.Type) map[*soltype.LifetimeVar][][]placeSeg {
+func lifetimeSites(ctx *Context, t soltype.Type) (map[*soltype.LifetimeVar][][]placeSeg, bool) {
 	sites := map[*soltype.LifetimeVar][][]placeSeg{}
-	walkLifetimes(ctx, t, func(lv *soltype.LifetimeVar, path []placeSeg) {
+	cut := walkLifetimes(ctx, t, func(lv *soltype.LifetimeVar, path []placeSeg) {
 		sites[lv] = append(sites[lv], path)
 	})
-	return sites
+	return sites, cut
 }
 
 // lifetimeVarsIn returns the lifetime variables occurring anywhere in t, deduped by identity
 // and ordered as the walk reaches them, which keeps the store edges a signature yields in a
 // stable order across runs.
-func lifetimeVarsIn(ctx *Context, t soltype.Type) []*soltype.LifetimeVar {
+func lifetimeVarsIn(ctx *Context, t soltype.Type) ([]*soltype.LifetimeVar, bool) {
 	var out []*soltype.LifetimeVar
 	seen := set.NewSet[*soltype.LifetimeVar]()
-	walkLifetimes(ctx, t, func(lv *soltype.LifetimeVar, _ []placeSeg) {
+	cut := walkLifetimes(ctx, t, func(lv *soltype.LifetimeVar, _ []placeSeg) {
 		if seen.Contains(lv) {
 			return
 		}
 		seen.Add(lv)
 		out = append(out, lv)
 	})
-	return out
+	return out, cut
 }
 
 // walkLifetimes calls visit once per lifetime-variable occurrence in t, passing the field
-// path within t at which it occurs.
-func walkLifetimes(ctx *Context, t soltype.Type, visit func(*soltype.LifetimeVar, []placeSeg)) {
+// path within t at which it occurs. cut reports that a limit stopped the walk before it
+// reached every node, so the occurrences visit saw are a subset of what t holds.
+func walkLifetimes(
+	ctx *Context, t soltype.Type, visit func(*soltype.LifetimeVar, []placeSeg),
+) (cut bool) {
 	w := &lifetimeWalk{
 		ctx:    ctx,
 		visit:  visit,
@@ -148,13 +167,15 @@ func walkLifetimes(ctx *Context, t soltype.Type, visit func(*soltype.LifetimeVar
 		fuel:   maxAliasExpansionDepth,
 	}
 	w.walk(t, nil)
+	return w.cut
 }
 
 // maxLifetimeWalkNodes bounds how many type nodes one walk visits. Alias expansion is what
 // makes the bound necessary: a chain of aliases that each name the next one twice describes
 // exponentially many field paths, and walking them all takes minutes at a depth a signature
 // could plausibly reach. A signature carrying this many type nodes is far past anything
-// hand-written.
+// hand-written. Running out reports the walk as cut, which callStoreEdges reads as a store at
+// the whole target rather than as no store.
 const maxLifetimeWalkNodes = 1024
 
 // maxAliasExpansionDepth bounds how many alias expansions one root-to-node chain may stack.
@@ -164,8 +185,7 @@ const maxLifetimeWalkNodes = 1024
 // refusing a repeated alias NAME is what keeps a re-nesting like `W<W<&'a mut B>>` correct,
 // since its two levels are different types and the inner one holds the borrow.
 //
-// Running out of either limit records fewer store edges, the same silence a kind the walk
-// does not descend produces.
+// Running out reports the walk as cut, the same as running out of node budget.
 const maxAliasExpansionDepth = 8
 
 // lifetimeWalk reports where each lifetime variable occurs in a type, as a field path from
@@ -184,6 +204,10 @@ type lifetimeWalk struct {
 	onPath set.Set[soltype.Type]
 	budget int
 	fuel   int
+	// cut records that budget or fuel ran out, so the walk stopped before reaching every
+	// node. Its caller reads this to tell "t holds no more occurrences" apart from "the walk
+	// stopped looking", which decide a store differently.
+	cut bool
 }
 
 // walk descends t, extending base by a segment at each named field. Only the kinds that can
@@ -205,12 +229,18 @@ type lifetimeWalk struct {
 //   - An alias descends its expansion at base. An alias is transparent, so a referent
 //     written as `Holder<'a>` is searched the way the object the alias names is.
 //
-// Any other kind stops the walk, so the call reads as storing nothing through it. One is
+// Any other kind stops the walk there, so the call reads as storing nothing through it. That
+// is a deliberate silence about a kind that holds no field-addressable borrow, unlike the cut
+// a limit causes, which says the walk stopped before it finished looking. One is
 // worth naming. A class LIFETIME argument — the `'a` of `Box<'a, T>`, as opposed to the type
 // argument this walk does descend — is unreachable because a class declares no lifetime
 // parameters, and it wants an arm here once one can be written.
 func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
-	if t == nil || w.budget <= 0 || w.onPath.Contains(t) {
+	if t == nil || w.onPath.Contains(t) {
+		return
+	}
+	if w.budget <= 0 {
+		w.cut = true
 		return
 	}
 	w.budget--
@@ -269,8 +299,15 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 // container's path. An alias with no expansion — unregistered, bodyless, or reached with the
 // expansion fuel spent — has its arguments attributed to base instead of being dropped.
 func (w *lifetimeWalk) walkAlias(t *soltype.AliasType, base []placeSeg) {
-	if w.ctx != nil && w.fuel > 0 {
+	if w.ctx != nil {
 		if def, ok := w.ctx.aliasDef(t.Name); ok && def.Body != nil {
+			if w.fuel <= 0 {
+				// The expansion this would have walked holds occurrences the caller does not
+				// get to see, so say the walk stopped short rather than reading the
+				// reference's own arguments as all the alias contributes.
+				w.cut = true
+				return
+			}
 			w.fuel--
 			defer func() { w.fuel++ }()
 			w.walk(w.ctx.expandAlias(t), base)
