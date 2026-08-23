@@ -128,8 +128,10 @@ func LoadCFG(path string) (*CFG, error) {
 }
 
 // ParseCFG decodes a serialized control-flow graph and indexes its functions by
-// name. A function whose kind the analysis cannot index, and a name repeated
-// within one index, are both errors rather than a silently dropped entry.
+// name. Anything the analysis cannot walk or address is an error here rather
+// than a silently dropped entry or a panic further in: a missing function or
+// node, an unnamed function, a kind with no index, and a name repeated within
+// one index.
 func ParseCFG(data []byte) (*CFG, error) {
 	cfg := &CFG{}
 	if err := json.Unmarshal(data, cfg); err != nil {
@@ -137,7 +139,18 @@ func ParseCFG(data []byte) (*CFG, error) {
 	}
 	cfg.abstractOps = make(map[string]*Func)
 	cfg.builtins = make(map[string]*Func)
-	for _, fn := range cfg.Funcs {
+	for i, fn := range cfg.Funcs {
+		if fn == nil {
+			return nil, fmt.Errorf("decoding cfg: funcs[%d] is missing", i)
+		}
+		if fn.Name == "" {
+			return nil, fmt.Errorf("decoding cfg: funcs[%d] has no name", i)
+		}
+		for j, node := range fn.Nodes {
+			if node == nil {
+				return nil, fmt.Errorf("decoding cfg: node %d of %s is missing", j, fn.Name)
+			}
+		}
 		var index map[string]*Func
 		switch fn.Kind {
 		case AbstractOp:

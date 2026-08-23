@@ -70,6 +70,23 @@ func TestParseCFGRejects(t *testing.T) {
 		// has nowhere to put anything else. Syntax-directed operations are the
 		// runtime semantics of the language rather than a library surface, so
 		// the serializer drops them.
+		// A missing entry would otherwise be a nil dereference here or in the
+		// walk that follows.
+		"MissingFunc": {
+			json: `{"specTarget":"abc","funcs":[null]}`,
+			err:  "decoding cfg: funcs[0] is missing",
+		},
+		"MissingNode": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"branch"},null]}]}`,
+			err: "decoding cfg: node 1 of ToObject is missing",
+		},
+		// The analysis addresses a function only by name, so an unnamed one is
+		// unreachable.
+		"UnnamedFunc": {
+			json: `{"specTarget":"abc","funcs":[{"kind":"abstract-op"}]}`,
+			err:  "decoding cfg: funcs[0] has no name",
+		},
 		"UnindexableKind": {
 			json: `{"specTarget":"abc","funcs":[{"name":"Evaluation","kind":"` +
 				string(SyntaxDirected) + `"}]}`,

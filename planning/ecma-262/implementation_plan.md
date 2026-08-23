@@ -665,12 +665,16 @@ func evalCall(F, c) Origin:
 ```
 
 `IdentityCoercions` is the key list for receiver tracking. `ToObject`
-and `RequireObjectCoercible` return the same object, so `O ← ?
-ToObject(this value)` keeps `O` at the receiver. Coercions that build a
-new value — `ToString`, `ToNumber` — are *not* identity-preserving,
-which is exactly why every `String.prototype` method comes out
-non-mutating: the algorithm coerces `this` to a fresh string primitive
-and never writes back to `Param(0)`.
+and `RequireObjectCoercible` return the object they were given, so `O ← ?
+ToObject(this value)` keeps `O` at the receiver. `ToObject` preserves
+identity only for an object argument. Given a primitive it allocates a
+wrapper, and the analysis propagates the receiver through it anyway. That
+approximation runs in the FR5-conservative direction, since a mutation
+claimed where there is none fails loudly at a call site while a missed one
+is silent unsoundness. Coercions that build a new value — `ToString`,
+`ToNumber` — are *not* identity-preserving, which is exactly why every
+`String.prototype` method comes out non-mutating: the algorithm coerces
+`this` to a fresh string primitive and never writes back to the receiver.
 
 **The analysis is deliberately path-insensitive.** It does not model
 control flow: `NodeBranch` is not interpreted, and the node list is
