@@ -668,7 +668,7 @@ func schemeType(s TypeScheme) soltype.Type {
 // It passes the printer no source names, so a class value binding's parameters render
 // positionally. renderSchemeWith renders them under the names the declaration wrote.
 func renderScheme(s TypeScheme) string {
-	return renderSchemeWith(s, nil)
+	return renderSchemeWith(s, nil, nil)
 }
 
 // renderSchemeWith renders a scheme like renderScheme, under the source names of the type
@@ -677,7 +677,11 @@ func renderScheme(s TypeScheme) string {
 // scheme's display type. It is called with that type once it is derived, since the lookup
 // reads the class or alias the type names. Pass nil to name nothing from the source, which
 // is right for every function: a FuncType carries its own parameters and names them itself.
-func renderSchemeWith(s TypeScheme, declaredFor func(soltype.Type) []*soltype.TypeParam) string {
+func renderSchemeWith(
+	s TypeScheme,
+	declaredFor func(soltype.Type) []*soltype.TypeParam,
+	declaredLtsFor func(soltype.Type) []*soltype.LifetimeParam,
+) string {
 	var t soltype.Type
 	// A MonoScheme coalesces to a var-free type, so every free variable left in it is a
 	// parameter. A PolyScheme names only the variables generalization quantified — those with
@@ -699,14 +703,19 @@ func renderSchemeWith(s TypeScheme, declaredFor func(soltype.Type) []*soltype.Ty
 	if declaredFor != nil {
 		declared = declaredFor(t)
 	}
-	return soltype.PrintAsSchemeWith(t, isParam, displayLtBounds(t, soltype.Positive), declared)
+	var declaredLts []*soltype.LifetimeParam
+	if declaredLtsFor != nil {
+		declaredLts = declaredLtsFor(t)
+	}
+	return soltype.PrintAsSchemeWith(t, isParam, displayLtBounds(t, soltype.Positive), declared, declaredLts)
 }
 
-// renderValueBinding renders a value binding's scheme under the source type-parameter names
-// of the declaration it came from, so `class Node<T> {value: T}` binds a value that renders
-// `<T> {new (value: T) -> Node<T>}`.
+// renderValueBinding renders a value binding's scheme under the source parameter names of the
+// declaration it came from, both sorts, so `class Node<T> {value: T}` binds a value that
+// renders `<T> {new (value: T) -> Node<T>}` and `class Pair<'x, 'y>` keeps 'x and 'y rather
+// than taking the generated 'a and 'b.
 func (c *checker) renderValueBinding(s TypeScheme) string {
-	return renderSchemeWith(s, c.declaredTypeParams)
+	return renderSchemeWith(s, c.declaredTypeParams, c.declaredLifetimeParams)
 }
 
 // declaredTypeParams returns the type parameters written by the declaration a display type

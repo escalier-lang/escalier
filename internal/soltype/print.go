@@ -169,7 +169,7 @@ func PrintElided(t Type, maxDepth int) string {
 // PrintAsSchemeWith, which the solver's renderScheme does. Use renderScheme, not
 // PrintAsScheme, to display a solver scheme that may carry borrow lifetimes.
 func PrintAsScheme(t Type) string {
-	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true }, nil, nil)
+	return PrintAsSchemeWith(t, func(*TypeVarType) bool { return true }, nil, nil, nil)
 }
 
 // PrintWithParams renders a type like Print, naming each variable in declared under the
@@ -230,6 +230,7 @@ func PrintAsSchemeWith(
 	isParam func(*TypeVarType) bool,
 	ltBounds map[*LifetimeVar][]*LifetimeVar,
 	declared []*TypeParam,
+	declaredLts []*LifetimeParam,
 ) string {
 	p := &namedPrinter{}
 	// A function's own type parameters claim their source names before anything else, so a
@@ -287,14 +288,32 @@ func PrintAsSchemeWith(
 	ltVars := freeLifetimeVars(t)
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
+	// A lifetime the declaration named keeps that name, the lifetime twin of the declared
+	// type parameters above, so `class Pair<'x, 'y>` renders under 'x and 'y rather than
+	// taking the generated 'a and 'b. A generated name skips one a declaration claims, the
+	// way it skips a name a function's own parameter claims.
+	declaredLtNames := map[*LifetimeVar]string{}
+	for _, lp := range declaredLts {
+		if lp.Name != "" {
+			declaredLtNames[lp.Var] = lp.Name
+		}
+	}
 	// A function's own lifetime parameters keep their source names in the prefix, and a
 	// free lifetime gets a generated name from the same 'a, 'b, … alphabet, so a generated
 	// name must skip any source name a parameter already claims. Without this a captured
 	// 'a and a declared 'a would both render as 'a. The type-parameter loop above skips a
 	// claimed name the same way.
 	reserved := ownLifetimeParamNames(t)
+	for _, name := range declaredLtNames {
+		reserved.Add(name)
+	}
 	nextLt := 0
 	for i, lv := range ltVars {
+		ltIndex[lv] = i
+		if declaredName, ok := declaredLtNames[lv]; ok {
+			ltNames[lv] = declaredName
+			continue
+		}
 		name := lifetimeParamName(nextLt)
 		for reserved.Contains(name) {
 			nextLt++
@@ -302,7 +321,6 @@ func PrintAsSchemeWith(
 		}
 		nextLt++
 		ltNames[lv] = name
-		ltIndex[lv] = i
 	}
 	if len(labels) == 0 && len(ltVars) == 0 {
 		// No quantified parameters: render as a plain (possibly raw-var) type, which
