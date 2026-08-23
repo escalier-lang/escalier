@@ -33,7 +33,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 
 | PR   | Work                                       | FRs        | Status | Depends on | Gate |
 | ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
-| §1   | Feasibility spike                          | FR1–FR4    | ⬜      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs |
+| §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
 | §2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
@@ -224,7 +224,9 @@ analysis needs before committing to the toolchain.
     `Array.prototype.map`;
   - internal-slot mutation, `Map.prototype.set`,
     `Set.prototype.add`;
-  - transitive mutation through a helper abstract operation;
+  - transitive mutation through a helper abstract operation, a named
+    subroutine the specification defines to factor out shared behavior and
+    abbreviated AO in the schema comments below;
   - immutable-primitive method, `String.prototype.replace`,
     `String.prototype.charAt`;
   - symbol-keyed method, `Array.prototype[Symbol.iterator]`;
@@ -253,6 +255,32 @@ noted in §3 alternatives.
 **This spike can grow the plan.** §1 and §2 are discovery phases; their
 findings feed back into the later phases. See "Discovery phases may grow
 the plan" below.
+
+**Outcome.** The gate is met — [spike_findings.md](spike_findings.md)
+records the per-method evidence. The CFG carries every signal, so no
+shallow-parser fallback is needed and §8/§9 keep their scope. The spike
+resolves onto the happy-path side of the §1 branches below. It sharpens one
+§3 detail and confirms two §4 ones, and it leaves the §3/§4 boundary intact —
+§3 stays a structural dumper that makes no mutability or alias decision.
+
+- **§3 (serializer).** The compiled IR carries no `?`/`!` flag; the guard is
+  lowered into a fixed post-call branch — an abrupt-check that returns
+  the completion for `?`, a normal assertion for `!`. §3 populates the
+  completion-guard field the Appendix A schema already defines, and that §9
+  reads as `node.Guard`, by matching that branch shape. This recovers spec
+  control flow structurally, not by any Escalier-level decision, so it stays
+  within §3's remit. §3 also copies each internal-slot name verbatim from the
+  CFG, which is the bare `MapData`, not the bracketed `[[MapData]]` the
+  Appendix A example shows.
+- **§4.1 (Go).** The FR1 property-write seed is load-bearing, not an
+  optimization: `Set` and its kin dispatch through a dynamic `[[Set]]`
+  internal method the mutation fixpoint cannot resolve by callee name, so
+  without the seed those writes are invisible to it. §4.1's
+  `BackingStoreSlots` set must match the bare slot names §3 emits, since the
+  CFG drops the `[[ ]]` brackets.
+- **§4 / §9 (Go).** `yet` incompleteness is per-step, not per-method, so the
+  FR5 conservative fallback applies per signal — a determination is left
+  unclassified only when a `yet` sits on a step it reads.
 
 ## §2. Toolchain scoping
 
@@ -425,6 +453,49 @@ not lower (a prose step, §3), a `Call` to a callee absent from the CFG,
 or a mutation phrasing outside the FR1 vocabulary. Both force
 `classified: false` (§4.3), so FR5's heuristic fall-through handles the
 method rather than the analysis emitting a claim it cannot stand behind.
+
+**How the seed works, and why it is not inlining.** The seed entries are the
+fixpoint's base cases. The analysis never invents a mutation; it only carries
+existing ones up the call graph, so every position in a `MutArgs` set traces
+back either to a seed entry or to an FR3 `SlotWrite`. An entry's value is the
+*argument position that call site mutates*: `"Set":0` says a call to `Set`
+mutates whatever was passed as its argument 0. At each call the fixpoint looks
+up the callee's mutated positions, reads the argument expression sitting at
+each one, and asks the §4.2 origin map what that expression is **in the
+caller's terms**. `Array.prototype.push` calls `Set(O, %6, E, true)`, so
+position 0 selects `O`, whose origin is `ToObject(this)` — receiver — giving
+`MutatesReceiver`. The same entry yields a different answer elsewhere:
+`Array.prototype.slice` calls `Set(A, "length", …)` on its freshly allocated
+`A`, and a `Fresh` origin is ignored. Multi-parameter results need no special
+case, since `MutArgs` is a set of positions that unions as facts propagate: a
+helper writing both of its parameters accumulates `{0, 1}` from two separate
+`Set` calls, and its callers inherit both positions through the same lookup.
+
+The seed exists because these operations cannot be analyzed by descending into
+their bodies. `Set`'s body is a single dispatch, `O.Set(O, P, V, O)`, to the
+object's `[[Set]]` internal method — a callee chosen at runtime by the
+receiver's type, and in the CFG a field reference rather than a resolvable
+name. Inlining cannot follow it. Nor would inlining help further down: the
+ordinary path continues through `OrdinarySetWithOwnDescriptor`, which dispatches
+again on the prototype chain and can end in `Call(setter, …)`, arbitrary user
+code. The concrete writes it eventually performs land on property-descriptor
+records several dispatch layers below, phrased in ESMeta's internal object
+representation rather than as a mutation of `O`. Recognizing those would mean
+curating a larger and subtler artifact than the seed while still failing to
+cross the dispatch boundary.
+
+Treating `Set` as opaque with a known positional effect removes the problem
+instead of solving it: nothing above `Set` descends into it, so the dynamic
+dispatch is never reached. The claim "`Set(O, …)` mutates `O`" is also a
+deliberate over-approximation. A Proxy's `[[Set]]` trap may write elsewhere,
+but assuming the argument is mutated is the FR5-conservative direction — a
+wrong `&mut` fails loudly at a call site, a missed one is silent unsoundness.
+Composite mutators above the dispatch boundary stay derived rather than
+asserted: `Object.freeze` gets `MutArgs = {0}` from calling `SetIntegrityLevel`,
+which the fixpoint reads off that helper's own summary. `SetIntegrityLevel` is
+seeded for robustness, not necessity. Inlining reasoning belongs in review, not
+in the analysis: walking the ordinary-object path by hand is how the seed's
+argument positions are validated against the spec on a bump.
 
 `BackingStoreSlots` is the curated FR3 list: `[[MapData]]`,
 `[[SetData]]`, `[[ArrayBufferData]]`, `[[ArrayBufferByteLength]]`,
