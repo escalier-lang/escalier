@@ -1068,23 +1068,35 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
   rides the M7 computed-key/index-segment work
   ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7);
   pull it forward if tuple-heavy code makes the imprecision bite.
-- **Borrow tracking through container methods.** The borrow-edge graph records an alias only
-  at a `val`/`var` initializer, a `var` reassignment, and a destructuring leaf, so a borrow
-  stored into a container through a method call — `a.peers.push(&mut b)` — is invisible to the
-  escape check and the connected-component move
-  ([internal/solver/return_escape.go](../../internal/solver/return_escape.go)). This is what
+- **Borrow tracking through a `self` receiver.** The borrow-edge graph records the store a
+  call performs through the callee's explicit parameters
+  ([internal/solver/borrow_store.go](../../internal/solver/borrow_store.go)): a signature that
+  shares one lifetime between an argument-borrow and a position inside another parameter's
+  referent declares that the call writes the borrow there, and the recorder turns that into a
+  `receiver → referent` edge at the call site. `store(&mut a, &mut b)` against
+
+  ```
+  declare fn store<'a, 'b>(target: &'b mut {peer: &'a mut B}, item: &'a mut B)
+  ```
+
+  records a → b at [peer], so the escape check and the connected-component move see the alias.
+
+  `a.peers.push(&mut b)`, the canonical container case, is not covered. No method call records
+  a store today, and four pieces are missing. First, `Array<T>` and its method surface:
+  `internal/solver` has no `Array` type and no array/tuple method calls, and both arrive with
+  the M7 stdlib ingestion
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7). Second, a
+  lifetime parameter on the container type, so `Array<'a, T>` can tie the element borrow to the
+  receiver; a class declares no lifetime parameters today, and neither can an object type's
+  method signature name a lifetime its enclosing signature binds. Third, the receiver type at
+  the call site: `memberValue` hands the call a signature with its `SelfParam` stripped, so
+  the recorder has no receiver to search for the shared lifetime. Fourth, named lifetimes on a
+  method signature at all: a method reaches the call site with its lifetimes coalesced to the
+  anonymous display lifetime, so the two sides of a store share nothing the search can match,
+  which is why even a store through a method's explicit parameter goes unrecorded. This is what
   keeps the requirements' canonical cyclic `build()` from being expressible as written: the
   `.push` edges that wire the graph are never recorded, so the escape check sees no borrows to
-  co-move. This is NOT part of PR 16, whose scope is the flow-sensitivity of the existing three
-  recording sites. It needs two things the affine PRs do not provide. First, `Array<T>` and its
-  method surface: `internal/solver` has no `Array` type and no array/tuple method calls today,
-  and both arrive with the M7 stdlib ingestion
-  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7). Second, a
-  lifetime annotation on a container method that expresses "the argument-borrow is stored into
-  the receiver," which the edge recorder reads at the call site to record a `receiver →
-  referent` edge — the same call-effect modeling a `&mut Holder` write needs. So it lands after
-  M7 as an extension of the borrow-edge recorder to model a call that stores a borrow into its
-  receiver, gated on the container-method lifetime annotations that supply the effect.
+  co-move.
 
 ## Testing approach
 

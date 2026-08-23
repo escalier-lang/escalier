@@ -214,15 +214,20 @@ that would introduce new PRs:
   `escape` disposition; curation spells it a `move` (owning container) or
   a lifetime-bounded borrow (borrow-holding container), per requirements
   FR12. The affine *core* — moves, use-after-move, borrows, escape forcing
-  — has landed, but the lifetime-borrow spelling needs one piece that has
-  not: **borrow tracking through container methods** (`.push` of a borrow,
-  `a.peers.push(&mut b)`), which the affine plan
+  — has landed, and so has the store-effect spelling for a callee's explicit
+  parameters: a signature that shares one lifetime between an argument-borrow
+  and a position inside another parameter's referent records a `receiver →
+  referent` edge at the call site
+  ([../../internal/solver/borrow_store.go](../../internal/solver/borrow_store.go)).
+  What the lifetime-borrow spelling still needs is the *container-method*
+  form, a `.push` of a borrow into the `self` receiver
+  (`a.peers.push(&mut b)`), which the affine plan
   ([../affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md))
-  lists as deferred and out of scope. It is blocked on two things: the
-  stdlib `Array` type and method surface, delivered by
+  lists as deferred and out of scope. It is blocked on the stdlib `Array`
+  type and method surface, delivered by
   [M7.5 PR5](../simple_sub/m7.5-implementation-plan.md#pr5--a-real-arrayt-and-the-well-known-handle-mechanism),
-  and a container-method lifetime
-  annotation expressing "the argument-borrow is stored into the receiver."
+  a lifetime parameter on the container type, the receiver's own type at
+  the call site, and named lifetimes on a method signature.
   That is **not this workstream's work** — until it lands, curation
   applies only the `move` spelling, and the `escape` facts for
   borrow-holding containers wait on it. Tracked here as an external
