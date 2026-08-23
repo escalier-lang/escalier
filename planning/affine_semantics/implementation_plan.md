@@ -1088,16 +1088,18 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
   &'a mut B)` records the edge at the whole Holder, since a class lifetime argument names no
   field.
 
-  `a.peers.push(&mut b)`, the canonical container case, is still not covered, because it
-  stores into the `self` receiver. Two pieces are missing. First, `Array<T>` and its method
-  surface: `internal/solver` has no `Array` type and no array/tuple method calls, and both
-  arrive with the M7.5 library-type ingestion
-  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). Second, the
-  receiver type at the call site: `memberValue` hands the call a signature with its
-  `SelfParam` stripped, so the recorder has no receiver to search for the shared lifetime.
-  This is what keeps the requirements' canonical cyclic `build()` from being expressible as
-  written: the `.push` edges that wire the graph are never recorded, so the escape check sees
-  no borrows to co-move.
+  A method's `self` receiver is a store target too. `memberValue` hands the call site a
+  signature with its `SelfParam` stripped, so the declared receiver is read from the side
+  table `memberValue` fills and the edge is rooted at the receiver expression. `h.put(&mut b)`
+  on a `Holder<'a>` therefore records h → b the way `store(&mut h, &mut b)` does.
+
+  `a.peers.push(&mut b)`, the canonical container case, needs one remaining piece: `Array<T>`
+  and its method surface. `internal/solver` has no `Array` type and no array/tuple method
+  calls, and both arrive with the M7.5 library-type ingestion
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). The same call
+  against a hand-written container records its edge today, which is what the requirements'
+  canonical cyclic `build()` needs; it stays unexpressible only for as long as the container
+  it wires the graph with is `Array`.
 
 ## Testing approach
 

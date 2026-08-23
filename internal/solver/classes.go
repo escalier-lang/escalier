@@ -504,10 +504,12 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 		def, _ := c.classDef(sub.Name)
 		var errs []SolverError
 		// Relate the lifetime arguments as equal regions. A class records no per-parameter
-		// variance for the lifetime sort, so each argument is invariant: `Holder<'x>` reaches
+		// variance for the lifetime sort, and a parameter may sit in a position of either
+		// variance inside the body, so each argument is invariant: `Holder<'x>` reaches
 		// `Holder<'static>` only when the two lifetimes outlive each other. Constraining one
 		// direction alone would let a caller launder a short region into a long one through
-		// the nominal name, which the structural twin `{peer: &'x mut B}` rejects.
+		// the nominal name wherever the parameter is used mutably. Measuring per-parameter
+		// lifetime variance the way def.Variance measures the type sort would relax this.
 		for i := range min(len(sub.LifetimeArgs), len(super.LifetimeArgs)) {
 			c.constrainLt(sub.LifetimeArgs[i], super.LifetimeArgs[i])
 			c.constrainLt(super.LifetimeArgs[i], sub.LifetimeArgs[i])
@@ -985,6 +987,7 @@ func (c *checker) memberValue(lvl int, blame ast.Node, member soltype.ObjTypeEle
 		case 0:
 			out = &soltype.ErrorType{}
 		case 1:
+			c.recordMethodSelfParam(blame, m.Signatures[0].SelfParam)
 			out = strippedMethodSig(m.Signatures[0])
 		default:
 			arms := make([]soltype.Type, len(m.Signatures))
@@ -1080,6 +1083,20 @@ func (c *checker) raiseUnionAccessorThrows(lvl int, blame ast.Node, name string,
 	for _, t := range throws {
 		c.raiseAccessorThrows(lvl, blame, t)
 	}
+}
+
+// recordMethodSelfParam notes the receiver of the method a member access reads, so a rule at
+// the call site can reach the type strippedMethodSig drops. An overloaded method records
+// nothing: its arms may declare different receivers, and which arm a call resolves is decided
+// later, in resolveOverload.
+func (c *checker) recordMethodSelfParam(blame ast.Node, self *soltype.FuncParam) {
+	if self == nil {
+		return
+	}
+	if c.methodSelfParams == nil {
+		c.methodSelfParams = map[ast.Node]*soltype.FuncParam{}
+	}
+	c.methodSelfParams[blame] = self
 }
 
 // strippedMethodSig returns a method signature as a plain callable, its SelfParam
