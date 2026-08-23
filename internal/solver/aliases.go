@@ -161,7 +161,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		declScope = scope.Child()
 		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
 	}
-	lifetimeParams := c.resolveAliasLifetimeParams(lvl, decl.LifetimeParams)
+	lifetimeParams := c.resolveLifetimeParams(lvl, decl.LifetimeParams)
 	aliasNamedLts := c.namedLifetimes
 	c.namedLifetimes = savedNamedLts
 
@@ -187,9 +187,10 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	}
 }
 
-// resolveAliasLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
+// resolveLifetimeParams mints one lifetime variable per `<'a, ...>` parameter through
 // namedLifetime, so a `&'a` in the body resolved under the same scope reaches that variable.
-func (c *checker) resolveAliasLifetimeParams(lvl int, ltParams []*ast.LifetimeParam) []*soltype.LifetimeParam {
+// An alias and a class both quantify lifetimes this way, so both bind their parameters here.
+func (c *checker) resolveLifetimeParams(lvl int, ltParams []*ast.LifetimeParam) []*soltype.LifetimeParam {
 	if len(ltParams) == 0 {
 		return nil
 	}
@@ -254,7 +255,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 			kind = EnumDeclKind
 		}
 	}
-	ltArgs := c.resolveAliasLifetimeArgs(ref, kind, ltParams, lvl)
+	ltArgs := c.resolveLifetimeArgs(ref, kind, ltParams, lvl)
 	args := c.resolveTypeArgs(scope, ref, kind, params, arityOfParams(params), lvl)
 	if len(args) == 0 {
 		// A non-generic alias carries no type arguments; any that were supplied are reported
@@ -269,10 +270,11 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
 }
 
-// resolveAliasLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks
-// their count against the alias's lifetime parameters, which have no default. A mismatch
-// reports a LifetimeArgArityMismatchError and recovers with fresh lifetimes.
-func (c *checker) resolveAliasLifetimeArgs(ref *ast.TypeRefTypeAnn, kind TypeDeclKind, ltParams []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
+// resolveLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks their
+// count against the referenced declaration's lifetime parameters, which have no default. A
+// mismatch reports a LifetimeArgArityMismatchError and recovers with fresh lifetimes. An
+// alias reference and a class reference are checked the same way, so both resolve here.
+func (c *checker) resolveLifetimeArgs(ref *ast.TypeRefTypeAnn, kind TypeDeclKind, ltParams []*soltype.LifetimeParam, lvl int) []soltype.Lifetime {
 	total := len(ltParams)
 	got := len(ref.LifetimeArgs)
 	if got != total {

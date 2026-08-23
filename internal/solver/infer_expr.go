@@ -195,10 +195,15 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// Give this function its own named-lifetime scope so a `&'a` in its signature
 	// resolves consistently across its params and return, without sharing the name
 	// with an enclosing or sibling function. Restored on exit so a nested function
-	// does not clobber the outer scope's names. namedLifetime allocates the map on
-	// first use, so a body with no `&'a` annotation pays no allocation.
+	// does not clobber the outer scope's names.
+	//
+	// A class member starts from the class's own parameters rather than from nothing, so a
+	// member writing the class's `&'a` reaches the variable that parameter carries. A name
+	// this signature rebinds shadows the class's, and nestedLifetimeScope drops those.
+	// namedLifetime allocates the map on first use, so a plain function with no `&'a`
+	// annotation pays no allocation.
 	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = nil
+	c.namedLifetimes = c.nestedLifetimeScope(sig.LifetimeParams)
 	defer func() { c.namedLifetimes = savedNamedLts }()
 	// Take the name inferMemberBodies left for this member, and clear it so a lambda nested in
 	// the body walked below is not blamed under the member's name. It is empty for every function

@@ -1083,18 +1083,21 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
 
   A method call records a store through its explicit parameters, since a lifetime written at
   two borrows survives the coalescing `freezeClassBody` applies to each member's signature.
+  A class quantifies lifetimes, so a container can tie its element borrow to the receiver:
+  `class Holder<'a> { peer: &'a mut B }` with `store<'a, 'c>(target: &'c mut Holder<'a>, item:
+  &'a mut B)` records the edge at the whole Holder, since a class lifetime argument names no
+  field.
+
   `a.peers.push(&mut b)`, the canonical container case, is still not covered, because it
-  stores into the `self` receiver. Three pieces are missing. First, `Array<T>` and its method
+  stores into the `self` receiver. Two pieces are missing. First, `Array<T>` and its method
   surface: `internal/solver` has no `Array` type and no array/tuple method calls, and both
   arrive with the M7.5 library-type ingestion
-  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). Second, a
-  lifetime parameter on the container type, so `Array<'a, T>` can tie the element borrow to
-  the receiver; a class declares no lifetime parameters today. Third, the receiver type at the
-  call site: `memberValue` hands the call a signature with its `SelfParam` stripped, so the
-  recorder has no receiver to search for the shared lifetime. This is what keeps the
-  requirements' canonical cyclic `build()` from being expressible as written: the `.push`
-  edges that wire the graph are never recorded, so the escape check sees no borrows to
-  co-move.
+  ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). Second, the
+  receiver type at the call site: `memberValue` hands the call a signature with its
+  `SelfParam` stripped, so the recorder has no receiver to search for the shared lifetime.
+  This is what keeps the requirements' canonical cyclic `build()` from being expressible as
+  written: the `.push` edges that wire the graph are never recorded, so the escape check sees
+  no borrows to co-move.
 
 ## Testing approach
 

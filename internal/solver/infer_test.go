@@ -83,7 +83,8 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 	//
 	// The alias's own type parameters are read off the handle before the body replaces it,
 	// since the body carries their variables but not their names: `type Alias<T> = {v: T}`
-	// shows `{v: T}`.
+	// shows `{v: T}`. Its lifetime parameters are read the same way, so `class Holder<'a>`
+	// renders `Holder<'a>` rather than the `'l{ID}` debug form a nameless lifetime falls to.
 	types = make(map[string]string, len(scope.types))
 	for name, b := range scope.types {
 		ty := b.Type
@@ -93,7 +94,7 @@ func inferModule(module *ast.Module) (values, types map[string]string, errs []So
 				ty = def.Body
 			}
 		}
-		types[name] = soltype.PrintWithParams(ty, params)
+		types[name] = soltype.PrintWithDeclaredParams(ty, params, c.declaredLifetimeParams(b.Type))
 	}
 	return values, types, c.errs
 }

@@ -975,7 +975,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 	// function's `'a` and its declared bound would force that outer lifetime, so an
 	// unrelated borrow parameter of the enclosing function would be pinned to 'static.
 	savedNamedLts := c.namedLifetimes
-	c.namedLifetimes = nil
+	c.namedLifetimes = c.nestedLifetimeScope(ta.LifetimeParams)
 	defer func() { c.namedLifetimes = savedNamedLts }()
 
 	// Resolve the annotation's type parameters into a child scope so a parameter, the

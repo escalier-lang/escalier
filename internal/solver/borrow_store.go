@@ -35,8 +35,7 @@ import (
 // before the recorder runs.
 //
 // So `a.peers.push(&mut b)`, the container case this exists for, is not covered. It needs an
-// `Array` type with a method surface, a lifetime parameter on the container tying the element
-// borrow to the receiver, and the receiver's type at the call site.
+// `Array` type with a method surface and the receiver's type at the call site.
 type storeEdge struct {
 	// arg is the index of the argument whose borrow the call stores.
 	arg int
@@ -210,11 +209,12 @@ type lifetimeWalk struct {
 //   - An object descends each named property at base plus that name. A member that names no
 //     field of its own descends at base, attributing what it holds to the enclosing object.
 //     walkObjElem says which members those are.
-//   - A tuple element, an array element, a class type argument, and a promise or generator
-//     payload descend at base unchanged. None of them contributes a name, since the place
-//     model has no index segment and neither a class type argument nor a payload is
+//   - A tuple element, an array element, a class type or lifetime argument, and a promise or
+//     generator payload descend at base unchanged. None of them contributes a name, since the
+//     place model has no index segment and neither a class argument nor a payload is
 //     addressable as a field. So `&'c mut Box<&'a mut B>` stores at the whole Box, which is
-//     where a class holding a borrowed element lands.
+//     where a class holding a borrowed element lands, and so does the `&'c mut Holder<'a>` a
+//     class lifetime parameter spells.
 //   - A union or intersection descends each member at base, since a borrow any member holds is
 //     reachable through the whole.
 //   - An alias descends its expansion at base. An alias is transparent, so `Holder<'a>` is
@@ -222,9 +222,7 @@ type lifetimeWalk struct {
 //
 // Any other kind stops the walk there, so the call reads as storing nothing through it. That
 // silence is deliberate, unlike the truncation an allowance causes: the kind holds no
-// field-addressable borrow. One case is worth naming. A class LIFETIME argument, the `'a` of `Box<'a, T>` rather
-// than the type argument this walk does descend, is unreachable because a class declares no
-// lifetime parameters. It wants an arm here once one can be written.
+// field-addressable borrow.
 func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 	if t == nil || w.onPath.Contains(t) {
 		return
@@ -268,6 +266,11 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 	case *soltype.ClassType:
 		for _, arg := range t.TypeArgs {
 			w.walk(arg, base)
+		}
+		for _, arg := range t.LifetimeArgs {
+			if lv, ok := arg.(*soltype.LifetimeVar); ok {
+				w.visit(lv, base)
+			}
 		}
 	case *soltype.UnionType:
 		for _, member := range t.Types {

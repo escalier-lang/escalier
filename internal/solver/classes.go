@@ -503,6 +503,15 @@ func (c *Context) constrainNominalWalk(sub, super *soltype.ClassType, seen *seen
 	if sub.Name == super.Name {
 		def, _ := c.classDef(sub.Name)
 		var errs []SolverError
+		// Relate the lifetime arguments as equal regions. A class records no per-parameter
+		// variance for the lifetime sort, so each argument is invariant: `Holder<'x>` reaches
+		// `Holder<'static>` only when the two lifetimes outlive each other. Constraining one
+		// direction alone would let a caller launder a short region into a long one through
+		// the nominal name, which the structural twin `{peer: &'x mut B}` rejects.
+		for i := range min(len(sub.LifetimeArgs), len(super.LifetimeArgs)) {
+			c.constrainLt(sub.LifetimeArgs[i], super.LifetimeArgs[i])
+			c.constrainLt(super.LifetimeArgs[i], sub.LifetimeArgs[i])
+		}
 		n := min(len(sub.TypeArgs), len(super.TypeArgs))
 		for i := range n {
 			variance := def.varianceAt(i, mutCtx)
