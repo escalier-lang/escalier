@@ -103,7 +103,7 @@ flowchart TD
 
     subgraph external["External — other planning docs"]
         EXT_CONV["builtins converter<br/>(planning/builtins FR10)"]
-        EXT_M75["M7.5 Library type resolution<br/>(planning/simple_sub)"]
+        EXT_M75["M7.5 Library type resolution<br/>(planning/simple_sub, PR5 + PR6)"]
         EXT_AFFINE["container-method borrow tracking<br/>(planning/affine_semantics)"]
     end
     subgraph followons["Follow-ons — not numbered PRs"]
@@ -122,9 +122,14 @@ flowchart TD
 
 The **external** group is work in other workstreams that this plan
 depends on: the builtins converter (planning/builtins FR10) that §5 and
-§7 wire into; M7.5 library-type resolution (planning/simple_sub); and the
-affine container-method borrow tracking (planning/affine_semantics),
-which is itself blocked on M7.5's `Array` ingestion. The **follow-ons**
+§7 wire into; M7.5 library-type resolution, broken into PRs in
+[../simple_sub/m7.5-implementation-plan.md](../simple_sub/m7.5-implementation-plan.md);
+and the affine container-method borrow tracking (planning/affine_semantics),
+which is itself blocked on M7.5's `Array` ingestion. The two M7.5 PRs
+this plan turns on are **PR5**, which makes `Array` and its method
+surface real, and **PR6**, which deletes the solver's stdlib
+placeholders. That plan records both edges from its own side under "What
+M7.5 unblocks." The **follow-ons**
 are ecma-262 work this plan names but does not number as PRs, because each
 waits on an external dependency: the solver-side application needs §7 and
 M7.5, and the `escape` lifetime-borrow spelling needs §11 and the affine
@@ -173,7 +178,14 @@ that would introduce new PRs:
   blocker is M7.5's ingestion, not the alias representation.) Wiring the
   facts into that ingestion is a **dependent PR that cannot be written
   until M7.5 lands**, tracked here as a known follow-on rather than a
-  scheduled phase.
+  scheduled phase. The specific PR that clears it is
+  [M7.5 PR6](../simple_sub/m7.5-implementation-plan.md#pr6--the-well-known-protocol-set),
+  which deletes `addStdlibTypePlaceholders` and resolves `Promise` /
+  `Iterable` / `Generator` from the committed `.esc` files. That PR also
+  retires the hardcoded `soltype.PromiseType` in favor of the ingested
+  declaration, keeping the two-argument `Promise<T, E>` form this plan's
+  `rejects` sets are spelled against — see "Two checkers; the active one is
+  the target" in [requirements.md](requirements.md).
 - **Applying the non-receiver facts.** §7 auto-applies only receiver
   mutability, the high-confidence determination. Parameter disposition
   (§8), the return-borrow seed (§8.2), `throws` (§9), and `rejects` (§9.3)
@@ -196,8 +208,9 @@ that would introduce new PRs:
   `a.peers.push(&mut b)`), which the affine plan
   ([../affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md))
   lists as deferred and out of scope. It is blocked on two things: the
-  stdlib `Array` type and method surface (M7.5 ingestion, the same blocker
-  as the solver-side application above) and a container-method lifetime
+  stdlib `Array` type and method surface, delivered by
+  [M7.5 PR5](../simple_sub/m7.5-implementation-plan.md#pr5--a-real-arrayt-and-the-well-known-handle-mechanism),
+  and a container-method lifetime
   annotation expressing "the argument-borrow is stored into the receiver."
   That is **not this workstream's work** — until it lands, curation
   applies only the `move` spelling, and the `escape` facts for
