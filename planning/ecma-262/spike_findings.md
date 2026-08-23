@@ -49,10 +49,14 @@ a builtin algorithm. 517 is the builtin-surface figure used elsewhere in this
 document.
 
 The builtins are the target surface, but two other categories carry weight.
-The abstract operations are what the §4.1 fixpoint walks to resolve transitive
-mutation — `Object.freeze` reaches its write through `SetIntegrityLevel`, an
-abstract operation, not a builtin — so §3 must serialize the operations
-reachable from the builtin surface, not the 517 alone. The internal methods are
+
+An abstract operation is a named subroutine ECMA-262 defines to factor out
+behavior shared across algorithms, such as `ToString` or `SetIntegrityLevel`.
+It is internal to the specification and not reachable from JavaScript. These
+are what the §4.1 fixpoint walks to resolve transitive mutation —
+`Object.freeze` reaches its write through `SetIntegrityLevel`, an abstract
+operation, not a builtin — so §3 must serialize the operations reachable from
+the builtin surface, not the 517 alone. The internal methods are
 the dispatch targets §4.1 deliberately does not enter: `[[Set]]` alone has five
 implementations, `Record[OrdinaryObject].Set`,
 `Record[ProxyExoticObject].Set`, `Record[TypedArray].Set`,
@@ -107,7 +111,7 @@ that stores a parameter into the receiver, the signal §8.1 needs.
 | `Array.prototype.push` | direct receiver mutation + escape | `Set(O, %6, E, true)` where `O = ToObject(this)`, `E` from `ArgumentsList`; receiver mutation and escape operand `E` (arg 2) both exposed; `RangeError` domain throw explicit; returns `fresh` |
 | `Array.prototype.fill` | receiver mutation returning receiver | `Set(O, Pk, value, true)`; returns `O` (receiver) |
 | `Array.prototype.sort` | receiver mutation returning receiver | writes back **directly** via `Set(obj, %7, sortedList[j], true)`; returns `obj`; `SortIndexedProperties` only reads `obj` via `Get` and returns a fresh sorted list, so it supplies the ordering, not the write — this is not the helper-mediated case |
-| `Object.freeze` (and `Object.seal`) | transitive mutation through a helper AO | no write in its own body; mutates only by `SetIntegrityLevel(O, ~frozen~)` on param 0; the mutation is discovered by the FR2 fixpoint, not read off `freeze` directly; `receiver: none`, param 0 `mutBorrow`, returns `param:0` |
+| `Object.freeze` (and `Object.seal`) | transitive mutation through a helper abstract operation | no write in its own body; mutates only by `SetIntegrityLevel(O, ~frozen~)` on param 0; the mutation is discovered by the FR2 fixpoint, not read off `freeze` directly; `receiver: none`, param 0 `mutBorrow`, returns `param:0` |
 | `Array.prototype.slice` | fresh allocation, no receiver mutation | `ArraySpeciesCreate(O, count) → A`; writes target `A` via `CreateDataPropertyOrThrow(A, …)`; receiver only read via `Get`/`HasProperty`; returns `A` (fresh) |
 | `Array.prototype.map` | fresh allocation + callback | `ArraySpeciesCreate(O, len) → A`; `Call(callback, …)`; `CreateDataPropertyOrThrow(A, Pk, mappedValue)`; returns `A` (fresh) |
 | `Map.prototype.set` | internal-slot mutation + escape | `push M.MapData < p` with `p = record{Key: key, Value: value}`; also `p.Value = value`; both params escape into `[[MapData]]`; returns `M` (receiver) |
@@ -146,7 +150,7 @@ The stored-value operand is the signal §8.1 needs to decide `escape`: a
 parameter appearing in that position outlives the call inside the written
 object.
 
-*Seen in:* `Array.prototype.push` stores its element through the AO form;
+*Seen in:* `Array.prototype.push` stores its element through the abstract-operation form;
 `Map.prototype.set` builds an entry record and appends it to the slot;
 `Reflect.set` writes through the dynamic form.
 
@@ -281,7 +285,7 @@ Both are `Call` nodes; the callee expression tells them apart:
 | Resolvable abstract operation | `call %r = clo<"AOName">(…)` | the callee's own throw set, by name |
 | Callback parameter | `call %r = clo<"Call">(cb, thisArg, «…»)` where `cb` is a popped formal | `throwsOf:param:k` |
 
-In the callback case the AO being invoked is `Call` itself, which *is*
+In the callback case the abstract operation being invoked is `Call` itself, which *is*
 statically known — the callback is its **first argument**. So §9.1 identifies
 the case by the origin of that argument, not by the callee name. The call is
 `?`-guarded, so the propagation edge is present.

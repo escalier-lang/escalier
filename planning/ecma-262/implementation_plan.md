@@ -224,7 +224,9 @@ analysis needs before committing to the toolchain.
     `Array.prototype.map`;
   - internal-slot mutation, `Map.prototype.set`,
     `Set.prototype.add`;
-  - transitive mutation through a helper abstract operation;
+  - transitive mutation through a helper abstract operation, a named
+    subroutine the specification defines to factor out shared behavior and
+    abbreviated AO in the schema comments below;
   - immutable-primitive method, `String.prototype.replace`,
     `String.prototype.charAt`;
   - symbol-keyed method, `Array.prototype[Symbol.iterator]`;
