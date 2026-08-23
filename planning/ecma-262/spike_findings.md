@@ -59,7 +59,7 @@ implementations, `Record[OrdinaryObject].Set`,
 `Record[ArgumentsExoticObject].Set`, and
 `Record[ModuleNamespaceExoticObject].Set`. Nothing in the CFG says which one a
 given `O.Set(…)` call selects, which is why the FR1 seed stops the fixpoint
-above them. The 1751 syntax-directed operations are the runtime semantics of
+above them. The syntax-directed operations are the runtime semantics of
 the language itself, one function per grammar production and operation; they
 are out of scope for annotating a library surface, so §3 can skip them.
 
@@ -123,135 +123,185 @@ that stores a parameter into the receiver, the signal §8.1 needs.
 
 ## How each required signal is exposed
 
+The snippets below are **illustrative**, written with readable names to show
+the shape the analysis matches on. Real dumps use compiler temporaries — `%0`,
+`%7` — and the surrounding coercion and bounds-check steps are elided here.
+Each subsection names the representative method it was read from, so the shape
+can be checked against that method's dump in [spike_evidence/](spike_evidence/).
+
 ### Abstract-operation calls, arguments, and the stored-value operand
 
-A `Call` node carries the callee name and every argument expression, so a
-write's stored value is a plain argument operand. `Array.prototype.push`
-stores its element with `call %7 = clo<"Set">(O, %6, E, true)`: `E` traces
-to `ArgumentsList`, `O` traces to `ToObject(this)`, and `E` sits at argument
-index 2. `Map.prototype.set` stores both key and value by building
-`record{Key: key, Value: value}` and appending it, `push M.MapData < p`.
-`Reflect.set` stores `V` through `target.Set(target, key, V, receiver)`. The
-escape analysis reads the stored operand directly in every case.
+A `Call` node carries the callee and every argument expression as operands, so
+the value being stored by a write is always a plain argument the analysis can
+read. Three write forms appear, and all three expose both the written object
+and the stored value:
+
+| Form | Illustrative shape | Written object | Stored value |
+| ---- | ------------------ | -------------- | ------------ |
+| Abstract-operation write | `call %r = clo<"Set">(obj, key, val, true)` | `obj` (arg 0) | `val` (arg 2) |
+| Backing-slot append | `push obj.MapData < entry` | `obj` | `entry` |
+| Dynamic internal-method write | `call %r = obj.Set(obj, key, val, receiver)` | `obj` (arg 0) | `val` (arg 2) |
+
+The stored-value operand is the signal §8.1 needs to decide `escape`: a
+parameter appearing in that position outlives the call inside the written
+object.
+
+*Seen in:* `Array.prototype.push` stores its element through the AO form;
+`Map.prototype.set` builds an entry record and appends it to the slot;
+`Reflect.set` writes through the dynamic form.
 
 ### Let bindings and origins
 
 `ILet` gives the bound name and its source expression, and origins propagate
-through the chain. In `push`, `let O = %0` follows `%0 = %0.Value` following
-`call %0 = clo<"ToObject">(this)`, so `O` is receiver-origin; `let E = %5[%4]`
-with `%5 = items = ArgumentsList` is parameter-origin. Fresh origins are the
-allocation expressions: `slice` and `map` bind `let A = <ArraySpeciesCreate…>`.
+along the binding chain. The three origins the analysis assigns:
+
+| Origin | Illustrative shape | Why |
+| ------ | ------------------ | --- |
+| Receiver | `call %r = clo<"ToObject">(this)` … `let obj = %r` | traces to `this` through an identity-preserving coercion |
+| Parameter | `pop item < ArgumentsList` … `let elem = item` | traces to a popped formal, at its pop index |
+| Fresh | `call %r = clo<"ArraySpeciesCreate">(obj, len)` … `let out = %r` | an allocator result, not observable to callers |
+
+A property or slot *read* breaks the chain, since the value read out of a
+container is a different object from the container.
+
+*Seen in:* `Array.prototype.push` for the receiver and parameter chains;
+`Array.prototype.slice` and `map` bind their `ArraySpeciesCreate` result as
+fresh.
 
 ### Transitive mutation through a helper abstract operation
 
-The FR2 mutation summary is an inter-procedural fixpoint, so the gate needs
-the CFG to carry two things beyond a single method's own writes: every helper
-abstract operation as a first-class function with its body, and each call
-node's argument operands, so an origin at a caller's argument can be matched
-to the helper's mutated parameter. Both hold. Every abstract operation the
-representative methods call is dumped as its own `.cfg` function — `Set`,
-`CreateDataPropertyOrThrow`, `DefinePropertyOrThrow`, `SetIntegrityLevel`,
-`SortIndexedProperties`, `PerformPromiseAll`, and the rest — so the call graph
-is complete and `MutArgs` can propagate along it.
+FR2's mutation summary is an inter-procedural fixpoint, so it needs two things
+the CFG must carry: every helper abstract operation present as a first-class
+function with its body, and each call's argument operands, so an argument at a
+caller can be matched to the helper's mutated parameter. Both hold — every
+abstract operation the representative methods call is dumped as its own
+function, so the call graph is complete.
 
-`Object.freeze` is the representative that exercises the propagation rather
-than a direct write. Its body performs no write of its own; its only effect on
-the argument is one call:
+The shape that matters is a caller with **no write of its own**, whose only
+effect on a parameter is passing it to a helper:
 
 ```
-INTRINSICS.Object.freeze:
-  pop O < ArgumentsList                        // O is param 0
-  call %1 = clo<"SetIntegrityLevel">(O, ~frozen~)
-  … return O                                   // returns param 0
+Caller(p):                                  // p is param 0
+  call %0 = clo<"Helper">(p, …)             // no write in this body
+  return p
 
-SetIntegrityLevel(O, level):
-  … call %5  = clo<"DefinePropertyOrThrow">(O, k, «Configurable: false»)   // sealed branch
-  … call %10 = clo<"DefinePropertyOrThrow">(O, k, desc)                    // frozen branch
+Helper(o, …):
+  call %1 = clo<"DefinePropertyOrThrow">(o, key, desc)   // seeded mutator
 ```
 
-`DefinePropertyOrThrow` is an FR1 seed mutator of argument 0. The fixpoint
-then resolves two hops with no direct write at either caller:
+The fixpoint resolves this in two hops, with no direct write at either caller:
 
-- `MutArgs[DefinePropertyOrThrow] = {0}` — the seed.
-- `SetIntegrityLevel` passes its own parameter `O` as argument 0 of
-  `DefinePropertyOrThrow`, so `MutArgs[SetIntegrityLevel] = {0}`.
-- `Object.freeze` passes its own parameter `O` as argument 0 of
-  `SetIntegrityLevel`, so `MutArgs[Object.freeze] = {0}`.
+- `MutArgs[DefinePropertyOrThrow] = {0}` — from the FR1 seed.
+- `Helper` passes its own parameter `o` as argument 0 of a function that
+  mutates argument 0, so `MutArgs[Helper] = {0}`.
+- `Caller` passes its own parameter `p` as argument 0 of `Helper`, so
+  `MutArgs[Caller] = {0}`.
 
-`Object.freeze` is a static, so it has `receiver: none`; the mutated argument
-0 is `mutBorrow`, and the return is `param:0`. `Object.seal` has the identical
-shape with `~sealed~`. This is the helper-mediated case sort does not cover:
-`Array.prototype.sort` performs its receiver write-back directly with
-`Set(obj, …)` in its own body, and `SortIndexedProperties` only reads the
-receiver, so sort exercises a direct write, not the fixpoint.
+*Seen in:* `Object.freeze` is this shape exactly — it delegates to
+`SetIntegrityLevel`, which writes through `DefinePropertyOrThrow`. As a static
+it has `receiver: none`, param 0 `mutBorrow`, and returns `param:0`;
+`Object.seal` is identical but for the integrity level. Note that
+`Array.prototype.sort` is *not* this case: it writes the receiver back
+directly in its own body, and its `SortIndexedProperties` helper only reads
+the receiver and returns a fresh sorted list.
 
 ### Internal-slot writes
 
-Two spellings appear. A list-backed slot append is `push M.MapData < p`
-(`IPush`). A direct slot store is `p.Value = value` (`IAssign(Field(…))`).
-Both name the object expression and the slot. **The slot name is rendered
-without its `[[ ]]` brackets** — `MapData`, not `[[MapData]]` — so the §3
-serializer keys `BackingStoreSlots` by the bare name.
+Two spellings appear, both naming the object expression and the slot:
+
+- **List append** (`IPush`) — `push obj.MapData < entry`, how "Append … to
+  *obj*.[[List]]" is lowered.
+- **Direct store** (`IAssign` over a `Field`) — `entry.Value = val`.
+
+**The slot name is rendered without its `[[ ]]` brackets** — `MapData`, not
+`[[MapData]]` — so §4.1's `BackingStoreSlots` must be keyed by the bare name.
+
+*Seen in:* `Map.prototype.set` uses both spellings; `Set.prototype.add` uses
+the append form.
 
 ### Completion guards `?` / `!` / plain
 
 The guards are **lowered into control flow, not kept as a flag on the call**.
 This is the first fact that shapes §3. The compiled forms are fixed and
-deterministic, so the serializer reconstructs the guard from the shape that
-follows a `Call`:
+deterministic, so the serializer reconstructs the guard from the shape
+following a `Call`:
 
-- `?` (`ReturnIfAbrupt`): `assert (? x: Completion)` then
-  `if (? x: Abrupt) then return x else x = x.Value`. An abrupt-check branch
-  whose then-edge returns the callee result unwrapped on the else-edge.
-- `!` (assert-normal): `assert (? x: Normal)` then `x = x.Value`. No
-  abrupt-return branch — the normal assertion and unwrap, nothing else.
-- plain: the result is used directly with no completion assertion.
+| Guard | Illustrative shape after the call | Distinguishing feature |
+| ----- | --------------------------------- | ---------------------- |
+| `?` | `assert (? %r: Completion)` → `if (? %r: Abrupt) then return %r else %r = %r.Value` | an abrupt-check branch that returns the completion |
+| `!` | `assert (? %r: Normal)` → `%r = %r.Value` | normal assertion and unwrap, no abrupt branch |
+| plain | the result is used directly | no completion assertion at all |
 
-`(? e: T)` here is the IR's type-check expression `ETypeCheck`, distinct from
-the spec's `?` sugar; `(? x: Abrupt)` reads "is `x` an abrupt completion." §3
-must recognize the `?`/`!` patterns structurally rather than reading a guard
-attribute, because the compiler discards the surface annotation. The `?`/`!`
-distinction that FR10 depends on survives intact.
+`(? e: T)` is the IR's type-check expression `ETypeCheck`, not the spec's `?`
+sugar; `(? %r: Abrupt)` reads "is `%r` an abrupt completion." §3 must match
+these structurally, because the compiler discards the surface annotation. The
+`?`/`!` distinction FR10 depends on survives intact.
 
 ### Explicit `Throw` steps
 
 `Throw a *T* exception` lowers to two calls and a return:
-`call %e = clo<"__NEW_ERROR_OBJ__">("%T.prototype%")` then
-`call %c = clo<"ThrowCompletion">(%e)` then `return %c`. **The error class is
-the string literal argument to `__NEW_ERROR_OBJ__`** — `"%TypeError.prototype%"`,
-`"%RangeError.prototype%"` — so the throw-set fixpoint reads the class name off
-that operand. `toFixed`'s two `RangeError` guards and `push`'s `TypeError`
-guard both appear in this form, each gated by an explicit `if` domain check
-that distinguishes them from the coercion `TypeError`s the FR11 filter drops.
+
+```
+call %e = clo<"__NEW_ERROR_OBJ__">("%RangeError.prototype%")
+call %c = clo<"ThrowCompletion">(%e)
+return %c
+```
+
+**The error class is the string literal argument to `__NEW_ERROR_OBJ__`**, so
+the throw-set fixpoint reads the class name off that operand.
+
+*Seen in:* `Number.prototype.toFixed` raises `RangeError` this way and
+`Array.prototype.push` raises `TypeError`. Each sits behind an explicit `if`
+domain check, which is what separates them from the receiver- and
+parameter-coercion `TypeError`s the FR11 filter drops.
 
 ### Promise rejection versus synchronous throw
 
-The two channels are distinguishable. A synchronous throw is the
-`ThrowCompletion` form above. An asynchronous rejection is a call to the
-capability's reject slot, `Call(promiseCapability.Reject, undefined, «value»)`.
-`Promise.reject` rejects with `r` at param index 0, giving the `param:0`
-origin FR13 records. `IfAbruptRejectPromise` lowers to an abrupt-check branch
-whose then-edge calls `promiseCapability.Reject` and returns
-`promiseCapability.Promise`, again the capability-reject shape, never a
-`ThrowCompletion`. §9.3 tells them apart by the callee: `ThrowCompletion` is a
-sync throw, a `.Reject` capability call is a rejection.
+The two channels are distinguishable by the callee at the raise site:
+
+| Channel | Illustrative shape | Recorded as |
+| ------- | ------------------ | ----------- |
+| Synchronous throw | `call %c = clo<"ThrowCompletion">(%e)` | `throws` (FR10) |
+| Asynchronous rejection | `call %r = clo<"Call">(capability.Reject, undefined, «val»)` | `rejects` (FR13) |
+
+`IfAbruptRejectPromise` lowers to an abrupt-check branch whose then-edge takes
+the capability-reject shape and returns `capability.Promise` — a rejection,
+never a `ThrowCompletion`. A rejected value that is a parameter gives the
+`param:k` origin FR13 records.
+
+*Seen in:* `Promise.reject` rejects with its param 0; `Promise.all` shows the
+`IfAbruptRejectPromise` form.
 
 ### Callback propagation versus a resolvable abstract operation
 
-A resolvable call names a fixed abstract operation, `clo<"AOName">(…)`. A
-callback call is the `Call` abstract operation applied to a parameter-origin
-callee: `forEach` emits `clo<"Call">(callback, thisArg, «…»)` with `callback`
-the popped param 0. §9.1 recognizes the callback case as a `Call`/`Construct`
-whose callee argument is parameter-origin, yielding `throwsOf:param:k`; every
-other guarded call resolves to a named abstract operation with its own throw
-set. The call is `?`-guarded, so the propagation edge is present.
+Both are `Call` nodes; the callee expression tells them apart:
+
+| Case | Illustrative shape | Throw contribution |
+| ---- | ------------------ | ------------------ |
+| Resolvable abstract operation | `call %r = clo<"AOName">(…)` | the callee's own throw set, by name |
+| Callback parameter | `call %r = clo<"Call">(cb, thisArg, «…»)` where `cb` is a popped formal | `throwsOf:param:k` |
+
+In the callback case the AO being invoked is `Call` itself, which *is*
+statically known — the callback is its **first argument**. So §9.1 identifies
+the case by the origin of that argument, not by the callee name. The call is
+`?`-guarded, so the propagation edge is present.
+
+*Seen in:* `Array.prototype.forEach`, whose `cb` is popped param 0.
 
 ### Return values
 
-`IReturn` carries the returned expression. Normal returns are wrapped
-`NormalCompletion(v)` and abrupt returns forward the completion, so the
-return-alias classifier reads `receiver` (`return O` / `NormalCompletion(O)`),
-`fresh` (`NormalCompletion(A)` off an allocator), or `param` off the operand.
+`IReturn` carries the returned expression. Normal returns are wrapped in
+`NormalCompletion` and abrupt returns forward the completion, so the
+return-alias classifier reads the operand:
+
+| Alias | Illustrative shape |
+| ----- | ------------------ |
+| `receiver` | `return obj` / `NormalCompletion(obj)` where `obj` is receiver-origin |
+| `fresh` | `NormalCompletion(out)` where `out` came from an allocator |
+| `param:k` | `NormalCompletion(p)` where `p` is the k-th formal |
+
+*Seen in:* `Array.prototype.fill` returns the receiver, `slice` returns fresh,
+`Object.freeze` returns `param:0`.
 
 ## Facts that shape §3 / §8 / §9
 
