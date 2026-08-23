@@ -285,7 +285,7 @@ func PrintAsSchemeWith(
 	//
 	// Name each 'a, 'b, … in first-appearance order and add it to the quantifier prefix
 	// after the type parameters.
-	ltVars := freeLifetimeVars(t)
+	ltVars := declaredLtsFirst(freeLifetimeVars(t), declaredLts)
 	ltNames := map[*LifetimeVar]string{}
 	ltIndex := map[*LifetimeVar]int{}
 	// A lifetime the declaration named keeps that name, the lifetime twin of the declared
@@ -364,6 +364,32 @@ func PrintAsSchemeWith(
 	// one prefix form cannot be split by a following operator, so it needs none: the
 	// class-constructor rendering stays `<T> {new (value: T) -> Node<T>}`.
 	return prefix + " " + p.printTypeMinPrec(t, precPrefix)
+}
+
+// declaredLtsFirst returns free with the lifetimes a declaration names moved to the front, in
+// the order the declaration wrote them, and the rest left in first-appearance order. The
+// quantifier prefix then reads in the same order as the argument list a reference writes, so
+// `class Pair<'x, 'y>` renders `<'x, 'y>` whichever field mentions 'y first. It is the
+// lifetime twin of the declared-first ordering the type-parameter labels take.
+func declaredLtsFirst(free []*LifetimeVar, declared []*LifetimeParam) []*LifetimeVar {
+	if len(declared) == 0 {
+		return free
+	}
+	present := set.FromSlice(free)
+	taken := set.NewSet[*LifetimeVar]()
+	out := make([]*LifetimeVar, 0, len(free))
+	for _, lp := range declared {
+		if present.Contains(lp.Var) && !taken.Contains(lp.Var) {
+			taken.Add(lp.Var)
+			out = append(out, lp.Var)
+		}
+	}
+	for _, lv := range free {
+		if !taken.Contains(lv) {
+			out = append(out, lv)
+		}
+	}
+	return out
 }
 
 // lifetimeBinder renders one lifetime binder in the quantifier prefix: the bare name

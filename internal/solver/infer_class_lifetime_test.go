@@ -191,8 +191,11 @@ func TestClassLifetimeSubtyping(t *testing.T) {
 
 // TestClassLifetimeScopeIsTheDeclaredParameters covers what a member may write without a
 // clause of its own: the names the class's `<…>` binds, and nothing a field happened to
-// write. A field writing an unbound `'z` must not intern it as a class binder, which would
-// suppress the undeclared report in every member and unify their borrows with the field's.
+// write. Both writes of the unbound `'z` are reported, the field's against the class
+// declaration it would have to be added to and the member's against its own signature.
+//
+// Interning a field's `'z` as a class binder instead would suppress the member's report and
+// unify the two borrows, leaving the class quantified over a lifetime no reference supplies.
 func TestClassLifetimeScopeIsTheDeclaredParameters(t *testing.T) {
 	src := `
 		class Holder<'a> {
@@ -203,8 +206,44 @@ func TestClassLifetimeScopeIsTheDeclaredParameters(t *testing.T) {
 	`
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
+		"4:12-4:14: lifetime 'z is used but not declared; did you mean 'a?",
 		"5:22-5:24: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
 	}, messagesWithSpan(errs))
+}
+
+// TestClassFieldLifetimeIsChecked covers the field scan on its own. A class with no `<…>`
+// clause has no lifetime a field may write, and the hint names the class rather than a
+// function signature, since the class declaration is where the binder would go.
+func TestClassFieldLifetimeIsChecked(t *testing.T) {
+	src := `
+		class Bad {
+			f: &'z mut {value: number},
+			g: &'z mut {value: number},
+		}
+	`
+	_, _, errs := inferSource(t, src)
+	require.Equal(t, []string{
+		"3:8-3:10: lifetime 'z is used but not declared; add `<'z>` to the enclosing class declaration",
+		"4:8-4:10: lifetime 'z is used but not declared; add `<'z>` to the enclosing class declaration",
+	}, messagesWithSpan(errs))
+}
+
+// TestClassLifetimeBinderOrderFollowsTheDeclaration covers the order the quantifier prefix
+// names a class's lifetime parameters in. It follows the `<…>` clause rather than the order
+// the fields happen to mention them, so the prefix and the instance's argument list agree.
+func TestClassLifetimeBinderOrderFollowsTheDeclaration(t *testing.T) {
+	src := `
+		class Pair<'x, 'y> {
+			b: &'y mut {value: number},
+			a: &'x mut {value: number},
+		}
+	`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, messagesWithSpan(errs))
+	require.Equal(t,
+		"<'x, 'y> {new (b: &'y mut {value: number}, a: &'x mut {value: number}) -> Pair<'x, 'y>}",
+		values["Pair"],
+	)
 }
 
 // TestClassLifetimeBoundNameIsNotABinder covers the other name a class's clause mentions

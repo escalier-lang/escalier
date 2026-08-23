@@ -113,6 +113,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// resolves through the pre-declared sibling signature — self-recursive, mutually
 	// recursive, or a forward call to a member declared later.
 	ctors := c.collectConstructors(decl)
+	c.checkFieldLifetimes(decl)
 	c.buildFieldSigs(declScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(declScope, lvl, decl, self, body, static)
 	// A mutually recursive method group with no annotated return cannot ground its own
@@ -631,6 +632,41 @@ func (c *checker) collectConstructors(decl *ast.ClassDecl) []*ast.ConstructorEle
 		}
 	}
 	return ctors
+}
+
+// checkFieldLifetimes reports a named lifetime a field annotation writes that the class's
+// `<…>` clause does not bind. A member signature is checked by checkLifetimeDeclarations,
+// which scans a signature's parameters and return and so never reaches a field.
+//
+// Without this a field's `&'z` interns 'z through namedLifetime, and two fields writing it
+// would share a lifetime the class quantifies but no reference can supply — the class value
+// would render a binder over an argument its instances do not carry.
+func (c *checker) checkFieldLifetimes(decl *ast.ClassDecl) {
+	var col lifetimeUseCollector
+	for _, elem := range decl.Body {
+		field, isField := elem.(*ast.FieldElem)
+		if !isField || field.Type == nil {
+			continue
+		}
+		field.Type.Accept(&col)
+	}
+	hasClause := len(decl.LifetimeParams) > 0
+	declaredOrder := make([]string, 0, len(decl.LifetimeParams))
+	for _, p := range decl.LifetimeParams {
+		declaredOrder = append(declaredOrder, p.Name)
+	}
+	for _, u := range col.uses {
+		if _, ok := c.classLifetimes[u.Name]; ok {
+			continue
+		}
+		c.report(&UndeclaredLifetimeError{
+			Name:        u.Name,
+			Suggestions: nearestLifetimes(u.Name, declaredOrder),
+			hasClause:   hasClause,
+			binder:      "class declaration",
+			span:        u.Span(),
+		})
+	}
 }
 
 // buildFieldSigs adds one PropertyElem per field to the instance or static body,
