@@ -267,6 +267,18 @@ return-alias classifier reads `receiver` (`return O` / `NormalCompletion(O)`),
    determination reads — rather than dropping a whole method because it
    carries a `yet` anywhere.
 
+   Most of that set is low-stakes for this workstream: `Math.*`, the `Date.*`
+   and numeric formatters, and `JSON.stringify` compute a fresh return value
+   without mutating the receiver or any parameter, so the facts worth
+   extracting there are `receiver: borrow` and `returns: fresh`, which the
+   visible part of each algorithm already establishes. `Atomics.*` is the
+   exception and the one to watch: `Atomics.add` carries a `yet` *and* mutates
+   its `typedArray` parameter, through `AtomicReadModifyWrite` and
+   `GetModifySetValueInBuffer` writing the underlying buffer. There a `yet`
+   coincides with a real effect, so the per-signal rule has to be applied
+   rather than assumed — the mutation is only safely extractable because the
+   `yet` sits off the path that establishes it.
+
 6. **Symbol-keyed names are exposed; some are spec aliases (§5).** A
    symbol-keyed method with its own algorithm appears under the
    `X.prototype[%Symbol.name%]` name, e.g.
