@@ -1507,6 +1507,10 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		// extra arguments that have no corresponding parameter.
 		if hasConsumeRef {
 			c.consumeCallArgs(e, fn, consumeRef)
+			// A borrow argument the signature stores into another argument aliases the two
+			// for as long as the target lives, so record that edge here rather than leaving
+			// the alias invisible to the escape check and the component move.
+			c.recordCallStoreEdges(e, fn, consumeRef)
 		}
 	}
 	c.recordType(e, res)
