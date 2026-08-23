@@ -132,6 +132,26 @@ func TestInferClassLifetimeParams(t *testing.T) {
 	}
 }
 
+// TestClassLifetimeParamsRenderUnderSourceNames covers the names a class's two bindings
+// render its lifetime parameters under. Both keep what the source wrote, so the value binding
+// and the type binding read the same, and neither takes the generated 'a, 'b the quantifier
+// would otherwise assign.
+func TestClassLifetimeParamsRenderUnderSourceNames(t *testing.T) {
+	src := `
+		class Pair<'x, 'y> {
+			a: &'x mut {value: number},
+			b: &'y mut {value: number},
+		}
+	`
+	values, types, errs := inferSource(t, src)
+	require.Empty(t, messagesWithSpan(errs))
+	require.Equal(t,
+		"<'x, 'y> {new (a: &'x mut {value: number}, b: &'y mut {value: number}) -> Pair<'x, 'y>}",
+		values["Pair"],
+	)
+	require.Equal(t, "Pair<'x, 'y>", types["Pair"])
+}
+
 // TestClassLifetimeSubtyping covers what a class's lifetime arguments oblige at the nominal
 // subtype rule. A class records no per-parameter variance for the lifetime sort, so each
 // argument is invariant: reaching `Holder<'static>` forces the source's region to 'static
