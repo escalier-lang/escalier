@@ -5,7 +5,7 @@ import esmeta.ir.*
 import esmeta.ir.util.YetCollector
 import esmeta.spec.{BuiltinHead, BuiltinPath}
 import esmeta.ty.{AbruptT, CompT, NormalT}
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ListBuffer, Map => MMap}
 
 /** Lowers `esmeta.cfg.CFG` to the `cfg.json` schema.
   *
@@ -232,6 +232,56 @@ final class Lowering(cfg: CFG):
     val guards: Map[Int, String] =
       calls.map(call => call.id -> guardOf(call)).toMap
 
+    /** where each guard puts its unwrap, as the node holding it paired with the
+      * local it unwraps. A `?` guard unwraps on the else-edge of its abrupt
+      * check and a `!` guard unwraps in the block that asserts. Pinning the
+      * unwrap to the call it belongs to keeps an ordinary algorithm step that
+      * reads a `[[Value]]` field from being mistaken for one.
+      */
+    val guardUnwraps: Set[(Int, String)] = calls.flatMap { call =>
+      val unwrapped = localName(call.callInst.lhs)
+      val assertBlock = call.next.collect { case block: Block => block }
+      guards.getOrElse(call.id, Guards.Plain) match
+        case Guards.Question =>
+          assertBlock
+            .flatMap(_.next)
+            .collect { case branch: Branch if branch.isAbruptNode => branch }
+            .flatMap(_.elseNode)
+            .map(_.id -> unwrapped)
+        case Guards.Bang => assertBlock.map(_.id -> unwrapped)
+        case _           => None
+    }.toSet
+
+    /** How many leading instructions of each node belong to the argument
+      * prologue ESMeta generates to bind the declared parameters.
+      *
+      * The prologue spans nested branches, one per optional parameter, so it is
+      * a run of nodes rather than a single block, and its last block can hold a
+      * real step after the bookkeeping. Measuring it as a prefix keeps a later
+      * step that binds a parameter name to `undefined` from being mistaken for
+      * the default of a missing argument.
+      */
+    val prologuePrefix: Map[Int, Int] =
+      val prefixes = MMap[Int, Int]()
+      var inPrologue = isBuiltin
+      for (node <- nodes if inPrologue) node match
+        case block: Block =>
+          val prefix = block.insts.iterator.takeWhile(isPrologueInst).size
+          prefixes(block.id) = prefix
+          inPrologue = prefix == block.insts.size
+        case branch: Branch => inPrologue = isArgCountTest(branch.cond)
+        case _: Call        => inPrologue = false
+      prefixes.toMap
+
+    private def isPrologueInst(inst: NormalInst): Boolean = inst match
+      case ILet(ArgsName, _)    => true
+      case IExpand(ArgsName, _) => true
+      case IPop(lhs, list, _)   => isArgsList(list) && formals(localName(lhs))
+      case ILet(Name(name), EUndef()) => formals(name)
+      // A rest parameter takes the whole remaining argument list.
+      case ILet(Name(name), list) => formals(name) && isArgsList(list)
+      case _                      => false
+
     private val blockInsts: List[NormalInst] = nodes.flatMap {
       case block: Block => block.insts.toList
       case _            => Nil
@@ -261,7 +311,8 @@ final class Lowering(cfg: CFG):
     val out = ListBuffer[NodeJson]()
     for (node <- ctx.nodes) node match
       case block: Block =>
-        for (inst <- block.insts) lowerInst(ctx, block.id, inst, out)
+        for ((inst, index) <- block.insts.zipWithIndex)
+          lowerInst(ctx, block.id, index, inst, out)
       case call: Call =>
         lowerCallInst(ctx, call, out)
       case branch: Branch =>
@@ -273,6 +324,7 @@ final class Lowering(cfg: CFG):
   private def lowerInst(
     ctx: FuncCtx,
     nodeId: Int,
+    index: Int,
     inst: NormalInst,
     out: ListBuffer[NodeJson],
   ): Unit =
@@ -280,7 +332,9 @@ final class Lowering(cfg: CFG):
       // The step is not formalized. Incompleteness is per-step, so the analysis
       // falls back only for the signals this step feeds.
       out += NodeJson(NodeKinds.Opaque)
-    else if (!isPrologue(ctx, inst) && !isCompletionUnwrap(inst))
+    else if (
+      !isPrologue(ctx, nodeId, index) && !isCompletionUnwrap(ctx, nodeId, inst)
+    )
       inst match
         case ILet(lhs, expr) =>
           out += NodeJson(
@@ -461,30 +515,35 @@ final class Lowering(cfg: CFG):
     * to the argument list and to `undefined`, neither of which carries a
     * parameter origin.
     */
-  private def isPrologue(ctx: FuncCtx, inst: NormalInst): Boolean =
-    ctx.isBuiltin && (inst match
-      case ILet(ArgsName, _)    => true
-      case IExpand(ArgsName, _) => true
-      case IPop(lhs, list, _) =>
-        isArgsList(list) && ctx.formals(localName(lhs))
-      case ILet(Name(name), EUndef()) => ctx.formals(name)
-      // A rest parameter takes the whole remaining argument list.
-      case ILet(Name(name), list) => ctx.formals(name) && isArgsList(list)
-      case _                      => false
-    )
+  /** Whether an instruction belongs to the argument prologue. Everything inside
+    * the measured prefix is prologue by construction, so the index decides.
+    */
+  private def isPrologue(ctx: FuncCtx, nodeId: Int, index: Int): Boolean =
+    index < ctx.prologuePrefix.getOrElse(nodeId, 0)
 
   private def isArgsList(expr: Expr): Boolean = expr match
     case ERef(ArgsListName) => true
     case _                  => false
+
+  /** Whether ESMeta counts the arguments it was passed, the condition each step
+    * of the prologue branches on.
+    */
+  private def isArgCountTest(cond: Expr): Boolean = cond match
+    case EBinary(_, _, ESizeOf(list)) => isArgsList(list)
+    case _                            => false
 
   /** Whether an instruction is the unwrap half of a completion guard, `x =
     * x.Value`. Emitting it would turn the guarded call's result into a slot
     * read, which resolves to an unknown origin and would break every chain that
     * runs through a `?`-guarded coercion such as `Let O be ? ToObject(this)`.
     */
-  private def isCompletionUnwrap(inst: NormalInst): Boolean = inst match
+  private def isCompletionUnwrap(
+    ctx: FuncCtx,
+    nodeId: Int,
+    inst: NormalInst,
+  ): Boolean = inst match
     case IAssign(lhs: Local, ERef(Field(base: Local, EStr("Value")))) =>
-      lhs == base
+      lhs == base && ctx.guardUnwraps((nodeId, localName(lhs)))
     case _ => false
 
   // ///////////////////////////////////////////////////////////////////////////

@@ -54,17 +54,6 @@ describe the build this directory produces.
    git -C tools/spec-extract/esmeta submodule update --init ecma262
    ```
 
-4. Install the JVM toolchain and build ESMeta:
-
-   ```sh
-   cd tools/spec-extract
-   mise install
-   mise run build-esmeta
-   ```
-
-   `sbt assembly` writes a self-contained launcher to `esmeta/bin/esmeta`. It
-   compiles 288 Scala sources and takes a couple of minutes.
-
 4. Install the JVM toolchain:
 
    ```sh
@@ -127,9 +116,9 @@ is published to a local repository and the vendored tree is never edited.
 `.scalafmt.conf` is the vendored tree's own configuration, so the Scala here
 reads like the Scala it is compiled against. `mise run format` applies it.
 
-`src/main/scala/escalier/specextract/` holds three files. `Main` runs the
-pipeline in process, `Lowering` turns `esmeta.cfg.CFG` into the schema, and
-`Validation` reads the written file back and checks it. `Schema` carries the
+`src/main/scala/escalier/specextract/` holds four files. `Main` runs the
+pipeline in process, `Lowering` turns `esmeta.cfg.CFG` into the schema,
+`Validation` reads the written file back and checks it, and `Schema` carries the
 case classes and the writer. The schema itself is Appendix A of the
 implementation plan, and the Go analysis reads the same shape, so a field
 renamed on one side has to be renamed on the other.

@@ -106,7 +106,10 @@ object Validation:
       fail("funcs is not an array")
     }
     val kindCounts = MMap[String, Int]().withDefaultValue(0)
+    val nodeCounts = MMap[String, Int]().withDefaultValue(0)
+    val guardCounts = MMap[String, Int]().withDefaultValue(0)
     val abstractOps = collection.mutable.Set[String]()
+    var promises = 0
     var callNodes = 0
     var resolvedCallees = 0
 
@@ -125,8 +128,10 @@ object Validation:
       if (!funcKinds(kind)) problems += s"$where: unknown func kind '$kind'"
       kindCounts(kind) += 1
       if (kind == FuncKinds.AbstractOp) abstractOps += where
-      if (funcObj("promise").flatMap(_.asBoolean).isEmpty)
-        problems += s"$where: promise is not a boolean"
+      funcObj("promise").flatMap(_.asBoolean) match
+        case None        => problems += s"$where: promise is not a boolean"
+        case Some(true)  => promises += 1
+        case Some(false) => ()
       for {
         params <- funcObj("params").flatMap(_.asArray)
         param <- params
@@ -135,7 +140,12 @@ object Validation:
       for {
         nodes <- funcObj("nodes").flatMap(_.asArray)
         node <- nodes
-      } checkNode(node, where, problems)
+      } {
+        nodeCounts(node.hcursor.get[String]("kind").getOrElse("")) += 1
+        for (guard <- node.hcursor.get[String]("guard").toOption)
+          guardCounts(guard) += 1
+        checkNode(node, where, problems)
+      }
 
     // A second pass now that every function name is known, so a callee can be
     // matched against the abstract operations it might name.
@@ -160,8 +170,15 @@ object Validation:
     for (name <- representative if !names(name))
       problems += s"the representative method '$name' is missing"
 
+    problems ++= missingSignals(nodeCounts, guardCounts, promises)
+
     println(s"validating $path ...")
     for ((kind, count) <- kindCounts.toList.sorted) println(s"  $count $kind")
+    for ((kind, count) <- nodeCounts.toList.sorted)
+      println(s"  $count $kind nodes")
+    for ((guard, count) <- guardCounts.toList.sorted)
+      println(s"  $count '$guard' guards")
+    println(s"  $promises promise-returning functions")
     println(
       s"  $resolvedCallees of $callNodes call nodes name an abstract operation",
     )
@@ -170,6 +187,32 @@ object Validation:
       for (problem <- problems.take(20)) println(s"  FAIL $problem")
       fail(s"${problems.length} schema problems in $path")
     println("  schema OK")
+
+  /** Names any signal the lowering reconstructs that came out empty.
+    *
+    * Each of these is recovered by matching a shape ESMeta's IR compiler
+    * produces, so a change to that compiler can leave the output schema-valid
+    * while silently emptying one of them: every call falling back to a `plain`
+    * guard, say, or no `Throw` step being recognized. A count that drops to
+    * zero is that failure. The check is deliberately a presence test and not a
+    * floor, because a spec bump moves every one of these counts for legitimate
+    * reasons, and a floor would fail the bump rather than the drift.
+    */
+  private def missingSignals(
+    nodeCounts: MMap[String, Int],
+    guardCounts: MMap[String, Int],
+    promises: Int,
+  ): List[String] =
+    val expected = List(
+      "'?' guards" -> guardCounts(Guards.Question),
+      "'!' guards" -> guardCounts(Guards.Bang),
+      "throw nodes" -> nodeCounts(NodeKinds.Throw),
+      "slot writes" -> nodeCounts(NodeKinds.SlotWrite),
+      "return nodes" -> nodeCounts(NodeKinds.Return),
+      "promise-returning functions" -> promises,
+    )
+    for ((what, count) <- expected if count == 0)
+      yield s"no $what, so the shape they are recovered from has changed"
 
   private def checkNode(
     node: Json,

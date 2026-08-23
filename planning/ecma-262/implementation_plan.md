@@ -443,7 +443,10 @@ maintainer runbook. Four findings shape the sections downstream.
   stop tracing to the receiver and `Array.prototype.push` would lose its
   receiver mutation. The serializer drops the assertion, the unwrap, and the
   abrupt branch that forwards the completion, and records the guard on the
-  call. §9.1 reads `guard`, never the branch.
+  call. §9.1 reads `guard`, never the branch. The drop is pinned to the edge
+  the guard puts its unwrap on, because `x = x.Value` is also a step some
+  algorithms write for themselves, and dropping those would lose real bindings
+  in `IteratorStep`, `ToBigInt`, and the promise combinators.
 - **Allocation operands are a signal Appendix A could not hold.** The
   schema had no expression for an allocation, and lowering one to a literal
   would have dropped what it stores. `Map.prototype.set` appends
