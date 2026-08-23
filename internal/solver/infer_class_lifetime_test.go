@@ -228,6 +228,63 @@ func TestClassFieldLifetimeIsChecked(t *testing.T) {
 	}, messagesWithSpan(errs))
 }
 
+// TestClassLifetimeClauseErrors covers what the class's own `<…>` clause and the body
+// outside a member signature can get wrong. Each name a class writes has to reach a binder
+// the clause declares, and each binder has to bind something new.
+func TestClassLifetimeClauseErrors(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// A lifetime argument on a type reference is a written use like a borrow's, so a
+		// field annotated `Cell<'z>` names 'z the way `&'z B` does.
+		"ReferenceArgumentOnAField": {
+			src: `
+				type Cell<'c> = {v: &'c mut {value: number}}
+				class Holder<'a> { peer: &'a mut {value: number}, x: Cell<'z> }
+			`,
+			want: []string{"3:63-3:65: lifetime 'z is used but not declared; did you mean 'a?"},
+		},
+		// An implements reference is a type reference too, so a lifetime argument on it is
+		// checked against the same binders. So is an extends reference, which the same scan
+		// walks.
+		"ReferenceArgumentOnImplements": {
+			src: `
+				class Shape<'b> { v: &'b mut {value: number} }
+				class Sub<'a> implements Shape<'z> { peer: &'a mut {value: number} }
+			`,
+			want: []string{"3:36-3:38: lifetime 'z is used but not declared; did you mean 'a?"},
+		},
+		// A name bound twice binds nothing new. Without the report the two would share one
+		// variable, silently equating a caller's two distinct arguments.
+		"DuplicateBinder": {
+			src:  `class Holder<'a, 'a> { peer: &'a mut {value: number} }`,
+			want: []string{"1:18-1:20: lifetime parameter 'a is declared more than once"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(errs))
+		})
+	}
+}
+
+// TestClassTypeParamBoundSeesTheClassLifetime covers the order the two parameter sorts
+// resolve in. A type parameter's bound may write the class's `'a`, so the type parameters
+// resolve inside the class's named-lifetime scope and the bound reaches the variable the
+// lifetime parameter carries rather than minting one of its own, which would render a bare
+// `&` with no name.
+func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
+	src := `class Holder<'a, T: &'a {value: number}> { peer: T }`
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, messagesWithSpan(errs))
+	require.Equal(t,
+		"<T, 'a> {new (peer: T & &'a {value: number}) -> Holder<'a, T>}",
+		values["Holder"],
+	)
+}
+
 // TestClassLifetimeBinderOrderFollowsTheDeclaration covers the order the quantifier prefix
 // names a class's lifetime parameters in. It follows the `<…>` clause rather than the order
 // the fields happen to mention them, so the prefix and the instance's argument list agree.
