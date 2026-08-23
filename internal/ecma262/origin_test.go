@@ -153,22 +153,22 @@ func TestOriginMapUnboundName(t *testing.T) {
 func TestOriginMapEval(t *testing.T) {
 	m := originsOf(t, "Array.prototype.push")
 
-	require.Equal(t, Receiver, m.Eval(&Expr{Kind: ExprThis}))
-	require.Equal(t, Receiver, m.Eval(&Expr{Kind: ExprVar, Var: "O"}))
-	require.Equal(t, Fresh, m.Eval(&Expr{Kind: ExprLit}))
-	require.Equal(t, Fresh, m.Eval(&Expr{Kind: ExprAlloc}))
+	require.Equal(t, Receiver, m.Eval(&ThisExpr{}))
+	require.Equal(t, Receiver, m.Eval(&VarExpr{Var: "O"}))
+	require.Equal(t, Fresh, m.Eval(&LitExpr{}))
+	require.Equal(t, Fresh, m.Eval(&AllocExpr{Args: nil}))
 	require.Equal(t, Unknown, m.Eval(nil))
 
 	// A read off the receiver is a different value from the receiver.
-	readO := &Expr{Kind: ExprSlot, Object: &Expr{Kind: ExprVar, Var: "O"}, Slot: "MapData"}
+	readO := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "MapData"}
 	require.Equal(t, Unknown, m.Eval(readO))
 
 	// A nested call resolves through the same lists a call node does.
-	toObject := &Expr{Kind: ExprCall, Callee: "ToObject", Args: []*Expr{{Kind: ExprThis}}}
+	toObject := &CallExpr{Callee: "ToObject", Args: []Expr{&ThisExpr{}}}
 	require.Equal(t, Receiver, m.Eval(toObject))
-	arrayCreate := &Expr{Kind: ExprCall, Callee: "ArrayCreate", Args: []*Expr{{Kind: ExprLit}}}
+	arrayCreate := &CallExpr{Callee: "ArrayCreate", Args: []Expr{&LitExpr{}}}
 	require.Equal(t, Fresh, m.Eval(arrayCreate))
-	get := &Expr{Kind: ExprCall, Callee: "Get", Args: []*Expr{{Kind: ExprVar, Var: "O"}}}
+	get := &CallExpr{Callee: "Get", Args: []Expr{&VarExpr{Var: "O"}}}
 	require.Equal(t, Unknown, m.Eval(get))
 }
 

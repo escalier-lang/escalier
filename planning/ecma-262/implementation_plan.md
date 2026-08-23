@@ -737,6 +737,11 @@ receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
   because `Array.prototype.slice` and its neighbours build their result through
   them.
 
+`Node` and `Expr` are sealed interfaces with one type per kind rather than
+one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
+models the compiler's own trees. Appendix A describes what that means for the
+schema, which is unchanged.
+
 283 of the 313 builtin methods bind a name at the receiver. The other 30 pass
 `this` straight into an operation that reads a value out of it, such as
 `ThisNumberValue` or `GeneratorResume`, or are among the eight §3 builtins with
@@ -1536,6 +1541,24 @@ abstract operation and the `Set` constructor. A `Callee`, and a closure
 named by an `ExprVar`, resolve against the `abstract-op` functions only.
 `ExprCall` is reserved: the compiled IR states every call as its own node,
 so a call never appears nested inside an expression.
+
+**The schema above is the wire shape, not the Go model.** A node and an
+expression each serialize as one object tagged by `kind`, which is what the
+Scala serializer writes and what a reader has to decode. Tagging one struct
+with a kind is not how this repository models a tree with several node
+shapes, though, and it lets a reader consult a field the tag does not carry,
+such as `Slot` on a `let`. So
+[internal/ecma262/cfg.go](../../internal/ecma262/cfg.go) declares `Node` and
+`Expr` as sealed interfaces with one type per kind, the pattern
+[internal/ast/expr.go](../../internal/ast/expr.go) uses, and decodes the
+JSON through unexported wire structs that mirror the schema above. The wire
+format does not change, so §3 is untouched. Two operands are genuinely
+optional and the rest are required at decode time: a `Throw` carries no
+`Value` when it constructs its error, and 22 `SlotWrite` nodes carry none
+because the serializer could not name what they store. Those 22 are all
+closure argument prologues writing into `__args__`, as in
+`NewPromiseCapability:clo0`, and none is a builtin method, so §8.1 sees a
+`SlotWrite` with no stored value only inside an abstract operation.
 
 ## Appendix B. `facts.json` schema
 

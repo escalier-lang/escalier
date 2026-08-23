@@ -218,13 +218,15 @@ func NewOriginMap(fn *Func) *OriginMap {
 			changed = m.bind(p, Param(i)) || changed
 		}
 		for _, node := range fn.Nodes {
-			switch node.Kind {
-			case NodeLet:
+			switch node := node.(type) {
+			case *LetNode:
 				changed = m.bind(node.Target, m.eval(node.Source)) || changed
-			case NodeCall:
+			case *CallNode:
 				if node.Target != "" {
 					changed = m.bind(node.Target, m.evalCall(node.Callee, node.Args)) || changed
 				}
+			default:
+				// No other node shape binds a name.
 			}
 		}
 		if !changed {
@@ -257,7 +259,7 @@ func (m *OriginMap) Of(name string) Origin {
 
 // Eval returns the origin of an expression read in this function. The mutation
 // fixpoint calls it to charge a mutated value to the receiver or a parameter.
-func (m *OriginMap) Eval(e *Expr) Origin {
+func (m *OriginMap) Eval(e Expr) Origin {
 	return resolved(m.eval(e))
 }
 
@@ -274,14 +276,11 @@ func resolved(o Origin) Origin {
 // eval returns an expression's origin, keeping the lattice bottom rather than
 // resolving it. A name read before the walk reaches its definition then
 // contributes nothing to the reader instead of pinning it at `Unknown`.
-func (m *OriginMap) eval(e *Expr) Origin {
-	if e == nil {
-		return Unknown
-	}
-	switch e.Kind {
-	case ExprVar:
+func (m *OriginMap) eval(e Expr) Origin {
+	switch e := e.(type) {
+	case *VarExpr:
 		return m.origins[e.Var]
-	case ExprThis:
+	case *ThisExpr:
 		// Only a prototype method has a `this` value to track. A static or
 		// namespace function's `this` is the constructor or the namespace
 		// object, never a parameter.
@@ -289,21 +288,22 @@ func (m *OriginMap) eval(e *Expr) Origin {
 			return Receiver
 		}
 		return Unknown
-	case ExprCall:
+	case *CallExpr:
 		return m.evalCall(e.Callee, e.Args)
-	case ExprAlloc, ExprLit:
+	case *AllocExpr, *LitExpr:
 		return Fresh
-	case ExprSlot, ExprProp:
+	case *SlotExpr, *PropExpr:
 		// A read, so the chain breaks here. The value read out of a container
 		// is a different object from the container itself.
 		return Unknown
 	default:
+		// An operand the graph left out, which reaches Eval as a nil Expr.
 		return Unknown
 	}
 }
 
 // evalCall returns the origin of a call's result.
-func (m *OriginMap) evalCall(callee string, args []*Expr) Origin {
+func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	switch {
 	case allocators.Contains(callee):
 		return Fresh

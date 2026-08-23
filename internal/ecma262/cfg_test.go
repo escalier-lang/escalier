@@ -87,6 +87,28 @@ func TestParseCFGRejects(t *testing.T) {
 			json: `{"specTarget":"abc","funcs":[{"kind":"abstract-op"}]}`,
 			err:  "decoding cfg: funcs[0] has no name",
 		},
+		// A required operand the graph leaves out would otherwise reach the
+		// origin walk as a nil Expr and resolve to Unknown, hiding the gap.
+		"MissingOperand": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"let","target":"O"}]}]}`,
+			err: "decoding cfg: node 0 of ToObject: the source is missing",
+		},
+		"MissingArgument": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"call","callee":"Get","args":[{"kind":"this"},null]}]}]}`,
+			err: "decoding cfg: node 0 of ToObject: the argument 1 is missing",
+		},
+		"UnknownNodeTag": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"assign"}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: kind "assign" names no node`,
+		},
+		"UnknownExprTag": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"return","value":{"kind":"regexp"}}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: kind "regexp" names no expression`,
+		},
 		"UnindexableKind": {
 			json: `{"specTarget":"abc","funcs":[{"name":"Evaluation","kind":"` +
 				string(SyntaxDirected) + `"}]}`,
@@ -105,6 +127,25 @@ func TestParseCFGRejects(t *testing.T) {
 			require.Equal(t, test.err, err.Error())
 		})
 	}
+}
+
+// The graph does not always name the value a slot write stores. A closure's
+// argument prologue writes an incoming argument the algorithm never named, so
+// the node decodes with a nil Value rather than being rejected.
+func TestParseCFGAllowsSlotWriteWithoutValue(t *testing.T) {
+	cfg := testCFG(t)
+
+	fn := cfg.AbstractOp("NewPromiseCapability:clo0")
+	require.NotNil(t, fn)
+
+	var slots []string
+	for _, node := range fn.Nodes {
+		if write, ok := node.(*SlotWriteNode); ok && write.Value == nil {
+			require.Equal(t, &VarExpr{Var: "__args__"}, write.Object)
+			slots = append(slots, write.Slot)
+		}
+	}
+	require.Equal(t, []string{"resolve", "reject"}, slots)
 }
 
 // One name can name both an abstract operation and a builtin. `Set` is the

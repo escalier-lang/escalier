@@ -1,9 +1,9 @@
 // Package ecma262 reads the ECMA-262 control-flow graph that
 // tools/spec-extract serializes to cfg.json and derives the mutation and alias
-// facts the builtin converter consumes. cfg.go mirrors the serialized schema,
-// and origin.go maps each value an algorithm names to where that value came
-// from. See planning/ecma-262/implementation_plan.md §4 for the analysis and
-// Appendix A for the schema.
+// facts the builtin converter consumes. cfg.go models the graph, and origin.go
+// maps each value an algorithm names to where that value came from. See
+// planning/ecma-262/implementation_plan.md §4 for the analysis and Appendix A
+// for the serialized schema.
 package ecma262
 
 import (
@@ -12,11 +12,12 @@ import (
 	"os"
 )
 
-// CFG is a serialized control-flow graph. It holds every builtin algorithm at a
-// pinned spec revision, plus the abstract operations reachable from them.
+// CFG is a control-flow graph read back from cfg.json. It holds every builtin
+// algorithm at a pinned spec revision, plus the abstract operations reachable
+// from them.
 type CFG struct {
-	SpecTarget string  `json:"specTarget"` // pinned ecma262 git ref
-	Funcs      []*Func `json:"funcs"`
+	SpecTarget string // pinned ecma262 git ref
+	Funcs      []*Func
 
 	abstractOps map[string]*Func
 	builtins    map[string]*Func
@@ -37,26 +38,96 @@ const (
 
 // Func is one algorithm. Params holds the declared parameters in order. A
 // method's receiver is not among them; it is the `this` value, reached through
-// an ExprThis.
+// a ThisExpr.
 type Func struct {
-	Name    string   `json:"name"` // canonical spec key or abstract-operation name
-	Kind    FuncKind `json:"kind"`
-	Params  []string `json:"params"`  // declared parameters, in order, 0-based
-	Promise bool     `json:"promise"` // the algorithm returns a promise
-	Nodes   []*Node  `json:"nodes"`   // CFG nodes in flat order
+	Name    string   // canonical spec key or abstract-operation name
+	Kind    FuncKind //
+	Params  []string // declared parameters, in order, 0-based
+	Promise bool     // the algorithm returns a promise
+	Nodes   []Node   // CFG nodes in flat order
 }
 
-// NodeKind names the statement shapes the serializer lowers a spec step to.
+// Node is one step of an algorithm.
+//
+//sumtype:decl
+type Node interface {
+	isNode()
+}
+
+func (*LetNode) isNode()       {}
+func (*CallNode) isNode()      {}
+func (*SlotWriteNode) isNode() {}
+func (*ThrowNode) isNode()     {}
+func (*ReturnNode) isNode()    {}
+func (*BranchNode) isNode()    {}
+func (*OpaqueNode) isNode()    {}
+
+// LetNode binds Target to Source. Serialized as kind "let".
+type LetNode struct {
+	Target string
+	Source Expr
+}
+
+// CallNode calls Callee, binding its result to Target when the algorithm names
+// the result. Serialized as kind "call".
+//
+// Callee is either an abstract-operation name, which resolves in the graph, or
+// a formal parameter holding a function, which is a callback such as the
+// `callbackfn` in `? Call(callbackfn, ...)`. The origin map tells the two
+// apart: a callee whose origin is a parameter is a callback.
+type CallNode struct {
+	Target string // empty when the result is discarded
+	Callee string
+	Args   []Expr
+	Guard  Guard
+}
+
+// SlotWriteNode writes Value into Object's Slot. Slot is the name without its
+// brackets, so [[MapData]] is "MapData". Serialized as kind "slotwrite".
+//
+// Value is the operand §8.1 reads to see a parameter escape into a container.
+// The serializer cannot always name it, so it can be nil: a closure's argument
+// prologue writes an incoming argument the algorithm never named, as in
+// `NewPromiseCapability:clo0` storing into `__args__.[[resolve]]`. Slot is
+// empty on the few writes whose slot the algorithm computes.
+type SlotWriteNode struct {
+	Object Expr
+	Slot   string
+	Value  Expr // nil when the graph does not name the stored value
+}
+
+// ThrowNode throws. ErrorType names the error the algorithm constructs, such as
+// "TypeError". Value is set instead for the rare algorithm that throws a value
+// it did not construct. Serialized as kind "throw".
+type ThrowNode struct {
+	ErrorType string
+	Value     Expr // nil when the algorithm constructs the error
+}
+
+// ReturnNode returns Value. Serialized as kind "return".
+type ReturnNode struct {
+	Value Expr
+}
+
+// BranchNode is control flow. The analysis never interprets one, so it carries
+// no data. Serialized as kind "branch".
+type BranchNode struct{}
+
+// OpaqueNode is a step the serializer could not lower, which leaves the
+// analysis unable to see the whole algorithm. Serialized as kind "opaque".
+type OpaqueNode struct{}
+
+// NodeKind is the tag each Node variant serializes under.
 type NodeKind string
 
 const (
-	NodeLet       NodeKind = "let"       // bind Target = Source
-	NodeCall      NodeKind = "call"      // optional Target = Callee(Args...)
-	NodeSlotWrite NodeKind = "slotwrite" // write Value into Object.Slot
-	NodeThrow     NodeKind = "throw"     // Throw a <ErrorType> exception
-	NodeReturn    NodeKind = "return"    // return Value
-	NodeBranch    NodeKind = "branch"    // control flow; carries no analyzed data
-	NodeOpaque    NodeKind = "opaque"    // a step the serializer could not lower
+	NodeLet       NodeKind = "let"
+	NodeCall      NodeKind = "call"
+	NodeSlotWrite NodeKind = "slotwrite"
+	NodeThrow     NodeKind = "throw"
+	NodeReturn    NodeKind = "return"
+	NodeBranch    NodeKind = "branch"
+	NodeOpaque    NodeKind = "opaque"
 )
 
 // Guard is the completion-record guard on a call. `?` propagates an abrupt
@@ -69,54 +140,73 @@ const (
 	GuardPlain    Guard = "plain" // result not completion-checked
 )
 
-// Node is one step of an algorithm. Which fields carry a value depends on Kind.
-type Node struct {
-	Kind   NodeKind `json:"kind"`
-	Target string   `json:"target,omitempty"` // Let target, or Call result binding
-	Source *Expr    `json:"source,omitempty"` // Let
-	// Callee is a Call's callee. It is either an abstract-operation name, which
-	// resolves in the graph, or a formal parameter holding a function, which is
-	// a callback such as the `callbackfn` in `? Call(callbackfn, ...)`. The
-	// origin map tells the two apart: a callee whose origin is Param(k) is a
-	// callback.
-	Callee string  `json:"callee,omitempty"`
-	Args   []*Expr `json:"args,omitempty"`   // Call
-	Guard  Guard   `json:"guard,omitempty"`  // Call: ? / ! / plain
-	Object *Expr   `json:"object,omitempty"` // SlotWrite: the written object
-	// Slot is the written slot name without its brackets, so [[MapData]] is
-	// "MapData".
-	Slot      string `json:"slot,omitempty"`
-	ErrorType string `json:"errorType,omitempty"` // Throw of a constructed error: "TypeError", ...
-	// Value is the returned expression on a Return, the stored value on a
-	// SlotWrite, and on a Throw the thrown expression, for the rare algorithm
-	// that throws a value it did not construct.
-	Value *Expr `json:"value,omitempty"`
+// Expr is a value an algorithm step reads or builds.
+//
+//sumtype:decl
+type Expr interface {
+	isExpr()
 }
 
-// ExprKind names the value shapes an algorithm step reads or builds.
+func (*VarExpr) isExpr()   {}
+func (*ThisExpr) isExpr()  {}
+func (*LitExpr) isExpr()   {}
+func (*CallExpr) isExpr()  {}
+func (*SlotExpr) isExpr()  {}
+func (*PropExpr) isExpr()  {}
+func (*AllocExpr) isExpr() {}
+
+// VarExpr names a value. The name also reaches a closure passed as a value,
+// which resolves against the abstract operations the way a callee does.
+// Serialized as kind "var".
+type VarExpr struct {
+	Var string
+}
+
+// ThisExpr is the `this` value. Serialized as kind "this".
+type ThisExpr struct{}
+
+// LitExpr is a literal or primitive. Serialized as kind "lit".
+type LitExpr struct{}
+
+// CallExpr is a call nested inside an expression. The compiled IR states every
+// call as its own node, so the serializer emits none of these, but Appendix A
+// reserves the shape. Serialized as kind "call".
+type CallExpr struct {
+	Callee string
+	Args   []Expr
+}
+
+// SlotExpr reads Object's Slot. Serialized as kind "slot".
+type SlotExpr struct {
+	Object Expr
+	Slot   string
+}
+
+// PropExpr reads a property off Object, through Get(Object, Key) or a similar
+// step. Serialized as kind "prop".
+type PropExpr struct {
+	Object Expr
+}
+
+// AllocExpr is a record, list, or map the algorithm allocates, or a copy of
+// one. The value is fresh, and Args holds the operands stored into it.
+// Serialized as kind "alloc".
+type AllocExpr struct {
+	Args []Expr
+}
+
+// ExprKind is the tag each Expr variant serializes under.
 type ExprKind string
 
 const (
-	ExprVar  ExprKind = "var"  // a named value
-	ExprThis ExprKind = "this" // the this value
-	ExprLit  ExprKind = "lit"  // literal / primitive
-	ExprCall ExprKind = "call" // nested abstract-operation call
-	ExprSlot ExprKind = "slot" // READ of Object.Slot
-	ExprProp ExprKind = "prop" // READ via Get(Object, Key) etc.
-	// ExprAlloc is a record, list, or map the algorithm allocates, or a copy of
-	// one. The value is fresh, and Args holds the operands stored into it.
+	ExprVar   ExprKind = "var"
+	ExprThis  ExprKind = "this"
+	ExprLit   ExprKind = "lit"
+	ExprCall  ExprKind = "call"
+	ExprSlot  ExprKind = "slot"
+	ExprProp  ExprKind = "prop"
 	ExprAlloc ExprKind = "alloc"
 )
-
-// Expr is a value expression. Which fields carry a value depends on Kind.
-type Expr struct {
-	Kind   ExprKind `json:"kind"`
-	Var    string   `json:"var,omitempty"`    // ExprVar; also names a closure passed as a value
-	Callee string   `json:"callee,omitempty"` // ExprCall
-	Args   []*Expr  `json:"args,omitempty"`   // ExprCall / ExprAlloc
-	Object *Expr    `json:"object,omitempty"` // ExprSlot / ExprProp
-	Slot   string   `json:"slot,omitempty"`   // ExprSlot
-}
 
 // LoadCFG reads and decodes a serialized control-flow graph.
 func LoadCFG(path string) (*CFG, error) {
@@ -129,27 +219,25 @@ func LoadCFG(path string) (*CFG, error) {
 
 // ParseCFG decodes a serialized control-flow graph and indexes its functions by
 // name. Anything the analysis cannot walk or address is an error here rather
-// than a silently dropped entry or a panic further in: a missing function or
-// node, an unnamed function, a kind with no index, and a name repeated within
-// one index.
+// than a silently dropped entry or a panic further in: a missing function,
+// node, or operand, an unnamed function, a tag that names no variant, and a
+// name repeated within one index.
 func ParseCFG(data []byte) (*CFG, error) {
-	cfg := &CFG{}
-	if err := json.Unmarshal(data, cfg); err != nil {
+	var wire wireCFG
+	if err := json.Unmarshal(data, &wire); err != nil {
 		return nil, fmt.Errorf("decoding cfg: %w", err)
 	}
-	cfg.abstractOps = make(map[string]*Func)
-	cfg.builtins = make(map[string]*Func)
-	for i, fn := range cfg.Funcs {
-		if fn == nil {
-			return nil, fmt.Errorf("decoding cfg: funcs[%d] is missing", i)
-		}
-		if fn.Name == "" {
-			return nil, fmt.Errorf("decoding cfg: funcs[%d] has no name", i)
-		}
-		for j, node := range fn.Nodes {
-			if node == nil {
-				return nil, fmt.Errorf("decoding cfg: node %d of %s is missing", j, fn.Name)
-			}
+
+	cfg := &CFG{
+		SpecTarget:  wire.SpecTarget,
+		Funcs:       make([]*Func, 0, len(wire.Funcs)),
+		abstractOps: make(map[string]*Func),
+		builtins:    make(map[string]*Func),
+	}
+	for i, wf := range wire.Funcs {
+		fn, err := wf.toFunc(i)
+		if err != nil {
+			return nil, fmt.Errorf("decoding cfg: %w", err)
 		}
 		var index map[string]*Func
 		switch fn.Kind {
@@ -157,6 +245,8 @@ func ParseCFG(data []byte) (*CFG, error) {
 			index = cfg.abstractOps
 		case BuiltinMethod, BuiltinStatic:
 			index = cfg.builtins
+		case SyntaxDirected:
+			fallthrough
 		default:
 			return nil, fmt.Errorf("decoding cfg: %s has kind %q, which the analysis cannot index", fn.Name, fn.Kind)
 		}
@@ -164,12 +254,13 @@ func ParseCFG(data []byte) (*CFG, error) {
 			return nil, fmt.Errorf("decoding cfg: two %s functions named %s", fn.Kind, fn.Name)
 		}
 		index[fn.Name] = fn
+		cfg.Funcs = append(cfg.Funcs, fn)
 	}
 	return cfg, nil
 }
 
 // AbstractOp returns the abstract operation of that name, or nil. A call's
-// callee and a closure named by an ExprVar both resolve here. Names live in two
+// callee and a closure named by a VarExpr both resolve here. Names live in two
 // spaces that a lookup has to keep apart. `Set` is both the property-write
 // abstract operation and the `Set` constructor.
 func (c *CFG) AbstractOp(name string) *Func {
@@ -180,4 +271,189 @@ func (c *CFG) AbstractOp(name string) *Func {
 // as "Array.prototype.push", or nil.
 func (c *CFG) Builtin(name string) *Func {
 	return c.builtins[name]
+}
+
+// The wire types mirror the serialized schema in Appendix A, where a node and
+// an expression are each one object tagged by kind. encoding/json cannot pick a
+// variant of a sealed interface on its own, so decoding lands here first and
+// the conversions below rebuild the graph as the sum types above.
+
+type wireCFG struct {
+	SpecTarget string      `json:"specTarget"`
+	Funcs      []*wireFunc `json:"funcs"`
+}
+
+type wireFunc struct {
+	Name    string      `json:"name"`
+	Kind    FuncKind    `json:"kind"`
+	Params  []string    `json:"params"`
+	Promise bool        `json:"promise"`
+	Nodes   []*wireNode `json:"nodes"`
+}
+
+type wireNode struct {
+	Kind      NodeKind    `json:"kind"`
+	Target    string      `json:"target"`
+	Source    *wireExpr   `json:"source"`
+	Callee    string      `json:"callee"`
+	Args      []*wireExpr `json:"args"`
+	Guard     Guard       `json:"guard"`
+	Object    *wireExpr   `json:"object"`
+	Slot      string      `json:"slot"`
+	ErrorType string      `json:"errorType"`
+	Value     *wireExpr   `json:"value"`
+}
+
+type wireExpr struct {
+	Kind   ExprKind    `json:"kind"`
+	Var    string      `json:"var"`
+	Callee string      `json:"callee"`
+	Args   []*wireExpr `json:"args"`
+	Object *wireExpr   `json:"object"`
+	Slot   string      `json:"slot"`
+}
+
+func (w *wireFunc) toFunc(index int) (*Func, error) {
+	if w == nil {
+		return nil, fmt.Errorf("funcs[%d] is missing", index)
+	}
+	if w.Name == "" {
+		return nil, fmt.Errorf("funcs[%d] has no name", index)
+	}
+
+	fn := &Func{
+		Name:    w.Name,
+		Kind:    w.Kind,
+		Params:  w.Params,
+		Promise: w.Promise,
+		Nodes:   make([]Node, 0, len(w.Nodes)),
+	}
+	for i, wn := range w.Nodes {
+		if wn == nil {
+			return nil, fmt.Errorf("node %d of %s is missing", i, w.Name)
+		}
+		node, err := wn.toNode()
+		if err != nil {
+			return nil, fmt.Errorf("node %d of %s: %w", i, w.Name, err)
+		}
+		fn.Nodes = append(fn.Nodes, node)
+	}
+	return fn, nil
+}
+
+func (w *wireNode) toNode() (Node, error) {
+	switch w.Kind {
+	case NodeLet:
+		source, err := requireExpr(w.Source, "source")
+		if err != nil {
+			return nil, err
+		}
+		return &LetNode{Target: w.Target, Source: source}, nil
+	case NodeCall:
+		args, err := toExprs(w.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &CallNode{Target: w.Target, Callee: w.Callee, Args: args, Guard: w.Guard}, nil
+	case NodeSlotWrite:
+		object, err := requireExpr(w.Object, "written object")
+		if err != nil {
+			return nil, err
+		}
+		value, err := w.Value.toExpr()
+		if err != nil {
+			return nil, err
+		}
+		return &SlotWriteNode{Object: object, Slot: w.Slot, Value: value}, nil
+	case NodeThrow:
+		value, err := w.Value.toExpr()
+		if err != nil {
+			return nil, err
+		}
+		return &ThrowNode{ErrorType: w.ErrorType, Value: value}, nil
+	case NodeReturn:
+		value, err := requireExpr(w.Value, "returned value")
+		if err != nil {
+			return nil, err
+		}
+		return &ReturnNode{Value: value}, nil
+	case NodeBranch:
+		return &BranchNode{}, nil
+	case NodeOpaque:
+		return &OpaqueNode{}, nil
+	default:
+		return nil, fmt.Errorf("kind %q names no node", w.Kind)
+	}
+}
+
+// toExpr converts a decoded expression. A nil receiver is an operand the graph
+// left out, which requireExpr rejects wherever the shape needs one.
+func (w *wireExpr) toExpr() (Expr, error) {
+	if w == nil {
+		return nil, nil
+	}
+	switch w.Kind {
+	case ExprVar:
+		return &VarExpr{Var: w.Var}, nil
+	case ExprThis:
+		return &ThisExpr{}, nil
+	case ExprLit:
+		return &LitExpr{}, nil
+	case ExprCall:
+		args, err := toExprs(w.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &CallExpr{Callee: w.Callee, Args: args}, nil
+	case ExprSlot:
+		object, err := requireExpr(w.Object, "read object")
+		if err != nil {
+			return nil, err
+		}
+		return &SlotExpr{Object: object, Slot: w.Slot}, nil
+	case ExprProp:
+		object, err := requireExpr(w.Object, "read object")
+		if err != nil {
+			return nil, err
+		}
+		return &PropExpr{Object: object}, nil
+	case ExprAlloc:
+		args, err := toExprs(w.Args)
+		if err != nil {
+			return nil, err
+		}
+		return &AllocExpr{Args: args}, nil
+	default:
+		return nil, fmt.Errorf("kind %q names no expression", w.Kind)
+	}
+}
+
+// requireExpr converts an operand the shape cannot do without. what names the
+// operand's role in the error.
+func requireExpr(w *wireExpr, what string) (Expr, error) {
+	e, err := w.toExpr()
+	if err != nil {
+		return nil, err
+	}
+	if e == nil {
+		return nil, fmt.Errorf("the %s is missing", what)
+	}
+	return e, nil
+}
+
+// toExprs converts an argument list, where a missing entry is an error because
+// an argument's position is what the analysis reads it by.
+func toExprs(ws []*wireExpr) ([]Expr, error) {
+	if len(ws) == 0 {
+		return nil, nil
+	}
+	exprs := make([]Expr, 0, len(ws))
+	for i, w := range ws {
+		e, err := requireExpr(w, fmt.Sprintf("argument %d", i))
+		if err != nil {
+			return nil, err
+		}
+		exprs = append(exprs, e)
+	}
+	return exprs, nil
 }
