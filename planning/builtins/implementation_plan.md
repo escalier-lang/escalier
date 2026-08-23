@@ -363,11 +363,9 @@ it lazily on first scheme-prefixed import.
   `?flag1&flag2` shape for future flags (`?type-only`, `?lazy`,
   …). Unknown flags currently error per the taxonomy; the
   resolver factors flag recognition into a per-flag table so
-  future flags slot in without restructuring. **Note:** the
-  earlier `?nested` shape (bound under `<scheme>.<package>`) was
-  removed once it became clear the dep_graph's cycle detection
-  only matched canonical `<pkg>.<name>` binding keys; cross-stdlib
-  collisions can be addressed later via file-local renaming.
+  future flags slot in without restructuring. A cross-stdlib name
+  collision is addressed by file-local renaming rather than by an
+  alternate binding shape.
 
 ### 2.4 Single-class shortcut (FR5)
 
@@ -487,9 +485,8 @@ exported names).
 
 ### 3.2 Lowering rules
 
-- **Member access through a package binding** (`math.sin(x)`,
-  `std.math.sin(x)` under `?nested`) collapses to the underlying
-  declaration's `(package, name)`
+- **Member access through a package binding** — `math.sin(x)` —
+  collapses to the underlying declaration's `(package, name)`
   identity and lowers to that declaration's `@js` expression
   applied to the call's arguments. Binding shape is purely an
   Escalier-side concern; codegen never sees it.
@@ -621,8 +618,6 @@ data directory (§2.2a). User code is free of these constraints.
   - Namespace member: `math.sin(x)` → `Math.sin(x)`.
   - Single-class shortcut: `Array.isArray(xs)` →
     `Array.isArray(xs)`; `Date()` (construct) → `new Date()`.
-  - Binding-shape independence: the same call lowers identically
-    under `?local` and `?nested`.
   - The `parseInt`, `Symbol.iterator`, and package-private
     invisibility fixtures need hand-authored `std:number` /
     `std:iterator` stubs; they live with §7's stdlib bootstrap
@@ -701,9 +696,9 @@ parameterized by a per-importing-file active augmentation set?**
    merges only *within the same namespace* (mutates a shared
    `ObjectType.Elems`). Two `interface HTMLElementTagNameMap { … }`
    declarations in two different `.esc` packages produce two
-   **distinct, unrelated** type aliases today — under `?nested`
-   imports, `web.dom.HTMLElementTagNameMap["canvas"]` and
-   `web.canvas.HTMLElementTagNameMap["canvas"]` are separate types.
+   **distinct, unrelated** type aliases today, so
+   `dom.HTMLElementTagNameMap["canvas"]` and
+   `canvas.HTMLElementTagNameMap["canvas"]` are separate types.
 
 If we wanted the per-element-family split, §4.2 would need
 **new** machinery (not a reuse of interop's merge): a
@@ -2114,11 +2109,10 @@ Once M7.5 and M8 are both in, the same corpus runs green on the
 solver harness, which is the real proof that nothing ambient is
 left.
 
-**Carries-over from §2.** §2 landed three binding-shape fixtures
-under [fixtures/](../../fixtures/) (`stdlib_import_local`,
-`stdlib_import_nested`, `stdlib_import_single_class`). One §2.5
-fixture was deferred to this phase because it needs material
-that does not exist until §7:
+**Carries-over from §2.** §2 landed two binding-shape fixtures
+under [fixtures/](../../fixtures/): `stdlib_import_local` and
+`stdlib_import_single_class`. One §2.5 fixture was deferred to this
+phase because it needs material that does not exist until §7:
 
 - A **single-class shortcut fixture with non-class package exports**
   on the same binding. §2's `std:array` stub has only the class;
@@ -2447,18 +2441,18 @@ source location:
    whose package qualifies for the single-class shortcut (FR5),
    render as the capitalized class binding (`Array<number>`,
    `Date.now()`) — matching what the user would write.
-2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`.
+2. **Namespace member.** `?local` without the shortcut →
+   `math.Foo`.
 3. **Not imported.** Fully-qualified canonical name
    (`std:array.Array`) plus a "did you mean to
    `import "std:array"`?" hint pointing at the FR16 quick-fix.
 
-**Tie-breaking.** When multiple forms are simultaneously in
-scope — say the file has both `import "std:array"` and
-`import "std:array?nested"` — the renderer picks the shortest;
-ties break in the order 1 → 2 → 3 above. The rendering is
-per-diagnostic, not per-compilation, so the same type can render
-differently in two files.
+**Tie-breaking.** When more than one form is in scope, the renderer
+picks the shortest, and ties break in the order 1 → 2 → 3 above.
+While `?local` is the only binding shape the cases are already
+disjoint, so the rule is latent; it starts mattering when a second
+shape lands. The rendering is per-diagnostic, not per-compilation,
+so the same type can render differently in two files.
 
 Named imports from pseudo-packages are out of scope per Non-goals,
 so the renderer has no "bare name" case to handle.
@@ -2531,11 +2525,10 @@ Implementation:
   the data directory — users editing their stdlib copy see the
   index update without restarting the LSP. Same index serves
   §10.2a diagnostic suggestions and §10.4 `--explain-type` hints.
-- **Per-file binding-shape preference.** Default `?local`;
-  user-configurable. The quick-fix follows the file's existing
-  convention if any of its imports already pick a flag — e.g.
-  if every other import in the file uses `?nested`, the
-  quick-fix emits `?nested` too.
+- **Per-file binding-shape preference.** `?local` is the default
+  and the only shape today, so the quick-fix emits a bare
+  `import "std:*"`. Once a second shape exists, follow the file's
+  existing convention when its other imports already pick one.
 - **Name-collision suggestion ordering.** When the same name is
   exported by more than one pseudo-package (rare but possible
   for `Error` subclasses, etc.), the quick-fix offers each
@@ -2583,9 +2576,9 @@ already takes a filename; the resolver passes the resolved path
 through unchanged, and the solver's diagnostics carry those spans
 like any other.
 
-**Gate.** LSP quick-fix integration test green; renderer fixture
-per case (`?local` shortcut, `?local` non-shortcut, `?nested`,
-no-import) passes; parser still rejects `intrinsic`.
+**Gate.** LSP quick-fix integration test green; a renderer fixture
+per case — `?local` shortcut, `?local` non-shortcut, no import —
+passes; parser still rejects `intrinsic`.
 
 ---
 

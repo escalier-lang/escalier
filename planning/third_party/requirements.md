@@ -75,8 +75,8 @@ Out of scope (owned by the builtins workstream or other efforts):
 
 - The ambient `builtins.esc` file and the `std:*` / `web:*`
   pseudo-package layout.
-- URI-scheme imports (`import "std:math"`) and the `?local` /
-  `?nested` flag modifiers.
+- URI-scheme imports (`import "std:math"`) and the `?local` flag
+  modifier.
 - Cross-package augmentation via registry interfaces.
 - Prelude changes that swap lib-walking for `builtins.esc`.
 - Always-current API surface plus codegen polyfill insertion.

@@ -26,10 +26,9 @@ var stdlibSchemesSet = set.FromSlice(stdlibSchemes)
 // stdlibKnownFlags is the recognized set of binding-shape flags.
 // Per §2.3 the slot is extensible (future `?type-only`, `?lazy`, …); the
 // table-driven check means new entries slot in without restructuring.
-// `?local` is currently the only shape flag — historical `?nested` was
-// removed because the dep_graph cycle detection only matched canonical
-// `<scheme>.<pkg>.<name>` keys, defeating the point of an alternate
-// binding path for sources that mostly need flat `<pkg>.<name>` access.
+// `?local` is the only binding shape: an import binds the package under
+// the lowercased last URI segment, so a reference reads `<pkg>.<name>`.
+// dep_graph's cycle detection matches on that canonical key.
 var stdlibKnownFlags = set.FromSlice([]string{"local"})
 
 // isSchemePrefixedImport reports whether spec begins with one of the

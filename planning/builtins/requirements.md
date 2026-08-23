@@ -72,9 +72,7 @@ In scope:
   dispatch, `await`, iteration, …), and **named** when the file
   explicitly imports the package.
 - Per-import binding-shape flag (`?local`) governing how a
-  pseudo-package's namespace lands in the importing file. The
-  earlier `?nested` shape was removed; see [implementation_plan.md](implementation_plan.md)
-  §2.3 for context.
+  pseudo-package's namespace lands in the importing file.
 - The **single-class shortcut** for per-class packages: when the
   package's lowercased name matches a class declared in it, the
   `?local` binding *is* the class for member access, construction,
@@ -391,20 +389,14 @@ they are mutually exclusive and exactly one is in effect per import
     shortcut (FR5), the `?local` binding is the class name with its
     original capitalization (e.g. `Array`, `Date`), not the
     lowercase URI segment. The shortcut applies only under `?local`.
-- **`?nested`.** Bind under a scheme-named namespace with the
-  package as a sub-namespace. Multiple `?nested` imports from the
-  same scheme merge under disjoint sub-namespaces (one per package
-  URI). No collision risk.
-  - `import "std:math?nested"` → `std.math.sin(x)`
-  - `import "std:json?nested"` adds `std.json` alongside.
-
-**Combining `?local` and `?nested` on one URI is a compile error**;
-the resolver reports which flag pair is invalid.
+`?local` is the only binding shape. The flag slot is extensible, so
+a later flag carries its own compatibility rules; when two flags on
+one URI are mutually exclusive the resolver reports which pair is
+invalid.
 
 **Identifier hygiene.** Package names use underscores, matching
 the file naming convention (FR2): `import "std:typed_arrays"` binds
-as `typed_arrays`, `import "std:typed_arrays?nested"` binds as
-`std.typed_arrays`. For `std:*` and `web:*` pseudo-packages there
+as `typed_arrays`. For `std:*` and `web:*` pseudo-packages there
 is no `-` → `_` substitution because hyphens never appear in their
 URIs. (Third-party npm package names *can* contain hyphens and will
 need a `-` → `_` substitution when computing the binding name; that
@@ -412,8 +404,7 @@ substitution rule is part of the third-party workstream and is out
 of scope here.) Internal bookkeeping (tracking whether a given
 file's imports have already pulled in a package's declarations)
 uses the pseudo-package's full URI as the key — e.g. `web:fetch` —
-regardless of which binding-shape flag the import carried. This
-applies uniformly across `?local` and `?nested`.
+regardless of which binding-shape flag the import carried.
 
 The flag slot is extensible: future flags (e.g. `?type-only`,
 `?lazy`) compose with the binding-shape flags subject to their own
@@ -471,13 +462,6 @@ with other package exports — a collision should be rare in
 practice given the small surface of per-class packages, but the
 rule is "class statics win" so the shortcut behavior remains
 predictable.
-
-**Not applicable to `?nested`.** That binding shape does not use
-the capitalized shortcut form; it follows the URI-segment-based
-rules in FR4. `?nested` binds under `scheme.package`, so writes
-look like `std.array.Array.isArray(nums)` — the package and class
-names are both explicit. The shortcut adds no value there because
-the class is already directly nameable.
 
 ### FR6. Inter-package imports
 
@@ -1049,8 +1033,8 @@ file's scope and picks among:
    whose package qualifies for the single-class shortcut (FR5),
    render as the capitalized class binding — `Array<number>`,
    `Date.now()` — matching what the user would write.
-2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`.
+2. **Namespace member.** `?local` without the shortcut →
+   `math.Foo`.
 3. **Not imported.** Render as the fully-qualified canonical name
    (`std:array.Array`) and pair the diagnostic with a "did you mean
    to `import \"std:array\"`?" hint (see FR16).
@@ -1207,14 +1191,11 @@ omitted; they belong to the third-party workstream.
    namespace-binding semantics. Parse the `?flag` /
    `?flag1&flag2` suffix on the URI; strip it before path
    resolution; apply per-flag binding rules at scope-insertion
-   time. Initial flag set covers both binding shapes: `?local`
-   (no-op default) and `?nested`. Combining the two reports a
-   clear error.
+   time. The initial flag set is `?local`, the no-op default.
    - **Gate:** a placeholder `std:math` package with a stub
-     `math.PI = 3.14` imports and resolves end-to-end; a
-     two-fixture test confirms each flag binds correctly
-     (`?local` → `math.PI`, `?nested` → `std.math.PI`);
-     mutually-exclusive flag combos error.
+     `math.PI = 3.14` imports and resolves end-to-end; a fixture
+     confirms `?local` binds `math.PI`; an unrecognized flag
+     errors.
 3. **Single `web:dom` partition + inter-package imports.** Build
    the FR7 MVP: the entire DOM tree lives in `web:dom` with all
    its registries (`HTMLElementTagNameMap`,
@@ -1374,17 +1355,19 @@ diagnostic:
   where the scheme is valid but no package file exists. Message
   names the scheme, the requested package, and (if cheap) suggests
   near-spelling matches from the resolved stdlib package list.
-- **Invalid flag combination.** `?local` and `?nested` on the
-  same URI. Message names the specific pair and explains they
-  are mutually exclusive binding shapes.
+- **Invalid flag combination.** Two flags on one URI that the
+  per-flag table marks mutually exclusive. Message names the pair
+  and explains why they cannot combine. No such pair exists while
+  `?local` is the only binding shape; the diagnostic is specified
+  here for the flags that follow it.
 - **Unknown flag.** `?something` that is not a recognized flag.
   Message names the flag and lists the currently-recognized set.
 - **Named import from a pseudo-package URI.** `import { sin } from
   "std:math"` (named imports from pseudo-packages are out of scope
   for this
   workstream). Message explains that pseudo-package imports must
-  use a namespace form (`import "std:math"` or
-  `import "std:math?nested"`) and suggests the rewrite.
+  use the namespace form `import "std:math"` and suggests the
+  rewrite.
 
 Each diagnostic ties back to a span on the offending `import`
 statement, ideally pointing at the URI string literal (and within
@@ -1428,8 +1411,8 @@ Requirements:
 - **Resolver tests.** End-to-end resolution of `std:`, `web:`,
   `node:` (reserved → clear error) schemes; unknown scheme; known
   scheme + unknown package; `?flag` stripping before path lookup.
-- **Binding-shape tests** (per FR4). Fixture per shape (`?local`,
-  `?nested`), per single- and multi-package case.
+- **Binding-shape tests** (per FR4). `?local` fixtures for the
+  single- and multi-package cases.
 - **Closed-registry tests** (per FR7 MVP). Fixture where
   `web/dom.esc` declares `HTMLElementTagNameMap` with at least
   two entries (`canvas: HTMLCanvasElement`,
@@ -1473,9 +1456,9 @@ Requirements:
   deleted in the same PR rather than kept behind a flag (pre-1.0).
 - **Adaptive diagnostic rendering** (per FR15). Fixture per
   rendering case: `?local` with single-class shortcut → lowercase;
-  `?local` without shortcut → dotted; `?nested` →
-  scheme.package.name; no import → fully-qualified canonical
-  name plus "did you mean to import" hint.
+  `?local` without shortcut → dotted; no import →
+  fully-qualified canonical name plus "did you mean to import"
+  hint.
 - **Auto-import quick-fix** (per FR16). LSP-level integration
   test: unimported reference produces a diagnostic; quick-fix
   applies the namespace import and the resulting source compiles.
@@ -1566,7 +1549,8 @@ canvas does *not* leak the augmentation to A's importers. Simply
 importing a package never magically re-exports it.
 
 **Independent of the binding-shape flag.** Importing `web:canvas`
-under either `?local` or `?nested` adds canvas's contributions to
-that file's view of `HTMLElementTagNameMap`. The flag only affects
+adds canvas's contributions to that file's view of
+`HTMLElementTagNameMap` whatever flag the import carries. The flag
+only affects
 how canvas's *direct exports* land in the importing scope, not
 which augmentations are activated.
