@@ -20,6 +20,12 @@ func originsOf(t *testing.T, name string) *OriginMap {
 }
 
 func TestOriginJoin(t *testing.T) {
+	// Origin{} is the zero value, whose kind is originUnset. That is the bottom
+	// of the lattice, a name no definition has bound yet. Joining it with an
+	// origin yields that origin, which is what lets a definition the walk has
+	// not evaluated yet contribute nothing to the name it defines instead of
+	// pinning it at Unknown. The three origins above the bottom have
+	// package-level names, so only this one is written as a literal.
 	tests := map[string]struct {
 		left, right, want Origin
 	}{
