@@ -41,6 +41,47 @@ func TestInferDistinctParamLifetimes(t *testing.T) {
 	require.Equal(t, "fn <'a>(p: &'a mut {x: number}, q: &mut {y: number}) -> &'a mut {x: number}", values["f"])
 }
 
+// TestInferSharedParamLifetimeIsNamed covers the naming rule for a lifetime written at
+// two or more borrows. One name repeated across borrows is a constraint the caller has to
+// satisfy — the regions must be the same — so it is named even when it reaches no output.
+// A lifetime written once and reaching no output still elides, since it constrains nothing.
+func TestInferSharedParamLifetimeIsNamed(t *testing.T) {
+	tests := map[string]struct {
+		src     string
+		binding string
+		want    string
+	}{
+		// Two params sharing `'a` must be borrows of the same region, so the name survives
+		// even though neither reaches the return.
+		"TwoParamsShareOneLifetime": {
+			src:     `declare fn pair<'a>(x: &'a mut {x: number}, y: &'a mut {x: number}) -> undefined`,
+			binding: "pair",
+			want:    "fn <'a>(x: &'a mut {x: number}, y: &'a mut {x: number}) -> undefined",
+		},
+		// One param whose outer borrow and inner field borrow share `'a` ties the two
+		// regions together, so the name survives on a single parameter as well.
+		"OneParamRepeatsItsLifetime": {
+			src:     `declare fn nest<'a>(x: &'a mut {peer: &'a mut {x: number}}) -> undefined`,
+			binding: "nest",
+			want:    "fn <'a>(x: &'a mut {peer: &'a mut {x: number}}) -> undefined",
+		},
+		// A lifetime written at one borrow and reaching no output constrains nothing, so it
+		// still elides to a bare `&mut`. This is the case the rule above must not swallow.
+		"SingleBorrowStillElides": {
+			src:     `declare fn drop<'a>(x: &'a mut {x: number}) -> undefined`,
+			binding: "drop",
+			want:    "fn (x: &mut {x: number}) -> undefined",
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tc.src)
+			require.Empty(t, errs)
+			require.Equal(t, tc.want, values[tc.binding])
+		})
+	}
+}
+
 // Writing a field through an owned-mutable param checks. The write requirement's
 // fresh lifetime imposes no obligation, so an owned receiver satisfies it.
 func TestInferFieldWriteThroughBorrowParam(t *testing.T) {

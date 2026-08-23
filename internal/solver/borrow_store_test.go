@@ -52,8 +52,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: []string{"11:13-11:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -76,8 +76,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -100,8 +100,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: []string{"11:13-11:25: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -126,8 +126,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: []string{"13:14-13:15: use of moved value 'b'"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
@@ -151,8 +151,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
@@ -177,8 +177,8 @@ func TestCallStoreEdge(t *testing.T) {
 				`,
 				want: nil,
 				types: map[string]string{
-					"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-						"item: &mut {value: number}) -> undefined",
+					"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+						"item: &'a mut {value: number}) -> undefined",
 					"build": "fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
 				},
 			},
@@ -200,7 +200,7 @@ func TestCallStoreEdge(t *testing.T) {
 				`,
 				want: nil,
 				types: map[string]string{
-					"store": "fn (target: &mut {peer: &{value: number}}, item: &{value: number}) -> undefined",
+					"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
 					"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
 				},
 			},
@@ -226,8 +226,8 @@ func TestCallStoreEdge(t *testing.T) {
 				`,
 				want: []string{"11:22-11:28: cannot borrow 'b' as mutable more than once at a time"},
 				types: map[string]string{
-					"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-						"item: &mut {value: number}) -> undefined",
+					"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+						"item: &'a mut {value: number}) -> undefined",
 					"build": "fn (p: mut {value: number}, q: mut {value: number}) " +
 						"-> [&mut {value: number}, &mut {value: number}]",
 				},
@@ -250,8 +250,8 @@ func TestCallStoreEdge(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) " +
 					"-> &mut {value: number}",
 			},
@@ -293,7 +293,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"10:13-10:14: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut [&mut {value: number}], item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> [&mut {value: number}]",
 			},
 		},
@@ -317,7 +317,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			want: []string{"11:13-11:18: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"Box":   "<T> {new (value: T) -> Box<T>}",
-				"store": "fn (target: &mut {box: &mut Box<&mut {value: number}>}, item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {box: &mut Box<&'a mut {value: number}>}, item: &'a mut {value: number}) -> undefined",
 				"build": "fn <'a>(seeded: mut Box<&'a mut {value: number}>) -> &mut Box<&'a mut {value: number}>",
 			},
 		},
@@ -336,7 +336,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"8:13-8:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn <'a>(target: &mut Holder<'a>, item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -358,7 +358,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}}, item: &{inner: &mut {value: number}}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -386,8 +386,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 				"10:13-10:19: borrowed value 'b' does not live long enough to escape the function",
 			},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {other: number} | &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {other: number} | &'a mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> &mut {value: number} | &mut {other: number}",
 			},
 		},
@@ -408,7 +408,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}}, item: &{inner: &mut {value: number}}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -429,8 +429,8 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"10:13-10:20: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peers: &mut {[key: string]?: &mut {value: number}}}, " +
-					"item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peers: &mut {[key: string]?: &'a mut {value: number}}}, " +
+					"item: &'a mut {value: number}) -> undefined",
 				"build": "fn <'a>(seeded: mut {[key: string]?: &'a mut {value: number}}) " +
 					"-> &mut {[key: string]?: &'a mut {value: number}}",
 			},
@@ -453,7 +453,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			`,
 			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
-				"store": "fn (target: &mut {peer: &{value: number}}, item: &{value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
 				"build": "fn (p: {value: number}) -> &{value: number}",
 			},
 		},
@@ -511,6 +511,81 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	}
 }
 
+// TestMethodCallStoreEdge covers a store declared by a METHOD's signature. freezeClassBody
+// coalesces each member's signature into the class body, so the store is recorded only
+// because a lifetime written at two borrows survives that pass. A method whose signature
+// elided its lifetimes would leave the two sides of the store sharing nothing the recorder
+// can match.
+//
+// The receiver is not a store target here. memberValue strips the `self` param off the
+// signature it hands the call, so only a method's explicit parameters reach the recorder.
+func TestMethodCallStoreEdge(t *testing.T) {
+	const decls = `
+		class Store {
+			tag: number,
+			put<'a, 'b>(
+				self,
+				target: &'b mut {peer: &'a mut {value: number}},
+				item: &'a mut {value: number},
+			) -> undefined {
+				target.peer = item
+			},
+		}
+	`
+	storeTypes := map[string]string{
+		"Store": "{new (tag: number) -> Store}",
+	}
+	withTypes := func(build string) map[string]string {
+		out := map[string]string{"build": build}
+		for name, ty := range storeTypes {
+			out[name] = ty
+		}
+		return out
+	}
+
+	tests := map[string]struct {
+		src   string
+		want  []string
+		types map[string]string
+	}{
+		// The method call is the only thing that aliases a to b, so returning a.peer reports
+		// the escape it would report for the equivalent free function.
+		"MethodStoreEscapes": {
+			src: decls + `
+				fn build(s: Store, p: mut {value: number}) -> &mut {value: number} {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut p}
+					s.put(&mut a, &mut b)
+					return a.peer
+				}
+			`,
+			want:  []string{"17:13-17:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: withTypes("fn (s: Store, p: mut {value: number}) -> &mut {value: number}"),
+		},
+		// Dropping the call isolates its effect: with no edge from a to b, the same return
+		// reports nothing.
+		"NoMethodCallNoEdge": {
+			src: decls + `
+				fn build(s: Store, p: mut {value: number}) -> &mut {value: number} {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut p}
+					return a.peer
+				}
+			`,
+			want:  nil,
+			types: withTypes("fn (s: Store, p: mut {value: number}) -> &mut {value: number}"),
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.types, values)
+		})
+	}
+}
+
 // TestCallStoreEdgeNonStores covers the signatures that share a lifetime without declaring a
 // store, so the call records nothing and the locals it borrows stay free. Each pairs with a
 // case in TestCallStoreEdge that does record an edge on the same source shape.
@@ -537,7 +612,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"pair":  "fn (x: &mut {value: number}, y: &mut {value: number}) -> undefined",
+				"pair":  "fn <'a>(x: &'a mut {value: number}, y: &'a mut {value: number}) -> undefined",
 				"take":  "fn (x: mut {peer: &mut {value: number}}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> undefined",
 			},
@@ -559,7 +634,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"read":  "fn (target: &{peer: &mut {value: number}}, item: &mut {value: number}) -> undefined",
+				"read":  "fn <'a>(target: &{peer: &'a mut {value: number}}, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -584,7 +659,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn <'a, 'b>(target: &mut Holder<'a, 'b>, item: &mut {value: number}) -> undefined",
+				"store": "fn <'a, 'b>(target: &mut Holder<'a, 'b>, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
 			},
 		},
@@ -609,7 +684,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"store": "fn (target: &mut {deep: W<W<&mut {value: number}>>}, item: &mut {value: number}) -> undefined",
+				"store": "fn <'a>(target: &mut {deep: W<W<&'a mut {value: number}>>}, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> number",
 			},
 		},
@@ -630,7 +705,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"keep":  "fn (target: mut {peer: &mut {value: number}}, item: &mut {value: number}) -> undefined",
+				"keep":  "fn <'a>(target: mut {peer: &'a mut {value: number}}, item: &'a mut {value: number}) -> undefined",
 				"build": "fn (p: mut {value: number}) -> undefined",
 			},
 		},
