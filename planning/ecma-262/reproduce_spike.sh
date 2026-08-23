@@ -16,8 +16,9 @@
 # Toolchain the spike used. Install these first; the compiler builds without a
 # JDK or sbt.
 #   - JDK 17+, the spike used Temurin 21
-#   - an sbt 1.x launcher, which bootstraps the sbt 1.10.11 that ESMeta's
-#     project/build.properties pins
+#   - an sbt 1.x launcher, the spike used the one from
+#     github.com/sbt/sbt v1.10.7. Whichever launcher you install bootstraps
+#     the sbt 1.10.11 that ESMeta's project/build.properties pins.
 #   - git, curl
 #
 # Pinned revisions:
