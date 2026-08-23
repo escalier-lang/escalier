@@ -94,11 +94,13 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // under a complement changes the type rather than merely dropping a name, since `~(&'a T)`
 // rendered as `~(&T)` is the complement of any borrow of T rather than of the `'a` one.
 //
-// shared holds the param lifetimes written at two or more borrows. One name repeated
-// across borrows is a constraint the caller has to satisfy — the two regions must be the
-// same — so it is named even when it reaches no output. `fn f<'a>(x: &'a mut B, y: &'a
-// mut B)` renders its `'a` for that reason, while the single-borrow `fn f(x: &mut B)`
-// elides. negSeen is the running count the set is derived from.
+// shared holds the param lifetimes written twice or more. One name repeated is a constraint
+// the caller has to satisfy — the two regions must be the same — so it is named even when it
+// reaches no output. `fn f<'a>(x: &'a mut B, y: &'a mut B)` renders its `'a` for that reason,
+// while the single-write `fn f(x: &mut B)` elides. A write is any of the three positions
+// EnterType records: a borrow's lifetime slot and an alias or class reference's lifetime
+// argument, so `fn f<'a>(a: mut Holder<'a>, b: mut Holder<'a>)` counts too. negSeen is the
+// running count the set is derived from.
 type ltOccVisitor struct {
 	occ      map[*soltype.LifetimeVar]occPolarity
 	noElide  set.Set[*soltype.LifetimeVar]
