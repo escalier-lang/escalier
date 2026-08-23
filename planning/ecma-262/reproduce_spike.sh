@@ -21,7 +21,8 @@
 #   - git, curl
 #
 # Pinned revisions:
-#   - ESMeta      7d237fd1680f473e674320cc97932702d950fa98  (v0.7.3)
+#   - ESMeta      7d237fd1680f473e674320cc97932702d950fa98
+#                 one commit past the v0.7.3 tag on main
 #   - ECMA-262    84b38ad852ff426795fa29cebc06949027336c64  (tag es2025)
 #                 pinned transitively as ESMeta's `ecma262` submodule at the
 #                 ESMeta revision above, so `git submodule update --init` checks

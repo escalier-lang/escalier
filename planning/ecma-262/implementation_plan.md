@@ -34,7 +34,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | PR   | Work                                       | FRs        | Status | Depends on | Gate |
 | ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
 | §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
-| §2   | Toolchain scoping                          | NFR        | ✅      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — met, see [tools/spec-extract/README.md](../../tools/spec-extract/README.md) |
+| §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
 | §4.2 | Origin map                                 | FR2, FR4   | ⬜      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown |
@@ -306,13 +306,14 @@ from the normal Go build and CI.
 build ESMeta; a contributor building the compiler from the repo root
 never installs Java or sbt.
 
-**Outcome.** The gate is met. `tools/spec-extract/` holds the JVM pins and the
-vendored ESMeta source, and the root `mise.toml` is unchanged, so `mise ls` at
-the repo root lists no `java` and no `sbt`. ESMeta builds at the pinned
-revision on a JDK 21 in about 90 seconds and the resulting `bin/esmeta`
-assembly runs. The maintainer runbook is
-[tools/spec-extract/README.md](../../tools/spec-extract/README.md). Five
-findings shape the later phases.
+**Outcome.** Partial. `tools/spec-extract/` holds the JVM pins and the vendored
+ESMeta source, and the root `mise.toml` is unchanged, so `mise ls` at the repo
+root lists no `java` and no `sbt`. ESMeta builds at the pinned revision on a
+JDK 21 in about 90 seconds and the resulting `bin/esmeta` assembly runs. The
+maintainer runbook is
+[tools/spec-extract/README.md](../../tools/spec-extract/README.md). What is
+left is the `mise.lock` this section's Work list calls for; see the closing
+paragraph. Five findings shape the later phases.
 
 - **§3's entry point is an external sbt build that declares the vendored
   ESMeta as a source dependency.** A `build.sbt` in `tools/spec-extract/`
@@ -345,9 +346,11 @@ findings shape the later phases.
   entry carries `ignore = untracked` to keep that build output out of the
   parent repo's `git status`.
 
-`mise.lock` is not committed. Recording the per-asset checksums needs network
-access to mise's tool-metadata hosts, so it lands the next time a maintainer
-runs `mise install` in `tools/spec-extract/`. The README carries the command.
+`mise.lock` is not committed, which is what holds §2 at partial. Recording the
+per-asset checksums needs network access to mise's tool-metadata hosts, so it
+lands the next time a maintainer runs `mise install` in `tools/spec-extract/`.
+The README carries the command. §2 is done once that lockfile is committed and
+records a checksum per tool and platform.
 
 ## §3. Scala CFG→JSON serializer
 

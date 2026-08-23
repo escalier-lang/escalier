@@ -16,13 +16,17 @@ picks them up.
 
 | Component                | Revision                                             | Pinned by                           |
 | ------------------------ | ---------------------------------------------------- | ----------------------------------- |
-| ESMeta                   | `7d237fd1680f473e674320cc97932702d950fa98`, v0.7.3   | the `esmeta` submodule              |
+| ESMeta                   | `7d237fd1680f473e674320cc97932702d950fa98`           | the `esmeta` submodule              |
 | ECMA-262 spec            | `84b38ad852ff426795fa29cebc06949027336c64`, `es2025` | ESMeta's own `ecma262` submodule    |
 | sbt that compiles ESMeta | 1.10.11                                              | ESMeta's `project/build.properties` |
 | JDK and sbt launcher     | see `mise.toml`                                      | `mise.toml`                         |
 
 Pinning the ESMeta revision pins the spec revision with it, because ESMeta
-tracks ECMA-262 as a submodule of its own.
+tracks ECMA-262 as a submodule of its own. The pin sits one commit past
+ESMeta's `v0.7.3` tag, on `main`. That is the revision the §1 spike ran, so the
+control-flow-graph dumps committed under
+[planning/ecma-262/spike_evidence/](../../planning/ecma-262/spike_evidence/)
+describe the build this directory produces.
 
 ## Setup
 
@@ -63,8 +67,8 @@ tracks ECMA-262 as a submodule of its own.
    ESMETA_HOME=$PWD ./bin/esmeta build-cfg -build-cfg:log
    ```
 
-   The dumps land in `esmeta/logs/cfg/func/`. `ESMETA_HOME` is required; ESMeta
-   resolves its resource paths from it.
+   The dumps land in `logs/cfg/func/` under that directory. `ESMETA_HOME` is
+   required; ESMeta resolves its resource paths from it.
 
 Building writes `target/`, `lib_managed/`, `bin/esmeta`, and a
 `.scala.semanticdb` beside every source into the vendored tree. The submodule

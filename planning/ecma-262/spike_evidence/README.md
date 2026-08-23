@@ -8,8 +8,9 @@ ESMeta.
 Each file is the `logs/cfg/func/<name>.cfg` output of
 `esmeta build-cfg -build-cfg:log`, copied verbatim. Regenerate them with
 [../reproduce_spike.sh](../reproduce_spike.sh), which pins ESMeta
-`7d237fd1` (v0.7.3) and the ECMA-262 `es2025` revision `84b38ad`. On a spec
-bump, diff the fresh dumps against these to confirm the findings still hold.
+`7d237fd1`, one commit past the `v0.7.3` tag, and the ECMA-262 `es2025`
+revision `84b38ad`. On a spec bump, diff the fresh dumps against these to
+confirm the findings still hold.
 
 | File | Shape it demonstrates |
 | ---- | --------------------- |
