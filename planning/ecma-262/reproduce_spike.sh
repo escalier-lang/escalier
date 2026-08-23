@@ -7,14 +7,17 @@
 # Findings:  planning/ecma-262/spike_findings.md
 # Evidence:  planning/ecma-262/spike_evidence/  (the dumps this script regenerates)
 #
-# This is a one-time reproduction runbook, not part of the Go build or CI. §2
-# formalizes the JVM toolchain as a maintainer-only dependency under
-# tools/spec-extract/; until then this script documents the exact steps.
+# This is a one-time reproduction runbook, not part of the Go build or CI. It
+# clones ESMeta into a scratch workdir of its own, so it stays independent of
+# the vendored submodule. The maintained toolchain lives under
+# tools/spec-extract/ — pinned JDK and sbt, the vendored ESMeta source, and the
+# build steps are in tools/spec-extract/README.md.
 #
-# Toolchain the spike used (install these first; JDK and sbt are not otherwise
-# needed to build the compiler):
-#   - JDK 17+            (spike used Temurin 21)
-#   - sbt 1.10.x         (spike used the launcher from github.com/sbt/sbt v1.10.7)
+# Toolchain the spike used. Install these first; the compiler builds without a
+# JDK or sbt.
+#   - JDK 17+, the spike used Temurin 21
+#   - an sbt 1.x launcher, which bootstraps the sbt 1.10.11 that ESMeta's
+#     project/build.properties pins
 #   - git, curl
 #
 # Pinned revisions:

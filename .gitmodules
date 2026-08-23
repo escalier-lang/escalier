@@ -1,0 +1,5 @@
+[submodule "tools/spec-extract/esmeta"]
+	path = tools/spec-extract/esmeta
+	url = https://github.com/es-meta/esmeta.git
+	update = none
+	ignore = untracked

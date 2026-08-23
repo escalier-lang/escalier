@@ -18,7 +18,8 @@ below; neither narrows §8/§9 scope.
 
 ## Toolchain and pinned revisions
 
-Reproduced with the following, which §2 will pin exactly:
+Reproduced with the following. §2 pins this toolchain under
+[tools/spec-extract/](../../tools/spec-extract/).
 
 | Component      | Revision |
 | -------------- | -------- |
