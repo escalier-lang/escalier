@@ -396,6 +396,48 @@ func TestCallStoreEdgePositions(t *testing.T) {
 	}
 }
 
+// TestCallStoreEdgePayloadPositions covers the three payload positions that hold a borrow
+// without naming a field: an array element, a promise's resolved value, and a generator's
+// yield. Each stores at the container holding it, so the store lands at the tuple slot the
+// payload sits in and returning that tuple follows the edge.
+//
+// Every case also reports one constrain error unrelated to the store. `&mut a` over a tuple
+// literal whose element is a bare name does not read as a mutable tuple, which is a
+// pre-existing limitation of the deep-mut rule rather than anything the store recorder does.
+// The same shape with a borrow element, TestCallStoreEdgePositions/StoreIntoTupleElement,
+// reports only the escape.
+func TestCallStoreEdgePayloadPositions(t *testing.T) {
+	tests := map[string]struct {
+		payload  string
+		declared string
+	}{
+		"ArrayElement":   {payload: "Array<&'a mut {value: number}>", declared: "Array<&mut {value: number}>"},
+		"PromiseValue":   {payload: "Promise<&'a mut {value: number}>", declared: "Promise<&mut {value: number}>"},
+		"GeneratorYield": {payload: "Generator<&'a mut {value: number}, undefined, undefined>", declared: "Generator<&mut {value: number}, undefined, undefined>"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			src := fmt.Sprintf(`
+				declare fn store<'a, 'c>(
+					target: &'c mut [%s],
+					item: &'a mut {value: number},
+				) -> undefined
+				fn build(seeded: %s) -> [%s] {
+					val mut b = {value: 2}
+					val mut a = [seeded]
+					store(&mut a, &mut b)
+					return a
+				}
+			`, tc.payload, tc.declared, tc.declared)
+			_, _, errs := inferSource(t, src)
+			require.Equal(t, []string{
+				"9:12-9:18: cannot constrain immutable tuple <: mutable tuple",
+				"10:13-10:14: borrowed value 'b' does not live long enough to escape the function",
+			}, messagesWithSpan(errs))
+		})
+	}
+}
+
 // TestCallStoreEdgeNonStores covers the signatures that share a lifetime without declaring a
 // store, so the call records nothing and the locals it borrows stay free. Each pairs with a
 // case in TestCallStoreEdge that does record an edge on the same source shape.
