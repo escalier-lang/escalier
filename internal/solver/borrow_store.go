@@ -511,6 +511,14 @@ func (c *checker) recordCallStoreEdges(
 // An argument that builds its carrier inline, such as `&{held: &mut b}`, names no place and
 // so has no edges. It holds the borrows written into the carrier, which referents already
 // carries — storedReferents falls back to the same scan for a non-place argument.
+//
+// A carrier the graph cannot see through holds nothing as far as this can tell, so nothing is
+// reported. `val s = wrap(&mut b)` is the case: a borrow passed to a call is not recorded as
+// an edge to the call's result, so s reaches b through no edge. That is the same gap
+// `return s` has, and every other reader of the graph shares it — escapingLocalsOf answers
+// the same way. Reporting the argument's own root instead would close it at the cost of a
+// false positive on `val s = {held: &mut q}` for a parameter q, which carries nothing that
+// can dangle.
 func (c *checker) collectStoredLocals(arg ast.Expr, referents []liveness.VarID, out set.Set[liveness.VarID]) {
 	if p, isPlace := exprPlace(borrowOperand(arg)); isPlace && p.root > 0 {
 		c.collectBorrowedFrom(p.root, p.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)
