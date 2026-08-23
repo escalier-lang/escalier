@@ -452,6 +452,49 @@ or a mutation phrasing outside the FR1 vocabulary. Both force
 `classified: false` (§4.3), so FR5's heuristic fall-through handles the
 method rather than the analysis emitting a claim it cannot stand behind.
 
+**How the seed works, and why it is not inlining.** The seed entries are the
+fixpoint's base cases. The analysis never invents a mutation; it only carries
+existing ones up the call graph, so every position in a `MutArgs` set traces
+back either to a seed entry or to an FR3 `SlotWrite`. An entry's value is the
+*argument position that call site mutates*: `"Set":0` says a call to `Set`
+mutates whatever was passed as its argument 0. At each call the fixpoint looks
+up the callee's mutated positions, reads the argument expression sitting at
+each one, and asks the §4.2 origin map what that expression is **in the
+caller's terms**. `Array.prototype.push` calls `Set(O, %6, E, true)`, so
+position 0 selects `O`, whose origin is `ToObject(this)` — receiver — giving
+`MutatesReceiver`. The same entry yields a different answer elsewhere:
+`Array.prototype.slice` calls `Set(A, "length", …)` on its freshly allocated
+`A`, and a `Fresh` origin is ignored. Multi-parameter results need no special
+case, since `MutArgs` is a set of positions that unions as facts propagate: a
+helper writing both of its parameters accumulates `{0, 1}` from two separate
+`Set` calls, and its callers inherit both positions through the same lookup.
+
+The seed exists because these operations cannot be analyzed by descending into
+their bodies. `Set`'s body is a single dispatch, `O.Set(O, P, V, O)`, to the
+object's `[[Set]]` internal method — a callee chosen at runtime by the
+receiver's type, and in the CFG a field reference rather than a resolvable
+name. Inlining cannot follow it. Nor would inlining help further down: the
+ordinary path continues through `OrdinarySetWithOwnDescriptor`, which dispatches
+again on the prototype chain and can end in `Call(setter, …)`, arbitrary user
+code. The concrete writes it eventually performs land on property-descriptor
+records several dispatch layers below, phrased in ESMeta's internal object
+representation rather than as a mutation of `O`. Recognizing those would mean
+curating a larger and subtler artifact than the seed while still failing to
+cross the dispatch boundary.
+
+Treating `Set` as opaque with a known positional effect removes the problem
+instead of solving it: nothing above `Set` descends into it, so the dynamic
+dispatch is never reached. The claim "`Set(O, …)` mutates `O`" is also a
+deliberate over-approximation. A Proxy's `[[Set]]` trap may write elsewhere,
+but assuming the argument is mutated is the FR5-conservative direction — a
+wrong `&mut` fails loudly at a call site, a missed one is silent unsoundness.
+Composite mutators above the dispatch boundary stay derived rather than
+asserted: `Object.freeze` gets `MutArgs = {0}` from calling `SetIntegrityLevel`,
+which the fixpoint reads off that helper's own summary. `SetIntegrityLevel` is
+seeded for robustness, not necessity. Inlining reasoning belongs in review, not
+in the analysis: walking the ordinary-object path by hand is how the seed's
+argument positions are validated against the spec on a bump.
+
 `BackingStoreSlots` is the curated FR3 list: `[[MapData]]`,
 `[[SetData]]`, `[[ArrayBufferData]]`, `[[ArrayBufferByteLength]]`,
 `[[TypedArrayName]]`, `[[ViewedArrayBuffer]]`, `[[WeakRefTarget]]`, and
