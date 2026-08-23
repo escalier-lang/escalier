@@ -1542,7 +1542,7 @@ named by an `ExprVar`, resolve against the `abstract-op` functions only.
 `ExprCall` is reserved: the compiled IR states every call as its own node,
 so a call never appears nested inside an expression.
 
-**The schema above is the wire shape, not the Go model.** A node and an
+**The schema above is the serialized shape, not the Go model.** A node and an
 expression each serialize as one object tagged by `kind`, which is what the
 Scala serializer writes and what a reader has to decode. Tagging one struct
 with a kind is not how this repository models a tree with several node
@@ -1551,8 +1551,13 @@ such as `Slot` on a `let`. So
 [internal/ecma262/cfg.go](../../internal/ecma262/cfg.go) declares `Node` and
 `Expr` as sealed interfaces with one type per kind, the pattern
 [internal/ast/expr.go](../../internal/ast/expr.go) uses, and decodes the
-JSON through unexported wire structs that mirror the schema above. The wire
-format does not change, so §3 is untouched. Two operands are genuinely
+JSON through unexported structs that mirror the schema above and are read
+only while parsing. The serialized format does not change, so §3 is
+untouched. The serializer omits every field a kind does not carry, so a
+`branch` node is `{"kind":"branch"}` and nothing more. The reader holds it
+to that: a field appearing on a kind that does not use it is an error,
+which is what catches the schema moving a field rather than letting the
+reader take it for absent. Two operands are genuinely
 optional and the rest are required at decode time: a `Throw` carries no
 `Value` when it constructs its error, and 22 `SlotWrite` nodes carry none
 because the serializer could not name what they store. Those 22 are all

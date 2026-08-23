@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // CFG is a control-flow graph read back from cfg.json. It holds every builtin
@@ -220,22 +222,22 @@ func LoadCFG(path string) (*CFG, error) {
 // ParseCFG decodes a serialized control-flow graph and indexes its functions by
 // name. Anything the analysis cannot walk or address is an error here rather
 // than a silently dropped entry or a panic further in: a missing function,
-// node, or operand, an unnamed function, a tag that names no variant, and a
-// name repeated within one index.
+// node, or operand, an unnamed function, a tag that names no variant, a field
+// the tagged kind does not use, and a name repeated within one index.
 func ParseCFG(data []byte) (*CFG, error) {
-	var wire wireCFG
-	if err := json.Unmarshal(data, &wire); err != nil {
+	var decoded decodeCFG
+	if err := json.Unmarshal(data, &decoded); err != nil {
 		return nil, fmt.Errorf("decoding cfg: %w", err)
 	}
 
 	cfg := &CFG{
-		SpecTarget:  wire.SpecTarget,
-		Funcs:       make([]*Func, 0, len(wire.Funcs)),
+		SpecTarget:  decoded.SpecTarget,
+		Funcs:       make([]*Func, 0, len(decoded.Funcs)),
 		abstractOps: make(map[string]*Func),
 		builtins:    make(map[string]*Func),
 	}
-	for i, wf := range wire.Funcs {
-		fn, err := wf.toFunc(i)
+	for i, df := range decoded.Funcs {
+		fn, err := df.toFunc(i)
 		if err != nil {
 			return nil, fmt.Errorf("decoding cfg: %w", err)
 		}
@@ -273,165 +275,261 @@ func (c *CFG) Builtin(name string) *Func {
 	return c.builtins[name]
 }
 
-// The wire types mirror the serialized schema in Appendix A, where a node and
+// The decode types mirror the serialized schema in Appendix A, where a node and
 // an expression are each one object tagged by kind. encoding/json cannot pick a
-// variant of a sealed interface on its own, so decoding lands here first and
-// the conversions below rebuild the graph as the sum types above.
+// variant of a sealed interface on its own, so decoding lands here first and the
+// conversions below rebuild the graph as the sum types above. Nothing marshals
+// back, so these types are read only when a graph is parsed.
 
-type wireCFG struct {
-	SpecTarget string      `json:"specTarget"`
-	Funcs      []*wireFunc `json:"funcs"`
+type decodeCFG struct {
+	SpecTarget string        `json:"specTarget"`
+	Funcs      []*decodeFunc `json:"funcs"`
 }
 
-type wireFunc struct {
-	Name    string      `json:"name"`
-	Kind    FuncKind    `json:"kind"`
-	Params  []string    `json:"params"`
-	Promise bool        `json:"promise"`
-	Nodes   []*wireNode `json:"nodes"`
+type decodeFunc struct {
+	Name    string        `json:"name"`
+	Kind    FuncKind      `json:"kind"`
+	Params  []string      `json:"params"`
+	Promise bool          `json:"promise"`
+	Nodes   []*decodeNode `json:"nodes"`
 }
 
-type wireNode struct {
-	Kind      NodeKind    `json:"kind"`
-	Target    string      `json:"target"`
-	Source    *wireExpr   `json:"source"`
-	Callee    string      `json:"callee"`
-	Args      []*wireExpr `json:"args"`
-	Guard     Guard       `json:"guard"`
-	Object    *wireExpr   `json:"object"`
-	Slot      string      `json:"slot"`
-	ErrorType string      `json:"errorType"`
-	Value     *wireExpr   `json:"value"`
+type decodeNode struct {
+	Kind      NodeKind      `json:"kind"`
+	Target    string        `json:"target"`
+	Source    *decodeExpr   `json:"source"`
+	Callee    string        `json:"callee"`
+	Args      []*decodeExpr `json:"args"`
+	Guard     Guard         `json:"guard"`
+	Object    *decodeExpr   `json:"object"`
+	Slot      string        `json:"slot"`
+	ErrorType string        `json:"errorType"`
+	Value     *decodeExpr   `json:"value"`
 }
 
-type wireExpr struct {
-	Kind   ExprKind    `json:"kind"`
-	Var    string      `json:"var"`
-	Callee string      `json:"callee"`
-	Args   []*wireExpr `json:"args"`
-	Object *wireExpr   `json:"object"`
-	Slot   string      `json:"slot"`
+type decodeExpr struct {
+	Kind   ExprKind      `json:"kind"`
+	Var    string        `json:"var"`
+	Callee string        `json:"callee"`
+	Args   []*decodeExpr `json:"args"`
+	Object *decodeExpr   `json:"object"`
+	Slot   string        `json:"slot"`
 }
 
-func (w *wireFunc) toFunc(index int) (*Func, error) {
-	if w == nil {
+// field pairs a schema field name with whether the decoded object carries it.
+type field struct {
+	name string
+	set  bool
+}
+
+// checkFields rejects a field the kind does not use. One decode struct covers
+// every kind, so a field the schema moved to another kind would otherwise be
+// read as absent and the change would pass unnoticed. used names the fields the
+// kind does carry, and fields returns them in schema order so a given graph
+// always fails on the same one.
+func checkFields(shape string, fields []field, used ...string) error {
+	carried := set.FromSlice(used)
+	for _, f := range fields {
+		if f.set && !carried.Contains(f.name) {
+			return fmt.Errorf("%s carries %q", shape, f.name)
+		}
+	}
+	return nil
+}
+
+func (d *decodeNode) fields() []field {
+	return []field{
+		{"target", d.Target != ""},
+		{"source", d.Source != nil},
+		{"callee", d.Callee != ""},
+		{"args", d.Args != nil},
+		{"guard", d.Guard != ""},
+		{"object", d.Object != nil},
+		{"slot", d.Slot != ""},
+		{"errorType", d.ErrorType != ""},
+		{"value", d.Value != nil},
+	}
+}
+
+func (d *decodeNode) check(used ...string) error {
+	return checkFields(fmt.Sprintf("a %s node", d.Kind), d.fields(), used...)
+}
+
+func (d *decodeExpr) fields() []field {
+	return []field{
+		{"var", d.Var != ""},
+		{"callee", d.Callee != ""},
+		{"args", d.Args != nil},
+		{"object", d.Object != nil},
+		{"slot", d.Slot != ""},
+	}
+}
+
+func (d *decodeExpr) check(used ...string) error {
+	return checkFields(fmt.Sprintf("a %s expression", d.Kind), d.fields(), used...)
+}
+
+func (d *decodeFunc) toFunc(index int) (*Func, error) {
+	if d == nil {
 		return nil, fmt.Errorf("funcs[%d] is missing", index)
 	}
-	if w.Name == "" {
+	if d.Name == "" {
 		return nil, fmt.Errorf("funcs[%d] has no name", index)
 	}
 
 	fn := &Func{
-		Name:    w.Name,
-		Kind:    w.Kind,
-		Params:  w.Params,
-		Promise: w.Promise,
-		Nodes:   make([]Node, 0, len(w.Nodes)),
+		Name:    d.Name,
+		Kind:    d.Kind,
+		Params:  d.Params,
+		Promise: d.Promise,
+		Nodes:   make([]Node, 0, len(d.Nodes)),
 	}
-	for i, wn := range w.Nodes {
-		if wn == nil {
-			return nil, fmt.Errorf("node %d of %s is missing", i, w.Name)
+	for i, dn := range d.Nodes {
+		if dn == nil {
+			return nil, fmt.Errorf("node %d of %s is missing", i, d.Name)
 		}
-		node, err := wn.toNode()
+		node, err := dn.toNode()
 		if err != nil {
-			return nil, fmt.Errorf("node %d of %s: %w", i, w.Name, err)
+			return nil, fmt.Errorf("node %d of %s: %w", i, d.Name, err)
 		}
 		fn.Nodes = append(fn.Nodes, node)
 	}
 	return fn, nil
 }
 
-func (w *wireNode) toNode() (Node, error) {
-	switch w.Kind {
+func (d *decodeNode) toNode() (Node, error) {
+	switch d.Kind {
 	case NodeLet:
-		source, err := requireExpr(w.Source, "source")
+		if err := d.check("target", "source"); err != nil {
+			return nil, err
+		}
+		source, err := requireExpr(d.Source, "source")
 		if err != nil {
 			return nil, err
 		}
-		return &LetNode{Target: w.Target, Source: source}, nil
+		return &LetNode{Target: d.Target, Source: source}, nil
 	case NodeCall:
-		args, err := toExprs(w.Args)
+		if err := d.check("target", "callee", "args", "guard"); err != nil {
+			return nil, err
+		}
+		args, err := toExprs(d.Args)
 		if err != nil {
 			return nil, err
 		}
-		return &CallNode{Target: w.Target, Callee: w.Callee, Args: args, Guard: w.Guard}, nil
+		return &CallNode{Target: d.Target, Callee: d.Callee, Args: args, Guard: d.Guard}, nil
 	case NodeSlotWrite:
-		object, err := requireExpr(w.Object, "written object")
+		if err := d.check("object", "slot", "value"); err != nil {
+			return nil, err
+		}
+		object, err := requireExpr(d.Object, "written object")
 		if err != nil {
 			return nil, err
 		}
-		value, err := w.Value.toExpr()
+		value, err := d.Value.toExpr()
 		if err != nil {
 			return nil, err
 		}
-		return &SlotWriteNode{Object: object, Slot: w.Slot, Value: value}, nil
+		return &SlotWriteNode{Object: object, Slot: d.Slot, Value: value}, nil
 	case NodeThrow:
-		value, err := w.Value.toExpr()
+		if err := d.check("errorType", "value"); err != nil {
+			return nil, err
+		}
+		value, err := d.Value.toExpr()
 		if err != nil {
 			return nil, err
 		}
-		return &ThrowNode{ErrorType: w.ErrorType, Value: value}, nil
+		return &ThrowNode{ErrorType: d.ErrorType, Value: value}, nil
 	case NodeReturn:
-		value, err := requireExpr(w.Value, "returned value")
+		if err := d.check("value"); err != nil {
+			return nil, err
+		}
+		value, err := requireExpr(d.Value, "returned value")
 		if err != nil {
 			return nil, err
 		}
 		return &ReturnNode{Value: value}, nil
 	case NodeBranch:
+		if err := d.check(); err != nil {
+			return nil, err
+		}
 		return &BranchNode{}, nil
 	case NodeOpaque:
+		if err := d.check(); err != nil {
+			return nil, err
+		}
 		return &OpaqueNode{}, nil
 	default:
-		return nil, fmt.Errorf("kind %q names no node", w.Kind)
+		return nil, fmt.Errorf("kind %q names no node", d.Kind)
 	}
 }
 
 // toExpr converts a decoded expression. A nil receiver is an operand the graph
 // left out, which requireExpr rejects wherever the shape needs one.
-func (w *wireExpr) toExpr() (Expr, error) {
-	if w == nil {
+func (d *decodeExpr) toExpr() (Expr, error) {
+	if d == nil {
 		return nil, nil
 	}
-	switch w.Kind {
+	switch d.Kind {
 	case ExprVar:
-		return &VarExpr{Var: w.Var}, nil
+		if err := d.check("var"); err != nil {
+			return nil, err
+		}
+		return &VarExpr{Var: d.Var}, nil
 	case ExprThis:
+		if err := d.check(); err != nil {
+			return nil, err
+		}
 		return &ThisExpr{}, nil
 	case ExprLit:
+		if err := d.check(); err != nil {
+			return nil, err
+		}
 		return &LitExpr{}, nil
 	case ExprCall:
-		args, err := toExprs(w.Args)
+		if err := d.check("callee", "args"); err != nil {
+			return nil, err
+		}
+		args, err := toExprs(d.Args)
 		if err != nil {
 			return nil, err
 		}
-		return &CallExpr{Callee: w.Callee, Args: args}, nil
+		return &CallExpr{Callee: d.Callee, Args: args}, nil
 	case ExprSlot:
-		object, err := requireExpr(w.Object, "read object")
+		if err := d.check("object", "slot"); err != nil {
+			return nil, err
+		}
+		object, err := requireExpr(d.Object, "read object")
 		if err != nil {
 			return nil, err
 		}
-		return &SlotExpr{Object: object, Slot: w.Slot}, nil
+		return &SlotExpr{Object: object, Slot: d.Slot}, nil
 	case ExprProp:
-		object, err := requireExpr(w.Object, "read object")
+		if err := d.check("object"); err != nil {
+			return nil, err
+		}
+		object, err := requireExpr(d.Object, "read object")
 		if err != nil {
 			return nil, err
 		}
 		return &PropExpr{Object: object}, nil
 	case ExprAlloc:
-		args, err := toExprs(w.Args)
+		if err := d.check("args"); err != nil {
+			return nil, err
+		}
+		args, err := toExprs(d.Args)
 		if err != nil {
 			return nil, err
 		}
 		return &AllocExpr{Args: args}, nil
 	default:
-		return nil, fmt.Errorf("kind %q names no expression", w.Kind)
+		return nil, fmt.Errorf("kind %q names no expression", d.Kind)
 	}
 }
 
 // requireExpr converts an operand the shape cannot do without. what names the
 // operand's role in the error.
-func requireExpr(w *wireExpr, what string) (Expr, error) {
-	e, err := w.toExpr()
+func requireExpr(d *decodeExpr, what string) (Expr, error) {
+	e, err := d.toExpr()
 	if err != nil {
 		return nil, err
 	}
@@ -443,13 +541,13 @@ func requireExpr(w *wireExpr, what string) (Expr, error) {
 
 // toExprs converts an argument list, where a missing entry is an error because
 // an argument's position is what the analysis reads it by.
-func toExprs(ws []*wireExpr) ([]Expr, error) {
-	if len(ws) == 0 {
+func toExprs(ds []*decodeExpr) ([]Expr, error) {
+	if len(ds) == 0 {
 		return nil, nil
 	}
-	exprs := make([]Expr, 0, len(ws))
-	for i, w := range ws {
-		e, err := requireExpr(w, fmt.Sprintf("argument %d", i))
+	exprs := make([]Expr, 0, len(ds))
+	for i, d := range ds {
+		e, err := requireExpr(d, fmt.Sprintf("argument %d", i))
 		if err != nil {
 			return nil, err
 		}

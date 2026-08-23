@@ -99,6 +99,19 @@ func TestParseCFGRejects(t *testing.T) {
 				`"nodes":[{"kind":"call","callee":"Get","args":[{"kind":"this"},null]}]}]}`,
 			err: "decoding cfg: node 0 of ToObject: the argument 1 is missing",
 		},
+		// The serializer omits every field the kind does not carry, so a field
+		// on the wrong kind means the schema moved and the reader has to be
+		// taught the new shape.
+		"StrayNodeField": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"let","target":"O","source":{"kind":"this"},"slot":"MapData"}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: a let node carries "slot"`,
+		},
+		"StrayExprField": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"return","value":{"kind":"var","var":"O","args":[]}}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: a var expression carries "args"`,
+		},
 		"UnknownNodeTag": {
 			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
 				`"nodes":[{"kind":"assign"}]}]}`,
