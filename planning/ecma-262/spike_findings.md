@@ -31,8 +31,37 @@ Reproduced with the following, which §2 will pin exactly:
 `sbt assembly` produced `bin/esmeta` in ~2 minutes on 4 cores.
 `esmeta build-cfg -build-cfg:log` ran the full pipeline and dumped one
 `.cfg` text file per function to `logs/cfg/func/`. The run produced 2951
-functions total, of which 517 are builtin methods and statics named
-`INTRINSICS.<path>`.
+functions, covering the whole mechanized spec rather than the builtin library
+alone:
+
+| Category | Count | Example |
+| -------- | ----- | ------- |
+| Syntax-directed operations | 1746 | `AdditiveExpression[1,0].Evaluation` |
+| Abstract operations | 548 | `ToString`, `Call`, `SetIntegrityLevel` |
+| Builtin methods and statics | 501 | `INTRINSICS.Array.prototype.push` |
+| Internal methods | 107 | `Record[OrdinaryObject].Set` |
+| Abstract closures | 49 | `INTRINSICS.Promise.prototype.finally:clo0` |
+
+The categories partition the 2951. Closures are counted on their own row rather
+than under the algorithm that encloses them, so counting by the `INTRINSICS.`
+name prefix alone gives 517 — the 501 above plus the 16 closures defined inside
+a builtin algorithm. 517 is the builtin-surface figure used elsewhere in this
+document.
+
+The builtins are the target surface, but two other categories carry weight.
+The abstract operations are what the §4.1 fixpoint walks to resolve transitive
+mutation — `Object.freeze` reaches its write through `SetIntegrityLevel`, an
+abstract operation, not a builtin — so §3 must serialize the operations
+reachable from the builtin surface, not the 517 alone. The internal methods are
+the dispatch targets §4.1 deliberately does not enter: `[[Set]]` alone has five
+implementations, `Record[OrdinaryObject].Set`,
+`Record[ProxyExoticObject].Set`, `Record[TypedArray].Set`,
+`Record[ArgumentsExoticObject].Set`, and
+`Record[ModuleNamespaceExoticObject].Set`. Nothing in the CFG says which one a
+given `O.Set(…)` call selects, which is why the FR1 seed stops the fixpoint
+above them. The 1751 syntax-directed operations are the runtime semantics of
+the language itself, one function per grammar production and operation; they
+are out of scope for annotating a library surface, so §3 can skip them.
 
 [reproduce_spike.sh](reproduce_spike.sh) automates these steps end to end.
 The representative-method dumps this document reads from are committed under
