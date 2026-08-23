@@ -1,0 +1,23 @@
+# JVM toolchain for the ECMA-262 spec-extraction pipeline. It is scoped to this
+# directory and deliberately kept out of the root mise.toml that every
+# contributor and CI activates. Building the Escalier compiler needs neither
+# Java nor sbt.
+#
+# See README.md for the maintainer runbook.
+
+[tools]
+# ESMeta requires JDK 17 or later. The §1 feasibility spike ran on Temurin 21,
+# so this stays on the 21 LTS line.
+java = "temurin-21.0.12+8"
+
+# This pins the sbt launcher, not the sbt that compiles ESMeta. The vendored
+# submodule's project/build.properties sets sbt.version=1.10.11, and the
+# launcher downloads that version on first run, so the compiling sbt is pinned
+# by the ESMeta revision. mise resolves sbt through conda-forge, whose 1.10 line
+# stops at 1.10.2, so 1.10.11 is not a version mise can install.
+sbt = "1.10.2"
+
+[tasks.build-esmeta]
+description = "Build the vendored ESMeta assembly at esmeta/bin/esmeta"
+dir = "{{config_root}}/esmeta"
+run = "ESMETA_HOME=$PWD sbt assembly"

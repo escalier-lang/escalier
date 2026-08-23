@@ -34,7 +34,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | PR   | Work                                       | FRs        | Status | Depends on | Gate |
 | ---- | ------------------------------------------ | ---------- | ------ | ---------- | ---- |
 | §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
-| §2   | Toolchain scoping                          | NFR        | ⬜      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment |
+| §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ⬜      | §2         | `cfg.json` for the full `std:*` surface, pinned spec, round-trips a schema check |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
 | §4.2 | Origin map                                 | FR2, FR4   | ⬜      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown |
@@ -154,10 +154,12 @@ that would introduce new PRs:
   wholesale, §3 becomes the pure-Go `spec.html` shallow parser (§3
   alternatives), a materially larger §3 that also has to reconstruct the
   call graph and the `?`/`!` guards itself.
-- **§2 → §3 integration shape.** ESMeta ships no library artifact, so
-  whether the serializer is an ESMeta **phase** invoked via `bin/esmeta`
-  or an external program depending on a `sbt publishLocal` build is a
-  §2 finding that fixes §3's entry point.
+- **§2 → §3 integration shape.** ESMeta ships no library artifact, so §2
+  settles §3's entry point. It is an external sbt build in
+  `tools/spec-extract/` that declares the vendored ESMeta as a source
+  dependency, rather than an ESMeta **phase** invoked via `bin/esmeta` or a
+  program depending on a `sbt publishLocal` artifact. See the §2 outcome for
+  the evidence.
 - **Solver-side application (new, not yet a numbered phase).** §7
   integrates the facts into the interop-layer `interop.Classify` and
   removes the legacy `internal/checker/prelude.go` overrides. The active
@@ -303,6 +305,52 @@ from the normal Go build and CI.
 **Gate.** A maintainer can `cd tools/spec-extract && mise install` and
 build ESMeta; a contributor building the compiler from the repo root
 never installs Java or sbt.
+
+**Outcome.** Partial. `tools/spec-extract/` holds the JVM pins and the vendored
+ESMeta source, and the root `mise.toml` is unchanged, so `mise ls` at the repo
+root lists no `java` and no `sbt`. ESMeta builds at the pinned revision on a
+JDK 21 in about 90 seconds and the resulting `bin/esmeta` assembly runs. The
+maintainer runbook is
+[tools/spec-extract/README.md](../../tools/spec-extract/README.md). What is
+left is the `mise.lock` this section's Work list calls for; see the closing
+paragraph. Five findings shape the later phases.
+
+- **§3's entry point is an external sbt build that declares the vendored
+  ESMeta as a source dependency.** A `build.sbt` in `tools/spec-extract/`
+  naming `RootProject(file("esmeta"))` as a `dependsOn` target compiles Scala 3
+  sources that import `esmeta.cfg.CFG`. It needs neither `sbt publishLocal` nor
+  an edit to the vendored tree. That rules out the ESMeta-phase shape §3 named
+  as the alternative. Registering a phase means adding it to ESMeta's own
+  `ESMeta.scala` command list, a patch that would have to be rebased on every
+  spec bump. Pin the wrapper build's `project/build.properties` to sbt 1.10.11
+  to match ESMeta's, because sbt loads a source dependency under the outer
+  build's version.
+- **The spec revision needs no pin of its own.** ESMeta tracks ECMA-262 as its
+  own `ecma262` submodule, so checking out the pinned ESMeta revision checks
+  out the pinned spec with it. §3's `-extract:target` has nothing to add beyond
+  the submodule state.
+- **Only one of ESMeta's three submodules is needed.** ESMeta declares
+  `ecma262`, `tests/test262`, and `client`; `build.sbt` names `test262` only in
+  its test tasks and never names `client`, so the build needs `ecma262` alone.
+  The Escalier submodule entry carries `update = none` so a recursive clone of
+  Escalier skips ESMeta and the large trees hanging off it.
+- **The mise pin is the sbt launcher, not the sbt that compiles ESMeta.**
+  ESMeta's `project/build.properties` sets `sbt.version=1.10.11` and the
+  launcher downloads that version before it reads `build.sbt`. mise resolves
+  `sbt` through conda-forge, whose 1.10 line stops at 1.10.2, so 1.10.11 is not
+  a version mise can install. Pinning the launcher is enough, since the
+  compiling sbt is pinned by the vendored revision.
+- **Building in place leaves untracked files in the vendored tree.** ESMeta
+  sets `semanticdbEnabled := true`, which writes a `.scala.semanticdb` beside
+  every source, and ESMeta's `.gitignore` does not cover them. The submodule
+  entry carries `ignore = untracked` to keep that build output out of the
+  parent repo's `git status`.
+
+`mise.lock` is not committed, which is what holds §2 at partial. Recording the
+per-asset checksums needs network access to mise's tool-metadata hosts, so it
+lands the next time a maintainer runs `mise install` in `tools/spec-extract/`.
+The README carries the command. §2 is done once that lockfile is committed and
+records a checksum per tool and platform.
 
 ## §3. Scala CFG→JSON serializer
 

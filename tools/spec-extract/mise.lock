@@ -1,0 +1,7 @@
+[[tools.java]]
+version = "temurin-21.0.12+8.0.LTS"
+backend = "core:java"
+
+[[tools.sbt]]
+version = "1.10.2"
+backend = "asdf:sbt"

@@ -18,15 +18,17 @@ below; neither narrows §8/§9 scope.
 
 ## Toolchain and pinned revisions
 
-Reproduced with the following, which §2 will pin exactly:
+Reproduced with the following. §2 pins this toolchain under
+[tools/spec-extract/](../../tools/spec-extract/).
 
-| Component      | Revision |
-| -------------- | -------- |
-| ESMeta         | `7d237fd1680f473e674320cc97932702d950fa98` (v0.7.3) |
-| ECMA-262 spec  | `84b38ad852ff426795fa29cebc06949027336c64` (tag `es2025`, ESMeta's `ecma262` submodule) |
-| Scala          | 3.3.6 |
-| sbt            | 1.10.11 |
-| JDK            | Temurin 21 (ESMeta requires 17+) |
+| Component                | Revision |
+| ------------------------ | -------- |
+| ESMeta                   | `7d237fd1680f473e674320cc97932702d950fa98`, one commit past the `v0.7.3` tag on `main` |
+| ECMA-262 spec            | `84b38ad852ff426795fa29cebc06949027336c64` (tag `es2025`, ESMeta's `ecma262` submodule) |
+| Scala                    | 3.3.6 |
+| sbt that compiles ESMeta | 1.10.11, from ESMeta's `project/build.properties` |
+| sbt launcher             | 1.10.7 |
+| JDK                      | Temurin 21 (ESMeta requires 17+) |
 
 `sbt assembly` produced `bin/esmeta` in ~2 minutes on 4 cores.
 `esmeta build-cfg -build-cfg:log` ran the full pipeline and dumped one
