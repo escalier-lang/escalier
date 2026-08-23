@@ -52,9 +52,9 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 		fn      string
 		origins map[string]string
 	}{
-		// `Let O be ? ToObject(this value)` carries the receiver into O, which
-		// is what makes push come out as a receiver mutation once the fixpoint
-		// reads `Set(O, ...)`.
+		// `Let O be ? ToObject(this value)` carries the receiver into `O`. That
+		// is what makes push come out as a receiver mutation once §4.1 reads
+		// its `Set(O, ...)` call.
 		"ReceiverThroughToObject": {
 			fn: "Array.prototype.push",
 			origins: map[string]string{
@@ -65,7 +65,8 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 			},
 		},
 		// slice writes only into the array ArraySpeciesCreate handed it, so
-		// every write it performs lands on a Fresh value.
+		// every write it makes lands on a `Fresh` value and none of them
+		// reaches the receiver.
 		"AllocatorsAreFresh": {
 			fn: "Array.prototype.slice",
 			origins: map[string]string{
@@ -77,8 +78,9 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 		},
 		// A String method reaches its receiver through RequireObjectCoercible,
 		// which preserves identity, and then coerces it with ToString, which
-		// does not. S is a fresh primitive the algorithm never writes back
-		// through, so String.prototype methods come out non-mutating.
+		// does not. `S` is a fresh string the algorithm never writes back
+		// through, which is why `String.prototype` methods come out
+		// non-mutating.
 		"ValueCoercionsBreakTheChain": {
 			fn: "String.prototype.toLowerCase",
 			origins: map[string]string{
@@ -86,9 +88,9 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 				"S": "Unknown",
 			},
 		},
-		// A static has no receiver. `this` is the constructor object, so
-		// nothing here is Receiver and the mutated object is a real parameter
-		// position.
+		// A static has no receiver. Its `this` is the constructor object, so
+		// nothing here is `Receiver`, and the object assign writes into sits
+		// at a real parameter position.
 		"StaticHasNoReceiver": {
 			fn: "Object.assign",
 			origins: map[string]string{
@@ -109,8 +111,8 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 				"value": "Param(1)",
 			},
 		},
-		// An abstract operation has no receiver either, so an ExprThis inside
-		// one resolves to Unknown rather than to a value the caller owns.
+		// An abstract operation has no receiver either. An ExprThis inside one
+		// resolves to `Unknown` rather than to a value its caller owns.
 		"AbstractOperationHasNoReceiver": {
 			fn: "OrdinaryToPrimitive",
 			origins: map[string]string{
@@ -131,16 +133,18 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 }
 
 // A name bound on two branches takes the join of both definitions. In
-// Map.prototype.set, `p` is the entry for the key: on one branch it is read out
-// of the receiver's [[MapData]] list, and on the other it is a record the
-// algorithm allocates. The two disagree, so `p` collapses to Unknown and a
-// write to it is charged to nothing.
+// `Map.prototype.set`, `p` is the entry holding the key. One branch reads it
+// out of the receiver's [[MapData]] list and the other allocates it as a fresh
+// record. The two disagree, so `p` collapses to `Unknown`. §4.1 then reads a
+// write to `p` as a mutation it cannot attribute, which leaves the method
+// unclassified rather than claiming an effect it cannot place.
 func TestOriginMapJoinsBranches(t *testing.T) {
 	m := originsOf(t, "Map.prototype.set")
 	require.Equal(t, Unknown, m.Of("p"))
 }
 
-// A name the function never binds is Unknown, not the lattice bottom.
+// A name the function never binds reads back as `Unknown`, not as the lattice
+// bottom.
 func TestOriginMapUnboundName(t *testing.T) {
 	m := originsOf(t, "Array.prototype.push")
 	require.Equal(t, Unknown, m.Of("nosuchvalue"))
@@ -170,9 +174,10 @@ func TestOriginMapEval(t *testing.T) {
 
 // The walk repeats until nothing moves, so a name a loop's back edge redefines
 // takes the join of both definitions rather than whichever the serializer
-// emitted first. ForBodyEvaluation binds %4 from a literal ahead of the loop
-// and from a value read inside it. One walk in node order would leave %4 at
-// Fresh and hide any mutation of it.
+// emitted first. ForBodyEvaluation binds `%4` from a literal ahead of its loop
+// and from a value read inside it. A single walk in node order would leave `%4`
+// at `Fresh`, which tells §4.1 that a mutation of it is invisible to the
+// caller.
 func TestOriginMapReachesFixpointAcrossBackEdges(t *testing.T) {
 	m := originsOf(t, "ForBodyEvaluation")
 	require.Equal(t, Unknown, m.Of("%4"))
@@ -195,8 +200,13 @@ value: Param(1)
 `))
 }
 
-// Every function in the committed graph analyzes, and a declared parameter is
-// never shadowed into an origin the analysis invented.
+// Every function in the committed graph analyzes, and two invariants hold
+// across all of them. No name is left at the lattice bottom, so every name the
+// walk bound reached a definition it could evaluate. A declared parameter's own
+// name reads back as its own position or as `Unknown`. It can never read back
+// as an origin the walk invented, because the only other definitions of that
+// name are assignments the algorithm makes to it, and those join to
+// `Unknown`.
 func TestOriginMapCoversEveryFunction(t *testing.T) {
 	cfg := testCFG(t)
 
@@ -204,10 +214,10 @@ func TestOriginMapCoversEveryFunction(t *testing.T) {
 		m := NewOriginMap(fn)
 		require.Same(t, fn, m.Func())
 		for _, name := range m.Names() {
-			require.NotEqual(t, originUnset, m.Of(name).Kind, "%s: %s left unset", fn.Name, name)
-			if origin := m.Of(name); origin.Kind == OriginParam {
-				require.Less(t, origin.Index, len(fn.Params), "%s: %s", fn.Name, name)
-			}
+			require.NotEqual(t, originUnset, m.origins[name].Kind, "%s: %s left unset", fn.Name, name)
+		}
+		for i, param := range fn.Params {
+			require.Contains(t, []Origin{Param(i), Unknown}, m.Of(param), "%s: %s", fn.Name, param)
 		}
 	}
 }

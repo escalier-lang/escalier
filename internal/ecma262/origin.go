@@ -27,7 +27,7 @@ const (
 	// observable to the caller.
 	OriginFresh
 	// OriginUnknown is a value the analysis could not tie to any of the above.
-	// It is the top of the lattice: joining it with anything yields it.
+	// It is the top of the lattice, so joining it with anything yields it.
 	OriginUnknown
 )
 
@@ -67,10 +67,11 @@ func (o Origin) String() string {
 	}
 }
 
-// join is the least upper bound of two origins. Two definitions that agree
-// keep their origin and two that disagree collapse to OriginUnknown, which is
-// what makes the analysis path-insensitive: a name assigned on two branches
-// takes the join of both rather than the one the analysis walked last.
+// join is the least upper bound of two origins. Two definitions that agree keep
+// their origin. Two that disagree collapse to OriginUnknown. That collapse is
+// what makes the analysis path-insensitive. A name assigned on two branches
+// takes the join of both definitions rather than whichever one the walk
+// reached last.
 func (o Origin) join(other Origin) Origin {
 	switch {
 	case o.Kind == originUnset:
@@ -85,26 +86,25 @@ func (o Origin) join(other Origin) Origin {
 }
 
 // identityCoercions are the abstract operations that hand back the value they
-// were given, so an origin propagates through them. The list is deliberately
-// short and reviewed by hand, because calling an operation identity-preserving
-// when it builds a new value would attribute a mutation to the wrong place.
+// were given, so an origin propagates through them. The list is short and
+// reviewed by hand. Calling an operation identity-preserving when it builds a
+// new value would charge a mutation to the wrong place.
 //
-// ToObject is the entry that makes receiver tracking work: `Let O be ?
-// ToObject(this value)` keeps O at the receiver, which is how
-// Array.prototype.push comes out mutating. For a primitive receiver ToObject
-// wraps rather than returns, so this over-approximates. That is the safe
-// direction under FR5 — a mutation claimed where there is none fails loudly at
-// a call site, while a missed one is silent unsoundness.
+// ToObject is the entry that makes receiver tracking work. `Let O be ?
+// ToObject(this value)` keeps `O` at the receiver, which is how
+// `Array.prototype.push` comes out mutating. ToObject wraps a primitive
+// receiver rather than returning it, so the entry over-approximates. That is
+// the safe direction under FR5. A mutation claimed where there is none fails
+// loudly at a call site, while a missed one is silent unsoundness.
 //
-// CanonicalizeKeyedCollectionKey returns its key unchanged except that it
-// normalizes -0 to +0, which cannot apply to an object. Completion and
+// CanonicalizeKeyedCollectionKey returns its key unchanged apart from
+// normalizing -0 to +0, which cannot apply to an object. Completion and
 // NormalCompletion wrap a value in a completion record, and the serializer
-// drops the matching unwrap, so from a caller's side they pass the value
-// through.
+// drops the matching unwrap, so a caller sees the value they were handed.
 //
 // Coercions that build a new value are absent by design. ToString and ToNumber
-// break the chain, which is why every String.prototype method comes out
-// non-mutating: the algorithm coerces `this` to a fresh string and never writes
+// break the chain. That is why every `String.prototype` method comes out
+// non-mutating. The algorithm coerces `this` to a fresh string and never writes
 // back through the receiver.
 var identityCoercions = set.FromSlice([]string{
 	"CanonicalizeKeyedCollectionKey",
@@ -115,22 +115,22 @@ var identityCoercions = set.FromSlice([]string{
 })
 
 // allocators are the abstract operations that return a value they allocated.
-// Their result is Fresh, so a mutation of it is invisible to the caller and the
-// mutation fixpoint ignores it. Every entry must genuinely allocate: claiming
-// Fresh for an operation that can hand back a caller-visible object would hide
-// a real mutation.
+// Their result is `Fresh`, the one origin whose mutations the fixpoint
+// discards, because a write to a value the algorithm made itself is invisible
+// to its caller. Every entry must therefore genuinely allocate. Listing an
+// operation that can hand back a value the caller already holds would turn a
+// real mutation invisible.
 //
-// Two absences are deliberate. Construct runs a constructor chosen at runtime
-// and can return any object, including one of its arguments. ProxyCreate
-// allocates a proxy, but a write to that proxy reaches its target, so the
-// result is not independent of the argument.
+// Two absences follow from that. Construct runs a constructor chosen at runtime
+// and may return any object, including one of its arguments. ProxyCreate
+// allocates a proxy, but a write to that proxy reaches its target, so its
+// result is not independent of its argument. Both resolve to `Unknown` instead.
 //
-// The species entries — ArraySpeciesCreate, TypedArraySpeciesCreate and the
-// TypedArrayCreate* family — run a constructor the caller can replace and so
-// carry the same risk as Construct. §4.2 names ArraySpeciesCreate as an
-// allocator because Array.prototype.slice and its neighbours build their result
-// through it, and a value read back out of that result is a slot or property
-// read, which breaks the chain anyway.
+// ArraySpeciesCreate, TypedArraySpeciesCreate, and the TypedArrayCreate family
+// run a constructor the caller can replace, so they carry the same risk. §4.2
+// lists ArraySpeciesCreate anyway, because `Array.prototype.slice` and its
+// neighbours build their result through it. Reading a value back out of that
+// result is a slot or property access, which breaks the chain regardless.
 var allocators = set.FromSlice([]string{
 	// Ordinary objects and records.
 	"MakeBasicObject",
@@ -204,12 +204,12 @@ type OriginMap struct {
 // seed the map, and each Let and each Call result binding takes the join of
 // every definition of its name.
 //
-// The pass is path-insensitive: a branch is never interpreted, and the node
-// list is walked as a flat sequence. Walking it repeatedly until nothing moves
-// makes the result independent of the order the serializer emitted the nodes
-// in, so a name defined by a loop's back edge still reaches its uses. The
-// walk terminates because an origin only ever climbs the lattice, from unset to
-// an origin to Unknown.
+// The walk is path-insensitive. It never interprets a branch and reads the node
+// list as a flat sequence. Repeating the walk until nothing moves makes the
+// result independent of the order the serializer emitted the nodes in, so a
+// name a loop's back edge redefines still reaches its uses. The repetition
+// terminates because an origin only climbs the lattice, from unset to one
+// origin to `Unknown`.
 func NewOriginMap(fn *Func) *OriginMap {
 	m := &OriginMap{fn: fn, origins: make(map[string]Origin, len(fn.Params)+len(fn.Nodes))}
 	for {
@@ -249,8 +249,8 @@ func (m *OriginMap) Func() *Func {
 	return m.fn
 }
 
-// Of returns the origin of a value name. A name the analysis never bound is
-// Unknown.
+// Of returns the origin of a value name. A name the walk never bound is
+// `Unknown`.
 func (m *OriginMap) Of(name string) Origin {
 	return resolved(m.origins[name])
 }
@@ -261,9 +261,9 @@ func (m *OriginMap) Eval(e *Expr) Origin {
 	return resolved(m.eval(e))
 }
 
-// resolved turns the lattice bottom into Unknown. A name is still unset when
-// every definition of it evaluated to unset, which means the analysis learned
-// nothing about it.
+// resolved turns the lattice bottom into `Unknown`. A name reaches the end of
+// the walk unset when every definition of it evaluated to unset, which means
+// the walk learned nothing about it.
 func resolved(o Origin) Origin {
 	if o.Kind == originUnset {
 		return Unknown
@@ -271,9 +271,9 @@ func resolved(o Origin) Origin {
 	return o
 }
 
-// eval returns an expression's origin, keeping the lattice bottom so that a
-// name read before the walk reaches its definition contributes nothing rather
-// than pinning the reader at Unknown.
+// eval returns an expression's origin, keeping the lattice bottom rather than
+// resolving it. A name read before the walk reaches its definition then
+// contributes nothing to the reader instead of pinning it at `Unknown`.
 func (m *OriginMap) eval(e *Expr) Origin {
 	if e == nil {
 		return Unknown
@@ -295,7 +295,7 @@ func (m *OriginMap) eval(e *Expr) Origin {
 		return Fresh
 	case ExprSlot, ExprProp:
 		// A read, so the chain breaks here. The value read out of a container
-		// is a different object from the container.
+		// is a different object from the container itself.
 		return Unknown
 	default:
 		return Unknown
@@ -329,7 +329,8 @@ func (m *OriginMap) Names() []string {
 }
 
 // String renders the map as one `name: origin` line per name, sorted by name,
-// so a test can assert the whole map at once.
+// so a test can assert the whole map at once. Origin.String spells each origin,
+// so a parameter reads as `Param(0)`.
 func (m *OriginMap) String() string {
 	names := m.Names()
 

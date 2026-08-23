@@ -690,11 +690,11 @@ construction, not by accident.
 
 **Outcome.** Done. [internal/ecma262/](../../internal/ecma262/) holds the Go
 reader for `cfg.json`, mirroring Appendix A, and the origin map.
-`NewOriginMap(fn)` returns the origins of one function's value names;
+`NewOriginMap(fn)` returns the origins of one function's value names.
 `Eval(expr)` answers the same question for an expression, which is the call
-§4.1 makes to charge a mutation. All 1202 functions analyze in about 4 ms,
-binding 11663 names: 373 at the receiver, 2007 at a parameter, 2969 fresh, and
-6314 unknown. The gate is
+§4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
+functions analyze in about 4 ms, binding 11663 names. Of those, 373 are at the
+receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
@@ -704,7 +704,7 @@ binding 11663 names: 373 at the receiver, 2007 at a parameter, 2969 fresh, and
 - **One walk in node order is unsound, so the walk repeats until nothing
   moves.** A loop's back edge redefines a name after its uses, and a single
   walk records only the definition it reached first. `ForBodyEvaluation` binds
-  `%4` from a literal ahead of its loop and from a value read inside it: one
+  `%4` from a literal ahead of its loop and from a value read inside it. One
   walk leaves `%4` at `Fresh`, which would tell §4.1 that a mutation of it is
   invisible to the caller. Repeating the walk joins both definitions and gives
   `Unknown`. It changes 7 names across 4 functions, all of them loops, and
@@ -715,14 +715,14 @@ binding 11663 names: 373 at the receiver, 2007 at a parameter, 2969 fresh, and
   nearly every algorithm's return. The record it builds is fresh, but §3 drops
   the caller-side unwrap, so the value the caller receives is `v`. Reading the
   wrap as an allocation would resolve every method's return to `Fresh` and cost
-  §4.3 its `returnAlias`: `Map.prototype.set` ends in `return
-  NormalCompletion(M)`, and the receiver has to survive that.
+  §4.3 its `returnAlias`. `Map.prototype.set` ends in `return
+  NormalCompletion(M)`, and the receiver has to survive that wrap.
 - **`CanonicalizeKeyedCollectionKey` is identity-preserving and had to be
   listed.** It returns its key unchanged apart from normalizing `-0` to `+0`,
   which cannot apply to an object. `Map.prototype.set` rebinds `key` to its
-  result, so without the entry `key` joins `Param(0)` with `Unknown` and
-  collapses, which is exactly the parameter §8.1 needs to follow into the
-  `[[MapData]]` record.
+  result. Without the entry, `key` joins `Param(0)` with `Unknown` and
+  collapses, losing the parameter §8.1 has to follow into the `[[MapData]]`
+  record.
 - **`Construct` and `ProxyCreate` are deliberately not allocators.**
   `Fresh` is the one origin whose mutations the fixpoint discards, so an entry
   that can hand back a value the caller already holds turns a real mutation

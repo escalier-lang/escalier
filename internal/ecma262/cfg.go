@@ -1,8 +1,9 @@
-// Package ecma262 analyzes the ECMA-262 control-flow graph that
-// tools/spec-extract serializes to cfg.json and derives the mutation and
-// alias facts the builtin converter consumes. See
-// planning/ecma-262/implementation_plan.md §4 for the analysis and
-// Appendix A for the schema this file mirrors.
+// Package ecma262 reads the ECMA-262 control-flow graph that
+// tools/spec-extract serializes to cfg.json and derives the mutation and alias
+// facts the builtin converter consumes. cfg.go mirrors the serialized schema,
+// and origin.go maps each value an algorithm names to where that value came
+// from. See planning/ecma-262/implementation_plan.md §4 for the analysis and
+// Appendix A for the schema.
 package ecma262
 
 import (
@@ -11,8 +12,8 @@ import (
 	"os"
 )
 
-// CFG is a serialized control-flow graph: every builtin algorithm at a pinned
-// spec revision, plus the abstract operations reachable from them.
+// CFG is a serialized control-flow graph. It holds every builtin algorithm at a
+// pinned spec revision, plus the abstract operations reachable from them.
 type CFG struct {
 	SpecTarget string  `json:"specTarget"` // pinned ecma262 git ref
 	Funcs      []*Func `json:"funcs"`
@@ -22,7 +23,9 @@ type CFG struct {
 }
 
 // FuncKind distinguishes the four algorithm shapes the spec defines. Only a
-// BuiltinMethod has a receiver.
+// BuiltinMethod has a receiver. A SyntaxDirected operation is the runtime
+// semantics of the language rather than a library surface, so the serializer
+// drops it and ParseCFG rejects one that reaches it.
 type FuncKind string
 
 const (
@@ -124,8 +127,9 @@ func LoadCFG(path string) (*CFG, error) {
 	return ParseCFG(data)
 }
 
-// ParseCFG decodes a serialized control-flow graph and indexes its functions
-// by name.
+// ParseCFG decodes a serialized control-flow graph and indexes its functions by
+// name. A function whose kind the analysis cannot index, and a name repeated
+// within one index, are both errors rather than a silently dropped entry.
 func ParseCFG(data []byte) (*CFG, error) {
 	cfg := &CFG{}
 	if err := json.Unmarshal(data, cfg); err != nil {
@@ -134,25 +138,33 @@ func ParseCFG(data []byte) (*CFG, error) {
 	cfg.abstractOps = make(map[string]*Func)
 	cfg.builtins = make(map[string]*Func)
 	for _, fn := range cfg.Funcs {
-		if fn.Kind == AbstractOp {
-			cfg.abstractOps[fn.Name] = fn
-		} else {
-			cfg.builtins[fn.Name] = fn
+		var index map[string]*Func
+		switch fn.Kind {
+		case AbstractOp:
+			index = cfg.abstractOps
+		case BuiltinMethod, BuiltinStatic:
+			index = cfg.builtins
+		default:
+			return nil, fmt.Errorf("decoding cfg: %s has kind %q, which the analysis cannot index", fn.Name, fn.Kind)
 		}
+		if _, dup := index[fn.Name]; dup {
+			return nil, fmt.Errorf("decoding cfg: two %s functions named %s", fn.Kind, fn.Name)
+		}
+		index[fn.Name] = fn
 	}
 	return cfg, nil
 }
 
-// AbstractOp returns the abstract operation named name, or nil. A call's callee
-// and a closure named by an ExprVar both resolve here. Names live in two spaces
-// that a lookup must keep apart: `Set` is both the property-write abstract
-// operation and the `Set` constructor.
+// AbstractOp returns the abstract operation of that name, or nil. A call's
+// callee and a closure named by an ExprVar both resolve here. Names live in two
+// spaces that a lookup has to keep apart. `Set` is both the property-write
+// abstract operation and the `Set` constructor.
 func (c *CFG) AbstractOp(name string) *Func {
 	return c.abstractOps[name]
 }
 
-// Builtin returns the builtin method or static named by its canonical spec key,
-// such as "Array.prototype.push", or nil.
+// Builtin returns the builtin method or static of that canonical spec key, such
+// as "Array.prototype.push", or nil.
 func (c *CFG) Builtin(name string) *Func {
 	return c.builtins[name]
 }

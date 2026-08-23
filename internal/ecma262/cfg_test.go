@@ -57,8 +57,49 @@ func TestLookupKeepsNameSpacesApart(t *testing.T) {
 	require.Equal(t, []string{"items"}, push.Params)
 }
 
-func TestParseCFGRejectsMalformedJSON(t *testing.T) {
-	_, err := ParseCFG([]byte("{"))
-	require.Error(t, err)
-	require.Equal(t, "decoding cfg: unexpected end of JSON input", err.Error())
+func TestParseCFGRejects(t *testing.T) {
+	tests := map[string]struct {
+		json string
+		err  string
+	}{
+		"MalformedJSON": {
+			json: `{`,
+			err:  "decoding cfg: unexpected end of JSON input",
+		},
+		// The analysis indexes an abstract operation apart from a builtin and
+		// has nowhere to put anything else. Syntax-directed operations are the
+		// runtime semantics of the language rather than a library surface, so
+		// the serializer drops them.
+		"UnindexableKind": {
+			json: `{"specTarget":"abc","funcs":[{"name":"Evaluation","kind":"` +
+				string(SyntaxDirected) + `"}]}`,
+			err: `decoding cfg: Evaluation has kind "syntax-directed", which the analysis cannot index`,
+		},
+		"RepeatedName": {
+			json: `{"specTarget":"abc","funcs":[{"name":"Set","kind":"abstract-op"},{"name":"Set","kind":"abstract-op"}]}`,
+			err:  "decoding cfg: two abstract-op functions named Set",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseCFG([]byte(test.json))
+			require.Error(t, err)
+			require.Equal(t, test.err, err.Error())
+		})
+	}
+}
+
+// One name can name both an abstract operation and a builtin. `Set` is the
+// property-write operation and the `Set` constructor, and the two indexes keep
+// them apart.
+func TestParseCFGIndexesBothNameSpaces(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op"},` +
+			`{"name":"Set","kind":"builtin-static"}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, AbstractOp, cfg.AbstractOp("Set").Kind)
+	require.Equal(t, BuiltinStatic, cfg.Builtin("Set").Kind)
 }
