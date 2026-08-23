@@ -78,6 +78,15 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// methodSelfParams maps a member-access node to the `self` receiver of the method it
+	// reads. memberValue hands the call site a signature with its receiver stripped, since
+	// `p.m` binds the receiver and returns a function of the remaining parameters, so a rule
+	// that needs the receiver's type reads it from here instead. The borrow-store recorder is
+	// the one reader: a signature that stores an argument into the receiver spells it by
+	// sharing a lifetime with the receiver's type. It holds an entry only for a method with a
+	// receiver and a single signature.
+	methodSelfParams map[ast.Node]*soltype.FuncParam
+
 	// declLifetimes maps each lifetime name the enclosing declaration binds to the variable
 	// its parameter carries. A class and a type alias both quantify lifetimes, and a
 	// signature nested in either may write `&'a` with no clause of its own, so inferFunc and

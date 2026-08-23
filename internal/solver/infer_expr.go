@@ -1512,14 +1512,40 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		// extra arguments that have no corresponding parameter.
 		if hasConsumeRef {
 			c.consumeCallArgs(e, fn, consumeRef)
-			// A borrow argument the signature stores into another argument aliases the two
-			// for as long as the target lives, so record that edge here rather than leaving
-			// the alias invisible to the escape check and the component move.
-			c.recordCallStoreEdges(e, fn, consumeRef)
+			// A borrow argument the signature stores into another argument, or into a
+			// method's receiver, aliases the two for as long as the target lives. Record that
+			// edge here rather than leaving the alias invisible to the escape check and the
+			// component move.
+			recv, self := c.calleeReceiver(e.Callee)
+			c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
 		}
 	}
 	c.recordType(e, res)
 	return res
+}
+
+// calleeReceiver returns the receiver a method call is made through and the `self` parameter
+// the method declares, or nil for a plain call. memberValue strips the receiver off the
+// signature it hands the call site and records it against the member-access node, so the
+// declared receiver is read back from there rather than from the callee's type.
+//
+// Both spellings of a member access reach a method: `h.put` and the bracket form `h["put"]`,
+// which resolveIndexPath routes through the same member lookup for a constant string key.
+func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam) {
+	var object ast.Expr
+	switch callee := callee.(type) {
+	case *ast.MemberExpr:
+		object = callee.Object
+	case *ast.IndexExpr:
+		object = callee.Object
+	default:
+		return nil, nil
+	}
+	self, ok := c.methodSelfParams[callee]
+	if !ok {
+		return nil, nil
+	}
+	return object, self
 }
 
 // consumeCallArgs consumes each owned argument passed to a bare owned parameter of
