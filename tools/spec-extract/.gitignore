@@ -1,0 +1,7 @@
+# sbt build output for the wrapper build. The vendored ESMeta tree keeps its own
+# build output out of `git status` through the `ignore = untracked` setting on
+# its submodule entry in .gitmodules.
+target/
+project/target/
+project/project/
+lib_managed/

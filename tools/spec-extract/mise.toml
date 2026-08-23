@@ -21,3 +21,13 @@ sbt = "1.10.2"
 description = "Build the vendored ESMeta assembly at esmeta/bin/esmeta"
 dir = "{{config_root}}/esmeta"
 run = "ESMETA_HOME=$PWD sbt assembly"
+
+[tasks.serialize-cfg]
+description = "Regenerate cfg.json from the pinned ECMA-262 revision"
+dir = "{{config_root}}"
+run = "sbt run"
+
+[tasks.format]
+description = "Format the serializer sources"
+dir = "{{config_root}}"
+run = "sbt scalafmtAll scalafmtSbt"
