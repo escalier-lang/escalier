@@ -78,13 +78,14 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
-	// classLifetimes maps each lifetime name the enclosing class binds to the variable its
-	// parameter carries. A member signature may write `&'a` with no clause of its own, so
-	// inferFunc seeds the member's own named-lifetime scope from this and
-	// checkLifetimeDeclarations reads the names as declared. It is nil outside a class body,
-	// and a member never writes into it: inferFunc copies before minting, so a member's own
-	// `'z` stays out of the class's scope and out of a sibling member's.
-	classLifetimes map[string]*soltype.LifetimeVar
+	// declLifetimes maps each lifetime name the enclosing declaration binds to the variable
+	// its parameter carries. A class and a type alias both quantify lifetimes, and a
+	// signature nested in either may write `&'a` with no clause of its own, so inferFunc and
+	// resolveFuncTypeAnn seed the nested scope from this and checkLifetimeDeclarations reads
+	// the names as declared. It is nil outside such a body, and a nested signature never
+	// writes into it: both readers copy before minting, so a name one mints stays out of the
+	// declaration's scope and out of a sibling signature's.
+	declLifetimes map[string]*soltype.LifetimeVar
 
 	// classNamespace is the dep_graph namespace of the class declaration currently
 	// being inferred, empty at the root namespace and outside any class body.

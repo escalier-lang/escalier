@@ -24,7 +24,7 @@ import (
 // so a nested function is judged only by its own clause.
 //
 // A lifetime an enclosing class binds is in scope with no clause of this signature's own, and
-// c.classLifetimes holds those names. A class member writing the class's `'a` is the case
+// c.declLifetimes holds those names. A class member writing the class's `'a` is the case
 // that needs it.
 //
 // Recovery is left to namedLifetime, which mints a fresh lifetime for an undeclared name
@@ -88,7 +88,7 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 		// is declared even though the member binds nothing. It marks no binder of this
 		// signature used, since a member that rebinds the name lands in the declared map
 		// above instead.
-		if _, ok := c.classLifetimes[u.Name]; ok {
+		if _, ok := c.declLifetimes[u.Name]; ok {
 			continue
 		}
 		c.report(&UndeclaredLifetimeError{

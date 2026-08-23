@@ -61,9 +61,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// of its own. It holds the declared parameters and nothing else: the shell's map is
 	// written only by resolveClassLifetimeParams, and every reader below copies before
 	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
-	savedClassLts := c.classLifetimes
-	c.classLifetimes = shell.namedLts
-	defer func() { c.classLifetimes = savedClassLts }()
+	savedClassLts := c.declLifetimes
+	c.declLifetimes = shell.namedLts
+	defer func() { c.declLifetimes = savedClassLts }()
 
 	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
 	// class parameter while a name the body mints stays out of the shell's map. A class is
@@ -351,18 +351,36 @@ func (c *checker) resolveClassParams(scope *Scope, lvl int, decl *ast.ClassDecl,
 func (c *checker) classLifetimeScope(
 	decl *ast.ClassDecl, params []*soltype.LifetimeParam,
 ) map[string]*soltype.LifetimeVar {
-	out := make(map[string]*soltype.LifetimeVar, len(params))
 	first := map[string]*ast.LifetimeParam{}
-	for i, p := range decl.LifetimeParams {
-		if i >= len(params) {
-			break
-		}
+	for _, p := range decl.LifetimeParams {
 		if kept, seen := first[p.Name]; seen {
 			c.report(&DuplicateLifetimeParamError{Name: p.Name, Param: p, First: kept})
 			continue
 		}
 		first[p.Name] = p
-		out[p.Name] = params[i].Var
+	}
+	return declaredLifetimeScope(decl.LifetimeParams, params)
+}
+
+// declaredLifetimeScope maps each name a declaration's `<…>` clause binds to the variable its
+// parameter carries, keeping the first binder when a name is bound twice. A class and a type
+// alias both build their nested-signature scope from it.
+//
+// It reads the declared parameters rather than the map resolveLifetimeParams minted into,
+// since a bound clause such as `<'a: 'b>` interns 'b there too and 'b binds nothing a
+// reference can supply.
+func declaredLifetimeScope(
+	written []*ast.LifetimeParam, resolved []*soltype.LifetimeParam,
+) map[string]*soltype.LifetimeVar {
+	out := make(map[string]*soltype.LifetimeVar, len(resolved))
+	for i, p := range written {
+		if i >= len(resolved) {
+			break
+		}
+		if _, seen := out[p.Name]; seen {
+			continue
+		}
+		out[p.Name] = resolved[i].Var
 	}
 	return out
 }
@@ -426,10 +444,10 @@ func qualifyClassName(ns string, decl *ast.ClassDecl) string {
 // out of a sibling signature's. It is nil outside a class body, where a signature starts from
 // nothing.
 func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
-	if len(c.classLifetimes) == 0 {
+	if len(c.declLifetimes) == 0 {
 		return nil
 	}
-	out := maps.Clone(c.classLifetimes)
+	out := maps.Clone(c.declLifetimes)
 	for _, p := range own {
 		delete(out, p.Name)
 	}
@@ -679,7 +697,7 @@ func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
 		declaredOrder = append(declaredOrder, p.Name)
 	}
 	for _, u := range append(col.uses, col.refArgs...) {
-		if _, ok := c.classLifetimes[u.Name]; ok {
+		if _, ok := c.declLifetimes[u.Name]; ok {
 			continue
 		}
 		c.report(&UndeclaredLifetimeError{
