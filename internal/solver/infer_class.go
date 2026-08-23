@@ -113,7 +113,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// resolves through the pre-declared sibling signature — self-recursive, mutually
 	// recursive, or a forward call to a member declared later.
 	ctors := c.collectConstructors(decl)
-	c.checkFieldLifetimes(decl)
+	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(declScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(declScope, lvl, decl, self, body, static)
 	// A mutually recursive method group with no annotated return cannot ground its own
@@ -315,36 +315,56 @@ func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*S
 		return sh.declScope, sh
 	}
 	sh := &classShell{declScope: scope, paramsClean: true}
+	c.resolveClassParams(scope, lvl, decl, sh)
+	return sh.declScope, sh
+}
+
+// resolveClassParams fills sh with the class's parameters of both sorts, resolved under one
+// named-lifetime scope of the class's own. Isolating the scope keeps one class's `'a`
+// independent of a sibling's, and the scope is kept so inferClassDecl can install it around
+// the body and have every `&'a` there share one variable.
+//
+// The type parameters resolve first, inside that scope, so a bound written `<'a, T: &'a X>`
+// reaches the same variable the `'a` parameter carries rather than minting one of its own.
+// preBindAlias orders the two the same way.
+func (c *checker) resolveClassParams(scope *Scope, lvl int, decl *ast.ClassDecl, sh *classShell) {
+	saved := c.namedLifetimes
+	c.namedLifetimes = nil
+	defer func() { c.namedLifetimes = saved }()
+
+	sh.declScope = scope
 	if len(decl.TypeParams) > 0 {
 		sh.declScope = scope.Child()
 		sh.typeParams = c.resolveTypeParams(sh.declScope, lvl, decl.TypeParams)
 	}
-	sh.lifetimeParams, sh.namedLts = c.resolveClassLifetimeParams(lvl, decl)
-	return sh.declScope, sh
+	sh.lifetimeParams = c.resolveLifetimeParams(lvl, decl.LifetimeParams)
+	sh.namedLts = c.classLifetimeScope(decl, sh.lifetimeParams)
 }
 
-// resolveClassLifetimeParams mints the class's `<'a, ...>` parameters in a named-lifetime
-// scope of their own and returns both, mirroring what preBindAlias does for an alias.
-// Isolating the scope keeps one class's `'a` independent of a sibling's, and handing it back
-// lets inferClassDecl install it around the body so every `&'a` there shares one variable.
-func (c *checker) resolveClassLifetimeParams(
-	lvl int, decl *ast.ClassDecl,
-) ([]*soltype.LifetimeParam, map[string]*soltype.LifetimeVar) {
-	saved := c.namedLifetimes
-	c.namedLifetimes = nil
-	defer func() { c.namedLifetimes = saved }()
-	params := c.resolveLifetimeParams(lvl, decl.LifetimeParams)
-	// Build the scope from the declared parameters rather than handing back the map
-	// resolveLifetimeParams minted into. A bound clause such as `<'a: 'b>` interns 'b there
-	// too, but 'b binds nothing a reference can supply, so a member writing it is undeclared
-	// and must not reach a variable through this scope.
-	scope := make(map[string]*soltype.LifetimeVar, len(params))
+// classLifetimeScope maps each name the class's `<…>` clause binds to the variable its
+// parameter carries. It is built from the declared parameters rather than from the map
+// resolveLifetimeParams minted into, since a bound clause such as `<'a: 'b>` interns 'b there
+// too and 'b binds nothing a reference can supply.
+//
+// A name bound twice binds nothing new, so the repeat is reported and the first binder's
+// variable is kept, matching what checkLifetimeDeclarations does for a signature.
+func (c *checker) classLifetimeScope(
+	decl *ast.ClassDecl, params []*soltype.LifetimeParam,
+) map[string]*soltype.LifetimeVar {
+	out := make(map[string]*soltype.LifetimeVar, len(params))
+	first := map[string]*ast.LifetimeParam{}
 	for i, p := range decl.LifetimeParams {
-		if i < len(params) {
-			scope[p.Name] = params[i].Var
+		if i >= len(params) {
+			break
 		}
+		if kept, seen := first[p.Name]; seen {
+			c.report(&DuplicateLifetimeParamError{Name: p.Name, Param: p, First: kept})
+			continue
+		}
+		first[p.Name] = p
+		out[p.Name] = params[i].Var
 	}
-	return params, scope
+	return out
 }
 
 // classParamsClean reports whether the module pre-pass resolved this class's type parameters
@@ -372,27 +392,17 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	defer func() { c.classNamespace = prevNS }()
 
 	quiet := c.errorWindow()
-	declScope := scope
-	var typeParams []*soltype.TypeParam
-	if len(decl.TypeParams) > 0 {
-		declScope = scope.Child()
-		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
-	}
-	lifetimeParams, namedLts := c.resolveClassLifetimeParams(lvl, decl)
+	sh := &classShell{}
+	c.resolveClassParams(scope, lvl, decl, sh)
+	sh.paramsClean = quiet()
 	if c.classShells == nil {
 		c.classShells = map[*ast.ClassDecl]*classShell{}
 	}
-	c.classShells[decl] = &classShell{
-		declScope:      declScope,
-		typeParams:     typeParams,
-		lifetimeParams: lifetimeParams,
-		namedLts:       namedLts,
-		paramsClean:    quiet(),
-	}
+	c.classShells[decl] = sh
 
 	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
-		def.TypeParams = typeParams
-		def.LifetimeParams = lifetimeParams
+		def.TypeParams = sh.typeParams
+		def.LifetimeParams = sh.lifetimeParams
 	}
 }
 
@@ -634,14 +644,20 @@ func (c *checker) collectConstructors(decl *ast.ClassDecl) []*ast.ConstructorEle
 	return ctors
 }
 
-// checkFieldLifetimes reports a named lifetime a field annotation writes that the class's
-// `<…>` clause does not bind. A member signature is checked by checkLifetimeDeclarations,
-// which scans a signature's parameters and return and so never reaches a field.
+// checkClassBodyLifetimes reports a named lifetime the class writes outside a member
+// signature that its `<…>` clause does not bind. Three places carry one: a field's
+// annotation, and the `extends` and `implements` references. A member signature is checked by
+// checkLifetimeDeclarations, which scans a signature's parameters and return and so reaches
+// none of the three.
 //
 // Without this a field's `&'z` interns 'z through namedLifetime, and two fields writing it
 // would share a lifetime the class quantifies but no reference can supply — the class value
 // would render a binder over an argument its instances do not carry.
-func (c *checker) checkFieldLifetimes(decl *ast.ClassDecl) {
+//
+// A lifetime argument on a type reference counts here, unlike in a signature's scan. There a
+// reference recovers an undeclared argument on its own and reporting it would double up; a
+// class body has no other check to double up with.
+func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
 	var col lifetimeUseCollector
 	for _, elem := range decl.Body {
 		field, isField := elem.(*ast.FieldElem)
@@ -650,12 +666,19 @@ func (c *checker) checkFieldLifetimes(decl *ast.ClassDecl) {
 		}
 		field.Type.Accept(&col)
 	}
+	if decl.Extends != nil {
+		decl.Extends.Accept(&col)
+	}
+	for _, impl := range decl.Implements {
+		impl.Accept(&col)
+	}
+
 	hasClause := len(decl.LifetimeParams) > 0
 	declaredOrder := make([]string, 0, len(decl.LifetimeParams))
 	for _, p := range decl.LifetimeParams {
 		declaredOrder = append(declaredOrder, p.Name)
 	}
-	for _, u := range col.uses {
+	for _, u := range append(col.uses, col.refArgs...) {
 		if _, ok := c.classLifetimes[u.Name]; ok {
 			continue
 		}
