@@ -157,49 +157,82 @@ func TestCallStoreEdge(t *testing.T) {
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
 		},
-		// A store whose target is a parameter escapes at once rather than recording an edge:
-		// the parameter's referent belongs to the caller and outlives the frame, so a borrow
-		// of a local written into it dangles. This is the call-site twin of the field store
-		// `p.peer = &mut b`, which checkParamFieldStoreEscape reports the same way.
-		"StoreIntoParameterTargetEscapes": {
-			src: `
-				declare fn store<'a, 'b, 'c>(
-					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-					item: &'a mut {value: number},
-				) -> undefined
+		// DISABLED until #1262. `p` is an owned parameter, so it was moved into build and the
+		// caller holds no path to it. Nothing escapes, and the store should record an edge the
+		// way it does into a local. The check reports an escape because it asks only whether
+		// the root is a parameter, without separating a borrow parameter from an owned one.
+		// #1262 explains why narrowing that test has to land with the exclusivity pass in #794.
+		/*
+			"StoreIntoOwnedParameterTargetRecordsAnEdge": {
+				src: `
+					declare fn store<'a, 'b, 'c>(
+						target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+						item: &'a mut {value: number},
+					) -> undefined
 
-				fn build(p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
-					val mut b = {value: 2}
-					store(&mut p, &mut b)
-				}
-			`,
-			want: []string{"9:20-9:26: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{
-				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &mut {value: number}) -> undefined",
-				"build": "fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+					fn build(p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
+						val mut b = {value: 2}
+						store(&mut p, &mut b)
+					}
+				`,
+				want: nil,
+				types: map[string]string{
+					"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+						"item: &mut {value: number}) -> undefined",
+					"build": "fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+				},
 			},
-		},
-		// An auto-borrowed place stored into a parameter escapes too. The argument names no
-		// borrow expression, so the local it carries is the place's own root rather than
-		// anything the escape post-pass would find by scanning the argument.
-		"AutoBorrowedArgumentIntoParameterEscapes": {
-			src: `
-				declare fn store<'a, 'c>(
-					target: &'c mut {peer: &'a {value: number}},
-					item: &'a {value: number},
-				) -> undefined
-				fn build(p: mut {peer: &{value: number}}) -> undefined {
-					val b = {value: 2}
-					store(&mut p, b)
-				}
-			`,
-			want: []string{"8:20-8:21: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{
-				"store": "fn (target: &mut {peer: &{value: number}}, item: &{value: number}) -> undefined",
-				"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
+		*/
+		// DISABLED until #1262. The auto-borrowed form of the case above. The argument names no
+		// borrow expression, so the local it carries is the place's own root, but the target is
+		// still an owned parameter and still nothing the caller can reach.
+		/*
+			"AutoBorrowedArgumentIntoOwnedParameterRecordsAnEdge": {
+				src: `
+					declare fn store<'a, 'c>(
+						target: &'c mut {peer: &'a {value: number}},
+						item: &'a {value: number},
+					) -> undefined
+					fn build(p: mut {peer: &{value: number}}) -> undefined {
+						val b = {value: 2}
+						store(&mut p, b)
+					}
+				`,
+				want: nil,
+				types: map[string]string{
+					"store": "fn (target: &mut {peer: &{value: number}}, item: &{value: number}) -> undefined",
+					"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
+				},
 			},
-		},
+		*/
+		// DISABLED until #1263. The store aliases a.peer to b, so the returned tuple hands the
+		// caller two mutable paths to one object. That is the shape a GC'd target makes unsafe,
+		// and nothing reports it. The wording and span below are a guess at what the
+		// exclusivity pass in #794 will produce; confirm both when re-enabling.
+		/*
+			"TwoMutablePathsEscape": {
+				src: `
+					declare fn store<'a, 'b, 'c>(
+						target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+						item: &'a mut {value: number},
+					) -> undefined
+
+					fn build(p: mut {value: number}, q: mut {value: number}) -> [&mut {value: number}, &mut {value: number}] {
+						val mut b = {value: 2}
+						val mut a = {peer: &mut p, spare: &mut q}
+						store(&mut a, &mut b)
+						return [a.peer, &mut b]
+					}
+				`,
+				want: []string{"11:22-11:28: cannot borrow 'b' as mutable more than once at a time"},
+				types: map[string]string{
+					"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+						"item: &mut {value: number}) -> undefined",
+					"build": "fn (p: mut {value: number}, q: mut {value: number}) " +
+						"-> [&mut {value: number}, &mut {value: number}]",
+				},
+			},
+		*/
 		// Storing a borrow of a parameter records no edge: a parameter's lifetime is the
 		// caller's and already outlives the frame, so it is not a local that can dangle.
 		"StoredParamBorrowIsExempt": {
@@ -616,6 +649,10 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 // its field paths number 2^depth. Without the budget the walk enumerates all of them and the
 // call takes minutes; with it the walk stops early, and the store at the chain's leaf is
 // still found because the first path to reach it does so within budget.
+//
+// The observable is the escape the store reports into an owned parameter target. #1262 will
+// stop reporting that, correctly, so this test needs a different observable when it lands.
+// A borrow parameter target keeps reporting and is the likely replacement.
 func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	const depth = 16
 	var b strings.Builder
@@ -652,6 +689,10 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 // The borrow sits deeper in the chain than the fuel reaches, so the exact field path is
 // unknown; recording no store would drop the escape that borrow raises. The store lands at
 // the whole target instead, which every field read through it follows.
+//
+// The observable is the escape the store reports into an owned parameter target. #1262 will
+// stop reporting that, correctly, so this test needs a different observable when it lands.
+// A borrow parameter target keeps reporting and is the likely replacement.
 func TestCallStoreEdgeCutWalkStaysSound(t *testing.T) {
 	// One alias per level, each naming the next, with the borrow past maxAliasExpansionDepth.
 	depth := maxAliasExpansionDepth * 2
