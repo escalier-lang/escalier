@@ -128,6 +128,35 @@ different answer for the same program.
 A class instance is exact when the class is `final`; a non-`final` class may have
 subclass instances, so its instance type stays inexact.
 
+### `sealed` classes
+
+Not implemented; see [#842](https://github.com/escalier-lang/escalier/issues/842).
+
+A `sealed` class sits between `final` and the open default. It may be subclassed
+inside the module that declares it, and an `extends` from a module that imports
+it is an error.
+
+`final` and `sealed` close different things, and the two axes are orthogonal.
+
+- `final` closes the instance **width**. There are no subclasses, so an instance
+  has exactly the declared members and the instance type is exact.
+- `sealed` closes the **set of alternatives**. A sealed base still has
+  subclasses, so a base-typed value may carry members the base does not declare,
+  and its instance type stays inexact. What is closed is the set of classes such
+  a value can be at runtime.
+
+Closing the alternatives is what makes a `match` over the hierarchy exhaustive.
+The checker can enumerate every permitted subclass and discriminate with
+`instanceof`, the same strategy it uses for enums. That buys the one thing
+neither existing option does: a shared base carrying fields and methods, with a
+closed set of leaves.
+
+So reach for an enum when the cases are independent shapes, and for a sealed
+class when they share inherited behavior.
+
+Escalier's `sealed` is not C#'s. C# spells `final` as `sealed` and forbids
+subclassing outright, which is the opposite of the concept here.
+
 ## Enums
 
 Enums are variant types with their own namespace. An enum name binds both a type
