@@ -37,7 +37,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
-| §4.2 | Origin map                                 | FR2, FR4   | ⬜      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown |
+| §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
 | §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
@@ -646,13 +646,16 @@ type Origin struct { Kind OriginKind; Index int }
 // receiver is never a Param, so there is no receiver offset.
 
 func OriginMap(F) map[string]Origin:
-    origin = {}
-    for i, p in F.Params: origin[p] = Param(i)       // declared params only; no receiver
-    for node in F.Nodes:
-        if node.Kind == Let:   origin[node.Target] = eval(F, node.Source)
-        if node.Kind == Call && node.Target != "":
-                               origin[node.Target] = evalCall(F, node)
-    return origin
+    origin = {}                                      // unset = lattice bottom
+    repeat until nothing moves:                      // a name defined by a loop's
+        for i, p in F.Params:                        // back edge reaches its uses
+            origin[p] = origin[p] ⊔ Param(i)         // declared params only; no receiver
+        for node in F.Nodes:
+            if node.Kind == Let:
+                origin[node.Target] ⊔= eval(F, node.Source)
+            if node.Kind == Call && node.Target != "":
+                origin[node.Target] ⊔= evalCall(F, node)
+    return origin                                    // a still-unset name reads back Unknown
 
 func eval(F, e Expr) Origin:
     switch e.Kind:
@@ -674,13 +677,17 @@ func evalCall(F, c) Origin:
     return Unknown                                    // Get, ToString, ToNumber, ... → read/fresh
 ```
 
-`IdentityCoercions` is the key list for receiver tracking: `ToObject`
-and `RequireObjectCoercible` return the same object, so `O ← ?
-ToObject(this value)` keeps `O` at `Param(0)`. Coercions that build a
-new value — `ToString`, `ToNumber` — are *not* identity-preserving,
-which is exactly why every `String.prototype` method comes out
-non-mutating: the algorithm coerces `this` to a fresh string primitive
-and never writes back to `Param(0)`.
+`IdentityCoercions` is the key list for receiver tracking. `ToObject`
+and `RequireObjectCoercible` return the object they were given, so `O ← ?
+ToObject(this value)` keeps `O` at the receiver. `ToObject` preserves
+identity only for an object argument. Given a primitive it allocates a
+wrapper, and the analysis propagates the receiver through it anyway. That
+approximation runs in the FR5-conservative direction, since a mutation
+claimed where there is none fails loudly at a call site while a missed one
+is silent unsoundness. Coercions that build a new value — `ToString`,
+`ToNumber` — are *not* identity-preserving, which is exactly why every
+`String.prototype` method comes out non-mutating: the algorithm coerces
+`this` to a fresh string primitive and never writes back to the receiver.
 
 **The analysis is deliberately path-insensitive.** It does not model
 control flow: `NodeBranch` is not interpreted, and the node list is
@@ -697,6 +704,86 @@ reachability or per-path joins, the serializer (§3) can emit that
 structure and this section becomes flow-sensitive. Until then the schema
 omits it (Appendix A) and the guarantees here are path-insensitive by
 construction, not by accident.
+
+**Outcome.** Done. [internal/ecma262/](../../internal/ecma262/) holds the Go
+reader for `cfg.json`, mirroring Appendix A, and the origin map.
+`NewOriginMap(fn)` returns the origins of one function's value names.
+`Eval(expr)` answers the same question for an expression, which is the call
+§4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
+functions analyze in about 4 ms, binding 11663 names. Of those, 373 are at the
+receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
+[internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
+`Let O be ? ToObject(this value)` puts `O` at the receiver in
+`Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
+`Array.prototype.slice`, and `? ToString(O)` puts `S` at `Unknown` in
+`String.prototype.toLowerCase`. Four findings.
+
+- **One walk in node order is unsound, so the walk repeats until nothing
+  moves.** A loop's back edge redefines a name after its uses, and a single
+  walk records only the definition it reached first. `ForBodyEvaluation` binds
+  `%4` from a literal ahead of its loop and from a value read inside it. One
+  walk leaves `%4` at `Fresh`, which would tell §4.1 that a mutation of it is
+  invisible to the caller. Repeating the walk joins both definitions and gives
+  `Unknown`. It changes 7 names across 4 functions, all of them loops, and
+  costs at most three passes over any function in the graph.
+- **Completion wrapping preserves the value, so `NormalCompletion` joins the
+  identity list.** ESMeta compiles a normal return as
+  `NormalCompletion(v)`, which is 1204 of the graph's call nodes and stands on
+  nearly every algorithm's return. The record it builds is fresh, but §3 drops
+  the caller-side unwrap, so the value the caller receives is `v`. Reading the
+  wrap as an allocation would resolve every method's return to `Fresh` and cost
+  §4.3 its `returnAlias`. `Map.prototype.set` ends in `return
+  NormalCompletion(M)`, and the receiver has to survive that wrap.
+- **`CanonicalizeKeyedCollectionKey` is identity-preserving and had to be
+  listed.** It returns its key unchanged apart from normalizing `-0` to `+0`,
+  which cannot apply to an object. `Map.prototype.set` rebinds `key` to its
+  result. Without the entry, `key` joins `Param(0)` with `Unknown` and
+  collapses, losing the parameter §8.1 has to follow into the `[[MapData]]`
+  record.
+- **`Construct` and `ProxyCreate` are deliberately not allocators.**
+  `Fresh` is the one origin whose mutations the fixpoint discards, so an entry
+  that can hand back a value the caller already holds turns a real mutation
+  invisible. `Construct` runs a constructor chosen at runtime and may return
+  one of its arguments, and a write to a proxy reaches its target. Both resolve
+  to `Unknown` instead. `ArraySpeciesCreate` and the typed-array species
+  operations carry the same risk and are listed anyway, as §4.2 specifies,
+  because `Array.prototype.slice` and its neighbours build their result through
+  them.
+
+`Node` and `Expr` are sealed interfaces with one type per kind rather than
+one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
+models the compiler's own trees. Appendix A describes what that means for the
+schema, which is unchanged.
+
+`freshPrimitives` names the coercions that build a new primitive from their
+argument, `ToString` and `ToNumber` among them, plus the numeric type
+operations of §6.1.6. Their result is `Fresh` for the same reason an
+allocation is, and with none of the risk, since a primitive cannot be
+mutated and so an entry there can never hide a write. The list exists mostly
+to be read: `Let S be ? ToString(O)` resolving away from the receiver is a
+decision, not an omission from `allocators`. It moves no mutation site at
+all, receiver attribution included, because a coerced primitive never
+reaches a mutating position. It turns four returns from `Unknown` into
+`Fresh` — `BigInt.prototype.toString`, `Date.prototype.toString`,
+`Number.prototype.toString`, and `String.prototype.concat` — and §5's join
+would settle those from the declared return type anyway.
+
+A name the function reads but never binds resolves to `Unknown` before the
+walk starts rather than sitting at the lattice bottom. 325 of the 1202
+functions read such a name, 607 in total, and a closure's captured value is
+the usual case. The distinction matters where the name shares a target with
+another definition. `Iterator.prototype.drop`'s closure opens with `Let
+remaining be integerLimit`, which the enclosing algorithm owns, and a later
+step assigns `remaining` a literal. Left at the bottom the capture would
+contribute nothing to the join, `remaining` would come out `Fresh`, and §4.1
+would read a mutation of it as invisible to the caller.
+
+283 of the 313 builtin methods bind a name at the receiver. The other 30 pass
+`this` straight into an operation that reads a value out of it, such as
+`ThisNumberValue` or `GeneratorResume`, or are among the eight §3 builtins with
+no algorithm head. Binding no name is not a loss, because §4.1 asks the map
+about expressions rather than names, and an `ExprThis` argument resolves to the
+receiver at the call site.
 
 ### §4.3. Method classification (FR4, FR5)
 
@@ -1490,6 +1577,29 @@ abstract operation and the `Set` constructor. A `Callee`, and a closure
 named by an `ExprVar`, resolve against the `abstract-op` functions only.
 `ExprCall` is reserved: the compiled IR states every call as its own node,
 so a call never appears nested inside an expression.
+
+**The schema above is the serialized shape, not the Go model.** A node and an
+expression each serialize as one object tagged by `kind`, which is what the
+Scala serializer writes and what a reader has to decode. Tagging one struct
+with a kind is not how this repository models a tree with several node
+shapes, though, and it lets a reader consult a field the tag does not carry,
+such as `Slot` on a `let`. So
+[internal/ecma262/cfg.go](../../internal/ecma262/cfg.go) declares `Node` and
+`Expr` as sealed interfaces with one type per kind, the pattern
+[internal/ast/expr.go](../../internal/ast/expr.go) uses, and decodes the
+JSON through unexported structs that mirror the schema above and are read
+only while parsing. The serialized format does not change, so §3 is
+untouched. The serializer omits every field a kind does not carry, so a
+`branch` node is `{"kind":"branch"}` and nothing more. The reader holds it
+to that: a field appearing on a kind that does not use it is an error,
+which is what catches the schema moving a field rather than letting the
+reader take it for absent. Two operands are genuinely
+optional and the rest are required at decode time: a `Throw` carries no
+`Value` when it constructs its error, and 22 `SlotWrite` nodes carry none
+because the serializer could not name what they store. Those 22 are all
+closure argument prologues writing into `__args__`, as in
+`NewPromiseCapability:clo0`, and none is a builtin method, so §8.1 sees a
+`SlotWrite` with no stored value only inside an abstract operation.
 
 ## Appendix B. `facts.json` schema
 
