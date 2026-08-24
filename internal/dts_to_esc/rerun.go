@@ -136,13 +136,13 @@ type CheckReport struct {
 // subtrees — internal/interop/data/ in the repo, the same root
 // WritePartitionedTree writes into.
 func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error) {
-	runs, err := diffPartition(result, escDir)
+	plans, err := planPartition(result, escDir)
 	if err != nil {
 		return nil, err
 	}
-	report := &CheckReport{Packages: make([]PackageDiff, 0, len(runs))}
-	for _, run := range runs {
-		report.Packages = append(report.Packages, run.diff)
+	report := &CheckReport{Packages: make([]PackageDiff, 0, len(plans))}
+	for _, plan := range plans {
+		report.Packages = append(report.Packages, plan.diff)
 	}
 	return report, nil
 }
@@ -257,13 +257,13 @@ type RegenResult struct {
 // A package whose file is absent is written in full — everything in it
 // is missing.
 func RegeneratePartition(result *PartitionResult, escDir string) (*RegenReport, error) {
-	runs, err := diffPartition(result, escDir)
+	plans, err := planPartition(result, escDir)
 	if err != nil {
 		return nil, err
 	}
-	report := &RegenReport{Packages: make([]RegenResult, 0, len(runs))}
-	for i := range runs {
-		res, err := runs[i].apply(escDir)
+	report := &RegenReport{Packages: make([]RegenResult, 0, len(plans))}
+	for i := range plans {
+		res, err := plans[i].apply(escDir)
 		if err != nil {
 			return nil, err
 		}
@@ -308,10 +308,10 @@ func (r *RegenReport) Write(w io.Writer) error {
 	return err
 }
 
-// packageRerun holds everything both modes need for one package: the
-// diff they report or apply, plus the committed source and converted
-// declarations the write pass splices from.
-type packageRerun struct {
+// packagePlan is the change one package's file needs, computed but not
+// yet applied. It holds the diff a check reports plus the two things a
+// write needs to carry that diff out.
+type packagePlan struct {
 	diff PackageDiff
 
 	// contents is the committed file's source, "" when it was absent.
@@ -339,21 +339,22 @@ type memberInsert struct {
 	text string
 }
 
-// diffPartition converts every bucket and diffs it against the
-// committed tree. Buckets are visited in package-URI order so both
-// modes report in the same sequence regardless of map iteration.
-func diffPartition(result *PartitionResult, escDir string) ([]packageRerun, error) {
+// planPartition converts every bucket and diffs it against the
+// committed tree, returning one plan per package. Buckets are visited
+// in package-URI order so both modes report in the same sequence
+// regardless of map iteration.
+func planPartition(result *PartitionResult, escDir string) ([]packagePlan, error) {
 	uris := make([]string, 0, len(result.Buckets))
 	for uri := range result.Buckets {
 		uris = append(uris, uri)
 	}
 	sort.Strings(uris)
 
-	runs := make([]packageRerun, 0, len(uris))
+	plans := make([]packagePlan, 0, len(uris))
 	for _, uri := range uris {
 		pkg, ok := PackageForURI(uri)
 		if !ok {
-			return nil, fmt.Errorf("diffPartition: unknown package URI %q "+
+			return nil, fmt.Errorf("planPartition: unknown package URI %q "+
 				"(every bucket should come from Route, which only returns "+
 				"URIs in PackageList)", uri)
 		}
@@ -361,28 +362,29 @@ func diffPartition(result *PartitionResult, escDir string) ([]packageRerun, erro
 		if err != nil {
 			return nil, fmt.Errorf("converting bucket %s: %w", uri, err)
 		}
-		run, err := diffPackage(pkg, mod, escDir)
+		plan, err := planPackage(pkg, mod, escDir)
 		if err != nil {
 			return nil, err
 		}
-		runs = append(runs, *run)
+		plans = append(plans, *plan)
 	}
-	return runs, nil
+	return plans, nil
 }
 
-// diffPackage compares one converted bucket against its committed file.
-func diffPackage(pkg Package, mod *StandaloneModule, escDir string) (*packageRerun, error) {
+// planPackage compares one converted bucket against its committed file
+// and returns the plan for closing the gap.
+func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePlan, error) {
 	dest := filepath.Join(escDir, filepath.FromSlash(pkg.File))
 	contents, exists, err := readCommitted(dest)
 	if err != nil {
 		return nil, err
 	}
 
-	run := &packageRerun{
+	plan := &packagePlan{
 		diff:     PackageDiff{Pkg: pkg.URI, Path: pkg.File, Exists: exists},
 		contents: contents,
 	}
-	diff := &run.diff
+	diff := &plan.diff
 
 	var committed []ast.Decl
 	if exists {
@@ -428,7 +430,7 @@ func diffPackage(pkg Package, mod *StandaloneModule, escDir string) (*packageRer
 		}
 		for _, m := range members {
 			diff.NewMembers = append(diff.NewMembers, m)
-			run.inserts = append(run.inserts, memberInsert{
+			plan.inserts = append(plan.inserts, memberInsert{
 				owner:     host,
 				ownerName: name,
 				text:      m.Text,
@@ -447,7 +449,7 @@ func diffPackage(pkg Package, mod *StandaloneModule, escDir string) (*packageRer
 		reported.Add(name)
 		diff.Removed = append(diff.Removed, name)
 	}
-	return run, nil
+	return plan, nil
 }
 
 // readCommitted reads a committed `.esc` file. A file that is not on
@@ -779,30 +781,37 @@ func escDeclKind(decl ast.Decl) string {
 }
 
 // apply writes this package's additions to disk and returns what it
-// did. A package with nothing missing is not rewritten, so an
-// unchanged file keeps its mtime.
-func (r *packageRerun) apply(escDir string) (RegenResult, error) {
+// did. A package whose contents would not change is not rewritten, so
+// an unchanged file keeps its mtime.
+func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 	res := RegenResult{
-		Pkg:     r.diff.Pkg,
-		Path:    r.diff.Path,
-		Removed: r.diff.Removed,
+		Pkg:     p.diff.Pkg,
+		Path:    p.diff.Path,
+		Removed: p.diff.Removed,
 	}
-	if r.diff.Empty() {
+	if p.diff.Empty() {
 		return res, nil
 	}
-	res.Created = !r.diff.Exists
+	res.Created = !p.diff.Exists
 
-	dest := filepath.Join(escDir, filepath.FromSlash(r.diff.Path))
+	dest := filepath.Join(escDir, filepath.FromSlash(p.diff.Path))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return res, fmt.Errorf("creating package dir for %s: %w", r.diff.Pkg, err)
+		return res, fmt.Errorf("creating package dir for %s: %w", p.diff.Pkg, err)
 	}
 
-	updated, inserted, skipped := r.splice()
+	updated, inserted, skipped := p.splice()
+	if p.diff.Exists && updated == p.contents {
+		// Every owner was skipped and nothing was appended, so there is
+		// no byte to write. Rewriting identical contents would move the
+		// file's mtime for no change.
+		res.Skipped = skipped
+		return res, nil
+	}
 	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
 		return res, fmt.Errorf("writing %s: %w", dest, err)
 	}
 
-	res.AddedDecls = len(r.diff.NewDecls)
+	res.AddedDecls = len(p.diff.NewDecls)
 	res.AddedMembers = inserted
 	res.Skipped = skipped
 	return res, nil
@@ -815,17 +824,17 @@ func (r *packageRerun) apply(escDir string) (RegenResult, error) {
 // `inserted` counts the members that landed. `skipped` names the
 // declarations whose body braces could not be located; their members
 // were left out rather than spliced blind.
-func (r *packageRerun) splice() (out string, inserted int, skipped []string) {
+func (p *packagePlan) splice() (out string, inserted int, skipped []string) {
 	type edit struct {
 		at   int
 		text string
 	}
 
 	// Group members by owner so one declaration takes one insertion.
-	order := make([]ast.Decl, 0, len(r.inserts))
-	byOwner := make(map[ast.Decl][]string, len(r.inserts))
-	names := make(map[ast.Decl]string, len(r.inserts))
-	for _, ins := range r.inserts {
+	order := make([]ast.Decl, 0, len(p.inserts))
+	byOwner := make(map[ast.Decl][]string, len(p.inserts))
+	names := make(map[ast.Decl]string, len(p.inserts))
+	for _, ins := range p.inserts {
 		if _, seen := byOwner[ins.owner]; !seen {
 			order = append(order, ins.owner)
 			names[ins.owner] = ins.ownerName
@@ -835,7 +844,7 @@ func (r *packageRerun) splice() (out string, inserted int, skipped []string) {
 
 	var edits []edit
 	for _, owner := range order {
-		at, brace, ok := bodyInsertPoint(r.contents, owner)
+		at, brace, ok := bodyInsertPoint(p.contents, owner)
 		if !ok {
 			skipped = append(skipped, names[owner])
 			continue
@@ -843,25 +852,25 @@ func (r *packageRerun) splice() (out string, inserted int, skipped []string) {
 		inserted += len(byOwner[owner])
 		edits = append(edits, edit{
 			at:   at,
-			text: memberInsertText(r.contents, at, brace, byOwner[owner]),
+			text: memberInsertText(p.contents, at, brace, byOwner[owner]),
 		})
 	}
 
 	// Apply from the end backwards so each offset still indexes into
 	// the text the spans were measured against.
 	sort.Slice(edits, func(i, j int) bool { return edits[i].at > edits[j].at })
-	out = r.contents
+	out = p.contents
 	for _, e := range edits {
 		out = out[:e.at] + e.text + out[e.at:]
 	}
 
-	if len(r.diff.NewDecls) > 0 {
+	if len(p.diff.NewDecls) > 0 {
 		var sb strings.Builder
 		sb.WriteString(out)
 		if out != "" && !strings.HasSuffix(out, "\n") {
 			sb.WriteString("\n")
 		}
-		for i, d := range r.diff.NewDecls {
+		for i, d := range p.diff.NewDecls {
 			if out != "" || i > 0 {
 				sb.WriteString("\n")
 			}
@@ -873,22 +882,50 @@ func (r *packageRerun) splice() (out string, inserted int, skipped []string) {
 }
 
 // bodyInsertPoint locates where a new member goes inside a
-// declaration's braces. It returns the offset just past the last
-// non-whitespace byte inside the body and the offset of the closing
-// brace itself, or false when the declaration does not end in a brace
-// — a shape the splice cannot reason about, so the caller leaves it
-// alone.
+// declaration's braces. It returns the offset just past the body's last
+// byte of actual code and the offset of the closing brace itself, or
+// false when the declaration does not end in a brace — a shape the
+// splice cannot reason about, so the caller leaves it alone.
+//
+// The insertion point sits before any comment that trails the last
+// member, not before the closing brace. A body ending in
+// `// TODO: revisit` would otherwise take the separating comma inside
+// that comment, rewriting a hand-written line and, when the last member
+// carries no trailing comma of its own, leaving the body unparseable.
 func bodyInsertPoint(contents string, decl ast.Decl) (at, brace int, ok bool) {
+	start := offsetOf(contents, decl.Span().Start)
 	end := offsetOf(contents, decl.Span().End)
 	if end <= 0 || end > len(contents) || contents[end-1] != '}' {
 		return 0, 0, false
 	}
 	brace = end - 1
-	at = brace
-	for at > 0 && isSpaceByte(contents[at-1]) {
-		at--
+	return lastCodeOffset(contents, start, brace), brace, true
+}
+
+// lastCodeOffset returns the offset just past the last token in
+// contents[from:to] that is not a comment, or `from` when the range
+// holds no such token.
+//
+// What counts as a comment is the Escalier lexer's decision, not this
+// function's. That is what keeps a `//` inside a string literal from
+// opening one, a comma inside one from reading as a member separator,
+// and a single quote from opening a string when it opens a lifetime.
+//
+// The fragment is lexed on its own, so token locations start at its
+// first byte and `from` is added back.
+func lastCodeOffset(contents string, from, to int) int {
+	fragment := contents[from:to]
+	last := 0
+	for _, token := range parser.NewLexer(&ast.Source{Contents: fragment}).Lex() {
+		switch token.Type {
+		case parser.LineComment, parser.BlockComment, parser.EndOfFile:
+			continue
+		}
+		if end := offsetOf(fragment, token.Span.End); end > last {
+			last = end
+		}
 	}
-	return at, brace, true
+	return from + last
 }
 
 // memberInsertText builds the text spliced in at `at`, where `brace` is
@@ -925,10 +962,6 @@ func indentLines(text, indent string) string {
 		lines[i] = indent + line
 	}
 	return strings.Join(lines, "\n")
-}
-
-func isSpaceByte(c byte) bool {
-	return c == ' ' || c == '\t' || c == '\n' || c == '\r'
 }
 
 // offsetOf converts a parser location into a byte offset into contents.
