@@ -1,10 +1,10 @@
 # 02 Functions
 
-## Type Annotations
+## Declarations and inference
 
-```ts
-// Function params must have type annotations, but the return type annotation
-// is optional since it can always be inferred.
+A function declaration names its parameters and, optionally, its return type.
+
+```esc
 fn add(a: number, b: number) {
     return a + b
 }
@@ -12,83 +12,211 @@ fn add(a: number, b: number) {
 fn sub(a: number, b: number) -> number {
     return a - b
 }
-
-fn sqrt(x: number) -> number throws RangeError {
-    if x < 0 {
-        throw RangeError("Can't take root of negative numbers")
-    }
-    return Math.sqrt(x)
-}
-
-// When passing a function expression as a callback, we can infer the param
-// types from the higher order function's callback param type.  Param types
-// can also be ommited when passing a function expression as a prop.  If you
-// assign the function to a variable function, the param types must be provided.
-const strings = ["1", "2", "3"]
-const numbers = strings.map(fn (elem, index) { return parseInt(elem) })
 ```
 
-The reason we don't allow function param types to be inferred from the usage
-of the params within the function is that it's difficult to infer object types
-from property access.
+The return type is always inferable from the body, so annotating it is optional.
+Parameter types are inferred too, from the body's usage of each parameter:
 
-## Destructuring Params
-
-TODO
-
-## Function Overloading
-
-TODO
-
-## Async/Await
-
+```esc
+fn dist(p) { p.x
+             p.y }
+// inferred: fn (p: {x: unknown, y: unknown}) -> undefined
 ```
-// Inferred as `fn(url: string) -> Promise<string>`
-async fn fetchJSON(url: string) {
-    val res = await fetch(url)
-    return res.json()
-}
 
-// Inferred as `fn(url: string) -> Promise<unknown, Error>`
-async fn fetchJSON(url: string) {
+The inferred parameter shape is **exact**, so a caller may not pass an object
+with extra fields. Mark the parameter `open` to keep it row-polymorphic:
+
+```esc
+fn dist(open p) { p.x
+                  p.y }
+// inferred: fn (p: {x: unknown, y: unknown, ...}) -> undefined
+```
+
+A function expression passed as a callback infers its parameter types from the
+higher-order function's signature:
+
+```esc
+val strings = ["1", "2", "3"]
+val numbers = strings.map(fn (elem, index) { return parseInt(elem) })
+```
+
+## Generics
+
+Type parameters are written in `<>` and may carry a constraint after `:`.
+
+```esc
+fn id<T>(x: T) -> T { return x }
+fn first<T>(x: T, y: T) -> T { return x }
+fn call<F: fn (x: number) -> number>(f: F) -> number { return f(1) }
+```
+
+Each call instantiates the parameters independently, so two calls to `id` keep
+their own argument types:
+
+```esc
+val a = id(5)      // a: 5
+val b = id("hi")   // b: "hi"
+```
+
+A function may also take **lifetime parameters**, written `<'a>` and optionally
+bounded with `'a: 'b`. They are inferred when possible and appear in the
+signature only when they connect an input to an output. See
+[Ownership](09_ownership.md).
+
+```esc
+declare fn id<'a>(p: &'a {x: number}) -> &'a {x: number}
+```
+
+## Parameters, ownership, and mutability
+
+A parameter's annotation says whether the function borrows its argument or takes
+ownership of it.
+
+```esc
+fn read(p: &{x: number}) -> number { return p.x }    // borrows; caller keeps p
+fn bump(p: &mut {x: number}) { p.x = p.x + 1 }       // mutable borrow
+fn store(p: {x: number}) { ... }                     // consumes; caller gives p up
+```
+
+The borrow is inserted at the call site, so a caller writes `read(p)` rather than
+`read(&p)`. An unannotated parameter is inferred: the checker picks a borrow when
+the body never lets the value escape and ownership when it does. See
+[Ownership](09_ownership.md) for what counts as escape.
+
+## `throws`
+
+A function's exceptional exits are part of its type. **Omitting the `throws`
+clause declares that the function raises nothing**, and a body that does raise is
+rejected at the site that raises.
+
+```esc
+fn f() { throw "boom" }
+// ERROR: cannot constrain "boom" <: never
+```
+
+Write `throws _` to infer the clause from the body:
+
+```esc
+fn f() throws _ { throw "boom" }
+// inferred: fn () -> never throws "boom"
+
+fn g(c: boolean) throws _ { if c { throw "a" } else { throw 5 } }
+// inferred: fn (c: boolean) -> never throws 5 | "a"
+```
+
+Write `throws T` to fix it, in which case each `throw` in the body is checked
+against `T` at its own site:
+
+```esc
+fn f() throws string { throw "boom" }    // OK — the literal widens to string
+fn g() throws number { throw "boom" }    // ERROR at the throw
+```
+
+A call raises whatever its callee declares, so the callee's `throws` reaches the
+caller's clause the way a `throw` in the caller's own body would. A body with no
+exceptional exit renders no clause, whether or not one was written. Nested
+functions own their own clause, so an inner function's `throws` does not leak
+into the enclosing one.
+
+See [Error Handling](06_error_handling.md) for `try`/`catch` and the rest.
+
+## Async and `await`
+
+An `async fn` returns `Promise<T, E>`, where `E` is the rejection type. Unlike a
+sync function, an `async fn` cannot raise: what its body throws is absorbed into
+the promise's rejection slot, so it never carries a `throws` clause.
+
+```esc
+async fn f() { throw "x" }
+// inferred: fn () -> Promise<never, "x">
+
+async fn g() { return 5 }
+// inferred: fn () -> Promise<5>
+```
+
+The rejection type may be written, in which case the body's throws are checked
+against it:
+
+```esc
+async fn fetchJSON(url: string) -> Promise<unknown, FetchError> {
     val res = await fetch(url)
     if !res.ok {
-        throw new Error(`couldn't fetch ${url}`)
+        throw FetchError(url)
     }
     return res.json()
 }
 ```
 
-`Promise<T, E = never>` differs from the `Promise` type provided by TypeScript.
-It has a second, optional type param that can be used to describe which errors
-an async function can throw.
+Either slot accepts `_` to infer just that slot:
 
-If an `await` expression is awaiting `Promise<T, E>` where `E` is not `never`,
-we will need to set the `ThrowsType` on this expression node.  This is used
-when determining what the caller throws.
-
-## Generators (post-MVP)
-
+```esc
+async fn f() -> Promise<_, _> { throw "x" }   // fn () -> Promise<never, "x">
 ```
-// Inferred as `fn(start: number, stop: number) -> Generator<number, "done", unknown>`
-gen fn range(start: number, stop: number) {
-    for i = start; i < stop; i++ {
-        yield i
-    }
-    return "done"
-}
 
+`Promise<T, E = never>` differs from TypeScript's `Promise<T>` by carrying the
+rejection type. Awaiting a `Promise<T, E>` where `E` is not `never` contributes
+`E` to the awaiting function's own rejection or `throws` clause.
+
+## Overloading
+
+Declaring the same name more than once at the top level makes it an overload
+set. A direct call resolves to the arm whose parameters accept the arguments.
+
+```esc
+fn f(x: number) -> number { return x }
+fn f(x: string) -> string { return x }
+
+val r = f(5)      // r: number
+val s = f("hi")   // s: string
+```
+
+Arms are tried most-specific-first when every argument has a known shape, and in
+declaration order otherwise. Overload resolution runs as a phase separate from
+subtyping, so "callable in several ways" never enters the type lattice. Each arm
+needs its own parameter annotations, since the runtime dispatcher generated for
+the set is built from them.
+
+## Generators
+
+```esc
+gen fn f() { yield 1 }
+// inferred: fn () -> Generator<1, undefined, unknown>
+
+gen fn g() { yield 1
+             return "done" }
+// inferred: fn () -> Generator<1, "done", unknown>
+```
+
+The three type arguments are the yield type, the return type, and the type sent
+back in through `next`. Multiple `yield`s union their types. `async gen fn`
+produces an `AsyncGenerator` with the same shape.
+
+A generator's values are consumed with `for`-`in`:
+
+```esc
 for i in range(0, 10) {
     console.log(`i = ${i}`)
 }
+```
 
-// Inferred as `fn(url: string, intervalMs: number) -> AsyncGenerator<unknown, "done", unknown>
-async gen fn pollData(url: string, intervalMs: number) {
-    while (true) {
-        const response = await fetch(url);
-        yield await response.json();
-        await new Promise(resolve => setTimeout(resolve, intervalMs));
-    }
-    return "done"
+## Function subtyping and exactness
+
+A written function value is **exact**: it accepts exactly the arities its
+parameter list declares, and a direct call with extra arguments is rejected.
+Exactness governs callback subtyping. A function type accepts a set of argument
+counts — `[required, declared]` when exact, `[required, ∞)` when inexact — and
+`G <: F` when `G` accepts every count `F`'s holders may call with, with
+parameters contravariant and the return covariant. This is what lets a
+one-parameter callback be passed where a three-parameter one is expected.
+
+## Destructuring parameters
+
+Parameters accept the same patterns as `val` bindings.
+
+```esc
+fn dist({x, y}: {x: number, y: number}) -> number {
+    return Math.sqrt(x ** 2 + y ** 2)
 }
 ```
+
+See [Destructuring](01_destructuring.md).

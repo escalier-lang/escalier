@@ -2,30 +2,51 @@
 
 ## Packages
 
-This is the smallest unit of interop with TypeScript.  A package
-must either be an Escalier package or a TypeScript package.  Both
-will use a standard package.json for specifying where dist files
-and type definitions live.
+A package is the smallest unit of interop with TypeScript. A package is either an
+Escalier package or a TypeScript package, never both, and both use a standard
+`package.json` to say where the dist files and type definitions live.
 
-Within a package all symbols are visible.  There is no need to
-import something from one file to another.  The directory structure
-defines a series of nested namespaces.  The only imports necessary
-are for external packages or other packages within a monorepo.
+```
+package.json
+lib/
+  index.esc
+  foo/
+    foo.esc
+    bar/
+      bar.esc
+bin/
+  main.esc
+build/            # generated
+```
 
-Child namespaces have access to all symbols in parent namespaces 
-automatically.  Parents must qualify symbols in child namespaces.  
-This maches how namespaces work in TypeScript.
+- **`lib/`** holds the package's library source. Every `.esc` file under `lib/`
+  is a module, which means statements may not appear outside a function or
+  method. `.test.esc` files are the exception.
+- **`bin/`** holds executable scripts. These run top to bottom, so statements at
+  top level are allowed.
+- **`build/`** holds the generated `.js`, `.d.ts`, and source maps.
 
-Example file structure:
-- package.json
-- src
-  - foo
-    - bar
-      - bar.esc  
-    - foo.esc
-  - foo_bar.esc
+## Namespaces
 
-This would be equivalent to the following TypeScript file:
+The directory structure under `lib/` defines a nested namespace hierarchy. The
+path of a file, minus the `lib/` prefix and the filename, is the namespace its
+declarations land in.
+
+| File | Namespace |
+|---|---|
+| `lib/index.esc` | root |
+| `lib/foo/foo.esc` | `foo` |
+| `lib/foo/bar/bar.esc` | `foo.bar` |
+
+Files sharing a namespace merge their declarations into it, so splitting a
+namespace across several files needs no plumbing.
+
+A child namespace sees every symbol in its parent namespaces without qualifying.
+A parent must qualify to reach a child's symbols. This matches how namespaces
+work in TypeScript.
+
+The layout above corresponds to:
+
 ```ts
 namespace Foo {
     namespace Bar {
@@ -37,34 +58,49 @@ namespace Foo {
         return "foo"
     }
 }
-export function foo_bar() { 
+export function foo_bar() {
     return Foo.foo() + Foo.Bar.bar()
 }
 ```
 
-Any symbol marked with the `export` modifier will be exported from
-the bundle that is created when building the package.  If a
-namespace doesn't export anything then it won't be include in the
-exports.
+## Declarations, imports, and dependency order
 
-Any .esc file located inside src/ will be considered a module which
-prohibits the use of statements outside of functions/methods.  The exception to this is .test.esc files.
+Declarations are visible across the whole module regardless of source order.
+Before checking, every declaration is collected and a dependency graph orders
+them by strongly connected component, so a function may call one defined further
+down, and two types may reference each other across files.
+
+Imports do **not** work this way: they are file-scoped, and each file states its
+own. See [Imports](03_imports.md).
+
+## Exporting
+
+A declaration marked `export` is exported from the bundle built for the package.
+A namespace that exports nothing is left out of the exports entirely.
+
+```esc
+export fn greet(name: string) -> string {
+    return `hello, ${name}`
+}
+```
 
 ## Bundling
 
-Files outside of the src/ are not included in the dist file bundle
-or the published package.  Files inside the bin/ will be included in
-the published package but not in dist file bundle.
+Files outside `lib/` and `bin/` are neither bundled nor published. Files in
+`bin/` are published but stay out of the dist bundle.
 
 There are two bundling modes:
-- `prod`: bundles everything into a single bundle
-- `dev`: produces a number of bundles based on the dependency graph
 
-`dev` mode is to support hot-loading using tools such as `vitejs`.
+- **`prod`** bundles everything into a single file.
+- **`dev`** produces several bundles derived from the dependency graph, which is
+  what hot-reloading tools such as Vite need.
 
-## Monorepo
+## Monorepos
 
-Monorepos can have multiple packages.  Packages cannot be nested.
-Packages can import other packages within the monorepo using the
-`@repo/` scope.  A package can only import exported symbols even if
-both packages are in the same monorepo.
+A monorepo may hold many packages, and packages may not nest. A package imports
+another package in the same monorepo through the `@repo/` scope, and may import
+only that package's exported symbols even though both live in one repository.
+
+```escalier
+import * as vec from "@repo/vec"
+```
