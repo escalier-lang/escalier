@@ -742,6 +742,16 @@ one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
 models the compiler's own trees. Appendix A describes what that means for the
 schema, which is unchanged.
 
+A name the function reads but never binds resolves to `Unknown` before the
+walk starts rather than sitting at the lattice bottom. 325 of the 1202
+functions read such a name, 607 in total, and a closure's captured value is
+the usual case. The distinction matters where the name shares a target with
+another definition. `Iterator.prototype.drop`'s closure opens with `Let
+remaining be integerLimit`, which the enclosing algorithm owns, and a later
+step assigns `remaining` a literal. Left at the bottom the capture would
+contribute nothing to the join, `remaining` would come out `Fresh`, and §4.1
+would read a mutation of it as invisible to the caller.
+
 283 of the 313 builtin methods bind a name at the receiver. The other 30 pass
 `this` straight into an operation that reads a value out of it, such as
 `ThisNumberValue` or `GeneratorResume`, or are among the eight §3 builtins with

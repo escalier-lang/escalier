@@ -189,6 +189,20 @@ func TestOriginMapReachesFixpointAcrossBackEdges(t *testing.T) {
 	require.Equal(t, Unknown, m.Of("%4"))
 }
 
+// A name the function reads but never binds is Unknown from the first pass, not
+// a value that drops silently out of a join. The closure behind
+// `Iterator.prototype.drop` opens with `Let remaining be integerLimit`, where
+// `integerLimit` belongs to the algorithm that built the closure, and a later
+// step assigns `remaining` a literal. Treating the captured name as nothing to
+// join would leave `remaining` at Fresh and make a mutation of it read as
+// unobservable.
+func TestOriginMapFreeNames(t *testing.T) {
+	m := originsOf(t, "INTRINSICS.Iterator.prototype.drop:clo0")
+
+	require.Equal(t, Unknown, m.Of("integerLimit"))
+	require.Equal(t, Unknown, m.Of("remaining"))
+}
+
 func TestOriginMapString(t *testing.T) {
 	m := originsOf(t, "Map.prototype.set")
 	snaps.MatchInlineSnapshot(t, m.String(), snaps.Inline(`%0: Unknown

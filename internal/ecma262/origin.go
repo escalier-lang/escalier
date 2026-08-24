@@ -198,6 +198,79 @@ var allocators = set.FromSlice([]string{
 type OriginMap struct {
 	fn      *Func
 	origins map[string]Origin
+	free    set.Set[string]
+}
+
+// freeNames returns fn's free names, the value names it reads but never binds.
+// A closure's captured value is the common case. `Iterator.prototype.drop`
+// builds a helper that opens with `Let remaining be integerLimit`, and
+// `integerLimit` belongs to the algorithm that built the helper, not to the
+// helper itself.
+//
+// The walk has to answer Unknown for such a name from the start, because it
+// never learns anything more about it. Left at the lattice bottom it would
+// contribute nothing to a join, and `remaining`, which a later step assigns a
+// literal, would come out Fresh. A mutation of it would then read as
+// unobservable to the caller when on one path it is the captured value.
+func freeNames(fn *Func) set.Set[string] {
+	bound := set.FromSlice(fn.Params)
+	for _, node := range fn.Nodes {
+		switch node := node.(type) {
+		case *LetNode:
+			bound.Add(node.Target)
+		case *CallNode:
+			if node.Target != "" {
+				bound.Add(node.Target)
+			}
+		default:
+			// No other node shape binds a name.
+		}
+	}
+
+	free := set.NewSet[string]()
+	var read func(Expr)
+	read = func(e Expr) {
+		switch e := e.(type) {
+		case *VarExpr:
+			if !bound.Contains(e.Var) {
+				free.Add(e.Var)
+			}
+		case *CallExpr:
+			for _, arg := range e.Args {
+				read(arg)
+			}
+		case *AllocExpr:
+			for _, arg := range e.Args {
+				read(arg)
+			}
+		case *SlotExpr:
+			read(e.Object)
+		case *PropExpr:
+			read(e.Object)
+		default:
+			// A this value, a literal, and an absent operand name nothing.
+		}
+	}
+	for _, node := range fn.Nodes {
+		switch node := node.(type) {
+		case *LetNode:
+			read(node.Source)
+		case *CallNode:
+			for _, arg := range node.Args {
+				read(arg)
+			}
+		case *SlotWriteNode:
+			read(node.Object)
+			read(node.Value)
+		case *ReturnNode:
+			read(node.Value)
+		case *ThrowNode:
+			read(node.Value)
+		default:
+			// No other node shape reads an operand.
+		}
+	}
+	return free
 }
 
 // NewOriginMap computes the origins of fn's value names. Declared parameters
@@ -211,7 +284,11 @@ type OriginMap struct {
 // terminates because an origin only climbs the lattice, from unset to one
 // origin to `Unknown`.
 func NewOriginMap(fn *Func) *OriginMap {
-	m := &OriginMap{fn: fn, origins: make(map[string]Origin, len(fn.Params)+len(fn.Nodes))}
+	m := &OriginMap{
+		fn:      fn,
+		origins: make(map[string]Origin, len(fn.Params)+len(fn.Nodes)),
+		free:    freeNames(fn),
+	}
 	for {
 		changed := false
 		for i, p := range fn.Params {
@@ -273,12 +350,24 @@ func resolved(o Origin) Origin {
 	return o
 }
 
-// eval returns an expression's origin, keeping the lattice bottom rather than
-// resolving it. A name read before the walk reaches its definition then
-// contributes nothing to the reader instead of pinning it at `Unknown`.
+// eval returns an expression's origin. It keeps the lattice bottom rather than
+// resolving it, which separates the two reasons a name can be unbound when the
+// walk reads it.
+//
+// A name the walk has not reached the definition of yet is still bottom, and
+// bottom contributes nothing to a join. The reader is left alone for this pass
+// and takes its origin on the next one, once the definition is bound. Answering
+// `Unknown` there would pin the reader at `Unknown` for good, since a join
+// never retracts.
+//
+// A free name is never going to be bound, so waiting gains nothing and the
+// answer is `Unknown` from the first pass.
 func (m *OriginMap) eval(e Expr) Origin {
 	switch e := e.(type) {
 	case *VarExpr:
+		if m.free.Contains(e.Var) {
+			return Unknown
+		}
 		return m.origins[e.Var]
 	case *ThisExpr:
 		// Only a prototype method has a `this` value to track. A static or
