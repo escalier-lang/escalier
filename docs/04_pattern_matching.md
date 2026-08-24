@@ -118,9 +118,9 @@ fn f(c: Color) {
 // ERROR: match is not exhaustive; add a branch for `Color.Hex`
 ```
 
-The rules follow exactness. An **exact** union is covered once every member has a
-covering branch. An **inexact** scrutinee admits values no pattern can name, so it
-requires a catch-all:
+The rules follow exactness. A union is closed, so it is covered once every member
+has a covering branch. An **inexact** object or tuple scrutinee admits values no
+pattern can name, so it requires a catch-all:
 
 ```esc
 // ERROR: match is not exhaustive; `{x: number, ...}` admits values no pattern

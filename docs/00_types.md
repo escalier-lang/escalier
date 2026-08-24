@@ -10,8 +10,11 @@ Two consequences shape everything below.
 - **Types form a Boolean algebra.** Union `|`, intersection `&`, and negation
   `~` are all first-class, with `unknown` at the top and `never` at the bottom.
 - **Inference is usage-driven.** A type variable carries a list of lower bounds
-  and a list of upper bounds. Reading a field adds an upper bound, passing a
-  value adds a lower bound, and the final type is read off those bounds.
+  and a list of upper bounds, and every constraint the program imposes lands on
+  one of the two. Reading `p.x` records an upper bound on `p`'s variable, saying
+  the value must have an `x`. Flowing a value into a position records a lower
+  bound on that position's variable, saying the position must accept that value.
+  The final type is read off the two lists.
 
 ## Primitives and literals
 
@@ -68,9 +71,8 @@ type Config = {
 }
 ```
 
-`?` marks a member that may be absent. `readonly` forbids reassigning the member
-but says nothing about the depth of the value it holds. See
-[Exact Types](07_exact_types.md) for the subtyping rules and
+`?` marks a member that may be absent. `readonly` forbids reassigning the member.
+See [Exact Types](07_exact_types.md) for the subtyping rules and
 [Mutability](08_mutability.md) for how `readonly` relates to `mut`.
 
 ## Unions, intersections, and negation
@@ -83,12 +85,12 @@ type NotNum = ~number
 
 `~T` is the set-theoretic complement of `T`: every value `T` rejects. The solver
 normalizes unions, intersections, and negations to disjunctive and conjunctive
-normal form rather than guessing which alternative to commit to, so these
-compose in any position, including under a type variable.
+normal forms rather than guessing which alternative to commit to, so the three
+compose in any position, including inside an inference variable's bounds.
 
-A union is exact by default like the other formers. `A | B | ...` is an inexact
-union that may hold members beyond the ones written, which is what makes an
-exhaustive `match` over it require a catch-all arm.
+Unions are always closed. There is no syntax for a union that may hold members
+beyond the ones listed, so `string`, `number`, or `unknown` is how you name an
+open set of values.
 
 ## Classes
 
@@ -96,6 +98,16 @@ Classes are **nominal**. A value of class `Point` is not assignable to an exact
 structural `{x: number, y: number}`, and a structural object is never assignable
 to `Point`, however well the fields line up. A class instance does satisfy an
 **inexact** object target structurally, so the target's exactness is what decides.
+
+Nominality governs assignability, not pattern matching. An object pattern
+destructures a class instance by field:
+
+```esc
+fn f(p: Point) {
+    val {x, y} = p    // x: number, y: number
+    return x
+}
+```
 
 ```esc
 class Point {
@@ -158,8 +170,15 @@ Aliases may be recursive and mutually recursive across files. The dependency
 graph orders declarations, so an alias may reference one written later in the
 source.
 
-Functions may also carry lifetime parameters, written `<'a>` and optionally
-bounded with `'a: 'b`. See [Ownership](09_ownership.md).
+Lifetime parameters are written in the same list, `<'a>`, and optionally bounded
+with `'a: 'b`. Functions, classes, interfaces, and type aliases may all take
+them; enums may not. See [Ownership](09_ownership.md).
+
+```esc
+type Ref<'a, T> = &'a T
+class Container<'a> { p: &'a {x: number} }
+declare fn id<'a>(p: &'a {x: number}) -> &'a {x: number}
+```
 
 ## Type-level operators
 
@@ -226,6 +245,13 @@ bracketed form too.
 
 ```esc
 type Pick<T, Ks> = {[K]: T[K] for K in keyof T if K : Ks}
+type Omit<T, Ks> = {[K]: T[K] for K in keyof T if K : ~Ks}
+```
+
+The same filtering can be written as a key remapping to `never`, which is how
+TypeScript spells it, and Escalier accepts that form too:
+
+```esc
 type Omit<T, Ks> = {[if K : Ks { never } else { K }]: T[K] for K in keyof T}
 ```
 

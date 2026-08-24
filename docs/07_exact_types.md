@@ -22,15 +22,15 @@ type ExactTuple = [string, number]
 type OpenTuple  = [string, number, ...]
 ```
 
-Unions carry the same flag. `A | B` is closed and `A | B | ...` may hold members
-beyond the ones written. A union may not have a trailing `...` written directly
-after a `|`; the compiler suggests `string`, `number`, or `unknown` for an open
-set of members.
+Unions and intersections have no exactness of their own. A union is always
+closed, and writing a trailing `...` after a `|` is rejected with a diagnostic
+pointing at `string`, `number`, or `unknown` as the way to name an open set of
+values.
 
-Intersections have no exactness of their own. Exactness is about whether the set
-of inhabitants is *open*, and an intersection is a constraint combinator rather
-than a value shape — the dual reading would mean hidden extra constraints, which
-is the opposite of what inexact means everywhere else. The exactness of an
+Exactness is about whether the set of inhabitants of a *value shape* is open, and
+neither former describes one. An intersection is a constraint combinator, so the
+dual reading would mean hidden extra constraints — fewer inhabitants, the
+opposite of what inexact means everywhere else. The exactness of an
 intersection's *result* is derived from its operands during normalization and
 lands on the resulting object or tuple.
 
@@ -63,7 +63,6 @@ val cq = {color, ...q}  // cq is inexact
 - Object, tuple, and array **literals** infer as exact.
 - A shape **inferred from usage** is exact too. Once body inference finishes, the
   row is closed.
-- **Unions** are exact.
 - A **class instance** is exact when the class is `final`. A non-`final` class may
   have subclass instances carrying extra members, so its instance type is inexact.
 - A written **function value** is exact, meaning it accepts exactly the arities its
@@ -120,13 +119,10 @@ type OpenObj = {x: number, y: string, ...}
 OpenObj[keyof OpenObj]       // unknown
 ```
 
-An exact union distributes through a conditional over exactly its written
-members. An inexact one cannot, since a member it does not name might behave
-differently.
-
-Exactness is also what makes `match` exhaustiveness decidable. An exact union is
-covered once every member has a branch; an inexact scrutinee always needs a
-catch-all. See [Pattern Matching](04_pattern_matching.md).
+Exactness is also what makes `match` exhaustiveness decidable. A union is closed,
+so it is covered once every member has a branch. An inexact object or tuple
+scrutinee admits values no pattern can name, so it always needs a catch-all. See
+[Pattern Matching](04_pattern_matching.md).
 
 ## Ownership is orthogonal
 
@@ -143,8 +139,20 @@ JSDoc field holding the original Escalier type annotation. An Escalier program
 importing those declarations reads the annotation and recovers the exact type;
 a TypeScript consumer ignores it and sees ordinary structural types.
 
-## Not yet implemented
+## `Exact<T>` and `Inexact<T>`
 
-The `Exact<T>` and `Inexact<T>` type operators are not implemented. Neither is
-the value-level `exact<T>(v)` conversion, which belongs to codegen: it lowers to
-a runtime check rather than a checker rule.
+The two operators convert between the forms. `Inexact<T>` sets the trailing `...`
+marker on its operand and `Exact<T>` clears it.
+
+```esc
+type A = Inexact<{x: number}>       // {x: number, ...}
+type B = Exact<{x: number, ...}>    // {x: number}
+```
+
+An operand carrying no such marker, a primitive or a literal, reduces to itself.
+An operand that is still abstract, such as a type parameter, stays symbolic until
+it grounds.
+
+The value-level `exact<T>(v)` conversion is a separate thing and is not
+implemented. It belongs to codegen, since it lowers to a runtime check rather
+than a checker rule.

@@ -68,8 +68,8 @@ enum Expr {
 
 ## Exhaustiveness
 
-An enum type is an exact union of its variants, so a `match` over one is checked
-for exhaustiveness by variant:
+An enum type is the union of its variants, and a union is closed, so a `match`
+over one is checked for exhaustiveness by variant:
 
 ```esc
 match c {

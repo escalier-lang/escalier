@@ -88,21 +88,34 @@ so the points live elsewhere and must outlive it.
 
 ## `readonly`
 
-`readonly` is a field-level modifier that forbids **reassigning** the field. It
-says nothing about the depth of the value the field holds.
+`readonly` is a field-level modifier that forbids **reassigning** the field.
 
 ```esc
-type Config = {readonly id: string, name: string}
+fn f(p: mut {readonly id: string, name: string}) {
+    p.name = "x"    // OK
+    p.id = "y"      // ERROR: cannot assign to readonly property: id
+}
 ```
 
-So `readonly` governs the slot and `mut` governs depth. The two compose without
-interacting.
+`readonly` governs one slot; `mut` governs everything the value owns. So the two
+answer different questions and compose without interacting. A field is never
+annotated `mut` on its own — the enclosing context decides mutability, and the
+compiler rejects a `mut` on a field with a diagnostic saying so.
 
 `readonly` also constrains structural compatibility. A `{readonly a: T}` value
-cannot satisfy a writable `{a: T}` target, because a holder of the target could
-reassign through `a` and break the source's guarantee. The reverse is allowed: a
-writable `{a: T}` value satisfies a `{readonly a: T}` target, since the target
-only ever reads.
+cannot satisfy a **writable** `{a: T}` target, since a holder of that target
+could reassign through `a` and break the source's guarantee:
+
+```esc
+fn f(p: mut {readonly a: number}) {
+    val q: mut {a: number} = p
+    // ERROR: readonly field a cannot satisfy a writable field requirement
+}
+```
+
+An immutable target is fine, because nobody can write through it. The reverse
+direction is always allowed: a writable `{a: T}` value satisfies a
+`{readonly a: T}` target, since the target only ever reads.
 
 `readonly` survives a freeze and a thaw unchanged, since it is part of the
 structural shape rather than the `mut` wrapper.
