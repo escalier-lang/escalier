@@ -17,9 +17,14 @@ import (
 
 // This file implements the read-only half of §6.4 of
 // planning/builtins/implementation_plan.md: verifying that a committed
-// `.esc` tree still covers every declaration the pinned `.d.ts` set
-// produces. CI runs it after a TypeScript bump to find out what
-// upstream gained.
+// `.esc` tree still covers every declaration and member the pinned
+// `.d.ts` set produces. CI runs it after a TypeScript bump to find out
+// what upstream gained.
+//
+// §6.4 states check 1 over declarations. Members are checked on the
+// same footing here. The §6.4 write mode adds them, so a check that
+// stayed silent about them would tell CI a bump was clean while the
+// write mode still had methods to add.
 //
 // The exemption list check 1 needs — `globalThis`, `eval`, and the
 // `intrinsic`-typed declarations of §6.1 — is not restated here. Every
@@ -53,6 +58,10 @@ type PackageDiff struct {
 	// counterpart of the same name.
 	NewDecls []NewDecl
 
+	// NewMembers are converted class or interface members missing from
+	// the committed declaration that shares their owner's name.
+	NewMembers []NewMember
+
 	// Removed names committed declarations absent from the converted
 	// output, usually a TS-side removal. Nothing is ever deleted.
 	Removed []string
@@ -61,7 +70,7 @@ type PackageDiff struct {
 // Empty reports whether the committed file already covers everything
 // the converter produced.
 func (d *PackageDiff) Empty() bool {
-	return len(d.NewDecls) == 0
+	return len(d.NewDecls) == 0 && len(d.NewMembers) == 0
 }
 
 // NewDecl is one converted declaration the committed file lacks.
@@ -71,6 +80,30 @@ type NewDecl struct {
 	// Kind is the declaration's Escalier form: "class", "interface",
 	// "type", "function", "value", or "namespace".
 	Kind string
+}
+
+// NewMember is one converted member the committed declaration lacks.
+type NewMember struct {
+	// Owner is the name of the committed declaration the member would
+	// be added to.
+	Owner string
+
+	// Name is the member's key: an identifier, a string-literal key, or
+	// a dotted computed key such as "Symbol.iterator". A constructor is
+	// named "constructor".
+	Name string
+
+	// Static reports whether the member lives on the static side.
+	Static bool
+}
+
+// Label renders a member as it appears in a report, e.g.
+// "Array.isArray (static)".
+func (m *NewMember) Label() string {
+	if m.Static {
+		return fmt.Sprintf("%s.%s (static)", m.Owner, m.Name)
+	}
+	return fmt.Sprintf("%s.%s", m.Owner, m.Name)
 }
 
 // CheckReport is the outcome of a read-only check run: one PackageDiff
@@ -93,10 +126,10 @@ func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error
 	return &CheckReport{Packages: diffs}, nil
 }
 
-// Failed reports whether the run found a `.d.ts` declaration with no
-// `.esc` counterpart. Extra declarations on the `.esc` side do not fail
-// the check — §6.4 reports them and leaves the deletion decision to a
-// contributor.
+// Failed reports whether the run found a `.d.ts` declaration or member
+// with no `.esc` counterpart. Extra declarations on the `.esc` side do
+// not fail the check — §6.4 reports them and leaves the deletion
+// decision to a contributor.
 func (r *CheckReport) Failed() bool {
 	for i := range r.Packages {
 		if !r.Packages[i].Empty() {
@@ -106,15 +139,16 @@ func (r *CheckReport) Failed() bool {
 	return false
 }
 
-// Counts returns the number of missing declarations and informational
-// removals across every package.
-func (r *CheckReport) Counts() (decls, removed int) {
+// Counts returns the number of missing declarations, missing members,
+// and informational removals across every package.
+func (r *CheckReport) Counts() (decls, members, removed int) {
 	for i := range r.Packages {
 		p := &r.Packages[i]
 		decls += len(p.NewDecls)
+		members += len(p.NewMembers)
 		removed += len(p.Removed)
 	}
-	return decls, removed
+	return decls, members, removed
 }
 
 // Write prints the report to w, one section per package with findings,
@@ -139,16 +173,21 @@ func (r *CheckReport) Write(w io.Writer) error {
 				return err
 			}
 		}
+		for j := range p.NewMembers {
+			if _, err := fmt.Fprintf(w, "  missing member: %s\n", p.NewMembers[j].Label()); err != nil {
+				return err
+			}
+		}
 		for _, name := range p.Removed {
 			if _, err := fmt.Fprintf(w, "  extra declaration: %s (absent from the .d.ts; not removed)\n", name); err != nil {
 				return err
 			}
 		}
 	}
-	decls, removed := r.Counts()
+	decls, members, removed := r.Counts()
 	if _, err := fmt.Fprintf(w,
-		"check: %d missing declarations, %d extra declarations\n",
-		decls, removed); err != nil {
+		"check: %d missing declarations, %d missing members, %d extra declarations\n",
+		decls, members, removed); err != nil {
 		return err
 	}
 	_, err := fmt.Fprint(w,
@@ -226,7 +265,13 @@ func diffPackage(pkg Package, mod *StandaloneModule, escDir string) (*PackageDif
 				Name: name,
 				Kind: escDeclKind(decl),
 			})
+			continue
 		}
+		host := memberHost(byName[name], decl)
+		if host == nil {
+			continue
+		}
+		diff.NewMembers = append(diff.NewMembers, missingMembers(name, host, decl)...)
 	}
 
 	// A name can be committed twice — once in each space — so report it
@@ -333,6 +378,156 @@ func spaceCovered(committed []ast.Decl, converted ast.Decl) bool {
 		}
 	}
 	return false
+}
+
+// memberHost returns the committed declaration whose members the
+// converted declaration's members are compared against, or nil when the
+// converted declaration has no member list or nothing of its shape was
+// committed under that name.
+//
+// Only a same-shape pair is member-comparable. A class and an interface
+// hold their members in different slots, and turning one into the other
+// is a signature change, which §6.4 leaves to a contributor.
+func memberHost(committed []ast.Decl, converted ast.Decl) ast.Decl {
+	switch converted.(type) {
+	case *ast.ClassDecl:
+		for _, decl := range committed {
+			if _, ok := decl.(*ast.ClassDecl); ok {
+				return decl
+			}
+		}
+	case *ast.InterfaceDecl:
+		for _, decl := range committed {
+			if _, ok := decl.(*ast.InterfaceDecl); ok {
+				return decl
+			}
+		}
+	}
+	return nil
+}
+
+// missingMembers returns the members of the converted declaration that
+// the committed declaration of the same name does not already fill.
+// `name` is the shared name, used to label each result.
+//
+// Only classes and interfaces have members, and memberHost has already
+// paired the two sides by shape, so anything else yields nothing.
+func missingMembers(name string, committed, converted ast.Decl) []NewMember {
+	switch conv := converted.(type) {
+	case *ast.ClassDecl:
+		host, ok := committed.(*ast.ClassDecl)
+		if !ok {
+			return nil
+		}
+		filled := set.NewSet[memberSlot]()
+		for _, elem := range host.Body {
+			if slot, ok := classElemSlot(elem); ok {
+				filled.Add(slot)
+			}
+		}
+		var out []NewMember
+		for _, elem := range conv.Body {
+			slot, ok := classElemSlot(elem)
+			if !ok || filled.Contains(slot) {
+				continue
+			}
+			filled.Add(slot)
+			out = append(out, NewMember{Owner: name, Name: slot.Name, Static: slot.Static})
+		}
+		return out
+
+	case *ast.InterfaceDecl:
+		host, ok := committed.(*ast.InterfaceDecl)
+		if !ok || host.TypeAnn == nil || conv.TypeAnn == nil {
+			return nil
+		}
+		filled := set.NewSet[memberSlot]()
+		for _, elem := range host.TypeAnn.Elems {
+			if slot, ok := objElemSlot(elem); ok {
+				filled.Add(slot)
+			}
+		}
+		var out []NewMember
+		for _, elem := range conv.TypeAnn.Elems {
+			slot, ok := objElemSlot(elem)
+			if !ok || filled.Contains(slot) {
+				continue
+			}
+			filled.Add(slot)
+			out = append(out, NewMember{Owner: name, Name: slot.Name, Static: slot.Static})
+		}
+		return out
+	}
+	return nil
+}
+
+// memberSlot identifies a member by the name it is addressed with plus
+// which side of the class it lives on. Members share a slot when a
+// hand-edit could have turned one into the other: a converted
+// `readonly x: T` field and a committed `get x() -> T` occupy the same
+// slot, so the check leaves the hand-written getter alone instead of
+// reporting the field missing beside it.
+//
+// Overload sets collapse to one slot too. Whether the committed
+// overloads still cover the `.d.ts` ones is a signature question, which
+// §6.4 checks 2 and 3 answer once the solver can compare them.
+type memberSlot struct {
+	Name   string
+	Static bool
+}
+
+// classElemSlot returns the slot a class member fills. The bool is
+// false for a member whose key is neither an identifier, a string
+// literal, nor a dotted computed key such as `[Symbol.iterator]`. Both
+// sides run through this function, so an unnameable member is invisible
+// to the member diff and is never reported.
+func classElemSlot(elem ast.ClassElem) (memberSlot, bool) {
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		return slotFor(e.Name, e.Static)
+	case *ast.MethodElem:
+		return slotFor(e.Name, e.Static)
+	case *ast.GetterElem:
+		return slotFor(e.Name, e.Static)
+	case *ast.SetterElem:
+		return slotFor(e.Name, e.Static)
+	case *ast.ConstructorElem:
+		return memberSlot{Name: "constructor"}, true
+	}
+	return memberSlot{}, false
+}
+
+// objElemSlot is classElemSlot for an interface or object-type member.
+// Call and construct signatures carry no name, so the diff passes over
+// them the same way it passes over an unnameable key.
+func objElemSlot(elem ast.ObjTypeAnnElem) (memberSlot, bool) {
+	switch e := elem.(type) {
+	case *ast.PropertyTypeAnn:
+		return slotFor(e.Name, false)
+	case *ast.MethodTypeAnn:
+		return slotFor(e.Name, false)
+	case *ast.GetterTypeAnn:
+		return slotFor(e.Name, false)
+	case *ast.SetterTypeAnn:
+		return slotFor(e.Name, false)
+	}
+	return memberSlot{}, false
+}
+
+// slotFor builds a memberSlot from a member key, reporting false for a
+// key with no stable textual name.
+func slotFor(key ast.ObjKey, static bool) (memberSlot, bool) {
+	switch k := key.(type) {
+	case *ast.IdentExpr:
+		return memberSlot{Name: k.Name, Static: static}, true
+	case *ast.StrLit:
+		return memberSlot{Name: k.Value, Static: static}, true
+	case *ast.ComputedKey:
+		if dotted := astExprDottedName(k.Expr); dotted != "" {
+			return memberSlot{Name: dotted, Static: static}, true
+		}
+	}
+	return memberSlot{}, false
 }
 
 // escDeclName returns the name a top-level declaration is addressed by,

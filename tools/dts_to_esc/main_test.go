@@ -47,7 +47,7 @@ func TestRun_CheckFailsOnAnEmptyTree(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`std:array (std/array.esc)
   missing file
   missing declaration: Array (class)
-check: 1 missing declarations, 0 extra declarations
+check: 1 missing declarations, 0 missing members, 0 extra declarations
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }
@@ -147,7 +147,7 @@ func TestRun_CheckPassesOnASeededTree(t *testing.T) {
 
 	var stdout strings.Builder
 	require.NoError(t, run([]string{"check", libDir, escDir}, &stdout, io.Discard))
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 extra declarations
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 missing members, 0 extra declarations
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }

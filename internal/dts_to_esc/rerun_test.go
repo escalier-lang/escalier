@@ -91,8 +91,9 @@ declare var Array: ArrayConstructor;
 	require.NoError(t, err)
 	require.False(t, report.Failed())
 
-	decls, removed := report.Counts()
+	decls, members, removed := report.Counts()
 	require.Equal(t, 0, decls)
+	require.Equal(t, 0, members)
 	require.Equal(t, 0, removed)
 }
 
@@ -140,6 +141,8 @@ declare var Array: ArrayConstructor;
 	writeEsc(t, root, "std/array.esc", `@js("Array")
 export declare class Array<T> {
     length: number,
+    constructor(mut self),
+    static readonly prototype: Array<any>,
 }
 
 export type MyArrayHelper<T> = Array<T>
@@ -148,12 +151,78 @@ export type MyArrayHelper<T> = Array<T>
 	report, err := CheckPartition(res, root)
 	require.NoError(t, err)
 
-	diff := findDiff(t, report, "std:array")
-	require.True(t, diff.Exists)
-	require.Empty(t, diff.NewDecls)
-	require.Equal(t, []string{"MyArrayHelper"}, diff.Removed)
+	// Nothing is missing on either side; the one finding is the `.esc`
+	// declaration the `.d.ts` has no counterpart for, which the report
+	// names and leaves in place.
+	var sb strings.Builder
+	require.NoError(t, report.Write(&sb))
+	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`std:array (std/array.esc)
+  extra declaration: MyArrayHelper (absent from the .d.ts; not removed)
+check: 0 missing declarations, 0 missing members, 1 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
 
 	// An extra declaration is informational, so it does not fail CI.
+	// That verdict is the one fact the rendered report does not carry.
+	require.False(t, report.Failed())
+}
+
+func TestCheckPartition_ReportsMissingMembers(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; indexOf(searchElement: T): number; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+	writeEsc(t, root, "std/array.esc", `@js("Array")
+export declare class Array<T> {
+    length: number,
+}
+`)
+
+	report, err := CheckPartition(res, root)
+	require.NoError(t, err)
+	require.True(t, report.Failed())
+
+	// The rendered report carries every fact this test is about: no
+	// declaration is missing because the class itself is committed, and
+	// each of the four members the `.d.ts` adds is named, static ones
+	// marked as such. Members are listed in the order the converted
+	// class declares them.
+	var sb strings.Builder
+	require.NoError(t, report.Write(&sb))
+	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`std:array (std/array.esc)
+  missing member: Array.indexOf
+  missing member: Array.constructor
+  missing member: Array.isArray (static)
+  missing member: Array.prototype (static)
+check: 0 missing declarations, 4 missing members, 0 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
+}
+
+func TestCheckPartition_AHandWrittenGetterFillsTheFieldSlot(t *testing.T) {
+	t.Parallel()
+	// A §7 hand-edit that turns a converted `readonly` field into a
+	// getter is a refinement, not a gap: the check must leave it alone
+	// rather than reporting the field missing beside it.
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { readonly length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+	writeEsc(t, root, "std/array.esc", `@js("Array")
+export declare class Array<T> {
+    get length(self) -> number,
+    constructor(mut self),
+    static readonly prototype: Array<any>,
+}
+`)
+
+	report, err := CheckPartition(res, root)
+	require.NoError(t, err)
 	require.False(t, report.Failed())
 }
 
@@ -179,7 +248,7 @@ declare var Array: ArrayConstructor;
 	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`std:array (std/array.esc)
   missing file
   missing declaration: Array (class)
-check: 1 missing declarations, 0 extra declarations
+check: 1 missing declarations, 0 missing members, 0 extra declarations
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }
@@ -232,6 +301,7 @@ export declare interface WeakRefConstructor {
 	require.NoError(t, err)
 	diff := findDiff(t, report, "std:weak_ref")
 	require.Empty(t, diff.NewDecls, "the fused class covers both converted halves")
+	require.Empty(t, diff.NewMembers)
 	require.False(t, report.Failed())
 }
 
