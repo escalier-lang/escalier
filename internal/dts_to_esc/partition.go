@@ -649,11 +649,16 @@ var webPackages = []struct {
 }
 
 // ExplicitDrops names top-level TS-lib declarations the converter
-// skips emission for, with a logged note. Per §6.1: `globalThis` was
-// the union of every previously-ambient name (now meaningless with
-// no ambient tier), and `eval` has no good use case. Intrinsic-typed
-// declarations (FR13) are detected structurally, not by name, and so
-// are not listed here.
+// skips emission for, with a logged note. Per §6.1: `globalThis` has
+// no ambient union to take now that there is no ambient tier, and
+// `eval` has no good use case. The FR13 intrinsics are listed by name
+// below rather than detected structurally — `intrinsic` is a type
+// annotation Escalier prints back out, so a converted alias would
+// otherwise reach the committed tree.
+//
+// This is the single copy of the drop list. The §6.4 `check` pass
+// takes its exemptions from Route rather than restating the names, so
+// the two cannot disagree.
 var ExplicitDrops = set.FromSlice([]string{
 	// Per §6.1 — `globalThis` had no ambient union to take, `eval` has
 	// no good use case.

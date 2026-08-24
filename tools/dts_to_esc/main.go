@@ -22,6 +22,13 @@
 //	    against the ECMA-262 effect facts derived from that control-flow
 //	    graph, and reports the names present on one side only. See
 //	    planning/ecma-262/implementation_plan.md §5.
+//
+//	dts_to_esc check <lib-dir> <esc-dir>
+//	    Read-only verification per §6.4: convert the pinned lib set and
+//	    report every `.d.ts` declaration with no counterpart in the
+//	    committed `.esc` tree under <esc-dir>. Exits non-zero when
+//	    anything is missing. Signature and property-type drift are not
+//	    checked yet — see internal/dts_to_esc/rerun.go.
 package main
 
 import (
@@ -44,14 +51,68 @@ func main() {
 	}
 }
 
+const usage = `usage:
+  dts_to_esc <path-to-d.ts>
+  dts_to_esc partition [--cfg <cfg.json>] <lib-dir> <out-dir>
+  dts_to_esc check <lib-dir> <esc-dir>`
+
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage:\n  dts_to_esc <path-to-d.ts>\n  dts_to_esc partition [--cfg <cfg.json>] <lib-dir> <out-dir>")
+		return fmt.Errorf("%s", usage)
 	}
-	if args[0] == "partition" {
+	switch args[0] {
+	case "partition":
 		return runPartition(args[1:], stderr)
+	case "check":
+		return runCheck(args[1:], stdout, stderr)
 	}
 	return runSingleFile(args, stdout)
+}
+
+// errCheckFailed is returned when `check` finds a missing declaration.
+// main turns any error into a non-zero exit, which is what CI keys off.
+// The message stays short because the report itself has already been
+// printed.
+var errCheckFailed = errors.New("committed .esc tree is out of date with the .d.ts inputs")
+
+func runCheck(args []string, stdout, stderr io.Writer) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: dts_to_esc check <lib-dir> <esc-dir>")
+	}
+	result, err := partitionLibDir(args[0], stderr)
+	if err != nil {
+		return err
+	}
+	report, err := dts_to_esc.CheckPartition(result, args[1])
+	if err != nil {
+		return err
+	}
+	if err := report.Write(stdout); err != nil {
+		return err
+	}
+	if report.Failed() {
+		return errCheckFailed
+	}
+	return nil
+}
+
+// partitionLibDir discovers, parses, and routes every lib.*.d.ts under
+// libDir. Shared by the partition and check subcommands.
+func partitionLibDir(libDir string, stderr io.Writer) (*dts_to_esc.PartitionResult, error) {
+	basenames, err := dts_to_esc.DiscoverLibFiles(libDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(basenames) == 0 {
+		return nil, fmt.Errorf("no lib.*.d.ts files found under %s", libDir)
+	}
+	fmt.Fprintf(stderr, "discovered %d lib files\n", len(basenames))
+
+	inputs, err := dts_to_esc.ParseLibFiles(libDir, basenames)
+	if err != nil {
+		return nil, err
+	}
+	return dts_to_esc.PartitionLib(inputs)
 }
 
 func runSingleFile(args []string, out io.Writer) error {
@@ -111,21 +172,7 @@ func runPartition(args []string, stderr io.Writer) error {
 		join = ecma262.NewJoin(ecma262.NewFacts(cfg))
 	}
 
-	basenames, err := dts_to_esc.DiscoverLibFiles(libDir)
-	if err != nil {
-		return err
-	}
-	if len(basenames) == 0 {
-		return fmt.Errorf("no lib.*.d.ts files found under %s", libDir)
-	}
-	fmt.Fprintf(stderr, "discovered %d lib files\n", len(basenames))
-
-	inputs, err := dts_to_esc.ParseLibFiles(libDir, basenames)
-	if err != nil {
-		return err
-	}
-
-	result, err := dts_to_esc.PartitionLib(inputs)
+	result, err := partitionLibDir(libDir, stderr)
 	if err != nil {
 		return err
 	}
