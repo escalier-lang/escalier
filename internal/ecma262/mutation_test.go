@@ -87,6 +87,15 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// Date.prototype.setTime writes `dateObject.[[DateValue]]`, the slot
 		// Date.prototype.getTime reads back.
 		"BackingStoreSlotOnADate": {"Date.prototype.setTime", "receiver"},
+		// A finalization registry keeps its cells the way a Map keeps its
+		// entries, so `finalizationRegistry.[[Cells]]` is a backing store too.
+		"BackingStoreSlotOnARegistry": {"FinalizationRegistry.prototype.register", "receiver"},
+		// A DataView setter stores bytes into the Data Block behind its buffer
+		// through `SetValueInBuffer`. The buffer reaches that call as
+		// `view.[[ViewedArrayBuffer]]`, and reading a slot breaks the origin
+		// chain, so the write lands on a value neither the receiver nor a
+		// parameter accounts for.
+		"DataBlockWrite": {"DataView.prototype.setUint8", "unattributable"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -112,6 +121,15 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 	}
 }
 
+// A write the callee could not place travels up to its callers, since the value
+// it wrote may have arrived as one of their arguments. `SetViewValue` stores
+// into the Data Block behind the view it was handed and cannot say whose block
+// that is, and every DataView setter calls it.
+func TestMutationSummaryCarriesUnattributableWritesUpTheCallGraph(t *testing.T) {
+	require.Equal(t, "unattributable", mutationsOf(t, "SetViewValue").String())
+	require.Equal(t, "unattributable", mutationsOf(t, "DataView.prototype.setFloat64").String())
+}
+
 // A mutation travels as far up the call graph as the origin map can follow it.
 // `Object.defineProperties` performs no write of its own. It calls
 // `ObjectDefineProperties(O, Properties)`, which calls `DefinePropertyOrThrow`
@@ -135,8 +153,10 @@ func TestMutationSummaryReadsThePositionTheCallPassesTheObjectAt(t *testing.T) {
 
 // A write the analysis cannot place leaves the function unattributable rather
 // than silently non-mutating. `Array.of` builds its array through
-// `CreateDataPropertyOrThrow(A, ...)`, where `A` came out of `Construct(C, ...)`
-// and §4.2 refuses to call a constructor's result fresh.
+// `CreateDataPropertyOrThrow(A, ...)`, where `A` came out of `Construct(C, ...)`.
+// §4.2 leaves a constructor's result Unknown rather than fresh, since the
+// constructor runs at runtime and may hand back a value the caller already
+// holds.
 func TestMutationSummaryUnattributableWrite(t *testing.T) {
 	require.Equal(t, "unattributable", mutationsOf(t, "Array.of").String())
 }
@@ -150,6 +170,27 @@ func TestMutationSummaryUnattributableWrite(t *testing.T) {
 // the hand-written overrides surfaces.
 func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
 	require.Equal(t, "none", mutationsOf(t, "Map.prototype.delete").String())
+}
+
+// A callee that names one of the calling function's parameters is a function
+// the caller was handed, not the abstract operation of that name. Charging it
+// with the operation's mutations would claim a write the callback may never
+// perform, so the call is treated as a body the analysis cannot read.
+//
+// No callee in the committed graph shadows an operation this way, so the case
+// is stated as a graph of its own. `Set` is the seeded property write, and
+// `Demo` calls a parameter that happens to carry the same name.
+func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["Set","target"],` +
+			`"nodes":[{"kind":"call","callee":"Set","args":[{"kind":"var","var":"target"}],"guard":"?"}]}]}`))
+	require.NoError(t, err)
+
+	s := NewMutationSummary(cfg)
+	require.Equal(t, "args{0}", s.Of(cfg.AbstractOp("Set")).String())
+	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
 }
 
 // A function the summary never saw reads back as mutating nothing.
@@ -234,7 +275,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 42, unattributable 17, incomplete 268
-builtin-method: total 313, receiver 43, args 0, unattributable 3, incomplete 35
-builtin-static: total 188, receiver 0, args 6, unattributable 3, incomplete 58`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 43, unattributable 36, incomplete 268
+builtin-method: total 313, receiver 44, args 0, unattributable 17, incomplete 35
+builtin-static: total 188, receiver 0, args 6, unattributable 22, incomplete 58`))
 }

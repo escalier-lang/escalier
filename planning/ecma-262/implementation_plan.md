@@ -636,28 +636,41 @@ holds the seed, the backing-store slot list, and the fixpoint.
 `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and `Of(fn)`
 returns one function's `Mutations`, which carries the mutated parameter
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
-about 10 ms. Seven seed entries grow into 42 abstract operations with a mutated
-position, and of the 501 builtins 43 mutate their receiver and 6 mutate a
-parameter. The gate is
+about 10 ms. Eight of the nine seed entries name an operation the graph holds,
+and those eight grow into 43 abstract operations with a mutated position. Of the
+501 builtins, 44 mutate their receiver and 6 mutate a parameter. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
 receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
 `RegExp.prototype.exec`, and the collection adders come out receiver-mutating;
 `Object.freeze`, `Object.seal`, `Object.assign`, `Object.defineProperty`,
-`Object.defineProperties`, and `Reflect.set` come out mutating argument 0. Five
-findings.
+`Object.defineProperties`, and `Reflect.set` come out mutating argument 0.
+Seven findings.
 
-- **`Incomplete` stays on the function that carries the unreadable step and is
-  not charged to its callers.** A callee the analysis could not fully read may
-  under-report its mutated positions, so a caller that reads that summary
-  inherits the gap. Charging the caller as well is the sound reading and costs
-  too much to use: it takes the incomplete builtins from 93 of 501 to 340, which
-  would leave §4.3 able to classify under a third of the surface. The unreadable
-  steps sit in operations nearly every algorithm reaches, so the flag saturates.
-  The narrower rule is what §4.1 specifies and what the code does. §6's
-  validation diff against the hand-written overrides is where a mutation lost
-  inside an incomplete callee surfaces.
+- **`Unattributable` is charged to callers and `Incomplete` is not.** Both
+  warnings mean the caller's own summary may be missing something, so the sound
+  reading charges each of them up the call graph. Only one is affordable. A
+  callee that wrote a value it could not place may have written a value the
+  caller handed it, and carrying that up costs 30 builtins and is what makes the
+  DataView setters reportable at all. Carrying `Incomplete` up takes the
+  incomplete builtins from 93 of 501 to 340, which would leave §4.3 able to
+  classify under a third of the surface, because the steps §3 could not lower
+  sit in operations nearly every algorithm reaches. §6's validation diff against
+  the hand-written overrides is where a mutation lost inside an incomplete
+  callee surfaces.
+- **A byte written into a Data Block needs a seed of its own.** FR3 names
+  `TypedArray.prototype.set` writing through `[[ArrayBufferData]]`, but the
+  write is not a slot write. The method reads the buffer out of that slot and
+  passes it to `SetValueInBuffer`, which stores a byte range the graph does not
+  lower. Reading a slot breaks the origin chain under §4.2, so the seed entry
+  cannot recover which buffer was written and the mutation surfaces as
+  `Unattributable` rather than as a receiver fact. That still moves the 11
+  `DataView.prototype.set*` methods, `Atomics.store`,
+  `TypedArray.prototype.copyWithin`, and `TypedArray.prototype.set` off a silent
+  non-mutating answer, which is the FR5-conservative direction. Reaching a
+  receiver fact for them needs an origin that survives a read out of a
+  backing-store slot, which §4.2 does not model.
 - **A computed slot on a fresh value is not a warning.** The serializer leaves
   the slot name empty on the 155 writes whose slot the algorithm computes, and
   the curated list cannot answer for those. They mark the function incomplete,
@@ -678,13 +691,24 @@ findings.
   Record rather than a backing store, and `p` itself came out of a read of
   `M.[[MapData]]`, which breaks the origin chain under §4.2. Both halves of the
   attribution fail, so the method reads as writing nothing.
-  `Map.prototype.clear`, `WeakMap.prototype.delete`, and
-  `TypedArray.prototype.set` are the same shape. Flagging every slot write the
-  analysis cannot place as `Unattributable` catches them, at the cost of
-  `Map.prototype.set` and `WeakMap.prototype.set`, which write the same record
-  on their update path and would stop being classifiable. §6 triages these
-  against the hand-written overrides, so the false negative is recorded rather
-  than resolved here.
+  `Map.prototype.clear` and `WeakMap.prototype.delete` are the same shape.
+  Flagging every slot write the analysis cannot place as `Unattributable`
+  catches them, at the cost of `Map.prototype.set` and `WeakMap.prototype.set`,
+  which write the same record on their update path and would stop being
+  classifiable. §6 triages these against the hand-written overrides, so the
+  false negative is recorded rather than resolved here.
+- **An iterator's cursor is left out of the backing-store list.** Nine slots
+  take a receiver-origin write inside a builtin method that the curated list
+  does not count, and all nine are iterator or generator bookkeeping:
+  `[[ArrayLikeNextIndex]]` and `[[IteratedArrayLike]]` in
+  `ArrayIteratorPrototype.next`, `[[VisitedKeys]]`, `[[RemainingKeys]]`,
+  `[[ObjectWasVisited]]` and `[[Object]]` in `ForInIteratorPrototype.next`,
+  `[[Done]]`, `[[GeneratorState]]`, and `[[AsyncGeneratorState]]` elsewhere.
+  Listing them would make every `next` method mutate its receiver, which is the
+  right answer if Escalier's iterator protocol takes `&mut self` and the wrong
+  one otherwise. That is a decision about the emitted surface rather than about
+  the analysis, so §11's curation makes it. `[[Cells]]` is listed, because a
+  finalization registry keeps its cells the way a Map keeps its entries.
 - **`CreateMethodProperty` is seeded and absent from the graph.** Nothing
   reachable from a builtin calls it; the spec uses it from the syntax-directed
   operations §3 drops. The entry stays, because the seed is a review artifact of

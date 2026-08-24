@@ -53,6 +53,13 @@ var directMutators = map[string]int{
 	"Set":                       0,
 	// Integrity changes.
 	"SetIntegrityLevel": 0,
+	// Data-block writes. SetValueInBuffer writes bytes into the Data Block an
+	// ArrayBuffer holds in its `[[ArrayBufferData]]` slot. Its argument 0 is
+	// that buffer, and every write a DataView setter, `Atomics.store`, or
+	// `TypedArray.prototype.set` performs goes through it. The write itself is
+	// a byte-range store the graph does not lower, so nothing below this entry
+	// reports it.
+	"SetValueInBuffer": 0,
 }
 
 // backingStoreSlots are the internal slots that hold an object's mutable
@@ -66,11 +73,13 @@ var directMutators = map[string]int{
 // non-mutating.
 //
 // The list is deliberately narrow. A slot belongs here when it holds the value
-// the object's own methods read back, not when it holds a field that merely
-// describes the object. `[[DateValue]]` is a backing store by that reading,
-// since `Date.prototype.setTime` writes it and `Date.prototype.getTime` reads
-// it back. `[[Prototype]]` and `[[Extensible]]` are not, because the property
-// operations that change them already go through the seed.
+// the object's own methods read back. `[[DateValue]]` qualifies, since
+// `Date.prototype.setTime` writes it and `Date.prototype.getTime` reads it
+// back. `[[Prototype]]` and `[[Extensible]]` do not, because they describe how
+// the object behaves rather than what it holds. Leaving them out costs nothing,
+// since `Object.setPrototypeOf` and `Object.preventExtensions` reach their
+// writes through an internal method the graph does not resolve and come out
+// incomplete either way.
 //
 // Like the seed, this is a reviewed constant. A collection type entering the
 // spec with a new payload slot needs an entry here or its methods come out
@@ -92,6 +101,8 @@ var backingStoreSlots = set.FromSlice([]string{
 	"ViewedArrayBuffer",
 	// Dates.
 	"DateValue",
+	// Finalization registries.
+	"Cells",
 })
 
 // Mutations is what the fixpoint concluded about one function. Args holds the
@@ -100,11 +111,11 @@ var backingStoreSlots = set.FromSlice([]string{
 // by Receiver.
 //
 // Unattributable and Incomplete are two different failures, and §4.3 turns
-// either one into `classified: false` so that FR5's heuristic fall-through
-// handles the method. Unattributable means the analysis saw a mutation and
-// could not tie it to the receiver or to a parameter. It knows something was
-// written but not what. Incomplete means the analysis could not see the whole
-// algorithm, so a mutation may be hiding in the part it could not read.
+// either one into `classified: false` so that FR5's name-based heuristics
+// decide the method instead. Unattributable means the analysis saw a mutation
+// and could not tie it to the receiver or to a parameter. It knows something
+// was written but not what. Incomplete means the analysis could not see the
+// whole algorithm, so a mutation may be hiding in the part it could not read.
 type Mutations struct {
 	Args           []int
 	Receiver       bool
@@ -165,6 +176,9 @@ type MutationSummary struct {
 // callee's summary can grow after its callers have been read, a function whose
 // summary grows re-enqueues its callers.
 //
+// A call also carries the callee's Unattributable flag up, since the value the
+// callee could not place may have arrived as one of the arguments.
+//
 // The analysis never invents a mutation. Every position in an Args set traces
 // back either to a seed entry or to a backing-store slot write.
 func NewMutationSummary(cfg *CFG) *MutationSummary {
@@ -210,7 +224,7 @@ func (s *MutationSummary) Of(fn *Func) Mutations {
 }
 
 // analysis is the state the fixpoint runs over. origins and callers are built
-// once and read throughout; only summary changes.
+// once and read from then on. Only summary changes as the fixpoint iterates.
 type analysis struct {
 	summary *MutationSummary
 	origins map[*Func]*OriginMap
@@ -218,8 +232,8 @@ type analysis struct {
 }
 
 // callees returns the functions fn calls, in call order and without repeats. A
-// callee that names no function in the graph is left out, and the transfer
-// function records it as incomplete when it reaches the call.
+// callee the analysis cannot resolve is left out, and the transfer function
+// records it as incomplete when it reaches the call.
 func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
@@ -228,7 +242,7 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 		if !ok {
 			continue
 		}
-		callee := cfg.AbstractOp(call.Callee)
+		callee := a.resolve(cfg, a.origins[fn], call.Callee)
 		if callee == nil || seen.Contains(callee) {
 			continue
 		}
@@ -236,6 +250,23 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 		called = append(called, callee)
 	}
 	return called
+}
+
+// resolve returns the function a call node's callee names, or nil when the
+// callee is not a body the analysis can read.
+//
+// A callee is either an abstract-operation name or a value the function holds,
+// such as the `callbackfn` a caller passed in. The origin map tells the two
+// apart, since a name bound to one of the function's own parameters is a
+// callback rather than the operation of that name. No callee in the pinned
+// graph shadows an operation this way. The check is there for a spec bump that
+// names a parameter after a seeded operation, where resolving by name alone
+// would charge the callback with that operation's mutations.
+func (a *analysis) resolve(cfg *CFG, origin *OriginMap, callee string) *Func {
+	if origin.Of(callee).Kind == OriginParam {
+		return nil
+	}
+	return cfg.AbstractOp(callee)
 }
 
 // run iterates the transfer function until no summary moves. It terminates
@@ -279,8 +310,8 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				// list cannot say whether this write reaches the object's
 				// backing store. A write onto a value the function allocated
 				// itself stays invisible to the caller whichever slot it
-				// lands on. At any other origin the analysis has seen a write
-				// it cannot read, which is what Incomplete records.
+				// lands on. At any other origin this is a write the analysis
+				// cannot read, which is what Incomplete records.
 				if origin.Eval(node.Object).Kind != OriginFresh {
 					changed = f.markIncomplete() || changed
 				}
@@ -288,19 +319,26 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				changed = a.attribute(f, origin, node.Object) || changed
 			}
 		case *CallNode:
-			callee := cfg.AbstractOp(node.Callee)
+			callee := a.resolve(cfg, origin, node.Callee)
 			if callee == nil {
-				// A callee absent from the graph, which is either an internal
-				// method chosen by the receiver's type or a callback the caller
-				// supplied. Either way the analysis cannot see what it writes.
+				// The callee is an internal method the receiver's type
+				// chooses, or a function the caller supplied. Neither is a
+				// body the analysis can read.
 				changed = f.markIncomplete() || changed
 				continue
 			}
-			for position := range a.summary.facts[callee].args {
+			summary := a.summary.facts[callee]
+			if summary.unattributable {
+				// The callee wrote a value it could not place, and that value
+				// may have arrived as one of these arguments.
+				changed = f.markUnattributable() || changed
+			}
+			for position := range summary.args {
 				if position >= len(node.Args) {
 					// No call in the pinned graph omits an argument its callee
-					// mutates. The bound keeps a spec bump that introduces one
-					// from indexing off the end of the argument list.
+					// mutates. A spec bump that introduces one leaves a write
+					// with no argument expression to charge it to.
+					changed = f.markIncomplete() || changed
 					continue
 				}
 				changed = a.attribute(f, origin, node.Args[position]) || changed
