@@ -193,6 +193,22 @@ func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
 }
 
+// A call that omits the argument its callee mutates leaves the write with no
+// argument expression to charge it to, so the caller is incomplete rather than
+// quietly clean. Every call in the committed graph passes the argument, so the
+// case is stated as a graph of its own.
+func TestMutationSummaryCallOmittingTheMutatedArgument(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["target"],` +
+			`"nodes":[{"kind":"call","callee":"Set","args":[],"guard":"?"}]}]}`))
+	require.NoError(t, err)
+
+	s := NewMutationSummary(cfg)
+	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
+}
+
 // A function the summary never saw reads back as mutating nothing.
 func TestMutationSummaryOfUnknownFunc(t *testing.T) {
 	require.Equal(t, Mutations{}, testSummary(t).Of(&Func{Name: "nosuchfunction"}))
