@@ -17,9 +17,22 @@
 //	    §6.1/§6.3; no `.esc` files are emitted there. The unmapped-
 //	    symbol fail-safe aborts the run with the offending name +
 //	    source file.
+//
+//	dts_to_esc check <lib-dir> <esc-dir>
+//	    Read-only verification per §6.4: convert the pinned lib set and
+//	    report every `.d.ts` declaration and member with no counterpart
+//	    in the committed `.esc` tree under <esc-dir>. Exits non-zero
+//	    when anything is missing. Signature and property-type drift are
+//	    not checked yet — see internal/interop/rerun.go.
+//
+//	dts_to_esc regenerate <lib-dir> <esc-dir>
+//	    Additive write per §6.4: add the declarations and members
+//	    `check` reports to the committed tree, leaving every existing
+//	    declaration byte-for-byte intact so hand-edits survive.
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -36,14 +49,86 @@ func main() {
 	}
 }
 
+const usage = `usage:
+  dts_to_esc <path-to-d.ts>
+  dts_to_esc partition <lib-dir> <out-dir>
+  dts_to_esc check <lib-dir> <esc-dir>
+  dts_to_esc regenerate <lib-dir> <esc-dir>`
+
 func run(args []string, stdout, stderr io.Writer) error {
 	if len(args) == 0 {
-		return fmt.Errorf("usage:\n  dts_to_esc <path-to-d.ts>\n  dts_to_esc partition <lib-dir> <out-dir>")
+		return fmt.Errorf("%s", usage)
 	}
-	if args[0] == "partition" {
+	switch args[0] {
+	case "partition":
 		return runPartition(args[1:], stderr)
+	case "check":
+		return runCheck(args[1:], stdout, stderr)
+	case "regenerate":
+		return runRegenerate(args[1:], stdout, stderr)
 	}
 	return runSingleFile(args, stdout)
+}
+
+// errCheckFailed is returned when `check` finds a missing declaration
+// or member. main turns any error into a non-zero exit, which is what
+// CI keys off; the message stays short because the report itself has
+// already been printed.
+var errCheckFailed = errors.New("committed .esc tree is out of date with the .d.ts inputs")
+
+func runCheck(args []string, stdout, stderr io.Writer) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: dts_to_esc check <lib-dir> <esc-dir>")
+	}
+	result, err := partitionLibDir(args[0], stderr)
+	if err != nil {
+		return err
+	}
+	report, err := interop.CheckPartition(result, args[1])
+	if err != nil {
+		return err
+	}
+	if err := report.Write(stdout); err != nil {
+		return err
+	}
+	if report.Failed() {
+		return errCheckFailed
+	}
+	return nil
+}
+
+func runRegenerate(args []string, stdout, stderr io.Writer) error {
+	if len(args) != 2 {
+		return fmt.Errorf("usage: dts_to_esc regenerate <lib-dir> <esc-dir>")
+	}
+	result, err := partitionLibDir(args[0], stderr)
+	if err != nil {
+		return err
+	}
+	report, err := interop.RegeneratePartition(result, args[1])
+	if err != nil {
+		return err
+	}
+	return report.Write(stdout)
+}
+
+// partitionLibDir discovers, parses, and routes every lib.*.d.ts under
+// libDir. Shared by the partition, check, and regenerate subcommands.
+func partitionLibDir(libDir string, stderr io.Writer) (*interop.PartitionResult, error) {
+	basenames, err := interop.DiscoverLibFiles(libDir)
+	if err != nil {
+		return nil, err
+	}
+	if len(basenames) == 0 {
+		return nil, fmt.Errorf("no lib.*.d.ts files found under %s", libDir)
+	}
+	fmt.Fprintf(stderr, "discovered %d lib files\n", len(basenames))
+
+	inputs, err := interop.ParseLibFiles(libDir, basenames)
+	if err != nil {
+		return nil, err
+	}
+	return interop.PartitionLib(inputs)
 }
 
 func runSingleFile(args []string, out io.Writer) error {
@@ -74,21 +159,7 @@ func runPartition(args []string, stderr io.Writer) error {
 	}
 	libDir, outDir := args[0], args[1]
 
-	basenames, err := interop.DiscoverLibFiles(libDir)
-	if err != nil {
-		return err
-	}
-	if len(basenames) == 0 {
-		return fmt.Errorf("no lib.*.d.ts files found under %s", libDir)
-	}
-	fmt.Fprintf(stderr, "discovered %d lib files\n", len(basenames))
-
-	inputs, err := interop.ParseLibFiles(libDir, basenames)
-	if err != nil {
-		return err
-	}
-
-	result, err := interop.PartitionLib(inputs)
+	result, err := partitionLibDir(libDir, stderr)
 	if err != nil {
 		return err
 	}
