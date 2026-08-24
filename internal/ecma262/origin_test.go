@@ -53,6 +53,11 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "unset", Origin{}.String())
 	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
 	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
+
+	// A kind outside the lattice renders as its number rather than as one of
+	// the names above, so an origin the walk could not produce is still legible
+	// in a failing assertion.
+	require.Equal(t, "Origin(99)", Origin{Kind: 99}.String())
 }
 
 // Only a receiver or a parameter has an interior the analysis can place. A
