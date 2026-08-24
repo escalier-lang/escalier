@@ -92,10 +92,21 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		"BackingStoreSlotOnARegistry": {"FinalizationRegistry.prototype.register", "receiver"},
 		// A DataView setter stores bytes into the Data Block behind its buffer
 		// through `SetValueInBuffer`. The buffer reaches that call as
-		// `view.[[ViewedArrayBuffer]]`, and reading a slot breaks the origin
-		// chain, so the write lands on a value neither the receiver nor a
-		// parameter accounts for.
-		"DataBlockWrite": {"DataView.prototype.setUint8", "unattributable"},
+		// `view.[[ViewedArrayBuffer]]`, an interior value of the view, so the
+		// store is charged to the view and then to the receiver the setter
+		// passed as it.
+		"DataBlockWrite": {"DataView.prototype.setUint8", "receiver"},
+		// TypedArray.prototype.set writes the same way, two calls further down
+		// through `SetTypedArrayFromTypedArray`.
+		"DataBlockWriteThroughAHelper": {"TypedArray.prototype.set", "receiver"},
+		// Atomics.store writes the buffer behind the typed array it was handed
+		// rather than a receiver, so the store lands on a parameter.
+		"DataBlockWriteOnAParameter": {"Atomics.store", "args{0}"},
+		// TypedArray.prototype.slice writes the buffer behind the array it
+		// allocated itself. A fresh object's interior is Unknown rather than
+		// fresh, since an algorithm can store a caller's value into a record it
+		// allocated, so the write is flagged rather than discarded.
+		"InteriorOfAFreshObject": {"TypedArray.prototype.slice", "unattributable incomplete"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -122,12 +133,22 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 }
 
 // A write the callee could not place travels up to its callers, since the value
-// it wrote may have arrived as one of their arguments. `SetViewValue` stores
-// into the Data Block behind the view it was handed and cannot say whose block
-// that is, and every DataView setter calls it.
+// it wrote may have arrived as one of their arguments. `JSON.parse` writes
+// nothing itself. It is unattributable because `InternalizeJSONProperty`, which
+// it calls, writes a value that operation cannot place.
 func TestMutationSummaryCarriesUnattributableWritesUpTheCallGraph(t *testing.T) {
-	require.Equal(t, "unattributable", mutationsOf(t, "SetViewValue").String())
-	require.Equal(t, "unattributable", mutationsOf(t, "DataView.prototype.setFloat64").String())
+	require.Equal(t, "unattributable incomplete", mutationsOf(t, "InternalizeJSONProperty").String())
+	require.Equal(t, "unattributable", mutationsOf(t, "JSON.parse").String())
+}
+
+// A write to a value read out of a backing-store slot is charged to the object
+// that holds the slot. `SetViewValue` passes `view.[[ViewedArrayBuffer]]` to
+// `SetValueInBuffer`, which the seed says mutates its argument 0, so the store
+// lands on `view` itself. Every DataView setter then passes its receiver as
+// `view`.
+func TestMutationSummaryChargesAnInteriorWriteToItsHolder(t *testing.T) {
+	require.Equal(t, "args{0}", mutationsOf(t, "SetViewValue").String())
+	require.Equal(t, "receiver", mutationsOf(t, "DataView.prototype.setFloat64").String())
 }
 
 // A mutation travels as far up the call graph as the origin map can follow it.
@@ -291,7 +312,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 43, unattributable 36, incomplete 268
-builtin-method: total 313, receiver 44, args 0, unattributable 17, incomplete 35
-builtin-static: total 188, receiver 0, args 6, unattributable 22, incomplete 58`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 31, incomplete 268
+builtin-method: total 313, receiver 57, args 0, unattributable 4, incomplete 35
+builtin-static: total 188, receiver 0, args 7, unattributable 21, incomplete 58`))
 }

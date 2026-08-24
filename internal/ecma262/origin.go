@@ -33,9 +33,17 @@ const (
 
 // Origin is where a value came from. Index is the parameter position and is
 // meaningful only when Kind is OriginParam.
+//
+// Interior marks a value read out of the backing store of the value Kind names,
+// rather than that value itself. `view.[[ViewedArrayBuffer]]` in `SetViewValue`
+// is the interior of parameter 0. Writing an interior value writes the object
+// holding it, which is what lets §4.1 charge a DataView setter's byte store to
+// its receiver. An interior value is not the object itself, so it never stands
+// in for it where identity is what matters, such as §4.3's return alias.
 type Origin struct {
-	Kind  OriginKind
-	Index int
+	Kind     OriginKind
+	Index    int
+	Interior bool
 }
 
 // Receiver, Fresh and Unknown are the origins that carry no index.
@@ -50,21 +58,50 @@ func Param(i int) Origin {
 	return Origin{Kind: OriginParam, Index: i}
 }
 
-func (o Origin) String() string {
+// interiorOf returns the origin of a value read out of o's backing store. Only
+// a receiver or a parameter has an interior the analysis can place.
+//
+// A fresh object's interior is `Unknown` rather than `Fresh`, because a value
+// the algorithm allocated can hold a value its caller already owns.
+// `MakeDataViewWithBufferWitnessRecord` builds a fresh record and stores the
+// view it was handed in it. Calling the record's contents fresh would discard a
+// write to that view, and `Fresh` is the one origin whose mutations §4.1 drops.
+func interiorOf(o Origin) Origin {
 	switch o.Kind {
 	case originUnset:
-		return "unset"
-	case OriginReceiver:
-		return "Receiver"
-	case OriginParam:
-		return fmt.Sprintf("Param(%d)", o.Index)
-	case OriginFresh:
-		return "Fresh"
-	case OriginUnknown:
-		return "Unknown"
+		// The walk has not reached the definition of the object being read
+		// yet. Answering `Unknown` would pin the reader there for good, since
+		// a join never retracts. Staying at the bottom lets the next pass
+		// bind it, which is what keeps the walk independent of node order.
+		return o
+	case OriginReceiver, OriginParam:
+		o.Interior = true
+		return o
 	default:
-		return fmt.Sprintf("Origin(%d)", o.Kind)
+		return Unknown
 	}
+}
+
+func (o Origin) String() string {
+	var name string
+	switch o.Kind {
+	case originUnset:
+		name = "unset"
+	case OriginReceiver:
+		name = "Receiver"
+	case OriginParam:
+		name = fmt.Sprintf("Param(%d)", o.Index)
+	case OriginFresh:
+		name = "Fresh"
+	case OriginUnknown:
+		name = "Unknown"
+	default:
+		name = fmt.Sprintf("Origin(%d)", o.Kind)
+	}
+	if o.Interior {
+		return "Interior(" + name + ")"
+	}
+	return name
 }
 
 // join is the least upper bound of two origins. Two definitions that agree keep
@@ -435,9 +472,18 @@ func (m *OriginMap) eval(e Expr) Origin {
 		return m.evalCall(e.Callee, e.Args)
 	case *AllocExpr, *LitExpr:
 		return Fresh
-	case *SlotExpr, *PropExpr:
-		// A read, so the chain breaks here. The value read out of a container
-		// is a different object from the container itself.
+	case *SlotExpr:
+		// A backing-store slot holds the object's own payload, so the value
+		// read out of one is charged to the object that holds it. Reading such
+		// a slot off an interior value keeps the same base, which is how
+		// `targetBuffer` stays at parameter 0 in `SetTypedArrayFromTypedArray`.
+		if backingStoreSlots.Contains(e.Slot) {
+			return interiorOf(m.eval(e.Object))
+		}
+		// Any other read breaks the chain. The value read out of a container is
+		// a different object from the container itself.
+		return Unknown
+	case *PropExpr:
 		return Unknown
 	default:
 		// An operand the graph left out, which reaches Eval as a nil Expr.

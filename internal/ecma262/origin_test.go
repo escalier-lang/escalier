@@ -51,6 +51,62 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "Fresh", Fresh.String())
 	require.Equal(t, "Unknown", Unknown.String())
 	require.Equal(t, "unset", Origin{}.String())
+	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
+	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
+}
+
+// Only a receiver or a parameter has an interior the analysis can place. A
+// fresh object's interior is `Unknown`, since a value the algorithm allocated
+// can hold a value its caller already owns, and calling that fresh would let
+// §4.1 discard a write to it.
+func TestInteriorOf(t *testing.T) {
+	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, interiorOf(Receiver))
+	require.Equal(t, Origin{Kind: OriginParam, Index: 1, Interior: true}, interiorOf(Param(1)))
+	require.Equal(t, Unknown, interiorOf(Fresh))
+	require.Equal(t, Unknown, interiorOf(Unknown))
+
+	// The lattice bottom stays at the bottom. A name whose definition the walk
+	// has not reached yet takes its origin on the next pass, and answering
+	// `Unknown` here would pin it for good.
+	require.Equal(t, Origin{}, interiorOf(Origin{}))
+
+	// Reading a backing-store slot off an interior value keeps the same base.
+	require.Equal(t, interiorOf(Receiver), interiorOf(interiorOf(Receiver)))
+}
+
+// An interior value is not the object that holds it, so the two never join into
+// one origin. §4.3 reads a return alias off this map, and returning
+// `M.[[MapData]]` is not returning `M`.
+func TestInteriorIsNotItsHolder(t *testing.T) {
+	require.NotEqual(t, Receiver, interiorOf(Receiver))
+	require.Equal(t, Unknown, Receiver.join(interiorOf(Receiver)))
+}
+
+// Reading a backing-store slot off a name the walk has not bound yet resolves
+// on a later pass rather than sticking at `Unknown`, so the result does not
+// depend on the order the serializer emitted the nodes in. Here `buf` reads the
+// receiver's payload one node before `O` is bound to the receiver.
+func TestOriginMapInteriorIsOrderIndependent(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[{"name":"Demo","kind":"builtin-method","params":[],"nodes":[` +
+			`{"kind":"let","target":"buf","source":{"kind":"slot","object":{"kind":"var","var":"O"},"slot":"MapData"}},` +
+			`{"kind":"let","target":"O","source":{"kind":"this"}}]}]}`))
+	require.NoError(t, err)
+
+	m := NewOriginMap(cfg.Builtin("Demo"))
+	require.Equal(t, Receiver, m.Of("O"))
+	require.Equal(t, interiorOf(Receiver), m.Of("buf"))
+}
+
+// A value read out of a backing-store slot is charged to the object holding it,
+// even when a name binds it first. `SetTypedArrayFromTypedArray` opens with
+// `Let targetBuffer be target.[[ViewedArrayBuffer]]` and passes `targetBuffer`
+// to the byte store several steps later.
+func TestOriginMapInteriorThroughALetBinding(t *testing.T) {
+	m := originsOf(t, "SetTypedArrayFromTypedArray")
+
+	require.Equal(t, Param(0), m.Of("target"))
+	require.Equal(t, interiorOf(Param(0)), m.Of("targetBuffer"))
 }
 
 func TestOriginMapSampleFunctions(t *testing.T) {
@@ -167,9 +223,14 @@ func TestOriginMapEval(t *testing.T) {
 	require.Equal(t, Fresh, m.Eval(&AllocExpr{Args: nil}))
 	require.Equal(t, Unknown, m.Eval(nil))
 
-	// A read off the receiver is a different value from the receiver.
-	readO := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "MapData"}
-	require.Equal(t, Unknown, m.Eval(readO))
+	// A backing-store slot holds the receiver's own payload, so the value read
+	// out of one is the receiver's interior rather than an unplaceable value.
+	readData := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "MapData"}
+	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, m.Eval(readData))
+
+	// Any other slot read is a different value from the receiver.
+	readOther := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "Prototype"}
+	require.Equal(t, Unknown, m.Eval(readOther))
 
 	// A nested call resolves through the same lists a call node does.
 	toObject := &CallExpr{Callee: "ToObject", Args: []Expr{&ThisExpr{}}}
@@ -210,7 +271,7 @@ func TestOriginMapString(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, m.String(), snaps.Inline(`%0: Unknown
 %1: Param(0)
 %2: Fresh
-%3: Unknown
+%3: Interior(Receiver)
 %4: Fresh
 %5: Unknown
 %6: Receiver

@@ -637,40 +637,47 @@ holds the seed, the backing-store slot list, and the fixpoint.
 returns one function's `Mutations`, which carries the mutated parameter
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
-and those eight grow into 43 abstract operations with a mutated position. Of the
-501 builtins, 44 mutate their receiver and 6 mutate a parameter. The gate is
+and those eight grow into 47 abstract operations with a mutated position. Of the
+501 builtins, 57 mutate their receiver and 7 mutate a parameter. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
 receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
-`RegExp.prototype.exec`, and the collection adders come out receiver-mutating;
-`Object.freeze`, `Object.seal`, `Object.assign`, `Object.defineProperty`,
-`Object.defineProperties`, and `Reflect.set` come out mutating argument 0.
-Seven findings.
+`RegExp.prototype.exec`, the collection adders, the 11 `DataView.prototype.set*`
+methods, `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` come
+out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
+`Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and
+`Atomics.store` come out mutating argument 0. Seven findings.
 
 - **`Unattributable` is charged to callers and `Incomplete` is not.** Both
   warnings mean the caller's own summary may be missing something, so the sound
   reading charges each of them up the call graph. Only one is affordable. A
   callee that wrote a value it could not place may have written a value the
-  caller handed it, and carrying that up costs 30 builtins and is what makes the
-  DataView setters reportable at all. Carrying `Incomplete` up takes the
-  incomplete builtins from 93 of 501 to 340, which would leave §4.3 able to
-  classify under a third of the surface, because the steps §3 could not lower
-  sit in operations nearly every algorithm reaches. §6's validation diff against
-  the hand-written overrides is where a mutation lost inside an incomplete
-  callee surfaces.
-- **A byte written into a Data Block needs a seed of its own.** FR3 names
-  `TypedArray.prototype.set` writing through `[[ArrayBufferData]]`, but the
-  write is not a slot write. The method reads the buffer out of that slot and
-  passes it to `SetValueInBuffer`, which stores a byte range the graph does not
-  lower. Reading a slot breaks the origin chain under §4.2, so the seed entry
-  cannot recover which buffer was written and the mutation surfaces as
-  `Unattributable` rather than as a receiver fact. That still moves the 11
-  `DataView.prototype.set*` methods, `Atomics.store`,
-  `TypedArray.prototype.copyWithin`, and `TypedArray.prototype.set` off a silent
-  non-mutating answer, which is the FR5-conservative direction. Reaching a
-  receiver fact for them needs an origin that survives a read out of a
-  backing-store slot, which §4.2 does not model.
+  caller handed it, and carrying that up flags 18 more builtins, of which only 2
+  were otherwise classifiable. `JSON.parse` is the shape it catches: the method
+  writes nothing itself and is unattributable because `InternalizeJSONProperty`
+  is. Carrying `Incomplete` up takes the incomplete builtins from 93 of 501 to
+  340 and the classifiable ones from 401 to 161, because the steps §3 could not
+  lower sit in operations nearly every algorithm reaches. §6's validation diff
+  against the hand-written overrides is where a mutation lost inside an
+  incomplete callee surfaces.
+- **A byte written into a Data Block needs a seed and an interior origin.** FR3
+  names `TypedArray.prototype.set` writing through `[[ArrayBufferData]]`, but
+  the write is not a slot write. The method reads the buffer out of that slot
+  and passes it to `SetValueInBuffer`, which stores a byte range the graph does
+  not lower, so the seed entry above is what reports it at all. The seed alone
+  charges nothing, since the buffer arrives at that call as a slot read and a
+  plain read resolves to `Unknown`. Reading a backing-store slot instead yields
+  the interior of the object that holds it, so the store lands on the view or
+  typed array itself. Six call sites attribute through an interior origin:
+  `SetViewValue`, `TypedArraySetElement`, `Atomics.store`,
+  `TypedArray.prototype.copyWithin`, and `SetTypedArrayFromTypedArray` twice.
+  That gives the 11 `DataView.prototype.set*` methods,
+  `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` a receiver
+  fact, and `Atomics.store` argument 0. `TypedArray.prototype.slice` and
+  `InitializeTypedArrayFromTypedArray` write a buffer they read out of an object
+  they allocated themselves, and a fresh object's interior is `Unknown`, so both
+  stay unattributable.
 - **A computed slot on a fresh value is not a warning.** The serializer leaves
   the slot name empty on the 155 writes whose slot the algorithm computes, and
   the curated list cannot answer for those. They mark the function incomplete,
@@ -692,11 +699,12 @@ Seven findings.
   `M.[[MapData]]`, which breaks the origin chain under §4.2. Both halves of the
   attribution fail, so the method reads as writing nothing.
   `Map.prototype.clear` and `WeakMap.prototype.delete` are the same shape.
-  Flagging every slot write the analysis cannot place as `Unattributable`
-  catches them, at the cost of `Map.prototype.set` and `WeakMap.prototype.set`,
-  which write the same record on their update path and would stop being
-  classifiable. §6 triages these against the hand-written overrides, so the
-  false negative is recorded rather than resolved here.
+  Carrying the interior origin through the indexed read that produces `p`, and
+  charging a write to any slot of an interior value to the object holding it,
+  resolves all three and costs nothing measurable: the receiver-mutating
+  builtins go from 57 to 60 with the unattributable and classifiable counts
+  unchanged. It widens the origin rules a second time, so it is left to §6,
+  which triages these against the hand-written overrides.
 - **An iterator's cursor is left out of the backing-store list.** Nine slots
   take a receiver-origin write inside a builtin method that the curated list
   does not count, and all nine are iterator or generator bookkeeping:
@@ -720,12 +728,15 @@ Seven findings.
 ### §4.2. Origin map (FR2, FR4)
 
 For each function, map every value name to its origin by a forward pass.
-Origins propagate only through **identity-preserving** operations; a
-property or slot *read* breaks the origin chain, because the value read
-out of a container is a different object from the container.
+Origins propagate only through **identity-preserving** operations. A
+property read breaks the origin chain, because the value read out of a
+container is a different object from the container. A read of a
+**backing-store slot** is the one exception. It yields the *interior* of
+the object read, a value that is not the object but lives inside it, so
+that §4.1 can charge a write to it back to the object holding it.
 
 ```
-type Origin struct { Kind OriginKind; Index int }
+type Origin struct { Kind OriginKind; Index int; Interior bool }
 // OriginKind ∈ { Receiver, Param, Fresh, Unknown }
 // Receiver is a BuiltinMethod's `this` value; Param(i) is the i-th
 // declared parameter, 0-based, matching the fact's param index. The
@@ -752,7 +763,9 @@ func eval(F, e Expr) Origin:
                 // or namespace object, never a parameter.
     case Call:  return evalCall(F, e)
     case Alloc, Lit: return Fresh                     // fresh object / primitive
-    case Slot, Prop: return Unknown                   // a READ: origin chain breaks
+    case Slot:  return Interior(eval(F, e.Object))    // if e.Slot is a backing store
+                return Unknown                        // otherwise the chain breaks
+    case Prop:  return Unknown                        // a READ: origin chain breaks
     default:    return Unknown
 
 func evalCall(F, c) Origin:
@@ -796,13 +809,14 @@ reader for `cfg.json`, mirroring Appendix A, and the origin map.
 `NewOriginMap(fn)` returns the origins of one function's value names.
 `Eval(expr)` answers the same question for an expression, which is the call
 §4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
-functions analyze in about 4 ms, binding 11663 names. Of those, 373 are at the
-receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
+functions analyze in about 8 ms, binding 11756 names. Of those, 373 are at the
+receiver, 2007 at a parameter, 4045 fresh, 100 interior, and 5231 unknown. The
+gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
 `Array.prototype.slice`, and `? ToString(O)` puts `S` at `Unknown` in
-`String.prototype.toLowerCase`. Four findings.
+`String.prototype.toLowerCase`. Five findings.
 
 - **One walk in node order is unsound, so the walk repeats until nothing
   moves.** A loop's back edge redefines a name after its uses, and a single
@@ -835,6 +849,18 @@ receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
   operations carry the same risk and are listed anyway, as §4.2 specifies,
   because `Array.prototype.slice` and its neighbours build their result through
   them.
+
+- **A backing-store slot read yields an interior origin, not `Unknown`.** The
+  value a collection or buffer keeps in its payload slot is not the object, but
+  a write to it is a write to the object. `SetViewValue` passes
+  `view.[[ViewedArrayBuffer]]` straight to the byte store, and resolving that to
+  `Unknown` left every `DataView.prototype.set*` method unable to name what it
+  wrote. `Interior` marks the 100 names this reaches. It is deliberately not the
+  same value as its holder, so it never stands in where identity is what
+  matters, such as §4.3's return alias: returning `M.[[MapData]]` is not
+  returning `M`. A fresh object's interior stays `Unknown` rather than becoming
+  `Fresh`, since an algorithm can store a value its caller owns into a record it
+  allocated, and `MakeDataViewWithBufferWitnessRecord` does exactly that.
 
 `Node` and `Expr` are sealed interfaces with one type per kind rather than
 one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
