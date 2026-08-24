@@ -9,37 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// storeEffectDecls are the declarations the store-edge cases share. `store` is the
-// store-effect signature: 'a ties item to target's peer field, 'b is the spare field's own
-// lifetime, and 'c is target's own borrow lifetime, so only peer takes the stored borrow.
-// `take` consumes an owned carrier of that shape, giving the cases a flow-out site other
-// than a return.
-const storeEffectDecls = `
-	declare fn store<'a, 'b, 'c>(
-		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-		item: &'a mut {value: number},
-	) -> undefined
-	declare fn take(x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
-`
-
-// storeEffectTypes are the inferred types of the two shared declarations, repeated in every
-// case's expectation since inferSource renders every binding in the module.
-var storeEffectTypes = map[string]string{
-	"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
-		"item: &mut {value: number}) -> undefined",
-	"take": "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
-}
-
-// withStoreEffectTypes returns storeEffectTypes extended with the type of the function a
-// case declares, so each expectation names only what that case adds.
-func withStoreEffectTypes(build string) map[string]string {
-	out := map[string]string{"build": build}
-	for name, ty := range storeEffectTypes {
-		out[name] = ty
-	}
-	return out
-}
-
 // TestCallStoreEdge covers the borrow edge a call records when its signature stores an
 // argument-borrow into another argument. The signature spells the store by sharing one
 // lifetime between the stored argument and a position inside the target's referent, so
@@ -48,6 +17,10 @@ func withStoreEffectTypes(build string) map[string]string {
 //
 // says item lands at target.peer. `store(&mut a, &mut b)` then aliases a to b at [peer],
 // the same edge `val a = {peer: &mut b}` records at its initializer.
+//
+// Each case declares its own `store`. 'a ties item to target's peer field, 'b is the spare
+// field's own lifetime, and 'c is target's own borrow lifetime, so only peer takes the
+// stored borrow and spare is a sibling position the store must miss.
 //
 // The edge is observed through the two rules that read the borrow-edge graph: the
 // return-escape check, which reports a local a returned value still borrows, and the
@@ -64,7 +37,12 @@ func TestCallStoreEdge(t *testing.T) {
 		// borrow out of the frame. Without the store edge the escape check finds no borrow
 		// under [peer] and reports nothing.
 		"StoredBorrowEscapes": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
@@ -72,14 +50,23 @@ func TestCallStoreEdge(t *testing.T) {
 					return a.peer
 				}
 			`,
-			want:  []string{"12:13-12:19: borrowed value 'b' does not live long enough to escape the function"},
-			types: withStoreEffectTypes("fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}"),
+			want: []string{"11:13-11:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+			},
 		},
 		// The edge lands at [peer], so returning the disjoint [spare] field follows no edge
 		// and reports nothing. This is what the store's field path buys over attributing the
 		// borrow to the whole target.
 		"StoredBorrowDoesNotEscapeThroughDisjointField": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
@@ -87,14 +74,23 @@ func TestCallStoreEdge(t *testing.T) {
 					return a.spare
 				}
 			`,
-			want:  nil,
-			types: withStoreEffectTypes("fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}"),
+			want: nil,
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+			},
 		},
 		// The target's own place prefixes the store's field path, so storing into a field of
 		// the target records the edge at [inner, peer] and returning that nested field
 		// follows it.
 		"StoreThroughTargetFieldPlace": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
 					val mut b = {value: 2}
 					val mut a = {inner: {peer: &mut p, spare: &mut q}}
@@ -102,14 +98,24 @@ func TestCallStoreEdge(t *testing.T) {
 					return a.inner.peer
 				}
 			`,
-			want:  []string{"12:13-12:25: borrowed value 'b' does not live long enough to escape the function"},
-			types: withStoreEffectTypes("fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}"),
+			want: []string{"11:13-11:25: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+			},
 		},
 		// The edge reaches the connected-component move as well as the escape check: passing
 		// a to a consuming parameter carries the stored borrow into the callee, so the move
 		// co-moves b and the read after it is a use-after-move.
 		"StoredBorrowIsCoMovedWithItsCarrier": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn take(x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
@@ -118,13 +124,24 @@ func TestCallStoreEdge(t *testing.T) {
 					val y = b
 				}
 			`,
-			want:  []string{"13:14-13:15: use of moved value 'b'"},
-			types: withStoreEffectTypes("fn (p: mut {value: number}, q: mut {value: number}) -> undefined"),
+			want: []string{"13:14-13:15: use of moved value 'b'"},
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
+			},
 		},
 		// Dropping the store call from the case above isolates its effect: with no edge from
 		// a to b, consuming a co-moves nothing and the read of b is fine.
 		"NoStoreLeavesTheCarrierAlone": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				declare fn take(x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
@@ -132,22 +149,36 @@ func TestCallStoreEdge(t *testing.T) {
 					val y = b
 				}
 			`,
-			want:  nil,
-			types: withStoreEffectTypes("fn (p: mut {value: number}, q: mut {value: number}) -> undefined"),
+			want: nil,
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
+			},
 		},
 		// A store whose target is a parameter escapes at once rather than recording an edge:
 		// the parameter's referent belongs to the caller and outlives the frame, so a borrow
 		// of a local written into it dangles. This is the call-site twin of the field store
 		// `p.peer = &mut b`, which checkParamFieldStoreEscape reports the same way.
 		"StoreIntoParameterTargetEscapes": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn build(p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
 					val mut b = {value: 2}
 					store(&mut p, &mut b)
 				}
 			`,
-			want:  []string{"10:20-10:26: borrowed value 'b' does not live long enough to escape the function"},
-			types: withStoreEffectTypes("fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined"),
+			want: []string{"9:20-9:26: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"build": "fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
+			},
 		},
 		// An auto-borrowed place stored into a parameter escapes too. The argument names no
 		// borrow expression, so the local it carries is the place's own root rather than
@@ -172,7 +203,12 @@ func TestCallStoreEdge(t *testing.T) {
 		// Storing a borrow of a parameter records no edge: a parameter's lifetime is the
 		// caller's and already outlives the frame, so it is not a local that can dangle.
 		"StoredParamBorrowIsExempt": {
-			src: storeEffectDecls + `
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
 				fn build(p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) -> &mut {value: number} {
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut r)
@@ -180,9 +216,12 @@ func TestCallStoreEdge(t *testing.T) {
 				}
 			`,
 			want: nil,
-			types: withStoreEffectTypes(
-				"fn (p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) -> &mut {value: number}",
-			),
+			types: map[string]string{
+				"store": "fn (target: &mut {peer: &mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &mut {value: number}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}, r: mut {value: number}) " +
+					"-> &mut {value: number}",
+			},
 		},
 	}
 
