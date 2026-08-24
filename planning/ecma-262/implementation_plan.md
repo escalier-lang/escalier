@@ -36,7 +36,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
 | §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
-| §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
+| §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
 | §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
@@ -630,6 +630,68 @@ others added as collection types enter the spec. Both the seed map and
 this list are reviewed Go constants — adding a mutator to the spec
 without listing it here produces a false non-mutating result, so they
 are deliberately explicit (FR1).
+
+**Outcome.** Done. [internal/ecma262/mutation.go](../../internal/ecma262/mutation.go)
+holds the seed, the backing-store slot list, and the fixpoint.
+`NewMutationSummary(cfg)` runs the fixpoint over a whole graph and `Of(fn)`
+returns one function's `Mutations`, which carries the mutated parameter
+positions, the receiver flag, and the two warnings. All 1202 functions settle in
+about 10 ms. Seven seed entries grow into 42 abstract operations with a mutated
+position, and of the 501 builtins 43 mutate their receiver and 6 mutate a
+parameter. The gate is
+[internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
+`Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
+`Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
+receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
+`RegExp.prototype.exec`, and the collection adders come out receiver-mutating;
+`Object.freeze`, `Object.seal`, `Object.assign`, `Object.defineProperty`,
+`Object.defineProperties`, and `Reflect.set` come out mutating argument 0. Five
+findings.
+
+- **`Incomplete` stays on the function that carries the unreadable step and is
+  not charged to its callers.** A callee the analysis could not fully read may
+  under-report its mutated positions, so a caller that reads that summary
+  inherits the gap. Charging the caller as well is the sound reading and costs
+  too much to use: it takes the incomplete builtins from 93 of 501 to 340, which
+  would leave §4.3 able to classify under a third of the surface. The unreadable
+  steps sit in operations nearly every algorithm reaches, so the flag saturates.
+  The narrower rule is what §4.1 specifies and what the code does. §6's
+  validation diff against the hand-written overrides is where a mutation lost
+  inside an incomplete callee surfaces.
+- **A computed slot on a fresh value is not a warning.** The serializer leaves
+  the slot name empty on the 155 writes whose slot the algorithm computes, and
+  the curated list cannot answer for those. They mark the function incomplete,
+  except where the written value is fresh, since no slot name makes a write to a
+  value the function allocated itself visible to its caller. 94 of the 155 land
+  on a fresh value, which keeps 47 functions out of `Incomplete`, 10 of them
+  builtins.
+- **The mutated position is the one the call site passes the object at, not the
+  one the seed names.** `OrdinarySet(O, P, V, Receiver)` performs its write
+  through `OrdinarySetWithOwnDescriptor`, which calls
+  `CreateDataProperty(Receiver, …)`. Position 0 is where the seed charges
+  `CreateDataProperty`, and reading the argument sitting there gives `Receiver`,
+  which is `OrdinarySet`'s parameter 3. Its summary is `{3}`, and a caller of
+  `OrdinarySet` charges whatever it passed fourth.
+- **A record read out of a backing store loses the receiver, so
+  `Map.prototype.delete` comes out non-mutating.** delete empties the entry in
+  place with `Set p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry
+  Record rather than a backing store, and `p` itself came out of a read of
+  `M.[[MapData]]`, which breaks the origin chain under §4.2. Both halves of the
+  attribution fail, so the method reads as writing nothing.
+  `Map.prototype.clear`, `WeakMap.prototype.delete`, and
+  `TypedArray.prototype.set` are the same shape. Flagging every slot write the
+  analysis cannot place as `Unattributable` catches them, at the cost of
+  `Map.prototype.set` and `WeakMap.prototype.set`, which write the same record
+  on their update path and would stop being classifiable. §6 triages these
+  against the hand-written overrides, so the false negative is recorded rather
+  than resolved here.
+- **`CreateMethodProperty` is seeded and absent from the graph.** Nothing
+  reachable from a builtin calls it; the spec uses it from the syntax-directed
+  operations §3 drops. The entry stays, because the seed is a review artifact of
+  FR1's vocabulary rather than a list of what the pinned graph happens to
+  contain. `TestMutationSummarySeedResolves` snapshots the absent entries, so a
+  spec bump that renames a seeded operation fails there rather than quietly
+  reporting one less mutation.
 
 ### §4.2. Origin map (FR2, FR4)
 
