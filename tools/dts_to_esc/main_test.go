@@ -152,6 +152,40 @@ note: signature and property-type drift are not checked yet; those compare both 
 `))
 }
 
+// TestRun_CheckPassesAfterRegenerate is the same happy path seeded by
+// the write mode instead of by `partition`. The two entry points share
+// one diff, so what `regenerate` writes is exactly what `check` then
+// finds nothing missing in.
+func TestRun_CheckPassesAfterRegenerate(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, arrayLib)
+	escDir := t.TempDir()
+
+	var regenOut strings.Builder
+	require.NoError(t, run([]string{"regenerate", libDir, escDir}, &regenOut, io.Discard))
+	require.Contains(t, regenOut.String(), "created std:array (std/array.esc)")
+
+	var checkOut strings.Builder
+	require.NoError(t, run([]string{"check", libDir, escDir}, &checkOut, io.Discard))
+	require.Contains(t, checkOut.String(),
+		"check: 0 missing declarations, 0 missing members, 0 extra declarations")
+}
+
+// TestRun_RegenerateIsIdempotent pins the re-run contract at the CLI
+// level: a second pass over a tree the first pass just wrote finds
+// nothing to add and reports zero on both counts.
+func TestRun_RegenerateIsIdempotent(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, arrayLib)
+	escDir := t.TempDir()
+
+	require.NoError(t, run([]string{"regenerate", libDir, escDir}, io.Discard, io.Discard))
+
+	var second strings.Builder
+	require.NoError(t, run([]string{"regenerate", libDir, escDir}, &second, io.Discard))
+	require.Contains(t, second.String(), "regenerate: +0 declarations, +0 members")
+}
+
 func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -161,6 +195,8 @@ func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
 	}{
 		{"check without esc dir", []string{"check", "lib"},
 			"usage: dts_to_esc check <lib-dir> <esc-dir>"},
+		{"regenerate without esc dir", []string{"regenerate", "lib"},
+			"usage: dts_to_esc regenerate <lib-dir> <esc-dir>"},
 		{"no subcommand", nil, usage},
 	}
 	for _, tc := range cases {

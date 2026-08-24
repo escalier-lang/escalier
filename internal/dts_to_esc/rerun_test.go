@@ -34,6 +34,18 @@ func escParses(t *testing.T, path, contents string) bool {
 	return len(errs) == 0
 }
 
+// readEsc reads a regenerated `.esc` file back and asserts it still
+// parses — a splice that produced unparseable source is a failure
+// however good the diff looked.
+func readEsc(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	require.True(t, escParses(t, path, string(contents)),
+		"regenerated %s should parse", path)
+	return string(contents)
+}
+
 // partitionOf routes one synthetic lib file through the partitioner.
 func partitionOf(t *testing.T, name, src string) *PartitionResult {
 	t.Helper()
@@ -305,6 +317,190 @@ export declare interface WeakRefConstructor {
 	require.False(t, report.Failed())
 }
 
+func TestRegeneratePartition_CreatesMissingFile(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Len(t, report.Packages, 1)
+	require.True(t, report.Packages[0].Created)
+	require.Equal(t, 1, report.Packages[0].AddedDecls)
+
+	contents := readEsc(t, filepath.Join(root, "std", "array.esc"))
+	require.Contains(t, contents, "class Array<T>")
+
+	// A second run has nothing left to add.
+	after, err := CheckPartition(res, root)
+	require.NoError(t, err)
+	require.False(t, after.Failed())
+}
+
+func TestRegeneratePartition_KeepsHandEditsAndAddsMembers(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface JSON { parse(text: string): any; stringify(value: any): string; }
+declare var JSON: JSON;
+`)
+	root := t.TempDir()
+	// The committed file carries §7-style hand-edits on `parse`: a
+	// `throws` clause, a return type narrowed from `any` to `unknown`,
+	// and a doc comment the converter never produced. None of them may
+	// be rewritten.
+	committed := `/** Hand-written note that must survive the re-run. */
+@js("JSON.parse")
+export declare fn parse(text: string) -> unknown throws SyntaxError
+`
+	path := writeEsc(t, root, "std/json.esc", committed)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Len(t, report.Packages, 1)
+	require.False(t, report.Packages[0].Created)
+	require.Equal(t, 1, report.Packages[0].AddedDecls)
+
+	contents := readEsc(t, path)
+	require.True(t, strings.HasPrefix(contents, committed),
+		"the hand-edited declaration must survive byte-for-byte")
+	require.Contains(t, contents, "fn stringify(value: any) -> string")
+	require.Equal(t, 1, strings.Count(contents, "fn parse"),
+		"the committed parse signature must not be duplicated")
+}
+
+func TestRegeneratePartition_AddsMembersToAnEmptyBody(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+	path := writeEsc(t, root, "std/array.esc", `@js("Array")
+export declare class Array<T> {}
+`)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Equal(t, 0, report.Packages[0].AddedDecls)
+	require.Equal(t, 4, report.Packages[0].AddedMembers)
+	require.Empty(t, report.Packages[0].Skipped)
+
+	contents := readEsc(t, path)
+	require.Contains(t, contents, "length: number,")
+	require.Contains(t, contents, "static isArray")
+
+	after, err := CheckPartition(res, root)
+	require.NoError(t, err)
+	require.False(t, after.Failed())
+}
+
+func TestRegeneratePartition_AddsMissingDeclAfterExistingOnes(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Number { toFixed(digits?: number): string; }
+interface NumberConstructor { new (value?: any): Number; readonly prototype: Number; }
+declare var Number: NumberConstructor;
+declare function parseInt(string: string, radix?: number): number;
+`)
+	root := t.TempDir()
+	path := writeEsc(t, root, "std/number.esc", `@js("Number")
+export declare class Number {
+    toFixed(self, digits?: number) -> string,
+}
+`)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Equal(t, 1, report.Packages[0].AddedDecls)
+
+	contents := readEsc(t, path)
+	require.True(t, strings.HasPrefix(contents, `@js("Number")`))
+	require.Contains(t, contents, "parseInt")
+	require.Contains(t, contents, "}\n\n@js(\"parseInt\")")
+}
+
+func TestRegeneratePartition_LeavesMatchingFileUntouched(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+	_, err := WritePartitionedTree(res, root)
+	require.NoError(t, err)
+
+	path := filepath.Join(root, "std", "array.esc")
+	before, err := os.Stat(path)
+	require.NoError(t, err)
+	original := readEsc(t, path)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Equal(t, 0, report.Packages[0].AddedDecls)
+	require.Equal(t, 0, report.Packages[0].AddedMembers)
+
+	after, err := os.Stat(path)
+	require.NoError(t, err)
+	require.Equal(t, before.ModTime(), after.ModTime(),
+		"a package with nothing missing should not be rewritten")
+	require.Equal(t, original, readEsc(t, path))
+}
+
+func TestRegeneratePartition_NeverDeletesExtraDecls(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+`)
+	root := t.TempDir()
+	path := writeEsc(t, root, "std/array.esc", `@js("Array")
+export declare class Array<T> {
+    length: number,
+    constructor(mut self),
+}
+
+export type RemovedUpstream = number
+`)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Equal(t, []string{"RemovedUpstream"}, report.Packages[0].Removed)
+
+	contents := readEsc(t, path)
+	require.Contains(t, contents, "export type RemovedUpstream = number")
+
+	var sb strings.Builder
+	require.NoError(t, report.Write(&sb))
+	require.Contains(t, sb.String(),
+		"RemovedUpstream is absent from the .d.ts; left in place for review")
+}
+
+func TestOffsetOf_CountsRunesNotBytes(t *testing.T) {
+	t.Parallel()
+	// Columns count code points, matching the lexer, so a multi-byte
+	// character earlier on the line must not shift the offset.
+	contents := "val π = 1\nval x = 2\n"
+	require.Equal(t, 0, offsetOf(contents, ast.Location{Line: 1, Column: 1}))
+	require.Equal(t, len("val π = 1\n"), offsetOf(contents, ast.Location{Line: 2, Column: 1}))
+	require.Equal(t, len(contents), offsetOf(contents, ast.Location{Line: 9, Column: 1}))
+}
+
+// TestCheckPartition_LibES5RoundTrips is the §6.4 idempotence gate on
+// real input: write the pinned lib.es5 partition, then check the
+// converter against what it just wrote. Nothing may come back missing.
+//
+// Packages whose output does not reparse are excluded — those are the
+// printer/parser asymmetries §7's hand-edits close, tracked by the soft
+// gate in TestPartitionLib_LibES5_EndToEnd. The check itself treats an
+// unparseable committed file as a hard error, so including them here
+// would test the §7 backlog rather than the diff.
 // TestCheckPartition_LibES5RoundTrips is the §6.4 idempotence gate on
 // real input: write the pinned lib.es5 partition, then check the
 // converter against what it just wrote. Nothing may come back missing.
@@ -351,6 +547,15 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 	require.NoError(t, report.Write(&sb))
 	require.False(t, report.Failed(),
 		"a freshly written tree must have nothing missing:\n%s", sb.String())
+
+	// The write mode agrees: a re-run over the same tree adds nothing.
+	regen, err := RegeneratePartition(reparsed, root)
+	require.NoError(t, err)
+	for _, p := range regen.Packages {
+		require.Equal(t, 0, p.AddedDecls, "%s should need no new declarations", p.Pkg)
+		require.Equal(t, 0, p.AddedMembers, "%s should need no new members", p.Pkg)
+		require.Empty(t, p.Skipped, "%s should have no unlocatable bodies", p.Pkg)
+	}
 	t.Logf("lib.es5 check: %d of %d packages round-tripped",
 		len(reparsed.Buckets), len(written))
 }
