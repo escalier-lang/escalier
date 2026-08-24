@@ -114,6 +114,60 @@ var identityCoercions = set.FromSlice([]string{
 	"ToObject",
 })
 
+// freshPrimitives are the abstract operations that build a new primitive from
+// their argument. Their result is `Fresh` for the same reason an allocation is,
+// and with none of the risk: a primitive cannot be mutated, so an entry here
+// can never hide a write the caller would observe. The list exists so that
+// `ToString` resolving away from its argument reads as a decision rather than
+// an omission from allocators.
+//
+// `Let S be ? ToString(O)` is the case that matters. `O` is the receiver, `S`
+// is a new string, and nothing the algorithm does to `S` can reach `O`. That is
+// why every `String.prototype` method comes out non-mutating.
+//
+// Predicates such as IsArray and SameValue return primitives too and are
+// deliberately absent. Listing every operation that returns a boolean would add
+// review surface without changing an answer, since a predicate's result is only
+// ever branched on.
+var freshPrimitives = set.FromSlice([]string{
+	// Coercions to a primitive. ToObject is not among them, since it returns an
+	// object and is identity-preserving instead.
+	"ToBigInt",
+	"ToBigInt64",
+	"ToBoolean",
+	"ToDateString",
+	"ToIndex",
+	"ToInt32",
+	"ToIntegerOrInfinity",
+	"ToLength",
+	"ToNumber",
+	"ToNumeric",
+	"ToPrimitive",
+	"ToPropertyKey",
+	"ToString",
+	"ToUint16",
+	"ToUint32",
+	"ToZeroPaddedDecimalString",
+	// The numeric type operations of ECMA-262 §6.1.6, which return a Number, a
+	// BigInt, or a Boolean.
+	"BigInt::divide",
+	"BigInt::equal",
+	"BigInt::exponentiate",
+	"BigInt::leftShift",
+	"BigInt::lessThan",
+	"BigInt::remainder",
+	"BigInt::toString",
+	"BigInt::unsignedRightShift",
+	"Number::add",
+	"Number::equal",
+	"Number::exponentiate",
+	"Number::lessThan",
+	"Number::sameValue",
+	"Number::sameValueZero",
+	"Number::toString",
+	"Number::unaryMinus",
+})
+
 // allocators are the abstract operations that return a value they allocated.
 // Their result is `Fresh`, the one origin whose mutations the fixpoint
 // discards, because a write to a value the algorithm made itself is invisible
@@ -394,13 +448,16 @@ func (m *OriginMap) eval(e Expr) Origin {
 // evalCall returns the origin of a call's result.
 func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	switch {
-	case allocators.Contains(callee):
+	case allocators.Contains(callee), freshPrimitives.Contains(callee):
 		return Fresh
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])
 	default:
-		// Get, ToString, ToNumber, and everything else either read a value out
-		// of a container or build a new one.
+		// Everything else breaks the chain. An operation such as Get reads a
+		// value out of a container, and the value read is a different object
+		// from the container. A predicate such as IsArray returns a boolean
+		// that stands for none of its arguments. Neither hands back the object
+		// it was given, and neither is a value the analysis can place.
 		return Unknown
 	}
 }

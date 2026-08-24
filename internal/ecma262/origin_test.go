@@ -84,16 +84,14 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 		},
 		// A String method reaches its receiver through RequireObjectCoercible,
 		// which preserves identity, and then coerces it with ToString, which
-		// does not. The string ToString builds really is a new value, but
-		// `Fresh` is a claim only the curated allocator list makes, and
-		// ToString is not on it, so `S` falls through to `Unknown`. Either
-		// answer keeps the receiver out of `S`, which is what makes every
+		// does not. `S` is the new string ToString built, so it is `Fresh` and
+		// the receiver is not in it. That is what makes every
 		// `String.prototype` method come out non-mutating.
 		"ValueCoercionsBreakTheChain": {
 			fn: "String.prototype.toLowerCase",
 			origins: map[string]string{
 				"O": "Receiver",
-				"S": "Unknown",
+				"S": "Fresh",
 			},
 		},
 		// A static has no receiver. Its `this` is the constructor object, so

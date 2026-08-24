@@ -742,6 +742,19 @@ one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
 models the compiler's own trees. Appendix A describes what that means for the
 schema, which is unchanged.
 
+`freshPrimitives` names the coercions that build a new primitive from their
+argument, `ToString` and `ToNumber` among them, plus the numeric type
+operations of §6.1.6. Their result is `Fresh` for the same reason an
+allocation is, and with none of the risk, since a primitive cannot be
+mutated and so an entry there can never hide a write. The list exists mostly
+to be read: `Let S be ? ToString(O)` resolving away from the receiver is a
+decision, not an omission from `allocators`. It moves no mutation site at
+all, receiver attribution included, because a coerced primitive never
+reaches a mutating position. It turns four returns from `Unknown` into
+`Fresh` — `BigInt.prototype.toString`, `Date.prototype.toString`,
+`Number.prototype.toString`, and `String.prototype.concat` — and §5's join
+would settle those from the declared return type anyway.
+
 A name the function reads but never binds resolves to `Unknown` before the
 walk starts rather than sitting at the lattice bottom. 325 of the 1202
 functions read such a name, 607 in total, and a closure's captured value is
