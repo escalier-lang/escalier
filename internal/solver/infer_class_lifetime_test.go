@@ -320,37 +320,83 @@ func TestClassLifetimeBoundNameIsNotABinder(t *testing.T) {
 	}, messagesWithSpan(errs))
 }
 
-// TestClassLifetimeShadowing covers a nested signature that rebinds a name the class already
-// binds. The nested binder wins, so the two are alpha-equivalent: rewriting `pick<'a>` to
-// `pick<'b>` must not change what a call infers. Seeding the member's scope from the class
-// without dropping the rebound names would capture the member's `'a` as the class's, forcing
-// a caller's argument to the class's region.
+// TestClassLifetimeShadowing covers a member signature written against the class's lifetime
+// scope. The first two cases rebind a name the class already binds: the nested binder wins,
+// so `pick<'a>` and `pick<'b>` are alpha-equivalent and a call infers the same type from
+// either. Seeding the member's scope from the class without dropping the rebound names would
+// capture the member's `'a` as the class's, forcing a caller's argument to the class's
+// region.
+//
+// The last two cases run the other interaction, a member that names the class's `'a` and
+// binds its own `'b` in one signature. The two must stay separate, and must still admit one
+// caller lifetime at both positions.
 func TestClassLifetimeShadowing(t *testing.T) {
-	const call = `
+	const pickCall = `
 		fn g<'y>(h: Holder<'static>, o: &'y mut {value: number}) -> undefined { h.pick(o) }
 	`
-	tests := map[string]string{
-		"MemberRebindsTheClassName": `
-			class Holder<'a> {
-				peer: &'a mut {value: number},
-				pick<'a>(self, p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
-			}
-		` + call,
-		"MemberBindsAFreshName": `
-			class Holder<'a> {
-				peer: &'a mut {value: number},
-				pick<'b>(self, p: &'b mut {value: number}) -> &'b mut {value: number} { return p },
-			}
-		` + call,
+	// `swap` names the class's 'a at its first parameter and binds its own 'b at the second, so
+	// a call fills the two from different places: 'a from the receiver's lifetime argument, 'b
+	// from the argument passed at the call.
+	const swapClass = `
+		class Holder<'a> {
+			peer: &'a mut {value: number},
+			swap<'b>(mut self, p: &'a mut {value: number}, q: &'b mut {value: number}) -> &'b mut {value: number} {
+				self.peer = p
+				return q
+			},
+		}
+	`
+	tests := map[string]struct {
+		src  string
+		want string
+	}{
+		"MemberRebindsTheClassName": {
+			src: `
+				class Holder<'a> {
+					peer: &'a mut {value: number},
+					pick<'a>(self, p: &'a mut {value: number}) -> &'a mut {value: number} { return p },
+				}
+			` + pickCall,
+			want: "fn (h: Holder<'static>, o: &mut {value: number}) -> undefined",
+		},
+		"MemberBindsAFreshName": {
+			src: `
+				class Holder<'a> {
+					peer: &'a mut {value: number},
+					pick<'b>(self, p: &'b mut {value: number}) -> &'b mut {value: number} { return p },
+				}
+			` + pickCall,
+			want: "fn (h: Holder<'static>, o: &mut {value: number}) -> undefined",
+		},
+		// The receiver fills 'a and the last argument fills 'b, so the caller quantifies two
+		// lifetimes. Capturing 'b as the class's would collapse them into one and tie the
+		// returned borrow to the receiver's region, which the caller never asked for.
+		"MemberBindsItsOwnBesideTheClassLifetime": {
+			src: swapClass + `
+				fn g<'x, 'y>(h: mut Holder<'x>, p: &'x mut {value: number}, q: &'y mut {value: number}) -> &'y mut {value: number} {
+					return h.swap(p, q)
+				}
+			`,
+			want: "fn <'a, 'b>(h: mut Holder<'a>, p: &'a mut {value: number}, " +
+				"q: &'b mut {value: number}) -> &'b mut {value: number}",
+		},
+		// Separate binders do not force separate arguments. One caller lifetime passed at both
+		// positions fills 'a and 'b alike, so the caller quantifies a single lifetime.
+		"ClassLifetimeFillsTheMemberBinder": {
+			src: swapClass + `
+				fn g<'x>(h: mut Holder<'x>, p: &'x mut {value: number}, q: &'x mut {value: number}) -> &'x mut {value: number} {
+					return h.swap(p, q)
+				}
+			`,
+			want: "fn <'a>(h: mut Holder<'a>, p: &'a mut {value: number}, " +
+				"q: &'a mut {value: number}) -> &'a mut {value: number}",
+		},
 	}
-	for name, src := range tests {
+	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
-			values, _, errs := inferSource(t, src)
+			values, _, errs := inferSource(t, tc.src)
 			require.Empty(t, messagesWithSpan(errs))
-			require.Equal(t,
-				"fn (h: Holder<'static>, o: &mut {value: number}) -> undefined",
-				values["g"],
-			)
+			require.Equal(t, tc.want, values["g"])
 		})
 	}
 }
