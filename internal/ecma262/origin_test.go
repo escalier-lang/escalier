@@ -55,7 +55,9 @@ func TestOriginString(t *testing.T) {
 
 func TestOriginMapSampleFunctions(t *testing.T) {
 	tests := map[string]struct {
-		fn      string
+		fn string
+		// origins names the values each case is about, not every value the
+		// function binds. TestOriginMapString below prints a whole map.
 		origins map[string]string
 	}{
 		// `Let O be ? ToObject(this value)` carries the receiver into `O`. That
