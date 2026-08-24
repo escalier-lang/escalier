@@ -1,4 +1,15 @@
-package interop
+// Package dts_to_esc translates TypeScript `.d.ts` declarations into
+// Escalier declaration ASTs. The translation runs from one AST to the
+// other. Nothing here type-checks, and the only trees it produces are
+// `ast` nodes.
+//
+// Classify decides each class member's receiver mutability from a
+// seven-tier ladder. Two of those tiers read the runtime override store
+// in internal/interop. This package reaches that store through the
+// `OverrideLookup` interface instead of importing it, which is what
+// keeps the store's type representation off the converter's import
+// graph.
+package dts_to_esc
 
 import (
 	"fmt"
@@ -179,7 +190,8 @@ type trioTable struct {
 
 // detectTrios scans a module's top-level statements for the
 // `interface Foo` + `interface FooConstructor` + `declare var Foo: FooConstructor`
-// pattern. Recognition mirrors interop.tryFuseTrio at the dts layer:
+// pattern. Recognition mirrors tryFuseTrio in internal/interop at the
+// dts layer:
 // the var's TypeAnn must be a TypeReference to FooConstructor, and the
 // constructor interface's `new (...)` signature(s) must return Foo.
 // Trios that fail any check pass through unchanged.

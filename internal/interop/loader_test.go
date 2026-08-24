@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
@@ -127,7 +128,7 @@ func TestBuildPipelineWithStubChecker(t *testing.T) {
 	eff := mod.Free["foo"]
 	require.NotNil(t, eff)
 	require.Same(t, fn, eff.Type)
-	require.Equal(t, TierBuiltinOverride, eff.Source)
+	require.Equal(t, dts_to_esc.TierBuiltinOverride, eff.Source)
 }
 
 func TestBuildWithoutTypeCheckerErrorsWhenFilesPresent(t *testing.T) {
@@ -187,7 +188,7 @@ func TestBuildPrecedenceUserProjectBeatsBuiltin(t *testing.T) {
 	eff := store.Modules[""].Free["foo"]
 	require.NotNil(t, eff)
 	require.Same(t, fnUser, eff.Type)
-	require.Equal(t, TierUserOverride, eff.Source)
+	require.Equal(t, dts_to_esc.TierUserOverride, eff.Source)
 }
 
 func TestBuildDuplicateWithinTierIsAnError(t *testing.T) {

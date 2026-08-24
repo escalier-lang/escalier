@@ -926,7 +926,7 @@ func resolveExportsTypes(exports interface{}) string {
 
 The existing infrastructure already handles parsing and inferring `.d.ts` files. We can reuse:
 
-- **`loadClassifiedTypeScriptModule()`** in [prelude.go:202-274](internal/checker/prelude.go#L202-L274) - parses `.d.ts` files using `dts_parser`, classifies them into package/global/named modules using `ClassifyDTSFile()`, and converts to AST via `interop.ConvertModule()`
+- **`loadClassifiedTypeScriptModule()`** in [prelude.go:202-274](internal/checker/prelude.go#L202-L274) - parses `.d.ts` files using `dts_parser`, classifies them into package/global/named modules using `ClassifyDTSFile()`, and converts to AST via `dts_to_esc.ConvertModule()`
 - **`loadPackageForImport()`** in [infer_import.go:108-231](internal/checker/infer_import.go#L108-L231) - infers modules using `c.InferModule()`, handles global augmentations, and registers in `PackageRegistry`
 
 **Using existing infrastructure for `@types/react`**:

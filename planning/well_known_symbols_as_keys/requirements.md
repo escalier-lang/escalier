@@ -395,7 +395,7 @@ Ensure the parser correctly handles:
 
 ### Interop Layer Changes
 
-`internal/interop/helper.go` needs to implement the `ComputedKey` case in `convertPropertyKey`:
+`internal/dts_to_esc/helper.go` needs to implement the `ComputedKey` case in `convertPropertyKey`:
 
 ```go
 case *dts_parser.ComputedKey:

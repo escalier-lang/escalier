@@ -186,7 +186,7 @@ type ClassDecl struct {
 	// TODO(#559): tighten Extends/Implements to *TypeReference. The
 	// `.d.ts` grammar only allows type references here, but these fields
 	// use the broad TypeAnn interface, forcing runtime casts in
-	// interop/decl.go.
+	// dts_to_esc/decl.go.
 	Extends    TypeAnn // optional
 	Implements []TypeAnn
 	Members    []ClassMember

@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
@@ -25,7 +27,7 @@ declare class Foo {
 	dtsModule := parseModule(t, input)
 
 	// Sanity check: without an override, findItem is immutable.
-	noOverride, err := ConvertModule(dtsModule)
+	noOverride, err := dts_to_esc.ConvertModule(dtsModule)
 	require.NoError(t, err)
 	require.False(t, methodReceiverMut(t, noOverride, "", "Foo", "findItem"),
 		"baseline: findItem should default to immutable receiver")
@@ -47,7 +49,7 @@ declare class Foo {
 						"Foo": &ClassScope{
 							Instance: &MemberSet{
 								Methods: map[string]*Effective{
-									"findItem": {Type: fn, Source: TierBuiltinOverride},
+									"findItem": {Type: fn, Source: dts_to_esc.TierBuiltinOverride},
 								},
 								Getters:    map[string]*Effective{},
 								Setters:    map[string]*Effective{},
@@ -61,7 +63,7 @@ declare class Foo {
 		},
 	}
 
-	withOverride, err := ConvertModuleWithOverrides(dtsModule, store, "")
+	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "")
 	require.NoError(t, err)
 	require.True(t, methodReceiverMut(t, withOverride, "", "Foo", "findItem"),
 		"tier-4 override should flip findItem's receiver to mut self")
@@ -84,7 +86,7 @@ declare namespace Outer {
 	dtsModule := parseModule(t, input)
 
 	// Baseline: no override → name heuristic → non-mut.
-	noOverride, err := ConvertModule(dtsModule)
+	noOverride, err := dts_to_esc.ConvertModule(dtsModule)
 	require.NoError(t, err)
 	require.False(t, methodReceiverMut(t, noOverride, "Outer", "Inner", "findItem"),
 		"baseline: findItem should default to immutable receiver")
@@ -107,7 +109,7 @@ declare namespace Outer {
 									"Inner": &ClassScope{
 										Instance: &MemberSet{
 											Methods: map[string]*Effective{
-												"findItem": {Type: fn, Source: TierBuiltinOverride},
+												"findItem": {Type: fn, Source: dts_to_esc.TierBuiltinOverride},
 											},
 											Getters:    map[string]*Effective{},
 											Setters:    map[string]*Effective{},
@@ -124,16 +126,26 @@ declare namespace Outer {
 		},
 	}
 
-	withOverride, err := ConvertModuleWithOverrides(dtsModule, store, "")
+	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "")
 	require.NoError(t, err)
 	require.True(t, methodReceiverMut(t, withOverride, "Outer", "Inner", "findItem"),
 		"tier-4 override on Outer.Inner.findItem should flip the receiver to mut self")
 }
 
-// methodReceiverMut walks the namespace keyed by nsName ("" for the
-// root namespace; "Outer.Inner" for nested namespaces, which
-// processNamespace flattens into qualified keys), finds the named
-// method on the named class, and returns its receiver's Mut flag.
+// parseModule parses a `.d.ts` source string into a dts_parser.Module,
+// failing the test on any parse error.
+func parseModule(t *testing.T, input string) *dts_parser.Module {
+	t.Helper()
+	source := &ast.Source{Path: "test.d.ts", Contents: input}
+	module, errs := dts_parser.NewDtsParser(source).ParseModule()
+	require.Empty(t, errs, "parse errors")
+	return module
+}
+
+// methodReceiverMut finds the named method on the named class and
+// returns its receiver's Mut flag. nsName keys the namespace to look
+// in: "" is the root namespace, and a nested namespace uses the dotted
+// name the converter flattens it to, such as "Outer.Inner".
 func methodReceiverMut(t *testing.T, m *ast.Module, nsName, className, methodName string) bool {
 	t.Helper()
 	ns, ok := m.Namespaces.Get(nsName)

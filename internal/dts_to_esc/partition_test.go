@@ -1,4 +1,4 @@
-package interop
+package dts_to_esc
 
 import (
 	"testing"
@@ -94,7 +94,7 @@ func TestRoute_Unmapped(t *testing.T) {
 func TestUnmappedError_MentionsSymbolSourceAndTable(t *testing.T) {
 	t.Parallel()
 	err := UnmappedError("FooBar", "lib.es5.d.ts")
-	require.EqualError(t, err, `converter: unmapped top-level declaration "FooBar" from lib.es5.d.ts; add it to internal/interop/partition.go (see planning/builtins/implementation_plan.md §6.1) or to ExplicitDrops if intentional`)
+	require.EqualError(t, err, `converter: unmapped top-level declaration "FooBar" from lib.es5.d.ts; add it to internal/dts_to_esc/partition.go (see planning/builtins/implementation_plan.md §6.1) or to ExplicitDrops if intentional`)
 }
 
 func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {

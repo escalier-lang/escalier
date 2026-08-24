@@ -1222,7 +1222,7 @@ structures — via import for a written reference, via the well-known-type handl
 a desugaring rule — rather than opaque placeholders.
 
 - **Interop reuse, gate intact.** The front half of the existing pipeline
-  (`dts_parser` parse → `interop.ConvertModule` → `*ast.Module`) is reusable as
+  (`dts_parser` parse → `dts_to_esc.ConvertModule` → `*ast.Module`) is reusable as
   AST. The back half (the old checker's `InferModule` → `type_system`) is what
   this milestone replaces with the new checker's `soltype` walk over that AST.
   `interop` itself imports `type_system`, so this milestone must consume only its

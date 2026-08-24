@@ -17,11 +17,11 @@ table below makes both explicit. Status legend: ✅ done,
 | 1   | Existing surface area                  | ✅      | —           | Descriptive only.                                                                                                                                                                                                                                                                              |
 | 2.1 | Spec scaffolding                       | ✅      | —           | `override` keyword, fixtures, merge-semantics doc, `@esctype` grammar.                                                                                                                                                                                                                         |
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
-| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/interop/mutability.go](../../internal/interop/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
-| 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/interop/mutability.go](../../internal/interop/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
+| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
+| 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
 | 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit and §5.13 Group B (property-type consistency, `ErrPropertyTypeMismatch`): data types, extract, merge & loader, checker wiring, trio-fusion / static-side lookup, and property/leaf-kind consistency are all in. Remaining: §5.13 Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
-| 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Phased as §6.A–§6.F (see [§6 Phasing](#phasing)): infra → always-immutable → mixed-mutability by ES revision → consistency test → FP libs → drop bootstrap entries. §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612, trimmed by #614**: `prelude.go`'s legacy `mutabilityOverrides` Go map currently holds entries for `String`, `Object`, `Function`, `Console`, `Body`, `Response`, `Request`. #614 wired `interop.ClassifyMethodByName` in as a fall-through inside `applyMethodMutability`, so the redundant `Date`/`Number`/`Boolean`/`RegExp` blocks were removed; what remains is the heuristic misses (bare nouns like `Console.log`, `Body.json`, `Object.propertyIsEnumerable`) and active mis-classifications (`String.replace`/`replaceAll`, `Console.clear`). §6.F drops these once §6.B/§6.C supersede them. |
-| 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/interop/mutability.go](../../internal/interop/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
+| 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Phased as §6.A–§6.F (see [§6 Phasing](#phasing)): infra → always-immutable → mixed-mutability by ES revision → consistency test → FP libs → drop bootstrap entries. §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612, trimmed by #614**: `prelude.go`'s legacy `mutabilityOverrides` Go map currently holds entries for `String`, `Object`, `Function`, `Console`, `Body`, `Response`, `Request`. #614 wired `dts_to_esc.ClassifyMethodByName` in as a fall-through inside `applyMethodMutability`, so the redundant `Date`/`Number`/`Boolean`/`RegExp` blocks were removed; what remains is the heuristic misses (bare nouns like `Console.log`, `Body.json`, `Object.propertyIsEnumerable`) and active mis-classifications (`String.replace`/`replaceAll`, `Console.clear`). §6.F drops these once §6.B/§6.C supersede them. |
+| 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ✅      | —           | `TestPrintTypeAudit_RoundTrip` in [internal/type_system/print_type_audit_test.go](../../internal/type_system/print_type_audit_test.go) enumerates each `type_system.Type` variant with a syntactic form, prints it via `PrintType`, re-parses through `parser.ParseTypeAnn` + `test_util.ParseTypeAnn`, and asserts double-print idempotency. Variants without source syntax (`UniqueSymbolType`, `CallableElem`, `ConstructorElem`, plus debug-only `IntrinsicType`/`ErrorType`/`GlobalThisType`/`RegexType`/`NamespaceType`/`ExtractorType`/`TypeVarType`/`IndexSignatureElem`) covered by `TestPrintTypeAudit_NoSyntax`. Audit uncovered one printer divergence — mapped-element printing used TypeScript syntax `[K in keyof T]: V` instead of Escalier's `[K]: V for K in keyof T`; fixed in [internal/type_system/print_type.go](../../internal/type_system/print_type.go). |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
 | 10  | `implements` mutability conformance    | 🚧     | —           | Lean check **already done**: `selfReceiverCompatible` in [internal/checker/check_implements.go:247](../../internal/checker/check_implements.go#L247) implements bidirectional `ReceiverIsMut` equality and is wired in at all three method-comparison sites. Currently emits the generic `mismatchedMember` error. |
@@ -62,8 +62,8 @@ phases don't need to wait on either.
   into a TS-shaped AST. Already handles `readonly` on properties; needs
   to surface comments, `this` parameters, and `Readonly<…>` references
   to the consumer.
-- [internal/interop/](../../internal/interop/) — converts the
-  `dts_parser` AST into Escalier `type_system` types. This is where
+- [internal/dts_to_esc/](../../internal/dts_to_esc/) — converts the
+  `dts_parser` AST into Escalier declaration ASTs. This is where
   mutability classification needs to land.
 - [internal/codegen/](../../internal/codegen/) — emits `.d.ts` and JS.
   `@esctype` emission lands here.
@@ -177,7 +177,7 @@ Goal: introduce the seven-tier resolution order from the requirements
 as a single function, wired in but populated only with existing
 behavior (so output is unchanged).
 
-- Add `internal/interop/mutability.go` defining the `ResolutionTier`
+- Add `internal/dts_to_esc/mutability.go` defining the `ResolutionTier`
   enum (the canonical 7-tier ladder, plus a zero-valued
   "user-authored source" sentinel — see §11.2):
 
@@ -201,7 +201,7 @@ behavior (so output is unchanged).
   a `ClassifyResult` (see §9.3). The `Source` field of the result
   is one of the constants above and is needed by §10's conformance
   check and §11's uncertainty warning.
-- Route every place in `interop/decl.go` and `interop/helper.go` that
+- Route every place in `dts_to_esc/decl.go` and `dts_to_esc/helper.go` that
   currently decides method/parameter mutability through `Classify`.
   At this phase `Classify` implements only tier 7 (default to
   mutating) — strong signals land in §4, the override store in §5,
@@ -219,7 +219,7 @@ green with no snapshot churn.
 Goal: cover all explicit author signals that don't require external
 data.
 
-Implement, in `internal/interop/mutability.go`, classification for:
+Implement, in `internal/dts_to_esc/mutability.go`, classification for:
 
 - `Readonly<T>` / `ReadonlyArray<T>` / `ReadonlySet<T>` /
   `ReadonlyMap<T>` — drives tier-3 classification. Requires
@@ -239,7 +239,7 @@ Implement, in `internal/interop/mutability.go`, classification for:
 
 Tests: extend the §2 resolution-order fixture with strong-signal
 cases; add table-driven unit tests in
-`internal/interop/mutability_test.go`.
+`internal/dts_to_esc/mutability_test.go`.
 
 Exit criteria: every strong-signal case in the §2 resolution-order
 fixture classifies correctly, with `Source = TierExplicitSignal`.
@@ -283,7 +283,7 @@ pass to avoid a redundant full walk of the namespace.
 
 **Subsumption by #614.** Adjustment (1) is already produced by
 `classifyExplicitSignal` (tier 3) for these symbol-keyed methods —
-once `interop.Classify` is wired into `UpdateMethodMutability`,
+once `dts_to_esc.Classify` is wired into `UpdateMethodMutability`,
 that half of the iterator-protocol fixup becomes redundant.
 Adjustment (2) is independent: it encodes the "iterator is owned"
 ownership rule, which has no tier-3 equivalent yet. The cleanest
@@ -340,7 +340,7 @@ There are two layers of competition:
 
 Naming convention: `OverrideTier` is the *internal* three-tier enum
 used only inside `internal/interop`. `ResolutionTier`
-(defined in `internal/interop/mutability.go`) is the broader 7-tier
+(defined in `internal/dts_to_esc/mutability.go`) is the broader 7-tier
 ladder. The two never appear in the same field or function
 parameter; the merge translates between them when it builds each
 leaf.
@@ -379,18 +379,18 @@ Override `.esc` files are ordinary Escalier source, so the
 ambient declarations they contain are converted to
 `type_system.Type` values by **reusing the existing checker
 pipeline** (the same pipeline that already handles `.d.ts`
-interop via `interop.ConvertModule` → `Checker.InferModule`).
+interop via `dts_to_esc.ConvertModule` → `Checker.InferModule`).
 No new `ast.Decl → type_system.Type` converter is written: every
 existing inference helper (`inferTypeAnn`, `inferFuncSig`,
 `inferTypeDecl`, `inferInterface`, etc.) applies directly.
 
-The whole override system lives in `internal/interop/`. Note
-that this is possible because `Build` does *not* import
-`checker` directly — it takes a `TypeChecker` function-type
-callback that the consumer (in `internal/checker/`) plugs in.
-The callback seam sidesteps the cycle that would otherwise
-arise (`checker` already imports `interop` for
-`interop.ConvertModule`), so no subpackage is needed.
+The whole override system lives in `internal/interop/`, which
+holds nothing else. The `.d.ts` converter sits in
+`internal/dts_to_esc` and reaches the store through the
+`dts_to_esc.OverrideLookup` interface. `Build` does not import
+`checker` directly. It takes a `TypeChecker` function-type
+callback that the consumer in `internal/checker/` plugs in, and
+that seam sidesteps the cycle a direct import would close.
 
 Files added to `internal/interop/`:
 
@@ -511,7 +511,7 @@ type MemberSet struct {
 }
 
 // OverrideTier identifies where an override came from. Distinct
-// from interop.ResolutionTier (the 7-tier classification ladder)
+// from dts_to_esc.ResolutionTier (the 7-tier classification ladder)
 // — OverrideTier is only used inside this package to drive the
 // internal three-tier collapse (§5.5). The merge translates the
 // winning OverrideTier into a ResolutionTier on the resulting
@@ -537,7 +537,7 @@ const (
 // rather than a separate flag.
 type Effective struct {
     Type       type_system.Type       // post-merge type
-    Source     interop.ResolutionTier
+    Source     dts_to_esc.ResolutionTier
     Provenance []Origin               // contributing files
 }
 
@@ -887,7 +887,7 @@ of any `QualIdent` walk.
 
 ### 5.11 `Classify` integration
 
-`Classify` lives in `internal/interop/mutability.go`; the
+`Classify` lives in `internal/dts_to_esc/mutability.go`; the
 store it consults is built upstream by `interop.Build`
 (§5.2) and handed in via `ClassifyContext`.
 
@@ -1261,7 +1261,7 @@ Three sub-tasks, the first two parallelizable:
   `UpdateMethodMutability`'s second pass for non-`*Constructor`-shaped
   classes). They were added inline as stop-gaps to keep the test suite
   green after the #612 polarity flip exposed under-classification.
-  Issue #614 then wired `interop.ClassifyMethodByName` in as a
+  Issue #614 then wired `dts_to_esc.ClassifyMethodByName` in as a
   fall-through inside `applyMethodMutability`, which let the
   redundant `Date`/`Number`/`Boolean`/`RegExp` blocks (whose entries
   were all covered by `get*` / `to*` / well-known `toString` /
@@ -1358,7 +1358,7 @@ correctly; consistency test green against pinned original versions.
 Goal: implement the remaining tiers so unknown TS APIs get useful
 classifications.
 
-Both tiers live in `internal/interop/mutability.go` as new
+Both tiers live in `internal/dts_to_esc/mutability.go` as new
 `classifyTier5` / `classifyTier6` functions called from `Classify`
 in tier order. Each returns `(ClassifyResult, bool)` like the
 existing `classifyTier2`.
@@ -1907,8 +1907,8 @@ type ImplementsMutabilityMismatchError struct {
     Member               string
     ClassSide            string // "self" | "mut self"
     InterfaceSide        string
-    ClassSource          interop.ResolutionTier
-    InterfaceSource      interop.ResolutionTier
+    ClassSource          dts_to_esc.ResolutionTier
+    InterfaceSource      dts_to_esc.ResolutionTier
     ClassProvenance      []interop.Origin // chain from class-side Effective
     InterfaceProvenance  []interop.Origin // chain from interface-side Effective
     Span                 ast.Span
@@ -1935,7 +1935,7 @@ suggestion.
 
 **Import direction.** `checker` already depends on `interop` for
 type construction; the new error type extends that direction with
-`interop.ResolutionTier` and `interop.Origin`. `interop` must not
+`dts_to_esc.ResolutionTier` and `interop.Origin`. `interop` must not
 import `checker` (override errors live in `internal/interop/
 errors.go` per §5.8 and are surfaced through the checker's
 existing error channel by value, not by interface reference back
@@ -1992,7 +1992,7 @@ classification tier produced in §5 / §7 needs to survive interop
 conversion long enough to reach the checker.
 
 Add a non-serialised field `Source ResolutionTier` on `FuncParam`,
-set by `interop/decl.go` on the `SelfParam` when it constructs the
+set by `dts_to_esc/decl.go` on the `SelfParam` when it constructs the
 type from `ClassifyResult`. The field is metadata, not part of
 unification.
 
@@ -2035,9 +2035,9 @@ if !methodNeedsMut && receiverIsImmut {
     }
 }
 
-func isHeuristicTier(t interop.ResolutionTier) bool {
-    return t == interop.TierGetPrefix       ||
-           t == interop.TierNameHeuristic
+func isHeuristicTier(t dts_to_esc.ResolutionTier) bool {
+    return t == dts_to_esc.TierGetPrefix       ||
+           t == dts_to_esc.TierNameHeuristic
 }
 ```
 
@@ -2052,7 +2052,7 @@ set a non-zero exit code.
 ```go
 type UncertainMutabilityWarning struct {
     Callee     string
-    Tier       interop.ResolutionTier
+    Tier       dts_to_esc.ResolutionTier
     Provenance []interop.Origin // chain from the callee's Effective
     Span       ast.Span
 }

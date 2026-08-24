@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,7 @@ func TestResolveFreeFunctionAtModuleTop(t *testing.T) {
 	store.Modules["lodash"] = &ModuleScope{
 		Container: Container{
 			Free: map[string]*Effective{
-				"map": {Type: fn, Source: TierBuiltinOverride},
+				"map": {Type: fn, Source: dts_to_esc.TierBuiltinOverride},
 			},
 			Children: map[string]ChildScope{},
 		},
@@ -43,7 +44,7 @@ func TestResolveInstanceMethod(t *testing.T) {
 				"Array": &ClassScope{
 					Instance: &MemberSet{
 						Methods: map[string]*Effective{
-							"map": {Type: fn, Source: TierBuiltinOverride},
+							"map": {Type: fn, Source: dts_to_esc.TierBuiltinOverride},
 						},
 						Getters:    map[string]*Effective{},
 						Setters:    map[string]*Effective{},

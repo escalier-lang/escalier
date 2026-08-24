@@ -719,7 +719,7 @@ Also added in PR #520:
 **File:** `internal/ast/class.go`
 
 `ClassDecl.Params` and `ClassDecl.Data` are removed. `NewClassDecl` and
-every call site (notably `internal/interop/decl.go`) updated.
+every call site (notably `internal/dts_to_esc/decl.go`) updated.
 
 `*ast.FieldElem` shape after the cut-over:
 

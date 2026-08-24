@@ -11,7 +11,7 @@
 //	dts_to_esc partition <lib-dir> <out-dir>
 //	    Full pinned-lib partitioning path per §6 PR A: discover every
 //	    lib.*.d.ts under <lib-dir>, parse each, route every top-level
-//	    declaration through interop.Route, and write the partitioned
+//	    declaration through dts_to_esc.Route, and write the partitioned
 //	    tree (std/*.esc, web/*.esc) under <out-dir>. <out-dir>/node/
 //	    is scaffolded with a README explaining its reserved status per
 //	    §6.1/§6.3; no `.esc` files are emitted there. The unmapped-
@@ -26,7 +26,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
-	"github.com/escalier-lang/escalier/internal/interop"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 )
 
 func main() {
@@ -61,11 +61,11 @@ func runSingleFile(args []string, out io.Writer) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("parse errors in %s: %v", path, errs)
 	}
-	standalone, err := interop.ConvertToStandaloneModule(dtsModule)
+	standalone, err := dts_to_esc.ConvertToStandaloneModule(dtsModule)
 	if err != nil {
 		return fmt.Errorf("converting %s: %w", path, err)
 	}
-	return interop.WriteStandaloneModule(standalone, out)
+	return dts_to_esc.WriteStandaloneModule(standalone, out)
 }
 
 func runPartition(args []string, stderr io.Writer) error {
@@ -74,7 +74,7 @@ func runPartition(args []string, stderr io.Writer) error {
 	}
 	libDir, outDir := args[0], args[1]
 
-	basenames, err := interop.DiscoverLibFiles(libDir)
+	basenames, err := dts_to_esc.DiscoverLibFiles(libDir)
 	if err != nil {
 		return err
 	}
@@ -83,24 +83,24 @@ func runPartition(args []string, stderr io.Writer) error {
 	}
 	fmt.Fprintf(stderr, "discovered %d lib files\n", len(basenames))
 
-	inputs, err := interop.ParseLibFiles(libDir, basenames)
+	inputs, err := dts_to_esc.ParseLibFiles(libDir, basenames)
 	if err != nil {
 		return err
 	}
 
-	result, err := interop.PartitionLib(inputs)
+	result, err := dts_to_esc.PartitionLib(inputs)
 	if err != nil {
 		return err
 	}
 
-	written, err := interop.WritePartitionedTree(result, outDir)
+	written, err := dts_to_esc.WritePartitionedTree(result, outDir)
 	if err != nil {
 		return err
 	}
-	if err := interop.ScaffoldNodeDir(outDir); err != nil {
+	if err := dts_to_esc.ScaffoldNodeDir(outDir); err != nil {
 		return err
 	}
 
 	fmt.Fprintf(stderr, "wrote %d packages under %s\n", len(written), outDir)
-	return interop.ReportPartition(result, stderr)
+	return dts_to_esc.ReportPartition(result, stderr)
 }

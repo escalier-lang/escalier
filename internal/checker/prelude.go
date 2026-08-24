@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -222,7 +223,7 @@ type MethodNames = set.Set[string]
 // TODO(#500): extend mutabilityOverrides for Promise, Error, and other
 // classes whose non-mutating methods should be callable on non-mut
 // receivers. Entries here are exceptions the name-only heuristics in
-// interop.ClassifyMethodByName (issue #614) either miss (e.g.
+// dts_to_esc.ClassifyMethodByName (issue #614) either miss (e.g.
 // String.charAt — no prefix match) or actively mis-classify (e.g.
 // String.replace — `replace` is a mutating-prefix). Method names
 // already covered by the heuristics — `get*`, `to*`, `is*`, `has*`,
@@ -358,7 +359,7 @@ func applyMethodMutability(objType *type_system.ObjectType, names MethodNames) {
 			}
 			continue
 		}
-		if mut, classified := interop.ClassifyMethodByName(name); classified && !mut {
+		if mut, classified := dts_to_esc.ClassifyMethodByName(name); classified && !mut {
 			for _, sig := range me.Signatures {
 				setReceiverMut(sig, false)
 			}

@@ -759,7 +759,7 @@ A one-time seeding tool. A Go binary that:
    object-shaped; etc.), only the substrate differs. The trio's
    sibling Escalier-style shape recognized by `tryFuseEscalierClass`
    is not expected in `lib.*.d.ts` and need not be handled.
-3. Runs `interop.Classify` (tiers 3/5/6) at conversion time to seed
+3. Runs `dts_to_esc.Classify` (tiers 3/5/6) at conversion time to seed
    receiver mutability into the emitted AST (`self` vs `mut self` on
    each method).
 4. Partitions the resulting declarations into pseudo-package `.esc`

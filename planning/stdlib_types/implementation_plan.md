@@ -23,8 +23,8 @@ This plan outlines the implementation steps for extending the Escalier compiler 
 | `internal/checker/prelude.go:337-353` | `loadGlobalDefinitions()` - loads lib.es5.d.ts and lib.dom.d.ts |
 | `internal/checker/prelude.go:355-429` | `loadGlobalFile()` - loads single lib file |
 | `internal/dts_parser/` | Complete .d.ts parsing infrastructure |
-| `internal/interop/module.go` | AST conversion from dts_parser to ast |
-| `internal/interop/decl.go:263-304` | `Promise<T>` → `Promise<T, E>` augmentation via `PromiseVisitor` |
+| `internal/dts_to_esc/module.go` | AST conversion from dts_parser to ast |
+| `internal/dts_to_esc/decl.go:263-304` | `Promise<T>` → `Promise<T, E>` augmentation via `PromiseVisitor` |
 | `internal/checker/package_registry.go` | Registry for named modules |
 
 ### Existing Promise<T, E> Augmentation
@@ -32,7 +32,7 @@ This plan outlines the implementation steps for extending the Escalier compiler 
 Escalier already augments TypeScript's `Promise<T>` to `Promise<T, E>` in the interop layer:
 
 ```go
-// internal/interop/decl.go:263-304
+// internal/dts_to_esc/decl.go:263-304
 // When converting Promise/PromiseLike interfaces from .d.ts files
 if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
     // Add error type parameter "E" with default type
@@ -85,7 +85,7 @@ loadGlobalDefinitions()
         ├── PackageDecls
         └── NamedModules
             ↓
-        interop.ConvertModule() → ast.Module
+        dts_to_esc.ConvertModule() → ast.Module
             ↓
         Checker.InferModule() → type_system.Namespace
             ↓
@@ -543,7 +543,7 @@ Create tests that verify:
 
 ### Phase 2.5: Extend Promise<T, E> Augmentation for ES2015+ Lib Files
 
-**Location**: `internal/interop/decl.go`
+**Location**: `internal/dts_to_esc/decl.go`
 
 The existing `PromiseVisitor` augments `Promise<T>` to `Promise<T, E>` for the base Promise interface. However, ES2015+ lib files introduce additional Promise-related types and methods that need similar treatment.
 
@@ -722,7 +722,7 @@ To properly track error types through Promise operations, the `PromiseVisitor` m
 
 1. **Interface augmentation**: Add `E` type parameter with default to `Promise` and `PromiseLike` interfaces
    ```go
-   // In interop/decl.go
+   // In dts_to_esc/decl.go
    errorTypeParam := ast.NewTypeParam("E", nil, ast.NewNeverTypeAnn(...)) // default = never
    typeParams = append(typeParams, &errorTypeParam)
    ```
@@ -1637,7 +1637,7 @@ Correctly inferring these requires understanding the semantics of each method.
 
 ### Promise<T, E> Implementation Notes
 
-- The `PromiseVisitor` in `internal/interop/decl.go` currently handles `Promise` and `PromiseLike` interface augmentation
+- The `PromiseVisitor` in `internal/dts_to_esc/decl.go` currently handles `Promise` and `PromiseLike` interface augmentation
 - **Default type parameter**: `Promise<T, E = never>` uses a default so that `Promise<T>` references resolve to `Promise<T, never>`
 - **Full error propagation**: Static and instance methods must be transformed to properly track error types:
   - `Promise.all/race`: Extract and union error types from input promise array

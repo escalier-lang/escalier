@@ -1,4 +1,4 @@
-package interop
+package dts_to_esc
 
 import (
 	"fmt"
@@ -789,7 +789,7 @@ func Route(name, sourceFile string) RouteResult {
 func UnmappedError(name, sourceFile string) error {
 	return fmt.Errorf(
 		"converter: unmapped top-level declaration %q from %s; "+
-			"add it to internal/interop/partition.go "+
+			"add it to internal/dts_to_esc/partition.go "+
 			"(see planning/builtins/implementation_plan.md §6.1) "+
 			"or to ExplicitDrops if intentional",
 		name, sourceFile)

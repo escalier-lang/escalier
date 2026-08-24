@@ -890,7 +890,7 @@ rejection, and one that does should be the site that has to handle it.
 
 The two-parameter promise is not new to Escalier. `internal/interop` already augments
 TypeScript's `Promise<T>` to `Promise<T, E>` through `PromiseVisitor`
-([interop/decl.go](../../internal/interop/decl.go)) and emits it back as `Promise<T>`
+([dts_to_esc/decl.go](../../internal/dts_to_esc/decl.go)) and emits it back as `Promise<T>`
 for `.d.ts` compatibility, and
 [stdlib_types/requirements.md](../stdlib_types/requirements.md) §"Promise<T, E> Usage"
 specifies the surface. This PR is the `soltype` half of that existing design.
@@ -1246,7 +1246,7 @@ layer but two already carries one, so this PR is mostly connecting parts that ex
 
 - `ast.ConstructorTypeAnn{Fn *FuncTypeAnn}` is already an `ObjTypeAnnElem`
   ([ast/type_ann.go:219](../../internal/ast/type_ann.go)). The `.d.ts` interop bridge
-  builds one ([interop/helper.go:176](../../internal/interop/helper.go)), the AST
+  builds one ([dts_to_esc/helper.go:176](../../internal/dts_to_esc/helper.go)), the AST
   printer renders it ([printer/printer.go:1312](../../internal/printer/printer.go)),
   and the old checker resolves it
   ([checker/infer_type_ann.go:402](../../internal/checker/infer_type_ann.go)). The

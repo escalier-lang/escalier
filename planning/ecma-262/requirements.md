@@ -7,8 +7,8 @@ The builtins workstream
 JavaScript standard-library surface as first-class `.esc` files. Its
 bootstrap converter (FR10) translates the pinned TypeScript `.d.ts` set
 into Escalier declarations and seeds receiver mutability by running
-`interop.Classify` — the name-based tiers in
-[../../internal/interop/mutability.go](../../internal/interop/mutability.go).
+`dts_to_esc.Classify` — the name-based tiers in
+[../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go).
 Those tiers are heuristics over method *names*: a `get*` prefix is
 non-mutating, a `set*`/`push`/`delete` prefix is mutating, and a
 hand-maintained exception table in
@@ -196,8 +196,8 @@ whichever checker owns builtin ingestion. Real stdlib ingestion into the
 solver is milestone M7.5 (Library type resolution), not yet landed — the
 solver prelude still seeds stdlib types as opaque placeholders — so the
 concrete point where the facts are consumed tracks wherever the builtins
-workstream lands that ingestion. The interop-layer classifier `interop.Classify`
-([../../internal/interop/mutability.go](../../internal/interop/mutability.go))
+workstream lands that ingestion. The converter's classifier `dts_to_esc.Classify`
+([../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go))
 operates on `dts_parser` declarations and is checker-agnostic, so FR8's
 integration there holds across both.
 
@@ -206,7 +206,7 @@ integration there holds across both.
 Escalier values are immutable by default; `mut` opts in
 ([../../docs/08_mutability.md](../../docs/08_mutability.md)). But
 TypeScript `.d.ts` types default to *mutating* at the import boundary —
-`interop.Classify`'s tier 7 is "default mutating." The
+`dts_to_esc.Classify`'s tier 7 is "default mutating." The
 receiver-mutability facts exist precisely to recover the correct split,
 so an immutable Escalier value can call the many builtin methods that do
 not mutate. The facts are what make immutability-by-default usable
@@ -668,7 +668,7 @@ and the TypeScript lib drift independently.
 ### FR8. Integration as a classification source
 
 The converter consumes the facts file as a classification source ranked
-**above** the name-based tiers of `interop.Classify`. The resolution
+**above** the name-based tiers of `dts_to_esc.Classify`. The resolution
 order becomes:
 
 1. explicit author signals already in `Classify` (getters/setters,
