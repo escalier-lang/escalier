@@ -101,11 +101,43 @@ func TestPrintMemberKeepsDoc(t *testing.T) {
 // TestPrintMemberRejectsNil covers the nil guards: both entry points
 // take an interface, so a nil member is a caller bug rather than an
 // empty print.
+//
+// A typed nil is the case worth pinning. Every member variant is a
+// pointer type, so an interface can hold a nil `*ast.FieldElem`, which
+// a plain `== nil` test reports as non-nil. Without the reflect-based
+// guard the printer reaches the member's Doc method and panics.
 func TestPrintMemberRejectsNil(t *testing.T) {
 	t.Parallel()
-	_, err := PrintClassElem(nil, DefaultOptions())
-	require.EqualError(t, err, "cannot print a nil class member")
+	classCases := []struct {
+		name string
+		elem ast.ClassElem
+	}{
+		{"untyped nil", nil},
+		{"typed nil field", (*ast.FieldElem)(nil)},
+		{"typed nil method", (*ast.MethodElem)(nil)},
+		{"typed nil constructor", (*ast.ConstructorElem)(nil)},
+	}
+	for _, tc := range classCases {
+		t.Run("class/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := PrintClassElem(tc.elem, DefaultOptions())
+			require.EqualError(t, err, "cannot print a nil class member")
+		})
+	}
 
-	_, err = PrintObjTypeAnnElem(nil, DefaultOptions())
-	require.EqualError(t, err, "cannot print a nil object type member")
+	annCases := []struct {
+		name string
+		elem ast.ObjTypeAnnElem
+	}{
+		{"untyped nil", nil},
+		{"typed nil property", (*ast.PropertyTypeAnn)(nil)},
+		{"typed nil method", (*ast.MethodTypeAnn)(nil)},
+	}
+	for _, tc := range annCases {
+		t.Run("objTypeAnn/"+tc.name, func(t *testing.T) {
+			t.Parallel()
+			_, err := PrintObjTypeAnnElem(tc.elem, DefaultOptions())
+			require.EqualError(t, err, "cannot print a nil object type member")
+		})
+	}
 }
