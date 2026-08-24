@@ -9,39 +9,26 @@ import (
 )
 
 // directMutators are the abstract operations that mutate an argument outright,
-// mapped to the argument position they mutate. They are the fixpoint's base
-// cases, the only mutations the analysis asserts rather than derives. See
+// mapped to the position they mutate. They are the fixpoint's base cases, the
+// only mutations the analysis asserts rather than derives. See
 // planning/ecma-262/implementation_plan.md §4.1 and requirements.md FR1.
 //
 // An entry reads as "a call to this operation mutates whatever was passed at
-// this position". `Array.prototype.push` calls `Set(O, %6, E, true)`, so the
-// `Set` entry selects `O`, whose origin is the receiver, and push comes out
-// mutating its receiver. The same entry answers differently in
-// `Array.prototype.slice`, which calls `Set(A, "length", ...)` on the array
-// `ArraySpeciesCreate` handed it. That origin is fresh, so the write is
-// invisible to slice's caller and is discarded.
+// this position", and the argument's origin decides what that means for the
+// caller. `Array.prototype.push` calls `Set(O, ...)` where `O` is the receiver,
+// so push mutates its receiver. `Array.prototype.slice` calls `Set(A, ...)` on
+// the array `ArraySpeciesCreate` handed it, and a fresh origin is discarded.
 //
-// These operations are seeded rather than analyzed because their bodies cannot
-// be descended into. `Set`'s body is a single dispatch to the object's
-// `[[Set]]` internal method, a callee chosen at runtime by the receiver's type.
-// The ordinary path below it dispatches again on the prototype chain and can
-// end in a call to a user-supplied setter. The concrete writes land on
-// property-descriptor records several layers down, phrased in ESMeta's internal
-// object representation rather than as a write to the argument.
-//
-// Claiming that `Set(O, ...)` mutates `O` over-approximates, since a Proxy's
-// `[[Set]]` trap may write elsewhere. That is the FR5-conservative direction. A
-// mutation claimed where there is none fails loudly at a call site, while a
-// missed one is silent unsoundness.
-//
-// Composite mutators stay derived. `Object.freeze` gets position 0 from its
-// call to `SetIntegrityLevel`, which the fixpoint reads off that operation's
-// own summary. `SetIntegrityLevel` is seeded for robustness rather than
-// necessity, since its own body writes through `DefinePropertyOrThrow`.
+// These operations are seeded because their bodies cannot be descended into.
+// `Set` dispatches to the object's `[[Set]]` internal method, a callee the
+// receiver's type chooses at runtime, and the writes below it land on
+// property-descriptor records rather than on the argument. Claiming that
+// `Set(O, ...)` mutates `O` therefore over-approximates. That is the
+// FR5-conservative direction, since a mutation claimed where there is none
+// fails loudly at a call site while a missed one is silent unsoundness.
 //
 // The map is a reviewed constant. A mutating operation the spec adds without an
-// entry here produces a false non-mutating result, so validating it against the
-// spec text is part of the spec-bump runbook.
+// entry here produces a false non-mutating result.
 var directMutators = map[string]int{
 	// Property writes.
 	"CreateDataProperty":        0,
@@ -53,37 +40,27 @@ var directMutators = map[string]int{
 	"Set":                       0,
 	// Integrity changes.
 	"SetIntegrityLevel": 0,
-	// Data-block writes. SetValueInBuffer writes bytes into the Data Block an
-	// ArrayBuffer holds in its `[[ArrayBufferData]]` slot. Its argument 0 is
-	// that buffer, and every write a DataView setter, `Atomics.store`, or
-	// `TypedArray.prototype.set` performs goes through it. The write itself is
-	// a byte-range store the graph does not lower, so nothing below this entry
-	// reports it.
+	// Data-block writes. SetValueInBuffer stores bytes into the Data Block its
+	// argument 0 holds, and the graph does not lower that store. Every write a
+	// DataView setter, `Atomics.store`, or `TypedArray.prototype.set` performs
+	// goes through it.
 	"SetValueInBuffer": 0,
 }
 
 // backingStoreSlots are the internal slots that hold an object's mutable
-// payload, so that writing one mutates the object itself. See requirements.md
-// FR3.
+// payload, so writing one mutates the object itself. See requirements.md FR3.
 //
 // A collection does not keep its contents as properties. `Map.prototype.set`
-// appends to `M.[[MapData]]` and `Set.prototype.add` appends to
-// `S.[[SetData]]`, and neither goes through a property write, so neither is
-// reachable from the seed above. Without this list both would come out
-// non-mutating.
+// appends to `M.[[MapData]]` and `Set.prototype.add` appends to `S.[[SetData]]`,
+// neither through a property write, so the seed above never reaches them.
 //
-// The list is deliberately narrow. A slot belongs here when it holds the value
-// the object's own methods read back. `[[DateValue]]` qualifies, since
-// `Date.prototype.setTime` writes it and `Date.prototype.getTime` reads it
-// back. `[[Prototype]]` and `[[Extensible]]` do not, because they describe how
-// the object behaves rather than what it holds. Leaving them out costs nothing,
-// since `Object.setPrototypeOf` and `Object.preventExtensions` reach their
-// writes through an internal method the graph does not resolve and come out
-// incomplete either way.
+// A slot belongs here when it holds the value the object's own methods read
+// back. `[[DateValue]]` qualifies, since `Date.prototype.setTime` writes it and
+// `Date.prototype.getTime` reads it. `[[Prototype]]` and `[[Extensible]]` do
+// not, because they describe how the object behaves rather than what it holds.
 //
-// Like the seed, this is a reviewed constant. A collection type entering the
-// spec with a new payload slot needs an entry here or its methods come out
-// non-mutating.
+// Like the seed, a reviewed constant. A collection type entering the spec with
+// a new payload slot needs an entry or its methods come out non-mutating.
 var backingStoreSlots = set.FromSlice([]string{
 	// Keyed collections.
 	"MapData",
@@ -106,16 +83,14 @@ var backingStoreSlots = set.FromSlice([]string{
 })
 
 // Mutations is what the fixpoint concluded about one function. Args holds the
-// 0-based positions of the declared parameters the function may mutate,
-// sorted. A method's receiver is not a parameter, so it is reported separately
-// by Receiver.
+// sorted 0-based positions of the declared parameters it may mutate. A method's
+// receiver is not a parameter, so Receiver reports it separately.
 //
-// Unattributable and Incomplete are two different failures, and §4.3 turns
-// either one into `classified: false` so that FR5's name-based heuristics
-// decide the method instead. Unattributable means the analysis saw a mutation
-// and could not tie it to the receiver or to a parameter. It knows something
-// was written but not what. Incomplete means the analysis could not see the
-// whole algorithm, so a mutation may be hiding in the part it could not read.
+// The two warnings name different failures, and §4.3 turns either into
+// `classified: false` so FR5's name-based heuristics decide the method instead.
+// Unattributable means the analysis saw a mutation it could not tie to the
+// receiver or to a parameter. Incomplete means it could not read the whole
+// algorithm, so a mutation may be hiding in the part it missed.
 type Mutations struct {
 	Args           []int
 	Receiver       bool
@@ -123,9 +98,8 @@ type Mutations struct {
 	Incomplete     bool
 }
 
-// String renders a summary as a space-separated list of the facts that hold, so
-// a test can assert one in a single line. A function with no facts reads
-// "none".
+// String renders the facts that hold as a space-separated list, so a test can
+// assert a summary in one line. A function with no facts reads "none".
 func (m Mutations) String() string {
 	var parts []string
 	if m.Receiver {
@@ -160,27 +134,24 @@ type facts struct {
 }
 
 // MutationSummary holds the mutation facts of every function in a graph. It
-// answers, for one function, which of its declared parameters it may mutate and
-// whether it mutates its receiver, counting both the writes the function
-// performs itself and those the functions it calls perform on its behalf.
+// answers, for one function, which declared parameters it may mutate and
+// whether it mutates its receiver, counting the writes it performs itself and
+// those its callees perform on its behalf.
 type MutationSummary struct {
 	facts map[*Func]*facts
 }
 
 // NewMutationSummary runs the mutation fixpoint over cfg.
 //
-// The seed above gives the base cases, and the summary of every other function
-// is derived from them. A function's own writes are charged to its receiver or
-// to one of its parameters through the origin map of §4.2, and a call charges
-// each position the callee mutates to whatever the call passed there. Since a
-// callee's summary can grow after its callers have been read, a function whose
-// summary grows re-enqueues its callers.
-//
-// A call also carries the callee's Unattributable flag up, since the value the
-// callee could not place may have arrived as one of the arguments.
+// The seed above gives the base cases and every other summary derives from
+// them. A function's own writes are charged to its receiver or to a parameter
+// through the origin map of §4.2. A call charges each position the callee
+// mutates to whatever the call passed there, and carries the callee's
+// Unattributable flag up, since the value it could not place may have arrived
+// as one of the arguments. A summary that grows re-enqueues its callers.
 //
 // The analysis never invents a mutation. Every position in an Args set traces
-// back either to a seed entry or to a backing-store slot write.
+// back to a seed entry or to a backing-store slot write.
 func NewMutationSummary(cfg *CFG) *MutationSummary {
 	a := &analysis{
 		summary: &MutationSummary{facts: make(map[*Func]*facts, len(cfg.Funcs))},
@@ -207,7 +178,7 @@ func NewMutationSummary(cfg *CFG) *MutationSummary {
 }
 
 // Of returns fn's summary. A function the summary was not computed for reads
-// back empty, which is the answer for a function that mutates nothing.
+// back empty, the same as one that mutates nothing.
 func (s *MutationSummary) Of(fn *Func) Mutations {
 	f := s.facts[fn]
 	if f == nil {
@@ -232,8 +203,8 @@ type analysis struct {
 }
 
 // callees returns the functions fn calls, in call order and without repeats. A
-// callee the analysis cannot resolve is left out, and the transfer function
-// records it as incomplete when it reaches the call.
+// callee the analysis cannot resolve is left out, and transfer records it as
+// incomplete when it reaches the call.
 func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
@@ -256,12 +227,11 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 // callee is not a body the analysis can read.
 //
 // A callee is either an abstract-operation name or a value the function holds,
-// such as the `callbackfn` a caller passed in. The origin map tells the two
-// apart, since a name bound to one of the function's own parameters is a
-// callback rather than the operation of that name. No callee in the pinned
-// graph shadows an operation this way. The check is there for a spec bump that
-// names a parameter after a seeded operation, where resolving by name alone
-// would charge the callback with that operation's mutations.
+// such as the `callbackfn` a caller passed in. A name bound to one of the
+// function's own parameters is the second kind. No callee in the pinned graph
+// shadows an operation this way; the check guards a spec bump that names a
+// parameter after a seeded operation, where resolving by name alone would
+// charge the callback with that operation's mutations.
 func (a *analysis) resolve(cfg *CFG, origin *OriginMap, callee string) *Func {
 	if origin.Of(callee).Kind == OriginParam {
 		return nil
