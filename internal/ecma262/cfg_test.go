@@ -120,6 +120,11 @@ func TestParseCFGRejects(t *testing.T) {
 				`"nodes":[{"kind":"opaque"}]}]}`,
 			err: "decoding cfg: node 0 of ToObject: the step text is missing",
 		},
+		"StrayOpaqueField": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"opaque","text":["Let _n_ be ..."],"slot":"MapData"}]}]}`,
+			err: `decoding cfg: node 0 of ToObject: a opaque node carries "slot"`,
+		},
 		"EmptyOpaqueText": {
 			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
 				`"nodes":[{"kind":"opaque","text":["Let _n_ be ...",""]}]}]}`,
