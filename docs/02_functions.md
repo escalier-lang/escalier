@@ -18,37 +18,62 @@ The return type is always inferable from the body, so annotating it is optional.
 Parameter types are inferred too, from the body's usage of each parameter:
 
 ```esc
-fn dist(p) { p.x
-             p.y }
-// inferred: fn (p: {x: unknown, y: unknown}) -> undefined
+import "std:math"
+
+fn dist(p) {
+    return math.sqrt(p.x * p.x + p.y * p.y)
+}
+// inferred: fn (p: {x: number, y: number}) -> number
 ```
+
+`p` is never annotated. Reading `p.x` says the argument must have an `x`, and
+multiplying it says that field must be a `number`, so the two constraints
+together give the parameter its type.
 
 The inferred parameter shape is **exact**, so a caller may not pass an object
 with extra fields. Mark the parameter `open` to keep it row-polymorphic:
 
 ```esc
-fn dist(open p) { p.x
-                  p.y }
-// inferred: fn (p: {x: unknown, y: unknown, ...}) -> undefined
+fn dist(open p) {
+    return math.sqrt(p.x * p.x + p.y * p.y)
+}
+// inferred: fn (p: {x: number, y: number, ...}) -> number
 ```
 
 A function expression passed as a callback infers its parameter types from the
 higher-order function's signature:
 
 ```esc
-val strings = ["1", "2", "3"]
-val numbers = strings.map(fn (elem, index) { return parseInt(elem) })
+import "std:array"
+import "std:number"
+
+val strings: Array<string> = ["1", "2", "3"]
+val numbers = strings.map(fn (elem, index) { return Number.parseInt(elem) })
+// elem: string, index: number, numbers: Array<number>
 ```
+
+`Array<T>.map` declares its callback as `fn (elem: T, index: number) -> U`, so
+`elem` and `index` are fixed by the slot the function expression lands in and `U`
+comes back from its body.
+
+The annotation on `strings` is what makes it an `Array<string>`. Without one,
+`val strings = ["1", "2", "3"]` infers the tuple `["1", "2", "3"]`, since a `val`
+binding keeps each element's literal type.
 
 ## Generics
 
-Type parameters are written in `<>` and may carry a constraint after `:`.
+Type parameters are written in `<>`, may carry a constraint after `:`, and may
+have a default after `=`.
 
 ```esc
 fn id<T>(x: T) -> T { return x }
 fn first<T>(x: T, y: T) -> T { return x }
 fn call<F: fn (x: number) -> number>(f: F) -> number { return f(1) }
+fn parse<T = string>(x: T) -> T { return x }
 ```
+
+A default fills the parameter in where the reference names no argument for it,
+so `type Box<T = number> = {value: T}` makes a bare `Box` mean `Box<number>`.
 
 Each call instantiates the parameters independently, so two calls to `id` keep
 their own argument types:
@@ -78,10 +103,11 @@ fn bump(p: &mut {x: number}) { p.x = p.x + 1 }       // mutable borrow
 fn store(p: {x: number}) { ... }                     // consumes; caller gives p up
 ```
 
-The borrow is inserted at the call site, so a caller writes `read(p)` rather than
-`read(&p)`. An unannotated parameter is inferred: the checker picks a borrow when
-the body never lets the value escape and ownership when it does. See
-[Ownership](09_ownership.md) for what counts as escape.
+The borrow is inserted at the call site, so a caller may write `read(p)`; writing
+`read(&p)` explicitly is also accepted. An unannotated parameter is inferred, and
+the checker picks a borrow when the body never lets the value escape and
+ownership when it does. See [Ownership](09_ownership.md) for what counts as
+escape.
 
 ## `throws`
 
@@ -94,7 +120,7 @@ fn f() { throw "boom" }
 // ERROR: cannot constrain "boom" <: never
 ```
 
-Write `throws _` to infer the clause from the body:
+Write `throws _` to read the clause off the body:
 
 ```esc
 fn f() throws _ { throw "boom" }
@@ -104,13 +130,25 @@ fn g(c: boolean) throws _ { if c { throw "a" } else { throw 5 } }
 // inferred: fn (c: boolean) -> never throws 5 | "a"
 ```
 
-Write `throws T` to fix it, in which case each `throw` in the body is checked
-against `T` at its own site:
+This is the point of the design. Checked exceptions in other languages make you
+enumerate what a function raises, which means tracing every call it makes and
+redoing that work whenever a callee changes. `throws _` opts a function into
+checked exceptions and leaves the enumeration to the compiler, so callers get the
+obligation without the author doing the bookkeeping. It is the same deal the
+return type already offers.
+
+Write `throws T` when you want to name the clause yourself. The declared type is
+what callers see, and each `throw` in the body is checked against it at its own
+site:
 
 ```esc
-fn f() throws string { throw "boom" }    // OK — the literal widens to string
+fn f() throws string { throw "boom" }    // the literal widens to string
 fn g() throws number { throw "boom" }    // ERROR at the throw
 ```
+
+Naming it is how you widen past what the body happens to raise today, so adding a
+second `throw` later does not change the signature every caller was written
+against.
 
 A call raises whatever its callee declares, so the callee's `throws` reaches the
 caller's clause the way a `throw` in the caller's own body would. A body with no
