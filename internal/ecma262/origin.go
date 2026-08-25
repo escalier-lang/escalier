@@ -13,10 +13,15 @@ import (
 type OriginKind uint8
 
 const (
-	// originUnset is a name the analysis has not bound to anything yet. It is
-	// the bottom of the lattice, so joining it with an origin yields that
-	// origin. A name still unset when the analysis finishes reads back as
+	// originUnset is a name NewOriginMap's walk has not bound yet. It is the
+	// bottom of the lattice, so joining it with an origin yields that origin,
+	// and a name still unset when the walk finishes reads back as
 	// OriginUnknown.
+	//
+	// A reader that reaches an unset name stays unset for this pass and takes
+	// its origin on the next one. A join never retracts, so answering
+	// `Unknown` early would pin the reader there and make the result depend on
+	// the order the walk visits nodes in.
 	originUnset OriginKind = iota
 	// OriginReceiver is a builtin method's `this` value.
 	OriginReceiver
@@ -38,13 +43,12 @@ const (
 // rather than that value itself. `view.[[ViewedArrayBuffer]]` in `SetViewValue`
 // is the interior of parameter 0. Writing an interior value writes the object
 // holding it, which is what lets §4.1 charge a DataView setter's byte store to
-// its receiver. An interior value is not the object itself, so it never stands
-// in for it where identity is what matters, such as §4.3's return alias.
+// its receiver. It is not the object itself, so it never stands in where
+// identity matters, such as §4.3's return alias.
 //
-// Captures marks a fresh value the algorithm built around something it was
-// given, so reading inside it can hand back a value its caller already owns.
-// It changes nothing about the fresh value itself, only about its interior.
-// See capturingAllocators.
+// Captures marks a fresh value built around something the algorithm was given.
+// It changes nothing about the fresh value, only about its interior. See
+// capturingAllocators.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
@@ -69,16 +73,12 @@ func Param(i int) Origin {
 // A fresh object's interior is fresh too, unless the allocator that built it
 // captured one of its arguments. `TypedArray.prototype.slice` writes the buffer
 // behind the array `TypedArraySpeciesCreate` handed it, and that write is
-// invisible to its caller. `MakeDataViewWithBufferWitnessRecord` instead
-// returns a record holding the view it was given, so reading inside its result
-// can reach a value the caller owns.
+// invisible to its caller.
 func interiorOf(o Origin) Origin {
 	switch o.Kind {
 	case originUnset:
-		// The walk has not reached the definition of the object being read
-		// yet. Answering `Unknown` would pin the reader there for good, since
-		// a join never retracts. Staying at the bottom lets the next pass
-		// bind it, which is what keeps the walk independent of node order.
+		// The walk has not reached the definition of the object being read.
+		// See originUnset.
 		return o
 	case OriginReceiver, OriginParam:
 		o.Interior = true
@@ -121,10 +121,9 @@ func (o Origin) String() string {
 }
 
 // join is the least upper bound of two origins. Two definitions that agree keep
-// their origin. Two that disagree collapse to OriginUnknown. That collapse is
+// their origin and two that disagree collapse to `Unknown`. That collapse is
 // what makes the analysis path-insensitive. A name assigned on two branches
-// takes the join of both definitions rather than whichever one the walk
-// reached last.
+// takes the join of both rather than whichever the walk reached last.
 func (o Origin) join(other Origin) Origin {
 	switch {
 	case o.Kind == originUnset:
@@ -139,26 +138,24 @@ func (o Origin) join(other Origin) Origin {
 }
 
 // identityCoercions are the abstract operations that hand back the value they
-// were given, so an origin propagates through them. The list is short and
-// reviewed by hand. Calling an operation identity-preserving when it builds a
-// new value would charge a mutation to the wrong place.
+// were given, so an origin propagates through them. Calling one
+// identity-preserving when it builds a new value would charge a mutation to the
+// wrong place, so the list is short and reviewed by hand.
 //
 // ToObject is the entry that makes receiver tracking work. `Let O be ?
 // ToObject(this value)` keeps `O` at the receiver, which is how
 // `Array.prototype.push` comes out mutating. ToObject wraps a primitive
-// receiver rather than returning it, so the entry over-approximates. That is
-// the safe direction under FR5. A mutation claimed where there is none fails
-// loudly at a call site, while a missed one is silent unsoundness.
+// receiver rather than returning it, so the entry over-approximates in the
+// FR5-safe direction. A mutation claimed where there is none fails loudly at a
+// call site, while a missed one is silent unsoundness.
 //
 // CanonicalizeKeyedCollectionKey returns its key unchanged apart from
 // normalizing -0 to +0, which cannot apply to an object. Completion and
 // NormalCompletion wrap a value in a completion record, and the serializer
 // drops the matching unwrap, so a caller sees the value they were handed.
 //
-// Coercions that build a new value are absent by design. ToString and ToNumber
-// break the chain. That is why every `String.prototype` method comes out
-// non-mutating. The algorithm coerces `this` to a fresh string and never writes
-// back through the receiver.
+// A coercion that builds a new value is absent by design. ToString and ToNumber
+// break the chain instead. See freshPrimitives.
 var identityCoercions = set.FromSlice([]string{
 	"CanonicalizeKeyedCollectionKey",
 	"Completion",
@@ -169,19 +166,18 @@ var identityCoercions = set.FromSlice([]string{
 
 // freshPrimitives are the abstract operations that build a new primitive from
 // their argument. Their result is `Fresh` for the same reason an allocation is,
-// and with none of the risk: a primitive cannot be mutated, so an entry here
-// can never hide a write the caller would observe. The list exists so that
-// `ToString` resolving away from its argument reads as a decision rather than
-// an omission from allocators.
+// and with none of the risk, since a primitive cannot be mutated. The list
+// exists so that `ToString` resolving away from its argument reads as a
+// decision rather than an omission from allocators.
 //
 // `Let S be ? ToString(O)` is the case that matters. `O` is the receiver, `S`
-// is a new string, and nothing the algorithm does to `S` can reach `O`. That is
-// why every `String.prototype` method comes out non-mutating.
+// is a new string, and nothing done to `S` can reach `O`. That is why every
+// `String.prototype` method comes out non-mutating.
 //
-// Predicates such as IsArray and SameValue return primitives too and are
-// deliberately absent. Listing every operation that returns a boolean would add
-// review surface without changing an answer, since a predicate's result is only
-// ever branched on.
+// A predicate such as IsArray returns a primitive too and is deliberately
+// absent. Listing every operation that returns a boolean would add review
+// surface without changing an answer, since a predicate's result is only ever
+// branched on.
 var freshPrimitives = set.FromSlice([]string{
 	// Coercions to a primitive. ToObject is not among them, since it returns an
 	// object and is identity-preserving instead.
@@ -223,21 +219,20 @@ var freshPrimitives = set.FromSlice([]string{
 
 // allocators are the abstract operations that return a value they allocated.
 // Their result is `Fresh`, the one origin whose mutations the fixpoint
-// discards, because a write to a value the algorithm made itself is invisible
-// to its caller. Every entry must therefore genuinely allocate. Listing an
-// operation that can hand back a value the caller already holds would turn a
-// real mutation invisible.
+// discards, since a write to a value the algorithm made itself is invisible to
+// its caller. Listing an operation that can hand back a value the caller
+// already holds would turn a real mutation invisible.
 //
-// Two absences follow from that. Construct runs a constructor chosen at runtime
-// and may return any object, including one of its arguments. ProxyCreate
-// allocates a proxy, but a write to that proxy reaches its target, so its
-// result is not independent of its argument. Both resolve to `Unknown` instead.
+// Construct and ProxyCreate are absent for that reason. Construct runs a
+// constructor chosen at runtime and may return any object, including one of its
+// arguments. A write to a proxy reaches its target, so ProxyCreate's result is
+// not independent of its argument. Both resolve to `Unknown`.
 //
-// ArraySpeciesCreate, TypedArraySpeciesCreate, and the TypedArrayCreate family
-// run a constructor the caller can replace, so they carry the same risk. §4.2
-// lists ArraySpeciesCreate anyway, because `Array.prototype.slice` and its
-// neighbours build their result through it. Reading a value back out of that
-// result is a slot or property access, which breaks the chain regardless.
+// ArraySpeciesCreate and the TypedArray create family run a constructor the
+// caller can replace, so they carry the same risk. They are listed anyway,
+// because `Array.prototype.slice` and its neighbours build their result through
+// one. Reading a value back out of that result is a slot or property access,
+// which breaks the chain regardless.
 var allocators = set.FromSlice([]string{
 	// Ordinary objects and records.
 	"MakeBasicObject",
@@ -303,14 +298,10 @@ var allocators = set.FromSlice([]string{
 
 // capturingAllocators are the allocators that build their result around a value
 // they were given, so reading inside that result can reach a value the caller
-// already owns. Every other allocator hands back something whose contents it
-// also made, and interiorOf keeps those fresh.
+// already owns. interiorOf keeps every other allocator's result fresh.
 //
-// `MakeDataViewWithBufferWitnessRecord` is the shape: it ends in `return
+// `MakeDataViewWithBufferWitnessRecord` is the shape. It ends in `return
 // « obj, byteLength »`, so the fresh record holds the very view it was passed.
-// `TypedArraySpeciesCreate` is the other shape. It builds a new typed array
-// over a new buffer, which is why `TypedArray.prototype.slice` writing that
-// buffer is invisible to its caller.
 //
 // The list is derived from the graph rather than judged by hand. An allocator
 // belongs here when one of its parameters reaches a place interiorOf would read
@@ -337,14 +328,13 @@ type OriginMap struct {
 // freeNames returns fn's free names, the value names it reads but never binds.
 // A closure's captured value is the common case. `Iterator.prototype.drop`
 // builds a helper that opens with `Let remaining be integerLimit`, and
-// `integerLimit` belongs to the algorithm that built the helper, not to the
-// helper itself.
+// `integerLimit` belongs to the algorithm that built the helper.
 //
-// The walk has to answer Unknown for such a name from the start, because it
-// never learns anything more about it. Left at the lattice bottom it would
-// contribute nothing to a join, and `remaining`, which a later step assigns a
-// literal, would come out Fresh. A mutation of it would then read as
-// unobservable to the caller when on one path it is the captured value.
+// Such a name is `Unknown` from the first pass, since the walk never learns more
+// about it. Left at the lattice bottom it would contribute nothing to a join,
+// and `remaining`, which a later step assigns a literal, would come out `Fresh`.
+// A mutation of it would then read as unobservable to the caller when on one
+// path it is the captured value.
 func freeNames(fn *Func) set.Set[string] {
 	bound := set.FromSlice(fn.Params)
 	for _, node := range fn.Nodes {
@@ -411,11 +401,10 @@ func freeNames(fn *Func) set.Set[string] {
 // every definition of its name.
 //
 // The walk is path-insensitive. It never interprets a branch and reads the node
-// list as a flat sequence. Repeating the walk until nothing moves makes the
-// result independent of the order the serializer emitted the nodes in, so a
-// name a loop's back edge redefines still reaches its uses. The repetition
-// terminates because an origin only climbs the lattice, from unset to one
-// origin to `Unknown`.
+// list as a flat sequence. Repeating it until nothing moves makes the result
+// independent of the order the serializer emitted the nodes in, so a name a
+// loop's back edge redefines still reaches its uses. It terminates because an
+// origin only climbs the lattice, from unset to one origin to `Unknown`.
 func NewOriginMap(fn *Func) *OriginMap {
 	m := &OriginMap{
 		fn:      fn,
@@ -485,16 +474,10 @@ func resolved(o Origin) Origin {
 
 // eval returns an expression's origin. It keeps the lattice bottom rather than
 // resolving it, which separates the two reasons a name can be unbound when the
-// walk reads it.
-//
-// A name the walk has not reached the definition of yet is still bottom, and
-// bottom contributes nothing to a join. The reader is left alone for this pass
-// and takes its origin on the next one, once the definition is bound. Answering
-// `Unknown` there would pin the reader at `Unknown` for good, since a join
-// never retracts.
-//
-// A free name is never going to be bound, so waiting gains nothing and the
-// answer is `Unknown` from the first pass.
+// walk reads it. A name whose definition the walk has not reached yet is still
+// bottom and takes its origin on a later pass, as originUnset describes. A free
+// name is never going to be bound, so waiting gains nothing and the answer is
+// `Unknown` from the first pass.
 func (m *OriginMap) eval(e Expr) Origin {
 	switch e := e.(type) {
 	case *VarExpr:
@@ -547,11 +530,10 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])
 	default:
-		// Everything else breaks the chain. An operation such as Get reads a
-		// value out of a container, and the value read is a different object
-		// from the container. A predicate such as IsArray returns a boolean
-		// that stands for none of its arguments. Neither hands back the object
-		// it was given, and neither is a value the analysis can place.
+		// Everything else breaks the chain. Get reads a value out of a
+		// container, and that value is a different object from the container.
+		// A predicate such as IsArray returns a boolean standing for none of
+		// its arguments.
 		return Unknown
 	}
 }
