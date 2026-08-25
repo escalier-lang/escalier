@@ -27,7 +27,7 @@ of TypeScript's `lib.es*.d.ts` and bundled `@types/*` packages. Mutability
 make this work, the compiler carries:
 
 - A seven-tier classification ladder in
-  [internal/interop/mutability.go](../../internal/interop/mutability.go)
+  [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go)
   (`Classify`) that decides receiver mutability when no explicit
   signal is present.
 - A merge pipeline in [internal/interop/merge.go](../../internal/interop/merge.go)
@@ -478,10 +478,10 @@ Add a `tools/dts_to_esc/` directory with a Go binary that:
    matching Escalier declaration. This avoids the §6.B-style
    bootstrap cycle (checker needs prelude needs checker) — the
    converter is a pure AST-to-AST translator, no type resolution
-   involved. `internal/interop/decl.go` / `extract.go` may be reused
+   involved. `internal/dts_to_esc/decl.go` / `extract.go` may be reused
    where they happen to do AST-level work, but anything that builds
    `type_system.Type` is not on this path.
-3. Runs `interop.Classify` (tiers 3/5/6) at conversion time to seed
+3. Runs `dts_to_esc.Classify` (tiers 3/5/6) at conversion time to seed
    receiver mutability directly into the emitted AST (e.g. deciding
    `self` vs `mut self` on each method).
 4. **Partitions** the resulting declarations into:
@@ -615,7 +615,7 @@ the `.esc` files, edited like any other source.
 > scheme there changes, update the cross-references here in lockstep
 > — adopting this proposal materially reshapes the tier landscape.
 
-What also goes away: `interop.ConvertModule` as a *runtime* call,
+What also goes away: `dts_to_esc.ConvertModule` as a *runtime* call,
 the seven-tier `Classify` at runtime (it still runs at conversion
 time), the trio-fusion in `class_shapes.go`, and
 `mergeReadonlyVariant`. All of that becomes either dead code or
@@ -740,7 +740,7 @@ Phased so we can back out if it doesn't work:
     against §5 tier 1a/1b overrides → write to
     `node_modules/.cache/escalier/`.
 11. **Delete the runtime interop pipeline.** Once step 10 is stable,
-    `interop.ConvertModule`, the runtime `Classify`, the trio-fusion
+    `dts_to_esc.ConvertModule`, the runtime `Classify`, the trio-fusion
     in `class_shapes.go`, and `mergeReadonlyVariant` come out.
 12. **Flip the default.** Remove the build flag from step 7.
 

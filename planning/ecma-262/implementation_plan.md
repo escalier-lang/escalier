@@ -166,7 +166,7 @@ that would introduce new PRs:
   program depending on a `sbt publishLocal` artifact. See the §2 outcome for
   the evidence.
 - **Solver-side application (new, not yet a numbered phase).** §7
-  integrates the facts into the interop-layer `interop.Classify` and
+  integrates the facts into the converter's `dts_to_esc.Classify` and
   removes the legacy `internal/checker/prelude.go` overrides. The active
   checker's own builtin ingestion is milestone **M7.5 — Library type
   resolution** in the solver (`internal/solver`), **not yet landed**: its
@@ -1080,7 +1080,7 @@ func normalize(specKey string) (owner []string, member MemberKey, sort MemberSor
   list, the same one FR7 enumerates.
   `MemberKey` mirrors `soltype.ObjTypeKey` so symbol-keyed members join
   by kind plus payload, matching how
-  [../../internal/interop/mutability.go](../../internal/interop/mutability.go)
+  [../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go)
   already distinguishes string- from symbol-keyed names. A
   `NamespaceFunc` carries `receiver: none`, so the join applies only its
   `params`, `throws`, and `rejects`.
@@ -1100,11 +1100,11 @@ func normalize(specKey string) (owner []string, member MemberKey, sort MemberSor
   overwrite them, matching the `GetterElem`/`SetterElem` carve-out in
   `applyMethodMutability`.
 - Wire the lookup into the bootstrap converter (`tools/dts_to_esc/`,
-  [../../internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go))
+  [../../internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go))
   so a converted method element can resolve its fact.
 - Report names present on one side only, mirroring the converter's
   unmapped-symbol fail-safe
-  ([../../internal/interop/partition.go](../../internal/interop/partition.go)).
+  ([../../internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)).
   A fact with no declaration and a declaration with no fact are both
   informational, since the spec and the TS lib drift independently.
 
@@ -1121,8 +1121,8 @@ resolve correctly.
 - Diff the receiver-mutability facts against the union of
   `mutabilityOverrides`
   ([../../internal/checker/prelude.go](../../internal/checker/prelude.go))
-  and `interop.ClassifyMethodByName`
-  ([../../internal/interop/mutability.go](../../internal/interop/mutability.go))
+  and `dts_to_esc.ClassifyMethodByName`
+  ([../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go))
   for the same methods.
 - Triage every disagreement: facts correct and override redundant, or
   facts buggy and the §4 analysis fixed.
@@ -1136,7 +1136,7 @@ entry. This is the gate that authorizes removing override entries in §7.
 
 **Work.**
 
-- Insert the facts lookup into `interop.Classify` at rung 2 (FR8):
+- Insert the facts lookup into `dts_to_esc.Classify` at rung 2 (FR8):
   after explicit author signals, before the `get*` prefix and name
   heuristics.
 - Set receiver mutability from a classified fact; leave unclassified

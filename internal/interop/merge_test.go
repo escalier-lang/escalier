@@ -3,6 +3,7 @@ package interop
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/type_system"
 	"github.com/stretchr/testify/require"
 )
@@ -40,10 +41,10 @@ func TestCollapseShadowing(t *testing.T) {
 	require.NotNil(t, mod, "expected lodash in collapsed output")
 	require.NotNil(t, mod.Free["map"])
 	require.Same(t, fnUser, mod.Free["map"].Type)
-	require.Equal(t, TierUserOverride, mod.Free["map"].Source)
+	require.Equal(t, dts_to_esc.TierUserOverride, mod.Free["map"].Source)
 	require.NotNil(t, mod.Free["filter"])
 	require.Same(t, fnBuiltin, mod.Free["filter"].Type)
-	require.Equal(t, TierBuiltinOverride, mod.Free["filter"].Source)
+	require.Equal(t, dts_to_esc.TierBuiltinOverride, mod.Free["filter"].Source)
 }
 
 // TestCollapseChildShapeMismatchHigherTierWins exercises cross-tier
@@ -144,9 +145,9 @@ func TestCollapseChildSameShapeAcrossTiers(t *testing.T) {
 	cls, ok := out["m"].Children["C"].(*ClassScope)
 	require.True(t, ok)
 	require.Same(t, fnHigh, cls.Instance.Methods["a"].Type)
-	require.Equal(t, TierUserOverride, cls.Instance.Methods["a"].Source)
+	require.Equal(t, dts_to_esc.TierUserOverride, cls.Instance.Methods["a"].Source)
 	require.Same(t, fnLow, cls.Instance.Methods["b"].Type)
-	require.Equal(t, TierBuiltinOverride, cls.Instance.Methods["b"].Source)
+	require.Equal(t, dts_to_esc.TierBuiltinOverride, cls.Instance.Methods["b"].Source)
 }
 
 func TestMergeOverrideReplacesOriginal(t *testing.T) {
@@ -166,7 +167,7 @@ func TestMergeOverrideReplacesOriginal(t *testing.T) {
 		"": {
 			Container: Container{
 				Free: map[string]*Effective{
-					"identity": {Type: overFn, Source: TierUserOverride},
+					"identity": {Type: overFn, Source: dts_to_esc.TierUserOverride},
 				},
 				Children: map[string]ChildScope{},
 			},
@@ -196,10 +197,10 @@ func TestMergePassesThroughOriginalWithoutOverride(t *testing.T) {
 	got := store.Modules[""].Free["identity"]
 	require.NotNil(t, got)
 	require.Same(t, origFn, got.Type)
-	// TierUserSource is the zero value of ResolutionTier, used here as
-	// the "Source left unset" sentinel for original-only leaves —
-	// Classify's lower tiers then decide the final tier.
-	require.Equal(t, TierUserSource, got.Source)
+	// TierUserSource is the zero value of dts_to_esc.ResolutionTier.
+	// It stands in for "Source left unset" on an original-only leaf,
+	// which leaves Classify's lower tiers to decide the final tier.
+	require.Equal(t, dts_to_esc.TierUserSource, got.Source)
 }
 
 // TestMergeAllPureStripsMutSelf: @all_pure on the override module side
@@ -253,7 +254,7 @@ func TestMergeAllPureStripsMutSelf(t *testing.T) {
 	_, stillMut := fn.SelfParam.Type.(*type_system.MutType)
 	require.False(t, stillMut, "@all_pure must unwrap MutType from instance method receiver")
 	require.Same(t, receiver, fn.SelfParam.Type)
-	require.Equal(t, TierUserOverride, got.Source)
+	require.Equal(t, dts_to_esc.TierUserOverride, got.Source)
 }
 
 // TestMergeUnknownMemberWhenOverrideOnlyAndParentExists: an override
@@ -273,7 +274,7 @@ func TestMergeUnknownMemberWhenOverrideOnlyAndParentExists(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"": {
 			Container: Container{
-				Free:     map[string]*Effective{"bar": {Type: overFn, Source: TierUserOverride}},
+				Free:     map[string]*Effective{"bar": {Type: overFn, Source: dts_to_esc.TierUserOverride}},
 				Children: map[string]ChildScope{},
 			},
 		},
@@ -300,7 +301,7 @@ func TestMergeUnknownMemberWhenParentOriginalAbsent(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"lodash": {
 			Container: Container{
-				Free:     map[string]*Effective{"map": {Type: overFn, Source: TierUserOverride}},
+				Free:     map[string]*Effective{"map": {Type: overFn, Source: dts_to_esc.TierUserOverride}},
 				Children: map[string]ChildScope{},
 			},
 		},
@@ -375,7 +376,7 @@ func TestMergeFuncTypeMismatchSurfacesError(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"f": {Type: overFn, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"f": {Type: overFn, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
@@ -411,7 +412,7 @@ func TestMergeExplicitMutSelfOverrideWins(t *testing.T) {
 	overMethod := type_system.NewFuncType(nil, nil, nil, type_system.NewNumPrimType(nil), nil)
 	overMethod.SelfParam = &type_system.FuncParam{Type: receiver}
 
-	mkClassWithMethod := func(fn *type_system.FuncType, source ResolutionTier) *ClassScope {
+	mkClassWithMethod := func(fn *type_system.FuncType, source dts_to_esc.ResolutionTier) *ClassScope {
 		return &ClassScope{
 			Instance: &MemberSet{
 				Methods:    map[string]*Effective{"m": {Type: fn, Source: source}},
@@ -432,7 +433,7 @@ func TestMergeExplicitMutSelfOverrideWins(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkClassWithMethod(overMethod, TierUserOverride)},
+			Children: map[string]ChildScope{"C": mkClassWithMethod(overMethod, dts_to_esc.TierUserOverride)},
 		}},
 	}
 
@@ -493,7 +494,7 @@ func TestMergeNamespaceNestedOverrideMatchesOriginal(t *testing.T) {
 	overFn := mkFn()
 
 	// Build a NamespaceScope with `map` as a free function in its Container.
-	mkNamespaceWithMap := func(fn *type_system.FuncType, source ResolutionTier) *NamespaceScope {
+	mkNamespaceWithMap := func(fn *type_system.FuncType, source dts_to_esc.ResolutionTier) *NamespaceScope {
 		return &NamespaceScope{
 			Container: Container{
 				Free:     map[string]*Effective{"map": {Type: fn, Source: source}},
@@ -511,7 +512,7 @@ func TestMergeNamespaceNestedOverrideMatchesOriginal(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"lodash": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"fp": mkNamespaceWithMap(overFn, TierUserOverride)},
+			Children: map[string]ChildScope{"fp": mkNamespaceWithMap(overFn, dts_to_esc.TierUserOverride)},
 		}},
 	}
 
@@ -548,7 +549,7 @@ func TestMergePropertyTypeEqualNoError(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: type_system.NewNumPrimType(nil), Source: TierUserOverride})},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: type_system.NewNumPrimType(nil), Source: dts_to_esc.TierUserOverride})},
 		}},
 	}
 	_, errs := Merge(original, override)
@@ -579,7 +580,7 @@ func TestMergePropertyMutWrappingPermitted(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: mutObj, Source: TierUserOverride})},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: mutObj, Source: dts_to_esc.TierUserOverride})},
 		}},
 	}
 	store, errs := Merge(original, override)
@@ -604,7 +605,7 @@ func TestMergePropertyTighteningAnyPermitted(t *testing.T) {
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
 			Free:     map[string]*Effective{},
-			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: num, Source: TierUserOverride})},
+			Children: map[string]ChildScope{"C": mkPropClass(&Effective{Type: num, Source: dts_to_esc.TierUserOverride})},
 		}},
 	}
 	_, errs := Merge(original, override)
@@ -625,7 +626,7 @@ func TestMergePropertyTypeMismatchSurfacesError(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: str, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: str, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
@@ -656,7 +657,7 @@ func TestMergePropertyKindMismatchSurfacesError(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: num, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: num, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
@@ -669,7 +670,7 @@ func TestMergePropertyKindMismatchSurfacesError(t *testing.T) {
 		errs[0].Error(),
 	)
 	require.Same(t, num, store.Modules[""].Free["x"].Type)
-	require.Equal(t, TierUserOverride, store.Modules[""].Free["x"].Source)
+	require.Equal(t, dts_to_esc.TierUserOverride, store.Modules[""].Free["x"].Source)
 }
 
 // TestMergePropertyAnyToUnknownRejected: tightening permits a concrete
@@ -687,7 +688,7 @@ func TestMergePropertyAnyToUnknownRejected(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: unkT, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: unkT, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
@@ -713,7 +714,7 @@ func TestMergePropertyMutWrapOverAnyPermitted(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: mutAny, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: mutAny, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}
@@ -747,7 +748,7 @@ func TestMergePropertyMutStrippingRejected(t *testing.T) {
 	}
 	override := map[string]*ModuleScope{
 		"": {Container: Container{
-			Free:     map[string]*Effective{"x": {Type: obj, Source: TierUserOverride}},
+			Free:     map[string]*Effective{"x": {Type: obj, Source: dts_to_esc.TierUserOverride}},
 			Children: map[string]ChildScope{},
 		}},
 	}

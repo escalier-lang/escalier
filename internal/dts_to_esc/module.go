@@ -1,4 +1,4 @@
-package interop
+package dts_to_esc
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 type convertCtx struct {
 	// store is the merged override store consulted by Classify; nil
 	// means no overrides are registered.
-	store *OverrideStore
+	store OverrideLookup
 
 	// modulePath is the store key for the module being converted: ""
 	// for globals/prelude lib files, the import specifier for an
@@ -24,10 +24,10 @@ type convertCtx struct {
 	modulePath string
 
 	// namespacePath is the dotted name of the enclosing `namespace`
-	// chain (e.g. "Outer.Inner"); empty at the module root. It is
-	// threaded into ClassifyContext so pathForMember can build a
-	// Member-chain Owner that walkChild can descend through nested
-	// NamespaceScopes.
+	// chain, such as "Outer.Inner". It is empty at the module root.
+	// Classify threads it into the override lookup, which needs the
+	// full chain to address a member declared inside nested
+	// namespaces.
 	namespacePath string
 }
 
@@ -185,7 +185,7 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 // package's package decls (e.g. "lodash/fp"); the module name for
 // `declare module "X" { ... }` blocks (passed by the caller, since the
 // classifier strips that wrapper before getting here).
-func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store *OverrideStore, modulePath string) (*ast.Module, error) {
+func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (*ast.Module, error) {
 	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
 

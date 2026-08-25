@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -137,10 +138,10 @@ func NewMemberSet() *MemberSet {
 	}
 }
 
-// OverrideTier identifies where an override came from. Distinct from
-// ResolutionTier (the 7-tier classification ladder) — OverrideTier is
-// only used inside the override system to drive the internal three-tier
-// collapse (§5.5).
+// OverrideTier identifies where an override came from. It is distinct
+// from dts_to_esc.ResolutionTier, the 7-tier classification ladder.
+// OverrideTier is used only inside the override system, to drive the
+// internal three-tier collapse (§5.5).
 //
 // Lower integer = higher precedence.
 type OverrideTier int
@@ -151,16 +152,16 @@ const (
 	OverrideTierBuiltin                         // requirements tier 4
 )
 
-// ResolutionTierFor maps an OverrideTier to the broader ResolutionTier
-// the merge sets on Effective.Source.
-func (t OverrideTier) ResolutionTierFor() ResolutionTier {
+// ResolutionTierFor maps an OverrideTier to the broader
+// dts_to_esc.ResolutionTier the merge sets on Effective.Source.
+func (t OverrideTier) ResolutionTierFor() dts_to_esc.ResolutionTier {
 	switch t {
 	case OverrideTierUserProject, OverrideTierUserDep:
-		return TierUserOverride
+		return dts_to_esc.TierUserOverride
 	case OverrideTierBuiltin:
-		return TierBuiltinOverride
+		return dts_to_esc.TierBuiltinOverride
 	}
-	return TierDefault
+	return dts_to_esc.TierDefault
 }
 
 // Effective is the merged result for a single member. Receiver shape
@@ -168,7 +169,7 @@ func (t OverrideTier) ResolutionTierFor() ResolutionTier {
 // *FuncType.SelfParam — callers use type_system.ReceiverIsMut.
 type Effective struct {
 	Type    type_system.Type
-	Source  ResolutionTier
+	Source  dts_to_esc.ResolutionTier
 	Origins []Origin
 
 	// Tier records the OverrideTier that produced this leaf in the
@@ -470,10 +471,11 @@ func buildOwnerQualIdent(namespacePath, className string) dts_parser.QualIdent {
 	return &dts_parser.Member{Left: cur, Right: dts_parser.NewIdent(className, ast.Span{})}
 }
 
-// pathForMember constructs a Path for the member in a ClassifyContext.
-// Returns a zero Path if the member shape is one Classify doesn't query
-// the store for (e.g. unsupported member type).
-func pathForMember(ctx ClassifyContext) Path {
+// pathForMember constructs a Path for the member in a
+// dts_to_esc.ClassifyContext. Returns a zero Path when the member is a
+// shape the classifier never queries the store for, such as an index
+// signature.
+func pathForMember(ctx dts_to_esc.ClassifyContext) Path {
 	if ctx.Member == nil {
 		return Path{}
 	}
@@ -507,12 +509,27 @@ func pathForMember(ctx ClassifyContext) Path {
 	return p
 }
 
-// overrideToResult converts an override hit into a ClassifyResult.
-// Receiver mutability is read off the override's *FuncType.SelfParam.
-func overrideToResult(eff *Effective) ClassifyResult {
+// overrideToResult converts an override hit into a
+// dts_to_esc.ClassifyResult. Receiver mutability is read off the
+// override's *FuncType.SelfParam.
+func overrideToResult(eff *Effective) dts_to_esc.ClassifyResult {
 	mut := false
 	if fn, ok := eff.Type.(*type_system.FuncType); ok {
 		mut = type_system.ReceiverIsMut(fn)
 	}
-	return ClassifyResult{Mut: mut, Source: eff.Source}
+	return dts_to_esc.ClassifyResult{Mut: mut, Source: eff.Source}
+}
+
+// LookupReceiverMut reports the receiver mutability this store records
+// for the member addressed by ctx, implementing dts_to_esc.OverrideLookup.
+// The second return value is false when no override addresses the member,
+// which leaves the classifier's remaining tiers to decide.
+func (s *OverrideStore) LookupReceiverMut(
+	ctx dts_to_esc.ClassifyContext,
+) (dts_to_esc.ClassifyResult, bool) {
+	eff := s.Resolve(pathForMember(ctx))
+	if eff == nil {
+		return dts_to_esc.ClassifyResult{}, false
+	}
+	return overrideToResult(eff), true
 }

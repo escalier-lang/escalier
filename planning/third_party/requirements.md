@@ -84,7 +84,7 @@ Out of scope (owned by the builtins workstream or other efforts):
 - The declaration-printer audit itself (builtins FR13,
   [builtins/requirements.md](../builtins/requirements.md)) —
   consumed here as a precondition.
-- The home of `interop.Classify`. The builtins workstream owns this
+- The home of `dts_to_esc.Classify`. The builtins workstream owns this
   decision; the current expectation is that `Classify` continues to
   live in `internal/interop/` and is called from there by both
   workstreams. See the builtins requirements for the authoritative
@@ -139,7 +139,7 @@ missing or stale, the compiler shall:
    than as a one-shot regenerator). The converter is a pure
    AST-to-AST translator that bypasses `type_system.Type` and the
    checker entirely.
-3. Run `interop.Classify` (the existing tier-3/5/6 heuristics) at
+3. Run `dts_to_esc.Classify` (the existing tier-3/5/6 heuristics) at
    conversion time to seed receiver mutability into the emitted
    AST — e.g. deciding `self` vs `mut self` on each method.
 4. Merge the resulting baseline against any present override
@@ -235,7 +235,7 @@ Placing the cache under `node_modules/.cache/escalier/` means
 
 ### FR4. Classify heuristics seed receiver mutability
 
-`interop.Classify` (tiers 3/5/6) shall run at conversion time on
+`dts_to_esc.Classify` (tiers 3/5/6) shall run at conversion time on
 every third-party `.d.ts` declaration. Its output seeds the
 `self` / `mut self` choice on emitted methods directly in the
 baseline AST, so the merged cache file contains explicit
@@ -591,7 +591,7 @@ code.
 
 Phase 2 removes the runtime interop pipeline. After Phase 2:
 
-- The `interop.ConvertModule` call site and the runtime
+- The `dts_to_esc.ConvertModule` call site and the runtime
   invocation of `Classify` are gone; any external code (tests,
   tooling) that depended on them must migrate to the converter
   library. Within this repo this is owned by the Phase 2 work.
@@ -648,7 +648,7 @@ Land the `escalier cache clean` subcommand in the same phase.
 
 Once Phase 1 is stable, remove:
 
-- `interop.ConvertModule` (the runtime conversion call).
+- `dts_to_esc.ConvertModule` (the runtime conversion call).
 - The runtime invocation path of the seven-tier `Classify` (the
   conversion-time invocation remains).
 - The trio-fusion logic in `internal/interop/class_shapes.go`.

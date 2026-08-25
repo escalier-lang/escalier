@@ -1,4 +1,4 @@
-package interop
+package dts_to_esc
 
 import (
 	"strings"
@@ -49,16 +49,14 @@ type ClassifyContext struct {
 	ModulePath string                 // module path (empty if none)
 
 	// NamespacePath is the dotted name of the enclosing `namespace`
-	// chain (e.g. "Outer.Inner"); empty when the class lives at the
-	// module root. pathForMember combines it with ClassName to build a
-	// Member-chain Owner that OverrideStore.walkChild can descend
-	// through nested NamespaceScopes.
+	// chain, such as "Outer.Inner". It is empty when the class lives at
+	// the module root. The override store combines it with ClassName to
+	// address the member through nested namespace scopes.
 	NamespacePath string
 
-	// Store, if non-nil, is the merged override store consulted by tiers
-	// 1 and 4 (user overrides and built-in overrides). nil is permitted
-	// and means "no overrides registered".
-	Store *OverrideStore
+	// Store, if non-nil, is consulted by tiers 1 and 4 for a recorded
+	// receiver mutability. nil means no overrides are registered.
+	Store OverrideLookup
 
 	// Base, if non-nil, is the inheritance fallthrough context: if all
 	// per-class tiers (1–6) miss on `Member`, `Classify` recurses on
@@ -67,21 +65,35 @@ type ClassifyContext struct {
 	Base *ClassifyContext
 }
 
+// OverrideLookup reports the receiver mutability that an override file
+// records for a class member. The runtime override store in
+// internal/interop implements it. Keeping the lookup behind an interface
+// is what lets this package convert `.d.ts` declarations without linking
+// against the store's type representation.
+//
+// The second return value is false when no override addresses the member
+// in ctx, which leaves the remaining tiers to decide.
+type OverrideLookup interface {
+	LookupReceiverMut(ctx ClassifyContext) (ClassifyResult, bool)
+}
+
 // Classify determines the mutability of a class member's receiver using the
 // seven-tier resolution order defined in
 // planning/interop_mutability/requirements.md.
 func Classify(ctx ClassifyContext) ClassifyResult {
-	// Consult the override store once. Its Source field tells us whether
-	// this is a tier-1 (user) hit or a tier-4 (built-in) hit — applied at
-	// the correct rung below.
-	var override *Effective
+	// Consult the override store once. The hit's `Source` says whether
+	// it is a tier-1 user override or a tier-4 built-in one, so it is
+	// applied at the correct rung below.
+	var override *ClassifyResult
 	if ctx.Store != nil {
-		override = ctx.Store.Resolve(pathForMember(ctx))
+		if hit, ok := ctx.Store.LookupReceiverMut(ctx); ok {
+			override = &hit
+		}
 	}
 
 	// Tier 1: user override files — §5.
 	if override != nil && override.Source == TierUserOverride {
-		return overrideToResult(override)
+		return *override
 	}
 
 	// Tier 2: @esctype tag — §9.
@@ -93,7 +105,7 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 
 	// Tier 4: builtin overrides (stdlib, FP libraries) — §6.
 	if override != nil && override.Source == TierBuiltinOverride {
-		return overrideToResult(override)
+		return *override
 	}
 
 	// Tier 5: get* prefix rule.

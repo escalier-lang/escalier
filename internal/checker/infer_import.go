@@ -8,6 +8,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/resolver"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -250,7 +251,7 @@ func parseTypeDef(filename string, store *interop.OverrideStore, packageModulePa
 		pkgDtsModule := &dts_parser.Module{
 			Statements: classification.PackageDecls,
 		}
-		pkgAstModule, err := interop.ConvertModuleWithOverrides(pkgDtsModule, store, packageModulePath)
+		pkgAstModule, err := dts_to_esc.ConvertModuleWithOverrides(pkgDtsModule, store, packageModulePath)
 		if err != nil {
 			return nil, fmt.Errorf("converting package declarations: %w", err)
 		}
@@ -263,7 +264,7 @@ func parseTypeDef(filename string, store *interop.OverrideStore, packageModulePa
 		globalDtsModule := &dts_parser.Module{
 			Statements: classification.GlobalDecls,
 		}
-		globalAstModule, err := interop.ConvertModuleWithOverrides(globalDtsModule, store, "")
+		globalAstModule, err := dts_to_esc.ConvertModuleWithOverrides(globalDtsModule, store, "")
 		if err != nil {
 			return nil, fmt.Errorf("converting global declarations: %w", err)
 		}
@@ -276,7 +277,7 @@ func parseTypeDef(filename string, store *interop.OverrideStore, packageModulePa
 		namedDtsModule := &dts_parser.Module{
 			Statements: namedMod.Decls,
 		}
-		namedAstModule, err := interop.ConvertModuleWithOverrides(namedDtsModule, store, namedMod.ModuleName)
+		namedAstModule, err := dts_to_esc.ConvertModuleWithOverrides(namedDtsModule, store, namedMod.ModuleName)
 		if err != nil {
 			return nil, fmt.Errorf("converting named module %s: %w", namedMod.ModuleName, err)
 		}

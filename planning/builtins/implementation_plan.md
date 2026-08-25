@@ -17,8 +17,8 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 2   | URI-scheme imports + binding-shape flags             | FR2–FR5     | ✅      | §1         | Parser, resolver, both binding shapes, single-class shortcut, and the `--stdlib-dir` flag (+ env var, sibling-to-exe, repo-relative discovery) all landed. Gate satisfied via `std:math` and `std:array` stubs; unit + fixture coverage in place. One follow-up deferred to §7 — the FR5 "non-class package exports as namespace members on the same binding" surface. |
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
-| 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `interop.ConvertToStandaloneModule` ([internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/interop/dts_to_esc_test.go](../../internal/interop/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
-| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/interop/partition.go](../../internal/interop/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/interop/partition_writer.go](../../internal/interop/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; `dts_to_esc partition <lib-dir> <out-dir>` subcommand. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's `--check` mode will close). PR B (`--check` + re-run semantics), PR C (TS-version-bump workflow), and PR D (split the converter out of the `type_system`-importing half of `internal/interop`) still outstanding; PR B's assignability check runs on the solver's `constrain` over `soltype`, so it lands after SimpleSub M7.5. |
+| 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `dts_to_esc.ConvertToStandaloneModule` ([internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/dts_to_esc/dts_to_esc_test.go](../../internal/dts_to_esc/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
+| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; `dts_to_esc partition <lib-dir> <out-dir>` subcommand. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's `--check` mode will close). PR D landed: the AST-producing conversion moved to [internal/dts_to_esc/](../../internal/dts_to_esc/), leaving `internal/interop` with the runtime override store alone. The converter reads recorded receiver mutability through the `dts_to_esc.OverrideLookup` interface, which the store implements, so no converter file imports `type_system`. One transitive link survives through `internal/ast`, which names `type_system.Type` and `type_system.BindingOwner`; M12 re-homes those two references whether or not the converter moves. PR B (`--check` + re-run semantics) and PR C (TS-version-bump workflow) are still outstanding. PR B's assignability check runs on the solver's `constrain` over `soltype`, so it lands after SimpleSub M7.5. |
 | 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (before M12)  | ⬜ | §4, §7, M7.5 | Migrate Escalier's own fixtures to `import "std:*"`. The solver has no ambient surface, so this is what lets SimpleSub M8's second fixture harness run the `fixtures/` tree at all. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The old checker keeps resolving previously-ambient names while it exists, so the added imports are additive and both harnesses stay green. |
 | 9   | Per-file shape loading in `internal/solver`          | FR11, FR12  | ⬜      | §2, §4, §7, §8, M7.5 | Add the FR11 trigger map on top of M7.5's import ingestion, so a file gets a literal's or language feature's method surface without naming the owning package. There is no switchover: the solver never had an ambient lib, and the legacy `internal/checker/` machinery goes out with the M12 flip, so §9.3 is an audit rather than a deletion PR. Re-home the §3.4 loader rules: rules 1–3 are AST-only and move to the pseudo-package load path; rule 4 (`@js` arg validation) needs a parsed TS lib, which only the old checker has via `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go), so it becomes a CI-only test that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Same test adds **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` or `get`, never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable. Today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime. Rule 5 shares the lib parse with rule 4, so doing them separately would duplicate it. |
@@ -114,10 +114,12 @@ Three consequences shape the remaining phases.
    list as an audit that nothing in it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so
-   §5 and §6 PR A need no rework at the source level. It does still
-   *link* against `type_system`, because `internal/interop` holds
-   the runtime override store in the same package — §6.7 PR D
-   splits that. Everything downstream of the AST is written against
+   §5 and §6 PR A need no rework at the source level. §6.7 PR D
+   moved the conversion into `internal/dts_to_esc`, so no converter
+   file imports `type_system`. The one link left is transitive:
+   `internal/ast` names `type_system.Type` and
+   `type_system.BindingOwner`, and M12 re-homes those two
+   references. Everything downstream of the AST is written against
    `soltype` and the solver's `constrain`: `--check` assignability
    (§6.4), shape loading (§9), and type rendering (§10.2).
 
@@ -129,7 +131,7 @@ sequence against the milestones in
 | -------------- | -------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
 | §6 PR B        | M7.5                 | The signature-drift check compares two declaration modules through the solver's `constrain`, which needs stdlib ingestion (§6.4). |
 | §6 PR C        | —                    | CLI subcommands and docs over PR A and PR B's behavior.                                                                          |
-| §6 PR D        | before M12           | The converter links against `type_system` through `internal/interop`, and M12 deletes it (§6.7 PR D).                            |
+| §6 PR D        | before M12           | Landed. No converter file imports `type_system` any more; the residual link runs through `internal/ast`, which M12 re-homes (§6.7 PR D). |
 | §7             | M9 for `Awaited<T>`  | Committing `.esc` files is checker-independent; the recursive conditional needs the type-level operators from M9 (§7 step 3).    |
 | §8             | M7.5, M8             | The second fixture harness runs the solver over `fixtures/`, where imports are mandatory because nothing is ambient.             |
 | §9             | M7.5, §8             | The trigger map loads packages through M7.5's ingestion path.                                                                    |
@@ -547,7 +549,7 @@ syntax. This phase adds it:
 - **Converter symmetry (#664).** The same "decorators only on
   decls that lower to a JS reference" rule governs the `.d.ts`
   converter. `attachJSDecorator` in
-  [internal/interop/dts_to_esc.go](../../internal/interop/dts_to_esc.go)
+  [internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go)
   stamps `@js("...")` only on `VarDecl`, `FuncDecl`, and
   `ClassDecl`; `TypeDecl` and `InterfaceDecl` are excluded by
   design and carry no `Decorators` field, so those branches are
@@ -1518,7 +1520,7 @@ the most recent contiguous JSDoc wins; `/**/` is not JSDoc.
    is itself a namespace). The converter does not emit nested
    namespace syntax; the FR14 audit (§1) excludes
    `declare namespace` from the supported declaration forms.
-5. **Receiver mutability seeding.** Run `interop.Classify`
+5. **Receiver mutability seeding.** Run `dts_to_esc.Classify`
    (tiers 3/5/6 from the interop_mutability workstream) at
    conversion time to seed `self` vs `mut self` on each method.
 6. **JSDoc pass-through.** Leading JSDoc on a TS declaration
@@ -1698,7 +1700,7 @@ before trio detection runs. This guarantees the trio detector sees
 exactly one merged `interface Array` + one merged `interface
 ArrayConstructor` + one `declare var Array`, regardless of how many
 lib years contributed members. See `mergeDecls` in
-[internal/interop/partition_writer.go](../../internal/interop/partition_writer.go).
+[internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go).
 Distinct-name interfaces (e.g. `interface Array<T>` and `interface
 ReadonlyArray<T>`) are *not* merged by this pass — they are
 separate TS types and stay distinct after routing. The Readonly-
@@ -1736,7 +1738,7 @@ not mutate; the new converter does the same at emission time:
 
 See `fuseReadonlyTwins` / `applyReadonlyTwinReceivers` /
 `appendReadonlyAliases` in
-[internal/interop/partition_writer.go](../../internal/interop/partition_writer.go).
+[internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go).
 
 **Known gap: the alias in step 3 keeps no readonly restriction.**
 `type ReadonlyArray<T> = Array<T>` makes the two names one type, so
@@ -1920,7 +1922,7 @@ A. **Partition table + routing + output layout** (6.1, 6.2, 6.3) ✅.
    `web:*` packages, well-known-symbol stay-put rule), the
    unmapped-symbol fail-safe, and the `node/` empty directory.
    `XxxConstructor` follows its `Xxx` partition entry via a
-   suffix-strip fallback in [Route](../../internal/interop/partition.go)
+   suffix-strip fallback in [Route](../../internal/dts_to_esc/partition.go)
    so contributors only list the instance name. Cross-input
    declaration merging (TS-style interface/namespace merging) runs
    inside each bucket before trio fusion, so members spread across
@@ -1941,25 +1943,33 @@ C. **TS-version-bump workflow** (6.6). Wires the
    documenting the bump steps. Small; lands after A and B
    have settled the underlying behaviors.
 
-D. **Free the converter of `internal/type_system`.** Every file
-   on the converter's path is already type-system-free —
+D. **Free the converter of `internal/type_system`.** ✅ The
+   AST-producing conversion lives in `internal/dts_to_esc`:
    `dts_to_esc.go`, `partition.go`, `partition_writer.go`,
-   `module.go`, `decl.go`, `helper.go`, `twin_rewrite.go`. What
-   couples them is the package boundary: `internal/interop` also
-   holds the runtime override store (`store.go`,
-   `class_shapes.go`, `extract.go`, `merge.go`, `mutability.go`,
-   `consistency.go`, `loader.go`), which imports `type_system`, so
-   `go list -deps ./tools/dts_to_esc` reports `type_system` today.
-   The SimpleSub M12 flip deletes that package, which would break
-   the converter build. Split the two halves — move the
-   AST-producing conversion into its own package, or move the
-   store half out — so the converter depends only on `ast`,
-   `parser`, `printer`, and `dts_parser`. Mechanical, no behavior
-   change, and it can land any time after PR A; do it before M12
-   rather than as part of the flip, so the flip is not blocked on
-   converter surgery. Removing the runtime override store itself
-   is the third-party workstream's call, not this one — PR D only
-   moves the boundary.
+   `module.go`, `decl.go`, `helper.go`, `twin_rewrite.go`, and the
+   mutability classifier `mutability.go`. `internal/interop` keeps
+   the runtime override store — `store.go`, `class_shapes.go`,
+   `extract.go`, `merge.go`, `consistency.go`, `loader.go` — along
+   with the `data/` tree and the stdlib-directory lookup.
+
+   The two halves meet at `dts_to_esc.OverrideLookup`, a one-method
+   interface the classifier consults for a recorded receiver
+   mutability. `*interop.OverrideStore` implements it by addressing
+   the member with `pathForMember` and reading the receiver off the
+   stored `*type_system.FuncType`. That keeps every `type_system`
+   reference on the store's side of the boundary. The dependency
+   runs `interop` → `dts_to_esc`, since the store also names the
+   seven-tier `dts_to_esc.ResolutionTier` ladder that
+   `Effective.Source` records.
+
+   The converter's own imports are now `ast`, `parser`, `printer`,
+   `dts_parser`, and `set`. `go list -deps ./tools/dts_to_esc`
+   still reports `type_system` because `internal/ast` names
+   `type_system.Type` and `type_system.BindingOwner`. Cutting that
+   last edge means changing how every AST node stores its inferred
+   type, which is M12's work rather than converter surgery.
+   Removing the runtime override store itself is the third-party
+   workstream's call.
 
 6.5 (`throws` bootstrap policy) is scope/policy rather than
 code — fold into whichever PR is convenient, or defer to §7
@@ -1982,7 +1992,7 @@ files as the source of truth.
    - Lifetimes where applicable (the existing
      [planning/lifetimes/](../lifetimes/) work feeds in here).
    - Mutability refinements not captured by the
-     `interop.Classify` seeding.
+     `dts_to_esc.Classify` seeding.
    - `Symbol.customMatcher` (Escalier-specific, not in
      `lib.*.d.ts`) hand-authored in `std:symbol`, written as
      `@js("Symbol.customMatcher") export declare …` per §3.
@@ -2152,7 +2162,7 @@ here:
   `t.Skip(...)` strings. Re-enabling is one grep + one deletion.
 - **Audit pass.** Before §9 lands, walk every fixture and test
   that loads a third-party `.d.ts` — the existing runtime interop
-  pipeline's consumers, meaning `interop.ConvertModule` call sites
+  pipeline's consumers, meaning `dts_to_esc.ConvertModule` call sites
   and fixtures with `.d.ts` payloads. Anything that resolves a
   stdlib name ambiently through the converted `.d.ts` gets
   `SkipUntilFR7`, since that is exactly what fails on the solver.

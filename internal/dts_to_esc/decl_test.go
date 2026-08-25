@@ -1,4 +1,4 @@
-package interop
+package dts_to_esc
 
 import (
 	"testing"

@@ -69,8 +69,8 @@ This plan outlines the implementation steps for supporting well-known symbols as
 | `internal/dts_parser/class.go` | Class computed key parsing uses `parseExpr()` | ✅ |
 | `internal/dts_parser/lexer.go` | `unique` keyword token | ✅ |
 | `internal/dts_parser/base.go` | Parses `unique symbol` | ✅ |
-| `internal/interop/helper.go` | `convertExpr()`, `convertPropertyKey()` with ComputedKey support | ✅ |
-| `internal/interop/helper_test.go` | ComputedKey validation tests | ✅ |
+| `internal/dts_to_esc/helper.go` | `convertExpr()`, `convertPropertyKey()` with ComputedKey support | ✅ |
+| `internal/dts_to_esc/helper_test.go` | ComputedKey validation tests | ✅ |
 | `internal/checker/prelude.go` | Lib file loading via `discoverESLibFiles()`, ES2015 enabled | ✅ |
 | `internal/checker/infer_module.go` | Declaration processing and merging | 🚧 |
 | `internal/type_system/types.go` | `ObjectType` with `SymbolKeyMap` | ✅ |
@@ -214,7 +214,7 @@ type UniqueSymbolType struct {
 
 ### Task 2.5: Add Interop Conversion ✅ DONE
 
-**Location:** `internal/interop/helper.go:265-266`
+**Location:** `internal/dts_to_esc/helper.go:265-266`
 
 **What exists:**
 ```go
@@ -341,7 +341,7 @@ func (p *DtsParser) parseIdentOrMemberExpr() Expr {
 
 ### Task 3.2: Implement `convertExpr()` Helper ✅ DONE
 
-**Location:** `internal/interop/helper.go:84-107`
+**Location:** `internal/dts_to_esc/helper.go:84-107`
 **Difficulty:** Easy
 **Risk:** Low
 
@@ -396,7 +396,7 @@ The AST `ComputedKey` already exists and can be used as an `ObjKey`.
 
 ### Task 3.4: Validate ComputedKey Conversion ✅ DONE
 
-**Location:** `internal/interop/helper_test.go:745-925`
+**Location:** `internal/dts_to_esc/helper_test.go:745-925`
 **Difficulty:** Easy
 **Risk:** Low
 
@@ -671,7 +671,7 @@ func TestParseComputedKey(t *testing.T) {
 
 ### Task 7.3: Interop Tests ✅ DONE
 
-**Location:** `internal/interop/helper_test.go`, `internal/interop/module_test.go`
+**Location:** `internal/dts_to_esc/helper_test.go`, `internal/dts_to_esc/module_test.go`
 **Difficulty:** Easy
 
 **What exists:**
@@ -1006,7 +1006,7 @@ All items from requirements.md Success Criteria section:
 
 ## Next Steps
 
-1. ~~**Immediate:** Implement `convertTypeAnnToExpr` helper in `internal/interop/helper.go`~~ ✅ Done
+1. ~~**Immediate:** Implement `convertTypeAnnToExpr` helper in `internal/dts_to_esc/helper.go`~~ ✅ Done
 2. ~~**Immediate:** Update `convertPropertyKey` to handle `ComputedKey`~~ ✅ Done
 3. ~~**Test:** Verify ES2015 lib files convert without errors~~ ✅ Done
 4. ~~**Enable:** Change `targetVersion` to `"es2015"` in `internal/checker/prelude.go` (Task 1.3)~~ ✅ Done

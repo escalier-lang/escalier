@@ -115,7 +115,7 @@ server of changes. This is the foundation that all other phases depend on.
 
 **Note**: The 3 copy-pasted `findRepoRoot` functions in test files
 (`cmd/escalier/fixture_test.go`, `internal/dts_parser/integration_test.go`,
-`internal/interop/module_test.go`) still look for `go.mod` — they're locating
+`internal/dts_to_esc/module_test.go`) still look for `go.mod` — they're locating
 the Go/Git repo root to find test fixtures, not an Escalier project root.
 
 **Files modified (TypeScript)**:
