@@ -326,6 +326,27 @@ read-only: HasProperty
 read-only: IsExtensible`))
 }
 
+// An internal method takes the object it dispatches on as its first argument, so
+// a call with no argument there is one the serializer lowered differently than
+// the table expects. The write has no argument expression to charge, which
+// leaves the caller incomplete rather than silently non-mutating.
+//
+// No call in the committed graph omits that argument, so the case is stated as a
+// graph of its own.
+func TestInternalMethodTableOnACallMissingItsObject(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget": "test", "funcs": [
+			{"name": "Demo", "kind": "abstract-op", "params": ["x"], "nodes": [
+				{"kind": "call", "callee": "SetPrototypeOf", "args": [], "guard": "plain"}
+			]}
+		]}`))
+	require.NoError(t, err)
+
+	fn := cfg.AbstractOp("Demo")
+	require.NotNil(t, fn)
+	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
+}
+
 // A callee that names an internal method but is bound to one of the calling
 // function's parameters is a function the caller was handed, not a dispatch. The
 // tables must not answer for it, or a callback named `Delete` would be charged
