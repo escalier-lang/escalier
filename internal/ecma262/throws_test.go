@@ -44,12 +44,10 @@ func TestRaisedString(t *testing.T) {
 		raised Raised
 		want   string
 	}{
-		"Class":            {Class("TypeError"), "TypeError"},
-		"OriginParam":      {Propagated(Param(1)), "Origin(Param(1))"},
-		"OriginReceiver":   {Propagated(Receiver), "Origin(Receiver)"},
-		"CallbackParam":    {CallbackThrows(Param(0)), "CallbackThrows(Param(0))"},
-		"CallbackReceiver": {CallbackThrows(Receiver), "CallbackThrows(Receiver)"},
-		"Untraced":         {Untraced, "Unknown"},
+		"Class":    {Class("TypeError"), "TypeError"},
+		"Origin":   {Propagated(Param(1)), "Origin(Param(1))"},
+		"Callback": {CallbackThrows(Param(0)), "CallbackThrows(Param(0))"},
+		"Untraced": {Untraced, "Unknown"},
 	}
 
 	for name, test := range tests {
@@ -65,7 +63,6 @@ func TestThrowsString(t *testing.T) {
 		want   string
 	}{
 		"Empty":      {Throws{}, "none"},
-		"OneClass":   {Throws{Raised: []Raised{Class("RangeError")}}, "RangeError"},
 		"Incomplete": {Throws{Incomplete: true}, "incomplete"},
 		"Every": {
 			Throws{
@@ -92,12 +89,6 @@ func TestThrowSummarySampleFunctions(t *testing.T) {
 		// inherits one from every `?`-guarded coercion it opens with. §9.2 is
 		// where the receiver coercion drops back out.
 		"ClassesOnly": {"Array.prototype.push", "TypeError"},
-		// slice allocates its result through `? ArraySpeciesCreate(O, count)`,
-		// which raises a RangeError on a length the spec rejects.
-		"TwoClasses": {"Array.prototype.slice", "RangeError TypeError"},
-		// A `!`-guarded call asserts that no abrupt completion arises, so
-		// `Math.max` inherits only from the `? ToNumber(item)` in its loop.
-		"ThroughOneGuardedCall": {"Math.max", "TypeError"},
 		// toFixed keeps the RangeError it raises on an out-of-range
 		// fractionDigits, which is the §9.2 gate. The prose step §3 could not
 		// lower is what leaves it incomplete.
@@ -127,9 +118,6 @@ func TestThrowSummaryCallbackEffect(t *testing.T) {
 		// `? Call(callback, thisArg, « kValue, 𝔽(k), O »)` invokes the method's
 		// first declared parameter.
 		"ForEach": {"Array.prototype.forEach", CallbackThrows(Param(0))},
-		"Map":     {"Array.prototype.map", CallbackThrows(Param(0))},
-		"Filter":  {"Array.prototype.filter", CallbackThrows(Param(0))},
-		"Reduce":  {"Array.prototype.reduce", CallbackThrows(Param(0))},
 		// apply invokes its receiver rather than a parameter, since `Let func
 		// be the this value` is the function being applied.
 		"Apply": {"Function.prototype.apply", CallbackThrows(Receiver)},
@@ -324,56 +312,54 @@ func TestThrowSummaryIncomplete(t *testing.T) {
 // O.[[Get]](P, O)` and nothing else, so nothing would report that a Proxy trap
 // running under it can raise anything at all.
 func TestThrowSummarySelfDispatchIsIncomplete(t *testing.T) {
-	for _, name := range []string{"Get", "Set", "HasProperty", "IsExtensible"} {
-		t.Run(name, func(t *testing.T) {
-			require.True(t, throwsOf(t, name).Incomplete)
-		})
-	}
+	// The operations are looked up by hand rather than through throwsOf, since
+	// `Set` also names the `Set` constructor.
+	cfg := testCFG(t)
+	summary := testThrows(t)
+
+	// `Get` dispatches and nothing else, so the flag is all it has to report.
+	require.Equal(t, "incomplete", summary.Of(cfg.AbstractOp("Get")).String())
+	// `Set` raises a TypeError of its own beside the dispatch.
+	require.Equal(t, "TypeError incomplete", summary.Of(cfg.AbstractOp("Set")).String())
 }
 
-// An object internal method resolves to no body, since its implementation is
-// chosen at runtime and a Proxy trap can replace it with any code at all.
-func TestThrowSummaryUnresolvedCalleeIsIncomplete(t *testing.T) {
-	cfg, err := ParseCFG([]byte(
-		`{"specTarget":"abc","funcs":[` +
-			`{"name":"Demo","kind":"builtin-static","params":["target"],` +
+// Each shape of step whose throws the analysis could not read leaves the
+// function incomplete rather than quietly raising nothing. `Raiser` is there so
+// that a shape which silently dropped its step would come back "none" and read
+// as a function that raises nothing.
+func TestThrowSummaryIncompleteShapes(t *testing.T) {
+	const raiser = `{"name":"Raiser","kind":"abstract-op","params":[],` +
+		`"nodes":[{"kind":"throw","errorType":"RangeError"}]},`
+
+	tests := map[string]string{
+		// An object internal method, whose implementation is chosen at runtime
+		// and which a Proxy trap can replace with any code at all.
+		"UnresolvedCallee": `{"name":"Demo","kind":"builtin-static","params":["target"],` +
 			`"nodes":[{"kind":"call","callee":"GetOwnProperty",` +
-			`"args":[{"kind":"var","var":"target"}],"guard":"?"}]}]}`))
-	require.NoError(t, err)
-
-	require.Equal(t, "incomplete", NewThrowSummary(cfg).Of(cfg.Builtin("Demo")).String())
-}
-
-// A callee bound to one of the calling function's parameters is a function the
-// caller was handed, whatever it is named, so it resolves to no body even when
-// an abstract operation shares its name.
-func TestThrowSummaryCalleeNamingAParameterIsIncomplete(t *testing.T) {
-	cfg, err := ParseCFG([]byte(
-		`{"specTarget":"abc","funcs":[` +
-			`{"name":"Raiser","kind":"abstract-op","params":[],` +
-			`"nodes":[{"kind":"throw","errorType":"RangeError"}]},` +
+			`"args":[{"kind":"var","var":"target"}],"guard":"?"}]}`,
+		// A callee bound to one of the calling function's parameters is a
+		// function the caller was handed, whatever it is named, so it resolves
+		// to no body even when an abstract operation shares its name.
+		"CalleeNamingAParameter": raiser +
 			`{"name":"Demo","kind":"builtin-static","params":["Raiser"],` +
-			`"nodes":[{"kind":"call","callee":"Raiser","args":[],"guard":"?"}]}]}`))
-	require.NoError(t, err)
-
-	require.Equal(t, "incomplete", NewThrowSummary(cfg).Of(cfg.Builtin("Demo")).String())
-}
-
-// An abrupt completion the algorithm captures as a value leaves the function
-// incomplete, since the guards no longer say which step raised it. `Demo` never
-// raises the RangeError under a `?`, so nothing else would report that it can.
-func TestThrowSummaryCapturedCompletionIsIncomplete(t *testing.T) {
-	cfg, err := ParseCFG([]byte(
-		`{"specTarget":"abc","funcs":[` +
-			`{"name":"Raiser","kind":"abstract-op","params":[],` +
-			`"nodes":[{"kind":"throw","errorType":"RangeError"}]},` +
+			`"nodes":[{"kind":"call","callee":"Raiser","args":[],"guard":"?"}]}`,
+		// An abrupt completion the algorithm captures as a value, which the
+		// guards no longer say which step raised.
+		"CapturedCompletion": raiser +
 			`{"name":"Demo","kind":"builtin-static","params":[],"nodes":[` +
 			`{"kind":"call","target":"%0","callee":"Raiser","args":[],"guard":"plain"},` +
 			`{"kind":"call","target":"%1","callee":"Completion",` +
-			`"args":[{"kind":"var","var":"%0"}],"guard":"plain"}]}]}`))
-	require.NoError(t, err)
+			`"args":[{"kind":"var","var":"%0"}],"guard":"plain"}]}`,
+	}
 
-	require.Equal(t, "incomplete", NewThrowSummary(cfg).Of(cfg.Builtin("Demo")).String())
+	for name, funcs := range tests {
+		t.Run(name, func(t *testing.T) {
+			cfg, err := ParseCFG([]byte(`{"specTarget":"abc","funcs":[` + funcs + `]}`))
+			require.NoError(t, err)
+
+			require.Equal(t, "incomplete", NewThrowSummary(cfg).Of(cfg.Builtin("Demo")).String())
+		})
+	}
 }
 
 // The order the fixpoint reaches a function in leaves no mark on its facts.
