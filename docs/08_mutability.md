@@ -45,8 +45,26 @@ val mut d = Counter(0)    // d: mut Counter
 ```
 
 A method declares its receiver's mutability in its own parameter list. `fn m(self)`
-reads, and `fn m(mut self)` writes. A `mut self` method may only be called through
-a mutable binding.
+reads and `fn m(mut self)` writes.
+
+```esc
+class Counter {
+    count: number,
+    constructor(mut self, count: number) { self.count = count },
+    incr(mut self) { self.count = self.count + 1 },
+    read(self) -> number { return self.count },
+}
+
+fn go() {
+    val mut c = Counter(0)
+    c.incr()          // mut self — needs the mutable binding
+    return c.read()   // self — reads through either
+}
+```
+
+A `mut self` method is meant to require a mutable binding, so calling `incr` on a
+plain `val c = Counter(0)` should be an error. The receiver's mutability is not
+checked at the call yet, so that call is currently accepted.
 
 ## `mut` is deep and uniform
 
@@ -113,9 +131,31 @@ fn f(p: mut {readonly a: number}) {
 }
 ```
 
-An immutable target is fine, because nobody can write through it. The reverse
-direction is always allowed: a writable `{a: T}` value satisfies a
-`{readonly a: T}` target, since the target only ever reads.
+An immutable target is fine, because nobody can write through it.
+
+The reverse direction — a writable `{a: T}` value against a `{readonly a: T}`
+target — depends on whether the target *owns* the value and on how long the
+source stays in use. Moving into the target is fine, since the move consumes the
+source and leaves no writable path. Borrowing is fine only while no mutable path
+is still live:
+
+```esc
+fn go() {
+    val mut p = {a: 0}
+    val q: &{readonly a: number} = p
+    p.a = 1                  // ERROR: cannot assign 'p' to immutable 'q':
+    val n = q.a              //        'p' is still used mutably after this point
+}
+
+fn ok() {
+    val mut p = {a: 0}
+    p.a = 1                  // last mutable use of p
+    val q: &{readonly a: number} = p
+    val n = q.a              // OK
+}
+```
+
+This is the exclusivity rule below, not a `readonly` rule of its own.
 
 `readonly` survives a freeze and a thaw unchanged, since it is part of the
 structural shape rather than the `mut` wrapper.
@@ -124,7 +164,9 @@ structural shape rather than the `mut` wrapper.
 
 There is no utility type that converts between mutable and immutable forms. The
 binding's mutability already governs the whole reachable owned structure, so
-moving a value into a differently-mutable binding *is* the conversion.
+moving a value into a differently-mutable binding *is* the conversion. Naming
+the converted type is tracked in
+[#1266](https://github.com/escalier-lang/escalier/issues/1266).
 
 ```esc
 val mut g = build()
@@ -142,8 +184,33 @@ borrow and a mutable path to the same value may never both be live. Within one
 kind, aliasing is free: several immutable borrows may be live at once, and so may
 several mutable ones.
 
-This is checked with liveness analysis over the control-flow graph, so a borrow
-that is never used again does not block a later transition.
+Liveness is what makes this workable. The check runs over the control-flow graph,
+so a path that is never used again does not block a later transition — only an
+overlap does.
+
+```esc
+fn conflicting() {
+    val mut p = {x: 0}
+    val q: &{x: number} = p   // ERROR: cannot assign 'p' to immutable 'q':
+    p.x = 1                   //        'p' is still used mutably after this point
+    val n = q.x
+}
+
+fn fine() {
+    val mut p = {x: 0}
+    p.x = 1                   // the mutable path ends here
+    val q: &{x: number} = p   // OK — nothing mutable is live past this point
+    val n = q.x
+}
+```
+
+The two functions differ only in statement order. In `conflicting` the write to
+`p` comes after `q` is created and `q` is read afterwards, so the two paths
+overlap. In `fine` the write is `p`'s last use, so no mutable path survives.
+
+Exclusivity between two `&` borrows of one value is specified but not yet
+enforced. Taking `&p` and `&mut p` and using both is accepted today; see
+[#794](https://github.com/escalier-lang/escalier/issues/794).
 
 ## Interop
 
