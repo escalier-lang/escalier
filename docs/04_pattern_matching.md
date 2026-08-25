@@ -51,11 +51,20 @@ match value {
 ```
 
 A binding leaf may be marked `mut`. Mutability lives on the place, so it attaches
-to the identifier rather than to the surrounding pattern:
+to the identifier rather than to the surrounding pattern, and each leaf decides
+for itself:
 
 ```esc
-val {mut x, y: mut a} = point
+fn go(pair: mut {left: {x: number}, right: {x: number}}) {
+    val {mut left, right} = pair
+    left.x = 1      // OK — left is mutable
+    // right.x = 1  // ERROR: cannot constrain immutable object <: mutable object
+}
 ```
+
+`mut` only means something on a leaf holding a reference-shaped value. A
+`number`, `string`, or `boolean` has no interior to mutate, so marking one has
+nothing to say.
 
 ## Narrowing with `:`
 
@@ -118,9 +127,9 @@ fn f(c: Color) {
 // ERROR: match is not exhaustive; add a branch for `Color.Hex`
 ```
 
-The rules follow exactness. A union is closed, so it is covered once every member
-has a covering branch. An **inexact** object or tuple scrutinee admits values no
-pattern can name, so it requires a catch-all:
+A union is always closed, so it is covered once every member has a covering
+branch. What can still leave a gap is an **inexact** object or tuple scrutinee,
+which admits values no pattern can name and so requires a catch-all:
 
 ```esc
 // ERROR: match is not exhaustive; `{x: number, ...}` admits values no pattern
@@ -158,6 +167,12 @@ if val x = u { x } else { 0 }
 
 `if var` binds mutably instead.
 
+A nullable scrutinee is planned to get its own handling. Where the scrutinee is
+`T | null`, `T | undefined`, or `T | null | undefined`, a bare identifier pattern
+will bind `x` at `T`, since testing for the absent case is the whole reason to
+write the form. Today it binds the full union like any other, so the narrowing
+has to be written out as `if val x: T = u`.
+
 ## `val … else`
 
 The refutable form of a `val` binding. The `else` block runs when the pattern
@@ -173,6 +188,13 @@ val x: number = u else { 0 }
 
 This is the early-return shape: the binding is in scope for the rest of the
 enclosing block, at the narrowed type, with no nesting.
+
+Rust's `let … else` is the same idea with one restriction Escalier drops. There
+the `else` block must diverge — its type is `!`, so it has to `return`, `break`,
+`continue`, or panic, and it can never produce a value. Escalier's block may do
+either. It may diverge, as the first three examples above do, or it may evaluate
+to a value of the binding's type, as `val x: number = u else { 0 }` does, which
+binds `0` when `u` is not a `number`.
 
 ## Moves and borrows in patterns
 
