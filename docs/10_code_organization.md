@@ -6,6 +6,10 @@ A package is the smallest unit of interop with TypeScript. A package is either a
 Escalier package or a TypeScript package, never both, and both use a standard
 `package.json` to say where the dist files and type definitions live.
 
+An Escalier package has a fixed layout. A TypeScript package has whatever layout
+its authors chose — Escalier reads it through its `package.json` and its `.d.ts`
+files, so nothing below applies to it.
+
 ```text
 package.json
 lib/
@@ -20,11 +24,15 @@ build/            # generated
 ```
 
 - **`lib/`** holds the package's library source. Its `.esc` files are source
-  files rather than modules of their own — a module spans every file that shares
-  a namespace. Statements may not appear outside a function or method in them,
-  with `.test.esc` files the exception.
+  files rather than modules of their own: **one module spans all of `lib/`**,
+  subdirectories included. A subdirectory introduces a namespace within that
+  module rather than a module of its own. Statements may not appear outside a
+  function or method in these files, with `.test.esc` files the exception.
 - **`bin/`** holds executable scripts. These run top to bottom, so statements at
-  top level are allowed.
+  top level are allowed. A `bin/` script reaches the package's own `lib/`
+  exports by name, with no import — the lib namespace sits between the prelude
+  and the script's own scope. Each script is checked on its own, so one `bin/`
+  file never sees another's declarations.
 - **`build/`** holds the generated `.js`, `.d.ts`, and source maps.
 
 ## Namespaces
@@ -96,16 +104,27 @@ There are two bundling modes:
 - **`dev`** produces several bundles derived from the dependency graph, which is
   what hot-reloading tools such as Vite need.
 
+A third mode, **`test`**, is planned. It exists to make symbols in other packages
+mockable. It emits a bundle whose symbols are all read through a module-level
+object rather than bound directly, so a test can replace one entry on that object
+and every call site picks up the replacement. Jest and similar libraries already
+work this way against CommonJS; the `test` bundle gives them the same handle over
+an Escalier build.
+
 ## Monorepos
 
 A monorepo may hold many packages, and packages may not nest. A package imports
-another package in the same monorepo through the `@repo/` scope, and may import
-only that package's exported symbols even though both live in one repository.
+another package in the same monorepo through the repository's own scope, and may
+import only that package's exported symbols even though both live in one
+repository.
+
+The scope is the repository's own name, not a literal `@repo`. In a monorepo
+called `acme`, a package named `vec` is `@acme/vec`:
 
 ```escalier
-import "@repo/vec"
+import "@acme/vec"
 
 val v = vec.zero()
 ```
 
-The binding is the specifier's last segment, so `@repo/vec` binds as `vec`.
+The binding is the specifier's last segment, so `@acme/vec` binds as `vec`.
