@@ -44,7 +44,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
-| §9.1 | Throw-set fixpoint                          | FR10       | ⬜      | §4.2       | raw throw sets, `Raised` = class / origin / callback-effect / unknown |
+| §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Raised` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | filtered throws — toFixed keeps RangeError, drops the receiver-coercion TypeError; param branch runs post-join |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ⬜ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled |
 | §9.4 | Throws validation + auto-apply gate        | FR14       | ⬜      | §9.1–§9.3, §7 | spec-independent (dynamically-observed) ground truth; false-negative rate report gates auto-apply |
