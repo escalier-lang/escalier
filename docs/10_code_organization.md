@@ -103,5 +103,9 @@ another package in the same monorepo through the `@repo/` scope, and may import
 only that package's exported symbols even though both live in one repository.
 
 ```escalier
-import * as vec from "@repo/vec"
+import "@repo/vec"
+
+val v = vec.zero()
 ```
+
+The binding is the specifier's last segment, so `@repo/vec` binds as `vec`.

@@ -13,9 +13,13 @@ ambient name, and there is nothing left to take its union over. Neither does
 ## The two kinds of import
 
 ```escalier
-import "std:math"                       // pseudo-package: the JS and Web platform
-import * as lodash from "lodash"        // npm package
+import "std:math"    // pseudo-package: the JS and Web platform
+import "lodash"      // npm package
 ```
+
+Both forms are the same statement. The specifier names what to import and the
+binding follows from it; there is nothing to spell out about the namespace,
+since a package always binds as one.
 
 Pseudo-packages hold the platform surface Escalier owns as first-class `.esc`
 source. npm packages come from `node_modules` and are typed by their `.d.ts`
@@ -54,7 +58,7 @@ Package names use underscores, matching the file naming, so `import
 
 ### Named imports are not accepted
 
-All pseudo-package imports go through the bare form above. Writing
+Every import goes through the bare form above. Writing
 `import { sin } from "std:math"` is a compile error that points at the
 alternative. Qualified-only access is the Go convention: reading `math.sin(x)`
 makes the origin of `sin` visible at every call site, and gives editor tooling an
@@ -89,6 +93,21 @@ iteration protocol and `AggregateError`, so the access is `async.Promise.all(…
 
 Other exports of a shortcut package are reachable as namespace members on the
 same binding. Where a name collides, class statics win.
+
+`std:number` is the case that has one. It exports the `Number` class, whose
+static side already carries `parseInt`, and it also owns the free `parseInt` that
+JavaScript exposes globally, since both belong to the numeric-parsing domain.
+Both would land on the same binding:
+
+```escalier
+import "std:number"
+
+Number.parseInt("42")   // the class static
+```
+
+The class static is what `Number.parseInt` resolves to. The rule exists so that
+the shortcut binding behaves the way the class does, rather than depending on
+what else the package happens to export.
 
 ### Binding-shape flags
 
@@ -149,39 +168,31 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 imports `web:dom` plus one or two siblings.
 
 A sibling that needs a `web:dom` type refers to it through a qualified name, so
-`web:fetch`'s `Response.body` is a `web.streams.ReadableStream | null` and has to
-be narrowed before a stream method can be called on it.
+`web:fetch`'s `Response.body` is a `streams.ReadableStream | null` and has to be
+narrowed before a stream method can be called on it. The scheme does not appear
+in the qualified name — the binding is the last URI segment, so `web:streams`
+binds as `streams`.
 Pseudo-packages import each other exactly like ordinary code, and import cycles
 between them are permitted.
 
 ## npm packages
 
-Third-party packages are imported by name, as a namespace or by member.
+Third-party packages use the same bare-string form, and the binding is the
+package's last path segment.
 
 ```escalier
-import * as lodash from "lodash"
-import * as fp from "lodash/fp"
+import "lodash"
+import "lodash/fp"
 
 val result = lodash.map([1, 2, 3], fn(x) { x * 2 })
 val piped = fp.pipe(fn1, fn2, fn3)
 ```
 
-```escalier
-import { map, filter } from "lodash"
-import { useState, useEffect } from "react"
+Access stays qualified, as it does for a pseudo-package, so where a name comes
+from is visible at the call site.
 
-val doubled = map([1, 2, 3], fn(x) { x * 2 })
-```
-
-Members may be renamed to avoid conflicts:
-
-```escalier
-import { map as lodashMap } from "lodash"
-import { map as ramdaMap } from "ramda"
-```
-
-Subpath exports are separate namespaces with their own contents, as `lodash` and
-`lodash/fp` are above.
+Subpath exports are separate packages with their own contents and their own
+binding, as `lodash` and `lodash/fp` are above.
 
 Types imported from a `.d.ts` file are **inexact** in every category, since
 TypeScript cannot state that a shape is closed. See
@@ -193,7 +204,7 @@ Imports are **file-scoped**, as in Go. Each file states what it depends on.
 
 ```escalier
 // lib/utils.esc
-import * as lodash from "lodash"
+import "lodash"
 
 fn helper() -> number {
     return lodash.sum([1, 2, 3])
@@ -252,11 +263,13 @@ packages are not.
 
 A local declaration shadows an imported one. Since there are no ambient globals,
 there is nothing to shadow implicitly, and no `globalThis` escape hatch for
-reaching a shadowed name. Where you need both, alias one at the import:
+reaching a shadowed name.
+
+Two imports whose last segments collide need one of them renamed. The syntax is
+not settled; the shape under consideration is a trailing `as`:
 
 ```escalier
-import "std:array"
-import { Array as VecArray } from "@repo/vec"
+import "lodash" as underscore
 ```
 
 ## Status

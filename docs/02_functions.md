@@ -210,9 +210,36 @@ val s = f("hi")   // s: string
 
 Arms are tried most-specific-first when every argument has a known shape, and in
 declaration order otherwise. Overload resolution runs as a phase separate from
-subtyping, so "callable in several ways" never enters the type lattice. Each arm
-needs its own parameter annotations, since the runtime dispatcher generated for
-the set is built from them.
+subtyping, so "callable in several ways" never enters the type lattice.
+
+### How overloads compile
+
+JavaScript has no overloading, so the compiler merges the whole set into **one**
+function whose body dispatches on the arguments at runtime. Arms are emitted
+most-specific-first, and a call matching none of them throws.
+
+```esc
+fn dup(value: number) -> number { return 2 * value }
+fn dup(value: string) -> string { return value ++ value }
+```
+
+```js
+export function dup(param0) {
+  if (typeof param0 === "number") {
+    const value = param0;
+    return 2 * value;
+  } else if (typeof param0 === "string") {
+    const value = param0;
+    return value + value;
+  } else throw new TypeError("No overload matches the provided arguments for function 'dup'");
+}
+```
+
+The test for each arm comes from that arm's parameter annotations, which is why
+every arm needs them. A primitive becomes a `typeof` check, a class becomes an
+`instanceof` check, and an object type becomes a check per required property.
+Arity participates too, so a three-parameter arm is tested before a
+two-parameter one.
 
 ## Generators
 
@@ -229,9 +256,20 @@ The three type arguments are the yield type, the return type, and the type sent
 back in through `next`. Multiple `yield`s union their types. `async gen fn`
 produces an `AsyncGenerator` with the same shape.
 
-A generator's values are consumed with `for`-`in`:
+`yield from` delegates to another generator, and a generator's values are
+consumed with `for`-`in`:
 
 ```esc
+import "std:console"
+
+gen fn range(start: number, stop: number) {
+    if start < stop {
+        yield start
+        yield from range(start + 1, stop)
+    }
+}
+// inferred: fn (start: number, stop: number) -> Generator<number, undefined, unknown>
+
 for i in range(0, 10) {
     console.log(`i = ${i}`)
 }
