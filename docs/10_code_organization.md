@@ -19,9 +19,10 @@ bin/
 build/            # generated
 ```
 
-- **`lib/`** holds the package's library source. Every `.esc` file under `lib/`
-  is a module, which means statements may not appear outside a function or
-  method. `.test.esc` files are the exception.
+- **`lib/`** holds the package's library source. Its `.esc` files are source
+  files rather than modules of their own — a module spans every file that shares
+  a namespace. Statements may not appear outside a function or method in them,
+  with `.test.esc` files the exception.
 - **`bin/`** holds executable scripts. These run top to bottom, so statements at
   top level are allowed.
 - **`build/`** holds the generated `.js`, `.d.ts`, and source maps.

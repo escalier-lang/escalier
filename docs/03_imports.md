@@ -76,7 +76,9 @@ val d: Date = Date()          // construct — no `new` keyword
 ```
 
 The shortcut is structural: it fires when the package declares a top-level class
-whose name matches the lowercased URI segment. `std:array`, `std:string`,
+whose name matches the URI segment, ignoring case and the underscores that
+separate words in a package name. That is what pairs `std:weak_ref` with
+`WeakRef`. `std:array`, `std:string`,
 `std:number`, `std:boolean`, `std:bigint`, `std:regexp`, `std:symbol`,
 `std:object`, `std:function`, `std:date`, `std:map`, `std:set`, and
 `std:weak_ref` all qualify. `std:math` declares no `Math` class, so its binding
@@ -97,10 +99,12 @@ an error.
 
 ### Imports are runtime-erased
 
-At runtime `Math.sin` and `console.log` are already available in every JavaScript
-environment. A pseudo-package import adds type information to the compile-time
-scope and codegen deletes the import line. The package is a type-checking
-grouping mechanism with zero runtime cost.
+The names behind these imports already exist at runtime. `Math.sin` is an
+ECMAScript builtin, present in every conforming engine; `console.log` is a host
+API, present wherever the target JavaScript host provides one. A pseudo-package
+import adds type information to the compile-time scope and codegen deletes the
+import line, so the package is a type-checking grouping mechanism with zero
+runtime cost.
 
 Binding names are not always the runtime names, so each exported declaration in a
 pseudo-package carries a `@js("...")` decorator naming the JavaScript expression
@@ -145,7 +149,8 @@ Web families with no DOM coupling get their own packages: `web:fetch`,
 imports `web:dom` plus one or two siblings.
 
 A sibling that needs a `web:dom` type refers to it through a qualified name, so
-`web:fetch`'s `Response.body` returns a `web.streams.ReadableStream`.
+`web:fetch`'s `Response.body` is a `web.streams.ReadableStream | null` and has to
+be narrowed before a stream method can be called on it.
 Pseudo-packages import each other exactly like ordinary code, and import cycles
 between them are permitted.
 

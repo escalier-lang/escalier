@@ -94,8 +94,20 @@ Escape is the single trigger for a move. An owned value moves when it flows into
 - a closure that itself escapes, capturing the value.
 
 A value does **not** escape when it flows into a strictly shorter-lived
-destination: a non-escaping argument, an inner-scope binding that dies first, or
-a local reborrow. Those are borrows, and the source is retained.
+destination: a non-escaping argument or a local reborrow. Those are borrows, and
+the source is retained.
+
+Binding is the exception to that shape. A `val` or `var` binding of an owned
+value moves it whatever its scope, because the new binding takes ownership rather
+than borrowing for a while:
+
+```esc
+val p = {x: 0}
+if true { val q = p }       // moves p, even though q dies first
+p.x                         // ERROR: use of moved value 'p'
+```
+
+Annotate the destination `&` to borrow instead.
 
 The escape verdict is read off the lifetime constraints rather than recomputed. A
 value escapes exactly when its lifetime is forced to outlive its binding's scope.
@@ -132,7 +144,7 @@ collected, so drops need no generated code.
 | Field or element store | Move when the container outlives the source |
 | `return` | Move, unless the value is a value type or an already-outliving borrow |
 | Function argument | Borrow for a `&` parameter, move for a bare owned one |
-| Closure capture | Move into an escaping closure, borrow into a local one |
+| Closure capture | Move into an escaping closure, borrow into a local one; see below |
 | Destructuring | Per part, following the same rules |
 | `match` arm bindings | Per part, consistent with destructuring |
 
@@ -325,9 +337,21 @@ concrete value type or take a borrow.
 
 ## What ownership does not cover
 
+Out of scope by design:
+
 - **Concurrency and data races.** Excluding them would require Rust-style
   exclusive borrowing, which Escalier deliberately gives up.
-- **Heap escape analysis** beyond function return values.
+
+Specified above but not yet enforced:
+
+- **Escaping closure captures.** Capturing a value in a closure that escapes is
+  specified as a move, but the checker does not consume the captured binding
+  today, so the later use goes unreported.
+- **Element stores.** `t[i] = x` is rejected as unsupported rather than treated
+  as an escape.
 - **Reassignment clearing a move.** Reassigning a `var` after it was moved gives
   it a fresh value, but the analysis still reads the binding as moved, so a use
   after re-initialization is reported spuriously.
+
+The other escape sites — a longer-lived binding, a field store, a `return`, and a
+consuming argument — do consume their source.

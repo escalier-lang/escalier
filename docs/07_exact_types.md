@@ -12,7 +12,8 @@ types that might, and it makes the former the default.
 
 ## Syntax
 
-A trailing `...` opts a former into inexactness.
+A **former** is a type constructor that builds a type out of parts — an object,
+a tuple, a function, a union. A trailing `...` opts one into inexactness.
 
 ```esc
 type ExactPoint = {x: number, y: number}

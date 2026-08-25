@@ -241,11 +241,33 @@ for i in range(0, 10) {
 
 A written function value is **exact**: it accepts exactly the arities its
 parameter list declares, and a direct call with extra arguments is rejected.
-Exactness governs callback subtyping. A function type accepts a set of argument
+
+Exactness governs callback subtyping. A function type accepts a range of argument
 counts — `[required, declared]` when exact, `[required, ∞)` when inexact — and
 `G <: F` when `G` accepts every count `F`'s holders may call with, with
-parameters contravariant and the return covariant. This is what lets a
-one-parameter callback be passed where a three-parameter one is expected.
+parameters contravariant and the return covariant.
+
+An exact value therefore has to match the slot's arity. Passing a
+one-parameter function where three arguments will be supplied is rejected,
+because its range is `[1, 1]` and the slot's holders call with 3:
+
+```esc
+declare fn hof(cb: fn (a: number, b: number, c: number) -> number) -> number
+
+val r = hof(fn (a) { return a })
+// ERROR: cannot constrain function of arity 1 <: function of arity 3
+```
+
+A trailing `...` makes the value inexact, opening its range to `[1, ∞)`, which
+does cover 3:
+
+```esc
+val r = hof(fn (a, ...) { return a })   // OK
+```
+
+This is the one place Escalier asks for something JavaScript does not. In
+JavaScript a callback may simply ignore trailing arguments; here that has to be
+stated, and `...` is how you state it.
 
 ## Destructuring parameters
 

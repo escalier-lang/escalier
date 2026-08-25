@@ -1,10 +1,17 @@
 # Escalier language reference
 
 Escalier is a programming language that compiles to JavaScript. It keeps
-TypeScript's structural type system and interop story, and changes three things
-about it: values are immutable by default, object types are exact by default, and
-ownership of reference-shaped values is tracked so the immutability guarantee
-actually holds.
+TypeScript's structural core and its interop story, and departs from it in a
+number of places. The largest ones:
+
+- Values are immutable by default, and ownership of reference-shaped values is
+  tracked so that guarantee holds.
+- Object, tuple, and function types are exact by default.
+- Classes are nominal and enums are variant types.
+- `any` is gone; negation `~T` is a real type; a `throws` clause is checked; and
+  a promise carries its rejection type as `Promise<T, E>`.
+
+The pages below cover the rest.
 
 | | |
 |---|---|

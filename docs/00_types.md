@@ -122,8 +122,14 @@ val x = p.x           // x: number
 
 Nominality follows the compilation target. Escalier compiles to JavaScript,
 where `instanceof` distinguishes two classes with identical fields, so the type
-system distinguishes them too. TypeScript treats classes structurally and gets a
-different answer for the same program.
+system distinguishes them too.
+
+TypeScript answers differently, and conditionally. It compares two classes by
+their public members, so classes with matching public shapes are interchangeable.
+Private and protected members are the exception: they match only when both sides
+inherit them from the same declaration, which makes a class carrying one behave
+nominally. Escalier applies the nominal rule to every class instead of leaving it
+to whether the class happens to declare a private member.
 
 A class instance is exact when the class is `final`; a non-`final` class may have
 subclass instances, so its instance type stays inexact.
