@@ -674,10 +674,12 @@ out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
   `TypedArray.prototype.copyWithin`, and `SetTypedArrayFromTypedArray` twice.
   That gives the 11 `DataView.prototype.set*` methods,
   `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` a receiver
-  fact, and `Atomics.store` argument 0. `TypedArray.prototype.slice` and
-  `InitializeTypedArrayFromTypedArray` write a buffer they read out of an object
-  they allocated themselves, and a fresh object's interior is `Unknown`, so both
-  stay unattributable.
+  fact, and `Atomics.store` argument 0. `InitializeTypedArrayFromTypedArray`
+  stays unattributable, because it writes the buffer behind an
+  `AllocateTypedArray` result and that allocator captures an argument.
+  `TypedArray.prototype.slice` writes the buffer behind a
+  `TypedArraySpeciesCreate` result, which captures nothing, so its write is
+  discarded and only the prose step §3 could not lower is left to report.
 - **A computed slot on a fresh value is not a warning.** The serializer leaves
   the slot name empty on the 155 writes whose slot the algorithm computes, and
   the curated list cannot answer for those. They mark the function incomplete,
@@ -736,7 +738,7 @@ the object read, a value that is not the object but lives inside it, so
 that §4.1 can charge a write to it back to the object holding it.
 
 ```
-type Origin struct { Kind OriginKind; Index int; Interior bool }
+type Origin struct { Kind OriginKind; Index int; Interior, Captures bool }
 // OriginKind ∈ { Receiver, Param, Fresh, Unknown }
 // Receiver is a BuiltinMethod's `this` value; Param(i) is the i-th
 // declared parameter, 0-based, matching the fact's param index. The
@@ -810,13 +812,13 @@ reader for `cfg.json`, mirroring Appendix A, and the origin map.
 `Eval(expr)` answers the same question for an expression, which is the call
 §4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
 functions analyze in about 8 ms, binding 11756 names. Of those, 373 are at the
-receiver, 2007 at a parameter, 4045 fresh, 100 interior, and 5231 unknown. The
-gate is
+receiver, 2007 at a parameter, 3927 fresh, 118 fresh from an allocator that
+captured an argument, 100 interior, and 5231 unknown. The gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
 `Array.prototype.slice`, and `? ToString(O)` puts `S` at `Unknown` in
-`String.prototype.toLowerCase`. Five findings.
+`String.prototype.toLowerCase`. Six findings.
 
 - **One walk in node order is unsound, so the walk repeats until nothing
   moves.** A loop's back edge redefines a name after its uses, and a single
@@ -858,9 +860,23 @@ gate is
   wrote. `Interior` marks the 100 names this reaches. It is deliberately not the
   same value as its holder, so it never stands in where identity is what
   matters, such as §4.3's return alias: returning `M.[[MapData]]` is not
-  returning `M`. A fresh object's interior stays `Unknown` rather than becoming
-  `Fresh`, since an algorithm can store a value its caller owns into a record it
-  allocated, and `MakeDataViewWithBufferWitnessRecord` does exactly that.
+  returning `M`.
+- **A fresh object's interior is fresh unless its allocator captured an
+  argument.** `MakeDataViewWithBufferWitnessRecord` ends in `return « obj,
+  byteLength »`, so the record it builds holds the very view it was passed, and
+  reading inside that result reaches a value the caller owns.
+  `TypedArraySpeciesCreate` instead builds a new array over a new buffer.
+  Collapsing both to `Unknown` cost `TypedArray.prototype.slice` a clean answer,
+  since it writes the buffer behind the array it allocated and MDN documents
+  that it modifies nothing. The split is derived from the graph rather than
+  judged by hand: an allocator captures when one of its parameters reaches the
+  operands of an allocation it builds or the value it writes into a
+  backing-store slot. Six of the 52 allocators qualify — `AllocateArrayBuffer`,
+  `AllocateSharedArrayBuffer`, `AllocateTypedArray`, `HostMakeJobCallback`, and
+  the two witness-record operations — and a transitive closure over calls
+  between allocators adds none. `TestCapturingAllocatorsMatchTheGraph`
+  recomputes the list, so a spec bump that reshapes an allocator fails there
+  rather than silently widening or narrowing what counts as fresh.
 
 `Node` and `Expr` are sealed interfaces with one type per kind rather than
 one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)

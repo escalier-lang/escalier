@@ -1,8 +1,10 @@
 package ecma262
 
 import (
+	"sort"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -53,6 +55,7 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "unset", Origin{}.String())
 	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
 	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
+	require.Equal(t, "Fresh(captures)", Origin{Kind: OriginFresh, Captures: true}.String())
 
 	// A kind outside the lattice renders as its number rather than as one of
 	// the names above, so an origin the walk could not produce is still legible
@@ -60,14 +63,14 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "Origin(99)", Origin{Kind: 99}.String())
 }
 
-// Only a receiver or a parameter has an interior the analysis can place. A
-// fresh object's interior is `Unknown`, since a value the algorithm allocated
-// can hold a value its caller already owns, and calling that fresh would let
-// §4.1 discard a write to it.
+// A receiver's or a parameter's interior is marked and stays placed. A fresh
+// object's interior is fresh too, since the algorithm made its contents as
+// well, unless the allocator captured one of its arguments.
 func TestInteriorOf(t *testing.T) {
 	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, interiorOf(Receiver))
 	require.Equal(t, Origin{Kind: OriginParam, Index: 1, Interior: true}, interiorOf(Param(1)))
-	require.Equal(t, Unknown, interiorOf(Fresh))
+	require.Equal(t, Fresh, interiorOf(Fresh))
+	require.Equal(t, Unknown, interiorOf(Origin{Kind: OriginFresh, Captures: true}))
 	require.Equal(t, Unknown, interiorOf(Unknown))
 
 	// The lattice bottom stays at the bottom. A name whose definition the walk
@@ -269,6 +272,92 @@ func TestOriginMapFreeNames(t *testing.T) {
 
 	require.Equal(t, Unknown, m.Of("integerLimit"))
 	require.Equal(t, Unknown, m.Of("remaining"))
+}
+
+// capturingAllocators is derived from the graph, so this recomputes it. An
+// allocator captures when one of its parameters reaches a place interiorOf
+// would read it back from: the operands of an allocation it builds, or the
+// value it writes into a backing-store slot.
+func TestCapturingAllocatorsMatchTheGraph(t *testing.T) {
+	cfg := testCFG(t)
+
+	derived := set.NewSet[string]()
+	for _, name := range allocators.ToSlice() {
+		fn := cfg.AbstractOp(name)
+		require.NotNil(t, fn, "no abstract operation named %s", name)
+		if capturesAnArgument(fn) {
+			derived.Add(name)
+		}
+	}
+
+	require.Equal(t, sorted(capturingAllocators), sorted(derived))
+}
+
+// capturesAnArgument reports whether one of fn's parameters can be read back
+// out of the value fn allocates.
+func capturesAnArgument(fn *Func) bool {
+	params := set.FromSlice(fn.Params)
+	var reaches func(Expr) bool
+	reaches = func(e Expr) bool {
+		switch e := e.(type) {
+		case *VarExpr:
+			return params.Contains(e.Var)
+		case *AllocExpr:
+			for _, arg := range e.Args {
+				if reaches(arg) {
+					return true
+				}
+			}
+		case *CallExpr:
+			for _, arg := range e.Args {
+				if reaches(arg) {
+					return true
+				}
+			}
+		case *SlotExpr:
+			return reaches(e.Object)
+		case *PropExpr:
+			return reaches(e.Object)
+		}
+		return false
+	}
+
+	for _, node := range fn.Nodes {
+		switch node := node.(type) {
+		case *ReturnNode:
+			if alloc, ok := node.Value.(*AllocExpr); ok && reaches(alloc) {
+				return true
+			}
+		case *LetNode:
+			if alloc, ok := node.Source.(*AllocExpr); ok && reaches(alloc) {
+				return true
+			}
+		case *SlotWriteNode:
+			if backingStoreSlots.Contains(node.Slot) && reaches(node.Value) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sorted(s set.Set[string]) []string {
+	names := s.ToSlice()
+	sort.Strings(names)
+	return names
+}
+
+// A write to the buffer behind a freshly allocated typed array is invisible to
+// the caller, which is what makes `TypedArray.prototype.slice` non-mutating.
+// `A` comes from `TypedArraySpeciesCreate`, which captures nothing, so
+// `A.[[ViewedArrayBuffer]]` stays fresh while `O.[[ViewedArrayBuffer]]` is the
+// receiver's interior.
+func TestOriginMapInteriorOfAFreshAllocation(t *testing.T) {
+	m := originsOf(t, "TypedArray.prototype.slice")
+
+	require.Equal(t, Fresh, m.Of("A"))
+	require.Equal(t, Fresh, m.Of("targetBuffer"))
+	require.Equal(t, interiorOf(Receiver), m.Of("srcBuffer"))
 }
 
 func TestOriginMapString(t *testing.T) {

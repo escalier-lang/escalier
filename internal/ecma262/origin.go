@@ -40,10 +40,16 @@ const (
 // holding it, which is what lets §4.1 charge a DataView setter's byte store to
 // its receiver. An interior value is not the object itself, so it never stands
 // in for it where identity is what matters, such as §4.3's return alias.
+//
+// Captures marks a fresh value the algorithm built around something it was
+// given, so reading inside it can hand back a value its caller already owns.
+// It changes nothing about the fresh value itself, only about its interior.
+// See capturingAllocators.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
 	Interior bool
+	Captures bool
 }
 
 // Receiver, Fresh and Unknown are the origins that carry no index.
@@ -58,14 +64,14 @@ func Param(i int) Origin {
 	return Origin{Kind: OriginParam, Index: i}
 }
 
-// interiorOf returns the origin of a value read out of o's backing store. Only
-// a receiver or a parameter has an interior the analysis can place.
+// interiorOf returns the origin of a value read out of o's backing store.
 //
-// A fresh object's interior is `Unknown` rather than `Fresh`, because a value
-// the algorithm allocated can hold a value its caller already owns.
-// `MakeDataViewWithBufferWitnessRecord` builds a fresh record and stores the
-// view it was handed in it. Calling the record's contents fresh would discard a
-// write to that view, and `Fresh` is the one origin whose mutations §4.1 drops.
+// A fresh object's interior is fresh too, unless the allocator that built it
+// captured one of its arguments. `TypedArray.prototype.slice` writes the buffer
+// behind the array `TypedArraySpeciesCreate` handed it, and that write is
+// invisible to its caller. `MakeDataViewWithBufferWitnessRecord` instead
+// returns a record holding the view it was given, so reading inside its result
+// can reach a value the caller owns.
 func interiorOf(o Origin) Origin {
 	switch o.Kind {
 	case originUnset:
@@ -77,6 +83,13 @@ func interiorOf(o Origin) Origin {
 	case OriginReceiver, OriginParam:
 		o.Interior = true
 		return o
+	case OriginFresh:
+		// A value the algorithm allocated holds only values it also made,
+		// unless the allocator captured something it was given.
+		if o.Captures {
+			return Unknown
+		}
+		return Fresh
 	default:
 		return Unknown
 	}
@@ -97,6 +110,9 @@ func (o Origin) String() string {
 		name = "Unknown"
 	default:
 		name = fmt.Sprintf("Origin(%d)", o.Kind)
+	}
+	if o.Captures {
+		name += "(captures)"
 	}
 	if o.Interior {
 		return "Interior(" + name + ")"
@@ -283,6 +299,32 @@ var allocators = set.FromSlice([]string{
 	"NewGlobalEnvironment",
 	"NewModuleEnvironment",
 	"NewObjectEnvironment",
+})
+
+// capturingAllocators are the allocators that build their result around a value
+// they were given, so reading inside that result can reach a value the caller
+// already owns. Every other allocator hands back something whose contents it
+// also made, and interiorOf keeps those fresh.
+//
+// `MakeDataViewWithBufferWitnessRecord` is the shape: it ends in `return
+// « obj, byteLength »`, so the fresh record holds the very view it was passed.
+// `TypedArraySpeciesCreate` is the other shape. It builds a new typed array
+// over a new buffer, which is why `TypedArray.prototype.slice` writing that
+// buffer is invisible to its caller.
+//
+// The list is derived from the graph rather than judged by hand. An allocator
+// belongs here when one of its parameters reaches a place interiorOf would read
+// it back from: the operands of an allocation it returns, or a backing-store
+// slot it writes on the value it allocated.
+// TestCapturingAllocatorsMatchTheGraph recomputes it, so a spec bump that
+// changes an allocator's shape fails there.
+var capturingAllocators = set.FromSlice([]string{
+	"AllocateArrayBuffer",
+	"AllocateSharedArrayBuffer",
+	"AllocateTypedArray",
+	"HostMakeJobCallback",
+	"MakeDataViewWithBufferWitnessRecord",
+	"MakeTypedArrayWithBufferWitnessRecord",
 })
 
 // OriginMap holds the origin of every value name in one function.
@@ -494,7 +536,13 @@ func (m *OriginMap) eval(e Expr) Origin {
 // evalCall returns the origin of a call's result.
 func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	switch {
-	case allocators.Contains(callee), freshPrimitives.Contains(callee):
+	case allocators.Contains(callee):
+		if capturingAllocators.Contains(callee) {
+			return Origin{Kind: OriginFresh, Captures: true}
+		}
+		return Fresh
+	case freshPrimitives.Contains(callee):
+		// A new primitive holds nothing, so it never captures.
 		return Fresh
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])

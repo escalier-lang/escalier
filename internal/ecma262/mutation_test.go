@@ -102,11 +102,16 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// Atomics.store writes the buffer behind the typed array it was handed
 		// rather than a receiver, so the store lands on a parameter.
 		"DataBlockWriteOnAParameter": {"Atomics.store", "args{0}"},
-		// TypedArray.prototype.slice writes the buffer behind the array it
-		// allocated itself. A fresh object's interior is Unknown rather than
-		// fresh, since an algorithm can store a caller's value into a record it
-		// allocated, so the write is flagged rather than discarded.
-		"InteriorOfAFreshObject": {"TypedArray.prototype.slice", "unattributable incomplete"},
+		// TypedArray.prototype.slice writes the buffer behind the array
+		// TypedArraySpeciesCreate handed it. That allocator captures none of
+		// its arguments, so the buffer is fresh and the write is discarded.
+		// Only the prose step §3 could not lower is left to report.
+		"InteriorOfAFreshAllocation": {"TypedArray.prototype.slice", "incomplete"},
+		// InitializeTypedArrayFromTypedArray writes the buffer behind an
+		// AllocateTypedArray result, and that allocator stores the name it was
+		// given into the array, so reading inside its result can reach a
+		// caller's value and the write cannot be placed.
+		"InteriorOfACapturingAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -313,6 +318,6 @@ func TestMutationSummaryTallies(t *testing.T) {
 	}
 	sort.Strings(kinds)
 	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 31, incomplete 268
-builtin-method: total 313, receiver 57, args 0, unattributable 4, incomplete 35
+builtin-method: total 313, receiver 57, args 0, unattributable 3, incomplete 35
 builtin-static: total 188, receiver 0, args 7, unattributable 21, incomplete 58`))
 }
