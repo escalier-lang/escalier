@@ -36,7 +36,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §1   | Feasibility spike                          | FR1–FR4    | ✅      | —          | ESMeta CFG for ~10 representative methods (incl. escape, reject, callback) exposes the call nodes, args, stored-value operands, guards, `Throw`s, reject sites, and returns the analysis needs — met, see [spike_findings.md](spike_findings.md) |
 | §2   | Toolchain scoping                          | NFR        | 🚧      | §1         | `tools/spec-extract/mise.toml` builds and runs ESMeta with no JVM in the root environment — see [tools/spec-extract/README.md](../../tools/spec-extract/README.md); `mise.lock` is still missing |
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
-| §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ⬜      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` |
+| §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
 | §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
@@ -514,6 +514,14 @@ parameter `j` is `&mut`. Keeping the receiver out of the parameter index
 space is what makes static and namespace functions — whose parameter 0 is
 a real argument, not a receiver — fall out correctly.
 
+**The standing objective is to shrink the unclassified set.** A builtin
+carrying `Unattributable` or `Incomplete` is one §4.3 hands to FR5's
+name-based heuristics instead of deciding from the spec. Every change to
+this analysis is measured by what it does to that count, and the tallies
+snapshot in `internal/ecma262/mutation_test.go` is where the number is
+recorded. A change that leaves it flat needs a reason, and one that raises
+it needs a stronger one.
+
 ### §4.1. Mutation summary fixpoint (FR1, FR2, FR3)
 
 Compute `MutArgs(F) ⊆ {0..arity-1}`, the formal positions function `F`
@@ -542,6 +550,18 @@ seed = {
 }
 for ao, k in seed: MutArgs[ao].add(k)
 
+// Object internal methods. The CFG flattens `O.[[SetPrototypeOf]](V)` to a call
+// whose callee is the bare name and whose argument 0 is `O`, and no body in the
+// graph carries that name. These two tables answer for such a call instead.
+mutatingInternalMethods = {
+    "Set":0, "DefineOwnProperty":0, "Delete":0,
+    "PreventExtensions":0, "SetPrototypeOf":0,
+}
+readOnlyInternalMethods = {
+    "GetOwnProperty", "GetPrototypeOf", "HasProperty",
+    "IsExtensible", "OwnPropertyKeys",
+}
+
 worklist = all funcs
 while worklist nonempty:
     F = worklist.pop()
@@ -553,7 +573,8 @@ while worklist nonempty:
         case SlotWrite where node.Slot in BackingStoreSlots:   // FR3
             attribute(F, origin, node.Object)
         case Call:
-            if node.Callee not in AllFuncs: Incomplete.add(F)  // unresolved callee
+            if node.Callee not in AllFuncs:                    // unresolved callee
+                chargeUnresolved(F, origin, node)
             else for k in MutArgs[node.Callee]:
                 attribute(F, origin, node.Args[k])
         case Opaque: Incomplete.add(F)  // a step the serializer could not lower (§3)
@@ -561,6 +582,15 @@ while worklist nonempty:
     //  value F allocated itself is not observable to F's callers.)
 
     if changed(before, F): worklist.push(callers(F))
+
+// chargeUnresolved: a callee with no body is an object internal method or a
+// function F's caller supplied. The tables answer for the first kind.
+func chargeUnresolved(F, origin, node):
+    if originOf(origin, node.Callee) is Param: Incomplete.add(F)   // a callback
+    elif node.Callee in mutatingInternalMethods:
+        attribute(F, origin, node.Args[0])                         // the dispatching object
+    elif node.Callee in readOnlyInternalMethods: pass              // writes nothing
+    else: Incomplete.add(F)
 
 // attribute: charge a mutated value expression to F's receiver or a formal.
 func attribute(F, origin, expr):
@@ -575,8 +605,9 @@ func attribute(F, origin, expr):
 the analysis saw a mutation it could not tie to a receiver or formal —
 it knows something escaped but not what. `Incomplete` means the analysis
 could not see the whole algorithm: an `Opaque` node the serializer could
-not lower (a prose step, §3), a `Call` to a callee absent from the CFG,
-or a mutation phrasing outside the FR1 vocabulary. Both force
+not lower, which is a prose step from §3, a `Call` to a callee that is
+absent from the CFG and named by neither internal-method table, or a
+mutation phrasing outside the FR1 vocabulary. Both force
 `classified: false` (§4.3), so FR5's heuristic fall-through handles the
 method rather than the analysis emitting a claim it cannot stand behind.
 
@@ -631,15 +662,146 @@ this list are reviewed Go constants — adding a mutator to the spec
 without listing it here produces a false non-mutating result, so they
 are deliberately explicit (FR1).
 
+`MutatingInternalMethods` and `ReadOnlyInternalMethods` are the seed's
+counterpart for the object internal methods. The CFG flattens
+`O.[[SetPrototypeOf]](V)` to a call whose callee is the bare name
+`SetPrototypeOf` and whose argument 0 is `O`, and no body in the graph carries
+that name, because the receiver's type chooses the implementation at runtime.
+Without an entry the call reads as a step the analysis could not see. The
+mutating table charges argument 0 the way the seed does, an
+over-approximation in the FR5-conservative direction. The read-only table is
+the one place the analysis asserts that a call writes nothing, so it lists only
+the methods whose ordinary implementation runs no user code. `[[Get]]`,
+`[[Call]]`, and `[[Construct]]` are left out, since an accessor property and a
+function object both reach user code. A Proxy trap is the remaining escape and
+§6's validation diff is where one would surface.
+
+**Outcome.** Done. [internal/ecma262/mutation.go](../../internal/ecma262/mutation.go)
+holds the seed, the backing-store slot list, the internal-method tables, and the
+fixpoint. `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and
+`Of(fn)` returns one function's `Mutations`, which carries the mutated parameter
+positions, the receiver flag, and the two warnings. All 1202 functions settle in
+about 10 ms. Eight of the nine seed entries name an operation the graph holds,
+and those eight grow into 47 abstract operations with a mutated position. Of the
+501 builtins, 58 mutate their receiver and 13 mutate a parameter, and 420 carry
+neither warning, so §4.3 decides them from the analysis rather than from FR5's
+name-based heuristics. The gate is
+[internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
+`Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
+`Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
+receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
+`RegExp.prototype.exec`, the collection adders, the 11 `DataView.prototype.set*`
+methods, `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` come
+out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
+`Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and
+`Atomics.store` come out mutating argument 0. Eight findings.
+
+- **`Unattributable` is charged to callers and `Incomplete` is not.** Both
+  warnings mean the caller's own summary may be missing something, so the sound
+  reading charges each of them up the call graph. Only one is affordable. A
+  callee that wrote a value it could not place may have written a value the
+  caller handed it, and carrying that up flags 18 more builtins, of which only 2
+  were otherwise classifiable. `JSON.parse` is the shape it catches: the method
+  writes nothing itself and is unattributable because `InternalizeJSONProperty`
+  is. Carrying `Incomplete` up takes the incomplete builtins from 74 of 501 to
+  307 and the classifiable ones from 420 to 194, because the steps §3 could not
+  lower sit in operations nearly every algorithm reaches. §6's validation diff
+  against the hand-written overrides is where a mutation lost inside an
+  incomplete callee surfaces.
+- **An unresolved callee is an internal-method dispatch more often than
+  anything else, and naming those is the largest single reduction available.**
+  Every call the graph cannot resolve to a body left the caller incomplete. 19
+  builtins carried that warning and nothing else, and all 19 died on the same
+  seven names: `[[GetOwnProperty]]`, `[[GetPrototypeOf]]`, `[[OwnPropertyKeys]]`,
+  `[[SetPrototypeOf]]`, `[[PreventExtensions]]`, `[[DefineOwnProperty]]`, and
+  `[[Delete]]`. The two tables take the incomplete builtins from 93 to 74 and the
+  classifiable ones from 401 to 420. They also recover seven mutations the
+  analysis had been losing: `Object.setPrototypeOf`, `Object.preventExtensions`,
+  `Reflect.setPrototypeOf`, `Reflect.preventExtensions`, `Reflect.defineProperty`,
+  and `Reflect.deleteProperty` go from `incomplete` to `args{0}`, and
+  `set Object.prototype.__proto__` to `receiver`. The abstract-op layer trades 42
+  incomplete for 6 unattributable, since a position the mutating table charges
+  can land on a value that layer cannot place. `[[Set]]`, `[[HasProperty]]`, and
+  `[[IsExtensible]]` are inert entries: the graph defines an abstract operation
+  of each name, so the body answers and the table is never consulted.
+- **A byte written into a Data Block needs a seed and an interior origin.** FR3
+  names `TypedArray.prototype.set` writing through `[[ArrayBufferData]]`, but
+  the write is not a slot write. The method reads the buffer out of that slot
+  and passes it to `SetValueInBuffer`, which stores a byte range the graph does
+  not lower, so the seed entry above is what reports it at all. The seed alone
+  charges nothing, since the buffer arrives at that call as a slot read and a
+  plain read resolves to `Unknown`. Reading a backing-store slot instead yields
+  the interior of the object that holds it, so the store lands on the view or
+  typed array itself. Six call sites attribute through an interior origin:
+  `SetViewValue`, `TypedArraySetElement`, `Atomics.store`,
+  `TypedArray.prototype.copyWithin`, and `SetTypedArrayFromTypedArray` twice.
+  That gives the 11 `DataView.prototype.set*` methods,
+  `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` a receiver
+  fact, and `Atomics.store` argument 0. `InitializeTypedArrayFromTypedArray`
+  stays unattributable, because it writes the buffer behind an
+  `AllocateTypedArray` result and that allocator captures an argument.
+  `TypedArray.prototype.slice` writes the buffer behind a
+  `TypedArraySpeciesCreate` result, which captures nothing, so its write is
+  discarded and only the prose step §3 could not lower is left to report.
+- **A computed slot on a fresh value is not a warning.** The serializer leaves
+  the slot name empty on the 155 writes whose slot the algorithm computes, and
+  the curated list cannot answer for those. They mark the function incomplete,
+  except where the written value is fresh, since no slot name makes a write to a
+  value the function allocated itself visible to its caller. 94 of the 155 land
+  on a fresh value, which keeps 47 functions out of `Incomplete`, 10 of them
+  builtins.
+- **The mutated position is the one the call site passes the object at, not the
+  one the seed names.** `OrdinarySet(O, P, V, Receiver)` performs its write
+  through `OrdinarySetWithOwnDescriptor`, which calls
+  `CreateDataProperty(Receiver, …)`. Position 0 is where the seed charges
+  `CreateDataProperty`, and reading the argument sitting there gives `Receiver`,
+  which is `OrdinarySet`'s parameter 3. Its summary is `{3}`, and a caller of
+  `OrdinarySet` charges whatever it passed fourth.
+- **A record read out of a backing store loses the receiver, so
+  `Map.prototype.delete` comes out non-mutating.** delete empties the entry in
+  place with `Set p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry
+  Record rather than a backing store, and `p` itself came out of a read of
+  `M.[[MapData]]`, which breaks the origin chain under §4.2. Both halves of the
+  attribution fail, so the method reads as writing nothing.
+  `Map.prototype.clear` and `WeakMap.prototype.delete` are the same shape.
+  Carrying the interior origin through the indexed read that produces `p`, and
+  charging a write to any slot of an interior value to the object holding it,
+  resolves all three and costs nothing measurable: the receiver-mutating
+  builtins go from 57 to 60 with the unattributable and classifiable counts
+  unchanged. It widens the origin rules a second time, so it is left to §6,
+  which triages these against the hand-written overrides.
+- **An iterator's cursor is left out of the backing-store list.** Nine slots
+  take a receiver-origin write inside a builtin method that the curated list
+  does not count, and all nine are iterator or generator bookkeeping:
+  `[[ArrayLikeNextIndex]]` and `[[IteratedArrayLike]]` in
+  `ArrayIteratorPrototype.next`, `[[VisitedKeys]]`, `[[RemainingKeys]]`,
+  `[[ObjectWasVisited]]` and `[[Object]]` in `ForInIteratorPrototype.next`,
+  `[[Done]]`, `[[GeneratorState]]`, and `[[AsyncGeneratorState]]` elsewhere.
+  Listing them would make every `next` method mutate its receiver, which is the
+  right answer if Escalier's iterator protocol takes `&mut self` and the wrong
+  one otherwise. That is a decision about the emitted surface rather than about
+  the analysis, so §11's curation makes it. `[[Cells]]` is listed, because a
+  finalization registry keeps its cells the way a Map keeps its entries.
+- **`CreateMethodProperty` is seeded and absent from the graph.** Nothing
+  reachable from a builtin calls it; the spec uses it from the syntax-directed
+  operations §3 drops. The entry stays, because the seed is a review artifact of
+  FR1's vocabulary rather than a list of what the pinned graph happens to
+  contain. `TestMutationSummarySeedResolves` snapshots the absent entries, so a
+  spec bump that renames a seeded operation fails there rather than quietly
+  reporting one less mutation.
+
 ### §4.2. Origin map (FR2, FR4)
 
 For each function, map every value name to its origin by a forward pass.
-Origins propagate only through **identity-preserving** operations; a
-property or slot *read* breaks the origin chain, because the value read
-out of a container is a different object from the container.
+Origins propagate only through **identity-preserving** operations. A
+property read breaks the origin chain, because the value read out of a
+container is a different object from the container. A read of a
+**backing-store slot** is the one exception. It yields the *interior* of
+the object read, a value that is not the object but lives inside it, so
+that §4.1 can charge a write to it back to the object holding it.
 
 ```
-type Origin struct { Kind OriginKind; Index int }
+type Origin struct { Kind OriginKind; Index int; Interior, Captures bool }
 // OriginKind ∈ { Receiver, Param, Fresh, Unknown }
 // Receiver is a BuiltinMethod's `this` value; Param(i) is the i-th
 // declared parameter, 0-based, matching the fact's param index. The
@@ -666,7 +828,9 @@ func eval(F, e Expr) Origin:
                 // or namespace object, never a parameter.
     case Call:  return evalCall(F, e)
     case Alloc, Lit: return Fresh                     // fresh object / primitive
-    case Slot, Prop: return Unknown                   // a READ: origin chain breaks
+    case Slot:  return Interior(eval(F, e.Object))    // if e.Slot is a backing store
+                return Unknown                        // otherwise the chain breaks
+    case Prop:  return Unknown                        // a READ: origin chain breaks
     default:    return Unknown
 
 func evalCall(F, c) Origin:
@@ -710,13 +874,14 @@ reader for `cfg.json`, mirroring Appendix A, and the origin map.
 `NewOriginMap(fn)` returns the origins of one function's value names.
 `Eval(expr)` answers the same question for an expression, which is the call
 §4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
-functions analyze in about 4 ms, binding 11663 names. Of those, 373 are at the
-receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
+functions analyze in about 8 ms, binding 11756 names. Of those, 373 are at the
+receiver, 2007 at a parameter, 3927 fresh, 118 fresh from an allocator that
+captured an argument, 100 interior, and 5231 unknown. The gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
 `Array.prototype.slice`, and `? ToString(O)` puts `S` at `Unknown` in
-`String.prototype.toLowerCase`. Four findings.
+`String.prototype.toLowerCase`. Six findings.
 
 - **One walk in node order is unsound, so the walk repeats until nothing
   moves.** A loop's back edge redefines a name after its uses, and a single
@@ -749,6 +914,32 @@ receiver, 2007 at a parameter, 2969 fresh, and 6314 unknown. The gate is
   operations carry the same risk and are listed anyway, as §4.2 specifies,
   because `Array.prototype.slice` and its neighbours build their result through
   them.
+
+- **A backing-store slot read yields an interior origin, not `Unknown`.** The
+  value a collection or buffer keeps in its payload slot is not the object, but
+  a write to it is a write to the object. `SetViewValue` passes
+  `view.[[ViewedArrayBuffer]]` straight to the byte store, and resolving that to
+  `Unknown` left every `DataView.prototype.set*` method unable to name what it
+  wrote. `Interior` marks the 100 names this reaches. It is deliberately not the
+  same value as its holder, so it never stands in where identity is what
+  matters, such as §4.3's return alias: returning `M.[[MapData]]` is not
+  returning `M`.
+- **A fresh object's interior is fresh unless its allocator captured an
+  argument.** `MakeDataViewWithBufferWitnessRecord` ends in `return « obj,
+  byteLength »`, so the record it builds holds the very view it was passed, and
+  reading inside that result reaches a value the caller owns.
+  `TypedArraySpeciesCreate` instead builds a new array over a new buffer.
+  Collapsing both to `Unknown` cost `TypedArray.prototype.slice` a clean answer,
+  since it writes the buffer behind the array it allocated and MDN documents
+  that it modifies nothing. The split is derived from the graph rather than
+  judged by hand: an allocator captures when one of its parameters reaches the
+  operands of an allocation it builds or the value it writes into a
+  backing-store slot. Six of the 52 allocators qualify — `AllocateArrayBuffer`,
+  `AllocateSharedArrayBuffer`, `AllocateTypedArray`, `HostMakeJobCallback`, and
+  the two witness-record operations — and a transitive closure over calls
+  between allocators adds none. `TestCapturingAllocatorsMatchTheGraph`
+  recomputes the list, so a spec bump that reshapes an allocator fails there
+  rather than silently widening or narrowing what counts as fresh.
 
 `Node` and `Expr` are sealed interfaces with one type per kind rather than
 one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
