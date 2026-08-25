@@ -1,11 +1,13 @@
 // Package ecma262 reads the ECMA-262 control-flow graph that
-// tools/spec-extract serializes to cfg.json and derives the mutation and alias
-// facts the builtin converter consumes. cfg.go models the graph, origin.go maps
-// each value an algorithm names to where that value came from, mutation.go
-// charges every mutation the graph holds to the receiver or the parameter it
-// lands on, and throws.go collects the exceptions each algorithm can raise. See
-// planning/ecma-262/implementation_plan.md §4 and §9.1 for the analyses and
-// Appendix A for the serialized schema.
+// tools/spec-extract serializes to cfg.json and derives the mutation, alias,
+// and throw facts the builtin converter consumes. cfg.go models the graph and
+// origin.go maps each value an algorithm names to where that value came from.
+// mutation.go charges every mutation the graph holds to the receiver or the
+// parameter it lands on, throws.go collects the exceptions each algorithm can
+// raise, and classify.go combines the mutation summary and the origin map into
+// one fact per builtin. See planning/ecma-262/implementation_plan.md §4 and
+// §9.1 for the analyses, Appendix A for the serialized graph, and Appendix B
+// for the facts.
 package ecma262
 
 import (

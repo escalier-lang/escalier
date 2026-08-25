@@ -181,8 +181,12 @@ type facts struct {
 // answers, for one function, which declared parameters it may mutate and
 // whether it mutates its receiver, counting the writes it performs itself and
 // those its callees perform on its behalf.
+//
+// It keeps the origin map each function's writes were charged through, so §4.3
+// reads the same one rather than walking the function a second time.
 type MutationSummary struct {
-	facts map[*Func]*facts
+	facts   map[*Func]*facts
+	origins map[*Func]*OriginMap
 }
 
 // NewMutationSummary runs the mutation fixpoint over cfg.
@@ -203,13 +207,15 @@ type MutationSummary struct {
 // write.
 func NewMutationSummary(cfg *CFG) *MutationSummary {
 	a := &analysis{
-		summary: &MutationSummary{facts: make(map[*Func]*facts, len(cfg.Funcs))},
-		origins: make(map[*Func]*OriginMap, len(cfg.Funcs)),
+		summary: &MutationSummary{
+			facts:   make(map[*Func]*facts, len(cfg.Funcs)),
+			origins: make(map[*Func]*OriginMap, len(cfg.Funcs)),
+		},
 		callers: make(map[*Func][]*Func, len(cfg.Funcs)),
 	}
 	for _, fn := range cfg.Funcs {
 		a.summary.facts[fn] = &facts{args: set.NewSet[int]()}
-		a.origins[fn] = NewOriginMap(fn)
+		a.summary.origins[fn] = NewOriginMap(fn)
 	}
 	for _, fn := range cfg.Funcs {
 		for _, callee := range a.callees(cfg, fn) {
@@ -246,11 +252,17 @@ func (s *MutationSummary) Of(fn *Func) Mutations {
 	}
 }
 
-// analysis is the state the fixpoint runs over. origins and callers are built
-// once and read from then on. Only summary changes as the fixpoint iterates.
+// originsOf returns the origin map fn's writes were charged through. A
+// function the summary was not computed for has none.
+func (s *MutationSummary) originsOf(fn *Func) *OriginMap {
+	return s.origins[fn]
+}
+
+// analysis is the state the fixpoint runs over. callers is built once and read
+// from then on, as are the origin maps the summary holds. Only the summary's
+// facts change as the fixpoint iterates.
 type analysis struct {
 	summary *MutationSummary
-	origins map[*Func]*OriginMap
 	callers map[*Func][]*Func
 }
 
@@ -261,7 +273,7 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
 	add := func(callee string) {
-		target := resolveCallee(cfg, a.origins[fn], callee)
+		target := resolveCallee(cfg, a.summary.origins[fn], callee)
 		if target == nil || seen.Contains(target) {
 			return
 		}
@@ -346,7 +358,7 @@ func (a *analysis) run(cfg *CFG) {
 // or to one of fn's parameters, and reports whether fn's summary grew.
 func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 	f := a.summary.facts[fn]
-	origin := a.origins[fn]
+	origin := a.summary.origins[fn]
 	changed := false
 
 	for _, node := range fn.Nodes {
