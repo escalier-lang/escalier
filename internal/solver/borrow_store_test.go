@@ -474,10 +474,11 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // payload sits in and returning that tuple follows the edge.
 //
 // Every case also reports one constrain error unrelated to the store. `&mut a` over a tuple
-// literal whose element is a bare name does not read as a mutable tuple, which is a
-// pre-existing limitation of the deep-mut rule rather than anything the store recorder does.
-// The same shape with a borrow element, TestCallStoreEdgePositions/StoreIntoTupleElement,
-// reports only the escape.
+// literal whose element is a bare name does not read as a mutable tuple, a pre-existing
+// limitation of the deep-mut rule rather than anything the store recorder does. The same shape
+// with a borrow element, TestCallStoreEdgePositions/StoreIntoTupleElement, reports only the
+// escape. #1270 tracks it, and the constrain error drops out of these expectations once the
+// unannotated `val mut` arm accepts a moved place inside a literal.
 func TestCallStoreEdgePayloadPositions(t *testing.T) {
 	tests := map[string]struct {
 		payload  string
