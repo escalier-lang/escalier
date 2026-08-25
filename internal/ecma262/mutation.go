@@ -82,6 +82,52 @@ var backingStoreSlots = set.FromSlice([]string{
 	"Cells",
 })
 
+// mutatingInternalMethods are the object internal methods that write the object
+// they dispatch on, mapped to the argument position that object arrives at. The
+// CFG flattens `O.[[SetPrototypeOf]](V)` to a call whose callee is the bare name
+// `SetPrototypeOf` and whose argument 0 is `O`, so every entry mutates position
+// 0. See planning/ecma-262/implementation_plan.md §4.1 and requirements.md FR1.
+//
+// These are the seed's counterpart for the dispatch the graph cannot follow.
+// Each name resolves to no body, since the receiver's type chooses the
+// implementation at runtime, and without an entry here the call reads as a step
+// the analysis could not see. `Object.setPrototypeOf` and
+// `Reflect.preventExtensions` reach their write through nothing else.
+//
+// Claiming the write over-approximates the same way the seed does. A Proxy trap
+// may write elsewhere or nowhere, and assuming the object is mutated is the
+// FR5-conservative direction.
+var mutatingInternalMethods = map[string]int{
+	"DefineOwnProperty": 0,
+	"Delete":            0,
+	"PreventExtensions": 0,
+	"Set":               0,
+	"SetPrototypeOf":    0,
+}
+
+// readOnlyInternalMethods are the object internal methods that read the object
+// they dispatch on and write nothing. A call to one contributes no mutation and
+// no warning.
+//
+// This is the one place the analysis asserts the absence of a mutation rather
+// than its presence, so the list is narrow. An entry belongs here only when the
+// ordinary implementation runs no user code. `[[GetOwnProperty]]` returns a
+// descriptor off the object's own property table, and `[[HasProperty]]` walks
+// the prototype chain through that same lookup. `[[Get]]` is left out because
+// an ordinary object's accessor property invokes a getter. `[[Call]]` and
+// `[[Construct]]` are left out because they run a function body.
+//
+// A Proxy is the remaining escape, since every trap is user code. The analysis
+// does not model that, and §6's validation diff against the hand-written
+// overrides is where a trap's write would surface.
+var readOnlyInternalMethods = set.FromSlice([]string{
+	"GetOwnProperty",
+	"GetPrototypeOf",
+	"HasProperty",
+	"IsExtensible",
+	"OwnPropertyKeys",
+})
+
 // Mutations is what the fixpoint concluded about one function. Args holds the
 // sorted 0-based positions of the declared parameters it may mutate. A method's
 // receiver is not a parameter, so Receiver reports it separately.
@@ -143,15 +189,20 @@ type MutationSummary struct {
 
 // NewMutationSummary runs the mutation fixpoint over cfg.
 //
-// The seed above gives the base cases and every other summary derives from
-// them. A function's own writes are charged to its receiver or to a parameter
-// through the origin map of §4.2. A call charges each position the callee
-// mutates to whatever the call passed there, and carries the callee's
-// Unattributable flag up, since the value it could not place may have arrived
-// as one of the arguments. A summary that grows re-enqueues its callers.
+// The seed gives the base cases and every other summary derives from them. A
+// function's own writes are charged to its receiver or to a parameter through
+// the origin map of §4.2. A call charges each position the callee mutates to
+// whatever the call passed there, and carries the callee's Unattributable flag
+// up, since the value it could not place may have arrived as one of the
+// arguments. A summary that grows re-enqueues its callers.
+//
+// A call whose callee resolves to no body is an object internal method or a
+// function the caller supplied. The two internal-method tables answer for the
+// first, and the second leaves the summary incomplete.
 //
 // The analysis never invents a mutation. Every position in an Args set traces
-// back to a seed entry or to a backing-store slot write.
+// back to a seed entry, an internal-method entry, or a backing-store slot
+// write.
 func NewMutationSummary(cfg *CFG) *MutationSummary {
 	a := &analysis{
 		summary: &MutationSummary{facts: make(map[*Func]*facts, len(cfg.Funcs))},
@@ -384,10 +435,7 @@ func (a *analysis) chargeNested(cfg *CFG, f *facts, origin *OriginMap, e Expr) b
 func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, args []Expr) bool {
 	target := a.resolve(cfg, origin, callee)
 	if target == nil {
-		// The callee is an internal method the receiver's type chooses, or a
-		// function the caller supplied. Neither is a body the analysis can
-		// read.
-		return f.markIncomplete()
+		return a.chargeUnresolved(f, origin, callee, args)
 	}
 
 	changed := false
@@ -408,6 +456,31 @@ func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, 
 		changed = a.attribute(f, origin, args[position]) || changed
 	}
 	return changed
+}
+
+// chargeUnresolved charges a call whose callee is not a body the analysis can
+// read, and reports whether that grew the summary. The two tables above answer
+// for an object internal method. Anything else is a step the analysis could not
+// see.
+func (a *analysis) chargeUnresolved(f *facts, origin *OriginMap, callee string, args []Expr) bool {
+	if origin.Of(callee).Kind == OriginParam {
+		// A function the caller supplied, which may name an internal method
+		// without being one.
+		return f.markIncomplete()
+	}
+	if position, ok := mutatingInternalMethods[callee]; ok {
+		if position >= len(args) {
+			// Every internal method takes the dispatching object first, so a
+			// call with no argument there is one the serializer lowered
+			// differently than this table expects.
+			return f.markIncomplete()
+		}
+		return a.attribute(f, origin, args[position])
+	}
+	if readOnlyInternalMethods.Contains(callee) {
+		return false
+	}
+	return f.markIncomplete()
 }
 
 // attribute charges one mutated value expression to fn's receiver or to one of

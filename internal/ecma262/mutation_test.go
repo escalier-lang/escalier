@@ -120,11 +120,30 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// `SetIntegrityLevel(O, ...)` rather than performing it itself.
 		"ParameterThroughAHelper": {"Object.freeze", "args{0}"},
 		"ParameterThroughASeed":   {"Reflect.set", "args{0}"},
-		// assign writes its target through `CreateDataPropertyOrThrow(to, ...)`
-		// and also carries a step §3 could not lower, so the mutation it found
-		// stands alongside the warning that it could not read the whole
-		// algorithm.
-		"MutatingAndIncomplete": {"Object.assign", "args{0} incomplete"},
+		// assign writes its target through `CreateDataPropertyOrThrow(to, ...)`.
+		// It reaches each source through `from.[[OwnPropertyKeys]]()` and
+		// `from.[[GetOwnProperty]](nextKey)`, two internal methods the
+		// read-only table answers for, so the write to `to` is the only fact
+		// left and no warning stands beside it.
+		"ParameterPastReadOnlyInternalMethods": {"Object.assign", "args{0}"},
+		// @@replace calls `Set(rx, "lastIndex", 0, true)` on its receiver, and
+		// separately appends to three lists through writes whose slot the
+		// algorithm computes. The appends land on values the analysis cannot
+		// place, so the mutation it found stands alongside the warning that it
+		// could not read the whole algorithm.
+		"MutatingAndIncomplete": {"RegExp.prototype [ @@replace ]", "receiver incomplete"},
+		// setPrototypeOf performs no write of its own. It ends in
+		// `O.[[SetPrototypeOf]](proto)`, a dispatch that resolves to no body,
+		// and the internal-method table is what reports the write at all.
+		"ParameterThroughAnInternalMethod":        {"Object.setPrototypeOf", "args{0}"},
+		"ParameterThroughADeletingInternalMethod": {"Reflect.deleteProperty", "args{0}"},
+		// The __proto__ setter reaches the same dispatch with its receiver.
+		"ReceiverThroughAnInternalMethod": {"set Object.prototype.__proto__", "receiver"},
+		// getOwnPropertyDescriptor bottoms out in `obj.[[GetOwnProperty]](key)`.
+		// Naming that dispatch read-only is what lets the method come out
+		// non-mutating rather than unreadable.
+		"ReadOnlyInternalMethod":           {"Object.getOwnPropertyDescriptor", "none"},
+		"ReadOnlyInternalMethodOnAKeyList": {"Reflect.ownKeys", "none"},
 		// toLowerCase reaches the Unicode case-mapping table through a prose
 		// step, which §3 emits as an opaque node.
 		"OpaqueStep": {"String.prototype.toLowerCase", "incomplete"},
@@ -142,7 +161,7 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 // nothing itself. It is unattributable because `InternalizeJSONProperty`, which
 // it calls, writes a value that operation cannot place.
 func TestMutationSummaryCarriesUnattributableWritesUpTheCallGraph(t *testing.T) {
-	require.Equal(t, "unattributable incomplete", mutationsOf(t, "InternalizeJSONProperty").String())
+	require.Equal(t, "unattributable", mutationsOf(t, "InternalizeJSONProperty").String())
 	require.Equal(t, "unattributable", mutationsOf(t, "JSON.parse").String())
 }
 
@@ -162,8 +181,8 @@ func TestMutationSummaryChargesAnInteriorWriteToItsHolder(t *testing.T) {
 // on the same object, and only that last operation is seeded.
 func TestMutationSummaryCarriesMutationsUpTheCallGraph(t *testing.T) {
 	require.Equal(t, "args{0}", mutationsOf(t, "Object.defineProperties").String())
-	require.Equal(t, "args{0} incomplete", mutationsOf(t, "ObjectDefineProperties").String())
-	require.Equal(t, "args{0} incomplete", mutationsOf(t, "DefinePropertyOrThrow").String())
+	require.Equal(t, "args{0}", mutationsOf(t, "ObjectDefineProperties").String())
+	require.Equal(t, "args{0}", mutationsOf(t, "DefinePropertyOrThrow").String())
 }
 
 // The mutated position is the one the call site passes the written object at,
@@ -280,6 +299,53 @@ func TestMutationSummarySeedResolves(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, strings.Join(absent, "\n"), snaps.Inline(`CreateMethodProperty`))
 }
 
+// The internal-method tables answer for a call only when the callee resolves to
+// no abstract operation, so an entry whose name the graph also defines as an
+// operation is inert: the body answers instead. Three entries are inert at the
+// pinned revision. They stay listed because the tables are a review artifact of
+// FR1's vocabulary rather than a list of what this graph happens to leave
+// unresolved. A spec bump that adds or drops a body for one of these names fails
+// here rather than quietly changing which rule decides the call.
+func TestInternalMethodTablesResolve(t *testing.T) {
+	cfg := testCFG(t)
+
+	var inert []string
+	for name := range mutatingInternalMethods {
+		if cfg.AbstractOp(name) != nil {
+			inert = append(inert, "mutating: "+name)
+		}
+	}
+	for _, name := range readOnlyInternalMethods.ToSlice() {
+		if cfg.AbstractOp(name) != nil {
+			inert = append(inert, "read-only: "+name)
+		}
+	}
+	sort.Strings(inert)
+	snaps.MatchInlineSnapshot(t, strings.Join(inert, "\n"), snaps.Inline(`mutating: Set
+read-only: HasProperty
+read-only: IsExtensible`))
+}
+
+// A callee that names an internal method but is bound to one of the calling
+// function's parameters is a function the caller was handed, not a dispatch. The
+// tables must not answer for it, or a callback named `Delete` would be charged
+// with mutating its first argument.
+func TestInternalMethodTableSkipsACallback(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget": "test", "funcs": [
+			{"name": "Demo", "kind": "abstract-op", "params": ["Delete", "x"], "nodes": [
+				{"kind": "call", "callee": "Delete", "args": [
+					{"kind": "var", "var": "x"}
+				], "guard": "plain"}
+			]}
+		]}`))
+	require.NoError(t, err)
+
+	fn := cfg.AbstractOp("Demo")
+	require.NotNil(t, fn)
+	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
+}
+
 // Every function in the committed graph gets a summary, and two invariants hold
 // across all of them. A mutated position is one of the function's own declared
 // parameters, so §4.3 can always name the parameter a fact refers to. Only a
@@ -301,9 +367,12 @@ func TestMutationSummaryCoversEveryFunction(t *testing.T) {
 }
 
 // The tallies over the whole graph, which move when a seed entry, a
-// backing-store slot, or the transfer function changes. A method that mutates
-// nothing is the common case, and a builtin that carries neither a mutation nor
-// a warning is one §4.3 can classify as non-mutating.
+// backing-store slot, an internal-method entry, or the transfer function
+// changes. A method that mutates nothing is the common case.
+//
+// `classifiable` counts the functions carrying neither warning, the ones §4.3
+// decides from the analysis rather than handing to FR5's name-based heuristics.
+// It is the number a change to this analysis should push up.
 func TestMutationSummaryTallies(t *testing.T) {
 	cfg := testCFG(t)
 	s := testSummary(t)
@@ -329,15 +398,18 @@ func TestMutationSummaryTallies(t *testing.T) {
 		if m.Incomplete {
 			byKind["incomplete"]++
 		}
+		if !m.Unattributable && !m.Incomplete {
+			byKind["classifiable"]++
+		}
 	}
 
 	kinds := make([]string, 0, len(tallies))
 	for kind, byKind := range tallies {
-		kinds = append(kinds, fmt.Sprintf("%s: total %d, receiver %d, args %d, unattributable %d, incomplete %d",
-			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"]))
+		kinds = append(kinds, fmt.Sprintf("%s: total %d, receiver %d, args %d, unattributable %d, incomplete %d, classifiable %d",
+			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"], byKind["classifiable"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 31, incomplete 268
-builtin-method: total 313, receiver 57, args 0, unattributable 3, incomplete 35
-builtin-static: total 188, receiver 0, args 7, unattributable 21, incomplete 58`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 37, incomplete 226, classifiable 449
+builtin-method: total 313, receiver 58, args 0, unattributable 3, incomplete 29, classifiable 282
+builtin-static: total 188, receiver 0, args 13, unattributable 21, incomplete 45, classifiable 138`))
 }

@@ -542,6 +542,18 @@ seed = {
 }
 for ao, k in seed: MutArgs[ao].add(k)
 
+// Object internal methods. The CFG flattens `O.[[SetPrototypeOf]](V)` to a call
+// whose callee is the bare name and whose argument 0 is `O`, and no body in the
+// graph carries that name. These two tables answer for such a call instead.
+mutatingInternalMethods = {
+    "Set":0, "DefineOwnProperty":0, "Delete":0,
+    "PreventExtensions":0, "SetPrototypeOf":0,
+}
+readOnlyInternalMethods = {
+    "GetOwnProperty", "GetPrototypeOf", "HasProperty",
+    "IsExtensible", "OwnPropertyKeys",
+}
+
 worklist = all funcs
 while worklist nonempty:
     F = worklist.pop()
@@ -553,7 +565,8 @@ while worklist nonempty:
         case SlotWrite where node.Slot in BackingStoreSlots:   // FR3
             attribute(F, origin, node.Object)
         case Call:
-            if node.Callee not in AllFuncs: Incomplete.add(F)  // unresolved callee
+            if node.Callee not in AllFuncs:                    // unresolved callee
+                chargeUnresolved(F, origin, node)
             else for k in MutArgs[node.Callee]:
                 attribute(F, origin, node.Args[k])
         case Opaque: Incomplete.add(F)  // a step the serializer could not lower (§3)
@@ -561,6 +574,15 @@ while worklist nonempty:
     //  value F allocated itself is not observable to F's callers.)
 
     if changed(before, F): worklist.push(callers(F))
+
+// chargeUnresolved: a callee with no body is an object internal method or a
+// function F's caller supplied. The tables answer for the first kind.
+func chargeUnresolved(F, origin, node):
+    if originOf(origin, node.Callee) is Param: Incomplete.add(F)   // a callback
+    elif node.Callee in mutatingInternalMethods:
+        attribute(F, origin, node.Args[0])                         // the dispatching object
+    elif node.Callee in readOnlyInternalMethods: pass              // writes nothing
+    else: Incomplete.add(F)
 
 // attribute: charge a mutated value expression to F's receiver or a formal.
 func attribute(F, origin, expr):
@@ -575,8 +597,9 @@ func attribute(F, origin, expr):
 the analysis saw a mutation it could not tie to a receiver or formal —
 it knows something escaped but not what. `Incomplete` means the analysis
 could not see the whole algorithm: an `Opaque` node the serializer could
-not lower (a prose step, §3), a `Call` to a callee absent from the CFG,
-or a mutation phrasing outside the FR1 vocabulary. Both force
+not lower, which is a prose step from §3, a `Call` to a callee that is
+absent from the CFG and named by neither internal-method table, or a
+mutation phrasing outside the FR1 vocabulary. Both force
 `classified: false` (§4.3), so FR5's heuristic fall-through handles the
 method rather than the analysis emitting a claim it cannot stand behind.
 
@@ -631,14 +654,30 @@ this list are reviewed Go constants — adding a mutator to the spec
 without listing it here produces a false non-mutating result, so they
 are deliberately explicit (FR1).
 
+`MutatingInternalMethods` and `ReadOnlyInternalMethods` are the seed's
+counterpart for the object internal methods. The CFG flattens
+`O.[[SetPrototypeOf]](V)` to a call whose callee is the bare name
+`SetPrototypeOf` and whose argument 0 is `O`, and no body in the graph carries
+that name, because the receiver's type chooses the implementation at runtime.
+Without an entry the call reads as a step the analysis could not see. The
+mutating table charges argument 0 the way the seed does, an
+over-approximation in the FR5-conservative direction. The read-only table is
+the one place the analysis asserts that a call writes nothing, so it lists only
+the methods whose ordinary implementation runs no user code. `[[Get]]`,
+`[[Call]]`, and `[[Construct]]` are left out, since an accessor property and a
+function object both reach user code. A Proxy trap is the remaining escape and
+§6's validation diff is where one would surface.
+
 **Outcome.** Done. [internal/ecma262/mutation.go](../../internal/ecma262/mutation.go)
-holds the seed, the backing-store slot list, and the fixpoint.
-`NewMutationSummary(cfg)` runs the fixpoint over a whole graph and `Of(fn)`
-returns one function's `Mutations`, which carries the mutated parameter
+holds the seed, the backing-store slot list, the internal-method tables, and the
+fixpoint. `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and
+`Of(fn)` returns one function's `Mutations`, which carries the mutated parameter
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
 and those eight grow into 47 abstract operations with a mutated position. Of the
-501 builtins, 57 mutate their receiver and 7 mutate a parameter. The gate is
+501 builtins, 58 mutate their receiver and 13 mutate a parameter, and 420 carry
+neither warning, so §4.3 decides them from the analysis rather than from FR5's
+name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
@@ -647,7 +686,7 @@ receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
 methods, `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` come
 out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
 `Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and
-`Atomics.store` come out mutating argument 0. Seven findings.
+`Atomics.store` come out mutating argument 0. Eight findings.
 
 - **`Unattributable` is charged to callers and `Incomplete` is not.** Both
   warnings mean the caller's own summary may be missing something, so the sound
@@ -656,11 +695,27 @@ out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
   caller handed it, and carrying that up flags 18 more builtins, of which only 2
   were otherwise classifiable. `JSON.parse` is the shape it catches: the method
   writes nothing itself and is unattributable because `InternalizeJSONProperty`
-  is. Carrying `Incomplete` up takes the incomplete builtins from 93 of 501 to
-  340 and the classifiable ones from 401 to 161, because the steps §3 could not
+  is. Carrying `Incomplete` up takes the incomplete builtins from 74 of 501 to
+  307 and the classifiable ones from 420 to 194, because the steps §3 could not
   lower sit in operations nearly every algorithm reaches. §6's validation diff
   against the hand-written overrides is where a mutation lost inside an
   incomplete callee surfaces.
+- **An unresolved callee is an internal-method dispatch more often than
+  anything else, and naming those is the largest single reduction available.**
+  Every call the graph cannot resolve to a body left the caller incomplete. 19
+  builtins carried that warning and nothing else, and all 19 died on the same
+  seven names: `[[GetOwnProperty]]`, `[[GetPrototypeOf]]`, `[[OwnPropertyKeys]]`,
+  `[[SetPrototypeOf]]`, `[[PreventExtensions]]`, `[[DefineOwnProperty]]`, and
+  `[[Delete]]`. The two tables take the incomplete builtins from 93 to 74 and the
+  classifiable ones from 401 to 420. They also recover seven mutations the
+  analysis had been losing: `Object.setPrototypeOf`, `Object.preventExtensions`,
+  `Reflect.setPrototypeOf`, `Reflect.preventExtensions`, `Reflect.defineProperty`,
+  and `Reflect.deleteProperty` go from `incomplete` to `args{0}`, and
+  `set Object.prototype.__proto__` to `receiver`. The abstract-op layer trades 42
+  incomplete for 6 unattributable, since a position the mutating table charges
+  can land on a value that layer cannot place. `[[Set]]`, `[[HasProperty]]`, and
+  `[[IsExtensible]]` are inert entries: the graph defines an abstract operation
+  of each name, so the body answers and the table is never consulted.
 - **A byte written into a Data Block needs a seed and an interior origin.** FR3
   names `TypedArray.prototype.set` writing through `[[ArrayBufferData]]`, but
   the write is not a slot write. The method reads the buffer out of that slot
