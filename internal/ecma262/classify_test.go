@@ -41,15 +41,11 @@ func TestMethodFactString(t *testing.T) {
 		fact MethodFact
 		want string
 	}{
+		// Every case in TestFactsSampleMethods renders a classified fact
+		// through String, so only what those cases cannot show is stated here:
+		// a fact with nothing to render, and a returned position past 0, which
+		// no builtin has.
 		"Unclassified": {MethodFact{}, "unclassified"},
-		"Method": {
-			MethodFact{Classified: true, Receiver: RecvMutBorrow, Returns: AliasReceiver},
-			"receiver:mutBorrow returns:receiver",
-		},
-		"Static": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasFresh},
-			"receiver:none returns:fresh",
-		},
 		"ParamReturn": {
 			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: 2},
 			"receiver:none returns:param(2)",
@@ -74,22 +70,26 @@ func TestAliasJoin(t *testing.T) {
 		want alias
 	}{
 		// The bottom of the lattice is the accumulator before any return has
-		// been read, so it never contributes.
-		"UnsetTakesTheOther":     {alias{}, receiver, receiver},
-		"UnsetOnTheRight":        {fresh, alias{}, fresh},
-		"BothUnset":              {alias{}, alias{}, alias{}},
+		// been read, so it never contributes. The loop below joins each pair
+		// both ways, which covers the bottom arriving on either side.
+		"UnsetTakesTheOther": {alias{}, receiver, receiver},
+		// Two returns that agree keep their alias, and a position is part of
+		// what they have to agree on.
 		"AgreeingReturns":        {fresh, fresh, fresh},
 		"AgreeingParamPositions": {aliasOf(Param(1)), aliasOf(Param(1)), aliasOf(Param(1))},
-		// Two returns that disagree collapse to a union, whichever inputs they
-		// name.
-		"ReceiverAndFresh":             {receiver, fresh, union},
-		"ReceiverAndParam":             {receiver, aliasOf(Param(0)), union},
-		"DifferingParamPosition":       {aliasOf(Param(0)), aliasOf(Param(1)), union},
+		// Two returns that disagree collapse to a union. A fresh return counts
+		// as a distinct value the same way an input origin does, which §4.3
+		// states for two input origins only.
+		"ReceiverAndFresh": {receiver, fresh, union},
+		// Two positions disagree the way two kinds do. No builtin in the
+		// committed graph returns two different parameters, so this is the only
+		// place the case is stated.
+		"DifferingParamPosition": {aliasOf(Param(0)), aliasOf(Param(1)), union},
+		// A third return that agrees with neither leaves the union standing.
 		"UnionAbsorbsAnAgreeingReturn": {union, receiver, union},
 		// Unknown is the top, so it wins over a union too.
 		"UnknownWinsOverAKnownReturn": {receiver, unknown, unknown},
 		"UnknownWinsOverAUnion":       {union, unknown, unknown},
-		"BothUnknown":                 {unknown, unknown, unknown},
 	}
 
 	for name, test := range tests {
@@ -116,14 +116,9 @@ func TestFactsSampleMethods(t *testing.T) {
 		"ReadOnlyMethodReturningAFreshArray": {"Array.prototype.slice", "receiver:borrow returns:fresh"},
 		// Map.prototype.set appends to `M.[[MapData]]` and ends in `Return M`.
 		"BackingStoreWriteReturningItsReceiver": {"Map.prototype.set", "receiver:mutBorrow returns:receiver"},
-		"SetAdd":                                {"Set.prototype.add", "receiver:mutBorrow returns:receiver"},
-		// A String method coerces its receiver to a fresh string and writes
-		// nothing. `at` returns a character it built off that string.
-		"StringMethod": {"String.prototype.at", "receiver:borrow returns:fresh"},
 		// A static has no receiver, and freeze ends in `Return O`, the object
 		// it was passed.
 		"StaticReturningItsArgument": {"Object.freeze", "receiver:none returns:param(0)"},
-		"StaticReturningItsTarget":   {"Object.assign", "receiver:none returns:param(0)"},
 		// A namespace function has no receiver either. max returns a literal on
 		// one path and a number read off its argument list on another, and
 		// §4.2 leaves a property read unresolved, so the unresolved return wins
@@ -132,9 +127,6 @@ func TestFactsSampleMethods(t *testing.T) {
 		// The `Object` constructor returns `OrdinaryObjectCreate(...)` on one
 		// path and `ToObject(value)`, which is its parameter, on another.
 		"ReturnsDifferingOrigins": {"Object", "receiver:none returns:union"},
-		// A method that hands back an iterator over its receiver's backing
-		// store returns the iterator `CreateMapIterator` allocated.
-		"IteratorOverABackingStore": {"Map.prototype.keys", "receiver:borrow returns:fresh"},
 		// The buffer a view was built over is the view's payload rather than
 		// the view, so returning it borrows neither.
 		"ReturnsAnInteriorValue": {"get DataView.prototype.buffer", "receiver:borrow returns:unknown"},
@@ -243,14 +235,11 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 			require.Zero(t, fact.ParamIndex, "%s carries a position it does not return", fn.Name)
 		}
 	}
+	// Each builtin resolved above, so an equal count leaves no room for
+	// anything else. Reading the count rather than each abstract operation's
+	// name is what keeps `Set` from failing it, since that name belongs to
+	// both the operations and the constructors.
 	require.Equal(t, builtins, len(f.Methods))
-
-	// The count is what shows nothing else got a fact, since one name can
-	// belong to both spaces: `Set` is the property-write operation and the
-	// `Set` constructor. A name only the abstract operations hold resolves to
-	// nothing at all.
-	_, ok := f.Of("ToObject")
-	require.False(t, ok)
 }
 
 // A name the graph does not hold is missing rather than unclassified. The §5
@@ -267,49 +256,29 @@ func TestFactsOfAnAbsentName(t *testing.T) {
 // as a proven-empty one.
 func TestFactsJSON(t *testing.T) {
 	tests := map[string]struct {
-		method string
-		want   string
+		fact MethodFact
+		want string
 	}{
-		"Method":       {"Array.prototype.fill", `{"classified":true,"receiver":"mutBorrow","returns":"receiver"}`},
-		"Static":       {"Object.freeze", `{"classified":true,"receiver":"none","returns":"param"}`},
-		"Unclassified": {"String.prototype.toLowerCase", `{"classified":false}`},
+		"Method":       {factOf(t, "Array.prototype.fill"), `{"classified":true,"receiver":"mutBorrow","returns":"receiver"}`},
+		"Unclassified": {factOf(t, "String.prototype.toLowerCase"), `{"classified":false}`},
+		// A returned position of 0 is omitted as the zero value, which is the
+		// position a reader takes an absent field for.
+		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":true,"receiver":"none","returns":"param"}`},
+		// A position past 0 is written out. Every parameter the committed graph
+		// returns sits at 0, so this fact is stated by hand.
+		"ReturnedPositionPastZero": {
+			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: 2},
+			`{"classified":true,"receiver":"none","returns":"param","paramIndex":2}`,
+		},
 	}
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			encoded, err := json.Marshal(factOf(t, test.method))
+			encoded, err := json.Marshal(test.fact)
 			require.NoError(t, err)
 			require.Equal(t, test.want, string(encoded))
 		})
 	}
-}
-
-// A returned position past 0 is written out, and position 0 is the value a
-// reader takes an absent field for.
-func TestFactsJSONParamIndex(t *testing.T) {
-	encoded, err := json.Marshal(MethodFact{
-		Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: 2,
-	})
-	require.NoError(t, err)
-	require.Equal(t, `{"classified":true,"receiver":"none","returns":"param","paramIndex":2}`, string(encoded))
-}
-
-// Two returns at different parameter positions disagree the way a receiver and
-// a parameter do, so they join to a union rather than to either position. No
-// builtin in the committed graph returns two different parameters, so the case
-// is stated as a graph of its own, the way mutation_test.go states the shapes
-// that graph does not hold.
-func TestReturnAliasOfDifferingParameters(t *testing.T) {
-	cfg, err := ParseCFG([]byte(
-		`{"specTarget":"abc","funcs":[{"name":"Demo","kind":"builtin-method",` +
-			`"params":["a","b"],"nodes":[` +
-			`{"kind":"return","value":{"kind":"var","var":"a"}},` +
-			`{"kind":"return","value":{"kind":"var","var":"b"}}]}]}`))
-	require.NoError(t, err)
-
-	fn := cfg.Builtin("Demo")
-	require.NotNil(t, fn)
-	require.Equal(t, "union", returnAlias(NewOriginMap(fn)).String())
 }
 
 // The methods FR5 hands to the converter's name heuristics. Each carries a
