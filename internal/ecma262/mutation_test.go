@@ -217,14 +217,16 @@ func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
 	require.Equal(t, "none", mutationsOf(t, "Map.prototype.delete").String())
 }
 
-// A callee that names one of the calling function's parameters is a function
-// the caller was handed, not the abstract operation of that name. Charging it
-// with the operation's mutations would claim a write the callback may never
-// perform, so the call is treated as a body the analysis cannot read.
+// The origin map decides what a callee is before the seed does. A callee bound
+// to one of the calling function's parameters is a function the caller was
+// handed, so charging it with the seeded operation's mutations would claim a
+// write the callback may never perform.
 //
-// No callee in the committed graph shadows an operation this way, so the case
-// is stated as a graph of its own. `Set` is the seeded property write, and
-// `Demo` calls a parameter that happens to carry the same name.
+// This pins the order of those two checks. The graph holds callbacks, and
+// `chargeUnresolved` treats them as unreadable bodies on every one, but none
+// carries a seeded name, so reversing the order would leave every real answer
+// and every tally unchanged. `TestGraphHoldsNoneOfTheHandWrittenShapes` is what
+// reports the day the graph grows a collision.
 func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
@@ -240,8 +242,9 @@ func TestMutationSummaryCalleeNamingAParameterIsACallback(t *testing.T) {
 
 // A call that omits the argument its callee mutates leaves the write with no
 // argument expression to charge it to, so the caller is incomplete rather than
-// quietly clean. Every call in the committed graph passes the argument, so the
-// case is stated as a graph of its own.
+// quietly clean. The guard also keeps the index off the end of the argument
+// list. Every call in the committed graph passes the argument, so the case is
+// stated as a graph of its own.
 func TestMutationSummaryCallOmittingTheMutatedArgument(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
@@ -255,9 +258,9 @@ func TestMutationSummaryCallOmittingTheMutatedArgument(t *testing.T) {
 }
 
 // A call can sit inside an expression rather than in a node of its own.
-// Appendix A reserves that shape and §3 emits none, so the case is stated as a
-// graph of its own. Charging it the same way keeps a mutation from passing
-// unseen, which is the direction the seed's own warning is about.
+// `ParseCFG` accepts that shape, so leaving it uncharged would drop a mutation
+// with no warning attached, which is the one outcome the two warnings exist to
+// prevent. §3 emits none today, so the case is stated as a graph of its own.
 func TestMutationSummaryCallNestedInAnExpression(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
@@ -329,10 +332,9 @@ read-only: IsExtensible`))
 // An internal method takes the object it dispatches on as its first argument, so
 // a call with no argument there is one the serializer lowered differently than
 // the table expects. The write has no argument expression to charge, which
-// leaves the caller incomplete rather than silently non-mutating.
-//
-// No call in the committed graph omits that argument, so the case is stated as a
-// graph of its own.
+// leaves the caller incomplete rather than silently non-mutating, and keeps the
+// index off the end of the argument list. No call in the committed graph omits
+// that argument, so the case is stated as a graph of its own.
 func TestInternalMethodTableOnACallMissingItsObject(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget": "test", "funcs": [
@@ -347,10 +349,11 @@ func TestInternalMethodTableOnACallMissingItsObject(t *testing.T) {
 	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
 }
 
-// A callee that names an internal method but is bound to one of the calling
-// function's parameters is a function the caller was handed, not a dispatch. The
-// tables must not answer for it, or a callback named `Delete` would be charged
-// with mutating its first argument.
+// The same ordering holds for the internal-method tables, where getting it wrong
+// is worse than with the seed. A callback named `Delete` charged from the
+// mutating table claims a write that may not happen, which is merely imprecise.
+// One named `GetOwnProperty` answered from the read-only table asserts that
+// arbitrary user code mutates nothing, which is unsound.
 func TestInternalMethodTableSkipsACallback(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget": "test", "funcs": [
@@ -365,6 +368,133 @@ func TestInternalMethodTableSkipsACallback(t *testing.T) {
 	fn := cfg.AbstractOp("Demo")
 	require.NotNil(t, fn)
 	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(fn).String())
+}
+
+// handWrittenShapes are the four shapes the committed graph does not hold, each
+// of which a rule in the transfer function answers for.
+type handWrittenShapes struct {
+	shadowed      []string // a callee bound to a parameter that also names a seed or table entry
+	shortCall     []string // a call omitting a position its resolved callee mutates
+	shortDispatch []string // an internal-method call with no dispatching object
+	nested        []string // an expression holding a call
+}
+
+// findHandWrittenShapes reports where cfg holds each shape. The gate below runs
+// it over the committed graph and expects nothing; the test after that runs it
+// over a graph holding all four and expects each one found, so the gate cannot
+// rot into a check that passes because it looks at nothing.
+func findHandWrittenShapes(cfg *CFG, s *MutationSummary) handWrittenShapes {
+	var holdsCall func(Expr) bool
+	holdsCall = func(e Expr) bool {
+		switch e := e.(type) {
+		case *CallExpr:
+			return true
+		case *AllocExpr:
+			for _, arg := range e.Args {
+				if holdsCall(arg) {
+					return true
+				}
+			}
+		case *SlotExpr:
+			return holdsCall(e.Object)
+		case *PropExpr:
+			return holdsCall(e.Object)
+		}
+		return false
+	}
+
+	var found handWrittenShapes
+	for _, fn := range cfg.Funcs {
+		origin := NewOriginMap(fn)
+		for _, node := range fn.Nodes {
+			for _, e := range readsOf(node) {
+				if e != nil && holdsCall(e) {
+					found.nested = append(found.nested, fn.Name)
+				}
+			}
+
+			call, ok := node.(*CallNode)
+			if !ok {
+				continue
+			}
+			where := fmt.Sprintf("%s calls %s", fn.Name, call.Callee)
+
+			// resolve consults the origin map before the graph, so a callee
+			// bound to a parameter is a callback whatever it is named.
+			if origin.Of(call.Callee).Kind == OriginParam {
+				_, seeded := directMutators[call.Callee]
+				_, mutating := mutatingInternalMethods[call.Callee]
+				if seeded || mutating || readOnlyInternalMethods.Contains(call.Callee) {
+					found.shadowed = append(found.shadowed, where)
+				}
+				continue
+			}
+			if target := cfg.AbstractOp(call.Callee); target != nil {
+				for _, position := range s.Of(target).Args {
+					if position >= len(call.Args) {
+						found.shortCall = append(found.shortCall, where)
+					}
+				}
+				continue
+			}
+			if position, ok := mutatingInternalMethods[call.Callee]; ok {
+				if position >= len(call.Args) {
+					found.shortDispatch = append(found.shortDispatch, where)
+				}
+			}
+		}
+	}
+	return found
+}
+
+// Each shape above is tested with a hand-written graph of its own, because the
+// committed graph holds none of them. This checks they are still absent, which
+// is what those tests assume and cannot themselves show.
+//
+// A failure here is not a defect. It means the pinned spec grew the case, so the
+// hand-written test is no longer the only description of how the analysis treats
+// it and the real occurrence wants reading.
+func TestGraphHoldsNoneOfTheHandWrittenShapes(t *testing.T) {
+	found := findHandWrittenShapes(testCFG(t), testSummary(t))
+
+	require.Empty(t, found.shadowed,
+		"a callee bound to a parameter shares a name with a seed or internal-method entry; "+
+			"TestMutationSummaryCalleeNamingAParameterIsACallback and "+
+			"TestInternalMethodTableSkipsACallback describe how that call is treated")
+	require.Empty(t, found.shortCall,
+		"a call omits an argument position its callee mutates; "+
+			"TestMutationSummaryCallOmittingTheMutatedArgument describes how it is treated")
+	require.Empty(t, found.shortDispatch,
+		"an internal-method call omits its dispatching object; "+
+			"TestInternalMethodTableOnACallMissingItsObject describes how it is treated")
+	require.Empty(t, found.nested,
+		"an expression holds a nested call; "+
+			"TestMutationSummaryCallNestedInAnExpression describes how it is charged")
+}
+
+// The gate above passes over the committed graph. This shows it passes because
+// the graph holds none of the shapes rather than because the walk finds nothing,
+// by running the same walk over a graph that holds all four.
+func TestHandWrittenShapesAreFoundWhenPresent(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+			`{"name":"Shadow","kind":"abstract-op","params":["Set","x"],"nodes":[` +
+			`{"kind":"call","callee":"Set","args":[{"kind":"var","var":"x"}],"guard":"plain"}]},` +
+			`{"name":"Short","kind":"abstract-op","params":["x"],"nodes":[` +
+			`{"kind":"call","callee":"Set","args":[],"guard":"plain"}]},` +
+			`{"name":"ShortDispatch","kind":"abstract-op","params":["x"],"nodes":[` +
+			`{"kind":"call","callee":"SetPrototypeOf","args":[],"guard":"plain"}]},` +
+			`{"name":"Nested","kind":"abstract-op","params":["x"],"nodes":[` +
+			`{"kind":"let","target":"y","source":{"kind":"call","callee":"Set",` +
+			`"args":[{"kind":"var","var":"x"}]}}]}]}`))
+	require.NoError(t, err)
+
+	found := findHandWrittenShapes(cfg, NewMutationSummary(cfg))
+	require.Equal(t, []string{"Shadow calls Set"}, found.shadowed)
+	require.Equal(t, []string{"Short calls Set"}, found.shortCall)
+	require.Equal(t, []string{"ShortDispatch calls SetPrototypeOf"}, found.shortDispatch)
+	require.Equal(t, []string{"Nested"}, found.nested)
 }
 
 // Every function in the committed graph gets a summary, and two invariants hold
