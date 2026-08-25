@@ -15,6 +15,11 @@ and how a callee's throws reaches its caller.
 Any value may be thrown, not only an `Error` subclass, since that is what
 JavaScript permits.
 
+This is planned to change. Throwing will be restricted to `Error` and its
+subclasses so that every exception carries a stack trace. A thrown string or
+object literal has none, which is what makes a failure in production hard to
+trace back to where it came from.
+
 ## `try` / `catch` / `finally`
 
 Catch arms are patterns, the same ones `match` uses.
@@ -38,11 +43,12 @@ A `try` block collects what it raises into a sink of its own, so an exception th
 arms cover never reaches the enclosing function's clause. `try` is an expression,
 so it produces a value, and a `finally` block may follow the arms.
 
-A `try` with no catch arms is rejected:
+A `try` with no catch arms is rejected, whether or not its block can raise:
 
-```
-a `try` with no catch arms catches nothing; drop the `try` and keep its block, or
-add at least one catch arm
+```esc
+fn f() { try { 42 } }
+// ERROR: a `try` with no catch arms catches nothing; drop the `try` and keep
+// its block, or add at least one catch arm
 ```
 
 ### The caught value is `unknown`
@@ -62,6 +68,12 @@ fn g() {
 }
 // inferred: fn () -> string | 0
 ```
+
+When throwing is restricted to `Error` and its subclasses, the caught binding
+becomes `Error` instead, and an arm narrows from there. Calls into third-party
+npm packages keep the weaker guarantee, since nothing constrains what a
+JavaScript library throws, so which of the two applies will be a setting rather
+than a fixed rule.
 
 ### Uncovered exceptions are rethrown
 

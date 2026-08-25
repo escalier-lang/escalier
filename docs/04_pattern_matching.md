@@ -138,13 +138,11 @@ which admits values no pattern can name and so requires a catch-all:
 
 Two shapes of near-miss get their own message, since the edit differs:
 
-```
-match is not exhaustive; `number` is matched only by a guarded branch, whose
-guard can fail, so add an unguarded branch for it
+> match is not exhaustive; `number` is matched only by a guarded branch, whose
+> guard can fail, so add an unguarded branch for it
 
-match is not exhaustive; `Color.RGB` is matched only by a branch whose own
-pattern can fail, so add a branch that matches it irrefutably
-```
+> match is not exhaustive; `Color.RGB` is matched only by a branch whose own
+> pattern can fail, so add a branch that matches it irrefutably
 
 ## `if val` and `if var`
 

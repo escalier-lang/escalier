@@ -6,7 +6,7 @@ A package is the smallest unit of interop with TypeScript. A package is either a
 Escalier package or a TypeScript package, never both, and both use a standard
 `package.json` to say where the dist files and type definitions live.
 
-```
+```text
 package.json
 lib/
   index.esc
