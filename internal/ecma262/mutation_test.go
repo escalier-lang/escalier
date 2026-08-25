@@ -235,9 +235,29 @@ func TestMutationSummaryCallOmittingTheMutatedArgument(t *testing.T) {
 	require.Equal(t, "incomplete", s.Of(cfg.Builtin("Demo")).String())
 }
 
-// A function the summary never saw reads back as mutating nothing.
+// A call can sit inside an expression rather than in a node of its own.
+// Appendix A reserves that shape and §3 emits none, so the case is stated as a
+// graph of its own. Charging it the same way keeps a mutation from passing
+// unseen, which is the direction the seed's own warning is about.
+func TestMutationSummaryCallNestedInAnExpression(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Set","kind":"abstract-op","params":["O","P","V","Throw"]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["target"],"nodes":[` +
+			`{"kind":"let","target":"x","source":{"kind":"call","callee":"Set",` +
+			`"args":[{"kind":"var","var":"target"}]}}]}]}`))
+	require.NoError(t, err)
+
+	s := NewMutationSummary(cfg)
+	require.Equal(t, "args{0}", s.Of(cfg.Builtin("Demo")).String())
+}
+
+// A function the summary never saw reads back as mutating nothing, and so does
+// one the fixpoint analyzed and found clean.
 func TestMutationSummaryOfUnknownFunc(t *testing.T) {
-	require.Equal(t, Mutations{}, testSummary(t).Of(&Func{Name: "nosuchfunction"}))
+	s := testSummary(t)
+	require.Equal(t, Mutations{}, s.Of(&Func{Name: "nosuchfunction"}))
+	require.Equal(t, Mutations{}, s.Of(testCFG(t).Builtin("Array.prototype.indexOf")))
 }
 
 // Every seed entry has to name an operation the graph holds, or it can never

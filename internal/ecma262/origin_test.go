@@ -295,13 +295,18 @@ func TestCapturingAllocatorsMatchTheGraph(t *testing.T) {
 
 // capturesAnArgument reports whether one of fn's parameters can be read back
 // out of the value fn allocates.
+//
+// A name is at a parameter when fn's own origin map says so, which is how a
+// parameter reached through an intermediate binding still counts. Matching a
+// parameter's spelling alone would miss `Let b be obj` followed by an
+// allocation over `b`.
 func capturesAnArgument(fn *Func) bool {
-	params := set.FromSlice(fn.Params)
+	origins := NewOriginMap(fn)
 	var reaches func(Expr) bool
 	reaches = func(e Expr) bool {
 		switch e := e.(type) {
 		case *VarExpr:
-			return params.Contains(e.Var)
+			return origins.Of(e.Var).Kind == OriginParam
 		case *AllocExpr:
 			for _, arg := range e.Args {
 				if reaches(arg) {

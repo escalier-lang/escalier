@@ -184,8 +184,11 @@ func (s *MutationSummary) Of(fn *Func) Mutations {
 	if f == nil {
 		return Mutations{}
 	}
-	args := f.args.ToSlice()
-	sort.Ints(args)
+	var args []int
+	if f.args.Len() > 0 {
+		args = f.args.ToSlice()
+		sort.Ints(args)
+	}
 	return Mutations{
 		Args:           args,
 		Receiver:       f.receiver,
@@ -208,17 +211,43 @@ type analysis struct {
 func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
+	add := func(callee string) {
+		target := a.resolve(cfg, a.origins[fn], callee)
+		if target == nil || seen.Contains(target) {
+			return
+		}
+		seen.Add(target)
+		called = append(called, target)
+	}
+
+	var nested func(Expr)
+	nested = func(e Expr) {
+		switch e := e.(type) {
+		case *CallExpr:
+			add(e.Callee)
+			for _, arg := range e.Args {
+				nested(arg)
+			}
+		case *AllocExpr:
+			for _, arg := range e.Args {
+				nested(arg)
+			}
+		case *SlotExpr:
+			nested(e.Object)
+		case *PropExpr:
+			nested(e.Object)
+		default:
+			// No other expression holds a call.
+		}
+	}
+
 	for _, node := range fn.Nodes {
-		call, ok := node.(*CallNode)
-		if !ok {
-			continue
+		if call, ok := node.(*CallNode); ok {
+			add(call.Callee)
 		}
-		callee := a.resolve(cfg, a.origins[fn], call.Callee)
-		if callee == nil || seen.Contains(callee) {
-			continue
+		for _, e := range readsOf(node) {
+			nested(e)
 		}
-		seen.Add(callee)
-		called = append(called, callee)
 	}
 	return called
 }
@@ -289,36 +318,94 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				changed = a.attribute(f, origin, node.Object) || changed
 			}
 		case *CallNode:
-			callee := a.resolve(cfg, origin, node.Callee)
-			if callee == nil {
-				// The callee is an internal method the receiver's type
-				// chooses, or a function the caller supplied. Neither is a
-				// body the analysis can read.
-				changed = f.markIncomplete() || changed
-				continue
-			}
-			summary := a.summary.facts[callee]
-			if summary.unattributable {
-				// The callee wrote a value it could not place, and that value
-				// may have arrived as one of these arguments.
-				changed = f.markUnattributable() || changed
-			}
-			for position := range summary.args {
-				if position >= len(node.Args) {
-					// No call in the pinned graph omits an argument its callee
-					// mutates. A spec bump that introduces one leaves a write
-					// with no argument expression to charge it to.
-					changed = f.markIncomplete() || changed
-					continue
-				}
-				changed = a.attribute(f, origin, node.Args[position]) || changed
-			}
+			changed = a.charge(cfg, f, origin, node.Callee, node.Args) || changed
 		case *OpaqueNode:
 			// A step §3 could not lower, such as a prose step.
 			changed = f.markIncomplete() || changed
 		default:
 			// No other node shape writes a value.
 		}
+		// A call can also sit inside an expression the node reads. Appendix A
+		// reserves that shape even though §3 emits none, so it is charged the
+		// same way rather than passing unseen.
+		for _, e := range readsOf(node) {
+			changed = a.chargeNested(cfg, f, origin, e) || changed
+		}
+	}
+	return changed
+}
+
+// readsOf returns the expressions a node reads, so the walk can find a call
+// nested inside one.
+func readsOf(node Node) []Expr {
+	switch node := node.(type) {
+	case *LetNode:
+		return []Expr{node.Source}
+	case *CallNode:
+		return node.Args
+	case *SlotWriteNode:
+		return []Expr{node.Object, node.Value}
+	case *ReturnNode:
+		return []Expr{node.Value}
+	case *ThrowNode:
+		return []Expr{node.Value}
+	default:
+		// A branch and an opaque step read nothing.
+		return nil
+	}
+}
+
+// chargeNested charges every call nested inside e, and reports whether that
+// grew the summary.
+func (a *analysis) chargeNested(cfg *CFG, f *facts, origin *OriginMap, e Expr) bool {
+	changed := false
+	switch e := e.(type) {
+	case *CallExpr:
+		changed = a.charge(cfg, f, origin, e.Callee, e.Args) || changed
+		for _, arg := range e.Args {
+			changed = a.chargeNested(cfg, f, origin, arg) || changed
+		}
+	case *AllocExpr:
+		for _, arg := range e.Args {
+			changed = a.chargeNested(cfg, f, origin, arg) || changed
+		}
+	case *SlotExpr:
+		changed = a.chargeNested(cfg, f, origin, e.Object) || changed
+	case *PropExpr:
+		changed = a.chargeNested(cfg, f, origin, e.Object) || changed
+	default:
+		// A name, a this value, a literal, and an absent operand hold no call.
+	}
+	return changed
+}
+
+// charge attributes one call's mutations to the calling function, and reports
+// whether that grew its summary.
+func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, args []Expr) bool {
+	target := a.resolve(cfg, origin, callee)
+	if target == nil {
+		// The callee is an internal method the receiver's type chooses, or a
+		// function the caller supplied. Neither is a body the analysis can
+		// read.
+		return f.markIncomplete()
+	}
+
+	changed := false
+	summary := a.summary.facts[target]
+	if summary.unattributable {
+		// The callee wrote a value it could not place, and that value may have
+		// arrived as one of these arguments.
+		changed = f.markUnattributable() || changed
+	}
+	for position := range summary.args {
+		if position >= len(args) {
+			// No call in the pinned graph omits an argument its callee mutates.
+			// A spec bump that introduces one leaves a write with no argument
+			// expression to charge it to.
+			changed = f.markIncomplete() || changed
+			continue
+		}
+		changed = a.attribute(f, origin, args[position]) || changed
 	}
 	return changed
 }
