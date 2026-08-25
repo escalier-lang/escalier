@@ -102,17 +102,24 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // reaches no output. `fn f<'a>(x: &'a mut B, y: &'a mut B)` renders its `'a` for that reason,
 // while the single-write `fn f(x: &mut B)` elides. A write is any of the three positions
 // EnterType records: a borrow's lifetime slot and an alias or class reference's lifetime
-// argument, so `fn f<'a>(a: mut Holder<'a>, b: mut Holder<'a>)` counts too. negSeen is the
-// running count that second entry is derived from.
+// argument, so `fn f<'a>(a: mut Holder<'a>, b: mut Holder<'a>)` counts too. negPolSeen is the
+// running per-lifetime tally that second entry is derived from.
 //
 // Only a parameter lifetime enters by the second route, since the count runs in the negative
 // arm alone. resolveLt relies on that: its non-param branch reads noElide to mean the
 // complement case, which is the only one that can reach it.
 type ltOccVisitor struct {
-	occ      map[*soltype.LifetimeVar]occPolarity
-	noElide  set.Set[*soltype.LifetimeVar]
-	negSeen  map[*soltype.LifetimeVar]int
-	negDepth int
+	occ     map[*soltype.LifetimeVar]occPolarity
+	noElide set.Set[*soltype.LifetimeVar]
+	// negPolSeen counts how many times each lifetime is written at NEGATIVE POLARITY, the
+	// position a borrow the caller supplies sits in. The second write is what puts the
+	// lifetime in noElide. A nested function type flips polarity, so a borrow written at a
+	// CALLBACK's parameter is positive and does not count here.
+	//
+	// negDepth below counts enclosing NegationType nodes. The two share a prefix and nothing
+	// else: negPolSeen is about polarity, negDepth is about complements.
+	negPolSeen map[*soltype.LifetimeVar]int
+	negDepth   int
 }
 
 func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
@@ -158,8 +165,8 @@ func (v *ltOccVisitor) record(lt soltype.Lifetime, pol soltype.Polarity) {
 		v.occ[lv] |= occPos
 	} else {
 		v.occ[lv] |= occNeg
-		v.negSeen[lv]++
-		if v.negSeen[lv] > 1 {
+		v.negPolSeen[lv]++
+		if v.negPolSeen[lv] > 1 {
 			v.noElide.Add(lv)
 		}
 	}
@@ -184,9 +191,9 @@ func walkLtOcc(t soltype.Type, pol soltype.Polarity) (
 	set.Set[*soltype.LifetimeVar],
 ) {
 	v := &ltOccVisitor{
-		occ:     map[*soltype.LifetimeVar]occPolarity{},
-		noElide: set.NewSet[*soltype.LifetimeVar](),
-		negSeen: map[*soltype.LifetimeVar]int{},
+		occ:        map[*soltype.LifetimeVar]occPolarity{},
+		noElide:    set.NewSet[*soltype.LifetimeVar](),
+		negPolSeen: map[*soltype.LifetimeVar]int{},
 	}
 	t.Accept(v, pol)
 	return v.occ, v.noElide
