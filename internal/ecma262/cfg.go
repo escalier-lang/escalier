@@ -118,7 +118,19 @@ type BranchNode struct{}
 
 // OpaqueNode is a step the serializer could not lower, which leaves the
 // analysis unable to see the whole algorithm. Serialized as kind "opaque".
-type OpaqueNode struct{}
+//
+// Text is the phrase the serializer could not formalize, spelled as the
+// specification writes it, such as "Let _a_ be the first _k_ - _f_ code units
+// of _m_." from Number.prototype.toFixed. An assertion contributes its
+// condition without the "Assert: " that precedes it in the step.
+//
+// The prose is the evidence for what the analysis loses by giving up on the
+// step. A step binding a name over numbers loses nothing. A step replacing the
+// elements of a slot loses a mutation. Each unformalized phrase is its own
+// entry, since one step can carry several.
+type OpaqueNode struct {
+	Text []string
+}
 
 // NodeKind is the tag each Node variant serializes under.
 type NodeKind string
@@ -306,6 +318,7 @@ type decodeNode struct {
 	Slot      string        `json:"slot"`
 	ErrorType string        `json:"errorType"`
 	Value     *decodeExpr   `json:"value"`
+	Text      []string      `json:"text"`
 }
 
 type decodeExpr struct {
@@ -349,6 +362,7 @@ func (d *decodeNode) fields() []field {
 		{"slot", d.Slot != ""},
 		{"errorType", d.ErrorType != ""},
 		{"value", d.Value != nil},
+		{"text", d.Text != nil},
 	}
 }
 
@@ -455,10 +469,18 @@ func (d *decodeNode) toNode() (Node, error) {
 		}
 		return &BranchNode{}, nil
 	case NodeOpaque:
-		if err := d.check(); err != nil {
+		if err := d.check("text"); err != nil {
 			return nil, err
 		}
-		return &OpaqueNode{}, nil
+		if len(d.Text) == 0 {
+			return nil, fmt.Errorf("the step text is missing")
+		}
+		for i, text := range d.Text {
+			if text == "" {
+				return nil, fmt.Errorf("step text %d is empty", i)
+			}
+		}
+		return &OpaqueNode{Text: d.Text}, nil
 	default:
 		return nil, fmt.Errorf("kind %q names no node", d.Kind)
 	}

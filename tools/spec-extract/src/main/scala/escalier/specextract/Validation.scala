@@ -34,7 +34,7 @@ object Validation:
     NodeKinds.Throw -> (Set("errorType", "value"), Set()),
     NodeKinds.Return -> (Set("value"), Set("value")),
     NodeKinds.Branch -> (Set(), Set()),
-    NodeKinds.Opaque -> (Set(), Set()),
+    NodeKinds.Opaque -> (Set("text"), Set("text")),
   )
 
   private val exprFields: Map[String, (Set[String], Set[String])] = Map(
@@ -242,6 +242,11 @@ object Validation:
             s"nor a thrown value"
         for (guard <- obj("guard").flatMap(_.asString) if !guards(guard))
           problems += s"$where: unknown guard '$guard'"
+        for {
+          text <- obj("text").flatMap(_.asArray)
+          entry <- text
+          if !entry.asString.exists(_.nonEmpty)
+        } problems += s"$where: a step text is not a non-empty string"
         for (key <- List("source", "object", "value"); expr <- obj(key))
           checkExpr(expr, where, problems)
         for {

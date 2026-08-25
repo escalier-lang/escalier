@@ -49,7 +49,9 @@ object NodeKinds:
   val Branch = "branch"
 
   /** a step carrying an ESMeta `yet` marker, which the analysis reads as
-    * incompleteness for whatever signal that step feeds
+    * incompleteness for whatever signal that step feeds. `text` carries the
+    * prose of the step, which is the evidence for judging what the fallback
+    * costs.
     */
   val Opaque = "opaque"
 
@@ -70,6 +72,7 @@ final case class NodeJson(
   slot: String = "",
   errorType: String = "",
   value: Option[ExprJson] = None,
+  text: List[String] = Nil,
 )
 
 /** Expression kinds. */
@@ -144,6 +147,7 @@ object JsonWriter:
     writeStrField(out, "slot", node.slot)
     writeStrField(out, "errorType", node.errorType)
     writeExprField(out, "value", node.value)
+    writeStringsField(out, "text", node.text)
     out.write("}")
 
   private def writeExpr(out: Writer, expr: ExprJson): Unit =
@@ -179,6 +183,14 @@ object JsonWriter:
       if (i > 0) out.write(",")
       writeExpr(out, expr)
     out.write("]")
+
+  private def writeStringsField(
+    out: Writer,
+    key: String,
+    values: List[String],
+  ): Unit = if (values.nonEmpty)
+    out.write(",\"" + key + "\":")
+    writeStrings(out, values)
 
   private def writeStrings(out: Writer, values: List[String]): Unit =
     out.write("[")

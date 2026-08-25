@@ -1693,7 +1693,8 @@ const (
     NodeThrow     NodeKind = "throw"     // Throw a <ErrorType> exception
     NodeReturn    NodeKind = "return"    // return Value
     NodeBranch    NodeKind = "branch"    // control flow; carries no data we analyze
-    NodeOpaque    NodeKind = "opaque"    // a step the serializer could not lower ⇒ Incomplete (§4.1)
+    NodeOpaque    NodeKind = "opaque"    // a step the serializer could not lower ⇒ Incomplete (§4.1);
+                                         // Text carries the prose of that step
 )
 
 // Guard is the completion-record guard on a call, needed for the §9
@@ -1725,6 +1726,11 @@ type Node struct {
                                                     // escape detection — the V in "Append V to O.[[slot]]");
                                                     // Throw of a non-constructed value: the thrown expr,
                                                     // whose origin §9.1 reads (rare in std:*)
+    Text      []string `json:"text,omitempty"`      // Opaque: the specification prose of each phrase the
+                                                    // lowering could not formalize, one entry per phrase.
+                                                    // It is the evidence for telling a step that costs the
+                                                    // analysis nothing, such as one binding a name over
+                                                    // numbers, from a mutation the lowering is dropping.
 }
 
 type ExprKind string
