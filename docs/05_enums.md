@@ -41,16 +41,19 @@ val c: Color = Color.RGB(255, 0, 0)
 
 ## Parameter names
 
-Variant parameters may be named or written `_`, in which case the constructor
-gets positional names:
+Variant parameters are named and annotated, the same as function parameters, and
+the names carry through to the constructor:
 
 ```esc
 enum E {
-    Pair(_: number, _: string),
+    Pair(a: number, b: string),
 }
 val ctor = E.Pair
-// ctor: fn (arg0: number, arg1: string) -> E
+// ctor: fn (a: number, b: string) -> E
 ```
+
+A name is not optional. `Pair(number, string)` is not two unannotated types —
+it declares two parameters *named* `number` and `string`, each typed `unknown`.
 
 ## Recursion
 
@@ -120,13 +123,13 @@ The planned syntax for extending an enum is a spread rather than `extends`:
 
 ```esc
 enum Color {
-    RGB(number, number, number),
-    HSL(number, number, number),
+    RGB(r: number, g: number, b: number),
+    HSL(h: number, s: number, l: number),
 }
 
 enum FutureColor {
     ...Color,
-    Oklab(number, number, number),
+    Oklab(l: number, a: number, b: number),
 }
 
 val c = Color.RGB(255, 0, 0)
