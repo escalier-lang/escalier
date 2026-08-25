@@ -103,11 +103,12 @@ fn bump(p: &mut {x: number}) { p.x = p.x + 1 }       // mutable borrow
 fn store(p: {x: number}) { ... }                     // consumes; caller gives p up
 ```
 
-The borrow is inserted at the call site, so a caller may write `read(p)`; writing
-`read(&p)` explicitly is also accepted. An unannotated parameter is inferred, and
-the checker picks a borrow when the body never lets the value escape and
-ownership when it does. See [Ownership](09_ownership.md) for what counts as
-escape.
+Passing an owned value to a borrowing parameter takes the same marker the
+parameter carries, so a caller writes `read(&p)` and `bump(&mut p)`. A method
+receiver is the exception and needs none. An unannotated parameter is inferred,
+and the checker picks a borrow when the body never lets the value escape and
+ownership when it does. See [Ownership](09_ownership.md) for the call-site rule
+and for what counts as escape.
 
 ## `throws`
 

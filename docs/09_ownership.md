@@ -64,9 +64,31 @@ val q = &p       // q: &Point — immutable borrow
 val r = &mut p   // r: &mut Point — mutable borrow; requires p to be owned-mutable
 ```
 
-Call arguments still borrow implicitly. Write `foo(p)`, not `foo(&p)` — the
-parameter's own `&` already states the borrow, and owning a value subsumes
-lending it.
+Passing an **owned** value to a borrowing parameter takes the same `&` or `&mut`,
+following Rust. The borrow is written at the call rather than inferred from the
+signature, so a reader sees at the call site that the callee only borrows:
+
+```esc
+fn read(p: &{x: number}) -> number { return p.x }
+fn bump(p: &mut {x: number}) { p.x = 1 }
+
+fn go() {
+    val mut p = {x: 0}
+    bump(&mut p)
+    val n = read(&p)
+}
+```
+
+An argument that is *already* a borrow passes as-is; there is nothing to borrow
+again.
+
+**Method receivers are the exception.** Calling a method whose `self` is borrowed
+needs no marker — `c.read()`, never `(&c).read()` — because the receiver's
+mutability is already written on `self` in the method's own parameter list and
+there is only ever one receiver to mark.
+
+The call-site `&` is not required yet. Today the compiler inserts the borrow
+itself, so both `read(p)` and `read(&p)` are accepted.
 
 ## Copy, borrow, move
 
@@ -92,6 +114,25 @@ Escape is the single trigger for a move. An owned value moves when it flows into
 - a `return`, since the value outlives the call frame;
 - an argument whose parameter the callee lets escape;
 - a closure that itself escapes, capturing the value.
+
+The escaping-argument case is the one that depends on the callee's body rather
+than on its signature. `store` below writes its parameter into module-level
+state, so the value has to outlive the call, and passing to it moves:
+
+```esc
+var sink: {x: number} = {x: 0}
+
+fn store(p: {x: number}) { sink = p }
+
+fn go() {
+    val p = {x: 1}
+    store(p)
+    val n = p.x     // ERROR: use of moved value 'p'
+}
+```
+
+A callee that only reads its parameter lets nothing escape, so the same call
+shape borrows and leaves the source usable.
 
 A value does **not** escape when it flows into a strictly shorter-lived
 destination: a non-escaping argument or a local reborrow. Those are borrows, and
@@ -141,18 +182,43 @@ collected, so drops need no generated code.
 |---|---|
 | `val` / `var` binding | Copy a value type, duplicate a borrow, move an owned value |
 | Reassignment | Same decision as a binding; the old value is dropped |
-| Field or element store | Move when the container outlives the source |
+| Field or element store | Move when the container outlives the source, borrowed containers included |
 | `return` | Move, unless the value is a value type or an already-outliving borrow |
-| Function argument | Borrow for a `&` parameter, move for a bare owned one |
+| Function argument | Borrow for a `&` parameter, written `&`/`&mut` at the call; move for a bare owned one |
 | Closure capture | Move into an escaping closure, borrow into a local one; see below |
 | Destructuring | Per part, following the same rules |
 | `match` arm bindings | Per part, consistent with destructuring |
+
+Whether the container is owned or borrowed does not change the field-store row.
+What matters is how long the container's storage lives, and a `&mut` container
+borrows from something that already outlives the value being stored:
+
+```esc
+fn put(c: &mut {slot: {x: number}}, v: {x: number}) { c.slot = v }
+
+fn go() {
+    val mut c = {slot: {x: 0}}
+    val v = {x: 1}
+    put(&mut c, v)
+    val n = v.x     // ERROR: use of moved value 'v'
+}
+```
 
 An owned value's mutability belongs to the binding and defaults to immutable, so
 moving into a plain `val` freezes it and `val mut` keeps it mutable. A borrow's
 mutability belongs to its `&`/`&mut` type and is inherited on copy. It can be
 narrowed by annotation but never widened, since a view cannot grant itself access
-the owner withheld.
+the owner withheld:
+
+```esc
+val mut p = {x: 0}
+
+val q = &mut p
+val r: &{x: number} = q        // OK — narrowing a mutable view to a read-only one
+
+val s = &p
+val t: &mut {x: number} = s    // ERROR: cannot constrain immutable object <: mutable object
+```
 
 ## Partial moves
 
@@ -182,17 +248,60 @@ phases that never overlap:
 but an immutable borrow's lifetime and a mutable borrow's lifetime for the same
 value may never overlap. The owner's own write path counts as a mutable path.
 
+Aliasing within one kind is free:
+
 ```esc
 val mut a = {x: 1}
 val b = &mut a       // mutable borrow
 val c = &mut a       // a second one — allowed
 b.x = 2
-print(a.x)           // OK — prints 2
+c.x = 3
 ```
 
 Multiple simultaneous mutable borrows are safe because Escalier compiles to
 single-threaded JavaScript. There is no data race to exclude, and the invariant
 forbids only mixing the two kinds, not aliasing within one kind.
+
+Mixing them is decided by *overlap*, not by which borrows exist. Running the
+mutable phase to completion before the immutable one begins is fine:
+
+```esc
+fn sequential() {
+    val mut p = {x: 0}
+    val a = &mut p
+    a.x = 1          // the mutable phase ends here
+    val b = &p
+    val n = b.x      // OK — the immutable phase starts after it
+}
+```
+
+Interleaving them is not. Here `b` is read after a write through `a`, so an
+immutable view observes a mutation:
+
+```esc
+fn overlapping() {
+    val mut p = {x: 0}
+    val b = &p
+    val a = &mut p
+    a.x = 1
+    val n = b.x      // should be rejected — b is live across the write
+}
+```
+
+Escalier catches that today only when the immutable view is created by
+annotation rather than by an explicit `&`:
+
+```esc
+val mut p = {x: 0}
+val b: &{x: number} = p   // ERROR: cannot assign 'p' to immutable 'b':
+p.x = 1                   //        'p' is still used mutably after this point
+val n = b.x
+```
+
+`overlapping` above is accepted as written; exclusivity between two `&` borrows
+of one value is specified but not yet enforced. See
+[#794](https://github.com/escalier-lang/escalier/issues/794) and
+[Mutability](08_mutability.md).
 
 ## Freezing and thawing
 
@@ -303,6 +412,7 @@ memory-safety motivation removed.
 | Drops | None; the runtime is garbage collected | `Drop` runs at scope end |
 | `Copy` trait | No such bound; primitives, functions, and promises are value types | `Copy`/`Clone` bounds on type parameters |
 | Lifetimes as a kind | Ordinary types, so a type parameter can be instantiated at a borrow | A separate kind that must be threaded explicitly |
+| Call-site borrows | `&` / `&mut` on the argument, none on a method receiver | The same |
 | Mutability depth | Deep and uniform through owned structure | Per-reference, and interior mutability via `Cell`/`RefCell` |
 | Freeze and thaw | A move into a `val` or `val mut` binding | No equivalent |
 | Concurrency | Out of scope; the target is single-threaded | `Send`/`Sync` built on exclusive borrowing |
