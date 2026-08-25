@@ -81,13 +81,11 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 //   - noElide holds the lifetimes that must keep their name whatever their position.
 //     Two writes put a lifetime there, described below.
 //
-// A complement does not move a borrow between a parameter and an output. But
-// NegationType.Accept flips the polarity its operand is visited at, which is right for
-// variance and wrong for reading position. Undoing that flip recovers the position.
-// Each enclosing complement inverts it once, so the parity of negDepth says whether to
-// flip back. The recovered position decides which connected component counts as
-// output-reaching. That in turn governs which lifetimes survive elision, and which
-// outlives bounds ltOutlivesRelation asserts.
+// A complement does not move a borrow between a parameter and an output, so the flip
+// NegationType.Accept applies has to be undone before the polarity can be read as a
+// position. negTypeDepth below carries what that costs. The recovered position decides which
+// connected component counts as output-reaching, which in turn governs which lifetimes
+// survive elision and which outlives bounds ltOutlivesRelation asserts.
 //
 // noElide exists because position alone is not enough. Two kinds of lifetime reach no
 // output and still have to keep their name.
@@ -115,16 +113,21 @@ type ltOccVisitor struct {
 	// position a borrow the caller supplies sits in. The second write is what puts the
 	// lifetime in noElide. A nested function type flips polarity, so a borrow written at a
 	// CALLBACK's parameter is positive and does not count here.
-	//
-	// negDepth below counts enclosing NegationType nodes. The two share a prefix and nothing
-	// else: negPolSeen is about polarity, negDepth is about complements.
 	negPolSeen map[*soltype.LifetimeVar]int
-	negDepth   int
+	// negTypeDepth counts the NegationType nodes enclosing the node being visited.
+	// NegationType.Accept flips the polarity its operand is visited at, which is right for
+	// variance and wrong for reading position, so record converts polarity back into position
+	// by flipping once per enclosing complement. Two complements cancel, so only the parity
+	// matters. A non-zero depth also marks every lifetime written under it as never-elidable.
+	//
+	// It shares a prefix with negPolSeen and nothing else. This one is about NegationType,
+	// that one is about polarity.
+	negTypeDepth int
 }
 
 func (v *ltOccVisitor) EnterType(t soltype.Type, pol soltype.Polarity) soltype.EnterResult {
 	if _, isNeg := t.(*soltype.NegationType); isNeg {
-		v.negDepth++
+		v.negTypeDepth++
 	}
 	// A lifetime is written at three kinds of node: the lifetime slot of a borrow, and the
 	// lifetime-argument list of an alias or class reference. `&'b mut Holder<'a>` writes 'a
@@ -155,10 +158,9 @@ func (v *ltOccVisitor) record(lt soltype.Lifetime, pol soltype.Polarity) {
 	if !ok {
 		return
 	}
-	// Undo one polarity flip per enclosing complement to recover the position the write
-	// structurally sits in. Two complements cancel, so only the parity counts.
+	// Recover the position this write structurally sits in. See negTypeDepth.
 	position := pol
-	if v.negDepth%2 == 1 {
+	if v.negTypeDepth%2 == 1 {
 		position = position.Flip()
 	}
 	if position == soltype.Positive {
@@ -170,7 +172,7 @@ func (v *ltOccVisitor) record(lt soltype.Lifetime, pol soltype.Polarity) {
 			v.noElide.Add(lv)
 		}
 	}
-	if v.negDepth > 0 {
+	if v.negTypeDepth > 0 {
 		v.noElide.Add(lv)
 	}
 }
@@ -179,7 +181,7 @@ func (v *ltOccVisitor) record(lt soltype.Lifetime, pol soltype.Polarity) {
 // visitor never sets SkipChildren, so Accept runs both halves for every node it enters.
 func (v *ltOccVisitor) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 	if _, isNeg := t.(*soltype.NegationType); isNeg {
-		v.negDepth--
+		v.negTypeDepth--
 	}
 	return t
 }
