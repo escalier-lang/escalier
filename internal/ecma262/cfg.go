@@ -119,12 +119,15 @@ type BranchNode struct{}
 // OpaqueNode is a step the serializer could not lower, which leaves the
 // analysis unable to see the whole algorithm. Serialized as kind "opaque".
 //
-// Text is the prose of the step as the specification writes it, such as "Let
-// _a_ be the first _k_ - _f_ code units of _m_." from Number.prototype.toFixed.
-// It is the evidence for what the analysis loses by giving up on the step. A
-// step binding a name over numbers loses nothing. A step replacing the elements
-// of a slot loses a mutation. Each unformalized phrase is its own entry, since
-// one step can carry several.
+// Text is the phrase the serializer could not formalize, spelled as the
+// specification writes it, such as "Let _a_ be the first _k_ - _f_ code units
+// of _m_." from Number.prototype.toFixed. An assertion contributes its
+// condition without the "Assert: " that precedes it in the step.
+//
+// The prose is the evidence for what the analysis loses by giving up on the
+// step. A step binding a name over numbers loses nothing. A step replacing the
+// elements of a slot loses a mutation. Each unformalized phrase is its own
+// entry, since one step can carry several.
 type OpaqueNode struct {
 	Text []string
 }

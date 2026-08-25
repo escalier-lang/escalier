@@ -337,6 +337,10 @@ final class Lowering(cfg: CFG):
       // elements of a slot loses a mutation. Each `yet` is its own entry
       // rather than one joined string, so the boundary between phrases
       // survives. No step in the pinned revision carries more than one.
+      //
+      // An assertion reaches this branch too. The collector walks an `IAssert`
+      // body whatever `ignoreInAssert` says, so an `Assert:` step ESMeta could
+      // not formalize lands here with its condition as the text.
       out += NodeJson(NodeKinds.Opaque, text = yets.map(_.msg))
     else if (
       !isPrologue(ctx, nodeId, index) && !isCompletionUnwrap(ctx, nodeId, inst)

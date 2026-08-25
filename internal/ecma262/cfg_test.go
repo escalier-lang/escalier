@@ -213,8 +213,8 @@ func TestOpaqueNodesCarryStepText(t *testing.T) {
 
 	// Number.prototype.toFixed is one of the builtins the analysis gives up on
 	// for its opaque steps. Every one of them binds a name over numbers and
-	// strings, and none writes an object or a slot. Reading that off the prose
-	// is what keeping it is for.
+	// strings, and none writes an object or a slot. The prose is what shows
+	// that.
 	toFixed := cfg.Builtin("Number.prototype.toFixed")
 	require.NotNil(t, toFixed)
 
