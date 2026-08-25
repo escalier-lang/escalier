@@ -112,6 +112,19 @@ func TestParseCFGRejects(t *testing.T) {
 				`"nodes":[{"kind":"return","value":{"kind":"var","var":"O","args":[]}}]}]}`,
 			err: `decoding cfg: node 0 of ToObject: a var expression carries "args"`,
 		},
+		// The prose of an unformalized step is the only thing an opaque node
+		// carries, so a node without it says nothing about what the analysis
+		// gave up on.
+		"OpaqueWithoutText": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"opaque"}]}]}`,
+			err: "decoding cfg: node 0 of ToObject: the step text is missing",
+		},
+		"EmptyOpaqueText": {
+			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
+				`"nodes":[{"kind":"opaque","text":["Let _n_ be ...",""]}]}]}`,
+			err: "decoding cfg: node 0 of ToObject: step text 1 is empty",
+		},
 		"UnknownNodeTag": {
 			json: `{"specTarget":"abc","funcs":[{"name":"ToObject","kind":"abstract-op",` +
 				`"nodes":[{"kind":"assign"}]}]}`,
@@ -173,4 +186,49 @@ func TestParseCFGIndexesBothNameSpaces(t *testing.T) {
 
 	require.Equal(t, AbstractOp, cfg.AbstractOp("Set").Kind)
 	require.Equal(t, BuiltinStatic, cfg.Builtin("Set").Kind)
+}
+
+// Every opaque node carries the prose of the step the lowering could not
+// formalize. Without it the analysis sees only that a step was lost, and one
+// binding a name over numbers looks the same as one replacing the contents of
+// a slot.
+func TestOpaqueNodesCarryStepText(t *testing.T) {
+	cfg := testCFG(t)
+
+	opaque := 0
+	for _, fn := range cfg.Funcs {
+		for i, node := range fn.Nodes {
+			step, ok := node.(*OpaqueNode)
+			if !ok {
+				continue
+			}
+			opaque++
+			require.NotEmpty(t, step.Text, "node %d of %s", i, fn.Name)
+			for _, text := range step.Text {
+				require.NotEmpty(t, text, "node %d of %s", i, fn.Name)
+			}
+		}
+	}
+	require.NotZero(t, opaque)
+
+	// Number.prototype.toFixed is one of the builtins the analysis gives up on
+	// for its opaque steps. Every one of them binds a name over numbers and
+	// strings, and none writes an object or a slot. Reading that off the prose
+	// is what keeping it is for.
+	toFixed := cfg.Builtin("Number.prototype.toFixed")
+	require.NotNil(t, toFixed)
+
+	var text []string
+	for _, node := range toFixed.Nodes {
+		if step, ok := node.(*OpaqueNode); ok {
+			text = append(text, step.Text...)
+		}
+	}
+	require.Equal(t, []string{
+		"Let _n_ be an integer for which _n_ / 10<sup>_f_</sup> - _x_ is as close to zero as possible. If there are two such _n_, pick the larger _n_.",
+		"let _m_ be the String value consisting of the digits of the decimal representation of _n_ (in order, with no leading zeroes).",
+		"Let _z_ be the String value consisting of _f_ + 1 - _k_ occurrences of the code unit 0x0030 (DIGIT ZERO).",
+		"Let _a_ be the first _k_ - _f_ code units of _m_.",
+		"Let _b_ be the other _f_ code units of _m_.",
+	}, text)
 }

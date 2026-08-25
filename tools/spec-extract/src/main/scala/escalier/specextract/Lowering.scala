@@ -328,10 +328,16 @@ final class Lowering(cfg: CFG):
     inst: NormalInst,
     out: ListBuffer[NodeJson],
   ): Unit =
-    if (YetCollector(inst, ignoreInAssert = true).nonEmpty)
+    val yets = YetCollector(inst, ignoreInAssert = true)
+    if (yets.nonEmpty)
       // The step is not formalized. Incompleteness is per-step, so the analysis
-      // falls back only for the signals this step feeds.
-      out += NodeJson(NodeKinds.Opaque)
+      // falls back only for the signals this step feeds. The rendered prose
+      // comes along as the evidence for what that fallback costs. A step
+      // binding a name over numbers loses nothing. A step replacing the
+      // elements of a slot loses a mutation. Each `yet` is its own entry
+      // rather than one joined string, so the boundary between phrases
+      // survives. No step in the pinned revision carries more than one.
+      out += NodeJson(NodeKinds.Opaque, text = yets.map(_.msg))
     else if (
       !isPrologue(ctx, nodeId, index) && !isCompletionUnwrap(ctx, nodeId, inst)
     )
