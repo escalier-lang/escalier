@@ -19,13 +19,13 @@ import (
 // so push mutates its receiver. `Array.prototype.slice` calls `Set(A, ...)` on
 // the array `ArraySpeciesCreate` handed it, and a fresh origin is discarded.
 //
-// These operations are seeded because their bodies cannot be descended into.
-// `Set` dispatches to the object's `[[Set]]` internal method, a callee the
-// receiver's type chooses at runtime, and the writes below it land on
-// property-descriptor records rather than on the argument. Claiming that
-// `Set(O, ...)` mutates `O` therefore over-approximates. That is the
-// FR5-conservative direction, since a mutation claimed where there is none
-// fails loudly at a call site while a missed one is silent unsoundness.
+// These are seeded because their bodies cannot be descended into. `Set`
+// dispatches to the object's `[[Set]]` internal method, chosen at runtime by the
+// receiver's type, and the writes below it land on property-descriptor records
+// rather than on the argument. Claiming that `Set(O, ...)` mutates `O` therefore
+// over-approximates, which is the FR5-conservative direction. A mutation claimed
+// where there is none fails loudly at a call site, while a missed one is silent
+// unsoundness.
 //
 // The map is a reviewed constant. A mutating operation the spec adds without an
 // entry here produces a false non-mutating result.
@@ -52,15 +52,15 @@ var directMutators = map[string]int{
 //
 // A collection does not keep its contents as properties. `Map.prototype.set`
 // appends to `M.[[MapData]]` and `Set.prototype.add` appends to `S.[[SetData]]`,
-// neither through a property write, so the seed above never reaches them.
+// neither through a property write, so the seed never reaches them.
 //
 // A slot belongs here when it holds the value the object's own methods read
 // back. `[[DateValue]]` qualifies, since `Date.prototype.setTime` writes it and
 // `Date.prototype.getTime` reads it. `[[Prototype]]` and `[[Extensible]]` do
 // not, because they describe how the object behaves rather than what it holds.
 //
-// Like the seed, a reviewed constant. A collection type entering the spec with
-// a new payload slot needs an entry or its methods come out non-mutating.
+// A reviewed constant like the seed. A collection type entering the spec with a
+// new payload slot needs an entry or its methods come out non-mutating.
 var backingStoreSlots = set.FromSlice([]string{
 	// Keyed collections.
 	"MapData",
@@ -89,14 +89,12 @@ var backingStoreSlots = set.FromSlice([]string{
 // 0. See planning/ecma-262/implementation_plan.md §4.1 and requirements.md FR1.
 //
 // These are the seed's counterpart for the dispatch the graph cannot follow.
-// Each name resolves to no body, since the receiver's type chooses the
-// implementation at runtime, and without an entry here the call reads as a step
-// the analysis could not see. `Object.setPrototypeOf` and
-// `Reflect.preventExtensions` reach their write through nothing else.
-//
-// Claiming the write over-approximates the same way the seed does. A Proxy trap
-// may write elsewhere or nowhere, and assuming the object is mutated is the
-// FR5-conservative direction.
+// Each name resolves to no body, since the implementation is chosen at runtime,
+// and without an entry here the call reads as a step the analysis could not see.
+// `Object.setPrototypeOf` and `Reflect.preventExtensions` reach their write
+// through nothing else. Claiming the write over-approximates the way the seed
+// does, since a Proxy trap may write elsewhere or nowhere. directMutators
+// describes why that is the safe direction under FR5.
 var mutatingInternalMethods = map[string]int{
 	"DefineOwnProperty": 0,
 	"Delete":            0,
@@ -117,9 +115,9 @@ var mutatingInternalMethods = map[string]int{
 // an ordinary object's accessor property invokes a getter. `[[Call]]` and
 // `[[Construct]]` are left out because they run a function body.
 //
-// A Proxy is the remaining escape, since every trap is user code. The analysis
-// does not model that, and §6's validation diff against the hand-written
-// overrides is where a trap's write would surface.
+// A Proxy is the remaining escape, since every trap is user code. §6's
+// validation diff against the hand-written overrides is where a trap's write
+// would surface.
 var readOnlyInternalMethods = set.FromSlice([]string{
 	"GetOwnProperty",
 	"GetPrototypeOf",
@@ -196,9 +194,9 @@ type MutationSummary struct {
 // up, since the value it could not place may have arrived as one of the
 // arguments. A summary that grows re-enqueues its callers.
 //
-// A call whose callee resolves to no body is an object internal method or a
-// function the caller supplied. The two internal-method tables answer for the
-// first, and the second leaves the summary incomplete.
+// A callee that resolves to no body is an object internal method, which the two
+// tables answer for, or a function the caller supplied, which leaves the summary
+// incomplete.
 //
 // The analysis never invents a mutation. Every position in an Args set traces
 // back to a seed entry, an internal-method entry, or a backing-store slot
@@ -308,10 +306,9 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 //
 // A callee is either an abstract-operation name or a value the function holds,
 // such as the `callbackfn` a caller passed in. A name bound to one of the
-// function's own parameters is the second kind. No callee in the pinned graph
-// shadows an operation this way; the check guards a spec bump that names a
-// parameter after a seeded operation, where resolving by name alone would
-// charge the callback with that operation's mutations.
+// function's own parameters is the second kind, whatever it is named. Resolving
+// by name alone would charge such a callback with a seeded operation's
+// mutations.
 func (a *analysis) resolve(cfg *CFG, origin *OriginMap, callee string) *Func {
 	if origin.Of(callee).Kind == OriginParam {
 		return nil
@@ -357,11 +354,11 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 		case *SlotWriteNode:
 			if node.Slot == "" {
 				// The algorithm computes the slot it writes, so the curated
-				// list cannot say whether this write reaches the object's
+				// list cannot say whether the write reaches the object's
 				// backing store. A write onto a value the function allocated
 				// itself stays invisible to the caller whichever slot it
-				// lands on. At any other origin this is a write the analysis
-				// cannot read, which is what Incomplete records.
+				// lands on. Any other origin is a write the analysis cannot
+				// read.
 				if origin.Eval(node.Object).Kind != OriginFresh {
 					changed = f.markIncomplete() || changed
 				}
@@ -376,9 +373,9 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 		default:
 			// No other node shape writes a value.
 		}
-		// A call can also sit inside an expression the node reads. Appendix A
-		// reserves that shape even though §3 emits none, so it is charged the
-		// same way rather than passing unseen.
+		// A call can also sit inside an expression the node reads. ParseCFG
+		// accepts that shape even though §3 emits none, so it is charged the
+		// same way rather than dropping a mutation silently.
 		for _, e := range readsOf(node) {
 			changed = a.chargeNested(cfg, f, origin, e) || changed
 		}
@@ -447,9 +444,7 @@ func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, 
 	}
 	for position := range summary.args {
 		if position >= len(args) {
-			// No call in the pinned graph omits an argument its callee mutates.
-			// A spec bump that introduces one leaves a write with no argument
-			// expression to charge it to.
+			// The write has no argument expression to charge it to.
 			changed = f.markIncomplete() || changed
 			continue
 		}
@@ -470,9 +465,7 @@ func (a *analysis) chargeUnresolved(f *facts, origin *OriginMap, callee string, 
 	}
 	if position, ok := mutatingInternalMethods[callee]; ok {
 		if position >= len(args) {
-			// Every internal method takes the dispatching object first, so a
-			// call with no argument there is one the serializer lowered
-			// differently than this table expects.
+			// The write has no argument expression to charge it to.
 			return f.markIncomplete()
 		}
 		return a.attribute(f, origin, args[position])

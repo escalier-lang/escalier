@@ -145,9 +145,8 @@ func (o Origin) join(other Origin) Origin {
 // ToObject is the entry that makes receiver tracking work. `Let O be ?
 // ToObject(this value)` keeps `O` at the receiver, which is how
 // `Array.prototype.push` comes out mutating. ToObject wraps a primitive
-// receiver rather than returning it, so the entry over-approximates in the
-// FR5-safe direction. A mutation claimed where there is none fails loudly at a
-// call site, while a missed one is silent unsoundness.
+// receiver rather than returning it, so the entry over-approximates.
+// directMutators describes why that is the safe direction under FR5.
 //
 // CanonicalizeKeyedCollectionKey returns its key unchanged apart from
 // normalizing -0 to +0, which cannot apply to an object. Completion and
