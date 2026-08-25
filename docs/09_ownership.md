@@ -454,14 +454,18 @@ Out of scope by design:
 
 Specified above but not yet enforced:
 
-- **Escaping closure captures.** Capturing a value in a closure that escapes is
-  specified as a move, but the checker does not consume the captured binding
-  today, so the later use goes unreported.
-- **Element stores.** `t[i] = x` is rejected as unsupported rather than treated
-  as an escape.
-- **Reassignment clearing a move.** Reassigning a `var` after it was moved gives
-  it a fresh value, but the analysis still reads the binding as moved, so a use
-  after re-initialization is reported spuriously.
+- **Escaping closure captures**
+  ([#1267](https://github.com/escalier-lang/escalier/issues/1267)). Capturing a
+  value in a closure that escapes is specified as a move, but the checker does
+  not consume the captured binding today, so the later use goes unreported.
+- **Element stores**
+  ([#1268](https://github.com/escalier-lang/escalier/issues/1268)). `t[i] = x`
+  is rejected as unsupported rather than treated as an escape.
+- **Reassignment clearing a move**
+  ([#1269](https://github.com/escalier-lang/escalier/issues/1269)). Reassigning
+  a `var` after it was moved gives it a fresh value, but the analysis still
+  reads the binding as moved, so a use after re-initialization is reported
+  spuriously.
 
 The other escape sites — a longer-lived binding, a field store, a `return`, and a
 consuming argument — do consume their source.
