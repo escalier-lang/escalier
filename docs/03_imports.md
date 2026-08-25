@@ -1,307 +1,288 @@
-# 03 Imports and Package System
+# 03 Imports
 
-This document describes Escalier's import system, package namespaces, and how to work with external TypeScript packages.
+Escalier has **no ambient globals**. Every name a program uses is either declared
+in that program's own module or imported. `Array`, `Promise`, `Math`, `console`,
+and `document` are all behind an explicit import, unlike TypeScript, where the
+whole `lib.es*` surface and, in a browser program, the whole `lib.dom` surface
+are visible everywhere without asking.
 
-## Overview
+Two things follow. `globalThis` does not exist — it was the union of every
+ambient name, and there is nothing left to take its union over. Neither does
+`eval`.
 
-Escalier uses a namespace-based import system where:
-
-- **Global types** (from TypeScript's lib.es5.d.ts, lib.dom.d.ts) are available without imports
-- **Package symbols** require imports and qualified access (e.g., `lodash.map`)
-- **Local declarations** can shadow globals
-- **Imports are file-scoped** - each file must import the packages it uses
-
-## Import Syntax
-
-### Namespace Imports
-
-Import an entire package as a namespace:
+## The two kinds of import
 
 ```escalier
-import * as lodash from "lodash"
-import * as fp from "lodash/fp"
+import "std:math"    // pseudo-package: the JS and Web platform
+import "lodash"      // npm package
+```
 
-// Use qualified access
+Both forms are the same statement. The specifier names what to import and the
+binding follows from it; there is nothing to spell out about the namespace,
+since a package always binds as one.
+
+Pseudo-packages hold the platform surface Escalier owns as first-class `.esc`
+source. npm packages come from `node_modules` and are typed by their `.d.ts`
+files.
+
+## Pseudo-packages
+
+The URI scheme names the platform layer:
+
+| Scheme | Surface |
+|---|---|
+| `std:` | The JavaScript language surface, from ECMA-262 |
+| `web:` | The Web platform surface, from the browser specs |
+| `node:` | Reserved; content lands when Node support does |
+
+```escalier
+import "std:math"
+import "std:json"
+import "web:dom"
+import "web:fetch"
+```
+
+The import binds the package under a local identifier equal to the lowercased
+last URI segment:
+
+```escalier
+import "std:math"
+val area = math.PI * r * r
+
+import "web:webgl"
+fn draw(ctx: webgl.WebGLRenderingContext) { ... }
+```
+
+Package names use underscores, matching the file naming, so `import
+"std:typed_arrays"` binds as `typed_arrays`.
+
+### Named imports are not accepted
+
+Every import goes through the bare form above. Writing
+`import { sin } from "std:math"` is a compile error that points at the
+alternative. Qualified-only access is the Go convention: reading `math.sin(x)`
+makes the origin of `sin` visible at every call site, and gives editor tooling an
+unambiguous target.
+
+### The single-class shortcut
+
+When a package's lowercased name matches a class declared in it, the binding
+**is** that class, named with its original capitalization.
+
+```escalier
+import "std:array"
+import "std:date"
+
+val nums = [1, 2, 3]
+Array.isArray(nums)           // class statics
+val xs: Array<number> = []    // type position
+val d: Date = Date()          // construct — no `new` keyword
+```
+
+The shortcut is structural: it fires when the package declares a top-level class
+whose name matches the URI segment, ignoring case and the underscores that
+separate words in a package name. That is what pairs `std:weak_ref` with
+`WeakRef`. `std:array`, `std:string`,
+`std:number`, `std:boolean`, `std:bigint`, `std:regexp`, `std:symbol`,
+`std:object`, `std:function`, `std:date`, `std:map`, `std:set`, and
+`std:weak_ref` all qualify. `std:math` declares no `Math` class, so its binding
+stays the lowercase namespace `math`.
+
+`Promise` is not on the list. It lives in `std:async` alongside the async
+iteration protocol and `AggregateError`, so the access is `async.Promise.all(…)`.
+
+Other exports of a shortcut package are reachable as namespace members on the
+same binding. Where a name collides, class statics win.
+
+`std:number` is the case that has one. It exports the `Number` class, whose
+static side already carries `parseInt`, and it also owns the free `parseInt` that
+JavaScript exposes globally, since both belong to the numeric-parsing domain.
+Both would land on the same binding:
+
+```escalier
+import "std:number"
+
+Number.parseInt("42")   // the class static
+```
+
+The class static is what `Number.parseInt` resolves to. The rule exists so that
+the shortcut binding behaves the way the class does, rather than depending on
+what else the package happens to export.
+
+### Binding-shape flags
+
+A URI may carry `?flag` modifiers separated by `&`. The binding shape today is
+`?local`, which is the default and the behavior described above. The flag slot is
+reserved for future additions such as `?type-only`, and an unrecognized flag is
+an error.
+
+### Imports are runtime-erased
+
+The names behind these imports already exist at runtime. `Math.sin` is an
+ECMAScript builtin, present in every conforming engine; `console.log` is a host
+API, present wherever the target JavaScript host provides one. A pseudo-package
+import adds type information to the compile-time scope and codegen deletes the
+import line, so the package is a type-checking grouping mechanism with zero
+runtime cost.
+
+Binding names are not always the runtime names, so each exported declaration in a
+pseudo-package carries a `@js("...")` decorator naming the JavaScript expression
+it lowers to. `math.sin(x)` lowers to `Math.sin(x)`, and `parseInt` from
+`std:number` lowers to bare `parseInt(...)` rather than `Number.parseInt(...)`.
+Construction is not carried by the decorator: codegen inserts `new` at the call
+site from the callee's type, so `Date()` lowers to `new Date()`.
+
+### The checker still knows what the language guarantees
+
+Requiring an import for every name does not mean writing `import "std:string"`
+before calling `.toUpperCase()`. Each `std:*` package loads in one of two modes.
+
+- **Shape-loaded.** The checker loads a package's contents to satisfy needs that
+  arise from the language itself: method dispatch on a string or number literal,
+  the result type of `await`, the iterable protocol behind `for x in xs`, the
+  array shape behind an array literal, the regex shape behind a regex literal.
+  No identifier enters scope. This is the checker knowing what the language
+  guarantees about its own values.
+- **Named.** Naming a class, type, or value — `Array`, `Promise`, `Error`,
+  `parseInt`, `Partial`, `Symbol` — requires the explicit import. The bindings
+  exposed are exactly the package's top-level declarations.
+
+Shape-loading is per-file and additive, and it never satisfies an explicit
+reference. `for x in xs` works without an import; `Array.from(xs)` needs
+`import "std:array"`.
+
+### The Web surface
+
+The entire DOM tree lives in one package, `web:dom` — `Document`, `Element`,
+`Node`, `Window`, every HTML, SVG, and MathML element class, the tag-name and
+event-map registries, CSSOM, events, observers, animations, and custom elements.
+One import gets the whole DOM surface, and the registries are closed inside the
+package, so `createElement("canvas")` narrows to `HTMLCanvasElement` and
+`createElement("does-not-exist")` is an error.
+
+Web families with no DOM coupling get their own packages: `web:fetch`,
+`web:streams`, `web:crypto`, `web:workers`, `web:webgl`, `web:web_audio`,
+`web:web_rtc`, `web:web_codecs`, `web:indexeddb`, `web:service_worker`,
+`web:websocket`, `web:storage`, `web:url`, `web:encoding`, `web:file`,
+`web:performance`, `web:webauthn`, `web:payments`. A typical browser program
+imports `web:dom` plus one or two siblings.
+
+A sibling that needs a `web:dom` type refers to it through a qualified name, so
+`web:fetch`'s `Response.body` is a `streams.ReadableStream | null` and has to be
+narrowed before a stream method can be called on it. The scheme does not appear
+in the qualified name — the binding is the last URI segment, so `web:streams`
+binds as `streams`.
+Pseudo-packages import each other exactly like ordinary code, and import cycles
+between them are permitted.
+
+## npm packages
+
+Third-party packages use the same bare-string form, and the binding is the
+package's last path segment.
+
+```escalier
+import "lodash"
+import "lodash/fp"
+
 val result = lodash.map([1, 2, 3], fn(x) { x * 2 })
 val piped = fp.pipe(fn1, fn2, fn3)
 ```
 
-### Named Imports
+Access stays qualified, as it does for a pseudo-package, so where a name comes
+from is visible at the call site.
 
-Import specific symbols from a package:
+Subpath exports are separate packages with their own contents and their own
+binding, as `lodash` and `lodash/fp` are above.
 
-```escalier
-import { map, filter } from "lodash"
-import { useState, useEffect } from "react"
+Types imported from a `.d.ts` file are **inexact** in every category, since
+TypeScript cannot state that a shape is closed. See
+[Exact Types](07_exact_types.md).
 
-// Use directly (but still file-scoped)
-val doubled = map([1, 2, 3], fn(x) { x * 2 })
-```
+## Import scope and declaration scope
 
-### Named Imports with Aliases
-
-Rename imports to avoid conflicts or for convenience:
-
-```escalier
-import { map as lodashMap } from "lodash"
-import { map as ramdaMap } from "ramda"
-
-// Both are available with different names
-val arr1 = lodashMap([1, 2], fn(x) { x * 2 })
-val arr2 = ramdaMap(fn(x) { x + 1 }, [1, 2])
-```
-
-## File-Scoped Imports
-
-Imports in Escalier are **file-scoped**, similar to Go. Each file must contain its own import statements for the packages it uses.
+Imports are **file-scoped**, as in Go. Each file states what it depends on.
 
 ```escalier
 // lib/utils.esc
-import * as lodash from "lodash"
+import "lodash"
 
 fn helper() -> number {
-    lodash.sum([1, 2, 3])  // OK: lodash imported in this file
+    return lodash.sum([1, 2, 3])
 }
 ```
 
 ```escalier
-// lib/main.esc
-// No import statement for lodash
-
+// lib/main.esc — no import statement for lodash
 fn main() -> number {
-    lodash.sum([1, 2, 3])  // ERROR: 'lodash' is not defined
+    return lodash.sum([1, 2, 3])   // ERROR: 'lodash' is not defined
 }
 ```
 
-Even if both files are in the same module, imports do not leak across files. If `main.esc` needs lodash, it must import it explicitly:
-
-```escalier
-// lib/main.esc
-import * as lodash from "lodash"
-
-fn main() -> number {
-    lodash.sum([1, 2, 3])  // OK now
-}
-```
-
-### Why File-Scoped Imports?
-
-1. **Explicit dependencies**: Each file clearly shows what external packages it depends on
-2. **Easier refactoring**: Moving a file to a different location doesn't break imports
-3. **Better tooling**: IDEs can easily determine what's available in each file
-4. **Familiar pattern**: Developers from Go, Python, and JavaScript will find this natural
-
-## Module-Level Declarations
-
-While imports are file-scoped, **type and function declarations** are shared across files within a module:
+Type and value **declarations**, by contrast, are shared across the files of a
+module:
 
 ```escalier
 // lib/types.esc
 type UserId = string
-type User = { id: UserId, name: string }
+type User = {id: UserId, name: string}
 ```
 
 ```escalier
-// lib/users.esc
-// No need to import User - it's in the same module
-
+// lib/users.esc — no import needed; same module
 fn createUser(id: UserId, name: string) -> User {
-    { id, name }
+    return {id, name}
 }
 ```
 
-## Global Types and Shadowing
+File-scoped imports keep each file's external dependencies visible, let a file
+move without breaking its imports, and give tooling an exact answer for what is
+in scope where. See [Code Organization](10_code_organization.md) for how files
+map onto modules and namespaces.
 
-### Accessing Global Types
+## Cyclic dependencies
 
-Global types from TypeScript's standard library (Array, Promise, Map, Set, etc.) are available without imports:
-
-```escalier
-declare val arr: Array<number>
-declare val promise: Promise<string>
-declare val map: Map<string, number>
-```
-
-### Shadowing Globals
-
-Local type declarations can shadow global types:
-
-```escalier
-// Define a custom Array type that shadows the global
-type Array<T> = {
-    items: T,
-    length: number,
-    isEmpty: boolean,
-}
-
-// Uses our custom Array type
-declare val myArray: Array<string>
-```
-
-### Accessing Shadowed Globals with globalThis
-
-When you shadow a global type, you can still access the original via `globalThis`:
-
-```escalier
-// Shadow the global Array
-type Array<T> = { items: T, isCustom: boolean }
-
-// Use our custom Array
-declare val customArr: Array<number>
-
-// Access the global Array via globalThis
-declare val globalArr: globalThis.Array<number>
-```
-
-This works for both types and values:
-
-```escalier
-// Access global Symbol
-val iterator = globalThis.Symbol.iterator
-
-// Access global Array constructor
-val arr = globalThis.Array.from([1, 2, 3])
-```
-
-## Package Registry
-
-Escalier maintains a package registry that caches loaded packages. When you import a package:
-
-1. The registry checks if the package is already loaded
-2. If not, it loads and parses the `.d.ts` file
-3. The package namespace is stored in the registry
-4. Future imports reuse the cached namespace
-
-This ensures:
-- Consistent type identity across files
-- Efficient memory usage
-- Fast subsequent imports
-
-## Subpath Imports
-
-Packages can have subpath exports that provide different functionality:
-
-```escalier
-import * as lodash from "lodash"       // Main package
-import * as fp from "lodash/fp"        // Functional programming variant
-
-// These are separate namespaces with different exports
-val arr1 = lodash.map([1, 2], fn(x) { x * 2 })  // (array, iteratee)
-val arr2 = fp.map(fn(x) { x * 2 })              // curried: (iteratee) -> (array)
-```
-
-## Cross-File Cyclic Dependencies
-
-Escalier handles cyclic type dependencies across files correctly:
+Types may reference each other across files within a module:
 
 ```escalier
 // lib/node.esc
-type Node<T> = {
-    value: T,
-    children: Tree<T>,  // References Tree from tree.esc
-}
+type Node<T> = {value: T, children: Tree<T>}
 ```
 
 ```escalier
 // lib/tree.esc
-type Tree<T> = {
-    root: Node<T>,      // References Node from node.esc
-    size: number,
-}
+type Tree<T> = {root: Node<T>, size: number}
 ```
 
-Both types can reference each other because:
-1. All declarations in a module are collected before type checking
-2. A unified dependency graph handles cyclic references
-3. Placeholder types are created for forward references
+All declarations in a module are collected before checking, and a dependency
+graph orders them by strongly connected component, so mutual references resolve.
 
-Note: Circular **package** dependencies (Package A imports B, which imports A) are not supported.
+Cycles between pseudo-packages are permitted. Circular dependencies between npm
+packages are not.
 
-## Migration Guide
+## Shadowing
 
-If you're migrating from an older version of Escalier or from TypeScript:
+A local declaration shadows an imported one. Since there are no ambient globals,
+there is nothing to shadow implicitly, and no `globalThis` escape hatch for
+reaching a shadowed name.
 
-### Breaking Change: Qualified Package Access
-
-**Before** (hypothetical old behavior):
-```escalier
-import "lodash"
-val result = map([1, 2, 3], fn(x) { x * 2 })  // Direct access
-```
-
-**After**:
-```escalier
-import * as lodash from "lodash"
-val result = lodash.map([1, 2, 3], fn(x) { x * 2 })  // Qualified access
-```
-
-### Re-exporting Package Symbols
-
-If you want shorter access, create module-level re-exports:
+Two imports whose last segments collide need one of them renamed. The syntax is
+not settled; the shape under consideration is a trailing `as`:
 
 ```escalier
-// lib/utils.esc
-import * as lodash from "lodash"
-
-// Re-export for convenience
-export val map = lodash.map
-export val filter = lodash.filter
+import "lodash" as underscore
 ```
 
-```escalier
-// lib/main.esc
-// Now you can use the re-exported symbols
-val doubled = map([1, 2, 3], fn(x) { x * 2 })
-```
+## Status
 
-### Handling Shadowing Conflicts
+The parser, the resolver, the binding shape, the single-class shortcut, `@js`
+lowering, and the `web:dom` partition are implemented.
 
-If you have local types that conflict with globals:
-
-```escalier
-// Your local Promise type
-type Promise<T> = { value: T, status: string }
-
-// Use globalThis for the actual Promise
-fn fetchData() -> globalThis.Promise<Data> {
-    // ...
-}
-
-// Use your local Promise type
-fn createPromise<T>(value: T) -> Promise<T> {
-    { value, status: "pending" }
-}
-```
-
-## Best Practices
-
-1. **Use namespace imports** for packages with many exports you'll use:
-   ```escalier
-   import * as lodash from "lodash"
-   ```
-
-2. **Use named imports** for packages where you only need a few symbols:
-   ```escalier
-   import { useState, useEffect } from "react"
-   ```
-
-3. **Import in every file** that needs the package - don't rely on other files' imports
-
-4. **Avoid shadowing globals** unless you have a good reason - it can cause confusion
-
-5. **Use globalThis explicitly** when you need to access a shadowed global
-
-6. **Create re-exports** in a utility file if you want short access to package functions
-
-## Summary
-
-| Feature | Behavior |
-|---------|----------|
-| Import scope | File-scoped (each file imports what it needs) |
-| Declaration scope | Module-scoped (shared across files in same directory) |
-| Global types | Available without import (Array, Promise, etc.) |
-| Package symbols | Require import + qualified access |
-| Shadowing | Local declarations can shadow globals |
-| Shadowed global access | Use `globalThis.TypeName` |
-| Cyclic types | Supported across files |
-| Cyclic packages | Not supported |
+Three pieces are still in progress. The committed `.esc` source for the `std:*`
+and `web:*` packages is generated from the pinned TypeScript `.d.ts` set by a
+bootstrap converter and then hand-edited, and that generation is not finished.
+The per-file shape loader that makes the shape-loaded mode work is not built, so
+until it is, the compiler resolves the previously-ambient names through the older
+prelude. Two editor features are planned on top: **auto-import**, a quick fix that
+adds the namespace import for a name the file references but has not imported, and
+**adaptive diagnostic rendering**, which prints a type name in the shortest form
+that is unambiguous given the bindings in the file the diagnostic came from.
