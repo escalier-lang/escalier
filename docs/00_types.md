@@ -54,11 +54,11 @@ Object and tuple types are structural and **exact by default** — a value may n
 carry members the type does not declare. A trailing `...` opts into inexactness.
 
 ```esc
-type ExactPoint = {x: number, y: number}
-type OpenPoint  = {x: number, y: number, ...}
+type ExactPoint   = {x: number, y: number}
+type InexactPoint = {x: number, y: number, ...}
 
-type Pair       = [string, number]
-type OpenPair   = [string, number, ...]
+type ExactPair    = [string, number]
+type InexactPair  = [string, number, ...]
 ```
 
 Members may be optional or read-only:

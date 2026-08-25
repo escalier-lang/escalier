@@ -5,7 +5,9 @@ it has all the required properties. Extra properties are fine.
 
 That has a consequence worth naming: given a value of some object type, you can
 never be sure it has no extra properties. It is why TypeScript types
-`Object.keys` as `string[]` rather than as the union of the declared keys.
+`Object.keys` as `string[]`. With exact types the same call is an array of the
+declared keys — `Array<"x" | "y">` for a `{x: number, y: string}` — because the
+key set is known to be closed.
 
 Escalier does better by distinguishing types known to have no extra members from
 types that might, and it makes the former the default.
@@ -13,14 +15,14 @@ types that might, and it makes the former the default.
 ## Syntax
 
 A **former** is a type constructor that builds a type out of parts — an object,
-a tuple, a function, a union. A trailing `...` opts one into inexactness.
+a tuple, a function. A trailing `...` opts one into inexactness.
 
 ```esc
-type ExactPoint = {x: number, y: number}
-type OpenPoint  = {x: number, y: number, ...}
+type ExactPoint   = {x: number, y: number}
+type InexactPoint = {x: number, y: number, ...}
 
-type ExactTuple = [string, number]
-type OpenTuple  = [string, number, ...]
+type ExactTuple   = [string, number]
+type InexactTuple = [string, number, ...]
 ```
 
 Unions and intersections have no exactness of their own. A union is always
@@ -40,9 +42,9 @@ lands on the resulting object or tuple.
 The rule is one-way: exact is a subtype of inexact, not the reverse.
 
 ```esc
-fn f(p: ExactPoint, q: OpenPoint) {
-    val a: OpenPoint = p    // OK
-    val b: ExactPoint = q   // ERROR: q may have members ExactPoint does not declare
+fn f(p: ExactPoint, q: InexactPoint) {
+    val a: InexactPoint = p   // OK
+    val b: ExactPoint = q     // ERROR: q may have members ExactPoint does not declare
 }
 ```
 
@@ -78,17 +80,22 @@ row-polymorphic helper, which wants to accept anything carrying the fields the
 body touches. Mark such a parameter `open`:
 
 ```esc
-fn dist(open p) { p.x
-                  p.y }
-// inferred: fn (p: {x: unknown, y: unknown, ...}) -> undefined
+import "std:math"
+
+fn dist(open p) {
+    return math.sqrt(p.x * p.x + p.y * p.y)
+}
+// inferred: fn (p: {x: number, y: number, ...}) -> number
 ```
 
-Without `open`, the same function infers `{x: unknown, y: unknown}` and a caller
+Without `open`, the same function infers `{x: number, y: number}` and a caller
 passing an object with a third field is rejected.
 
 The default is chosen for the typical audience. Most Escalier code is application
 code, where exact-by-default catches extra-field bugs at the call site. Library
-authors writing row-polymorphic helpers pay one keyword.
+authors writing row-polymorphic helpers pay one keyword — and they are the ones
+most likely to be writing explicit annotations anyway, where exactness is stated
+outright rather than inferred.
 
 ## Function exactness
 
@@ -98,8 +105,21 @@ Direct calls reject extra arguments whatever the exactness. Exactness governs
 A function type accepts a range of argument counts: `[required, declared]` when
 exact, `[required, ∞)` when inexact. `G <: F` when `G` accepts every count `F`'s
 holders may invoke with, with parameters contravariant and the return covariant.
-The familiar "a one-parameter callback works where three are supplied" rule is
-the inexact case.
+
+So the familiar "a one-parameter callback works where three are supplied" rule
+is the *inexact* case, and only that case. A written function value is exact, so
+it has to match the slot's arity:
+
+```esc
+declare fn hof(cb: fn (a: number, b: number, c: number) -> number) -> number
+
+val r = hof(fn (a) { return a })
+// ERROR: cannot constrain function of arity 1 <: function of arity 3
+
+val s = hof(fn (a, ...) { return a })   // OK — [1, ∞) covers 3
+```
+
+See [Functions](02_functions.md) for the same rule from the caller's side.
 
 ## Exactness and type-level operators
 
@@ -107,22 +127,37 @@ Exactness changes what the operators compute, which is the whole point of
 tracking it.
 
 ```esc
-type Tup = [string, number]
-keyof Tup                    // 0 | 1
+type ExactTup = [string, number]
+keyof ExactTup                   // 0 | 1
 
-type OpenTup = [string, number, ...]
-keyof OpenTup                // number
+type InexactTup = [string, number, ...]
+keyof InexactTup                 // number
 
-type Obj = {x: number, y: string}
-Obj[keyof Obj]               // number | string
+type ExactObj = {x: number, y: string}
+ExactObj[keyof ExactObj]         // number | string
 
-type OpenObj = {x: number, y: string, ...}
-OpenObj[keyof OpenObj]       // unknown
+type InexactObj = {x: number, y: string, ...}
+InexactObj[keyof InexactObj]     // unknown
+```
+
+A mapped type carries its operand's exactness onto its result, so a utility
+built from one preserves the distinction rather than flattening it:
+
+```esc
+type Partial<T> = {[K]?: T[K] for K in keyof T}
+
+Partial<ExactObj>     // {x?: number, y?: string}
+Partial<InexactObj>   // {x?: number, y?: string, ...}
 ```
 
 Exactness is also what makes `match` exhaustiveness decidable. A union is closed,
 so it is covered once every member has a branch. An inexact object or tuple
-scrutinee admits values no pattern can name, so it always needs a catch-all. See
+scrutinee admits values no pattern can name, so it always needs a catch-all.
+
+A rest pattern still *matches* an inexact scrutinee and binds whatever it did not
+name, so `{x, ...rest}` reads `x` and collects the undeclared members into
+`rest`. What it does not do yet is discharge the catch-all requirement — the
+coverage check asks for a catch-all whatever the arms look like. See
 [Pattern Matching](04_pattern_matching.md).
 
 ## Ownership is orthogonal
@@ -135,10 +170,24 @@ compose without interacting.
 
 TypeScript has no exact types, so everything imported from a package is inexact.
 
-To keep Escalier types across a package boundary, emitted declarations carry a
-JSDoc field holding the original Escalier type annotation. An Escalier program
-importing those declarations reads the annotation and recovers the exact type;
-a TypeScript consumer ignores it and sees ordinary structural types.
+To keep Escalier types across a package boundary, emitted declarations carry an
+`@escalier-type` JSDoc tag holding the original annotation in source form. The
+emitted TypeScript is a best-effort erasure for plain TypeScript consumers; the
+tag is the source of truth for an Escalier consumer re-importing the declaration.
+
+```esc
+export declare val p: {x: number, ...}
+```
+
+```ts
+/** @escalier-type {x: number, ...} */
+export declare const p: { x: number };
+```
+
+A TypeScript consumer ignores the tag and sees an ordinary structural type. An
+Escalier consumer reads it and recovers the inexactness the `.d.ts` form cannot
+express. The same mechanism carries tuples, functions, unions, and the
+`Exact<T>` / `Inexact<T>` wrappers.
 
 ## `Exact<T>` and `Inexact<T>`
 
