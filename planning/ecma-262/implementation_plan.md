@@ -514,6 +514,14 @@ parameter `j` is `&mut`. Keeping the receiver out of the parameter index
 space is what makes static and namespace functions — whose parameter 0 is
 a real argument, not a receiver — fall out correctly.
 
+**The standing objective is to shrink the unclassified set.** A builtin
+carrying `Unattributable` or `Incomplete` is one §4.3 hands to FR5's
+name-based heuristics instead of deciding from the spec. Every change to
+this analysis is measured by what it does to that count, and the tallies
+snapshot in `internal/ecma262/mutation_test.go` is where the number is
+recorded. A change that leaves it flat needs a reason, and one that raises
+it needs a stronger one.
+
 ### §4.1. Mutation summary fixpoint (FR1, FR2, FR3)
 
 Compute `MutArgs(F) ⊆ {0..arity-1}`, the formal positions function `F`
