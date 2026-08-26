@@ -178,10 +178,12 @@ func TestFactsSampleMethods(t *testing.T) {
 		// toLowerCase reaches the Unicode case-mapping table through a prose step
 		// and returns what that step produced.
 		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toLowerCase", "returns:unknown"},
-		// Array.of builds its array through `Construct(C, ...)`, whose result
-		// the origin map cannot place, so the write to it is unattributable and
-		// the return it hands back is unresolved too.
-		"UnattributableStatic": {"Array.of", "returns:unknown"},
+		// A static keeps its receiver claim through either warning. Having no
+		// receiver follows from `Func.Kind`, not from a step the analysis had to
+		// read. Array.of builds its array through `Construct(C, ...)`, whose
+		// result the origin map cannot place, so the write to it is
+		// unattributable and the return it hands back is unresolved too.
+		"UnattributableStatic": {"Array.of", "receiver:none returns:unknown"},
 	}
 
 	for name, test := range tests {
@@ -247,12 +249,15 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 		require.True(t, fact.Classified.Returns, "%s has no return alias", fn.Name)
 		require.NotEmpty(t, fact.Returns, "%s covers a return alias it does not carry", fn.Name)
 		switch {
+		case fn.Kind != BuiltinMethod:
+			// A static's `none` follows from the function kind, so no warning
+			// withholds it.
+			require.True(t, fact.Classified.Receiver, "%s has no receiver claim", fn.Name)
+			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
 		case !fact.Classified.Receiver:
 			require.Empty(t, fact.Receiver, "%s carries a receiver claim it is not classified for", fn.Name)
-		case fn.Kind == BuiltinMethod:
-			require.Contains(t, []ReceiverKind{RecvBorrow, RecvMutBorrow}, fact.Receiver, fn.Name)
 		default:
-			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
+			require.Contains(t, []ReceiverKind{RecvBorrow, RecvMutBorrow}, fact.Receiver, fn.Name)
 		}
 		if fact.Returns == AliasParam {
 			require.NotNil(t, fact.ParamIndex, "%s returns a parameter but no position", fn.Name)
@@ -314,9 +319,10 @@ func TestFactsJSON(t *testing.T) {
 
 // The methods whose receiver claim FR5 hands to the converter's name
 // heuristics. Each carries a mutation the analysis could not place or a step it
-// could not read, so its receiver is withheld rather than guessed. Each still
-// publishes the return alias, which §7 records for curation rather than
-// applies.
+// could not read, so its receiver mutability is withheld rather than guessed.
+// Each still publishes the return alias, which §7 records for curation rather
+// than applies. A static carrying the same warning is absent, since it has no
+// receiver for the warning to cost it.
 //
 // This list is the §4 objective made visible. Shrinking it is what a change to
 // the analysis is measured by, and the tallies below record the same number as
@@ -352,8 +358,8 @@ func TestFactsTallies(t *testing.T) {
 	sort.Strings(lines)
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 222
 receiver mutBorrow: 60
-receiver none: 138
-receiver unclassified: 81
+receiver none: 188
+receiver unclassified: 31
 returns fresh: 229
 returns param: 6
 returns receiver: 15

@@ -462,8 +462,10 @@ merely stricter.
   defined behavior, an unrecognized mutation phrasing — is emitted as
   **unclassified**, not as a guess. Coverage is per determination, so a
   method withholds only the axes that read the step it could not resolve.
-  An unclassified determination falls through to the existing name
-  heuristics and hand-curation in the converter.
+  An axis that reads no step is never withheld: a static and a namespace
+  function have `receiver: none` whatever the analysis missed. An
+  unclassified determination falls through to the existing name heuristics
+  and hand-curation in the converter.
 - Receiver mutability defaults to **mutating** (`&mut self`) when
   unclassified, consistent with the interop core principle "default to
   mutating"
@@ -512,13 +514,15 @@ determination with its field absent. FR6 and Appendix B use this one
 contract.
 
 Splitting coverage this way keeps the conservative bias where it buys
-safety and drops it where it does not. `receiver` is auto-applied, so a
-missed mutation must cost the claim. `returns` is FR4's lifetime seed,
-recorded for curation rather than applied, so a method whose only problem
-is a possible hidden mutation still publishes it.
+safety and drops it where it does not. A method's receiver mutability is
+auto-applied, so a missed mutation must cost that claim. `returns` is
+FR4's lifetime seed, recorded for curation rather than applied, so a
+method whose only problem is a possible hidden mutation still publishes
+it. A static's `receiver: none` reads no step at all, so nothing the
+analysis missed can put it in doubt.
 
-Every method with an unclassified receiver is reported by name so the gap
-is visible and auditable rather than silent.
+Every method whose receiver mutability is unclassified is reported by name
+so the gap is visible and auditable rather than silent.
 
 ### FR6. Output contract
 
@@ -554,7 +558,9 @@ showed this parameter is only read," whereas the FR5 default applies where
   one leaves its field out. `String.prototype.toLowerCase` reaches the
   Unicode case-mapping table through a prose step, so the analysis cannot
   say what that step wrote and the entry carries no `receiver`. The return
-  alias survives, because FR4 curates it rather than applying it.
+  alias survives, because FR4 curates it rather than applying it. A static
+  keeps `receiver: none` through the same warning, since its having no
+  receiver is a fact about the declaration rather than about a step.
 - `receiver` maps a non-mutating method to `&self` and a mutating one to
   `&mut self` (FR2). A method that stores an argument into the receiver
   marks that parameter `escape`, because the argument outlives the call
@@ -1031,9 +1037,9 @@ types and arity.
   requires the JVM toolchain, scoped to `tools/spec-extract/` via a
   per-directory `mise.toml`.
 - **Auditability.** Every classification carries its provenance, and
-  every method with an unclassified receiver is listed, so a reviewer can
-  see exactly which methods the spec proved and which fell through to
-  heuristics.
+  every method whose receiver mutability is unclassified is listed, so a
+  reviewer can see exactly which methods the spec proved and which fell
+  through to heuristics.
 
 ## Coverage and limitations
 
@@ -1047,9 +1053,10 @@ types and arity.
   out of range, `Array(-1)`) is a tracked domain throw. The exclusion is
   what keeps the throw sets ergonomic and removes a would-be permanent
   blocker to the FR14 auto-apply gate.
-- A handful of algorithms are prose-only or host-defined, so their
-  receiver falls through to the name heuristic per FR5. The return alias
-  is published regardless, since FR4 curates it rather than applying it.
+- A handful of algorithms are prose-only or host-defined, so a method
+  among them has its receiver mutability fall through to the name
+  heuristic per FR5. The return alias is published regardless, since FR4
+  curates it rather than applying it.
 - Generic and array-like receivers operate on `O ← ? ToObject(this
   value)`; the analysis treats `ToObject(this value)` as
   receiver-origin so that a write to `O` is a write to the receiver.

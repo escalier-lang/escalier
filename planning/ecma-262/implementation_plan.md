@@ -479,9 +479,9 @@ maintainer runbook. Four findings shape the sections downstream.
   `String.prototype.toUpperCase`, `Math.random`, the `toLocaleString`
   family, `Function.prototype`, and its own `print` from manual sources
   rather than from `spec.html`. Six of the eight have a body that is a
-  single `yet`, so the analysis withholds their receiver claim, which is
-  the right answer. They are keyed from the compiled function's name so
-  the surface stays complete.
+  single `yet`, so the analysis withholds the mutability of whichever of
+  them is a method, which is the right answer. They are keyed from the
+  compiled function's name so the surface stays complete.
 
 Two limits are worth naming for §9.3. `Promise` is set from the shape
 Appendix A describes, an algorithm that builds a promise capability and
@@ -515,10 +515,10 @@ space is what makes static and namespace functions — whose parameter 0 is
 a real argument, not a receiver — fall out correctly.
 
 **The standing objective is to shrink the unclassified set.** A builtin
-carrying `Unattributable` or `Incomplete` is one whose receiver claim §4.3
-hands to FR5's name-based heuristics instead of deciding from the spec.
-Every change to this analysis is measured by what it does to that count,
-and the tallies
+method carrying `Unattributable` or `Incomplete` is one whose receiver
+claim §4.3 hands to FR5's name-based heuristics instead of deciding from
+the spec. Every change to this analysis is measured by what it does to
+that count, and the tallies
 snapshot in `internal/ecma262/mutation_test.go` is where the number is
 recorded. A change that leaves it flat needs a reason, and one that raises
 it needs a stronger one.
@@ -608,10 +608,11 @@ it knows something escaped but not what. `Incomplete` means the analysis
 could not see the whole algorithm: an `Opaque` node the serializer could
 not lower, which is a prose step from §3, a `Call` to a callee that is
 absent from the CFG and named by neither internal-method table, or a
-mutation phrasing outside the FR1 vocabulary. Either withholds the
+mutation phrasing outside the FR1 vocabulary. Either withholds a method's
 receiver claim (§4.3), so FR5's heuristic fall-through decides receiver
 mutability rather than the analysis emitting a claim it cannot stand
-behind. Neither withholds the return alias.
+behind. Neither withholds the return alias, and neither reaches a static
+or a namespace function, which has no receiver to claim.
 
 **How the seed works, and why it is not inlining.** The seed entries are the
 fixpoint's base cases. The analysis never invents a mutation; it only carries
@@ -686,8 +687,8 @@ positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
 and those eight grow into 47 abstract operations with a mutated position. Of the
 501 builtins, 61 mutate their receiver and 13 mutate a parameter, and 420 carry
-neither warning, so §4.3 decides them from the analysis rather than from FR5's
-name-based heuristics. The gate is
+neither warning, so §4.3 reads their receiver mutability from the analysis
+rather than from FR5's name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
@@ -1001,9 +1002,11 @@ func classify(M) MethodFact:
     fact.Rejects    = rejectSet(M)                 // §9.3
     // Soundness bias (FR5), applied per determination. A method the
     // analysis could not fully cover OR could not fully attribute
-    // withholds the determinations that read the steps it missed.
-    fact.Classified.Receiver = M not in Unattributable and M not in Incomplete
-    fact.Classified.Returns  = true   // returnAlias is total: its top is Unknown
+    // withholds the determinations that read the steps it missed. A
+    // static's RecvNone reads no step, so no warning withholds it.
+    fact.Classified.Receiver = M.Kind != BuiltinMethod
+        or (M not in Unattributable and M not in Incomplete)
+    fact.Classified.Returns  = true   // returnAlias is total, top Unknown
     return fact
 
 func receiverKind(M):
@@ -1036,9 +1039,15 @@ its `returns` and loses only its `receiver`. That is §2's per-signal
 finding — a determination is unclassified only when a `yet` sits on a step
 it reads.
 
-The receiver axis cannot be recovered the same way. An opaque node carries
-no operands, so there is no way to tell what a missed step would have
-written, and the claim has to keep paying for incompleteness.
+A method's receiver mutability cannot be recovered the same way. An opaque
+node carries no operands, so there is no way to tell what a missed step
+would have written, and that claim has to keep paying for incompleteness.
+
+The carve-out is a static or a namespace function, whose `receiver: none`
+comes from `Func.Kind` and reads no algorithm step at all. No `yet` can
+sit on a step it reads, so a warning never withholds it. That takes 50
+builtins out of the unclassified set, leaving 31 methods whose mutability
+the analysis has to leave to the heuristics.
 
 The return-alias axis also tolerates `Unknown` on its own, since the alias
 lattice has a top. A missed step can itself be a return, and the join then
@@ -1061,9 +1070,13 @@ because the alias is curated rather than applied.
 - `Set.prototype.union` — the prose step `Let resultSetData be a copy of
   O.[[SetData]]` leaves a possible receiver write unread, so no
   `receiver`; the Set it allocates and hands back ⇒ `returns: fresh`.
+- `Array.of` — `Construct(C, …)` leaves a write unattributable, but a
+  static has no receiver either way ⇒ `receiver: none`, `returns:
+  unknown`.
 
 Methods with a withheld receiver are listed. The `returns` tally spans
-every builtin, not only the ones that publish a receiver.
+every builtin, and the `receiver` tally leaves out only the 31 methods
+whose mutability is withheld.
 
 ## §5. Keying and join (FR7, FR15)
 
@@ -1877,9 +1890,11 @@ const (
 
 // Coverage says which determinations the analysis resolved. Each axis is
 // withheld on its own, so a method that hides a mutation still publishes
-// its return alias (§4.3).
+// its return alias (§4.3). An axis a warning cannot bear on is always
+// covered: a static's "receiver": "none" comes from the function kind,
+// not from a step (§4.3).
 type Coverage struct {
-    Receiver bool `json:"receiver"` // whole algorithm read and every write placed
+    Receiver bool `json:"receiver"` // §4.3; always set for a static
     Returns  bool `json:"returns"`  // returnAlias ran; true for every builtin
     Params   bool `json:"params"`   // §8.1
     Throws   bool `json:"throws"`   // §9.2

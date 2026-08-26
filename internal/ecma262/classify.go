@@ -136,6 +136,18 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 	return RecvBorrow
 }
 
+// receiverCovered reports whether the analysis can answer the receiver axis for
+// fn. A static and a namespace function have no receiver, which fn.Kind settles
+// without reading a single step, so no warning can withhold it. A method has to
+// have been read whole, since a step the analysis missed could have written the
+// receiver.
+func receiverCovered(fn *Func, mutations Mutations) bool {
+	if fn.Kind != BuiltinMethod {
+		return true
+	}
+	return !mutations.Unattributable && !mutations.Incomplete
+}
+
 // Coverage records which of MethodFact's determinations the analysis resolved.
 // A determination is an independent axis of the fact, and requirements.md FR5's
 // conservative fallback applies to each one on its own. A step the analysis
@@ -145,10 +157,12 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 // Params, Throws, and Rejects join MethodFact in §8 and §9, and each adds its
 // own field here.
 type Coverage struct {
-	// Receiver is set when the mutation fixpoint read the whole algorithm and
-	// placed every write it saw. An opaque node carries no operands, so a
-	// missed step could have written anything, and the receiver claim is
-	// withheld rather than guessed.
+	// Receiver is always set for a static and a namespace function, which
+	// have no receiver to claim at all. For a method it is set when the
+	// mutation fixpoint read the whole algorithm and placed every write it
+	// saw. An opaque node carries no operands, so a missed step could have
+	// written a method's receiver, and the mutability claim is withheld
+	// rather than guessed.
 	Receiver bool `json:"receiver"`
 	// Returns is set whenever returnAlias ran, which is for every builtin.
 	// The alias lattice has a top, so an algorithm the walk could not tie to
@@ -230,7 +244,7 @@ type Facts struct {
 
 // NewFacts classifies every builtin in cfg. It runs the mutation fixpoint
 // itself, which supplies the receiver axis and the two warnings that withhold
-// it.
+// a method's mutability claim.
 //
 // The two axes carry different risk, which is why a warning takes only one of
 // them. Receiver mutability is a soundness claim §7 auto-applies, and a wrong
@@ -257,7 +271,7 @@ func NewFacts(cfg *CFG) *Facts {
 		returns := returnAlias(summary.originsOf(fn))
 		fact := MethodFact{
 			Classified: Coverage{
-				Receiver: !mutations.Unattributable && !mutations.Incomplete,
+				Receiver: receiverCovered(fn, mutations),
 				Returns:  true,
 			},
 			Returns: returns.Kind,
@@ -283,8 +297,10 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 
 // Unclassified returns the names whose receiver claim FR5 hands to the
 // converter's name-based heuristics, sorted. Shrinking this list is what §4 is
-// measured by. A method listed here still publishes its return alias, so the
-// list names a withheld determination rather than an empty fact.
+// measured by. Only a builtin method can appear, since a static and a namespace
+// function have no receiver for a warning to cost them. A name listed here
+// still publishes its return alias, so the list marks a withheld determination
+// rather than an empty fact.
 func (f *Facts) Unclassified() []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
