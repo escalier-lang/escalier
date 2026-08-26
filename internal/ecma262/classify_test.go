@@ -143,8 +143,11 @@ func TestFactsSampleMethods(t *testing.T) {
 		// The buffer a view was built over is the view's payload rather than
 		// the view, so returning it borrows neither.
 		"ReturnsAnInteriorValue": {"get DataView.prototype.buffer", "receiver:borrow returns:unknown"},
-		// localeCompare is implementation-defined past the coercion of its two
-		// arguments, so its graph ends without a return to read.
+		// A method whose graph holds no return at all. ESMeta lowers
+		// localeCompare's two argument coercions and stops there, because the
+		// comparison itself is implementation-defined, so the walk has nothing
+		// to read. The coercions are where the graph ends, not something the
+		// return alias consults.
 		"NoReturnToRead": {"String.prototype.localeCompare", "receiver:borrow returns:unknown"},
 		// An iterator is its own iterable, so @@iterator returns the receiver.
 		"SymbolKeyedMethod": {"Iterator.prototype [ @@iterator ]", "receiver:borrow returns:receiver"},

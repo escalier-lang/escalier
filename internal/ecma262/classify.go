@@ -104,9 +104,9 @@ func aliasOf(o Origin) alias {
 
 // returnAlias joins what every return in one algorithm aliases. An algorithm
 // with no return the serializer lowered is `unknown`, since the walk learned
-// nothing about what it hands back. `String.prototype.localeCompare` is
-// implementation-defined past the coercion of its arguments, so its graph holds
-// no return.
+// nothing about what it hands back. `String.prototype.localeCompare` is one.
+// ESMeta lowers its argument coercions and stops there, because the comparison
+// itself is implementation-defined.
 func returnAlias(m *OriginMap) alias {
 	var acc alias
 	for _, node := range m.Func().Nodes {
