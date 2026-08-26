@@ -38,7 +38,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §4.3 | Method classification                      | FR4, FR5   | ⬜      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods |
+| §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
@@ -1848,7 +1848,7 @@ type MethodFact struct {
     Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)
     Params     []ParamFact   `json:"params,omitempty"`     // only non-borrow parameters (FR12)
     Returns    *AliasKind    `json:"returns,omitempty"`    // return-borrow lifetime seed (FR4)
-    ParamIndex int           `json:"paramIndex,omitempty"` // when Returns == "param"
+    ParamIndex *int          `json:"paramIndex,omitempty"` // set exactly when Returns == "param"
     Throws     []string      `json:"throws,omitempty"`     // sync throws post-filter (FR10, FR11)
     Rejects    []string      `json:"rejects,omitempty"`    // async rejects → Promise<T,E>.Err (FR13)
 }
@@ -1875,6 +1875,16 @@ was proven read-only (`&`) — not to be confused with the FR5 `&mut`
 default the converter applies to an *unclassified* method's parameters.
 The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
+
+`ParamIndex` is a pointer for a different reason than the fields above it.
+`Receiver` and `Returns` are kinds with no empty member, so an omitted
+field is unambiguous either way. A position of 0 is one a fact really
+carries — it is the first declared parameter, and the receiver is not in
+that index space — so writing it as an absence would spell the common case
+as missing data. Every parameter the pinned graph returns sits at position
+0, so `omitempty` on a plain `int` would keep `paramIndex` out of
+`facts.json` entirely and leave a consumer no example to read the
+convention from.
 
 ## Appendix C. Canonical spec keys
 
