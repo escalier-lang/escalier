@@ -513,10 +513,9 @@ final class Lowering(cfg: CFG):
     * wording states.
     *
     * `pattern` is anchored at the start of the rendered prose and `node` builds
-    * the step from the names the match captured. `sites` is how many steps the
-    * pattern matches at the pinned revision, which [[checkPhrasingsMatched]]
-    * holds the run to. `name` labels the entry in the run's output and in the
-    * failure that check raises.
+    * the step from the names it captured. `sites` is how many steps the pattern
+    * matched when the entry was reviewed, which [[checkPhrasingsMatched]] holds
+    * the run to. `name` labels the entry in the run's output.
     */
   private final case class Phrasing(
     name: String,
@@ -527,33 +526,25 @@ final class Lowering(cfg: CFG):
 
   /** The prose steps the lowering reads rather than gives up on.
     *
-    * An unformalized step is emitted as an opaque node, which tells the
-    * analysis it could not read the whole algorithm. Some of those steps state
-    * a write or an allocation plainly enough to lower, and leaving them opaque
-    * costs the analysis a fact it could have had. `Set.prototype.clear` ends in
-    * "Replace the element of _S_.[[SetData]] whose value is _e_ with an element
-    * whose value is ~empty~". That names both the object and the slot. Without
-    * the entry below, the method reports nothing but the fact that a step was
-    * unreadable.
-    *
-    * Each entry produces an ordinary node, so nothing downstream learns a new
-    * vocabulary. The analysis sees the same `slotwrite` and `let` shapes the IR
-    * produces elsewhere.
+    * An unformalized step becomes an opaque node, which tells the analysis it
+    * could not read the whole algorithm. Some state their effect plainly enough
+    * to lower. `Set.prototype.clear` ends in "Replace the element of
+    * _S_.[[SetData]] whose value is _e_ with an element whose value is
+    * ~empty~", which names both the object and the slot, and without an entry
+    * the method reports nothing but that a step was unreadable. Each entry
+    * emits an ordinary node, so nothing downstream learns a new vocabulary.
     *
     * A recognized step is read whole. The node an entry emits is the step's
-    * entire effect, the way every node the lowering emits is, so the step stops
-    * reporting incompleteness to the throw analysis of §9.1 as well as to the
-    * mutation analysis of §4.1. An entry therefore qualifies only when the
-    * prose states everything the step does. All four below state an allocation
-    * or a write over bytes and list elements, and none of them can raise. What
-    * an entry may never do is read a step as having no effect, which would
-    * assert an absence from wording rather than state what the wording says.
+    * entire effect, so the step stops reporting incompleteness to §9.1's throw
+    * sets as well as to §4.1's mutation summaries. An entry therefore qualifies
+    * only when the prose states everything the step does, and may never read a
+    * step as having no effect, which would assert an absence from wording. All
+    * four below state an allocation or a write over bytes and list elements,
+    * and none can raise.
     *
-    * The set is deliberately small and each entry is reviewed against the
-    * wording at the pinned revision. Matching prose is wording-dependent, so a
-    * spec bump can reword a step out from under an entry.
-    * [[checkPhrasingsMatched]] fails the run when that happens, rather than
-    * letting the step fall back to opaque and quietly lose the fact again.
+    * Each entry is reviewed against the wording at the pinned revision.
+    * [[checkPhrasingsMatched]] fails the run when a spec bump rewords one, so a
+    * step never falls back to opaque and loses its fact again.
     */
   private val recognizedPhrasings: List[Phrasing] = List(
     // How `Set.prototype.clear`, `Set.prototype.delete`, and
@@ -575,12 +566,9 @@ final class Lowering(cfg: CFG):
     // How `Set.prototype`'s `union`, `difference`, and `symmetricDifference`
     // start building their result, and how `RepeatMatcher` copies a match
     // state's captures. The copy is a fresh list holding what the slot holds,
-    // the same shape `ECopy` lowers to.
-    //
-    // Leaving it opaque costs the three Set methods twice. The step itself goes
-    // unread, and so does the name it binds, which nothing else in the graph
-    // binds. Each method then appends to that name, and the analysis can place
-    // neither the appends nor the step.
+    // the same shape `ECopy` lowers to. Leaving it opaque costs the three Set
+    // methods twice, since nothing else in the graph binds the name it binds
+    // and each method then appends to that name.
     Phrasing(
       "backing-store copy",
       4,
@@ -605,17 +593,14 @@ final class Lowering(cfg: CFG):
     ),
     // The closure the six read-modify-write `Atomics` methods hand to
     // `AtomicReadModifyWrite`, and the one `AtomicCompareExchangeInSharedBlock`
-    // defines for itself. It is a fresh function value, and the names it
-    // captures are the operands it holds, so it lowers the way an allocation
-    // does. The write itself happens below the call rather than here.
+    // defines for itself. It is a fresh function value whose captured names are
+    // the operands it holds, so it lowers the way an allocation does.
     //
-    // The step's own effect is the binding, so the entry matches the header and
-    // the closure's steps come along only as the text of the match. Those steps
-    // run when the function is called, which happens in
-    // `GetModifySetValueInBuffer` through its `op` parameter. A call whose
-    // callee is a parameter resolves to no body, so the analysis would not
-    // descend into those steps even if ESMeta compiled them into a function of
-    // their own, which is why matching the header alone loses nothing.
+    // Binding it is the whole of the step's own effect, so the entry matches
+    // the header alone. The step's remaining lines run where
+    // `GetModifySetValueInBuffer` calls the function through its `op`
+    // parameter, and a callee that is a parameter resolves to no body, so the
+    // analysis would not descend into them however they were compiled.
     Phrasing(
       "read-modify-write modification function",
       7,
@@ -631,12 +616,12 @@ final class Lowering(cfg: CFG):
           ),
         ),
     ),
-    // The list the atomic accesses read a Data Block into. It holds the bytes
-    // at an index, or bytes left nondeterministic on the shared-memory path.
-    // Either way its elements are bytes, so the list holds nothing its caller
+    // The list the atomic accesses read a Data Block into, holding the bytes
+    // at an index or, on the shared-memory path, bytes left nondeterministic.
+    // Its elements are bytes either way, so the list holds nothing its caller
     // owns and the allocation carries no operands. Both tails are spelled out
     // rather than matched loosely, since a list of anything else could hold a
-    // value the caller owns and would need its operands kept.
+    // value the caller owns.
     Phrasing(
       "byte list",
       5,
@@ -655,8 +640,8 @@ final class Lowering(cfg: CFG):
   /** How many steps each recognized phrasing matched, keyed by its name. */
   private val phrasingMatches = MMap[String, Int]().withDefaultValue(0)
 
-  /** The match count of every recognized phrasing, in table order, for the run
-    * to print.
+  /** Every recognized phrasing's match count, in table order, for the run to
+    * print.
     */
   def recognizedCounts: List[(String, Int)] =
     recognizedPhrasings.map(p => p.name -> phrasingMatches(p.name))
@@ -664,16 +649,15 @@ final class Lowering(cfg: CFG):
   /** Lowers an unformalized step.
     *
     * A step a phrasing recognizes becomes the node that phrasing states.
-    * Anything else becomes an opaque node, which the analysis reads as
-    * incompleteness for whatever signals the step feeds. The rendered prose
-    * comes along as the evidence for what that fallback costs. A step binding a
+    * Anything else becomes an opaque node, carrying its prose as the evidence
+    * for what the analysis loses by giving up on the step. A step binding a
     * name over numbers loses nothing. A step replacing the elements of a slot
     * loses a mutation.
     *
     * Each `yet` is its own entry rather than one joined string, so the boundary
-    * between phrases survives. No step in the pinned revision carries more than
-    * one, and recognition is attempted only on a step that carries exactly one,
-    * since a phrasing describes a whole step.
+    * between phrases survives. Recognition is attempted only on a step carrying
+    * exactly one, since a phrasing describes a whole step. No step in the
+    * pinned revision carries more.
     *
     * An assertion reaches here too. The collector walks an `IAssert` body
     * whatever `ignoreInAssert` says, so an `Assert:` step ESMeta could not
@@ -698,7 +682,7 @@ final class Lowering(cfg: CFG):
       }
 
   /** The values a closure captures, read off the `captures` clause of its
-    * defining step. A closure that captures nothing holds no operands.
+    * defining step. One that captures nothing holds no operands.
     */
   private def capturedOperands(clause: String): List[ExprJson] =
     if (clause == "nothing") Nil
@@ -716,11 +700,11 @@ final class Lowering(cfg: CFG):
   /** Fails when a recognized phrasing matches a different number of steps than
     * it was reviewed against.
     *
-    * A count that fell means the specification reworded a step. Falling back to
-    * an opaque node would lose the write or the allocation the entry recovers,
-    * and lose it without saying so. A count that rose means a step nobody
-    * reviewed the entry against now matches it. Either way the table no longer
-    * describes the specification it was written for, so the run stops.
+    * A count that fell means the specification reworded a step, and the fact
+    * the entry recovers would go back to being lost without saying so. A count
+    * that rose means a step nobody reviewed the entry against now matches it.
+    * Either way the table no longer describes the specification it was written
+    * for.
     */
   private def checkPhrasingsMatched(): Unit =
     val moved =
