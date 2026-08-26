@@ -258,8 +258,9 @@ func TestOriginMapEval(t *testing.T) {
 	readOther := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "Prototype"}
 	require.Equal(t, Unknown, m.Eval(readOther))
 
-	// A property read off that payload stays inside the receiver, while one off
-	// the receiver itself yields a different object.
+	// A property read off that payload is still the receiver's own state, while
+	// one off the receiver reaches a separate object it only references. The
+	// Origin doc comment spells out the difference.
 	readEntry := &PropExpr{Object: readData}
 	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, m.Eval(readEntry))
 	readProp := &PropExpr{Object: &VarExpr{Var: "O"}}

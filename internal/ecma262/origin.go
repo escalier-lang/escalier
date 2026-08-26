@@ -46,6 +46,16 @@ const (
 // its receiver. It is not the object itself, so it never stands in where
 // identity matters, such as §4.3's return alias.
 //
+// An interior value is part of its holder's own state, which is what separates
+// a backing-store slot from an ordinary property. The List in `M.[[MapData]]`
+// is reachable only through the Map's own methods, so emptying one of its
+// entries changes what `Map.prototype.get` returns. A property instead holds a
+// separate object that the owner only references. Writing that object leaves
+// every method of the owner returning what it did before, and the read itself
+// may run a getter that returns anything. Interior therefore means "inside this
+// object's state" rather than "one read below it", which is why a further read
+// off an interior value keeps the marker.
+//
 // Captures marks a fresh value built around something the algorithm was given.
 // It changes nothing about the fresh value, only about its interior. See
 // capturingAllocators.
