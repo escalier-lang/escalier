@@ -608,11 +608,13 @@ it knows something escaped but not what. `Incomplete` means the analysis
 could not see the whole algorithm: an `Opaque` node the serializer could
 not lower, which is a prose step from §3, a `Call` to a callee that is
 absent from the CFG and named by neither internal-method table, or a
-mutation phrasing outside the FR1 vocabulary. Either withholds a method's
-receiver claim (§4.3), so FR5's heuristic fall-through decides receiver
-mutability rather than the analysis emitting a claim it cannot stand
-behind. Neither withholds the return alias, and neither reaches a static
-or a namespace function, which has no receiver to claim.
+mutation phrasing outside the FR1 vocabulary. Either can land on any
+function the analysis reads. A warning withholds a receiver claim only for
+a `BuiltinMethod` (§4.3), where FR5's heuristic fall-through then decides
+the mutability rather than the analysis emitting a claim it cannot stand
+behind. A static or a namespace function has no receiver to claim, so a
+warning leaves its `receiver: none` standing. `Array.of` is unattributable
+and publishes it. Neither warning withholds the return alias.
 
 **How the seed works, and why it is not inlining.** The seed entries are the
 fixpoint's base cases. The analysis never invents a mutation; it only carries
@@ -1903,15 +1905,19 @@ type Coverage struct {
 
 // The effect fields are pointers/slices so an uncovered determination is
 // ABSENT (JSON null or omitted) — an unanalyzed axis, distinct from a
-// proven-empty result, which is covered with an empty effect field.
+// proven-empty result, which is covered with an empty effect field. The
+// three slices carry no omitempty for that reason. omitempty drops an
+// empty slice, which would spell a covered determination with nothing to
+// report as an unanalyzed one. An uncovered slice encodes as null, and a
+// covered empty one as [].
 type MethodFact struct {
     Classified Coverage      `json:"classified"`           // per-determination coverage (FR5)
     Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)
-    Params     []ParamFact   `json:"params,omitempty"`     // only non-borrow parameters (FR12)
+    Params     []ParamFact   `json:"params"`               // only non-borrow parameters (FR12)
     Returns    *AliasKind    `json:"returns,omitempty"`    // return-borrow lifetime seed (FR4)
     ParamIndex *int          `json:"paramIndex,omitempty"` // set exactly when Returns == "param"
-    Throws     []string      `json:"throws,omitempty"`     // sync throws post-filter (FR10, FR11)
-    Rejects    []string      `json:"rejects,omitempty"`    // async rejects → Promise<T,E>.Err (FR13)
+    Throws     []string      `json:"throws"`               // sync throws post-filter (FR10, FR11)
+    Rejects    []string      `json:"rejects"`              // async rejects → Promise<T,E>.Err (FR13)
 }
 ```
 
@@ -1927,9 +1933,9 @@ at the FR7 join to throws polymorphism; or the sentinel `"unknown"` for a
 propagated value the analysis can neither name nor trace. All origin and
 effect refs resolve to types at the FR7 join. An entry carries no receiver,
 disposition, throw, or reject claim its `classified` coverage does not
-cover — those fields are absent, not empty — so the converter cannot
-mistake "unanalyzed" for "proven none"; it applies the FR5 default for
-that axis itself. A method whose `receiver` is uncovered falls through to
+cover — those fields are absent or null, never empty — so the converter
+cannot mistake "unanalyzed" for "proven none"; it applies the FR5 default
+for that axis itself. A method whose `receiver` is uncovered falls through to
 the name heuristics and is collected into a separate `unclassified` report
 alongside `facts.json` for auditing (FR5). Where `classified.params` is
 set, a parameter absent from `Params` was proven read-only (`&`) — not to
