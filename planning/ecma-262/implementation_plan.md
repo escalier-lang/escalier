@@ -38,7 +38,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / classified for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
+| §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / per-determination coverage for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §5   | Keying and join                            | FR7, FR15  | ⬜      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
@@ -479,9 +479,9 @@ maintainer runbook. Four findings shape the sections downstream.
   `String.prototype.toUpperCase`, `Math.random`, the `toLocaleString`
   family, `Function.prototype`, and its own `print` from manual sources
   rather than from `spec.html`. Six of the eight have a body that is a
-  single `yet`, so the analysis reads them as unclassified, which is the
-  right answer. They are keyed from the compiled function's name so the
-  surface stays complete.
+  single `yet`, so the analysis withholds the mutability of whichever of
+  them is a method, which is the right answer. They are keyed from the
+  compiled function's name so the surface stays complete.
 
 Two limits are worth naming for §9.3. `Promise` is set from the shape
 Appendix A describes, an algorithm that builds a promise capability and
@@ -515,9 +515,10 @@ space is what makes static and namespace functions — whose parameter 0 is
 a real argument, not a receiver — fall out correctly.
 
 **The standing objective is to shrink the unclassified set.** A builtin
-carrying `Unattributable` or `Incomplete` is one §4.3 hands to FR5's
-name-based heuristics instead of deciding from the spec. Every change to
-this analysis is measured by what it does to that count, and the tallies
+method carrying `Unattributable` or `Incomplete` is one whose receiver
+claim §4.3 hands to FR5's name-based heuristics instead of deciding from
+the spec. Every change to this analysis is measured by what it does to
+that count, and the tallies
 snapshot in `internal/ecma262/mutation_test.go` is where the number is
 recorded. A change that leaves it flat needs a reason, and one that raises
 it needs a stronger one.
@@ -607,9 +608,13 @@ it knows something escaped but not what. `Incomplete` means the analysis
 could not see the whole algorithm: an `Opaque` node the serializer could
 not lower, which is a prose step from §3, a `Call` to a callee that is
 absent from the CFG and named by neither internal-method table, or a
-mutation phrasing outside the FR1 vocabulary. Both force
-`classified: false` (§4.3), so FR5's heuristic fall-through handles the
-method rather than the analysis emitting a claim it cannot stand behind.
+mutation phrasing outside the FR1 vocabulary. Either can land on any
+function the analysis reads. A warning withholds a receiver claim only for
+a `BuiltinMethod` (§4.3), where FR5's heuristic fall-through then decides
+the mutability rather than the analysis emitting a claim it cannot stand
+behind. A static or a namespace function has no receiver to claim, so a
+warning leaves its `receiver: none` standing. `Array.of` is unattributable
+and publishes it. Neither warning withholds the return alias.
 
 **How the seed works, and why it is not inlining.** The seed entries are the
 fixpoint's base cases. The analysis never invents a mutation; it only carries
@@ -684,8 +689,8 @@ positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
 and those eight grow into 47 abstract operations with a mutated position. Of the
 501 builtins, 61 mutate their receiver and 13 mutate a parameter, and 420 carry
-neither warning, so §4.3 decides them from the analysis rather than from FR5's
-name-based heuristics. The gate is
+neither warning, so §4.3 reads their receiver mutability from the analysis
+rather than from FR5's name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
@@ -865,9 +870,9 @@ collapse to `Unknown` — and `returnAlias` (§4.3) considers *every*
 `Return` node, not only the reachable ones. This over-approximates
 (a throw or return on a dead branch still counts), which is safe here:
 the mutation and throw sets only grow, over-approximating rather than
-missing an effect, and a method the analysis cannot fully resolve is left
-unclassified rather than guessed (FR5). ESMeta's CFG does carry
-block successors and branch conditions; if a later precision pass wants
+missing an effect, and a determination the analysis cannot resolve is
+withheld rather than guessed (FR5). ESMeta's CFG does carry block
+successors and branch conditions; if a later precision pass wants
 reachability or per-path joins, the serializer (§3) can emit that
 structure and this section becomes flow-sensitive. Until then the schema
 omits it (Appendix A) and the guarantees here are path-insensitive by
@@ -997,9 +1002,13 @@ func classify(M) MethodFact:
     fact.Returns    = returnAlias(M)               // below
     fact.Throws     = filterThrows(M)              // §9.2
     fact.Rejects    = rejectSet(M)                 // §9.3
-    // Soundness bias (FR5): a method the analysis could not fully cover
-    // OR could not fully attribute is unclassified.
-    fact.Classified = M not in Unattributable and M not in Incomplete
+    // Soundness bias (FR5), applied per determination. A method the
+    // analysis could not fully cover OR could not fully attribute
+    // withholds the determinations that read the steps it missed. A
+    // static's RecvNone reads no step, so no warning withholds it.
+    fact.Classified.Receiver = M.Kind != BuiltinMethod
+        or (M not in Unattributable and M not in Incomplete)
+    fact.Classified.Returns  = true   // returnAlias is total, top Unknown
     return fact
 
 func receiverKind(M):
@@ -1018,12 +1027,36 @@ func returnAlias(M) AliasKind:
 
 An `Unattributable` method has a mutation the analysis could not pin to
 a formal — a write through an `Unknown`-origin value, including deep
-mutation reached through a property read. It is emitted with
-`classified: false` and listed, so the converter falls it through to the
-name heuristics and the receiver defaults to `&mut self` (FR5). The
-return-alias axis tolerates `Unknown` without making the whole method
-unclassified, because it is the low-stakes lifetime seed, not a
-soundness-bearing claim.
+mutation reached through a property read. Its receiver claim is withheld
+and its name listed, so the converter falls the method through to the
+name heuristics and the receiver defaults to `&mut self` (FR5).
+
+**Coverage is per determination, not per method.** The two axes carry
+different risk. Receiver mutability is a soundness claim §7 auto-applies,
+and a wrong `borrow` lets an immutable value call a mutating method. The
+return alias is FR4's lifetime seed, which §7 records for curation rather
+than applies, so withholding it costs precision and buys no safety. A
+method whose only problem is a possible hidden mutation therefore keeps
+its `returns` and loses only its `receiver`. That is §2's per-signal
+finding — a determination is unclassified only when a `yet` sits on a step
+it reads.
+
+A method's receiver mutability cannot be recovered the same way. An opaque
+node carries no operands, so there is no way to tell what a missed step
+would have written, and that claim has to keep paying for incompleteness.
+
+The carve-out is a static or a namespace function, whose `receiver: none`
+comes from `Func.Kind` and reads no algorithm step at all. No `yet` can
+sit on a step it reads, so a warning never withholds it. That takes 50
+builtins out of the unclassified set, leaving 31 methods whose mutability
+the analysis has to leave to the heuristics.
+
+The return-alias axis also tolerates `Unknown` on its own, since the alias
+lattice has a top. A missed step can itself be a return, and the join then
+misses that path. `String.prototype.repeat` ends in a prose step that
+returns n copies of the string appended together, so the `fresh` it
+publishes comes from its empty-string path alone. FR4 accepts that,
+because the alias is curated rather than applied.
 
 **Gate.** Spot-check the representative methods from §1:
 - `Array.prototype.push` — `Set(O,…)` on `Param(0)` ⇒ `receiver:
@@ -1036,8 +1069,16 @@ soundness-bearing claim.
   `Param(0)`), `Return M` ⇒ `receiver: mutBorrow`, `returns: receiver`.
 - every `String.prototype` method — `this` coerced to a fresh string,
   never written ⇒ all `receiver: borrow`.
+- `Set.prototype.union` — the prose step `Let resultSetData be a copy of
+  O.[[SetData]]` leaves a possible receiver write unread, so no
+  `receiver`; the Set it allocates and hands back ⇒ `returns: fresh`.
+- `Array.of` — `Construct(C, …)` leaves a write unattributable, but a
+  static has no receiver either way ⇒ `receiver: none`, `returns:
+  unknown`.
 
-Unclassified methods are listed.
+Methods with a withheld receiver are listed. The `returns` tally spans
+every builtin, and the `receiver` tally leaves out only the 31 methods
+whose mutability is withheld.
 
 ## §5. Keying and join (FR7, FR15)
 
@@ -1147,10 +1188,10 @@ entry. This is the gate that authorizes removing override entries in §7.
 - Insert the facts lookup into `dts_to_esc.Classify` at rung 2 (FR8):
   after explicit author signals, before the `get*` prefix and name
   heuristics.
-- Set receiver mutability from a classified fact; leave unclassified
-  methods to the existing tiers.
-- Apply the FR5 defaults for what a `classified: false` record omits (its
-  effect fields are absent). Receiver mutability falls through to the name
+- Set receiver mutability from a fact whose `classified.receiver` is set;
+  leave the rest to the existing tiers.
+- Apply the FR5 defaults for every determination a record leaves uncovered,
+  whose field is absent. Receiver mutability falls through to the name
   tiers, defaulting to `&mut self`. For the curation-grade determinations
   the converter writes a baseline and flags it for review rather than
   trusting it — parameter mutation defaults to **`&mut`** (FR5's flipped
@@ -1211,20 +1252,20 @@ Once §9.4's FR14 gate measures a zero false-negative rate, `throws` /
 `rejects` graduate from the reviewed path to the auto-applied one for the
 covered subset.
 
-**A method absent from `facts.json` falls back to types plus defaults.**
-When a `std:*` method has no fact — unclassified (§4.3) or unmatched by
-the join (§5) — its declaration is `.d.ts` types plus the FR5 defaults
-(`&mut self`, `&mut` parameters, empty `throws`/`rejects`), carrying no
-spec-derived effects. This is the degraded path, not a preferred one: FR5
-lists every unclassified method and §5 reports every unmatched
-declaration, precisely so these are visible gaps to close, not a silent
-route. (`web:*` / `node:*` methods have no `facts.json` entry by
-construction — out of ECMA-262 scope — and take the same
-types-plus-curation route until the WebIDL extractor lands.)
+**A determination `facts.json` does not carry falls back to a default.**
+When a `std:*` method is unmatched by the join (§5), or its fact leaves a
+determination uncovered (§4.3), that part of the declaration is `.d.ts`
+types plus the FR5 defaults — `&mut self`, `&mut` parameters, empty
+`throws`/`rejects` — carrying no spec-derived effect. This is the degraded
+path, not a preferred one. FR5 lists every method with a withheld receiver
+and §5 reports every unmatched declaration, precisely so these are visible
+gaps to close, not a silent route. (`web:*` / `node:*` methods have no
+`facts.json` entry by construction — out of ECMA-262 scope — and take the
+same types-plus-curation route until the WebIDL extractor lands.)
 
 **Gate.** Converter output for `std:*` matches the facts for every
-classified method; the removed override entries cause no regression in
-the converter and checker test suites.
+published determination; the removed override entries cause no regression
+in the converter and checker test suites.
 
 ## §8. Parameter disposition and return-borrow outputs (FR12, FR4)
 
@@ -1831,7 +1872,8 @@ const (
                                             // move or a lifetime-bounded borrow at curation (FR12)
     // A parameter the analysis PROVED read-only (&) is omitted from Params.
     // That omission is distinct from the FR5 uncertain default (&mut): it
-    // means "shown read-only", and applies only to a classified method.
+    // means "shown read-only", and reads that way only where
+    // Coverage.Params is set.
 )
 
 type ParamFact struct {
@@ -1848,17 +1890,31 @@ const (
     AliasUnknown  AliasKind = "unknown"  // a return origin could not be resolved
 )
 
-// The effect fields are pointers/slices so they are ABSENT (JSON null or
-// omitted) when Classified is false — an unanalyzed method, distinct from
-// a proven-empty result which is Classified:true with empty effect fields.
+// Coverage says which determinations the analysis resolved. Each axis is
+// withheld on its own, so a method that hides a mutation still publishes
+// its return alias. An axis no step decides is always covered, such as a
+// static's "receiver": "none" (§4.3).
+type Coverage struct {
+    Receiver bool `json:"receiver"` // §4.3; always set for a static
+    Returns  bool `json:"returns"`  // returnAlias ran; true for every builtin
+    Params   bool `json:"params"`   // §8.1
+    Throws   bool `json:"throws"`   // §9.2
+    Rejects  bool `json:"rejects"`  // §9.3
+}
+
+// The effect fields are pointers/slices so an uncovered determination is
+// ABSENT (JSON null or omitted) — an unanalyzed axis, distinct from a
+// proven-empty result, which is covered with an empty effect field. The
+// three slices carry no omitempty, which would drop the [] that spells
+// that second case. Uncovered they encode as null.
 type MethodFact struct {
-    Classified bool          `json:"classified"`           // false ⇒ effect fields absent (FR5)
+    Classified Coverage      `json:"classified"`           // per-determination coverage (FR5)
     Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)
-    Params     []ParamFact   `json:"params,omitempty"`     // only non-borrow parameters (FR12)
+    Params     []ParamFact   `json:"params"`               // only non-borrow parameters (FR12)
     Returns    *AliasKind    `json:"returns,omitempty"`    // return-borrow lifetime seed (FR4)
     ParamIndex *int          `json:"paramIndex,omitempty"` // set exactly when Returns == "param"
-    Throws     []string      `json:"throws,omitempty"`     // sync throws post-filter (FR10, FR11)
-    Rejects    []string      `json:"rejects,omitempty"`    // async rejects → Promise<T,E>.Err (FR13)
+    Throws     []string      `json:"throws"`               // sync throws post-filter (FR10, FR11)
+    Rejects    []string      `json:"rejects"`              // async rejects → Promise<T,E>.Err (FR13)
 }
 ```
 
@@ -1872,15 +1928,16 @@ the **effect ref** `"throwsOf:param:k"` for a method that propagates a
 callback parameter's throws (`Array.prototype.forEach`/`map`/…), resolved
 at the FR7 join to throws polymorphism; or the sentinel `"unknown"` for a
 propagated value the analysis can neither name nor trace. All origin and
-effect refs resolve to types at the FR7 join. A `classified: false` entry carries no receiver,
-disposition, throw, or reject claim — those fields are absent, not empty —
-so the converter cannot mistake "unanalyzed" for "proven none"; it applies
-the FR5 defaults itself and falls the method through to the name
-heuristics. Such methods are also collected into a separate
-`unclassified` report alongside `facts.json` for auditing
-(FR5). In a *classified* method's entry, a parameter absent from `Params`
-was proven read-only (`&`) — not to be confused with the FR5 `&mut`
-default the converter applies to an *unclassified* method's parameters.
+effect refs resolve to types at the FR7 join. An entry carries no receiver,
+disposition, throw, or reject claim its `classified` coverage does not
+cover — those fields are absent or null, never empty — so the converter
+cannot mistake "unanalyzed" for "proven none"; it applies the FR5 default
+for that axis itself. A method whose `receiver` is uncovered falls through to
+the name heuristics and is collected into a separate `unclassified` report
+alongside `facts.json` for auditing (FR5). Where `classified.params` is
+set, a parameter absent from `Params` was proven read-only (`&`) — not to
+be confused with the FR5 `&mut` default the converter applies where it is
+not.
 The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
 

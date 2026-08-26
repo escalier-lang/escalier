@@ -27,6 +27,9 @@ func testFacts(t *testing.T) *Facts {
 	return allFacts
 }
 
+// fullCoverage is what NewFacts builds for a builtin it read whole.
+var fullCoverage = Coverage{Receiver: true, Returns: true}
+
 // position is the 0-based parameter position a fact returns, as MethodFact
 // holds it.
 func position(i int) *int {
@@ -47,20 +50,19 @@ func TestMethodFactString(t *testing.T) {
 		fact MethodFact
 		want string
 	}{
-		// Every case in TestFactsSampleMethods renders a classified fact
-		// through String, so only what those cases cannot show is stated here:
-		// a fact with nothing to render, and a returned position past 0, which
-		// no builtin has.
-		"Unclassified": {MethodFact{}, "unclassified"},
+		// TestFactsSampleMethods renders every shape NewFacts builds, so only
+		// what those cases cannot show is stated here: a fact with nothing to
+		// render, and a returned position past 0, which no builtin has.
+		"NoDetermination": {MethodFact{}, "unclassified"},
 		"ParamReturn": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
+			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
 			"receiver:none returns:param(2)",
 		},
 		// A parameter return with no position reads as the missing position
 		// rather than as position 0. Nothing in the package builds such a fact;
 		// a hand-edited facts.json is where one would come from.
 		"ParamReturnWithNoPosition": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam},
+			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: AliasParam},
 			"receiver:none returns:param(?)",
 		},
 	}
@@ -165,13 +167,21 @@ func TestFactsSampleMethods(t *testing.T) {
 		// call graph and `Incomplete` not at all. next resumes the generator
 		// through `GeneratorResume`, which carries the warning.
 		"CallerOfAnIncompleteAlgorithm": {"GeneratorPrototype.next", "receiver:borrow returns:unknown"},
-		// A method carrying either warning is handed to the name heuristics
-		// whole. toLowerCase reaches the Unicode case-mapping table through a
-		// prose step, which leaves the analysis unable to read the algorithm.
-		"IncompleteMethod": {"String.prototype.toLowerCase", "unclassified"},
-		// Array.of builds its array through `Construct(C, ...)`, whose result
-		// the origin map cannot place, so the write to it is unattributable.
-		"UnattributableStatic": {"Array.of", "unclassified"},
+		// A method carrying either warning keeps its return alias and loses only
+		// its receiver claim. union reaches the prose step `Let resultSetData be
+		// a copy of O.[[SetData]]`, which could have written the receiver for all
+		// the analysis can tell. The Set it hands back is one it allocated.
+		"IncompleteMethodReturningAFreshValue": {"Set.prototype.union", "returns:fresh"},
+		// The same withheld receiver over a return the walk could not resolve.
+		// toLowerCase returns what a prose step reaching the Unicode case-mapping
+		// table produced.
+		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toLowerCase", "returns:unknown"},
+		// A static keeps its receiver claim through either warning, since having
+		// none follows from `Func.Kind` rather than from a step. Array.of builds
+		// its array through `Construct(C, ...)`, whose result the origin map
+		// cannot place, so the write to it is unattributable and the return
+		// unresolved.
+		"UnattributableStatic": {"Array.of", "receiver:none returns:unknown"},
 	}
 
 	for name, test := range tests {
@@ -184,8 +194,8 @@ func TestFactsSampleMethods(t *testing.T) {
 // The §4.3 gate's last spot-check. Every String method coerces its receiver
 // with `ToString` before reading it, and §4.2 makes that coercion's result a
 // fresh primitive, so no write can reach the receiver. The seven left out are
-// the ones the analysis could not read at all, which carry no receiver claim
-// to check.
+// the ones the analysis could not read whole, so they withhold the receiver
+// claim this checks.
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int
 	var unread []string
@@ -193,7 +203,7 @@ func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 		if !strings.HasPrefix(name, "String.prototype") {
 			continue
 		}
-		if !fact.Classified {
+		if !fact.Classified.Receiver {
 			unread = append(unread, name)
 			continue
 		}
@@ -232,14 +242,18 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 		builtins++
 		fact, ok := f.Of(fn.Name)
 		require.True(t, ok, "%s has no fact", fn.Name)
-		if !fact.Classified {
-			require.Equal(t, MethodFact{}, fact, "%s carries a claim it is not classified for", fn.Name)
-			continue
-		}
-		if fn.Kind == BuiltinMethod {
-			require.Contains(t, []ReceiverKind{RecvBorrow, RecvMutBorrow}, fact.Receiver, fn.Name)
-		} else {
+		// Every builtin resolves a return alias, warning or not.
+		require.True(t, fact.Classified.Returns, "%s has no return alias", fn.Name)
+		require.NotEmpty(t, fact.Returns, "%s covers a return alias it does not carry", fn.Name)
+		switch {
+		case fn.Kind != BuiltinMethod:
+			// `none` follows from the function kind, so no warning withholds it.
+			require.True(t, fact.Classified.Receiver, "%s has no receiver claim", fn.Name)
 			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
+		case !fact.Classified.Receiver:
+			require.Empty(t, fact.Receiver, "%s carries a receiver claim it is not classified for", fn.Name)
+		default:
+			require.Contains(t, []ReceiverKind{RecvBorrow, RecvMutBorrow}, fact.Receiver, fn.Name)
 		}
 		if fact.Returns == AliasParam {
 			require.NotNil(t, fact.ParamIndex, "%s returns a parameter but no position", fn.Name)
@@ -265,27 +279,29 @@ func TestFactsOfAnAbsentName(t *testing.T) {
 	require.Equal(t, MethodFact{}, fact)
 }
 
-// A classified fact serializes as Appendix B describes, and an unclassified one
-// carries nothing beside the flag, so the converter cannot read an absent claim
+// A fact serializes as Appendix B describes. A determination its coverage
+// leaves unset omits its field, so the converter cannot read an absent claim
 // as a proven-empty one.
 func TestFactsJSON(t *testing.T) {
 	tests := map[string]struct {
 		fact MethodFact
 		want string
 	}{
-		"Method":       {factOf(t, "Array.prototype.fill"), `{"classified":true,"receiver":"mutBorrow","returns":"receiver"}`},
-		"Unclassified": {factOf(t, "String.prototype.toLowerCase"), `{"classified":false}`},
+		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":"receiver"}`},
+		// A withheld receiver falls through to FR5's `&mut self`, so the entry
+		// carries the return alias alone.
+		"WithheldReceiver": {factOf(t, "Set.prototype.union"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave paramIndex absent from the whole file and spell the common case
 		// as missing data.
-		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":true,"receiver":"none","returns":"param","paramIndex":0}`},
+		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":{"receiver":true,"returns":true},"receiver":"none","returns":"param","paramIndex":0}`},
 		"ReturnedPositionPastZero": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
-			`{"classified":true,"receiver":"none","returns":"param","paramIndex":2}`,
+			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
+			`{"classified":{"receiver":true,"returns":true},"receiver":"none","returns":"param","paramIndex":2}`,
 		},
 		// A fact that returns no parameter carries no position at all.
-		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"classified":true,"receiver":"mutBorrow","returns":"fresh"}`},
+		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":"fresh"}`},
 	}
 
 	for name, test := range tests {
@@ -297,29 +313,36 @@ func TestFactsJSON(t *testing.T) {
 	}
 }
 
-// The methods FR5 hands to the converter's name heuristics. Each carries a
-// mutation the analysis could not place or a step it could not read, so it is
-// emitted with no claim at all rather than with a guess.
+// The methods whose receiver claim FR5 hands to the converter's name
+// heuristics. Each carries a mutation the analysis could not place or a step it
+// could not read, so its mutability is withheld rather than guessed, and each
+// still publishes its return alias. A static is absent, having no receiver for
+// a warning to cost it.
 //
-// This list is the §4 objective made visible: shrinking it is what a change to
-// the analysis is measured by, and the tallies below record the same number
-// against the classified ones.
+// This list is the §4 objective made visible. Shrinking it is what a change to
+// the analysis is measured by, and the tallies below record the same count.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
 	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(), "\n"))
 }
 
 // The tallies over every builtin, which move when the mutation analysis, the
-// origin map, or the classification changes.
+// origin map, or the classification changes. Each determination is counted on
+// its own, so the return-alias distribution spans every builtin while the
+// receiver one leaves out the methods that withhold it.
 func TestFactsTallies(t *testing.T) {
 	counts := map[string]int{}
 	for _, fact := range testFacts(t).Methods {
 		counts["total"]++
-		if !fact.Classified {
-			counts["unclassified"]++
-			continue
+		if fact.Classified.Receiver {
+			counts["receiver "+string(fact.Receiver)]++
+		} else {
+			counts["receiver unclassified"]++
 		}
-		counts["receiver "+string(fact.Receiver)]++
-		counts["returns "+string(fact.Returns)]++
+		if fact.Classified.Returns {
+			counts["returns "+string(fact.Returns)]++
+		} else {
+			counts["returns unclassified"]++
+		}
 	}
 
 	lines := make([]string, 0, len(counts))
@@ -329,12 +352,12 @@ func TestFactsTallies(t *testing.T) {
 	sort.Strings(lines)
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 222
 receiver mutBorrow: 60
-receiver none: 138
-returns fresh: 177
+receiver none: 188
+receiver unclassified: 31
+returns fresh: 229
 returns param: 6
 returns receiver: 15
 returns union: 1
-returns unknown: 221
-total: 501
-unclassified: 81`))
+returns unknown: 250
+total: 501`))
 }
