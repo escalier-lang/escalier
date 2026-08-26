@@ -136,11 +136,8 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 	return RecvBorrow
 }
 
-// receiverCovered reports whether the analysis can answer the receiver axis for
-// fn. A static and a namespace function have no receiver, which fn.Kind settles
-// without reading a single step, so no warning can withhold it. A method has to
-// have been read whole, since a step the analysis missed could have written the
-// receiver.
+// receiverCovered reports whether a warning leaves fn's receiver claim
+// standing. Only a method has a receiver a missed step could have written.
 func receiverCovered(fn *Func, mutations Mutations) bool {
 	if fn.Kind != BuiltinMethod {
 		return true
@@ -149,30 +146,26 @@ func receiverCovered(fn *Func, mutations Mutations) bool {
 }
 
 // Coverage records which of MethodFact's determinations the analysis resolved.
-// A determination is an independent axis of the fact, and requirements.md FR5's
-// conservative fallback applies to each one on its own. A step the analysis
-// could not read withholds only the determinations that read that step, so a
-// missed write costs the receiver claim and leaves the return alias standing.
-//
-// Params, Throws, and Rejects join MethodFact in §8 and §9, and each adds its
-// own field here.
+// Each is an independent axis, so requirements.md FR5's conservative fallback
+// applies to each on its own. A step the analysis could not read withholds only
+// the determinations that read it. §8 and §9 add a field per determination they
+// bring.
 type Coverage struct {
-	// Receiver is always set for a static and a namespace function, which
-	// have no receiver to claim at all. For a method it is set when the
-	// mutation fixpoint read the whole algorithm and placed every write it
-	// saw. An opaque node carries no operands, so a missed step could have
-	// written a method's receiver, and the mutability claim is withheld
-	// rather than guessed.
+	// Receiver is always set for a static and a namespace function, which have
+	// no receiver to claim. For a method it is set when the mutation fixpoint
+	// read the whole algorithm and placed every write. An opaque node carries
+	// no operands, so a missed step could have written the receiver, and the
+	// mutability claim is withheld rather than guessed.
 	Receiver bool `json:"receiver"`
-	// Returns is set whenever returnAlias ran, which is for every builtin.
-	// The alias lattice has a top, so an algorithm the walk could not tie to
-	// any origin resolves to AliasUnknown instead of leaving the axis open.
+	// Returns is set for every builtin, since returnAlias is total. The alias
+	// lattice has a top, so an algorithm the walk could not tie to any origin
+	// resolves to AliasUnknown rather than leaving the axis open.
 	//
-	// A step the analysis could not read can itself be a return, and the join
-	// then misses that path. `String.prototype.repeat` ends in a prose step
-	// that returns n copies of the string appended together, so the `fresh`
-	// it publishes comes from its empty-string path alone. FR4 accepts that,
-	// because §7 records the alias for curation rather than applying it.
+	// A missed step can itself be a return, which drops out of the join.
+	// `String.prototype.repeat` ends in a prose step returning n copies of the
+	// string, so the `fresh` it publishes comes from its empty-string path
+	// alone. FR4 accepts that, since §7 curates the alias rather than applying
+	// it.
 	Returns bool `json:"returns"`
 }
 
@@ -180,10 +173,10 @@ type Coverage struct {
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// A determination Coverage leaves unset carries no claim. Its field is absent
-// from the JSON, so a consumer never reads "unanalyzed" as "proven none". The
-// converter applies requirements.md FR5's default for that axis instead, which
-// for an absent receiver is `&mut self`.
+// A determination Coverage leaves unset carries no claim, and its field is
+// absent from the JSON, so a consumer never reads "unanalyzed" as "proven
+// none". The converter applies requirements.md FR5's default instead, `&mut
+// self` for an absent receiver.
 //
 // Appendix B draws that absence with pointers. Receiver and Returns are plain
 // kinds, which have no empty member, so omitempty encodes their absence the
@@ -207,8 +200,8 @@ type MethodFact struct {
 }
 
 // String renders the covered determinations in one line, so a test can assert
-// a fact whole. An uncovered determination is left out rather than spelled with
-// a placeholder value, and a fact covering nothing reads "unclassified".
+// a fact whole. An uncovered one is left out, and a fact covering nothing reads
+// "unclassified".
 func (f MethodFact) String() string {
 	var parts []string
 	if f.Classified.Receiver {
@@ -245,12 +238,6 @@ type Facts struct {
 // NewFacts classifies every builtin in cfg. It runs the mutation fixpoint
 // itself, which supplies the receiver axis and the two warnings that withhold
 // a method's mutability claim.
-//
-// The two axes carry different risk, which is why a warning takes only one of
-// them. Receiver mutability is a soundness claim §7 auto-applies, and a wrong
-// `borrow` lets an immutable value call a mutating method. The return alias is
-// FR4's lifetime seed, which §7 records for curation rather than applies, so
-// withholding it costs precision and buys no safety.
 //
 // A published receiver claim is only as strong as §4.1. A mutation the analysis
 // does not see leaves no warning, so the borrow is published rather than
@@ -297,10 +284,8 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 
 // Unclassified returns the names whose receiver claim FR5 hands to the
 // converter's name-based heuristics, sorted. Shrinking this list is what §4 is
-// measured by. Only a builtin method can appear, since a static and a namespace
-// function have no receiver for a warning to cost them. A name listed here
-// still publishes its return alias, so the list marks a withheld determination
-// rather than an empty fact.
+// measured by. Only a method appears, and it still publishes its return alias,
+// so the list marks a withheld determination rather than an empty fact.
 func (f *Facts) Unclassified() []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {

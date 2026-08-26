@@ -1892,9 +1892,8 @@ const (
 
 // Coverage says which determinations the analysis resolved. Each axis is
 // withheld on its own, so a method that hides a mutation still publishes
-// its return alias (§4.3). An axis a warning cannot bear on is always
-// covered: a static's "receiver": "none" comes from the function kind,
-// not from a step (§4.3).
+// its return alias. An axis no step decides is always covered, such as a
+// static's "receiver": "none" (§4.3).
 type Coverage struct {
     Receiver bool `json:"receiver"` // §4.3; always set for a static
     Returns  bool `json:"returns"`  // returnAlias ran; true for every builtin
@@ -1906,10 +1905,8 @@ type Coverage struct {
 // The effect fields are pointers/slices so an uncovered determination is
 // ABSENT (JSON null or omitted) — an unanalyzed axis, distinct from a
 // proven-empty result, which is covered with an empty effect field. The
-// three slices carry no omitempty for that reason. omitempty drops an
-// empty slice, which would spell a covered determination with nothing to
-// report as an unanalyzed one. An uncovered slice encodes as null, and a
-// covered empty one as [].
+// three slices carry no omitempty, which would drop the [] that spells
+// that second case. Uncovered they encode as null.
 type MethodFact struct {
     Classified Coverage      `json:"classified"`           // per-determination coverage (FR5)
     Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)

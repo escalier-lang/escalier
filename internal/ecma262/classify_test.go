@@ -27,8 +27,7 @@ func testFacts(t *testing.T) *Facts {
 	return allFacts
 }
 
-// fullCoverage is what NewFacts builds for a builtin it read whole, with no
-// determination withheld.
+// fullCoverage is what NewFacts builds for a builtin it read whole.
 var fullCoverage = Coverage{Receiver: true, Returns: true}
 
 // position is the 0-based parameter position a fact returns, as MethodFact
@@ -170,19 +169,18 @@ func TestFactsSampleMethods(t *testing.T) {
 		"CallerOfAnIncompleteAlgorithm": {"GeneratorPrototype.next", "receiver:borrow returns:unknown"},
 		// A method carrying either warning keeps its return alias and loses only
 		// its receiver claim. union reaches the prose step `Let resultSetData be
-		// a copy of O.[[SetData]]`, which the analysis cannot read, so it cannot
-		// rule out a write to the receiver there. The Set it hands back is one it
-		// allocated either way.
+		// a copy of O.[[SetData]]`, which could have written the receiver for all
+		// the analysis can tell. The Set it hands back is one it allocated.
 		"IncompleteMethodReturningAFreshValue": {"Set.prototype.union", "returns:fresh"},
 		// The same withheld receiver over a return the walk could not resolve.
-		// toLowerCase reaches the Unicode case-mapping table through a prose step
-		// and returns what that step produced.
+		// toLowerCase returns what a prose step reaching the Unicode case-mapping
+		// table produced.
 		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toLowerCase", "returns:unknown"},
-		// A static keeps its receiver claim through either warning. Having no
-		// receiver follows from `Func.Kind`, not from a step the analysis had to
-		// read. Array.of builds its array through `Construct(C, ...)`, whose
-		// result the origin map cannot place, so the write to it is
-		// unattributable and the return it hands back is unresolved too.
+		// A static keeps its receiver claim through either warning, since having
+		// none follows from `Func.Kind` rather than from a step. Array.of builds
+		// its array through `Construct(C, ...)`, whose result the origin map
+		// cannot place, so the write to it is unattributable and the return
+		// unresolved.
 		"UnattributableStatic": {"Array.of", "receiver:none returns:unknown"},
 	}
 
@@ -197,7 +195,7 @@ func TestFactsSampleMethods(t *testing.T) {
 // with `ToString` before reading it, and §4.2 makes that coercion's result a
 // fresh primitive, so no write can reach the receiver. The seven left out are
 // the ones the analysis could not read whole, so they withhold the receiver
-// claim this checks. Each still publishes a return alias.
+// claim this checks.
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int
 	var unread []string
@@ -244,14 +242,12 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 		builtins++
 		fact, ok := f.Of(fn.Name)
 		require.True(t, ok, "%s has no fact", fn.Name)
-		// Every builtin resolves a return alias, so the axis is covered even
-		// where a warning withheld the receiver.
+		// Every builtin resolves a return alias, warning or not.
 		require.True(t, fact.Classified.Returns, "%s has no return alias", fn.Name)
 		require.NotEmpty(t, fact.Returns, "%s covers a return alias it does not carry", fn.Name)
 		switch {
 		case fn.Kind != BuiltinMethod:
-			// A static's `none` follows from the function kind, so no warning
-			// withholds it.
+			// `none` follows from the function kind, so no warning withholds it.
 			require.True(t, fact.Classified.Receiver, "%s has no receiver claim", fn.Name)
 			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
 		case !fact.Classified.Receiver:
@@ -292,8 +288,8 @@ func TestFactsJSON(t *testing.T) {
 		want string
 	}{
 		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":"receiver"}`},
-		// A method the analysis could not read whole publishes its return alias
-		// and no receiver, so the receiver falls through to FR5's `&mut self`.
+		// A withheld receiver falls through to FR5's `&mut self`, so the entry
+		// carries the return alias alone.
 		"WithheldReceiver": {factOf(t, "Set.prototype.union"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
@@ -319,14 +315,12 @@ func TestFactsJSON(t *testing.T) {
 
 // The methods whose receiver claim FR5 hands to the converter's name
 // heuristics. Each carries a mutation the analysis could not place or a step it
-// could not read, so its receiver mutability is withheld rather than guessed.
-// Each still publishes the return alias, which §7 records for curation rather
-// than applies. A static carrying the same warning is absent, since it has no
-// receiver for the warning to cost it.
+// could not read, so its mutability is withheld rather than guessed, and each
+// still publishes its return alias. A static is absent, having no receiver for
+// a warning to cost it.
 //
 // This list is the §4 objective made visible. Shrinking it is what a change to
-// the analysis is measured by, and the tallies below record the same number as
-// the withheld receivers.
+// the analysis is measured by, and the tallies below record the same count.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
 	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(), "\n"))
 }
@@ -334,7 +328,7 @@ func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
 // The tallies over every builtin, which move when the mutation analysis, the
 // origin map, or the classification changes. Each determination is counted on
 // its own, so the return-alias distribution spans every builtin while the
-// receiver one leaves out the methods that withhold the claim.
+// receiver one leaves out the methods that withhold it.
 func TestFactsTallies(t *testing.T) {
 	counts := map[string]int{}
 	for _, fact := range testFacts(t).Methods {
