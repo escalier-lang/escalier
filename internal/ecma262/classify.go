@@ -142,8 +142,12 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 // An unclassified fact carries no claim at all. Every other field is absent
 // from the JSON, so a consumer never reads "unanalyzed" as "proven none". The
 // converter falls such a method through to its name heuristics, which is
-// requirements.md FR5's soundness bias. Appendix B draws the absence with
-// pointers. A kind has no empty member, so omitempty encodes it the same.
+// requirements.md FR5's soundness bias.
+//
+// Appendix B draws that absence with pointers. Receiver and Returns are plain
+// kinds, which have no empty member, so omitempty encodes their absence the
+// same way. ParamIndex needs the pointer, because its zero value is a position
+// a fact can really carry.
 //
 // Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
 // Params, no fact makes a parameter claim, so an absent Params is not yet
@@ -152,11 +156,13 @@ type MethodFact struct {
 	Classified bool         `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
 	Returns    AliasKind    `json:"returns,omitempty"`
-	// ParamIndex is the 0-based position Returns aliases, read only when
-	// Returns is AliasParam. It indexes the declared parameters, which do not
-	// include a method's receiver. Position 0 is omitted from the JSON as the
-	// zero value, which is what a reader takes an absent field for anyway.
-	ParamIndex int `json:"paramIndex,omitempty"`
+	// ParamIndex is the 0-based position Returns aliases. It indexes the
+	// declared parameters, which do not include a method's receiver, so
+	// position 0 on an instance method is its first argument. It is set
+	// exactly when Returns is AliasParam, and position 0 is written out like
+	// any other, since omitting it would spell the first parameter as an
+	// absence.
+	ParamIndex *int `json:"paramIndex,omitempty"`
 }
 
 // String renders the fact in one line, so a test can assert it whole. An
@@ -165,7 +171,16 @@ func (f MethodFact) String() string {
 	if !f.Classified {
 		return "unclassified"
 	}
-	returns := alias{Kind: f.Returns, Index: f.ParamIndex}
+	returns := string(f.Returns)
+	if f.Returns == AliasParam {
+		// A parameter return with no position is a fact nothing in this
+		// package builds. It reads as the missing position rather than as
+		// position 0, which is the confusion the pointer exists to prevent.
+		returns = "param(?)"
+		if f.ParamIndex != nil {
+			returns = fmt.Sprintf("param(%d)", *f.ParamIndex)
+		}
+	}
 	return fmt.Sprintf("receiver:%s returns:%s", f.Receiver, returns)
 }
 
@@ -207,12 +222,16 @@ func NewFacts(cfg *CFG) *Facts {
 			continue
 		}
 		returns := returnAlias(summary.originsOf(fn))
-		facts.Methods[fn.Name] = MethodFact{
+		fact := MethodFact{
 			Classified: true,
 			Receiver:   receiverKind(fn, mutations),
 			Returns:    returns.Kind,
-			ParamIndex: returns.Index,
 		}
+		if returns.Kind == AliasParam {
+			position := returns.Index
+			fact.ParamIndex = &position
+		}
+		facts.Methods[fn.Name] = fact
 	}
 	return facts
 }

@@ -27,6 +27,12 @@ func testFacts(t *testing.T) *Facts {
 	return allFacts
 }
 
+// position is the 0-based parameter position a fact returns, as MethodFact
+// holds it.
+func position(i int) *int {
+	return &i
+}
+
 // factOf returns the fact for one builtin, failing when the graph does not
 // hold it.
 func factOf(t *testing.T, name string) MethodFact {
@@ -47,8 +53,15 @@ func TestMethodFactString(t *testing.T) {
 		// no builtin has.
 		"Unclassified": {MethodFact{}, "unclassified"},
 		"ParamReturn": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: 2},
+			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
 			"receiver:none returns:param(2)",
+		},
+		// A parameter return with no position reads as the missing position
+		// rather than as position 0. Nothing in the package builds such a fact;
+		// a hand-edited facts.json is where one would come from.
+		"ParamReturnWithNoPosition": {
+			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam},
+			"receiver:none returns:param(?)",
 		},
 	}
 
@@ -229,10 +242,11 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
 		}
 		if fact.Returns == AliasParam {
-			require.Less(t, fact.ParamIndex, len(fn.Params), "%s: returned position", fn.Name)
-			require.GreaterOrEqual(t, fact.ParamIndex, 0, "%s: returned position", fn.Name)
+			require.NotNil(t, fact.ParamIndex, "%s returns a parameter but no position", fn.Name)
+			require.Less(t, *fact.ParamIndex, len(fn.Params), "%s: returned position", fn.Name)
+			require.GreaterOrEqual(t, *fact.ParamIndex, 0, "%s: returned position", fn.Name)
 		} else {
-			require.Zero(t, fact.ParamIndex, "%s carries a position it does not return", fn.Name)
+			require.Nil(t, fact.ParamIndex, "%s carries a position it does not return", fn.Name)
 		}
 	}
 	// Each builtin resolved above, so an equal count leaves no room for
@@ -261,15 +275,17 @@ func TestFactsJSON(t *testing.T) {
 	}{
 		"Method":       {factOf(t, "Array.prototype.fill"), `{"classified":true,"receiver":"mutBorrow","returns":"receiver"}`},
 		"Unclassified": {factOf(t, "String.prototype.toLowerCase"), `{"classified":false}`},
-		// A returned position of 0 is omitted as the zero value, which is the
-		// position a reader takes an absent field for.
-		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":true,"receiver":"none","returns":"param"}`},
-		// A position past 0 is written out. Every parameter the committed graph
-		// returns sits at 0, so this fact is stated by hand.
+		// The first parameter is written out like any other position. Every
+		// parameter the committed graph returns sits at 0, so omitting it would
+		// leave paramIndex absent from the whole file and spell the common case
+		// as missing data.
+		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":true,"receiver":"none","returns":"param","paramIndex":0}`},
 		"ReturnedPositionPastZero": {
-			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: 2},
+			MethodFact{Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(2)},
 			`{"classified":true,"receiver":"none","returns":"param","paramIndex":2}`,
 		},
+		// A fact that returns no parameter carries no position at all.
+		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"classified":true,"receiver":"mutBorrow","returns":"fresh"}`},
 	}
 
 	for name, test := range tests {

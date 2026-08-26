@@ -1848,7 +1848,7 @@ type MethodFact struct {
     Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)
     Params     []ParamFact   `json:"params,omitempty"`     // only non-borrow parameters (FR12)
     Returns    *AliasKind    `json:"returns,omitempty"`    // return-borrow lifetime seed (FR4)
-    ParamIndex int           `json:"paramIndex,omitempty"` // when Returns == "param"
+    ParamIndex *int          `json:"paramIndex,omitempty"` // set exactly when Returns == "param"
     Throws     []string      `json:"throws,omitempty"`     // sync throws post-filter (FR10, FR11)
     Rejects    []string      `json:"rejects,omitempty"`    // async rejects → Promise<T,E>.Err (FR13)
 }
@@ -1875,6 +1875,16 @@ was proven read-only (`&`) — not to be confused with the FR5 `&mut`
 default the converter applies to an *unclassified* method's parameters.
 The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
+
+`ParamIndex` is a pointer for a different reason than the fields above it.
+`Receiver` and `Returns` are kinds with no empty member, so an omitted
+field is unambiguous either way. A position of 0 is one a fact really
+carries — it is the first declared parameter, and the receiver is not in
+that index space — so writing it as an absence would spell the common case
+as missing data. Every parameter the pinned graph returns sits at position
+0, so `omitempty` on a plain `int` would keep `paramIndex` out of
+`facts.json` entirely and leave a consumer no example to read the
+convention from.
 
 ## Appendix C. Canonical spec keys
 
