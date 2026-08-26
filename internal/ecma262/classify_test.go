@@ -155,14 +155,11 @@ func TestFactsSampleMethods(t *testing.T) {
 		// it stored, which reaches the return through `TimeClip`, an operation
 		// §4.2 does not resolve.
 		"MutatingMethodWithAnUnresolvedReturn": {"Date.prototype.setTime", "receiver:mutBorrow returns:unknown"},
-		// A borrow claim is only as good as the mutation analysis behind it.
 		// delete empties its entry with `Set p.[[Key]] to EMPTY`, a write to a
-		// Map Entry Record read out of `M.[[MapData]]`, and §4.1 places
-		// neither half. The method is classified because no warning stands, so
-		// the wrong answer is published rather than handed to the heuristics.
-		// §6's validation diff against the hand-written overrides is where the
-		// three methods of this shape are triaged.
-		"MutationTheAnalysisDoesNotSee": {"Map.prototype.delete", "receiver:borrow returns:fresh"},
+		// Map Entry Record read out of `M.[[MapData]]`. §4.1 charges it to the
+		// Map, so the receiver claim is mutBorrow. The return is the boolean
+		// the algorithm built, which is fresh and not the receiver.
+		"MutationThroughARecordInABackingStore": {"Map.prototype.delete", "receiver:mutBorrow returns:fresh"},
 		// A caller of an algorithm the analysis could not read whole is
 		// classified all the same, since §4.1 charges `Unattributable` up the
 		// call graph and `Incomplete` not at all. next resumes the generator
@@ -330,8 +327,8 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 225
-receiver mutBorrow: 57
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 222
+receiver mutBorrow: 60
 receiver none: 138
 returns fresh: 177
 returns param: 6

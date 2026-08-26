@@ -46,6 +46,16 @@ const (
 // its receiver. It is not the object itself, so it never stands in where
 // identity matters, such as §4.3's return alias.
 //
+// An interior value is part of its holder's own state, which is what separates
+// a backing-store slot from an ordinary property. The List in `M.[[MapData]]`
+// is reachable only through the Map's own methods, so emptying one of its
+// entries changes what `Map.prototype.get` returns. A property instead holds a
+// separate object that the owner only references. Writing that object leaves
+// every method of the owner returning what it did before, and the read itself
+// may run a getter that returns anything. Interior therefore means "inside this
+// object's state" rather than "one read below it", which is why a further read
+// off an interior value keeps the marker.
+//
 // Captures marks a fresh value built around something the algorithm was given.
 // It changes nothing about the fresh value, only about its interior. See
 // capturingAllocators.
@@ -90,6 +100,28 @@ func interiorOf(o Origin) Origin {
 			return Unknown
 		}
 		return Fresh
+	default:
+		return Unknown
+	}
+}
+
+// insideOf returns the origin of a value read out of o by a property read, such
+// as one entry of a List an object keeps in a backing-store slot.
+//
+// An interior value's contents are still inside the object holding it, so
+// writing one of them writes that object. `Map.prototype.delete` reaches the
+// entry it empties through `M.[[MapData]]`, and the write to that entry is
+// charged to `M`. Reading a property off anything else breaks the chain,
+// because the value read out of a container is a different object from the
+// container.
+func insideOf(o Origin) Origin {
+	switch {
+	case o.Kind == originUnset:
+		// The walk has not reached the definition of the object being read.
+		// See originUnset.
+		return o
+	case o.Interior:
+		return o
 	default:
 		return Unknown
 	}
@@ -508,7 +540,12 @@ func (m *OriginMap) eval(e Expr) Origin {
 		// a different object from the container itself.
 		return Unknown
 	case *PropExpr:
-		return Unknown
+		// A property read off an interior value stays interior. `p` in
+		// `Map.prototype.delete` is one entry of the List in the receiver's
+		// `[[MapData]]`, so a write to `p` writes the Map. Reading a property
+		// off anything else breaks the chain the way a slot read outside the
+		// backing-store list does.
+		return insideOf(m.eval(e.Object))
 	default:
 		// An operand the graph left out, which reaches Eval as a nil Expr.
 		return Unknown

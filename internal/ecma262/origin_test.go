@@ -90,6 +90,24 @@ func TestInteriorIsNotItsHolder(t *testing.T) {
 	require.Equal(t, Unknown, Receiver.join(interiorOf(Receiver)))
 }
 
+// A property read keeps an interior origin and breaks every other chain. The
+// entries of a List a collection keeps in a backing-store slot are inside that
+// collection, so a write to one is a write to the collection.
+func TestInsideOf(t *testing.T) {
+	require.Equal(t, interiorOf(Receiver), insideOf(interiorOf(Receiver)))
+	require.Equal(t, interiorOf(Param(1)), insideOf(interiorOf(Param(1))))
+
+	// Reading a property off the object itself yields a different object.
+	require.Equal(t, Unknown, insideOf(Receiver))
+	require.Equal(t, Unknown, insideOf(Param(1)))
+	require.Equal(t, Unknown, insideOf(Fresh))
+	require.Equal(t, Unknown, insideOf(Unknown))
+
+	// The lattice bottom stays at the bottom, for the reason TestInteriorOf
+	// gives.
+	require.Equal(t, Origin{}, insideOf(Origin{}))
+}
+
 // Reading a backing-store slot off a name the walk has not bound yet resolves
 // on a later pass rather than sticking at `Unknown`, so the result does not
 // depend on the order the serializer emitted the nodes in. Here `buf` reads the
@@ -240,6 +258,14 @@ func TestOriginMapEval(t *testing.T) {
 	readOther := &SlotExpr{Object: &VarExpr{Var: "O"}, Slot: "Prototype"}
 	require.Equal(t, Unknown, m.Eval(readOther))
 
+	// A property read off that payload is still the receiver's own state, while
+	// one off the receiver reaches a separate object it only references. The
+	// Origin doc comment spells out the difference.
+	readEntry := &PropExpr{Object: readData}
+	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, m.Eval(readEntry))
+	readProp := &PropExpr{Object: &VarExpr{Var: "O"}}
+	require.Equal(t, Unknown, m.Eval(readProp))
+
 	// A nested call resolves through the same lists a call node does.
 	toObject := &CallExpr{Callee: "ToObject", Args: []Expr{&ThisExpr{}}}
 	require.Equal(t, Receiver, m.Eval(toObject))
@@ -363,6 +389,17 @@ func TestOriginMapInteriorOfAFreshAllocation(t *testing.T) {
 	require.Equal(t, Fresh, m.Of("A"))
 	require.Equal(t, Fresh, m.Of("targetBuffer"))
 	require.Equal(t, interiorOf(Receiver), m.Of("srcBuffer"))
+}
+
+// A record read out of a backing store keeps the holder's interior origin, so
+// §4.1 can charge a write to that record to the holder. `Map.prototype.delete`
+// binds `p` from a read of `M.[[MapData]]` and then empties it with `Set
+// p.[[Key]] to EMPTY`.
+func TestOriginMapRecordReadOutOfABackingStore(t *testing.T) {
+	m := originsOf(t, "Map.prototype.delete")
+
+	require.Equal(t, Receiver, m.Of("M"))
+	require.Equal(t, interiorOf(Receiver), m.Of("p"))
 }
 
 func TestOriginMapString(t *testing.T) {

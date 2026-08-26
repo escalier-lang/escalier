@@ -683,16 +683,16 @@ fixpoint. `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
 and those eight grow into 47 abstract operations with a mutated position. Of the
-501 builtins, 58 mutate their receiver and 13 mutate a parameter, and 420 carry
+501 builtins, 61 mutate their receiver and 13 mutate a parameter, and 420 carry
 neither warning, so §4.3 decides them from the analysis rather than from FR5's
 name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
 receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
-`RegExp.prototype.exec`, the collection adders, the 11 `DataView.prototype.set*`
-methods, `TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` come
-out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
+`RegExp.prototype.exec`, the collection adders, the Map and WeakMap removals,
+the 11 `DataView.prototype.set*` methods, `TypedArray.prototype.set`, and
+`TypedArray.prototype.copyWithin` come out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
 `Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and
 `Atomics.store` come out mutating argument 0. Eight findings.
 
@@ -757,19 +757,22 @@ out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
   `CreateDataProperty`, and reading the argument sitting there gives `Receiver`,
   which is `OrdinarySet`'s parameter 3. Its summary is `{3}`, and a caller of
   `OrdinarySet` charges whatever it passed fourth.
-- **A record read out of a backing store loses the receiver, so
-  `Map.prototype.delete` comes out non-mutating.** delete empties the entry in
-  place with `Set p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry
-  Record rather than a backing store, and `p` itself came out of a read of
-  `M.[[MapData]]`, which breaks the origin chain under §4.2. Both halves of the
-  attribution fail, so the method reads as writing nothing.
-  `Map.prototype.clear` and `WeakMap.prototype.delete` are the same shape.
-  Carrying the interior origin through the indexed read that produces `p`, and
-  charging a write to any slot of an interior value to the object holding it,
-  resolves all three and costs nothing measurable: the receiver-mutating
-  builtins go from 57 to 60 with the unattributable and classifiable counts
-  unchanged. It widens the origin rules a second time, so it is left to §6,
-  which triages these against the hand-written overrides.
+- **A record read out of a backing store is charged to the object holding
+  that store.** `Map.prototype.delete` empties its entry in place with `Set
+  p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry Record rather than a
+  backing store, so the slot list alone reports nothing, and `p` itself came out
+  of a read of `M.[[MapData]]`. Two rules together place the write. A property
+  read off an interior value stays interior, which puts `p` at the receiver's
+  interior, and a slot write on an interior value is charged to its holder
+  whatever the slot is named. `Map.prototype.clear` and `WeakMap.prototype.delete`
+  are the same shape, and the three take the receiver-mutating builtins from 58
+  to 61 with the unattributable, incomplete, and classifiable counts unchanged.
+  §4.3 publishes 60 of the 61 as `mutBorrow`. `RegExp.prototype [ @@replace ]`
+  is the one left out, because it also carries a warning.
+  The Set counterparts are the same operation failing the other way.
+  `Set.prototype.delete`, `Set.prototype.clear`, and `WeakSet.prototype.delete`
+  reach the replacement through a prose step §3 could not lower, so they come out
+  incomplete and FR5's name heuristics decide them.
 - **An iterator's cursor is left out of the backing-store list.** Nine slots
   take a receiver-origin write inside a builtin method that the curated list
   does not count, and all nine are iterator or generator bookkeeping:
@@ -830,7 +833,8 @@ func eval(F, e Expr) Origin:
     case Alloc, Lit: return Fresh                     // fresh object / primitive
     case Slot:  return Interior(eval(F, e.Object))    // if e.Slot is a backing store
                 return Unknown                        // otherwise the chain breaks
-    case Prop:  return Unknown                        // a READ: origin chain breaks
+    case Prop:  return Inside(eval(F, e.Object))      // interior stays interior;
+                                                      // any other read breaks the chain
     default:    return Unknown
 
 func evalCall(F, c) Origin:
@@ -876,7 +880,7 @@ reader for `cfg.json`, mirroring Appendix A, and the origin map.
 §4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
 functions analyze in about 8 ms, binding 11756 names. Of those, 373 are at the
 receiver, 2007 at a parameter, 3927 fresh, 118 fresh from an allocator that
-captured an argument, 100 interior, and 5231 unknown. The gate is
+captured an argument, 121 interior, and 5210 unknown. The gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
@@ -920,10 +924,14 @@ captured an argument, 100 interior, and 5231 unknown. The gate is
   a write to it is a write to the object. `SetViewValue` passes
   `view.[[ViewedArrayBuffer]]` straight to the byte store, and resolving that to
   `Unknown` left every `DataView.prototype.set*` method unable to name what it
-  wrote. `Interior` marks the 100 names this reaches. It is deliberately not the
+  wrote. `Interior` marks the 121 names this reaches. It is deliberately not the
   same value as its holder, so it never stands in where identity is what
   matters, such as §4.3's return alias: returning `M.[[MapData]]` is not
-  returning `M`.
+  returning `M`. A property read off an interior value keeps that origin, which
+  is how one entry of a collection's payload List stays placed. `p` in
+  `Map.prototype.delete` comes out of a read of `M.[[MapData]]` and stays at the
+  receiver's interior, so §4.1 charges `Set p.[[Key]] to EMPTY` to `M`. Reading
+  a property off anything else still breaks the chain.
 - **A fresh object's interior is fresh unless its allocator captured an
   argument.** `MakeDataViewWithBufferWitnessRecord` ends in `return « obj,
   byteLength »`, so the record it builds holds the very view it was passed, and
