@@ -364,17 +364,8 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 	for _, node := range fn.Nodes {
 		switch node := node.(type) {
 		case *SlotWriteNode:
-			if node.Slot == "" {
-				// The algorithm computes the slot it writes, so the curated
-				// list cannot say whether the write reaches the object's
-				// backing store. A write onto a value the function allocated
-				// itself stays invisible to the caller whichever slot it
-				// lands on. Any other origin is a write the analysis cannot
-				// read.
-				if origin.Eval(node.Object).Kind != OriginFresh {
-					changed = f.markIncomplete() || changed
-				}
-			} else if backingStoreSlots.Contains(node.Slot) || origin.Eval(node.Object).Interior {
+			switch o := origin.Eval(node.Object); {
+			case backingStoreSlots.Contains(node.Slot) || o.Interior:
 				// A write to a backing-store slot mutates the object that
 				// holds it. So does a write to any slot of an interior value,
 				// since that value lives inside the object holding it and the
@@ -382,8 +373,23 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				// empties one entry of `M.[[MapData]]` with `Set p.[[Key]] to
 				// EMPTY`. `[[Key]]` is a field of a Map Entry Record rather
 				// than a backing-store slot, so only the interior origin of
-				// `p` places that write.
+				// `p` places that write. An interior answers the same way when
+				// the algorithm computes the slot, which is how a byte stored
+				// into a Data Block reaches the buffer holding it.
 				changed = a.attribute(f, origin, node.Object) || changed
+			case node.Slot != "":
+				// A slot the curated list does not name, on a value that is
+				// not an interior. `[[Prototype]]` and `[[Extensible]]` are
+				// the shape. They describe how the object behaves rather than
+				// what it holds.
+			case o.Kind == OriginFresh:
+				// The algorithm computes the slot, so the curated list cannot
+				// answer for the write at all. A write onto a value the
+				// function allocated itself stays invisible to the caller
+				// whichever slot it lands on.
+			default:
+				// A computed slot on a value the analysis cannot place.
+				changed = f.markIncomplete() || changed
 			}
 		case *CallNode:
 			changed = a.charge(cfg, f, origin, node.Callee, node.Args) || changed

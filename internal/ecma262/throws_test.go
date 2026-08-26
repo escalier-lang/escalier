@@ -97,6 +97,12 @@ func TestThrowSummarySampleFunctions(t *testing.T) {
 		// A method that raises nothing and reaches nothing that raises.
 		// `Number.isInteger` tests its argument and returns a boolean.
 		"RaisesNothing": {"Number.isInteger", "none"},
+		// The six read-modify-write Atomics methods define their modification
+		// function in a prose step, and §3 reads it as the allocation it is.
+		// `Atomics.store` states the same work in steps ESMeta formalizes, and
+		// the two raise the same three classes.
+		"StepReadFromProse": {"Atomics.add", "RangeError SyntaxError TypeError"},
+		"StepFormalized":    {"Atomics.store", "RangeError SyntaxError TypeError"},
 	}
 
 	for name, test := range tests {
@@ -297,6 +303,11 @@ func TestThrowSummaryIncomplete(t *testing.T) {
 		"CapturedCompletion": {"Iterator.prototype.forEach", true},
 		// Every step of push resolves.
 		"WhollyReadable": {"Array.prototype.push", false},
+		// A step §3 reads out of prose is read whole, so it reports no
+		// incompleteness to the throw sets any more than to the mutation
+		// summaries. `Atomics.store` states the same work in steps ESMeta
+		// formalizes and is complete for the same reason.
+		"StepReadFromProse": {"Atomics.add", false},
 	}
 
 	for name, test := range tests {

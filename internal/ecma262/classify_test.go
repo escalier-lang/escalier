@@ -168,10 +168,11 @@ func TestFactsSampleMethods(t *testing.T) {
 		// through `GeneratorResume`, which carries the warning.
 		"CallerOfAnIncompleteAlgorithm": {"GeneratorPrototype.next", "receiver:borrow returns:unknown"},
 		// A method carrying either warning keeps its return alias and loses only
-		// its receiver claim. union reaches the prose step `Let resultSetData be
-		// a copy of O.[[SetData]]`, which could have written the receiver for all
-		// the analysis can tell. The Set it hands back is one it allocated.
-		"IncompleteMethodReturningAFreshValue": {"Set.prototype.union", "returns:fresh"},
+		// its receiver claim. TypedArray.prototype.slice reaches a prose step
+		// that could have written the receiver for all the analysis can tell.
+		// The typed array it hands back is one TypedArraySpeciesCreate
+		// allocated.
+		"IncompleteMethodReturningAFreshValue": {"TypedArray.prototype.slice", "returns:fresh"},
 		// The same withheld receiver over a return the walk could not resolve.
 		// toLowerCase returns what a prose step reaching the Unicode case-mapping
 		// table produced.
@@ -182,6 +183,15 @@ func TestFactsSampleMethods(t *testing.T) {
 		// cannot place, so the write to it is unattributable and the return
 		// unresolved.
 		"UnattributableStatic": {"Array.of", "receiver:none returns:unknown"},
+		// A method whose only mutation the specification states in prose. clear
+		// empties `S.[[SetData]]` with a step ESMeta does not formalize, and §3
+		// reads the write out of the wording. Without that the method publishes
+		// no receiver claim at all.
+		"MutationStatedInProse": {"Set.prototype.clear", "receiver:mutBorrow returns:fresh"},
+		// union reads its receiver's payload and builds a new set from it. The
+		// step copying that payload is prose too, so leaving it unrecognized
+		// costs the method a borrow claim it can support.
+		"AllocationStatedInProse": {"Set.prototype.union", "receiver:borrow returns:fresh"},
 	}
 
 	for name, test := range tests {
@@ -290,7 +300,7 @@ func TestFactsJSON(t *testing.T) {
 		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":"receiver"}`},
 		// A withheld receiver falls through to FR5's `&mut self`, so the entry
 		// carries the return alias alone.
-		"WithheldReceiver": {factOf(t, "Set.prototype.union"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
+		"WithheldReceiver": {factOf(t, "Array.prototype.concat"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave paramIndex absent from the whole file and spell the common case
@@ -350,10 +360,10 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 222
-receiver mutBorrow: 60
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 225
+receiver mutBorrow: 63
 receiver none: 188
-receiver unclassified: 31
+receiver unclassified: 25
 returns fresh: 229
 returns param: 6
 returns receiver: 15

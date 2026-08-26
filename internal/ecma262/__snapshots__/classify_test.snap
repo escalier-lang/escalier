@@ -14,11 +14,6 @@ RegExp.prototype [ @@matchAll ]
 RegExp.prototype [ @@replace ]
 RegExp.prototype [ @@split ]
 RegExpStringIteratorPrototype.next
-Set.prototype.clear
-Set.prototype.delete
-Set.prototype.difference
-Set.prototype.symmetricDifference
-Set.prototype.union
 SharedArrayBuffer.prototype.grow
 String.prototype.normalize
 String.prototype.repeat
@@ -29,6 +24,5 @@ String.prototype.toLowerCase
 String.prototype.toUpperCase
 TypedArray.prototype.slice
 TypedArray.prototype.toLocaleString
-WeakSet.prototype.delete
 get RegExp.prototype.flags
 ---
