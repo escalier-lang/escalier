@@ -675,6 +675,13 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 	}
 
 	for _, site := range a.summary.facts[target].order {
+		if site.Sink == SinkReject {
+			// The callee settles its own returned promise with this value. It
+			// never leaves the callee as an abrupt completion, so neither the
+			// `?` guard nor a capture of the callee's completion carries it
+			// out, and it belongs to no channel of the caller's.
+			continue
+		}
 		if invoking && site.Raised.Kind == RaisedCallback {
 			// The invoking operation's own callback effect is the effect of the
 			// function this very call invokes, which propagateInvoked already

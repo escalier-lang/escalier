@@ -246,15 +246,15 @@ func rejectGraph(t *testing.T, promise bool, reason string) *CFG {
 // a function that returns no promise stays incomplete, since nothing there says
 // where the captured completion goes.
 func TestRejectWalkReadsThroughACapturedCompletion(t *testing.T) {
-	const completionValue = `{"kind":"slot","object":{"kind":"var","var":"status"},"slot":"Value"}`
+	const capturedReason = `{"kind":"slot","object":{"kind":"var","var":"status"},"slot":"Value"}`
 
-	cfg := rejectGraph(t, true, completionValue)
+	cfg := rejectGraph(t, true, capturedReason)
 	throws := NewThrowSummary(cfg).Of(cfg.Builtin("Demo"))
 	require.Equal(t, "none", throws.String())
 	require.Equal(t, "RangeError", throws.RejectsString())
 	require.Equal(t, "#0 rejects RangeError <- Raiser#0", throws.Sites[0].String())
 
-	cfg = rejectGraph(t, false, completionValue)
+	cfg = rejectGraph(t, false, capturedReason)
 	throws = NewThrowSummary(cfg).Of(cfg.Builtin("Demo"))
 	require.Equal(t, "incomplete", throws.String())
 	require.Equal(t, "none", throws.RejectsString())
@@ -347,4 +347,31 @@ func TestRejectReasonReadsEachInvokersArgumentList(t *testing.T) {
 			require.Equal(t, "Origin(Param(0))", NewThrowSummary(cfg).Of(cfg.Builtin("Demo")).RejectsString())
 		})
 	}
+}
+
+// A callee's rejections settle the promise the callee returns, so they reach
+// neither channel of a caller that `?`-guards it. Only what the callee raises
+// synchronously travels out. Without the split the caller would report the
+// callee's rejected value as one of its own synchronous throws.
+func TestCalleeRejectionsDoNotPropagate(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Rejecter","kind":"abstract-op","params":["r"],"promise":true,"nodes":[` +
+			`{"kind":"throw","errorType":"RangeError"},` +
+			`{"kind":"call","target":"%0","callee":"Call","guard":"?","args":[` +
+			`{"kind":"slot","object":{"kind":"var","var":"cap"},"slot":"Reject"},` +
+			`{"kind":"lit"},` +
+			`{"kind":"alloc","args":[{"kind":"var","var":"r"}]}]}]},` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"call","callee":"Rejecter","args":[{"kind":"var","var":"x"}],"guard":"?"}]}]}`))
+	require.NoError(t, err)
+
+	summary := NewThrowSummary(cfg)
+	rejecter := summary.Of(cfg.AbstractOp("Rejecter"))
+	require.Equal(t, "RangeError", rejecter.String())
+	require.Equal(t, "Origin(Param(0))", rejecter.RejectsString())
+
+	demo := summary.Of(cfg.Builtin("Demo"))
+	require.Equal(t, "RangeError", demo.String())
+	require.Equal(t, "none", demo.RejectsString())
 }
