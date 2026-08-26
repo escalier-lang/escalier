@@ -228,8 +228,7 @@ func NewFacts(cfg *CFG) *Facts {
 			Returns:    returns.Kind,
 		}
 		if returns.Kind == AliasParam {
-			position := returns.Index
-			fact.ParamIndex = &position
+			fact.ParamIndex = new(returns.Index)
 		}
 		facts.Methods[fn.Name] = fact
 	}
