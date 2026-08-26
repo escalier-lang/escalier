@@ -482,3 +482,47 @@ declare function f(x: void, p: Promise<void>, cb: (v: number) => void): void;
 	require.Contains(t, printed,
 		"fn f(x: never, p: Promise<undefined>, cb: fn (v: number) -> unknown) -> unknown")
 }
+
+// The converter records a runtime path for every declaration it emits,
+// including the ones that carry no `@js` decorator because they erase at
+// codegen. `InterfaceDecl` and `TypeDecl` have no Decorators field, so the
+// side map is the only place their path survives.
+func TestStandaloneModuleRecordsPaths(t *testing.T) {
+	t.Parallel()
+
+	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", `
+declare namespace Intl {
+    interface Collator { compare(x: string): number; }
+    function getCanonicalLocales(locales?: string): string[];
+}
+interface ConcatArray<T> { join(separator?: string): string; }
+declare function parseInt(s: string): number;
+`).Module)
+	require.NoError(t, err)
+
+	paths := map[string]string{}
+	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			paths[declName(decl)] = mod.Paths[decl]
+		}
+		return true
+	})
+	require.Equal(t, map[string]string{
+		"Collator":            "Intl.Collator",
+		"getCanonicalLocales": "Intl.getCanonicalLocales",
+		"ConcatArray":         "ConcatArray",
+		"parseInt":            "parseInt",
+	}, paths)
+}
+
+func declName(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.InterfaceDecl:
+		return d.Name.Name
+	case *ast.FuncDecl:
+		return d.Name.Name
+	case *ast.ClassDecl:
+		return d.Name.Name
+	}
+	return ""
+}

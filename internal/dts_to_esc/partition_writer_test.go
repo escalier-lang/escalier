@@ -555,3 +555,59 @@ func TestReportPartition_FormatsSortedSummary(t *testing.T) {
 	// Sorted: std comes before web.
 	require.Less(t, strings.Index(out, "std:array"), strings.Index(out, "web:dom"))
 }
+
+// WritePartitionedTree is ConvertBuckets followed by WriteConvertedTree. A
+// caller that needs the converted modules for something other than writing
+// them runs the two halves itself, which must land the same files.
+func TestConvertBucketsAndWriteConvertedTree(t *testing.T) {
+	t.Parallel()
+	es5 := parseLib(t, "lib.es5.d.ts", `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+declare namespace Math {
+    function abs(x: number): number;
+}
+`)
+	res, err := PartitionLib([]LibInput{es5})
+	require.NoError(t, err)
+
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"std:array", "std:math"}, keysOf(mods))
+
+	split := t.TempDir()
+	written, err := WriteConvertedTree(mods, split)
+	require.NoError(t, err)
+	require.Equal(t, []string{"std:array", "std:math"}, written)
+
+	whole := t.TempDir()
+	_, err = WritePartitionedTree(res, whole)
+	require.NoError(t, err)
+
+	for _, rel := range []string{"std/array.esc", "std/math.esc"} {
+		fromSplit, err := os.ReadFile(filepath.Join(split, filepath.FromSlash(rel)))
+		require.NoError(t, err)
+		fromWhole, err := os.ReadFile(filepath.Join(whole, filepath.FromSlash(rel)))
+		require.NoError(t, err)
+		require.Equal(t, string(fromWhole), string(fromSplit), "%s", rel)
+	}
+}
+
+// WriteConvertedTree only knows the package URIs Route produces, so a URI
+// from anywhere else is a caller bug rather than a package it should invent
+// a path for.
+func TestWriteConvertedTreeRejectsUnknownURI(t *testing.T) {
+	t.Parallel()
+	_, err := WriteConvertedTree(map[string]*StandaloneModule{"std:nope": nil}, t.TempDir())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), `unknown package URI "std:nope"`)
+}
+
+func keysOf(mods map[string]*StandaloneModule) []string {
+	out := make([]string, 0, len(mods))
+	for uri := range mods {
+		out = append(out, uri)
+	}
+	return out
+}

@@ -581,8 +581,35 @@ func appendReadonlyAliases(mod *StandaloneModule, twins []readonlyTwin) {
 //
 // Returns a sorted list of the URIs written, for caller-side reporting.
 func WritePartitionedTree(result *PartitionResult, outDir string) ([]string, error) {
-	uris := make([]string, 0, len(result.Buckets))
-	for uri := range result.Buckets {
+	mods, err := ConvertBuckets(result)
+	if err != nil {
+		return nil, err
+	}
+	return WriteConvertedTree(mods, outDir)
+}
+
+// ConvertBuckets converts every bucket in result, keyed by package URI.
+// Callers that need the converted modules for something other than writing
+// them — the ECMA-262 join reads them for the members each package declares —
+// go through this instead of converting a second time.
+func ConvertBuckets(result *PartitionResult) (map[string]*StandaloneModule, error) {
+	mods := make(map[string]*StandaloneModule, len(result.Buckets))
+	for uri, stmts := range result.Buckets {
+		mod, err := ConvertBucket(stmts)
+		if err != nil {
+			return nil, fmt.Errorf("converting bucket %s: %w", uri, err)
+		}
+		mods[uri] = mod
+	}
+	return mods, nil
+}
+
+// WriteConvertedTree writes each converted module to its package file under
+// outDir, creating parent directories as needed. Returns the package URIs
+// written, sorted.
+func WriteConvertedTree(mods map[string]*StandaloneModule, outDir string) ([]string, error) {
+	uris := make([]string, 0, len(mods))
+	for uri := range mods {
 		uris = append(uris, uri)
 	}
 	sort.Strings(uris)
@@ -591,14 +618,11 @@ func WritePartitionedTree(result *PartitionResult, outDir string) ([]string, err
 	for _, uri := range uris {
 		pkg, ok := PackageForURI(uri)
 		if !ok {
-			return nil, fmt.Errorf("WritePartitionedTree: unknown package URI %q "+
+			return nil, fmt.Errorf("WriteConvertedTree: unknown package URI %q "+
 				"(every bucket should come from Route, which only returns "+
 				"URIs in PackageList)", uri)
 		}
-		mod, err := ConvertBucket(result.Buckets[uri])
-		if err != nil {
-			return nil, fmt.Errorf("converting bucket %s: %w", uri, err)
-		}
+		mod := mods[uri]
 		dest := filepath.Join(outDir, filepath.FromSlash(pkg.File))
 		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return nil, fmt.Errorf("creating package dir for %s: %w", uri, err)
