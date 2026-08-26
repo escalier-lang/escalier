@@ -3,6 +3,7 @@ package ecma262
 import (
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ReceiverKind is how a builtin takes the value it is called on. See
@@ -135,14 +136,40 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 	return RecvBorrow
 }
 
+// Coverage records which of MethodFact's determinations the analysis resolved.
+// A determination is an independent axis of the fact, and requirements.md FR5's
+// conservative fallback applies to each one on its own. A step the analysis
+// could not read withholds only the determinations that read that step, so a
+// missed write costs the receiver claim and leaves the return alias standing.
+//
+// Params, Throws, and Rejects join MethodFact in §8 and §9, and each adds its
+// own field here.
+type Coverage struct {
+	// Receiver is set when the mutation fixpoint read the whole algorithm and
+	// placed every write it saw. An opaque node carries no operands, so a
+	// missed step could have written anything, and the receiver claim is
+	// withheld rather than guessed.
+	Receiver bool `json:"receiver"`
+	// Returns is set whenever returnAlias ran, which is for every builtin.
+	// The alias lattice has a top, so an algorithm the walk could not tie to
+	// any origin resolves to AliasUnknown instead of leaving the axis open.
+	//
+	// A step the analysis could not read can itself be a return, and the join
+	// then misses that path. `String.prototype.repeat` ends in a prose step
+	// that returns n copies of the string appended together, so the `fresh`
+	// it publishes comes from its empty-string path alone. FR4 accepts that,
+	// because §7 records the alias for curation rather than applying it.
+	Returns bool `json:"returns"`
+}
+
 // MethodFact is what the analysis concluded about one builtin. It serializes
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// An unclassified fact carries no claim at all. Every other field is absent
+// A determination Coverage leaves unset carries no claim. Its field is absent
 // from the JSON, so a consumer never reads "unanalyzed" as "proven none". The
-// converter falls such a method through to its name heuristics, which is
-// requirements.md FR5's soundness bias.
+// converter applies requirements.md FR5's default for that axis instead, which
+// for an absent receiver is `&mut self`.
 //
 // Appendix B draws that absence with pointers. Receiver and Returns are plain
 // kinds, which have no empty member, so omitempty encodes their absence the
@@ -153,7 +180,7 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 // Params, no fact makes a parameter claim, so an absent Params is not yet
 // Appendix B's proven-read-only one.
 type MethodFact struct {
-	Classified bool         `json:"classified"`
+	Classified Coverage     `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
 	Returns    AliasKind    `json:"returns,omitempty"`
 	// ParamIndex is the 0-based position Returns aliases. It indexes the
@@ -165,23 +192,31 @@ type MethodFact struct {
 	ParamIndex *int `json:"paramIndex,omitempty"`
 }
 
-// String renders the fact in one line, so a test can assert it whole. An
-// unclassified fact reads "unclassified", since it holds nothing else.
+// String renders the covered determinations in one line, so a test can assert
+// a fact whole. An uncovered determination is left out rather than spelled with
+// a placeholder value, and a fact covering nothing reads "unclassified".
 func (f MethodFact) String() string {
-	if !f.Classified {
+	var parts []string
+	if f.Classified.Receiver {
+		parts = append(parts, "receiver:"+string(f.Receiver))
+	}
+	if f.Classified.Returns {
+		returns := string(f.Returns)
+		if f.Returns == AliasParam {
+			// A parameter return with no position is a fact nothing in this
+			// package builds. It reads as the missing position rather than as
+			// position 0, which is the confusion the pointer exists to prevent.
+			returns = "param(?)"
+			if f.ParamIndex != nil {
+				returns = fmt.Sprintf("param(%d)", *f.ParamIndex)
+			}
+		}
+		parts = append(parts, "returns:"+returns)
+	}
+	if len(parts) == 0 {
 		return "unclassified"
 	}
-	returns := string(f.Returns)
-	if f.Returns == AliasParam {
-		// A parameter return with no position is a fact nothing in this
-		// package builds. It reads as the missing position rather than as
-		// position 0, which is the confusion the pointer exists to prevent.
-		returns = "param(?)"
-		if f.ParamIndex != nil {
-			returns = fmt.Sprintf("param(%d)", *f.ParamIndex)
-		}
-	}
-	return fmt.Sprintf("receiver:%s returns:%s", f.Receiver, returns)
+	return strings.Join(parts, " ")
 }
 
 // Facts is the classification of every builtin in one graph, keyed by the
@@ -194,17 +229,19 @@ type Facts struct {
 }
 
 // NewFacts classifies every builtin in cfg. It runs the mutation fixpoint
-// itself, which supplies the receiver axis and the two warnings that decide
-// whether a method is classified at all.
+// itself, which supplies the receiver axis and the two warnings that withhold
+// it.
 //
-// An unresolved return alias does not unclassify a method. It is FR4's lifetime
-// seed, which §7 records rather than applies, not a soundness claim the way
-// receiver mutability is.
+// The two axes carry different risk, which is why a warning takes only one of
+// them. Receiver mutability is a soundness claim §7 auto-applies, and a wrong
+// `borrow` lets an immutable value call a mutating method. The return alias is
+// FR4's lifetime seed, which §7 records for curation rather than applies, so
+// withholding it costs precision and buys no safety.
 //
-// A classified receiver claim is only as strong as §4.1. A mutation that
-// analysis does not see leaves no warning, so the borrow is published rather
-// than withheld. §6's diff against the hand-written overrides is what
-// authorizes §7 to trust this source.
+// A published receiver claim is only as strong as §4.1. A mutation the analysis
+// does not see leaves no warning, so the borrow is published rather than
+// withheld. §6's diff against the hand-written overrides is what authorizes §7
+// to trust this source.
 func NewFacts(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
 
@@ -217,15 +254,16 @@ func NewFacts(cfg *CFG) *Facts {
 			continue
 		}
 		mutations := summary.Of(fn)
-		if mutations.Unattributable || mutations.Incomplete {
-			facts.Methods[fn.Name] = MethodFact{Classified: false}
-			continue
-		}
 		returns := returnAlias(summary.originsOf(fn))
 		fact := MethodFact{
-			Classified: true,
-			Receiver:   receiverKind(fn, mutations),
-			Returns:    returns.Kind,
+			Classified: Coverage{
+				Receiver: !mutations.Unattributable && !mutations.Incomplete,
+				Returns:  true,
+			},
+			Returns: returns.Kind,
+		}
+		if fact.Classified.Receiver {
+			fact.Receiver = receiverKind(fn, mutations)
 		}
 		if returns.Kind == AliasParam {
 			fact.ParamIndex = new(returns.Index)
@@ -243,12 +281,14 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 	return fact, ok
 }
 
-// Unclassified returns the names FR5 hands to the converter's name-based
-// heuristics, sorted. Shrinking this list is what §4 is measured by.
+// Unclassified returns the names whose receiver claim FR5 hands to the
+// converter's name-based heuristics, sorted. Shrinking this list is what §4 is
+// measured by. A method listed here still publishes its return alias, so the
+// list names a withheld determination rather than an empty fact.
 func (f *Facts) Unclassified() []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
-		if !fact.Classified {
+		if !fact.Classified.Receiver {
 			names = append(names, name)
 		}
 	}

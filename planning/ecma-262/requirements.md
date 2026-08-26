@@ -72,11 +72,11 @@ name heuristics.
 - **Throws as a finished, unreviewed annotation.** Emitting the throw
   set is an in-scope deliverable (FR10, FR11), but it ships as a reviewed
   candidate set, not a trusted final annotation. The review need is not
-  that the extraction is inaccurate — for a classified method FR10's
-  *raw* throw set is a sound, complete enumeration of what ECMA-262 models
-  the algorithm as throwing, and could ship unreviewed at the cost of
-  noise. Review guards the two things downstream of that, both properties
-  of the coercion filter (FR11):
+  that the extraction is inaccurate — where `classified.throws` is set,
+  FR10's *raw* throw set is a sound, complete enumeration of what
+  ECMA-262 models the algorithm as throwing, and could ship unreviewed at
+  the cost of noise. Review guards the two things downstream of that,
+  both properties of the coercion filter (FR11):
   - **The filter can under-report.** Making the raw set usable means
     *narrowing* it — dropping coercion `TypeError`s — and narrowing is the
     unsound direction: a dropped real throw yields a `throws` clause too
@@ -458,10 +458,12 @@ merely stricter.
 
 **Conservative defaults — assume the effect when uncertain:**
 
-- A method the analysis cannot classify — prose-only algorithm, host-
+- A determination the analysis cannot make — a prose-only algorithm, host-
   defined behavior, an unrecognized mutation phrasing — is emitted as
-  **unclassified**, not as a guess. Unclassified methods fall through to
-  the existing name heuristics and hand-curation in the converter.
+  **unclassified**, not as a guess. Coverage is per determination, so a
+  method withholds only the axes that read the step it could not resolve.
+  An unclassified determination falls through to the existing name
+  heuristics and hand-curation in the converter.
 - Receiver mutability defaults to **mutating** (`&mut self`) when
   unclassified, consistent with the interop core principle "default to
   mutating"
@@ -499,17 +501,24 @@ impractical:**
   accepting that this is the unsound direction, and both are curation-grade
   and gated by the FR14 validation before they could ever auto-apply.
 
-These defaults are applied by the **converter**, not serialized as
-facts. A `classified: false` record omits its effect fields — `receiver`,
-`params`, `throws`, `rejects` are absent (or null) on the wire — so the
-format never conflates "the analysis proved this method borrows and
-throws nothing" with "the analysis could not tell." A proven-empty result
-is `classified: true` with empty effect fields; an unanalyzed method is
-`classified: false` with the effect fields absent. FR6 and Appendix B use
-this one contract.
+These defaults are applied by the **converter**, not serialized as facts.
+A record's `classified` object marks each determination covered or not,
+and an uncovered one omits its field — `receiver`, `params`, `throws`,
+`rejects` are absent, or null, on the wire. So the format never conflates
+"the analysis proved this method borrows and throws nothing" with "the
+analysis could not tell." A proven-empty result is a covered determination
+with an empty effect field; an unanalyzed one is an uncovered
+determination with its field absent. FR6 and Appendix B use this one
+contract.
 
-Every unclassified method is reported by name so the gap is visible and
-auditable rather than silent.
+Splitting coverage this way keeps the conservative bias where it buys
+safety and drops it where it does not. `receiver` is auto-applied, so a
+missed mutation must cost the claim. `returns` is FR4's lifetime seed,
+recorded for curation rather than applied, so a method whose only problem
+is a possible hidden mutation still publishes it.
+
+Every method with an unclassified receiver is reported by name so the gap
+is visible and auditable rather than silent.
 
 ### FR6. Output contract
 
@@ -518,26 +527,34 @@ name. Each entry records the five determinations and the tier-relevant
 provenance. `receiver` is `borrow` (`&self`), `mutBorrow` (`&mut self`),
 or `none` (a static or namespace function with no receiver). `params`
 lists only the parameters the analysis found `mutBorrow` (`&mut`) or
-`escape` (stored into the receiver, spelled at curation — see FR12); a
-parameter omitted from a *classified* method's entry was proven read-only
-(`borrow`). That proven-read-only omission is distinct from the FR5
+`escape` (stored into the receiver, spelled at curation — see FR12).
+Where `classified.params` is set, a parameter omitted from the entry was
+proven read-only (`borrow`). That proven-read-only omission is distinct
+from the FR5
 uncertain default, which is `&mut`: the omission means "the analysis
-showed this parameter is only read," whereas the FR5 default applies to an
-*unclassified* method whose parameters are absent entirely.
+showed this parameter is only read," whereas the FR5 default applies where
+`classified.params` is unset and the parameters are absent entirely.
 
 ```json
 {
-  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [], "classified": true },
-  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [], "classified": true },
-  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [], "classified": true },
-  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [], "classified": true },
-  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": true },
+  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
 
-  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [], "classified": true },
-  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": true }
+  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+
+  "String.prototype.toLowerCase": { "returns": "unknown", "classified": {"receiver":false,"params":false,"returns":true,"throws":false,"rejects":false} }
 }
 ```
 
+- `classified` marks each determination covered or not, and an uncovered
+  one leaves its field out. `String.prototype.toLowerCase` reaches the
+  Unicode case-mapping table through a prose step, so the analysis cannot
+  say what that step wrote and the entry carries no `receiver`. The return
+  alias survives, because FR4 curates it rather than applying it.
 - `receiver` maps a non-mutating method to `&self` and a mutating one to
   `&mut self` (FR2). A method that stores an argument into the receiver
   marks that parameter `escape`, because the argument outlives the call
@@ -588,9 +605,10 @@ The key space therefore covers prototype methods
 (`X.prototype.method`), static methods (`X.method`), symbol-keyed
 methods, and namespace-qualified forms where `X` is a dotted path naming
 a namespace and optionally a nested constructor — all joined by FR7.
-`classified: false` marks the FR5 fall-through entries; their effect
-fields (`receiver`, `params`, `throws`, `rejects`) are absent, distinct
-from a proven-empty result (§FR5).
+The `classified` object marks each determination covered or not. An
+uncovered one is an FR5 fall-through, and its field — `receiver`,
+`params`, `throws`, or `rejects` — is absent, distinct from a proven-empty
+result (§FR5).
 
 ### FR7. Keying and join to typed declarations
 
@@ -1013,8 +1031,9 @@ types and arity.
   requires the JVM toolchain, scoped to `tools/spec-extract/` via a
   per-directory `mise.toml`.
 - **Auditability.** Every classification carries its provenance, and
-  every unclassified method is listed, so a reviewer can see exactly
-  which methods the spec proved and which fell through to heuristics.
+  every method with an unclassified receiver is listed, so a reviewer can
+  see exactly which methods the spec proved and which fell through to
+  heuristics.
 
 ## Coverage and limitations
 
@@ -1028,8 +1047,9 @@ types and arity.
   out of range, `Array(-1)`) is a tracked domain throw. The exclusion is
   what keeps the throw sets ergonomic and removes a would-be permanent
   blocker to the FR14 auto-apply gate.
-- A handful of algorithms are prose-only or host-defined and fall
-  through to the name heuristic per FR5.
+- A handful of algorithms are prose-only or host-defined, so their
+  receiver falls through to the name heuristic per FR5. The return alias
+  is published regardless, since FR4 curates it rather than applying it.
 - Generic and array-like receivers operate on `O ← ? ToObject(this
   value)`; the analysis treats `ToObject(this value)` as
   receiver-origin so that a write to `O` is a write to the receiver.
