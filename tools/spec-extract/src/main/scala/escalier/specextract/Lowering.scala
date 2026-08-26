@@ -6,6 +6,7 @@ import esmeta.ir.util.YetCollector
 import esmeta.spec.{BuiltinHead, BuiltinPath}
 import esmeta.ty.{AbruptT, CompT, NormalT}
 import scala.collection.mutable.{ListBuffer, Map => MMap}
+import scala.util.matching.Regex
 
 /** Lowers `esmeta.cfg.CFG` to the `cfg.json` schema.
   *
@@ -18,6 +19,10 @@ import scala.collection.mutable.{ListBuffer, Map => MMap}
   * compiler has already lowered them away. Each is described where it is
   * handled: the completion guards in [[guardOf]], the argument prologue in
   * [[isPrologue]], and the `Throw` step in [[throwNode]].
+  *
+  * A fourth shape is reconstructed from prose rather than from the IR. ESMeta
+  * leaves some steps unformalized, and [[recognizedPhrasings]] spells out the
+  * few whose wording names the write or the allocation the step performs.
   */
 final class Lowering(cfg: CFG):
 
@@ -59,6 +64,7 @@ final class Lowering(cfg: CFG):
       .toVector
       .sortBy((_, json) => (json.kind, json.name))
     checkUniqueNames(lowered)
+    checkPhrasingsMatched()
     CfgJson(target, lowered.map((_, json) => json))
 
   /** A callee name resolves against the `abstract-op` functions, so those names
@@ -330,18 +336,7 @@ final class Lowering(cfg: CFG):
   ): Unit =
     val yets = YetCollector(inst, ignoreInAssert = true)
     if (yets.nonEmpty)
-      // The step is not formalized. Incompleteness is per-step, so the analysis
-      // falls back only for the signals this step feeds. The rendered prose
-      // comes along as the evidence for what that fallback costs. A step
-      // binding a name over numbers loses nothing. A step replacing the
-      // elements of a slot loses a mutation. Each `yet` is its own entry
-      // rather than one joined string, so the boundary between phrases
-      // survives. No step in the pinned revision carries more than one.
-      //
-      // An assertion reaches this branch too. The collector walks an `IAssert`
-      // body whatever `ignoreInAssert` says, so an `Assert:` step ESMeta could
-      // not formalize lands here with its condition as the text.
-      out += NodeJson(NodeKinds.Opaque, text = yets.map(_.msg))
+      out += lowerYet(yets.map(_.msg))
     else if (
       !isPrologue(ctx, nodeId, index) && !isCompletionUnwrap(ctx, nodeId, inst)
     )
@@ -509,6 +504,238 @@ final class Lowering(cfg: CFG):
     if (assertion.contains(CompT)) Guards.Question
     else if (assertion.contains(NormalT)) Guards.Bang
     else Guards.Plain
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // Unformalized steps
+  // ///////////////////////////////////////////////////////////////////////////
+
+  /** One prose step ESMeta leaves unformalized, paired with the node its
+    * wording states.
+    *
+    * `pattern` is anchored at the start of the rendered prose and `node` builds
+    * the step from the names the match captured. `sites` is how many steps the
+    * pattern matches at the pinned revision, which [[checkPhrasingsMatched]]
+    * holds the run to. `name` labels the entry in the run's output and in the
+    * failure that check raises.
+    */
+  private final case class Phrasing(
+    name: String,
+    sites: Int,
+    pattern: Regex,
+    node: Regex.Match => NodeJson,
+  )
+
+  /** The prose steps the lowering reads rather than gives up on.
+    *
+    * An unformalized step is emitted as an opaque node, which tells the
+    * analysis it could not read the whole algorithm. Some of those steps state
+    * a write or an allocation plainly enough to lower, and leaving them opaque
+    * costs the analysis a fact it could have had. `Set.prototype.clear` ends in
+    * "Replace the element of _S_.[[SetData]] whose value is _e_ with an element
+    * whose value is ~empty~". That names both the object and the slot. Without
+    * the entry below, the method reports nothing but the fact that a step was
+    * unreadable.
+    *
+    * Each entry produces an ordinary node, so nothing downstream learns a new
+    * vocabulary. The analysis sees the same `slotwrite` and `let` shapes the IR
+    * produces elsewhere.
+    *
+    * A recognized step is read whole. The node an entry emits is the step's
+    * entire effect, the way every node the lowering emits is, so the step stops
+    * reporting incompleteness to the throw analysis of §9.1 as well as to the
+    * mutation analysis of §4.1. An entry therefore qualifies only when the
+    * prose states everything the step does. All four below state an allocation
+    * or a write over bytes and list elements, and none of them can raise. What
+    * an entry may never do is read a step as having no effect, which would
+    * assert an absence from wording rather than state what the wording says.
+    *
+    * The set is deliberately small and each entry is reviewed against the
+    * wording at the pinned revision. Matching prose is wording-dependent, so a
+    * spec bump can reword a step out from under an entry.
+    * [[checkPhrasingsMatched]] fails the run when that happens, rather than
+    * letting the step fall back to opaque and quietly lose the fact again.
+    */
+  private val recognizedPhrasings: List[Phrasing] = List(
+    // How `Set.prototype.clear`, `Set.prototype.delete`, and
+    // `WeakSet.prototype.delete` empty an entry. It is the only mutation any of
+    // the three performs.
+    Phrasing(
+      "backing-store element replacement",
+      3,
+      ("""Replace the element of _(\w+)_\.\[\[(\w+)\]\] whose value is """ +
+      """_\w+_ with an element whose value is ~empty~\.$""").r,
+      m =>
+        NodeJson(
+          NodeKinds.SlotWrite,
+          obj = Some(ExprJson(ExprKinds.Var, name = m.group(1))),
+          slot = m.group(2),
+          value = Some(ExprJson(ExprKinds.Lit)),
+        ),
+    ),
+    // How `Set.prototype`'s `union`, `difference`, and `symmetricDifference`
+    // start building their result, and how `RepeatMatcher` copies a match
+    // state's captures. The copy is a fresh list holding what the slot holds,
+    // the same shape `ECopy` lowers to.
+    //
+    // Leaving it opaque costs the three Set methods twice. The step itself goes
+    // unread, and so does the name it binds, which nothing else in the graph
+    // binds. Each method then appends to that name, and the analysis can place
+    // neither the appends nor the step.
+    Phrasing(
+      "backing-store copy",
+      4,
+      """Let _(\w+)_ be a copy of _(\w+)_\.\[\[(\w+)\]\]\.$""".r,
+      m =>
+        NodeJson(
+          NodeKinds.Let,
+          target = m.group(1),
+          source = Some(
+            ExprJson(
+              ExprKinds.Alloc,
+              args = List(
+                ExprJson(
+                  ExprKinds.Slot,
+                  obj = Some(ExprJson(ExprKinds.Var, name = m.group(2))),
+                  slot = m.group(3),
+                ),
+              ),
+            ),
+          ),
+        ),
+    ),
+    // The closure the six read-modify-write `Atomics` methods hand to
+    // `AtomicReadModifyWrite`, and the one `AtomicCompareExchangeInSharedBlock`
+    // defines for itself. It is a fresh function value, and the names it
+    // captures are the operands it holds, so it lowers the way an allocation
+    // does. The write itself happens below the call rather than here.
+    //
+    // The step's own effect is the binding, so the entry matches the header and
+    // the closure's steps come along only as the text of the match. Those steps
+    // run when the function is called, which happens in
+    // `GetModifySetValueInBuffer` through its `op` parameter. A call whose
+    // callee is a parameter resolves to no body, so the analysis would not
+    // descend into those steps even if ESMeta compiled them into a function of
+    // their own, which is why matching the header alone loses nothing.
+    Phrasing(
+      "read-modify-write modification function",
+      7,
+      ("""Let _(\w+)_ be a new read-modify-write modification function with """ +
+      """parameters \([^)]*\) that captures (nothing|_\w+_(?:, _\w+_)*) and """ +
+      """performs the following steps atomically when called:""").r,
+      m =>
+        NodeJson(
+          NodeKinds.Let,
+          target = m.group(1),
+          source = Some(
+            ExprJson(ExprKinds.Alloc, args = capturedOperands(m.group(2))),
+          ),
+        ),
+    ),
+    // The list the atomic accesses read a Data Block into. It holds the bytes
+    // at an index, or bytes left nondeterministic on the shared-memory path.
+    // Either way its elements are bytes, so the list holds nothing its caller
+    // owns and the allocation carries no operands. Both tails are spelled out
+    // rather than matched loosely, since a list of anything else could hold a
+    // value the caller owns and would need its operands kept.
+    Phrasing(
+      "byte list",
+      5,
+      ("""Let _(\w+)_ be a List of length _\w+_ whose elements are """ +
+      """(?:nondeterministically chosen byte values|the sequence of _\w+_ """ +
+      """bytes starting with _\w+_\[_\w+_\])\.$""").r,
+      m =>
+        NodeJson(
+          NodeKinds.Let,
+          target = m.group(1),
+          source = Some(ExprJson(ExprKinds.Alloc)),
+        ),
+    ),
+  )
+
+  /** How many steps each recognized phrasing matched, keyed by its name. */
+  private val phrasingMatches = MMap[String, Int]().withDefaultValue(0)
+
+  /** The match count of every recognized phrasing, in table order, for the run
+    * to print.
+    */
+  def recognizedCounts: List[(String, Int)] =
+    recognizedPhrasings.map(p => p.name -> phrasingMatches(p.name))
+
+  /** Lowers an unformalized step.
+    *
+    * A step a phrasing recognizes becomes the node that phrasing states.
+    * Anything else becomes an opaque node, which the analysis reads as
+    * incompleteness for whatever signals the step feeds. The rendered prose
+    * comes along as the evidence for what that fallback costs. A step binding a
+    * name over numbers loses nothing. A step replacing the elements of a slot
+    * loses a mutation.
+    *
+    * Each `yet` is its own entry rather than one joined string, so the boundary
+    * between phrases survives. No step in the pinned revision carries more than
+    * one, and recognition is attempted only on a step that carries exactly one,
+    * since a phrasing describes a whole step.
+    *
+    * An assertion reaches here too. The collector walks an `IAssert` body
+    * whatever `ignoreInAssert` says, so an `Assert:` step ESMeta could not
+    * formalize arrives with its condition as the text.
+    */
+  private def lowerYet(texts: List[String]): NodeJson =
+    val recognized = texts match
+      case List(text) => recognize(text)
+      case _          => None
+    recognized.getOrElse(NodeJson(NodeKinds.Opaque, text = texts))
+
+  /** Applies the first phrasing that matches and counts the match. */
+  private def recognize(text: String): Option[NodeJson] =
+    recognizedPhrasings.iterator
+      .flatMap(phrasing =>
+        phrasing.pattern.findPrefixMatchOf(text).map(phrasing -> _),
+      )
+      .nextOption()
+      .map { (phrasing, m) =>
+        phrasingMatches(phrasing.name) += 1
+        phrasing.node(m)
+      }
+
+  /** The values a closure captures, read off the `captures` clause of its
+    * defining step. A closure that captures nothing holds no operands.
+    */
+  private def capturedOperands(clause: String): List[ExprJson] =
+    if (clause == "nothing") Nil
+    else
+      clause
+        .split(", ")
+        .toList
+        .map(name =>
+          ExprJson(
+            ExprKinds.Var,
+            name = name.stripPrefix("_").stripSuffix("_"),
+          ),
+        )
+
+  /** Fails when a recognized phrasing matches a different number of steps than
+    * it was reviewed against.
+    *
+    * A count that fell means the specification reworded a step. Falling back to
+    * an opaque node would lose the write or the allocation the entry recovers,
+    * and lose it without saying so. A count that rose means a step nobody
+    * reviewed the entry against now matches it. Either way the table no longer
+    * describes the specification it was written for, so the run stops.
+    */
+  private def checkPhrasingsMatched(): Unit =
+    val moved =
+      recognizedPhrasings.filter(p => phrasingMatches(p.name) != p.sites)
+    if (moved.nonEmpty)
+      val details = moved
+        .map(p =>
+          s"'${p.name}' matches ${phrasingMatches(p.name)} steps, not ${p.sites}",
+        )
+        .mkString("; ")
+      throw new IllegalStateException(
+        s"the recognized phrasings no longer describe the specification: " +
+        s"$details; re-read each step against the current wording before " +
+        "updating a count",
+      )
 
   // ///////////////////////////////////////////////////////////////////////////
   // The builtin argument prologue

@@ -445,7 +445,7 @@ rather than a library surface, so they are dropped. The run ends by reading
 the file back with an independent parser and checking every kind, every
 field, and the builtin count against the graph, which is the gate.
 [tools/spec-extract/README.md](../../tools/spec-extract/README.md) is the
-maintainer runbook. Four findings shape the sections downstream.
+maintainer runbook. Five findings shape the sections downstream.
 
 - **The completion unwrap has to be absorbed into the guard, not emitted.**
   §1 established that `?` and `!` are lowered into control flow, and the
@@ -482,6 +482,38 @@ maintainer runbook. Four findings shape the sections downstream.
   single `yet`, so the analysis withholds the mutability of whichever of
   them is a method, which is the right answer. They are keyed from the
   compiled function's name so the surface stays complete.
+- **A few unformalized steps state their effect plainly enough to lower.** An
+  opaque node tells §4.1 it could not read the whole algorithm, and 380 of the
+  graph's nodes are opaque. Four phrasings account for 19 of them, and each one
+  says what its step does.
+
+    - "Replace the element of _S_.[[SetData]] whose value is _e_ with an
+      element whose value is ~empty~", which names both the object and the
+      slot, in the three collection mutators.
+    - "Let _resultSetData_ be a copy of _O_.[[SetData]]", which the three Set
+      algebra methods open with.
+    - The step the six read-modify-write `Atomics` methods define their
+      modification function in.
+    - "a List of length _elementSize_", the byte list the atomic accesses read
+      a Data Block into.
+
+  `Lowering.scala` carries a reviewed table of the four and emits the ordinary
+  `slotwrite` or `let` each states, so nothing downstream learns a new
+  vocabulary. A recognized step is read whole, the way every node the lowering
+  emits is, so it stops reporting incompleteness to §9.1's throw sets as well as
+  to §4.1's mutation summaries. An entry therefore qualifies only when the prose
+  states everything the step does. All four state an allocation or a write over
+  bytes and list elements, and none of them can raise. The `Atomics` entry
+  matches only the step's opening line, since binding the modification function
+  is the whole of what the step itself does. Its remaining lines run when
+  `GetModifySetValueInBuffer` calls that function through its `op` parameter,
+  and a call whose callee is a parameter resolves to no body whether or not
+  ESMeta compiled those lines into a function of their own. What the table may
+  never do is read a step as having no effect, which would assert an absence
+  from wording rather than state what the wording says. Matching prose is
+  wording-dependent, so each entry records how many steps it matched when it was
+  reviewed, and the run fails when that number moves rather than letting a
+  reworded step fall back to opaque.
 
 Two limits are worth naming for §9.3. `Promise` is set from the shape
 Appendix A describes, an algorithm that builds a promise capability and
@@ -687,19 +719,21 @@ fixpoint. `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and
 `Of(fn)` returns one function's `Mutations`, which carries the mutated parameter
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
-and those eight grow into 47 abstract operations with a mutated position. Of the
-501 builtins, 61 mutate their receiver and 13 mutate a parameter, and 420 carry
+and those eight grow into 49 abstract operations with a mutated position. Of the
+501 builtins, 64 mutate their receiver and 20 mutate a parameter, and 433 carry
 neither warning, so §4.3 reads their receiver mutability from the analysis
 rather than from FR5's name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
 `Array.prototype.push` and `Array.prototype.fill` mutate the receiver,
 `Array.prototype.slice` mutates nothing, and `Map.prototype.set` mutates the
 receiver through `[[MapData]]`. The Date setters, the in-place Array methods,
-`RegExp.prototype.exec`, the collection adders, the Map and WeakMap removals,
-the 11 `DataView.prototype.set*` methods, `TypedArray.prototype.set`, and
-`TypedArray.prototype.copyWithin` come out receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
-`Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and
-`Atomics.store` come out mutating argument 0. Eight findings.
+`RegExp.prototype.exec`, the collection adders, the Map, WeakMap, Set, and
+WeakSet removals, the 11 `DataView.prototype.set*` methods,
+`TypedArray.prototype.set`, and `TypedArray.prototype.copyWithin` come out
+receiver-mutating. `Object.freeze`, `Object.seal`, `Object.assign`,
+`Object.defineProperty`, `Object.defineProperties`, `Reflect.set`, and the eight
+`Atomics` methods that write through a typed array come out mutating argument 0.
+Nine findings.
 
 - **`Unattributable` is charged to callers and `Incomplete` is not.** Both
   warnings mean the caller's own summary may be missing something, so the sound
@@ -748,13 +782,33 @@ the 11 `DataView.prototype.set*` methods, `TypedArray.prototype.set`, and
   `TypedArray.prototype.slice` writes the buffer behind a
   `TypedArraySpeciesCreate` result, which captures nothing, so its write is
   discarded and only the prose step §3 could not lower is left to report.
-- **A computed slot on a fresh value is not a warning.** The serializer leaves
-  the slot name empty on the 155 writes whose slot the algorithm computes, and
-  the curated list cannot answer for those. They mark the function incomplete,
-  except where the written value is fresh, since no slot name makes a write to a
-  value the function allocated itself visible to its caller. 94 of the 155 land
-  on a fresh value, which keeps 47 functions out of `Incomplete`, 10 of them
-  builtins.
+- **A computed slot answers from the origin of the value written.** The
+  serializer leaves the slot name empty on the 155 writes whose slot the
+  algorithm computes, and the curated list cannot answer for those. Two origins
+  answer without it. 99 of the 155 land on a fresh value, which no slot name
+  makes visible to the caller, and 50 functions write a computed slot only that
+  way, 13 of them builtins. Three land on an interior value, which is the
+  object's own backing store, so a write to any position within it is charged to
+  the object holding it. All three store a byte into a Data Block the algorithm
+  addresses by index. Two of them give `GetModifySetValueInBuffer` and
+  `AtomicReadModifyWrite` an argument-0 mutation, which the six read-modify-write
+  `Atomics` methods inherit. The third is the write `Atomics.compareExchange`
+  performs for itself. The remaining 53 mark the function incomplete. The finding
+  below charges a write to a *named* slot of an interior value the same way, so
+  an interior answers whether or not the algorithm computes the slot.
+- **Reading four prose phrasings recovers a fact for 13 builtins.** §3's
+  recognized phrasings turn 19 opaque nodes into ordinary ones, and every
+  builtin that moves is one of the same 13. `Set.prototype.clear`,
+  `Set.prototype.delete`, and `WeakSet.prototype.delete` go from `incomplete` to
+  `receiver`, since the step replacing an entry with `~empty~` was their only
+  mutation. `Set.prototype.union`, `difference`, and `symmetricDifference` go to
+  `none`. Recognizing the copy binds `resultSetData`, a name nothing in the
+  graph bound before, so the two or three appends into it land on a value the
+  method allocated itself. The seven `Atomics` methods that carried an opaque
+  step go to `args{0}`. Six of them reach their Data-Block store through
+  `AtomicReadModifyWrite`, and `Atomics.compareExchange` performs it itself.
+  Across the graph the receiver-mutating builtins go from 61 to 64, the
+  classifiable ones from 420 to 433, and the incomplete ones from 74 to 61.
 - **The mutated position is the one the call site passes the object at, not the
   one the seed names.** `OrdinarySet(O, P, V, Receiver)` performs its write
   through `OrdinarySetWithOwnDescriptor`, which calls
@@ -774,10 +828,10 @@ the 11 `DataView.prototype.set*` methods, `TypedArray.prototype.set`, and
   to 61 with the unattributable, incomplete, and classifiable counts unchanged.
   §4.3 publishes 60 of the 61 as `mutBorrow`. `RegExp.prototype [ @@replace ]`
   is the one left out, because it also carries a warning.
-  The Set counterparts are the same operation failing the other way.
+  The Set counterparts reach the same answer by the other route.
   `Set.prototype.delete`, `Set.prototype.clear`, and `WeakSet.prototype.delete`
-  reach the replacement through a prose step §3 could not lower, so they come out
-  incomplete and FR5's name heuristics decide them.
+  state the replacement in prose, and §3 lowers it to a write of `[[SetData]]`
+  or `[[WeakSetData]]`, which the slot list covers without the interior rule.
 - **An iterator's cursor is left out of the backing-store list.** Nine slots
   take a receiver-origin write inside a builtin method that the curated list
   does not count, and all nine are iterator or generator bookkeeping:
@@ -1048,7 +1102,7 @@ would have written, and that claim has to keep paying for incompleteness.
 The carve-out is a static or a namespace function, whose `receiver: none`
 comes from `Func.Kind` and reads no algorithm step at all. No `yet` can
 sit on a step it reads, so a warning never withholds it. That takes 50
-builtins out of the unclassified set, leaving 31 methods whose mutability
+builtins out of the unclassified set, leaving 25 methods whose mutability
 the analysis has to leave to the heuristics.
 
 The return-alias axis also tolerates `Unknown` on its own, since the alias
@@ -1069,15 +1123,15 @@ because the alias is curated rather than applied.
   `Param(0)`), `Return M` ⇒ `receiver: mutBorrow`, `returns: receiver`.
 - every `String.prototype` method — `this` coerced to a fresh string,
   never written ⇒ all `receiver: borrow`.
-- `Set.prototype.union` — the prose step `Let resultSetData be a copy of
-  O.[[SetData]]` leaves a possible receiver write unread, so no
-  `receiver`; the Set it allocates and hands back ⇒ `returns: fresh`.
+- `TypedArray.prototype.slice` — a prose step leaves a possible receiver
+  write unread, so no `receiver`; the array `TypedArraySpeciesCreate`
+  allocated and it hands back ⇒ `returns: fresh`.
 - `Array.of` — `Construct(C, …)` leaves a write unattributable, but a
   static has no receiver either way ⇒ `receiver: none`, `returns:
   unknown`.
 
 Methods with a withheld receiver are listed. The `returns` tally spans
-every builtin, and the `receiver` tally leaves out only the 31 methods
+every builtin, and the `receiver` tally leaves out only the 25 methods
 whose mutability is withheld.
 
 ## §5. Keying and join (FR7, FR15)

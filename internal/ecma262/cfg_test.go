@@ -1,6 +1,7 @@
 package ecma262
 
 import (
+	"strings"
 	"sync"
 	"testing"
 
@@ -236,4 +237,146 @@ func TestOpaqueNodesCarryStepText(t *testing.T) {
 		"Let _a_ be the first _k_ - _f_ code units of _m_.",
 		"Let _b_ be the other _f_ code units of _m_.",
 	}, text)
+}
+
+// The steps the serializer reads out of prose rather than out of the compiled
+// IR. ESMeta leaves some algorithm steps unformalized, and tools/spec-extract
+// recognizes the few whose wording names the write or the allocation the step
+// performs. Each entry names a function one of those steps sits in and the node
+// the graph carries in its place.
+//
+// A regeneration that stopped recognizing a step would put an opaque node back
+// here, and the function would report nothing but the fact that a step was
+// unreadable. The serializer's own run fails when a phrasing stops matching the
+// number of steps it was reviewed against. This pins what the committed graph
+// carries, which is what the analysis reads.
+func TestGraphCarriesTheStepsReadFromProse(t *testing.T) {
+	tests := map[string]struct {
+		fn   string
+		want string
+	}{
+		// "Replace the element of _S_.[[SetData]] whose value is _e_ with an
+		// element whose value is ~empty~."
+		"ElementReplacement": {"Set.prototype.clear", "slotwrite S.SetData = lit"},
+		// "Let _resultSetData_ be a copy of _O_.[[SetData]]."
+		"BackingStoreCopy": {"Set.prototype.union", "let resultSetData = alloc(O.SetData)"},
+		// "Let _add_ be a new read-modify-write modification function with
+		// parameters (_xBytes_, _yBytes_) that captures _typedArray_ and
+		// performs the following steps atomically when called: ..."
+		"ModificationFunction": {"Atomics.add", "let add = alloc(typedArray)"},
+		// "Let _rawBytesRead_ be a List of length _elementSize_ whose elements
+		// are the sequence of _elementSize_ bytes starting with
+		// _block_[_byteIndexInBuffer_]."
+		"ByteList": {"Atomics.compareExchange", "let rawBytesRead = alloc()"},
+	}
+
+	cfg := testCFG(t)
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			fn := cfg.Builtin(test.fn)
+			require.NotNil(t, fn, "no builtin named %s", test.fn)
+
+			var rendered []string
+			for _, node := range fn.Nodes {
+				rendered = append(rendered, renderNode(node))
+			}
+			require.Contains(t, rendered, test.want)
+		})
+	}
+}
+
+// The builtins where a phrasing recognizes every unformalized step. Each
+// reported nothing but the fact that a step was unreadable while those steps
+// stayed opaque, so an opaque node reappearing here means the specification
+// reworded a phrasing.
+func TestGraphLeavesNoOpaqueStepInTheRecognizedBuiltins(t *testing.T) {
+	cfg := testCFG(t)
+
+	for _, name := range []string{
+		"Atomics.add",
+		"Atomics.and",
+		"Atomics.compareExchange",
+		"Atomics.exchange",
+		"Atomics.or",
+		"Atomics.sub",
+		"Atomics.xor",
+		"Set.prototype.clear",
+		"Set.prototype.delete",
+		"Set.prototype.difference",
+		"Set.prototype.symmetricDifference",
+		"Set.prototype.union",
+		"WeakSet.prototype.delete",
+	} {
+		fn := cfg.Builtin(name)
+		require.NotNil(t, fn, "no builtin named %s", name)
+		for i, node := range fn.Nodes {
+			_, opaque := node.(*OpaqueNode)
+			require.False(t, opaque, "node %d of %s is opaque", i, name)
+		}
+	}
+}
+
+// renderNode spells one node on a line, so a test can name the node a step
+// lowers to without walking its operands field by field.
+func renderNode(node Node) string {
+	switch node := node.(type) {
+	case *LetNode:
+		return "let " + node.Target + " = " + renderExpr(node.Source)
+	case *CallNode:
+		args := make([]string, 0, len(node.Args))
+		for _, arg := range node.Args {
+			args = append(args, renderExpr(arg))
+		}
+		return "call " + node.Target + " = " + node.Callee +
+			"(" + strings.Join(args, ", ") + ") " + string(node.Guard)
+	case *SlotWriteNode:
+		target := renderExpr(node.Object)
+		if node.Slot != "" {
+			target += "." + node.Slot
+		} else {
+			target += "[computed]"
+		}
+		return "slotwrite " + target + " = " + renderExpr(node.Value)
+	case *ThrowNode:
+		if node.ErrorType != "" {
+			return "throw " + node.ErrorType
+		}
+		return "throw " + renderExpr(node.Value)
+	case *ReturnNode:
+		return "return " + renderExpr(node.Value)
+	case *BranchNode:
+		return "branch"
+	case *OpaqueNode:
+		return "opaque " + strings.Join(node.Text, " | ")
+	}
+	return ""
+}
+
+// renderExpr spells one expression, and an absent operand as "none".
+func renderExpr(e Expr) string {
+	switch e := e.(type) {
+	case *VarExpr:
+		return e.Var
+	case *ThisExpr:
+		return "this"
+	case *LitExpr:
+		return "lit"
+	case *CallExpr:
+		args := make([]string, 0, len(e.Args))
+		for _, arg := range e.Args {
+			args = append(args, renderExpr(arg))
+		}
+		return e.Callee + "(" + strings.Join(args, ", ") + ")"
+	case *SlotExpr:
+		return renderExpr(e.Object) + "." + e.Slot
+	case *PropExpr:
+		return renderExpr(e.Object) + "[computed]"
+	case *AllocExpr:
+		args := make([]string, 0, len(e.Args))
+		for _, arg := range e.Args {
+			args = append(args, renderExpr(arg))
+		}
+		return "alloc(" + strings.Join(args, ", ") + ")"
+	}
+	return "none"
 }

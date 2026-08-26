@@ -158,6 +158,22 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// toLowerCase reaches the Unicode case-mapping table through a prose
 		// step, which §3 emits as an opaque node.
 		"OpaqueStep": {"String.prototype.toLowerCase", "incomplete"},
+		// clear empties every entry of `S.[[SetData]]` with a step ESMeta does
+		// not formalize. §3 reads the write out of the prose, so the method
+		// reports the mutation rather than only that a step was unreadable.
+		"ReceiverThroughAProseStep":           {"Set.prototype.clear", "receiver"},
+		"ReceiverThroughAProseStepOnAWeakSet": {"WeakSet.prototype.delete", "receiver"},
+		// The six read-modify-write Atomics methods hand a modification
+		// function to `AtomicReadModifyWrite`, which stores bytes into the Data
+		// Block behind the typed array it was passed. The step defining that
+		// function is prose, and §3 reads it as the allocation it is.
+		"ParameterThroughAReadModifyWrite": {"Atomics.add", "args{0}"},
+		// compareExchange performs the same store itself rather than through a
+		// helper.
+		"ParameterThroughAnInlinedDataBlockWrite": {"Atomics.compareExchange", "args{0}"},
+		// The Set algebra methods copy `O.[[SetData]]` and append to the copy,
+		// so every write they perform lands on a value they made themselves.
+		"FreshCopyOfABackingStore": {"Set.prototype.union", "none"},
 	}
 
 	for name, test := range tests {
@@ -226,16 +242,17 @@ func TestMutationSummaryUnattributableWrite(t *testing.T) {
 //
 // The three methods of this shape are `Map.prototype.delete`,
 // `Map.prototype.clear`, and `WeakMap.prototype.delete`. Their Set counterparts
-// reach the same replacement through a prose step §3 could not lower, so they
-// come out incomplete and FR5's name heuristics decide them.
+// reach the same answer by the other route. Each states the replacement in
+// prose, and §3 lowers it to a write of `[[SetData]]` or `[[WeakSetData]]`,
+// which the slot list covers on its own.
 func TestMutationSummaryChargesARecordWriteToItsCollection(t *testing.T) {
 	require.Equal(t, "receiver", mutationsOf(t, "Map.prototype.delete").String())
 	require.Equal(t, "receiver", mutationsOf(t, "Map.prototype.clear").String())
 	require.Equal(t, "receiver", mutationsOf(t, "WeakMap.prototype.delete").String())
 
-	require.Equal(t, "incomplete", mutationsOf(t, "Set.prototype.delete").String())
-	require.Equal(t, "incomplete", mutationsOf(t, "Set.prototype.clear").String())
-	require.Equal(t, "incomplete", mutationsOf(t, "WeakSet.prototype.delete").String())
+	require.Equal(t, "receiver", mutationsOf(t, "Set.prototype.delete").String())
+	require.Equal(t, "receiver", mutationsOf(t, "Set.prototype.clear").String())
+	require.Equal(t, "receiver", mutationsOf(t, "WeakSet.prototype.delete").String())
 }
 
 // A write to a slot outside the backing-store list is skipped when the object
@@ -246,6 +263,32 @@ func TestMutationSummaryChargesARecordWriteToItsCollection(t *testing.T) {
 // decision about the emitted surface, which §11's curation makes.
 func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
 	require.Equal(t, "none", mutationsOf(t, "ArrayIteratorPrototype.next").String())
+}
+
+// A write whose slot the algorithm computes is charged to the object holding
+// the value written, when that value is the object's own backing store. The
+// three writes of this shape in the graph all store a byte into a Data Block,
+// which the algorithm addresses by index. `GetModifySetValueInBuffer` reaches
+// the block through `arrayBuffer.[[ArrayBufferData]]`, so the store lands on
+// `arrayBuffer`, and `AtomicReadModifyWrite` passes the buffer behind its own
+// typed array as it.
+func TestMutationSummaryChargesAComputedSlotWriteOnAnInterior(t *testing.T) {
+	require.Equal(t, "args{0} incomplete", mutationsOf(t, "GetModifySetValueInBuffer").String())
+	require.Equal(t, "args{0}", mutationsOf(t, "AtomicReadModifyWrite").String())
+}
+
+// A write whose slot the algorithm computes leaves the function incomplete when
+// the written value is neither fresh nor an interior. The analysis knows
+// neither what the write reached nor whose value it was.
+func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
+	cfg, err := ParseCFG([]byte(
+		`{"specTarget":"abc","funcs":[` +
+			`{"name":"Demo","kind":"builtin-static","params":["x"],"nodes":[` +
+			`{"kind":"let","target":"y","source":{"kind":"prop","object":{"kind":"var","var":"x"}}},` +
+			`{"kind":"slotwrite","object":{"kind":"var","var":"y"},"value":{"kind":"lit"}}]}]}`))
+	require.NoError(t, err)
+
+	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
 }
 
 // The origin map decides what a callee is before the seed does. A callee bound
@@ -591,7 +634,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"], byKind["classifiable"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 37, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 61, args 0, unattributable 3, incomplete 29, classifiable 282
-builtin-static: total 188, receiver 0, args 13, unattributable 21, incomplete 45, classifiable 138`))
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 49, unattributable 37, incomplete 226, classifiable 449
+builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 23, classifiable 288
+builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
 }

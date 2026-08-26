@@ -142,6 +142,20 @@ stored into it, because a parameter put in a fresh record escapes into whatever
 that record is stored in, and lowering the allocation to a bare literal would
 drop the only edge that shows it.
 
+A fourth shape is read out of prose rather than out of the IR. ESMeta leaves
+some algorithm steps unformalized, and those become opaque nodes that tell the
+analysis it could not read the whole algorithm. A few of them state a write or
+an allocation plainly enough to lower, so `Lowering.scala` carries a small table
+of recognized phrasings and emits the ordinary node each one states.
+`Set.prototype.clear` is the shape. Its only mutation is "Replace the element of
+_S_.[[SetData]] whose value is _e_ with an element whose value is ~empty~",
+which names both the object and the slot.
+
+Each entry is reviewed against the wording at the pinned revision and records
+how many steps it matched then. The run prints those counts and fails when one
+moves, since a reworded step would otherwise fall back to opaque and lose the
+fact again. Re-read the step against the new wording before changing a count.
+
 ## Bumping the spec
 
 Bump the ESMeta submodule, which carries the spec revision with it, then

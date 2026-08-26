@@ -39,6 +39,8 @@ object Main:
     val lowered = lowering.result
     val byKind = lowered.funcs.groupBy(_.kind).view.mapValues(_.length).toList
     for ((kind, count) <- byKind.sortBy(_._1)) println(s"  $count $kind")
+    for ((phrasing, count) <- lowering.recognizedCounts)
+      println(s"  $count steps read as '$phrasing'")
 
     val writer = new BufferedWriter(
       new OutputStreamWriter(new FileOutputStream(out), UTF_8),
