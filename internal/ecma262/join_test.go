@@ -101,21 +101,58 @@ func TestMethodFactForSignatureLeavesTheFactAlone(t *testing.T) {
 	require.Equal(t, "receiver: returns:param(3)", fact.String())
 }
 
-// joinFixture is a hand-built fact set covering each keying shape the join
-// has to resolve.
+// joinFixture is a hand-built fact set covering each keying shape the join has
+// to resolve. Every entry but one carries the fact the committed control-flow
+// graph really holds for that name, so the fixture doubles as a description of
+// the fact set rather than reading as a claim the graph does not make.
+//
+// The exception is the Fixture owner, which names no builtin. No real fact
+// returns a parameter above position 0 — all six that return a parameter are
+// `Object.*` statics at position 0 — so the case where a signature declares no
+// parameter at the position a fact names has no ECMA-262 instance yet. The
+// shape is real even though the fact is not: the spec's
+// `Array.prototype.splice(start, deleteCount, ...items)` meets a TypeScript
+// overload set whose shortest member is `splice(start: number): T[]`. The
+// position-keyed facts of §8.1 are what will populate it.
 func joinFixture() *Facts {
 	return &Facts{
 		SpecTarget: "test",
 		Methods: map[string]MethodFact{
-			"Array.prototype.push":           {Classified: true, Receiver: RecvMutBorrow, Returns: AliasFresh},
-			"Array.prototype [ @@iterator ]": {Classified: true, Receiver: RecvBorrow, Returns: AliasFresh},
-			"Array.from":                     {Classified: true, Receiver: RecvNone, Returns: AliasFresh},
-			"get Map.prototype.size":         {Classified: true, Receiver: RecvBorrow, Returns: AliasFresh},
-			"Math.max":                       {Classified: true, Receiver: RecvNone, Returns: AliasFresh},
-			"String.prototype.at":            {Classified: true, Receiver: RecvBorrow, Returns: AliasParam, ParamIndex: position(1)},
-			"Set.prototype.add":              {Classified: false},
-			"parseInt":                       {Classified: true, Receiver: RecvNone, Returns: AliasFresh},
+			// An instance member, string-keyed and symbol-keyed.
+			"Array.prototype.push":            {Classified: true, Receiver: RecvMutBorrow, Returns: AliasFresh},
+			"String.prototype [ @@iterator ]": {Classified: true, Receiver: RecvBorrow, Returns: AliasFresh},
+			// An accessor, whose fixed mutability the join must not overwrite.
+			"get Map.prototype.size": {Classified: true, Receiver: RecvBorrow, Returns: AliasFresh},
+			// A static that hands back one of its own parameters.
+			"Object.assign": {Classified: true, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(0)},
+			// A namespace function, which has no receiver.
+			"Math.max": {Classified: true, Receiver: RecvNone, Returns: AliasUnknown},
+			// A method the analysis left unclassified, carrying no claim.
+			"Array.from": {Classified: false},
+			// A function the global object holds, which addresses no owner and
+			// so is refused by Normalize.
+			"parseInt": {Classified: false},
+			// Not a builtin. See the note above.
+			"Fixture.prototype.returnsSecond": {Classified: true, Receiver: RecvBorrow, Returns: AliasParam, ParamIndex: position(1)},
 		},
+	}
+}
+
+// The fixture describes the committed fact set rather than inventing one, so
+// every entry that names a builtin has to keep matching what the graph holds.
+// Without this, an entry edited to drive a test reads afterwards as a claim
+// about ECMA-262 that nothing checks. The Fixture owner is the one documented
+// exception, since no builtin exercises the case it stands in for.
+func TestJoinFixtureMatchesCommittedFacts(t *testing.T) {
+	committed := testFacts(t)
+	for name, fact := range joinFixture().Methods {
+		if strings.HasPrefix(name, "Fixture.") {
+			continue
+		}
+		real, ok := committed.Of(name)
+		require.Truef(t, ok, "%s is not a builtin the committed graph holds", name)
+		require.Equalf(t, real.String(), fact.String(),
+			"the fixture's %s disagrees with the committed graph", name)
 	}
 }
 
@@ -128,8 +165,8 @@ func TestJoinLookup(t *testing.T) {
 		want string
 	}{
 		"Instance":  {MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance}, "Array.prototype.push"},
-		"Symbol":    {MemberRef{Owner: "Array", Member: SymMember("iterator"), Sort: SortInstance}, "Array.prototype [ @@iterator ]"},
-		"Static":    {MemberRef{Owner: "Array", Member: StrMember("from"), Sort: SortStatic}, "Array.from"},
+		"Symbol":    {MemberRef{Owner: "String", Member: SymMember("iterator"), Sort: SortInstance}, "String.prototype [ @@iterator ]"},
+		"Static":    {MemberRef{Owner: "Object", Member: StrMember("assign"), Sort: SortStatic}, "Object.assign"},
 		"Namespace": {MemberRef{Owner: "Math", Member: StrMember("max"), Sort: SortNamespaceFunc}, "Math.max"},
 		"Getter": {
 			MemberRef{Owner: "Map", Member: StrMember("size"), Sort: SortInstance, Accessor: GetAccessor},
@@ -207,9 +244,9 @@ func TestJoinMatch(t *testing.T) {
 			Signatures: []Signature{{Params: 1, Rest: true}},
 		},
 		{
-			// Two overloads of one algorithm: the shorter one cannot name
-			// the parameter the fact returns.
-			Ref:        MemberRef{Owner: "String", Member: StrMember("at"), Sort: SortInstance},
+			// Two overloads of one algorithm: the shorter one declares no
+			// parameter at the position the fact returns.
+			Ref:        MemberRef{Owner: "Fixture", Member: StrMember("returnsSecond"), Sort: SortInstance},
 			Signatures: []Signature{{Params: 1}, {Params: 2}},
 		},
 		{
@@ -251,13 +288,13 @@ func TestJoinMatch(t *testing.T) {
 	}
 
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`Array.prototype.push -> instance Array.push receiverApplies:yes [ receiver:mutBorrow returns:fresh ]
-String.prototype.at -> instance String.at receiverApplies:yes [ receiver:borrow returns:unknown | receiver:borrow returns:param(1) ]
+Fixture.prototype.returnsSecond -> instance Fixture.returnsSecond receiverApplies:yes [ receiver:borrow returns:unknown | receiver:borrow returns:param(1) ]
 get Map.prototype.size -> get instance Map.size receiverApplies:no [ receiver:borrow returns:fresh ]
 no fact: instance Array.toSorted
 no declaration: Array.from
-no declaration: Array.prototype [ @@iterator ]
 no declaration: Math.max
-no declaration: Set.prototype.add
+no declaration: Object.assign
+no declaration: String.prototype [ @@iterator ]
 unjoinable fact: parseInt
 unkeyed declaration: parseInt`))
 }
@@ -275,7 +312,7 @@ func TestWriteJoinReport(t *testing.T) {
 	report := NewJoin(joinFixture()).Match(Declarations{
 		Keyed: []Declaration{
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, Rest: true}}},
-			{Ref: MemberRef{Owner: "Set", Member: StrMember("add"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
+			{Ref: MemberRef{Owner: "Array", Member: StrMember("from"), Sort: SortStatic}, Signatures: []Signature{{Params: 1}}},
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("toSorted"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
 		},
 		Unkeyed: []string{"parseInt"},
@@ -285,10 +322,10 @@ func TestWriteJoinReport(t *testing.T) {
 	require.NoError(t, WriteJoinReport(report, &out))
 	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  join: 2 matched (1 classified), 1 declarations without a fact, 5 facts without a declaration, 1 unkeyed declarations, 1 unjoinable facts
     no fact: instance Array.toSorted
-    no declaration: Array.from
-    no declaration: Array.prototype [ @@iterator ]
+    no declaration: Fixture.prototype.returnsSecond
     no declaration: Math.max
-    no declaration: String.prototype.at
+    no declaration: Object.assign
+    no declaration: String.prototype [ @@iterator ]
     no declaration: get Map.prototype.size
     unkeyed declaration: parseInt
     unjoinable fact: parseInt
