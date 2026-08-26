@@ -261,7 +261,7 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
 	add := func(callee string) {
-		target := a.resolve(cfg, a.origins[fn], callee)
+		target := resolveCallee(cfg, a.origins[fn], callee)
 		if target == nil || seen.Contains(target) {
 			return
 		}
@@ -301,15 +301,15 @@ func (a *analysis) callees(cfg *CFG, fn *Func) []*Func {
 	return called
 }
 
-// resolve returns the function a call node's callee names, or nil when the
-// callee is not a body the analysis can read.
+// resolveCallee returns the function a call node's callee names, or nil when
+// the callee is not a body the analysis can read.
 //
 // A callee is either an abstract-operation name or a value the function holds,
 // such as the `callbackfn` a caller passed in. A name bound to one of the
 // function's own parameters is the second kind, whatever it is named. Resolving
 // by name alone would charge such a callback with a seeded operation's
-// mutations.
-func (a *analysis) resolve(cfg *CFG, origin *OriginMap, callee string) *Func {
+// mutations, or credit it with that operation's throws.
+func resolveCallee(cfg *CFG, origin *OriginMap, callee string) *Func {
 	if origin.Of(callee).Kind == OriginParam {
 		return nil
 	}
@@ -430,7 +430,7 @@ func (a *analysis) chargeNested(cfg *CFG, f *facts, origin *OriginMap, e Expr) b
 // charge attributes one call's mutations to the calling function, and reports
 // whether that grew its summary.
 func (a *analysis) charge(cfg *CFG, f *facts, origin *OriginMap, callee string, args []Expr) bool {
-	target := a.resolve(cfg, origin, callee)
+	target := resolveCallee(cfg, origin, callee)
 	if target == nil {
 		return a.chargeUnresolved(f, origin, callee, args)
 	}
