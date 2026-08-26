@@ -152,9 +152,10 @@ type MethodFact struct {
 	Classified bool         `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
 	Returns    AliasKind    `json:"returns,omitempty"`
-	// ParamIndex is the position Returns aliases, read only when Returns is
-	// AliasParam. Position 0 is omitted from the JSON as the zero value, which
-	// is what a reader takes an absent field for anyway.
+	// ParamIndex is the 0-based position Returns aliases, read only when
+	// Returns is AliasParam. It indexes the declared parameters, which do not
+	// include a method's receiver. Position 0 is omitted from the JSON as the
+	// zero value, which is what a reader takes an absent field for anyway.
 	ParamIndex int `json:"paramIndex,omitempty"`
 }
 
