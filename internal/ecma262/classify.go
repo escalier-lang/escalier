@@ -20,17 +20,13 @@ const (
 	RecvNone ReceiverKind = "none"
 )
 
-// AliasKind is what a builtin's return value aliases. It is the lifetime seed
-// of requirements.md FR4: a `receiver` return is a borrow tied to the
-// receiver's lifetime, a `param` return is a borrow tied to that parameter's,
-// `fresh` is an owned return, and `union` is a lifetime union.
+// AliasKind is what a builtin's return value aliases, which requirements.md
+// FR4 reads as the lifetime the return borrows from.
 type AliasKind string
 
 const (
-	// aliasUnset is the bottom of the lattice, the accumulator before any
-	// return has been read. Joining it with an alias yields that alias, and
-	// returnAlias resolves it to AliasUnknown when an algorithm holds no
-	// return the serializer lowered.
+	// aliasUnset is the lattice bottom, the accumulator before any return has
+	// been read. returnAlias resolves it to AliasUnknown.
 	aliasUnset AliasKind = ""
 	// AliasReceiver is a return that hands back the receiver.
 	AliasReceiver AliasKind = "receiver"
@@ -47,10 +43,8 @@ const (
 	AliasUnknown AliasKind = "unknown"
 )
 
-// alias is what one return value, or the join of every return value in an
-// algorithm, aliases. Index is the parameter position and is meaningful only
-// when Kind is AliasParam. MethodFact holds the two apart, the way Appendix B
-// spells them.
+// alias is what one return, or the join of every return in an algorithm,
+// aliases. Index is meaningful only when Kind is AliasParam.
 type alias struct {
 	Kind  AliasKind
 	Index int
@@ -64,12 +58,10 @@ func (a alias) String() string {
 }
 
 // join is the least upper bound of two aliases. Two returns that agree keep
-// their alias, two that disagree collapse to a union, and anything joined with
-// `unknown` is unknown. The collapse is what makes the walk path-insensitive:
-// every return in the algorithm contributes, whichever branch reaches it.
-//
-// Two `param` aliases at different positions disagree the way a receiver and a
-// parameter do, so they join to a union rather than to either position.
+// their alias, and two that disagree collapse to a union, including two
+// parameters at different positions. Anything joined with `unknown` is unknown.
+// Every return contributes whichever branch reaches it, which is what makes the
+// walk path-insensitive.
 func (a alias) join(other alias) alias {
 	switch {
 	case a.Kind == aliasUnset:
@@ -87,13 +79,10 @@ func (a alias) join(other alias) alias {
 
 // aliasOf reads a returned value's origin as what the return aliases.
 //
-// An interior origin is a value read out of an object's backing store rather
-// than the object itself, so it cannot stand in for that object where identity
-// matters. `get DataView.prototype.buffer` returns
-// `view.[[ViewedArrayBuffer]]`, which is not the view. Such a return is
-// `unknown` rather than a borrow of the holder. That under-claims a lifetime
-// the curated override layer can still supply, which is the cheaper direction
-// on an axis §7 records rather than applies.
+// An interior origin is a value read out of an object's backing store, not the
+// object itself, so it cannot stand in for its holder where identity matters.
+// `get DataView.prototype.buffer` returns `view.[[ViewedArrayBuffer]]`, which
+// is not the view, so it is `unknown` rather than a borrow of the view.
 func aliasOf(o Origin) alias {
 	if o.Interior {
 		return alias{Kind: AliasUnknown}
@@ -105,20 +94,19 @@ func aliasOf(o Origin) alias {
 		return alias{Kind: AliasParam, Index: o.Index}
 	case OriginFresh:
 		// A capturing allocator's result is still a value the algorithm made.
-		// What it captured is reachable only through its interior, which
-		// aliasOf refuses above.
+		// What it captured is reachable only through its interior, and the
+		// check above refuses that.
 		return alias{Kind: AliasFresh}
 	default:
 		return alias{Kind: AliasUnknown}
 	}
 }
 
-// returnAlias joins what every return in one algorithm aliases.
-//
-// An algorithm holding no return the serializer lowered is `unknown` rather
-// than the lattice bottom, since the walk learned nothing about what it hands
-// back. `String.prototype.localeCompare` is implementation-defined past the
-// coercion of its two arguments, and its graph ends without a return.
+// returnAlias joins what every return in one algorithm aliases. An algorithm
+// with no return the serializer lowered is `unknown`, since the walk learned
+// nothing about what it hands back. `String.prototype.localeCompare` is
+// implementation-defined past the coercion of its arguments, so its graph holds
+// no return.
 func returnAlias(m *OriginMap) alias {
 	var acc alias
 	for _, node := range m.Func().Nodes {
@@ -135,8 +123,8 @@ func returnAlias(m *OriginMap) alias {
 }
 
 // receiverKind reports how a builtin takes its receiver. A static and a
-// namespace function have none, and a method's receiver is mutable exactly
-// when the mutation summary charged a write to it.
+// namespace function have none. A method's receiver is mutable exactly when
+// the mutation summary charged a write to it.
 func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 	if fn.Kind != BuiltinMethod {
 		return RecvNone
@@ -151,24 +139,22 @@ func receiverKind(fn *Func, mutations Mutations) ReceiverKind {
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// An unclassified fact is requirements.md FR5's fall-through. The analysis
-// could not read the whole algorithm or could not place a write it saw, so the
-// fact carries no claim at all. Every other field is absent from the JSON, and
-// the converter applies its own defaults and falls the method through to the
-// name heuristics. Appendix B spells the effect fields as pointers to keep that
-// absence apart from a proven-empty result. A kind has no empty member, so a
-// plain string with omitempty encodes the same distinction.
+// An unclassified fact carries no claim at all. Every other field is absent
+// from the JSON, so a consumer never reads "unanalyzed" as "proven none". The
+// converter falls such a method through to its name heuristics, which is
+// requirements.md FR5's soundness bias. Appendix B draws the absence with
+// pointers. A kind has no empty member, so omitempty encodes it the same.
 //
 // Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
-// Params, a classified fact makes no parameter claim at all, so a consumer
-// cannot yet read an absent Params as Appendix B's proven-read-only one.
+// Params, no fact makes a parameter claim, so an absent Params is not yet
+// Appendix B's proven-read-only one.
 type MethodFact struct {
 	Classified bool         `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
 	Returns    AliasKind    `json:"returns,omitempty"`
 	// ParamIndex is the position Returns aliases, read only when Returns is
 	// AliasParam. Position 0 is omitted from the JSON as the zero value, which
-	// is the position a reader takes an absent field for.
+	// is what a reader takes an absent field for anyway.
 	ParamIndex int `json:"paramIndex,omitempty"`
 }
 
@@ -182,11 +168,10 @@ func (f MethodFact) String() string {
 	return fmt.Sprintf("receiver:%s returns:%s", f.Receiver, returns)
 }
 
-// Facts is the classification of every builtin in one graph, keyed by
-// canonical spec name. Appendix C of
-// planning/ecma-262/implementation_plan.md describes the key space. An
-// abstract operation feeds the analysis but is not a library surface, so it is
-// absent here.
+// Facts is the classification of every builtin in one graph, keyed by the
+// canonical spec names of Appendix C in
+// planning/ecma-262/implementation_plan.md. An abstract operation feeds the
+// analysis but is not a library surface, so it is absent here.
 type Facts struct {
 	SpecTarget string                `json:"specTarget"`
 	Methods    map[string]MethodFact `json:"methods"`
@@ -196,14 +181,14 @@ type Facts struct {
 // itself, which supplies the receiver axis and the two warnings that decide
 // whether a method is classified at all.
 //
-// The return-alias axis tolerates an unknown without unclassifying the method.
-// It is the lifetime seed of FR4, which the converter records rather than
-// applies, not a soundness-bearing claim the way receiver mutability is.
+// An unresolved return alias does not unclassify a method. It is FR4's lifetime
+// seed, which §7 records rather than applies, not a soundness claim the way
+// receiver mutability is.
 //
-// A classified receiver claim is only as strong as the analysis behind it. A
-// mutation §4.1 does not see leaves no warning to unclassify the method, so
-// the borrow is published rather than withheld. §6's validation diff against
-// the hand-written overrides is what authorizes §7 to trust this source.
+// A classified receiver claim is only as strong as §4.1. A mutation that
+// analysis does not see leaves no warning, so the borrow is published rather
+// than withheld. §6's diff against the hand-written overrides is what
+// authorizes §7 to trust this source.
 func NewFacts(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
 
@@ -232,8 +217,8 @@ func NewFacts(cfg *CFG) *Facts {
 }
 
 // Of returns the fact for a canonical spec name, and whether the graph held
-// that builtin at all. A name the graph does not hold is one the §5 join
-// reports as unmatched rather than one the analysis left unclassified.
+// that builtin at all. §5 reports a name the graph does not hold as unmatched,
+// which is not the same as one the analysis left unclassified.
 func (f *Facts) Of(name string) (MethodFact, bool) {
 	fact, ok := f.Methods[name]
 	return fact, ok
