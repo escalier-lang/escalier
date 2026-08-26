@@ -7,14 +7,10 @@ import (
 )
 
 // Sink is the exit a raised value leaves a function through. Every throw site
-// belongs to exactly one, which is what splits a method's raised set into the
-// synchronous `throws` and the asynchronous `rejects` of the promise it
-// returns. See planning/ecma-262/implementation_plan.md §9.3 and
-// requirements.md FR13.
-//
-// The split needs no case for generators. A generator's `next` raises
-// synchronously and an async generator's `next` rejects the promise it hands
-// back, and the partition below reads each off the same node list.
+// belongs to exactly one, which splits a method's raised set into the
+// synchronous `throws` and the `rejects` of the promise it returns. A generator
+// needs no case of its own, since its `next` reaches the first sink and an async
+// generator's the second. See implementation_plan.md §9.3 and FR13.
 type Sink uint8
 
 const (
@@ -113,30 +109,27 @@ type directReject struct {
 // rejectPlan is where one function's rejections come from. It is worked out
 // from the node list alone, so the fixpoint builds it once and reads it on
 // every pass.
-//
-// routed and direct are the two sources §9.3 names. routed holds the steps
-// whose abrupt completion an `IfAbruptRejectPromise` sends to the reject
-// function, and what each raises is whatever the fixpoint concluded about the
-// operation that step calls. direct holds the steps handed a plain value.
-//
-// read holds the positions of the `Completion` captures the walk traced back
-// through. Such a capture is the point where an abrupt completion stops being
-// control flow and becomes a value, and §9.1 flags a function that has one
-// because it can no longer name the step that raised it. A capture this walk
-// read through is named after all, so it leaves the flag alone.
-//
-// modeled holds what the hand-written combinator model contributes, which has
-// no step in the graph at all.
-//
-// delegated marks a function that hands the capability it built to another
-// function which rejects one. Those rejections settle the promise this function
-// returns and neither source above sees them, so the function is flagged rather
-// than published as if its reject set were whole.
 type rejectPlan struct {
-	routed    []rejectRoute
-	direct    []directReject
-	read      set.Set[int]
-	modeled   []Raised
+	// routed holds the steps whose abrupt completion an `IfAbruptRejectPromise`
+	// sends to the reject function. What each raises is whatever the fixpoint
+	// concluded about the operation that step calls. routed and direct are the
+	// two sources §9.3 names.
+	routed []rejectRoute
+	// direct holds the steps handed a plain value rather than a completion.
+	direct []directReject
+	// read holds the positions of the `Completion` captures the walk traced
+	// back through. Such a capture is where an abrupt completion stops being
+	// control flow and becomes a value, and §9.1 flags a function that has one
+	// because it can no longer name the step that raised it. A capture this
+	// walk read through is named after all, so it leaves the flag alone.
+	read set.Set[int]
+	// modeled holds what the hand-written combinator model contributes, which
+	// has no step in the graph at all.
+	modeled []Raised
+	// delegated marks a function that hands the capability it built to another
+	// function which rejects one. Those rejections settle the promise this
+	// function returns and neither source above sees them, so the function is
+	// flagged rather than published as if its reject set were whole.
 	delegated bool
 }
 
@@ -213,21 +206,14 @@ func rejecters(cfg *CFG) set.Set[string] {
 	return names
 }
 
-// delegatesCapability reports whether fn passes a promise capability it built
-// to a function that rejects one.
-//
-// `AsyncFromSyncIteratorPrototype.next` is the shape. It builds a capability,
-// hands it to `AsyncFromSyncIteratorContinuation`, and returns the capability's
-// promise, and the continuation is where three of the four rejections of that
-// promise happen. Following the value into the callee would take a summary of
-// which parameter each function rejects and how a caller fills it, which §9.3
-// does not build, so the caller is flagged instead.
-//
-// The four `Promise` combinators pass their capability to a `PerformPromise*`
-// operation that resolves rather than rejects it. What those forward is each
-// element promise's rejection, which reaches the capability through a reaction
-// handler rather than a reject step, and the combinator model is what covers
-// it.
+// delegatesCapability reports whether fn passes a promise capability it built to
+// a function that rejects one. `AsyncFromSyncIteratorPrototype.next` is the
+// shape: it hands its capability to `AsyncFromSyncIteratorContinuation`, where
+// three of the four rejections of the promise it returns happen. Following the
+// value in would take a summary of which parameter each function rejects, which
+// §9.3 does not build, so the caller is flagged instead. The check is on the
+// immediate callee, which leaves the combinators alone; each passes its
+// capability to a `PerformPromise*` operation that only resolves it.
 func delegatesCapability(fn *Func, rejecters set.Set[string]) bool {
 	held := capabilityNames(fn)
 	if held.Len() == 0 {
@@ -306,25 +292,19 @@ type rejectScan struct {
 }
 
 // raisingSteps walks the value handed to a reject function back to the steps
-// whose abrupt completion it carries, and returns their positions.
-//
-// ESMeta inlines `IfAbruptRejectPromise(v, capability)` rather than leaving it
-// an opaque helper, so the shape reaching the graph is four steps:
+// whose abrupt completion it carries, and returns their positions. ESMeta
+// inlines `IfAbruptRejectPromise`, so the shape is four steps:
 //
 //	%1 = plain GetPromiseResolve(C)
 //	%2 = plain Completion(%1)
 //	let promiseResolve = %2
 //	%3 = ? Call(promiseCapability.[[Reject]], lit, alloc(promiseResolve.[[Value]]))
 //
-// The call the exception came from is `GetPromiseResolve`, three hops back
-// through a completion capture and a binding, and reading it is what makes the
-// rejection a fact about that operation rather than an untraced value. The walk
-// unwraps `.[[Value]]`, follows a binding to its source, and stops at the
-// capture.
-//
-// seen holds the names already walked, since a name is bound from itself on the
-// path where the completion turns out to be a normal one, as in `let
-// promiseResolve be promiseResolve.[[Value]]`.
+// Reading back to `GetPromiseResolve` is what makes the rejection a fact about
+// that operation rather than an untraced value, so the walk unwraps
+// `.[[Value]]`, follows a binding to its source, and stops at the capture. seen
+// holds the names already walked, since a name is bound from itself on the path
+// where the completion turns out to be a normal one.
 func (s *rejectScan) raisingSteps(e Expr, seen set.Set[string]) []int {
 	switch e := e.(type) {
 	case *SlotExpr:
@@ -391,25 +371,14 @@ type promiseCombinator struct {
 	form     func(Origin) Raised
 }
 
-// promiseCombinators models the four `Promise` combinators by name.
-//
-// Each forwards the reject type of the promises its iterable yields, and that
-// value arrives through the promise-resolution machinery rather than along an
-// edge the graph holds: `Promise.all` hands each element to
-// `PerformPromiseAll`, which registers a reaction whose rejection settles the
-// returned promise. No origin the analysis computes reaches that, so FR13 asks
-// for the four to be modeled by hand instead.
-//
-// The model is the element channel alone. What a combinator rejects on its own
-// account — the `TypeError` from `? GetIterator(iterable)` on a non-iterable
-// argument, say — is a routed rejection the walk above already finds, and the
-// two are unioned. `Promise.allSettled` is the case that shows why: it captures
-// each element rejection as a `{status, reason}` record, so its element channel
-// is empty while its own iterator rejection stands.
-//
-// TestPromiseCombinatorsMatchTheGraph checks each entry against the graph, so a
-// spec bump that renames the parameter fails there rather than silently
-// modeling nothing.
+// promiseCombinators models the four `Promise` combinators by name. Each
+// forwards the reject type of the promises its iterable yields, which arrives
+// through the promise-resolution machinery rather than along an edge the graph
+// holds, so FR13 asks for the four to be modeled by hand. The model is the
+// element channel alone, unioned with the routed rejections the walk above
+// finds, which is why `Promise.allSettled` keeps its own iterator `TypeError`
+// while forwarding nothing from its elements.
+// TestPromiseCombinatorsMatchTheGraph checks each entry against the graph.
 var promiseCombinators = map[string]promiseCombinator{
 	"Promise.all":        {iterable: "iterable", form: ElementErr},
 	"Promise.race":       {iterable: "iterable", form: ElementErr},
