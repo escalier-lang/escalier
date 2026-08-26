@@ -146,26 +146,14 @@ func receiverCovered(fn *Func, mutations Mutations) bool {
 }
 
 // Coverage records which of MethodFact's determinations the analysis resolved.
-// Each is an independent axis, so requirements.md FR5's conservative fallback
-// applies to each on its own. A step the analysis could not read withholds only
-// the determinations that read it. §8 and §9 add a field per determination they
-// bring.
+// A step it could not read withholds only the ones that read it (FR5).
 type Coverage struct {
-	// Receiver is always set for a static and a namespace function, which have
-	// no receiver to claim. For a method it is set when the mutation fixpoint
-	// read the whole algorithm and placed every write. An opaque node carries
-	// no operands, so a missed step could have written the receiver, and the
-	// mutability claim is withheld rather than guessed.
+	// Receiver is set for a static or namespace function, which has no receiver
+	// to claim, and for a method the mutation fixpoint read whole.
 	Receiver bool `json:"receiver"`
-	// Returns is set for every builtin, since returnAlias is total. The alias
-	// lattice has a top, so an algorithm the walk could not tie to any origin
-	// resolves to AliasUnknown rather than leaving the axis open.
-	//
-	// A missed step can itself be a return, which drops out of the join.
-	// `String.prototype.repeat` ends in a prose step returning n copies of the
-	// string, so the `fresh` it publishes comes from its empty-string path
-	// alone. FR4 accepts that, since §7 curates the alias rather than applying
-	// it.
+	// Returns is set for every builtin, since returnAlias is total. A return
+	// hidden in a step the analysis could not read drops out of the join, a
+	// loss FR4 accepts because §7 curates the alias rather than applying it.
 	Returns bool `json:"returns"`
 }
 
