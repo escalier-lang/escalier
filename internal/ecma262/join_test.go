@@ -148,9 +148,9 @@ func TestJoinLookup(t *testing.T) {
 	}
 }
 
-// The accessor tag is not part of the address, so a plain method never
-// resolves to the getter of the same name and the getter never resolves to a
-// method's fact.
+// The accessor tag is part of the address, so a lookup resolves only against a
+// fact whose accessor matches. A plain method never picks up the fact for the
+// getter of the same name, and a getter never picks up a method's.
 func TestJoinLookupSeparatesAccessorsFromMethods(t *testing.T) {
 	t.Parallel()
 	join := NewJoin(joinFixture())
@@ -291,5 +291,6 @@ func TestWriteJoinReport(t *testing.T) {
     no declaration: String.prototype.at
     no declaration: get Map.prototype.size
     unkeyed declaration: parseInt
+    unjoinable fact: parseInt
 `))
 }

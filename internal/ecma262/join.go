@@ -205,9 +205,9 @@ func (j *Join) Match(decls Declarations) JoinReport {
 	return report
 }
 
-// WriteJoinReport prints the join's counts and the names present on one side
-// only. The converter's operator reads it the way ReportPartition's summary
-// is read, as a list of gaps rather than a failure.
+// WriteJoinReport prints the join's counts and every name it could not match.
+// The converter's operator reads it the way ReportPartition's summary is read,
+// as a list of gaps rather than a failure.
 func WriteJoinReport(report JoinReport, w io.Writer) error {
 	classified := 0
 	for _, m := range report.Matched {
@@ -233,6 +233,11 @@ func WriteJoinReport(report JoinReport, w io.Writer) error {
 	}
 	for _, path := range report.UnkeyedDecls {
 		if _, err := fmt.Fprintf(w, "    unkeyed declaration: %s\n", path); err != nil {
+			return err
+		}
+	}
+	for _, name := range report.UnjoinableFacts {
+		if _, err := fmt.Fprintf(w, "    unjoinable fact: %s\n", name); err != nil {
 			return err
 		}
 	}
