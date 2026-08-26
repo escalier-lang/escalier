@@ -377,10 +377,10 @@ func TestThrowSummaryIsIndependentOfFuncOrder(t *testing.T) {
 		lines := make([]string, 0, len(throws.Sites))
 		for _, site := range throws.Sites {
 			base := site.Base()
-			lines = append(lines, fmt.Sprintf("#%d %s from #%d %s", site.Index, site.Raised, base.Index, base.Raised))
+			lines = append(lines, fmt.Sprintf("#%d %s %s from #%d %s", site.Index, site.Sink, site.Raised, base.Index, base.Raised))
 		}
 		sort.Strings(lines)
-		return throws.String() + "\n" + strings.Join(lines, "\n")
+		return throws.String() + " / " + throws.RejectsString() + "\n" + strings.Join(lines, "\n")
 	}
 
 	forward := testThrows(t)

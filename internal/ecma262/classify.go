@@ -174,6 +174,10 @@ type Coverage struct {
 // Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
 // Params, no fact makes a parameter claim, so an absent Params is not yet
 // Appendix B's proven-read-only one.
+//
+// Both throw fields land together, in §9.2. ThrowSummary already computes each
+// channel, but publishing the reject set on its own would spell a method whose
+// synchronous throws are simply not published yet as one that throws nothing.
 type MethodFact struct {
 	Classified Coverage     `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
