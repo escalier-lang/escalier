@@ -84,6 +84,17 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// backing-store slot.
 		"ReceiverThroughABackingStoreSlot": {"Map.prototype.set", "receiver"},
 		"BackingStoreSlotOnASet":           {"Set.prototype.add", "receiver"},
+		// Map.prototype.delete empties one entry of `M.[[MapData]]` in place
+		// with `Set p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry
+		// Record rather than a backing-store slot, so the write counts only
+		// because `p` came out of a read of `M.[[MapData]]` and carries the
+		// receiver's interior origin.
+		"SlotOnARecordReadOutOfABackingStore": {"Map.prototype.delete", "receiver"},
+		// clear empties every entry of `M.[[MapData]]` the same way, and
+		// WeakMap.prototype.delete empties the entry it matched in
+		// `M.[[WeakMapData]]`.
+		"ClearingEveryRecordInABackingStore": {"Map.prototype.clear", "receiver"},
+		"SlotOnARecordInAWeakBackingStore":   {"WeakMap.prototype.delete", "receiver"},
 		// Date.prototype.setTime writes `dateObject.[[DateValue]]`, the slot
 		// Date.prototype.getTime reads back.
 		"BackingStoreSlotOnADate": {"Date.prototype.setTime", "receiver"},
@@ -206,15 +217,35 @@ func TestMutationSummaryUnattributableWrite(t *testing.T) {
 	require.Equal(t, "unattributable", mutationsOf(t, "Array.of").String())
 }
 
-// Only a backing-store slot write counts as a mutation of the object written.
-// `Map.prototype.delete` empties the entry in place, `Set p.[[Key]] to EMPTY`,
-// and `[[Key]]` is a field of a Map Entry Record rather than a backing store.
-// The record itself came out of a read of `M.[[MapData]]`, which breaks the
-// origin chain, so the receiver is not in `p` either. delete therefore comes
-// out non-mutating, and §6's validation diff is where that disagreement with
-// the hand-written overrides surfaces.
+// A write to any slot of a record read out of a backing store is charged to the
+// object holding that store. `Map.prototype.delete` empties its entry in place
+// with `Set p.[[Key]] to EMPTY`. `[[Key]]` is a field of a Map Entry Record
+// rather than a backing-store slot, so the slot list alone reports nothing.
+// `p` came out of a read of `M.[[MapData]]`, which puts it at the receiver's
+// interior, and the write lands on `M`.
+//
+// The three methods of this shape are `Map.prototype.delete`,
+// `Map.prototype.clear`, and `WeakMap.prototype.delete`. Their Set counterparts
+// reach the same replacement through a prose step §3 could not lower, so they
+// come out incomplete and FR5's name heuristics decide them.
+func TestMutationSummaryChargesARecordWriteToItsCollection(t *testing.T) {
+	require.Equal(t, "receiver", mutationsOf(t, "Map.prototype.delete").String())
+	require.Equal(t, "receiver", mutationsOf(t, "Map.prototype.clear").String())
+	require.Equal(t, "receiver", mutationsOf(t, "WeakMap.prototype.delete").String())
+
+	require.Equal(t, "incomplete", mutationsOf(t, "Set.prototype.delete").String())
+	require.Equal(t, "incomplete", mutationsOf(t, "Set.prototype.clear").String())
+	require.Equal(t, "incomplete", mutationsOf(t, "WeakSet.prototype.delete").String())
+}
+
+// A write to a slot outside the backing-store list is skipped when the object
+// written is the receiver itself rather than a value read out of its backing
+// store. `ArrayIteratorPrototype.next` writes `[[IteratedArrayLike]]` and
+// `[[ArrayLikeNextIndex]]` on the iterator, and both are cursor bookkeeping
+// rather than payload. Whether an iterator's `next` mutates its receiver is a
+// decision about the emitted surface, which §11's curation makes.
 func TestMutationSummarySkipsNonBackingStoreSlots(t *testing.T) {
-	require.Equal(t, "none", mutationsOf(t, "Map.prototype.delete").String())
+	require.Equal(t, "none", mutationsOf(t, "ArrayIteratorPrototype.next").String())
 }
 
 // The origin map decides what a callee is before the seed does. A callee bound
@@ -561,6 +592,6 @@ func TestMutationSummaryTallies(t *testing.T) {
 	}
 	sort.Strings(kinds)
 	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 47, unattributable 37, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 58, args 0, unattributable 3, incomplete 29, classifiable 282
+builtin-method: total 313, receiver 61, args 0, unattributable 3, incomplete 29, classifiable 282
 builtin-static: total 188, receiver 0, args 13, unattributable 21, incomplete 45, classifiable 138`))
 }

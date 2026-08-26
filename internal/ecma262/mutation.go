@@ -374,7 +374,15 @@ func (a *analysis) transfer(cfg *CFG, fn *Func) bool {
 				if origin.Eval(node.Object).Kind != OriginFresh {
 					changed = f.markIncomplete() || changed
 				}
-			} else if backingStoreSlots.Contains(node.Slot) {
+			} else if backingStoreSlots.Contains(node.Slot) || origin.Eval(node.Object).Interior {
+				// A write to a backing-store slot mutates the object that
+				// holds it. So does a write to any slot of an interior value,
+				// since that value lives inside the object holding it and the
+				// object's own methods read it back. `Map.prototype.delete`
+				// empties one entry of `M.[[MapData]]` with `Set p.[[Key]] to
+				// EMPTY`. `[[Key]]` is a field of a Map Entry Record rather
+				// than a backing-store slot, so only the interior origin of
+				// `p` places that write.
 				changed = a.attribute(f, origin, node.Object) || changed
 			}
 		case *CallNode:
