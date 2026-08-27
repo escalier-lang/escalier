@@ -303,10 +303,10 @@ func TestMutationSummaryDiscardsAComputedSlotWriteOnARestParameter(t *testing.T)
 }
 
 // Every write in the committed graph whose slot the algorithm computes and
-// whose object sits at a declared parameter, as `name: position`. Nothing can
-// say what such a write reached, so it leaves its function `Incomplete`. None
-// is in a builtin, and a spec bump that puts one there fails here rather than
-// quietly costing that builtin its receiver claim.
+// whose object sits at a declared parameter. Nothing can say what such a write
+// reached, so it leaves its function `Incomplete`. None is in a builtin, and a
+// spec bump that puts one there fails here rather than quietly costing that
+// builtin its receiver claim.
 //
 // A write on a parameter's interior is charged to the parameter holding it, so
 // it is not one of these.
@@ -323,20 +323,23 @@ func TestGraphComputedSlotWritesOnADeclaredParameter(t *testing.T) {
 			}
 			if o := origins.Eval(write.Object); o.Kind == OriginParam && !o.Interior {
 				require.Equal(t, AbstractOp, fn.Kind, "%s is a builtin", fn.Name)
-				found = append(found, fmt.Sprintf("%s: %d", fn.Name, o.Index))
+				found = append(found, fmt.Sprintf("%s: %s", fn.Name, fn.Params[o.Index]))
 			}
 		}
 	}
 	sort.Strings(found)
 
-	snaps.MatchInlineSnapshot(t, strings.Join(found, "\n"), snaps.Inline(`AddValueToKeyedGroup: 0
-CopyDataBlockBytes: 0
-CopyDataBlockBytes: 0
-GatherAvailableAncestors: 1
-InnerModuleEvaluation: 1
-InnerModuleLinking: 1
-__APPEND_LIST__: 0
-__REMOVE_ELEM__: 1`))
+	// One line per write, as `operation: the parameter it writes`. Every one is
+	// a container the operation appends to or removes from, addressed by an
+	// index it computes, so the same operation appears once per such step.
+	snaps.MatchInlineSnapshot(t, strings.Join(found, "\n"), snaps.Inline(`AddValueToKeyedGroup: groups
+CopyDataBlockBytes: toBlock
+CopyDataBlockBytes: toBlock
+GatherAvailableAncestors: execList
+InnerModuleEvaluation: stack
+InnerModuleLinking: stack
+__APPEND_LIST__: to
+__REMOVE_ELEM__: list`))
 }
 
 // The origin map decides what a callee is before the seed does. A callee bound
