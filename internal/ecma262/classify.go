@@ -102,13 +102,13 @@ func (s aliasSet) join(other aliasSet) aliasSet {
 // AliasUnknown the same way the top does, since an algorithm whose returns the
 // walk never read says nothing about what it hands back.
 func (s aliasSet) kind() AliasKind {
-	switch {
-	case s.unknown || s.members.Len() == 0:
+	switch members := s.sorted(); {
+	case s.unknown || len(members) == 0:
 		return AliasUnknown
-	case s.members.Len() > 1:
-		return AliasUnion
+	case len(members) == 1:
+		return members[0].Kind
 	default:
-		return s.sorted()[0].Kind
+		return AliasUnion
 	}
 }
 
