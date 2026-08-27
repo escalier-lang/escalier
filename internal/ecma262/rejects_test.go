@@ -135,6 +135,15 @@ func TestRejectSetSplitsACombinatorBySite(t *testing.T) {
 // replacing it. `Promise.allSettled` shows the difference: its element channel
 // is empty, and the TypeError it rejects with on a non-iterable argument still
 // stands.
+//
+// The `Unknown` every row carries is two callback effects the analysis could
+// not name. `? GetIterator(iterable)` ends at `? Call(method, obj)` on the
+// method it read off `iterable[@@iterator]`, and `PerformPromise*` ends at `?
+// Call(promiseResolve, ...)` on the function `GetPromiseResolve(C)` read off
+// `C.resolve`. Each is a function the combinator rejects with the throws of,
+// and each was read off a property rather than handed in as a parameter, so
+// there is no origin to thread it back to. FR6 spells that `unknown`, and the
+// FR7 join fills it from the typed signature.
 func TestCombinatorRejects(t *testing.T) {
 	tests := map[string]struct {
 		fn   string
