@@ -477,9 +477,10 @@ func TestOriginMapCoversEveryFunction(t *testing.T) {
 
 // Every builtin the committed graph keys a rest parameter for, as `name:
 // position/parameters`. A rest parameter need not come last, and `Function (
-// ...parameterArgs, bodyArg )` is where that shows. Only a builtin declares
-// one, because a rest parameter is spelled in an algorithm head and an
-// abstract operation has none.
+// ...parameterArgs, bodyArg )` is where that shows. The last argument to that
+// constructor is the function body and every argument before it is a formal
+// parameter. Only a builtin declares a rest parameter, because one is spelled
+// in an algorithm head and an abstract operation has none.
 func TestGraphRestParameters(t *testing.T) {
 	cfg := testCFG(t)
 
