@@ -335,9 +335,9 @@ func TestRejectSetFlagsADelegatedCapability(t *testing.T) {
 	}
 }
 
-// The reason a rejection carries is read from the invoker's own argument list,
-// which sits third in `Call(F, V, argumentsList)` and second in `Construct(F,
-// argumentsList, newTarget)`.
+// The reason a rejection carries is read from the argument list of the invoker
+// that carries it. `Call(F, V, argumentsList)` holds that list third and
+// `Construct(F, argumentsList, newTarget)` holds it second.
 func TestRejectReasonReadsEachInvokersArgumentList(t *testing.T) {
 	const reject = `{"kind":"slot","object":{"kind":"var","var":"cap"},"slot":"Reject"}`
 	const list = `{"kind":"alloc","args":[{"kind":"var","var":"r"}]}`
@@ -360,10 +360,20 @@ func TestRejectReasonReadsEachInvokersArgumentList(t *testing.T) {
 	}
 }
 
-// A callee's rejections settle the promise the callee returns, so they reach
-// neither channel of a caller that `?`-guards it. Only what the callee raises
-// synchronously travels out. Without the split the caller would report the
-// callee's rejected value as one of its own synchronous throws.
+// A callee's rejections settle the promise the callee returns, so a caller that
+// `?`-guards it inherits only what the callee raises synchronously. Without the
+// split the caller would report the callee's rejected value as one of its own
+// synchronous throws.
+//
+// A caller that returned the callee's promise rather than guarding it would
+// hand those rejections on, and §9.3 would not see them. It reads a function's
+// own `[[Reject]]` steps and never a callee's reject set. That case does not
+// arise in the pinned graph: `Promise.resolve` is the one builtin returning a
+// callee's promise, and `PromiseResolve` rejects nowhere. The serializer also
+// leaves `Func.Promise` unset on a function returning a promise built
+// elsewhere, so such a function reports no rejections rather than the wrong
+// ones. See the §3 findings on `Promise.prototype.catch` in
+// planning/ecma-262/implementation_plan.md.
 func TestCalleeRejectionsDoNotPropagate(t *testing.T) {
 	cfg, err := ParseCFG([]byte(
 		`{"specTarget":"abc","funcs":[` +
