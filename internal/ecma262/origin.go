@@ -56,26 +56,27 @@ const (
 // object's state" rather than "one read below it", which is why a further read
 // off an interior value keeps the marker.
 //
-// Captures marks a fresh value built around something the algorithm was given.
-// It changes nothing about the fresh value, only about its interior. An
+// Shallow marks a value that is fresh only at the top. The algorithm allocated
+// the value itself but not what it holds, so writing it stays invisible to the
+// caller while reading inside it can reach a value the caller owns. An
 // allocator that stores one of its arguments into the value it returns builds
 // one, and so does the call that builds a rest parameter's List out of the
-// caller's arguments. See capturingAllocators and paramOrigin.
+// caller's arguments. See shallowAllocators and paramOrigin.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
 	Interior bool
-	Captures bool
+	Shallow  bool
 }
 
-// Receiver, Fresh, Capturing and Unknown are the origins that carry no index.
-// Capturing is the fresh value whose interior is not fresh, which is what a
-// capturing allocator returns and what a rest parameter names.
+// Receiver, Fresh, ShallowFresh and Unknown are the origins that carry no
+// index. ShallowFresh is the value that is fresh while its contents are not,
+// which is what a shallow allocator returns and what a rest parameter names.
 var (
-	Receiver  = Origin{Kind: OriginReceiver}
-	Fresh     = Origin{Kind: OriginFresh}
-	Capturing = Origin{Kind: OriginFresh, Captures: true}
-	Unknown   = Origin{Kind: OriginUnknown}
+	Receiver     = Origin{Kind: OriginReceiver}
+	Fresh        = Origin{Kind: OriginFresh}
+	ShallowFresh = Origin{Kind: OriginFresh, Shallow: true}
+	Unknown      = Origin{Kind: OriginUnknown}
 )
 
 // Param returns the origin of the i-th declared parameter, 0-based.
@@ -88,13 +89,13 @@ func Param(i int) Origin {
 // A rest parameter is not a value the caller passed. It names the List the call
 // builds out of the arguments the head does not name one by one. Writing that
 // List is invisible to the caller, while the values in it are the caller's own,
-// which is the split Captures marks. `Array.prototype.concat` opens by
+// which is the split Shallow marks. `Array.prototype.concat` opens by
 // prepending its receiver onto `items`, and that prepend reaches nothing the
 // caller holds. A read out of the List lands on `Unknown`, since the value it
 // yields is one argument rather than the formal's own position.
 func paramOrigin(fn *Func, i int) Origin {
 	if fn.Variadic != nil && *fn.Variadic == i {
-		return Capturing
+		return ShallowFresh
 	}
 	return Param(i)
 }
@@ -116,8 +117,8 @@ func interiorOf(o Origin) Origin {
 		return o
 	case OriginFresh:
 		// A value the algorithm allocated holds only values it also made,
-		// unless it was built around something the algorithm was given.
-		if o.Captures {
+		// unless the allocation is shallow.
+		if o.Shallow {
 			return Unknown
 		}
 		return Fresh
@@ -164,8 +165,8 @@ func (o Origin) String() string {
 	default:
 		name = fmt.Sprintf("Origin(%d)", o.Kind)
 	}
-	if o.Captures {
-		name += "(captures)"
+	if o.Shallow {
+		name += "(shallow)"
 	}
 	if o.Interior {
 		return "Interior(" + name + ")"
@@ -348,9 +349,10 @@ var allocators = set.FromSlice([]string{
 	"NewObjectEnvironment",
 })
 
-// capturingAllocators are the allocators that build their result around a value
+// shallowAllocators are the allocators that build their result around a value
 // they were given, so reading inside that result can reach a value the caller
-// already owns. interiorOf keeps every other allocator's result fresh.
+// already owns. interiorOf keeps every other allocator's result fresh all the
+// way down.
 //
 // `MakeDataViewWithBufferWitnessRecord` is the shape. It ends in `return
 // « obj, byteLength »`, so the fresh record holds the very view it was passed.
@@ -359,9 +361,9 @@ var allocators = set.FromSlice([]string{
 // belongs here when one of its parameters reaches a place interiorOf would read
 // it back from: the operands of an allocation it returns, or a backing-store
 // slot it writes on the value it allocated.
-// TestCapturingAllocatorsMatchTheGraph recomputes it, so a spec bump that
+// TestShallowAllocatorsMatchTheGraph recomputes it, so a spec bump that
 // changes an allocator's shape fails there.
-var capturingAllocators = set.FromSlice([]string{
+var shallowAllocators = set.FromSlice([]string{
 	"AllocateArrayBuffer",
 	"AllocateSharedArrayBuffer",
 	"AllocateTypedArray",
@@ -577,12 +579,12 @@ func (m *OriginMap) eval(e Expr) Origin {
 func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	switch {
 	case allocators.Contains(callee):
-		if capturingAllocators.Contains(callee) {
-			return Capturing
+		if shallowAllocators.Contains(callee) {
+			return ShallowFresh
 		}
 		return Fresh
 	case freshPrimitives.Contains(callee):
-		// A new primitive holds nothing, so it never captures.
+		// A new primitive holds nothing, so it is fresh all the way down.
 		return Fresh
 	case identityCoercions.Contains(callee) && len(args) > 0:
 		return m.eval(args[0])

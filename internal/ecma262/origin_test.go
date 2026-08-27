@@ -57,7 +57,7 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "unset", Origin{}.String())
 	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
 	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
-	require.Equal(t, "Fresh(captures)", Capturing.String())
+	require.Equal(t, "Fresh(shallow)", ShallowFresh.String())
 
 	// A kind outside the lattice renders as its number rather than as one of
 	// the names above, so an origin the walk could not produce is still legible
@@ -67,12 +67,12 @@ func TestOriginString(t *testing.T) {
 
 // A receiver's or a parameter's interior is marked and stays placed. A fresh
 // object's interior is fresh too, since the algorithm made its contents as
-// well, unless the allocator captured one of its arguments.
+// well, unless the allocation is shallow.
 func TestInteriorOf(t *testing.T) {
 	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, interiorOf(Receiver))
 	require.Equal(t, Origin{Kind: OriginParam, Index: 1, Interior: true}, interiorOf(Param(1)))
 	require.Equal(t, Fresh, interiorOf(Fresh))
-	require.Equal(t, Unknown, interiorOf(Capturing))
+	require.Equal(t, Unknown, interiorOf(ShallowFresh))
 	require.Equal(t, Unknown, interiorOf(Unknown))
 
 	// The lattice bottom stays at the bottom. A name whose definition the walk
@@ -153,7 +153,7 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 				"O": "Receiver",
 				// The rest parameter is the List the call built, not a value
 				// the caller passed. TestOriginMapRestParameter covers it.
-				"items": "Fresh(captures)",
+				"items": "Fresh(shallow)",
 				"E":     "Unknown", // read out of the argument list
 				"len":   "Unknown", // ? LengthOfArrayLike(O)
 			},
@@ -189,9 +189,9 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 			fn: "Object.assign",
 			origins: map[string]string{
 				"target":  "Param(0)",
-				"to":      "Param(0)",        // ? ToObject(target)
-				"sources": "Fresh(captures)", // the rest parameter's List
-				"from":    "Unknown",         // ? ToObject(nextSource), off a list read
+				"to":      "Param(0)",       // ? ToObject(target)
+				"sources": "Fresh(shallow)", // the rest parameter's List
+				"from":    "Unknown",        // ? ToObject(nextSource), off a list read
 			},
 		},
 		// Map.prototype.set reaches its receiver straight off `this` rather
@@ -247,12 +247,12 @@ func TestOriginMapJoinsBranches(t *testing.T) {
 // assuming 0.
 func TestOriginMapRestParameter(t *testing.T) {
 	concat := originsOf(t, "Array.prototype.concat")
-	require.Equal(t, Capturing, concat.Of("items"))
+	require.Equal(t, ShallowFresh, concat.Of("items"))
 	require.Equal(t, Receiver, concat.Of("O"))
 
 	assign := originsOf(t, "Object.assign")
 	require.Equal(t, Param(0), assign.Of("target"))
-	require.Equal(t, Capturing, assign.Of("sources"))
+	require.Equal(t, ShallowFresh, assign.Of("sources"))
 }
 
 // A value read out of a rest parameter is one of the caller's arguments, which
@@ -262,7 +262,7 @@ func TestOriginMapRestParameter(t *testing.T) {
 func TestOriginMapReadOutOfARestParameter(t *testing.T) {
 	m := originsOf(t, "Math.max")
 
-	require.Equal(t, Capturing, m.Of("args"))
+	require.Equal(t, ShallowFresh, m.Of("args"))
 	require.Equal(t, Unknown, m.Eval(&PropExpr{Object: &VarExpr{Var: "args"}}))
 	require.Equal(t, Unknown, m.Eval(&SlotExpr{Object: &VarExpr{Var: "args"}, Slot: "MapData"}))
 }
@@ -334,33 +334,33 @@ func TestOriginMapFreeNames(t *testing.T) {
 	require.Equal(t, Unknown, m.Of("remaining"))
 }
 
-// capturingAllocators is derived from the graph, so this recomputes it. An
-// allocator captures when one of its parameters reaches a place interiorOf
-// would read it back from: the operands of an allocation it builds, or the
-// value it writes into a backing-store slot.
-func TestCapturingAllocatorsMatchTheGraph(t *testing.T) {
+// shallowAllocators is derived from the graph, so this recomputes it. An
+// allocation is shallow when one of the allocator's parameters reaches a place
+// interiorOf would read it back from: the operands of an allocation it builds,
+// or the value it writes into a backing-store slot.
+func TestShallowAllocatorsMatchTheGraph(t *testing.T) {
 	cfg := testCFG(t)
 
 	derived := set.NewSet[string]()
 	for _, name := range allocators.ToSlice() {
 		fn := cfg.AbstractOp(name)
 		require.NotNil(t, fn, "no abstract operation named %s", name)
-		if capturesAnArgument(fn) {
+		if allocatesShallowly(fn) {
 			derived.Add(name)
 		}
 	}
 
-	require.Equal(t, sorted(capturingAllocators), sorted(derived))
+	require.Equal(t, sorted(shallowAllocators), sorted(derived))
 }
 
-// capturesAnArgument reports whether one of fn's parameters can be read back
+// allocatesShallowly reports whether one of fn's parameters can be read back
 // out of the value fn allocates.
 //
 // A name is at a parameter when fn's own origin map says so, which is how a
 // parameter reached through an intermediate binding still counts. Matching a
 // parameter's spelling alone would miss `Let b be obj` followed by an
 // allocation over `b`.
-func capturesAnArgument(fn *Func) bool {
+func allocatesShallowly(fn *Func) bool {
 	origins := NewOriginMap(fn)
 	var reaches func(Expr) bool
 	reaches = func(e Expr) bool {
@@ -414,9 +414,9 @@ func sorted(s set.Set[string]) []string {
 
 // A write to the buffer behind a freshly allocated typed array is invisible to
 // the caller, which is what makes `TypedArray.prototype.slice` non-mutating.
-// `A` comes from `TypedArraySpeciesCreate`, which captures nothing, so
-// `A.[[ViewedArrayBuffer]]` stays fresh while `O.[[ViewedArrayBuffer]]` is the
-// receiver's interior.
+// `A` comes from `TypedArraySpeciesCreate`, which holds nothing it was given,
+// so `A.[[ViewedArrayBuffer]]` stays fresh while `O.[[ViewedArrayBuffer]]` is
+// the receiver's interior.
 func TestOriginMapInteriorOfAFreshAllocation(t *testing.T) {
 	m := originsOf(t, "TypedArray.prototype.slice")
 

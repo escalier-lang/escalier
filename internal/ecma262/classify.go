@@ -94,9 +94,9 @@ func aliasOf(o Origin) alias {
 	case OriginParam:
 		return alias{Kind: AliasParam, Index: o.Index}
 	case OriginFresh:
-		// A capturing allocator's result is still a value the algorithm made.
-		// What it captured is reachable only through its interior, and the
-		// check above refuses that.
+		// A shallow allocator's result is still a value the algorithm made.
+		// What it holds is reachable only through its interior, and the check
+		// above refuses that.
 		return alias{Kind: AliasFresh}
 	default:
 		return alias{Kind: AliasUnknown}

@@ -114,15 +114,15 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// rather than a receiver, so the store lands on a parameter.
 		"DataBlockWriteOnAParameter": {"Atomics.store", "args{0}"},
 		// TypedArray.prototype.slice writes the buffer behind the array
-		// TypedArraySpeciesCreate handed it. That allocator captures none of
-		// its arguments, so the buffer is fresh and the write is discarded.
+		// TypedArraySpeciesCreate handed it. That allocator holds none of its
+		// arguments, so the buffer is fresh and the write is discarded.
 		// Only the prose step §3 could not lower is left to report.
 		"InteriorOfAFreshAllocation": {"TypedArray.prototype.slice", "incomplete"},
 		// InitializeTypedArrayFromTypedArray writes the buffer behind an
 		// AllocateTypedArray result, and that allocator stores the name it was
 		// given into the array, so reading inside its result can reach a
 		// caller's value and the write cannot be placed.
-		"InteriorOfACapturingAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
+		"InteriorOfAShallowAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
