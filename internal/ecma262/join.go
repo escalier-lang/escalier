@@ -33,18 +33,32 @@ func (s Signature) Holds(pos int) bool {
 // overload. A spec algorithm maps to a single member even where the type
 // source declares an overload set, so the algorithm-level claims apply to
 // every signature unchanged. A claim that names a parameter position applies
-// only to a signature that declares that position; where it does not, the
+// only to a signature that declares that position. Where it does not, the
 // return alias drops to AliasUnknown, since the value handed back is one the
 // signature cannot name.
+//
+// A union goes the same way as soon as one of its members names a position the
+// signature lacks. Keeping the other members would publish a narrower set of
+// lifetimes than the algorithm can return, which claims more than the analysis
+// showed.
 func (f MethodFact) ForSignature(s Signature) MethodFact {
-	if f.Returns != AliasParam {
+	refs := f.Returns.refs()
+	// A union names its members, so one naming none claims values the fact
+	// does not carry and no signature can resolve it. A parameter return with
+	// no position is the same shape, and the loop below drops it.
+	if f.Returns.Kind == AliasUnion && len(refs) == 0 {
+		f.Returns = ReturnFact{Kind: AliasUnknown}
 		return f
 	}
-	if f.ParamIndex != nil && s.Holds(*f.ParamIndex) {
-		return f
+	for _, ref := range refs {
+		if ref.Kind != AliasParam {
+			continue
+		}
+		if ref.Index == nil || !s.Holds(*ref.Index) {
+			f.Returns = ReturnFact{Kind: AliasUnknown}
+			return f
+		}
 	}
-	f.Returns = AliasUnknown
-	f.ParamIndex = nil
 	return f
 }
 

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // ReceiverKind is how a builtin takes the value it is called on. See
@@ -26,9 +28,6 @@ const (
 type AliasKind string
 
 const (
-	// aliasUnset is the lattice bottom, the accumulator before any return has
-	// been read. returnAlias resolves it to AliasUnknown.
-	aliasUnset AliasKind = ""
 	// AliasReceiver is a return that hands back the receiver.
 	AliasReceiver AliasKind = "receiver"
 	// AliasParam is a return that hands back a declared parameter, identified
@@ -38,14 +37,16 @@ const (
 	// it computed. Nothing the caller holds is borrowed.
 	AliasFresh AliasKind = "fresh"
 	// AliasUnion is a return that aliases different values on different paths.
+	// The values it joined are the union's members, which §8.2 reads as the
+	// lifetimes the return borrows from.
 	AliasUnion AliasKind = "union"
 	// AliasUnknown is a return the analysis could not tie to any of the above.
 	// It is the top of the lattice, so joining it with anything yields it.
 	AliasUnknown AliasKind = "unknown"
 )
 
-// alias is what one return, or the join of every return in an algorithm,
-// aliases. Index is meaningful only when Kind is AliasParam.
+// alias is one value a return hands back. Index is meaningful only when Kind
+// is AliasParam.
 type alias struct {
 	Kind  AliasKind
 	Index int
@@ -58,24 +59,70 @@ func (a alias) String() string {
 	return string(a.Kind)
 }
 
-// join is the least upper bound of two aliases. Two returns that agree keep
-// their alias, and two that disagree collapse to a union, including two
-// parameters at different positions. Anything joined with `unknown` is unknown.
-// Every return contributes whichever branch reaches it, which is what makes the
-// walk path-insensitive.
-func (a alias) join(other alias) alias {
-	switch {
-	case a.Kind == aliasUnset:
-		return other
-	case other.Kind == aliasUnset:
-		return a
-	case a == other:
-		return a
-	case a.Kind == AliasUnknown || other.Kind == AliasUnknown:
-		return alias{Kind: AliasUnknown}
-	default:
-		return alias{Kind: AliasUnion}
+// aliasSet is what every return in one algorithm aliases, joined. It is the
+// lattice returnAlias accumulates over.
+//
+// members holds the distinct values the returns handed back. The empty set is
+// the bottom, the accumulator before any return has been read. A set of one
+// member is that member's kind, and a set of more is FR4's union, whose
+// members are what §8.2 spells a lifetime union from.
+//
+// unknown is the top, and joining it with anything yields it. A return the
+// walk could not resolve leaves the lifetime unbounded, so no member is worth
+// reading beside it. `RegExp` hands back parameter 0 on one path and an
+// unresolved value on another, and comes out `unknown` rather than a union
+// naming that position.
+type aliasSet struct {
+	unknown bool
+	members set.Set[alias]
+}
+
+// aliasOne is the set one return contributes. An unresolved return raises the
+// top rather than adding a member, since `unknown` names no value to borrow.
+func aliasOne(a alias) aliasSet {
+	if a.Kind == AliasUnknown {
+		return aliasSet{unknown: true}
 	}
+	return aliasSet{members: set.FromSlice([]alias{a})}
+}
+
+// join is the least upper bound of two sets, which is their union below the
+// top. Two returns that agree contribute one member, and two that disagree
+// contribute two, including two parameters at different positions. Every
+// return contributes whichever branch reaches it, which is what makes the walk
+// path-insensitive.
+func (s aliasSet) join(other aliasSet) aliasSet {
+	if s.unknown || other.unknown {
+		return aliasSet{unknown: true}
+	}
+	return aliasSet{members: s.members.Union(other.members)}
+}
+
+// kind names the lattice point the set sits at. The bottom resolves to
+// AliasUnknown the same way the top does, since an algorithm whose returns the
+// walk never read says nothing about what it hands back.
+func (s aliasSet) kind() AliasKind {
+	switch {
+	case s.unknown || s.members.Len() == 0:
+		return AliasUnknown
+	case s.members.Len() > 1:
+		return AliasUnion
+	default:
+		return s.sorted()[0].Kind
+	}
+}
+
+// sorted returns the members by kind and then by position. Map iteration order
+// would otherwise leak into a fact's members and its rendering.
+func (s aliasSet) sorted() []alias {
+	members := s.members.ToSlice()
+	sort.Slice(members, func(i, j int) bool {
+		if members[i].Kind != members[j].Kind {
+			return members[i].Kind < members[j].Kind
+		}
+		return members[i].Index < members[j].Index
+	})
+	return members
 }
 
 // aliasOf reads a returned value's origin as what the return aliases.
@@ -104,21 +151,19 @@ func aliasOf(o Origin) alias {
 }
 
 // returnAlias joins what every return in one algorithm aliases. An algorithm
-// with no return the serializer lowered is `unknown`, since the walk learned
-// nothing about what it hands back. `String.prototype.localeCompare` is one.
-// ESMeta lowers its argument coercions and stops there, because the comparison
-// itself is implementation-defined.
-func returnAlias(m *OriginMap) alias {
-	var acc alias
+// with no return the serializer lowered leaves the set empty, which kind reads
+// as `unknown`, since the walk learned nothing about what it hands back.
+// `String.prototype.localeCompare` is one. ESMeta lowers its argument
+// coercions and stops there, because the comparison itself is
+// implementation-defined.
+func returnAlias(m *OriginMap) aliasSet {
+	var acc aliasSet
 	for _, node := range m.Func().Nodes {
 		ret, ok := node.(*ReturnNode)
 		if !ok {
 			continue
 		}
-		acc = acc.join(aliasOf(m.Eval(ret.Value)))
-	}
-	if acc.Kind == aliasUnset {
-		return alias{Kind: AliasUnknown}
+		acc = acc.join(aliasOne(aliasOf(m.Eval(ret.Value))))
 	}
 	return acc
 }
@@ -157,6 +202,100 @@ type Coverage struct {
 	Returns bool `json:"returns"`
 }
 
+// AliasRef names one value a return hands back, as Appendix B of
+// planning/ecma-262/implementation_plan.md serializes it. Index is the 0-based
+// position among the declared parameters, which do not include a method's
+// receiver, so position 0 on an instance method is its first argument. It is
+// set exactly when Kind is AliasParam.
+//
+// Index is a pointer because position 0 is one a fact really carries, so
+// omitting it would spell the first parameter as an absence.
+type AliasRef struct {
+	Kind  AliasKind `json:"kind"`
+	Index *int      `json:"index,omitempty"`
+}
+
+func (r AliasRef) String() string {
+	if r.Kind != AliasParam {
+		return string(r.Kind)
+	}
+	// A parameter return with no position is a fact nothing in this package
+	// builds. It reads as the missing position rather than as position 0,
+	// which is the confusion the pointer exists to prevent.
+	if r.Index == nil {
+		return "param(?)"
+	}
+	return fmt.Sprintf("param(%d)", *r.Index)
+}
+
+// ReturnFact is FR4's return-borrow seed for one builtin, what its return
+// value aliases. Kind is the alias lattice's answer over every return in the
+// algorithm.
+//
+// Index and Members carry what the kind alone cannot spell, and at most one of
+// them is ever set. A union names its members so §8.2 can spell the lifetime
+// union they seed.
+type ReturnFact struct {
+	Kind AliasKind `json:"kind"`
+	// Index is the returned parameter's position, set exactly when Kind is
+	// AliasParam. See AliasRef.
+	Index *int `json:"index,omitempty"`
+	// Members holds the distinct values the returns joined, sorted, set
+	// exactly when Kind is AliasUnion. Every member comes from one return's
+	// own alias, which aliasOf reads as the receiver, a parameter, or a fresh
+	// value. No member is a union, and none is `unknown`, which raises the
+	// lattice top over the whole set instead.
+	Members []AliasRef `json:"members,omitempty"`
+}
+
+// refs returns every value the return hands back. A union names them, and any
+// other kind is its own single ref.
+func (r ReturnFact) refs() []AliasRef {
+	if r.Kind == AliasUnion {
+		return r.Members
+	}
+	return []AliasRef{{Kind: r.Kind, Index: r.Index}}
+}
+
+func (r ReturnFact) String() string {
+	if r.Kind != AliasUnion {
+		return AliasRef{Kind: r.Kind, Index: r.Index}.String()
+	}
+	// A union with no members is the counterpart of a positionless parameter
+	// return, a fact nothing in this package builds.
+	if len(r.Members) == 0 {
+		return "union(?)"
+	}
+	names := make([]string, 0, len(r.Members))
+	for _, ref := range r.Members {
+		names = append(names, ref.String())
+	}
+	return "union(" + strings.Join(names, ", ") + ")"
+}
+
+// newReturnFact publishes a joined alias set. A set of one member spells that
+// member's kind and position, and a set of more spells a union that names them
+// all.
+func newReturnFact(s aliasSet) ReturnFact {
+	members := s.sorted()
+	switch s.kind() {
+	case AliasParam:
+		return ReturnFact{Kind: AliasParam, Index: new(members[0].Index)}
+	case AliasUnion:
+		refs := make([]AliasRef, 0, len(members))
+		for _, member := range members {
+			ref := AliasRef{Kind: member.Kind}
+			if member.Kind == AliasParam {
+				ref.Index = new(member.Index)
+			}
+			refs = append(refs, ref)
+		}
+		return ReturnFact{Kind: AliasUnion, Members: refs}
+	default:
+		return ReturnFact{Kind: s.kind()}
+	}
+}
+
 // MethodFact is what the analysis concluded about one builtin. It serializes
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
@@ -166,10 +305,8 @@ type Coverage struct {
 // none". The converter applies requirements.md FR5's default instead, `&mut
 // self` for an absent receiver.
 //
-// Appendix B draws that absence with pointers. Receiver and Returns are plain
-// kinds, which have no empty member, so omitempty encodes their absence the
-// same way. ParamIndex needs the pointer, because its zero value is a position
-// a fact can really carry.
+// Receiver is a plain kind with no empty member, so omitempty encodes its
+// absence. Returns is a struct, and omitzero encodes the same absence for it.
 //
 // Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
 // Params, no fact makes a parameter claim, so an absent Params is not yet
@@ -177,14 +314,7 @@ type Coverage struct {
 type MethodFact struct {
 	Classified Coverage     `json:"classified"`
 	Receiver   ReceiverKind `json:"receiver,omitempty"`
-	Returns    AliasKind    `json:"returns,omitempty"`
-	// ParamIndex is the 0-based position Returns aliases. It indexes the
-	// declared parameters, which do not include a method's receiver, so
-	// position 0 on an instance method is its first argument. It is set
-	// exactly when Returns is AliasParam, and position 0 is written out like
-	// any other, since omitting it would spell the first parameter as an
-	// absence.
-	ParamIndex *int `json:"paramIndex,omitempty"`
+	Returns    ReturnFact   `json:"returns,omitzero"`
 }
 
 // String renders the covered determinations in one line, so a test can assert
@@ -196,17 +326,7 @@ func (f MethodFact) String() string {
 		parts = append(parts, "receiver:"+string(f.Receiver))
 	}
 	if f.Classified.Returns {
-		returns := string(f.Returns)
-		if f.Returns == AliasParam {
-			// A parameter return with no position is a fact nothing in this
-			// package builds. It reads as the missing position rather than as
-			// position 0, which is the confusion the pointer exists to prevent.
-			returns = "param(?)"
-			if f.ParamIndex != nil {
-				returns = fmt.Sprintf("param(%d)", *f.ParamIndex)
-			}
-		}
-		parts = append(parts, "returns:"+returns)
+		parts = append(parts, "returns:"+f.Returns.String())
 	}
 	if len(parts) == 0 {
 		return "unclassified"
@@ -243,19 +363,15 @@ func NewFacts(cfg *CFG) *Facts {
 			continue
 		}
 		mutations := summary.Of(fn)
-		returns := returnAlias(summary.originsOf(fn))
 		fact := MethodFact{
 			Classified: Coverage{
 				Receiver: receiverCovered(fn, mutations),
 				Returns:  true,
 			},
-			Returns: returns.Kind,
+			Returns: newReturnFact(returnAlias(summary.originsOf(fn))),
 		}
 		if fact.Classified.Receiver {
 			fact.Receiver = receiverKind(fn, mutations)
-		}
-		if returns.Kind == AliasParam {
-			fact.ParamIndex = new(returns.Index)
 		}
 		facts.Methods[fn.Name] = fact
 	}

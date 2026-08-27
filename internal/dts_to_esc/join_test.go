@@ -266,8 +266,7 @@ interface Fixture {
 			"Fixture.prototype.withTail": {
 				Classified: ecma262.Coverage{Receiver: true, Returns: true},
 				Receiver:   ecma262.RecvBorrow,
-				Returns:    ecma262.AliasParam,
-				ParamIndex: &tail,
+				Returns:    ecma262.ReturnFact{Kind: ecma262.AliasParam, Index: &tail},
 			},
 		},
 	}
@@ -335,14 +334,14 @@ declare function parseInt(string: string, radix?: number): number;
 	facts := &ecma262.Facts{
 		SpecTarget: "test",
 		Methods: map[string]ecma262.MethodFact{
-			"Array.prototype.push":           {Classified: covered, Receiver: ecma262.RecvMutBorrow, Returns: ecma262.AliasFresh},
-			"Array.prototype [ @@iterator ]": {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: ecma262.AliasFresh},
-			"Array.isArray":                  {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.AliasFresh},
-			"Math.max":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.AliasFresh},
-			"Math.min":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.AliasFresh},
+			"Array.prototype.push":           {Classified: covered, Receiver: ecma262.RecvMutBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Array.prototype [ @@iterator ]": {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Array.isArray":                  {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Math.max":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Math.min":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
 			// A function the global object holds names no owner, so neither
 			// side of the join can key it.
-			"parseInt": {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.AliasFresh},
+			"parseInt": {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
 		},
 	}
 	report := ecma262.NewJoin(facts).Match(StdDeclarations(mods))
