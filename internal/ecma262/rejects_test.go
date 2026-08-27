@@ -14,9 +14,9 @@ func rejectsOf(t *testing.T, name string) string {
 	return throwsOf(t, name).RejectsString()
 }
 
-func TestRaisedStringOfACombinatorForm(t *testing.T) {
+func TestExceptionStringOfACombinatorForm(t *testing.T) {
 	tests := map[string]struct {
-		raised Raised
+		raised Exception
 		want   string
 	}{
 		"ElementErr": {ElementErr(Param(0)), "ElementErr(Param(0))"},
@@ -32,10 +32,10 @@ func TestRaisedStringOfACombinatorForm(t *testing.T) {
 
 func TestThrowsRejectsString(t *testing.T) {
 	require.Equal(t, "none", Throws{}.RejectsString())
-	require.Equal(t, "none", Throws{Raised: []Raised{Class("TypeError")}}.RejectsString())
+	require.Equal(t, "none", Throws{Raised: []Exception{Class("TypeError")}}.RejectsString())
 	require.Equal(t,
 		"TypeError ElementErr(Param(0))",
-		Throws{Rejects: []Raised{Class("TypeError"), ElementErr(Param(0))}}.RejectsString(),
+		Throws{Rejects: []Exception{Class("TypeError"), ElementErr(Param(0))}}.RejectsString(),
 	)
 }
 
@@ -76,7 +76,7 @@ func TestRejectSetIsEmptyWithoutAReturnedPromise(t *testing.T) {
 // set names the parameter rather than an error class. FR6 spells the fact
 // `param:0` on the wire.
 func TestRejectSetRecordsADirectRejectionsOrigin(t *testing.T) {
-	require.Equal(t, []Raised{Propagated(Param(0))}, throwsOf(t, "Promise.reject").Rejects)
+	require.Equal(t, []Exception{Propagated(Param(0))}, throwsOf(t, "Promise.reject").Rejects)
 }
 
 // The same error class reaches both channels when a method raises it on both

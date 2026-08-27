@@ -125,7 +125,7 @@ type rejectPlan struct {
 	read set.Set[int]
 	// modeled holds what the hand-written combinator model contributes, which
 	// has no step in the graph at all.
-	modeled []Raised
+	modeled []Exception
 	// delegated marks a function that hands the capability it built to another
 	// function which rejects one. Those rejections settle the promise this
 	// function returns and neither source above sees them, so the function is
@@ -368,7 +368,7 @@ func (s *rejectScan) capturedSteps(e Expr) []int {
 // as. A nil form is a combinator that never rejects from its elements.
 type promiseCombinator struct {
 	iterable string
-	form     func(Origin) Raised
+	form     func(Origin) Exception
 }
 
 // promiseCombinators models the four `Promise` combinators by name. Each
@@ -389,14 +389,14 @@ var promiseCombinators = map[string]promiseCombinator{
 // combinatorRejects returns what the hand-written model contributes to fn's
 // reject set, which is nothing for any function that is not one of the four
 // combinators.
-func combinatorRejects(fn *Func) []Raised {
+func combinatorRejects(fn *Func) []Exception {
 	model, modeled := promiseCombinators[fn.Name]
 	if !modeled || model.form == nil {
 		return nil
 	}
 	for i, param := range fn.Params {
 		if param == model.iterable {
-			return []Raised{model.form(Param(i))}
+			return []Exception{model.form(Param(i))}
 		}
 	}
 	return nil

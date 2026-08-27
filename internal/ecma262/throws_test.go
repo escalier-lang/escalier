@@ -39,9 +39,9 @@ func throwsOf(t *testing.T, name string) Throws {
 	return testThrows(t).Of(fn)
 }
 
-func TestRaisedString(t *testing.T) {
+func TestExceptionString(t *testing.T) {
 	tests := map[string]struct {
-		raised Raised
+		raised Exception
 		want   string
 	}{
 		"Class":    {Class("TypeError"), "TypeError"},
@@ -66,7 +66,7 @@ func TestThrowsString(t *testing.T) {
 		"Incomplete": {Throws{Incomplete: true}, "incomplete"},
 		"Every": {
 			Throws{
-				Raised:     []Raised{Class("TypeError"), Propagated(Param(0)), CallbackThrows(Param(1)), Untraced},
+				Raised:     []Exception{Class("TypeError"), Propagated(Param(0)), CallbackThrows(Param(1)), Untraced},
 				Incomplete: true,
 			},
 			"TypeError Origin(Param(0)) CallbackThrows(Param(1)) Unknown incomplete",
@@ -113,7 +113,7 @@ func TestThrowSummarySampleFunctions(t *testing.T) {
 func TestThrowSummaryCallbackEffect(t *testing.T) {
 	tests := map[string]struct {
 		fn   string
-		want Raised
+		want Exception
 	}{
 		// `? Call(callback, thisArg, « kValue, 𝔽(k), O »)` invokes the method's
 		// first declared parameter.

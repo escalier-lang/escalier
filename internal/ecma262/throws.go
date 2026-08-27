@@ -68,45 +68,51 @@ var objectInternalMethods = set.FromSlice([]string{
 	"SetPrototypeOf",
 })
 
-// RaisedKind classifies an exception an algorithm can raise. See
+// ExceptionKind classifies an exception an algorithm can raise. See
 // planning/ecma-262/implementation_plan.md §9.1.
-type RaisedKind uint8
+type ExceptionKind uint8
 
 const (
-	// RaisedClass is an error class the algorithm constructs, as in `Throw a
+	// ExceptionClass is an error class the algorithm constructs, as in `Throw a
 	// *TypeError* exception`. It is the dominant form in the synchronous
 	// channel, since every such step in ECMA-262 names a constructor.
-	RaisedClass RaisedKind = iota
-	// RaisedOrigin is a value the algorithm raises without constructing it,
+	ExceptionClass ExceptionKind = iota
+	// ExceptionOrigin is a value the algorithm raises without constructing it,
 	// resolved to the receiver or the parameter it arrived at.
 	// `Generator.prototype.throw` raises its own first argument.
-	RaisedOrigin
-	// RaisedCallback is the effect of a function the caller supplied, rather
+	ExceptionOrigin
+	// ExceptionCallback is the effect of a function the caller supplied, rather
 	// than a value. `Array.prototype.forEach` raises whatever its callback
 	// raises. FR10 spells it `throwsOf:param:k`, and FR13 turns it into throws
 	// polymorphism at the join.
-	RaisedCallback
-	// RaisedElementErr is the reject type of the promises an iterable yields,
+	ExceptionCallback
+	// ExceptionElementErr is the reject type of the promises an iterable yields,
 	// forwarded by a `Promise` combinator. Origin names the parameter holding
 	// that iterable. `Promise.all` rejects with it. See promiseCombinators.
-	RaisedElementErr
-	// RaisedAggregate is an `AggregateError` whose errors list holds the reject
-	// types RaisedElementErr names. `Promise.any` rejects with it once every
+	ExceptionElementErr
+	// ExceptionAggregate is an `AggregateError` whose errors list holds the reject
+	// types ExceptionElementErr names. `Promise.any` rejects with it once every
 	// element promise has rejected.
-	RaisedAggregate
-	// RaisedUnknown is a raised value the analysis could neither name nor
+	ExceptionAggregate
+	// ExceptionUnknown is a raised value the analysis could neither name nor
 	// trace. See Untraced.
-	RaisedUnknown
+	ExceptionUnknown
 )
 
-// Raised is one exception a function can raise. Class holds the error class
-// name when Kind is RaisedClass. Every other kind but RaisedUnknown holds an
-// origin, and each names something different by it. A RaisedOrigin origin names
-// the raised value itself. A RaisedCallback origin names a function whose own
-// throws travel outward. A RaisedElementErr or RaisedAggregate origin names the
-// iterable parameter whose element promises carry the reject type.
-type Raised struct {
-	Kind   RaisedKind
+// Exception is one exception a function can raise. Class holds the error class
+// name when Kind is ExceptionClass. Every other kind but ExceptionUnknown holds
+// an origin, and each names something different by it. An ExceptionOrigin origin
+// names the raised value itself. An ExceptionCallback origin names a function
+// whose own throws travel outward. An ExceptionElementErr or ExceptionAggregate
+// origin names the iterable parameter whose element promises carry the reject
+// type.
+//
+// The last three name where an exception comes from rather than an exception
+// value, because the value itself is not in the graph. It is whatever the
+// caller's callback raises, or whatever the promises the caller passed reject
+// with.
+type Exception struct {
+	Kind   ExceptionKind
 	Class  string
 	Origin Origin
 }
@@ -114,61 +120,61 @@ type Raised struct {
 // Untraced is the raised value the analysis could not place. It renders as
 // `Unknown`, which is the vocabulary §9.1 uses, and FR6 spells it `unknown` on
 // the wire.
-var Untraced = Raised{Kind: RaisedUnknown}
+var Untraced = Exception{Kind: ExceptionUnknown}
 
 // Class returns the exception a `Throw a *T* exception` step raises.
-func Class(name string) Raised {
-	return Raised{Kind: RaisedClass, Class: name}
+func Class(name string) Exception {
+	return Exception{Kind: ExceptionClass, Class: name}
 }
 
 // Propagated returns the exception a step raises by handing on a value that
 // came from o.
-func Propagated(o Origin) Raised {
-	return Raised{Kind: RaisedOrigin, Origin: o}
+func Propagated(o Origin) Exception {
+	return Exception{Kind: ExceptionOrigin, Origin: o}
 }
 
 // CallbackThrows returns the exception a step raises by invoking the function
 // that came from o, which is whatever that function itself raises.
-func CallbackThrows(o Origin) Raised {
-	return Raised{Kind: RaisedCallback, Origin: o}
+func CallbackThrows(o Origin) Exception {
+	return Exception{Kind: ExceptionCallback, Origin: o}
 }
 
 // ElementErr returns the reject type of the promises the iterable at o yields.
-func ElementErr(o Origin) Raised {
-	return Raised{Kind: RaisedElementErr, Origin: o}
+func ElementErr(o Origin) Exception {
+	return Exception{Kind: ExceptionElementErr, Origin: o}
 }
 
 // AggregateErr returns the `AggregateError` that aggregates the reject types of
 // the promises the iterable at o yields.
-func AggregateErr(o Origin) Raised {
-	return Raised{Kind: RaisedAggregate, Origin: o}
+func AggregateErr(o Origin) Exception {
+	return Exception{Kind: ExceptionAggregate, Origin: o}
 }
 
-func (r Raised) String() string {
+func (r Exception) String() string {
 	switch r.Kind {
-	case RaisedClass:
+	case ExceptionClass:
 		return r.Class
-	case RaisedOrigin:
+	case ExceptionOrigin:
 		return fmt.Sprintf("Origin(%s)", r.Origin)
-	case RaisedCallback:
+	case ExceptionCallback:
 		return fmt.Sprintf("CallbackThrows(%s)", r.Origin)
-	case RaisedElementErr:
+	case ExceptionElementErr:
 		return fmt.Sprintf("ElementErr(%s)", r.Origin)
-	case RaisedAggregate:
+	case ExceptionAggregate:
 		return fmt.Sprintf("AggregateError<ElementErr(%s)>", r.Origin)
-	case RaisedUnknown:
+	case ExceptionUnknown:
 		return "Unknown"
 	default:
-		return fmt.Sprintf("Raised(%d)", r.Kind)
+		return fmt.Sprintf("Exception(%d)", r.Kind)
 	}
 }
 
 // carriesOrigin reports whether the raised value names an origin. Every kind
 // but an error class and an untraced value does, and remap threads each of them
 // back through a call's arguments the same way.
-func (r Raised) carriesOrigin() bool {
+func (r Exception) carriesOrigin() bool {
 	switch r.Kind {
-	case RaisedOrigin, RaisedCallback, RaisedElementErr, RaisedAggregate:
+	case ExceptionOrigin, ExceptionCallback, ExceptionElementErr, ExceptionAggregate:
 		return true
 	default:
 		return false
@@ -176,7 +182,7 @@ func (r Raised) carriesOrigin() bool {
 }
 
 // at returns the same kind of raised value read against another origin.
-func (r Raised) at(o Origin) Raised {
+func (r Exception) at(o Origin) Exception {
 	r.Origin = o
 	return r
 }
@@ -184,7 +190,7 @@ func (r Raised) at(o Origin) Raised {
 // less orders two raised values so a rendered set always reads the same way.
 // The kinds sort in declaration order, which puts the error classes first, and
 // two values of one kind sort by how they render.
-func (r Raised) less(other Raised) bool {
+func (r Exception) less(other Exception) bool {
 	if r.Kind != other.Kind {
 		return r.Kind < other.Kind
 	}
@@ -218,7 +224,7 @@ func (r Root) Direct() bool {
 // node list. Sink is the exit the value leaves through, which is what splits
 // the raised set into `throws` and `rejects`.
 type ThrowSite struct {
-	Raised Raised
+	Raised Exception
 	Root   Root
 	Node   Node
 	Index  int
@@ -278,7 +284,7 @@ func (s ThrowSite) String() string {
 // function value the graph holds no body for, and an abrupt completion the
 // algorithm captured as a value without the reject walk naming where it came
 // from. FR10 asks for such a method to be flagged rather than guessed at, and
-// §4.3 turns the flag into `classified: false`.
+// §4.3 withholds the receiver determination from a method carrying it.
 //
 // The flag is about this function's own steps and does not travel up the call
 // graph, the same way §4.1's is. A consumer that wants the transitive answer
@@ -286,8 +292,8 @@ func (s ThrowSite) String() string {
 // flag on most of the builtins, since nearly every algorithm reaches an object
 // internal method through some callee.
 type Throws struct {
-	Raised     []Raised
-	Rejects    []Raised
+	Raised     []Exception
+	Rejects    []Exception
 	Sites      []ThrowSite
 	Incomplete bool
 }
@@ -377,7 +383,7 @@ func (t Throws) SitesString() string {
 // particular route walks the call graph from Base itself.
 type siteKey struct {
 	index  int
-	raised Raised
+	raised Exception
 	base   *ThrowSite
 	sink   Sink
 }
@@ -388,8 +394,8 @@ type siteKey struct {
 type throwFacts struct {
 	sites      map[siteKey]*ThrowSite
 	order      []*ThrowSite
-	raised     set.Set[Raised]
-	rejected   set.Set[Raised]
+	raised     set.Set[Exception]
+	rejected   set.Set[Exception]
 	incomplete bool
 }
 
@@ -408,7 +414,7 @@ type ThrowSummary struct {
 // leaves the result unchecked, so neither contributes.
 //
 // A call that invokes a function the caller supplied contributes that
-// function's own throws as a RaisedCallback effect rather than a value, which
+// function's own throws as a ExceptionCallback effect rather than a value, which
 // is what makes `Array.prototype.forEach` raise whatever its callback raises.
 // Every other `?`-guarded call carries the callee's sites, with a parametric
 // raised value threaded back through the arguments to the calling function's
@@ -429,8 +435,8 @@ func NewThrowSummary(cfg *CFG) *ThrowSummary {
 	for _, fn := range cfg.Funcs {
 		a.summary.facts[fn] = &throwFacts{
 			sites:    make(map[siteKey]*ThrowSite),
-			raised:   set.NewSet[Raised](),
-			rejected: set.NewSet[Raised](),
+			raised:   set.NewSet[Exception](),
+			rejected: set.NewSet[Exception](),
 		}
 		a.origins[fn] = NewOriginMap(fn)
 		a.plans[fn] = newRejectPlan(fn, rejecting)
@@ -453,8 +459,8 @@ func (s *ThrowSummary) Of(fn *Func) Throws {
 		return Throws{}
 	}
 
-	raised := sortedRaised(f.raised)
-	rejects := sortedRaised(f.rejected)
+	raised := sortedExceptions(f.raised)
+	rejects := sortedExceptions(f.rejected)
 
 	var sites []ThrowSite
 	if len(f.order) > 0 {
@@ -479,11 +485,11 @@ func (s *ThrowSummary) Of(fn *Func) Throws {
 	return Throws{Raised: raised, Rejects: rejects, Sites: sites, Incomplete: f.incomplete}
 }
 
-// sortedRaised reads a raised set back in a fixed order, so a rendered set
+// sortedExceptions reads a channel's set back in a fixed order, so a rendered set
 // always looks the same. An empty set reads back nil rather than an empty
 // slice, which keeps a channel that carries nothing distinguishable in a
 // struct comparison.
-func sortedRaised(s set.Set[Raised]) []Raised {
+func sortedExceptions(s set.Set[Exception]) []Exception {
 	if s.Len() == 0 {
 		return nil
 	}
@@ -613,7 +619,7 @@ func (a *throwAnalysis) transfer(cfg *CFG, fn *Func) bool {
 // raisedAt returns what a Throw step raises. An algorithm that constructs its
 // error names the class, and one that hands on a value it was given resolves to
 // where that value came from.
-func raisedAt(origin *OriginMap, node *ThrowNode) Raised {
+func raisedAt(origin *OriginMap, node *ThrowNode) Exception {
 	if node.ErrorType != "" {
 		return Class(node.ErrorType)
 	}
@@ -627,7 +633,7 @@ func raisedAt(origin *OriginMap, node *ThrowNode) Raised {
 // An interior value is left untraced. It was read out of the backing store of
 // the receiver or a parameter and is a different value from the one that names
 // it, so reporting it as that parameter would name the wrong type at the join.
-func raisedOf(origin *OriginMap, e Expr) Raised {
+func raisedOf(origin *OriginMap, e Expr) Exception {
 	switch o := origin.Eval(e); o.Kind {
 	case OriginReceiver, OriginParam:
 		if o.Interior {
@@ -682,7 +688,7 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 			// out, and it belongs to no channel of the caller's.
 			continue
 		}
-		if invoking && site.Raised.Kind == RaisedCallback {
+		if invoking && site.Raised.Kind == ExceptionCallback {
 			// The invoking operation's own callback effect is the effect of the
 			// function this very call invokes, which propagateInvoked already
 			// recorded against the origin the caller passed. Threading it back
@@ -703,7 +709,7 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 //
 // A function that reached the algorithm as its receiver or one of its
 // parameters raises whatever the algorithm's own caller passed in, which is the
-// RaisedCallback effect. Any other function value was read off a property or
+// ExceptionCallback effect. Any other function value was read off a property or
 // out of a slot, so the graph holds no body for it and its throws cannot be
 // read.
 func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node *CallNode, position, index int, sink Sink) bool {
@@ -730,7 +736,7 @@ func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node 
 // standing for one cannot be threaded and is left untraced. So is a value the
 // call passes at a position it does not fill, or one it fills with something
 // that is neither the receiver nor a parameter of the caller.
-func remap(origin *OriginMap, args []Expr, r Raised) Raised {
+func remap(origin *OriginMap, args []Expr, r Exception) Exception {
 	if !r.carriesOrigin() {
 		return r
 	}
@@ -749,7 +755,7 @@ func remap(origin *OriginMap, args []Expr, r Raised) Raised {
 }
 
 // add records one site on sink's channel and reports whether it was new.
-func (f *throwFacts) add(raised Raised, root Root, node Node, index int, sink Sink) bool {
+func (f *throwFacts) add(raised Exception, root Root, node Node, index int, sink Sink) bool {
 	key := siteKey{index: index, raised: raised, sink: sink}
 	if root.Inner != nil {
 		key.base = root.Inner.base()
@@ -767,7 +773,7 @@ func (f *throwFacts) add(raised Raised, root Root, node Node, index int, sink Si
 // model records a rejection the hand-written combinator model supplies. It has
 // no site, because the value reaches the returned promise through the
 // resolution machinery rather than through a step the graph holds.
-func (f *throwFacts) model(raised Raised) bool {
+func (f *throwFacts) model(raised Exception) bool {
 	if f.rejected.Contains(raised) {
 		return false
 	}
@@ -775,7 +781,7 @@ func (f *throwFacts) model(raised Raised) bool {
 	return true
 }
 
-func (f *throwFacts) channel(sink Sink) set.Set[Raised] {
+func (f *throwFacts) channel(sink Sink) set.Set[Exception] {
 	if sink == SinkReject {
 		return f.rejected
 	}

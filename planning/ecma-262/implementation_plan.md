@@ -44,7 +44,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
-| §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Raised` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
+| §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | filtered throws — toFixed keeps RangeError, drops the receiver-coercion TypeError; param branch runs post-join |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.4 | Throws validation + auto-apply gate        | FR14       | ⬜      | §9.1–§9.3, §7 | spec-independent (dynamically-observed) ground truth; false-negative rate report gates auto-apply |
@@ -1368,7 +1368,7 @@ type-guard noise.
 
 ### §9.1. Throw-set fixpoint (FR10)
 
-Compute `Throws(F) ⊆ Raised`, the exceptions `F` can raise (a constructed
+Compute `Throws(F) ⊆ Exception`, the exceptions `F` can raise (a constructed
 error class, or a `Param(k)`/`Receiver` origin for a propagated value),
 directly or transitively. The structure is identical to the §4.1
 mutation-summary fixpoint: a worklist over the call graph, a per-call
@@ -1376,7 +1376,7 @@ transfer, re-enqueue callers on change. The transfer differs and depends
 on each call's completion guard, which §3 now records on the `Node`.
 
 ```
-Throws : map[FuncName] Set[Raised]      // Class(TypeError), Origin(Param(k)), Unknown, ...
+Throws : map[FuncName] Set[Exception]      // Class(TypeError), Origin(Param(k)), Unknown, ...
 ThrowSites : map[FuncName] []ThrowSite  // provenance chains for §9.2 / §9.3
 
 // A site preserves where the value ULTIMATELY came from, so a coercion
@@ -1456,7 +1456,7 @@ unreachable.
 CoercionAOs = { ToObject, RequireObjectCoercible,
                 ToString, ToNumber, ToNumeric, ToPrimitive }
 
-func filterThrows(M) []Raised:
+func filterThrows(M) []Exception:
     kept = {}
     for site in syncSites(M):                        // §9.3: sites reaching the synchronous exit
         if site.Raised == Class(TypeError) and precludedCoercion(M, site):
@@ -1506,7 +1506,7 @@ feeds `rejects` (the `Promise<T, E>` reject type). The two use the same
 fixpoint; they differ only in classifying the site:
 
 ```
-func rejectSet(M) []Raised:
+func rejectSet(M) []Exception:
     if not returnsPromise(M): return []          // no async channel (source below)
     kept = combinatorRejects(M)                  // hand-modeled (below); empty for anything else
     // (a) abrupt completions routed to the reject sink — IfAbruptRejectPromise,
