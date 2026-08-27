@@ -208,7 +208,7 @@ func TestThrowSiteBase(t *testing.T) {
 
 	base := propagated.Base()
 	require.True(t, base.Root.Direct())
-	require.Equal(t, Class("RangeError"), base.Raised)
+	require.Equal(t, Class("RangeError"), base.Exception)
 	require.Equal(t, 1, base.Index)
 }
 
@@ -377,7 +377,7 @@ func TestThrowSummaryIsIndependentOfFuncOrder(t *testing.T) {
 		lines := make([]string, 0, len(throws.Sites))
 		for _, site := range throws.Sites {
 			base := site.Base()
-			lines = append(lines, fmt.Sprintf("#%d %s %s from #%d %s", site.Index, site.Sink, site.Raised, base.Index, base.Raised))
+			lines = append(lines, fmt.Sprintf("#%d %s %s from #%d %s", site.Index, site.Sink, site.Exception, base.Index, base.Exception))
 		}
 		sort.Strings(lines)
 		return throws.String() + " / " + throws.RejectsString() + "\n" + strings.Join(lines, "\n")

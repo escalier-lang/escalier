@@ -194,11 +194,11 @@ func TestChannelsHoldWhatTheirSitesRaise(t *testing.T) {
 	for _, fn := range testCFG(t).Funcs {
 		throws := summary.Of(fn)
 		for _, site := range throws.SyncSites() {
-			require.Contains(t, throws.Raised, site.Raised, fn.Name)
-			require.NotContains(t, combinatorRejects(fn), site.Raised, fn.Name)
+			require.Contains(t, throws.Raised, site.Exception, fn.Name)
+			require.NotContains(t, combinatorRejects(fn), site.Exception, fn.Name)
 		}
 		for _, site := range throws.RejectSites() {
-			require.Contains(t, throws.Rejects, site.Raised, fn.Name)
+			require.Contains(t, throws.Rejects, site.Exception, fn.Name)
 		}
 		for _, modeled := range combinatorRejects(fn) {
 			require.Contains(t, throws.Rejects, modeled, fn.Name)

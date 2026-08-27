@@ -219,16 +219,17 @@ func (r Root) Direct() bool {
 	return r.Inner == nil
 }
 
-// ThrowSite is one place a function raises an exception. Node is the step that
-// raises or propagates it and Index is that step's position in the function's
-// node list. Sink is the exit the value leaves through, which is what splits
-// the raised set into `throws` and `rejects`.
+// ThrowSite is one place a function raises an exception. Exception is what it
+// raises there, Node is the step that raises or propagates it, and Index is
+// that step's position in the function's node list. Sink is the exit the value
+// leaves through, which is what splits the raised set into `throws` and
+// `rejects`, so a site on either channel fills the same Exception field.
 type ThrowSite struct {
-	Raised Exception
-	Root   Root
-	Node   Node
-	Index  int
-	Sink   Sink
+	Exception Exception
+	Root      Root
+	Node      Node
+	Index     int
+	Sink      Sink
 }
 
 // Base returns the site that raised the value, walking Root back through every
@@ -260,7 +261,7 @@ func (s ThrowSite) String() string {
 	if s.Sink == SinkReject {
 		sb.WriteString("rejects ")
 	}
-	fmt.Fprintf(&sb, "%s", s.Raised)
+	fmt.Fprintf(&sb, "%s", s.Exception)
 	for root := s.Root; root.Inner != nil; root = root.Inner.Root {
 		fmt.Fprintf(&sb, " <- %s#%d", root.Callee, root.Inner.Index)
 	}
@@ -475,8 +476,8 @@ func (s *ThrowSummary) Of(fn *Func) Throws {
 			if sites[i].Index != sites[j].Index {
 				return sites[i].Index < sites[j].Index
 			}
-			if sites[i].Raised != sites[j].Raised {
-				return sites[i].Raised.less(sites[j].Raised)
+			if sites[i].Exception != sites[j].Exception {
+				return sites[i].Exception.less(sites[j].Exception)
 			}
 			return sites[i].String() < sites[j].String()
 		})
@@ -688,7 +689,7 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 			// out, and it belongs to no channel of the caller's.
 			continue
 		}
-		if invoking && site.Raised.Kind == ExceptionCallback {
+		if invoking && site.Exception.Kind == ExceptionCallback {
 			// The invoking operation's own callback effect is the effect of the
 			// function this very call invokes, which propagateInvoked already
 			// recorded against the origin the caller passed. Threading it back
@@ -697,7 +698,7 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 			// `incomplete` with an `Unknown` where it cannot.
 			continue
 		}
-		raised := remap(origin, node.Args, site.Raised)
+		raised := remap(origin, node.Args, site.Exception)
 		changed = f.add(raised, Root{Callee: node.Callee, Inner: site}, node, index, sink) || changed
 	}
 	return changed
@@ -763,7 +764,7 @@ func (f *throwFacts) add(raised Exception, root Root, node Node, index int, sink
 	if _, seen := f.sites[key]; seen {
 		return false
 	}
-	site := &ThrowSite{Raised: raised, Root: root, Node: node, Index: index, Sink: sink}
+	site := &ThrowSite{Exception: raised, Root: root, Node: node, Index: index, Sink: sink}
 	f.sites[key] = site
 	f.order = append(f.order, site)
 	f.channel(sink).Add(raised)

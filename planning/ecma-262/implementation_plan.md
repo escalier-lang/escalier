@@ -1382,7 +1382,7 @@ ThrowSites : map[FuncName] []ThrowSite  // provenance chains for §9.2 / §9.3
 // A site preserves where the value ULTIMATELY came from, so a coercion
 // throw stays recognizable however many `?`-hops it propagates through.
 type ThrowSite:
-    Raised : Class(name)                 // a constructed error class (Throw a T exception)
+    Exception : Class(name)                 // a constructed error class (Throw a T exception)
            | Origin(Param(k) | Receiver) // a propagated value, resolved to a type at the join (FR13)
            | CallbackThrows(Param(k))    // throwsOf:param:k — the method throws whatever the
                                          // function-typed parameter k throws (FR13); throws polymorphism
@@ -1401,15 +1401,15 @@ while worklist nonempty:
             raised = node.ErrorType ? Class(node.ErrorType)   // "Throw a T exception" → class
                                     : raisedOf(F, node.Value)  // "throw <value>" → origin (rare in std:*)
             Throws[F].add(raised)
-            ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
+            ThrowSites[F].append(ThrowSite{ Exception: raised, Root: Direct(node), Node: node })
         case Call where node.Guard == GuardQuestion:   // ? propagates the callee's throws
             if node.Callee is a function-typed Param(k):   // ? Call(callbackfn, …) → the callback's throws
                 raised = CallbackThrows(Param(k))          // throwsOf:param:k (FR13)
                 Throws[F].add(raised)
-                ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
+                ThrowSites[F].append(ThrowSite{ Exception: raised, Root: Direct(node), Node: node })
             else for s in ThrowSites[node.Callee]:         // resolvable AO: carry its OWN sites, by name
-                Throws[F].add(s.Raised)
-                ThrowSites[F].append(ThrowSite{ Raised: s.Raised,
+                Throws[F].add(s.Exception)
+                ThrowSites[F].append(ThrowSite{ Exception: s.Exception,
                                                 Root: Propagated(node.Callee, s), Node: node })
         // GuardBang (! asserts no abrupt completion) and GuardPlain
         // (result not completion-checked) contribute nothing.
@@ -1459,9 +1459,9 @@ CoercionAOs = { ToObject, RequireObjectCoercible,
 func filterThrows(M) []Exception:
     kept = {}
     for site in syncSites(M):                        // §9.3: sites reaching the synchronous exit
-        if site.Raised == Class(TypeError) and precludedCoercion(M, site):
+        if site.Exception == Class(TypeError) and precludedCoercion(M, site):
             continue                                  // statically unreachable
-        kept.add(site.Raised)                         // a class name, an Origin, or Unknown
+        kept.add(site.Exception)                         // a class name, an Origin, or Unknown
     return sorted(kept)
 
 // precludedCoercion: the throw's Root bottoms out at a coercion AO whose
@@ -1512,8 +1512,8 @@ func rejectSet(M) []Exception:
     // (a) abrupt completions routed to the reject sink — IfAbruptRejectPromise,
     //     or a throw value reaching [[Reject]]. These ARE ThrowSites.
     for site in rejectSites(M):
-        if not (site.Raised == Class(TypeError) and precludedCoercion(M, site)):
-            kept.add(site.Raised)                // a class name, an Origin, or Unknown
+        if not (site.Exception == Class(TypeError) and precludedCoercion(M, site)):
+            kept.add(site.Exception)                // a class name, an Origin, or Unknown
     // (b) direct rejections — Call(cap.[[Reject]], reason) whose reason is a
     //     plain value, not an abrupt completion, as in Promise.reject(r).
     //     These are NOT ThrowSites; scan them and record the reason's origin.
