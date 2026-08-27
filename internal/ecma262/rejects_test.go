@@ -143,7 +143,9 @@ func TestRejectSetSplitsACombinatorBySite(t *testing.T) {
 // `C.resolve`. Each is a function the combinator rejects with the throws of,
 // and each was read off a property rather than handed in as a parameter, so
 // there is no origin to thread it back to. FR6 spells that `unknown`, and the
-// FR7 join fills it from the typed signature.
+// FR7 join fills it from the typed signature. Whether an origin naming the
+// property path is worth recording instead is
+// https://github.com/escalier-lang/escalier/issues/1304.
 func TestCombinatorRejects(t *testing.T) {
 	tests := map[string]struct {
 		fn   string
