@@ -445,7 +445,7 @@ rather than a library surface, so they are dropped. The run ends by reading
 the file back with an independent parser and checking every kind, every
 field, and the builtin count against the graph, which is the gate.
 [tools/spec-extract/README.md](../../tools/spec-extract/README.md) is the
-maintainer runbook. Five findings shape the sections downstream.
+maintainer runbook. Six findings shape the sections downstream.
 
 - **The completion unwrap has to be absorbed into the guard, not emitted.**
   §1 established that `?` and `!` are lowered into control flow, and the
@@ -514,6 +514,19 @@ maintainer runbook. Five findings shape the sections downstream.
   wording-dependent, so each entry records how many steps it matched when it was
   reviewed, and the run fails when that number moves rather than letting a
   reworded step fall back to opaque.
+- **A rest parameter is spelled in the algorithm head, so the schema has to
+  carry it.** `Array.prototype.push ( ...items )` declares one formal covering
+  every argument, and the compiled function shows only that one formal. The
+  spec writes it as `...items`, and ESMeta keeps that on the head's parameter as
+  `ParamKind.Variadic`, so the serializer reads it off the head the way it reads
+  the parameter names. `Func.variadic` carries the position, which §4.2 needs to
+  tell the List the call built from a value the caller passed. 36 of the 501
+  builtins declare one. It is a position rather than a flag on the last formal
+  because four of the 36 declare theirs elsewhere. `Function`, `AsyncFunction`,
+  `GeneratorFunction`, and `AsyncGeneratorFunction` all read
+  `( ...parameterArgs, bodyArg )`. A head declaring two is a shape the schema
+  cannot spell, and the lowering fails on one rather than writing the first
+  alone.
 
 Two limits are worth naming for §9.3. `Promise` is set from the shape
 Appendix A describes, an algorithm that builds a promise capability and
@@ -720,7 +733,7 @@ fixpoint. `NewMutationSummary(cfg)` runs the fixpoint over a whole graph and
 positions, the receiver flag, and the two warnings. All 1202 functions settle in
 about 10 ms. Eight of the nine seed entries name an operation the graph holds,
 and those eight grow into 49 abstract operations with a mutated position. Of the
-501 builtins, 64 mutate their receiver and 20 mutate a parameter, and 433 carry
+501 builtins, 64 mutate their receiver and 20 mutate a parameter, and 434 carry
 neither warning, so §4.3 reads their receiver mutability from the analysis
 rather than from FR5's name-based heuristics. The gate is
 [internal/ecma262/mutation_test.go](../../internal/ecma262/mutation_test.go).
@@ -873,13 +886,17 @@ func OriginMap(F) map[string]Origin:
     origin = {}                                      // unset = lattice bottom
     repeat until nothing moves:                      // a name defined by a loop's
         for i, p in F.Params:                        // back edge reaches its uses
-            origin[p] = origin[p] ⊔ Param(i)         // declared params only; no receiver
+            origin[p] = origin[p] ⊔ seed(F, i)       // declared params only; no receiver
         for node in F.Nodes:
             if node.Kind == Let:
                 origin[node.Target] ⊔= eval(F, node.Source)
             if node.Kind == Call && node.Target != "":
                 origin[node.Target] ⊔= evalCall(F, node)
     return origin                                    // a still-unset name reads back Unknown
+
+func seed(F, i int) Origin:
+    if i == F.Variadic: return Captures(Fresh)        // the rest parameter's List is
+    return Param(i)                                   // built by the call, not passed in
 
 func eval(F, e Expr) Origin:
     switch e.Kind:
@@ -916,6 +933,27 @@ is silent unsoundness. Coercions that build a new value — `ToString`,
 `String.prototype` method comes out non-mutating: the algorithm coerces
 `this` to a fresh string primitive and never writes back to the receiver.
 
+**A rest parameter is a fresh List holding the caller's values.** The
+formal a variadic algorithm head declares does not name something the
+caller passed. It names the List the call builds out of the arguments the
+head does not spell one by one. Writing that List reaches nothing the
+caller holds, while the values in it are still the caller's own. That is
+the split `Captures` already draws for an allocator that stores one of its
+arguments into the value it returns, with the ownership reversed, so the
+seed reuses it. The List is `Fresh`, and reading inside it is `Unknown`.
+`Array.prototype.concat` is what this buys. Its opening step lowers to a
+write into `items` at a slot the algorithm computes, and reading `items`
+as `Param(0)` leaves the method unable to say what the write reached.
+
+Reading a value back out of that List stays `Unknown` by choice, not by
+omission. `Math.max` hands back one of its arguments, so the honest alias
+is "argument *k* of the rest parameter", and Appendix B has no way to
+spell one. `paramIndex` names a declared formal, and every argument in the
+List shares that formal's single position. Adding a spelling would buy
+little, since the returns it recovers are lifetime seeds on numbers, which
+borrow nothing. So `Math.max`, `Math.min`, and the rest of that shape
+publish `returns: unknown` deliberately.
+
 **The analysis is deliberately path-insensitive.** It does not model
 control flow: `NodeBranch` is not interpreted, and the node list is
 walked as a flat sequence. Each name takes the join of every origin
@@ -937,14 +975,14 @@ reader for `cfg.json`, mirroring Appendix A, and the origin map.
 `NewOriginMap(fn)` returns the origins of one function's value names.
 `Eval(expr)` answers the same question for an expression, which is the call
 §4.1 makes when it charges a mutation to a receiver or a parameter. All 1202
-functions analyze in about 8 ms, binding 11756 names. Of those, 373 are at the
-receiver, 2007 at a parameter, 3927 fresh, 118 fresh from an allocator that
-captured an argument, 121 interior, and 5210 unknown. The gate is
+functions analyze in about 8 ms, binding 11770 names. Of those, 373 are at the
+receiver, 1963 at a parameter, 3941 fresh, 162 fresh around a value the
+algorithm was given, 121 interior, and 5210 unknown. The gate is
 [internal/ecma262/origin_test.go](../../internal/ecma262/origin_test.go).
 `Let O be ? ToObject(this value)` puts `O` at the receiver in
 `Array.prototype.push`, `? ArraySpeciesCreate(O, count)` puts `A` at `Fresh` in
 `Array.prototype.slice`, and `? ToString(O)` puts `S` at `Unknown` in
-`String.prototype.toLowerCase`. Six findings.
+`String.prototype.toLowerCase`. Seven findings.
 
 - **One walk in node order is unsound, so the walk repeats until nothing
   moves.** A loop's back edge redefines a name after its uses, and a single
@@ -1007,6 +1045,20 @@ captured an argument, 121 interior, and 5210 unknown. The gate is
   between allocators adds none. `TestCapturingAllocatorsMatchTheGraph`
   recomputes the list, so a spec bump that reshapes an allocator fails there
   rather than silently widening or narrowing what counts as fresh.
+- **A rest parameter takes the same fresh-with-a-captured-interior origin, and
+  it recovers `Array.prototype.concat`.** The 36 builtins that declare one
+  carry it into 44 names, all of which read `Param(i)` without the seed. concat
+  is the one whose answer changes. Its "Let _items_ be a List whose first
+  element is _O_ and whose subsequent elements are, in left to right order, the
+  arguments passed to this function" lowers to a write into `items` at a
+  computed slot, which is the only write of that shape any builtin in the
+  graph performs. As a fresh List the write is
+  discarded, and the method goes from withholding its receiver claim to
+  `receiver: borrow`, `returns: fresh`. The incomplete builtins fall from 61 to
+  60 and the classifiable ones rise from 433 to 434. No other tally moves.
+  `TestGraphComputedSlotWritesOnADeclaredParameter` pins the eight remaining
+  writes of that shape, all in abstract operations, so a spec bump that gives
+  one to a builtin fails there rather than costing that builtin its claim.
 
 `Node` and `Expr` are sealed interfaces with one type per kind rather than
 one struct tagged by kind, matching how [internal/ast/](../../internal/ast/)
@@ -1102,7 +1154,7 @@ would have written, and that claim has to keep paying for incompleteness.
 The carve-out is a static or a namespace function, whose `receiver: none`
 comes from `Func.Kind` and reads no algorithm step at all. No `yet` can
 sit on a step it reads, so a warning never withholds it. That takes 50
-builtins out of the unclassified set, leaving 25 methods whose mutability
+builtins out of the unclassified set, leaving 24 methods whose mutability
 the analysis has to leave to the heuristics.
 
 The return-alias axis also tolerates `Unknown` on its own, since the alias
@@ -1129,9 +1181,13 @@ because the alias is curated rather than applied.
 - `Array.of` — `Construct(C, …)` leaves a write unattributable, but a
   static has no receiver either way ⇒ `receiver: none`, `returns:
   unknown`.
+- `Array.prototype.concat` — prepends its receiver onto `items`, the List
+  the call built out of the arguments, so the write is discarded ⇒
+  `receiver: borrow`; the array `ArraySpeciesCreate` allocated and it
+  hands back ⇒ `returns: fresh`.
 
 Methods with a withheld receiver are listed. The `returns` tally spans
-every builtin, and the `receiver` tally leaves out only the 25 methods
+every builtin, and the `receiver` tally leaves out only the 24 methods
 whose mutability is withheld.
 
 ## §5. Keying and join (FR7, FR15)
@@ -1783,6 +1839,14 @@ type Func struct {
     Params  []string `json:"params"`  // DECLARED parameters, in order, 0-based. The receiver
                                        // is NOT a parameter — a method's receiver is the `this`
                                        // value, referenced via ExprThis, never Params[0].
+    Variadic *int    `json:"variadic,omitempty"` // the position of the REST parameter, the formal
+                                       // taking every argument the head does not name one by one.
+                                       // Absent when the head declares none, and only a builtin
+                                       // ever declares one. It is a position rather than a flag on
+                                       // the last formal, because such a formal need not come last.
+                                       // `Function ( ...parameterArgs, bodyArg )` declares one at 0
+                                       // of 2. §4.2 seeds it as a fresh value holding the caller's
+                                       // arguments rather than as Param(i).
     Promise bool     `json:"promise"` // true when the algorithm builds a promise capability and
                                        // returns its [[Promise]], or the function is async (§9.3)
     Nodes   []Node   `json:"nodes"`   // CFG nodes in flat order; branches carry no analyzed data

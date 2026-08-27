@@ -56,6 +56,12 @@ func TestLookupKeepsNameSpacesApart(t *testing.T) {
 	require.NotNil(t, push)
 	require.Equal(t, BuiltinMethod, push.Kind)
 	require.Equal(t, []string{"items"}, push.Params)
+
+	// `Array.prototype.push ( ...items )` declares its one formal as the rest
+	// parameter, while `Set(O, P, V, Throw)` declares none.
+	require.NotNil(t, push.Variadic)
+	require.Equal(t, 0, *push.Variadic)
+	require.Nil(t, setOp.Variadic)
 }
 
 func TestParseCFGRejects(t *testing.T) {
@@ -149,6 +155,19 @@ func TestParseCFGRejects(t *testing.T) {
 		"RepeatedName": {
 			json: `{"specTarget":"abc","funcs":[{"name":"Set","kind":"abstract-op"},{"name":"Set","kind":"abstract-op"}]}`,
 			err:  "decoding cfg: two abstract-op functions named Set",
+		},
+		// A rest parameter is named by position, so a position past the
+		// declared parameters names nothing. Read as absent it would leave the
+		// List looking like a value the caller passed.
+		"RestPositionPastTheParameters": {
+			json: `{"specTarget":"abc","funcs":[{"name":"Math.max","kind":"builtin-static",` +
+				`"params":["args"],"variadic":1}]}`,
+			err: "decoding cfg: Math.max declares a rest parameter at position 1, outside its 1 parameters",
+		},
+		"NegativeRestPosition": {
+			json: `{"specTarget":"abc","funcs":[{"name":"Math.max","kind":"builtin-static",` +
+				`"params":["args"],"variadic":-1}]}`,
+			err: "decoding cfg: Math.max declares a rest parameter at position -1, outside its 1 parameters",
 		},
 	}
 

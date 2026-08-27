@@ -1,6 +1,5 @@
 
 [TestFactsUnclassifiedMethodsAreListed - 1]
-Array.prototype.concat
 Array.prototype.toLocaleString
 Date.prototype.getTimezoneOffset
 Date.prototype.toISOString

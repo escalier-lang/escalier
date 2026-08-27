@@ -291,6 +291,63 @@ func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
 	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
 }
 
+// A write whose slot the algorithm computes is discarded when it lands on a
+// rest parameter, because that List is what the call built out of the caller's
+// arguments. `Array.prototype.concat` opens with "Let _items_ be a List whose
+// first element is _O_ and whose subsequent elements are, in left to right
+// order, the arguments passed to this function", which lowers to a write into
+// `items` at a slot the algorithm computes. The prepend reaches nothing the
+// caller holds, so the method mutates nothing and reads whole.
+func TestMutationSummaryDiscardsAComputedSlotWriteOnARestParameter(t *testing.T) {
+	require.Equal(t, "none", mutationsOf(t, "Array.prototype.concat").String())
+}
+
+// Every write in the committed graph whose slot the algorithm computes and
+// whose object the analysis places at a declared parameter, as `name: position`
+// with one entry per write.
+//
+// Each one leaves its function `Incomplete`, since neither the curated slot
+// list nor a fresh origin can answer for what it reached.
+// TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue states that outcome
+// on a graph of its own. No builtin is among them, which is what lets §4.3
+// publish a receiver claim for every builtin the rest of the analysis reads
+// whole.
+//
+// An interior of a parameter is a different case and is left out. A write to
+// one is charged to the parameter holding it, which
+// TestMutationSummaryChargesAComputedSlotWriteOnAnInterior covers.
+//
+// A spec bump that grows one of these fails here rather than quietly costing a
+// builtin its receiver claim. Read the new step before changing anything.
+func TestGraphComputedSlotWritesOnADeclaredParameter(t *testing.T) {
+	cfg := testCFG(t)
+
+	var found []string
+	for _, fn := range cfg.Funcs {
+		origins := NewOriginMap(fn)
+		for _, node := range fn.Nodes {
+			write, ok := node.(*SlotWriteNode)
+			if !ok || write.Slot != "" {
+				continue
+			}
+			if o := origins.Eval(write.Object); o.Kind == OriginParam && !o.Interior {
+				require.Equal(t, AbstractOp, fn.Kind, "%s is a builtin", fn.Name)
+				found = append(found, fmt.Sprintf("%s: %d", fn.Name, o.Index))
+			}
+		}
+	}
+	sort.Strings(found)
+
+	snaps.MatchInlineSnapshot(t, strings.Join(found, "\n"), snaps.Inline(`AddValueToKeyedGroup: 0
+CopyDataBlockBytes: 0
+CopyDataBlockBytes: 0
+GatherAvailableAncestors: 1
+InnerModuleEvaluation: 1
+InnerModuleLinking: 1
+__APPEND_LIST__: 0
+__REMOVE_ELEM__: 1`))
+}
+
 // The origin map decides what a callee is before the seed does. A callee bound
 // to one of the calling function's parameters is a function the caller was
 // handed, so charging it with the seeded operation's mutations would claim a
@@ -635,6 +692,6 @@ func TestMutationSummaryTallies(t *testing.T) {
 	}
 	sort.Strings(kinds)
 	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 49, unattributable 37, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 23, classifiable 288
+builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 22, classifiable 289
 builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
 }

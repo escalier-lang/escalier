@@ -1,7 +1,9 @@
 package ecma262
 
 import (
+	"fmt"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/set"
@@ -55,7 +57,7 @@ func TestOriginString(t *testing.T) {
 	require.Equal(t, "unset", Origin{}.String())
 	require.Equal(t, "Interior(Receiver)", interiorOf(Receiver).String())
 	require.Equal(t, "Interior(Param(2))", interiorOf(Param(2)).String())
-	require.Equal(t, "Fresh(captures)", Origin{Kind: OriginFresh, Captures: true}.String())
+	require.Equal(t, "Fresh(captures)", Capturing.String())
 
 	// A kind outside the lattice renders as its number rather than as one of
 	// the names above, so an origin the walk could not produce is still legible
@@ -70,7 +72,7 @@ func TestInteriorOf(t *testing.T) {
 	require.Equal(t, Origin{Kind: OriginReceiver, Interior: true}, interiorOf(Receiver))
 	require.Equal(t, Origin{Kind: OriginParam, Index: 1, Interior: true}, interiorOf(Param(1)))
 	require.Equal(t, Fresh, interiorOf(Fresh))
-	require.Equal(t, Unknown, interiorOf(Origin{Kind: OriginFresh, Captures: true}))
+	require.Equal(t, Unknown, interiorOf(Capturing))
 	require.Equal(t, Unknown, interiorOf(Unknown))
 
 	// The lattice bottom stays at the bottom. A name whose definition the walk
@@ -148,8 +150,10 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 		"ReceiverThroughToObject": {
 			fn: "Array.prototype.push",
 			origins: map[string]string{
-				"O":     "Receiver",
-				"items": "Param(0)",
+				"O": "Receiver",
+				// The rest parameter is the List the call built, not a value
+				// the caller passed. TestOriginMapRestParameter covers it.
+				"items": "Fresh(captures)",
 				"E":     "Unknown", // read out of the argument list
 				"len":   "Unknown", // ? LengthOfArrayLike(O)
 			},
@@ -185,9 +189,9 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 			fn: "Object.assign",
 			origins: map[string]string{
 				"target":  "Param(0)",
-				"to":      "Param(0)", // ? ToObject(target)
-				"sources": "Param(1)",
-				"from":    "Unknown", // ? ToObject(nextSource), off a list read
+				"to":      "Param(0)",        // ? ToObject(target)
+				"sources": "Fresh(captures)", // the rest parameter's List
+				"from":    "Unknown",         // ? ToObject(nextSource), off a list read
 			},
 		},
 		// Map.prototype.set reaches its receiver straight off `this` rather
@@ -231,6 +235,36 @@ func TestOriginMapSampleFunctions(t *testing.T) {
 func TestOriginMapJoinsBranches(t *testing.T) {
 	m := originsOf(t, "Map.prototype.set")
 	require.Equal(t, Unknown, m.Of("p"))
+}
+
+// A rest parameter names the List the call builds out of the arguments the
+// head does not name one by one, so it is fresh and holds values the caller
+// owns. `Array.prototype.concat` prepends its receiver onto that List, and
+// §4.1 discards the write instead of losing track of what it reached.
+//
+// `Object.assign ( target, ...sources )` declares its rest parameter after an
+// ordinary one, so the seed reads the position off the head rather than
+// assuming 0.
+func TestOriginMapRestParameter(t *testing.T) {
+	concat := originsOf(t, "Array.prototype.concat")
+	require.Equal(t, Capturing, concat.Of("items"))
+	require.Equal(t, Receiver, concat.Of("O"))
+
+	assign := originsOf(t, "Object.assign")
+	require.Equal(t, Param(0), assign.Of("target"))
+	require.Equal(t, Capturing, assign.Of("sources"))
+}
+
+// A value read out of a rest parameter is one of the caller's arguments, which
+// Appendix B has no way to name, so it resolves to `Unknown` rather than to the
+// List's own position. `Math.max` hands back one of those values and comes out
+// with no return alias.
+func TestOriginMapReadOutOfARestParameter(t *testing.T) {
+	m := originsOf(t, "Math.max")
+
+	require.Equal(t, Capturing, m.Of("args"))
+	require.Equal(t, Unknown, m.Eval(&PropExpr{Object: &VarExpr{Var: "args"}}))
+	require.Equal(t, Unknown, m.Eval(&SlotExpr{Object: &VarExpr{Var: "args"}, Slot: "MapData"}))
 }
 
 // A name the function never binds reads back as `Unknown`, not as the lattice
@@ -422,10 +456,10 @@ value: Param(1)
 // Every function in the committed graph analyzes, and two invariants hold
 // across all of them. No name is left at the lattice bottom, so every name the
 // walk bound reached a definition it could evaluate. A declared parameter's own
-// name reads back as its own position or as `Unknown`. It can never read back
-// as an origin the walk invented, because the only other definitions of that
-// name are assignments the algorithm makes to it, and those join to
-// `Unknown`.
+// name reads back as the origin it was seeded with or as `Unknown`. It can
+// never read back as an origin the walk invented, because the only other
+// definitions of that name are assignments the algorithm makes to it, and those
+// join to `Unknown`.
 func TestOriginMapCoversEveryFunction(t *testing.T) {
 	cfg := testCFG(t)
 
@@ -436,7 +470,63 @@ func TestOriginMapCoversEveryFunction(t *testing.T) {
 			require.NotEqual(t, originUnset, m.origins[name].Kind, "%s: %s left unset", fn.Name, name)
 		}
 		for i, param := range fn.Params {
-			require.Contains(t, []Origin{Param(i), Unknown}, m.Of(param), "%s: %s", fn.Name, param)
+			require.Contains(t, []Origin{paramOrigin(fn, i), Unknown}, m.Of(param), "%s: %s", fn.Name, param)
 		}
 	}
+}
+
+// Every builtin the committed graph keys a rest parameter for, as `name:
+// position/parameters`. A rest parameter need not come last, and `Function (
+// ...parameterArgs, bodyArg )` is where that shows. Only a builtin declares
+// one, because a rest parameter is spelled in an algorithm head and an
+// abstract operation has none.
+func TestGraphRestParameters(t *testing.T) {
+	cfg := testCFG(t)
+
+	var declared []string
+	for _, fn := range cfg.Funcs {
+		if fn.Variadic == nil {
+			continue
+		}
+		require.NotEqual(t, AbstractOp, fn.Kind, "%s is not a builtin", fn.Name)
+		declared = append(declared, fmt.Sprintf("%s: %d/%d", fn.Name, *fn.Variadic, len(fn.Params)))
+	}
+	sort.Strings(declared)
+
+	snaps.MatchInlineSnapshot(t, strings.Join(declared, "\n"), snaps.Inline(`Array.of: 0/1
+Array.prototype.concat: 0/1
+Array.prototype.push: 0/1
+Array.prototype.splice: 2/3
+Array.prototype.toSpliced: 2/3
+Array.prototype.unshift: 0/1
+Array: 0/1
+AsyncFunction: 0/2
+AsyncGeneratorFunction: 0/2
+BigInt64Array: 0/1
+BigUint64Array: 0/1
+Date: 0/1
+Float16Array: 0/1
+Float32Array: 0/1
+Float64Array: 0/1
+Function.prototype.bind: 1/2
+Function.prototype.call: 1/2
+Function: 0/2
+GeneratorFunction: 0/2
+Int16Array: 0/1
+Int32Array: 0/1
+Int8Array: 0/1
+Math.hypot: 0/1
+Math.max: 0/1
+Math.min: 0/1
+Object.assign: 1/2
+Promise.try: 1/2
+String.fromCharCode: 0/1
+String.fromCodePoint: 0/1
+String.prototype.concat: 0/1
+String.raw: 1/2
+TypedArray.of: 0/1
+Uint16Array: 0/1
+Uint32Array: 0/1
+Uint8Array: 0/1
+Uint8ClampedArray: 0/1`))
 }

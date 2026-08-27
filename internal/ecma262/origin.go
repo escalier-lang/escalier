@@ -57,8 +57,10 @@ const (
 // off an interior value keeps the marker.
 //
 // Captures marks a fresh value built around something the algorithm was given.
-// It changes nothing about the fresh value, only about its interior. See
-// capturingAllocators.
+// It changes nothing about the fresh value, only about its interior. An
+// allocator that stores one of its arguments into the value it returns builds
+// one, and so does the call that builds a rest parameter's List out of the
+// caller's arguments. See capturingAllocators and paramOrigin.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
@@ -66,11 +68,14 @@ type Origin struct {
 	Captures bool
 }
 
-// Receiver, Fresh and Unknown are the origins that carry no index.
+// Receiver, Fresh, Capturing and Unknown are the origins that carry no index.
+// Capturing is the fresh value whose interior is not fresh, which is what a
+// capturing allocator returns and what a rest parameter names.
 var (
-	Receiver = Origin{Kind: OriginReceiver}
-	Fresh    = Origin{Kind: OriginFresh}
-	Unknown  = Origin{Kind: OriginUnknown}
+	Receiver  = Origin{Kind: OriginReceiver}
+	Fresh     = Origin{Kind: OriginFresh}
+	Capturing = Origin{Kind: OriginFresh, Captures: true}
+	Unknown   = Origin{Kind: OriginUnknown}
 )
 
 // Param returns the origin of the i-th declared parameter, 0-based.
@@ -78,10 +83,26 @@ func Param(i int) Origin {
 	return Origin{Kind: OriginParam, Index: i}
 }
 
+// paramOrigin returns the origin fn's i-th declared parameter is seeded with.
+//
+// A rest parameter is not a value the caller passed. It names the List the call
+// builds out of the arguments the head does not name one by one. Writing that
+// List is invisible to the caller, while the values in it are the caller's own,
+// which is the split Captures marks. `Array.prototype.concat` opens by
+// prepending its receiver onto `items`, and that prepend reaches nothing the
+// caller holds. A read out of the List lands on `Unknown`, since the value it
+// yields is one argument rather than the formal's own position.
+func paramOrigin(fn *Func, i int) Origin {
+	if fn.Variadic != nil && *fn.Variadic == i {
+		return Capturing
+	}
+	return Param(i)
+}
+
 // interiorOf returns the origin of a value read out of o's backing store.
 //
-// A fresh object's interior is fresh too, unless the allocator that built it
-// captured one of its arguments. `TypedArray.prototype.slice` writes the buffer
+// A fresh object's interior is fresh too, unless it was built around a value
+// the algorithm was given. `TypedArray.prototype.slice` writes the buffer
 // behind the array `TypedArraySpeciesCreate` handed it, and that write is
 // invisible to its caller.
 func interiorOf(o Origin) Origin {
@@ -95,7 +116,7 @@ func interiorOf(o Origin) Origin {
 		return o
 	case OriginFresh:
 		// A value the algorithm allocated holds only values it also made,
-		// unless the allocator captured something it was given.
+		// unless it was built around something the algorithm was given.
 		if o.Captures {
 			return Unknown
 		}
@@ -445,7 +466,7 @@ func NewOriginMap(fn *Func) *OriginMap {
 	for {
 		changed := false
 		for i, p := range fn.Params {
-			changed = m.bind(p, Param(i)) || changed
+			changed = m.bind(p, paramOrigin(fn, i)) || changed
 		}
 		for _, node := range fn.Nodes {
 			switch node := node.(type) {
@@ -557,7 +578,7 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 	switch {
 	case allocators.Contains(callee):
 		if capturingAllocators.Contains(callee) {
-			return Origin{Kind: OriginFresh, Captures: true}
+			return Capturing
 		}
 		return Fresh
 	case freshPrimitives.Contains(callee):

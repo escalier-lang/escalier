@@ -3,7 +3,7 @@ package escalier.specextract
 import esmeta.cfg.{Block, Branch, CFG, Call, Func, Node}
 import esmeta.ir.*
 import esmeta.ir.util.YetCollector
-import esmeta.spec.{BuiltinHead, BuiltinPath}
+import esmeta.spec.{BuiltinHead, BuiltinPath, ParamKind}
 import esmeta.ty.{AbruptT, CompT, NormalT}
 import scala.collection.mutable.{ListBuffer, Map => MMap}
 import scala.util.matching.Regex
@@ -95,12 +95,13 @@ final class Lowering(cfg: CFG):
       case esmeta.ir.FuncKind.Builtin =>
         irFunc.head.collect { case head: BuiltinHead => head }
       case _ => None
-    val (name, kind, params) = builtinHead match
+    val (name, kind, params, variadic) = builtinHead match
       case Some(head) =>
         (
           canonicalKey(head.path),
           builtinKind(head.path),
           head.params.map(_.name),
+          restParam(head),
         )
       case None if irFunc.kind == esmeta.ir.FuncKind.Builtin =>
         // ESMeta supplies a handful of builtins from its own manual sources
@@ -113,11 +114,11 @@ final class Lowering(cfg: CFG):
           if (key.contains(".prototype.") || key.endsWith(".prototype"))
             FuncKinds.BuiltinMethod
           else FuncKinds.BuiltinStatic
-        (key, manualKind, poppedFormals(func))
+        (key, manualKind, poppedFormals(func), None)
       case None =>
-        (irFunc.name, FuncKinds.AbstractOp, irFunc.params.map(_.lhs.name))
+        (irFunc.name, FuncKinds.AbstractOp, irFunc.params.map(_.lhs.name), None)
     val ctx = FuncCtx(func, kind != FuncKinds.AbstractOp, params.toSet)
-    FuncJson(name, kind, params, isPromise(ctx), lowerNodes(ctx))
+    FuncJson(name, kind, params, variadic, isPromise(ctx), lowerNodes(ctx))
 
   // ///////////////////////////////////////////////////////////////////////////
   // Names
@@ -171,6 +172,31 @@ final class Lowering(cfg: CFG):
         case _ => Nil
       }
       .distinct
+
+  /** The position of the formal that takes the remaining arguments as a List,
+    * when the algorithm head declares one.
+    *
+    * The position is carried rather than read off the end of the parameter
+    * list, because such a formal need not come last. `Array.prototype.push (
+    * ...items )` declares it at position 0 with nothing after it, and `Function
+    * ( ...parameterArgs, bodyArg )` declares it at position 0 with a formal
+    * after it.
+    *
+    * A head declaring two of them is a shape the schema cannot spell, so it
+    * fails here instead of reaching the analysis as the first one alone. The
+    * specification declares at most one in every head at the pinned revision.
+    */
+  private def restParam(head: BuiltinHead): Option[Int] =
+    val positions = head.params.zipWithIndex.collect {
+      case (param, position) if param.kind == ParamKind.Variadic => position
+    }
+    if (positions.length > 1)
+      throw new IllegalStateException(
+        s"the head of ${canonicalKey(head.path)} declares " +
+        s"${positions.length} rest parameters at positions " +
+        positions.mkString(", "),
+      )
+    positions.headOption
 
   private def localName(local: Local): String = local match
     case Name(name) => name

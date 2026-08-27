@@ -133,7 +133,8 @@ already lowered them away, and each is described where it is handled in
   guard on the call and drops all three, because the unwrap reads a field and
   would otherwise break the origin chain through every coerced receiver.
 - The argument prologue, which takes a builtin's declared formals out of the
-  argument list. The parameters come from the algorithm head instead.
+  argument list. The parameters come from the algorithm head instead, which is
+  also where the serializer reads which formal is the rest parameter.
 - `Throw a *T* exception`, which is a call constructing the error object
   followed by a `ThrowCompletion` of it.
 

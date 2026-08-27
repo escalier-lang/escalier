@@ -110,6 +110,7 @@ object Validation:
     val guardCounts = MMap[String, Int]().withDefaultValue(0)
     val abstractOps = collection.mutable.Set[String]()
     var promises = 0
+    var restParams = 0
     var callNodes = 0
     var resolvedCallees = 0
 
@@ -119,7 +120,7 @@ object Validation:
       checkKeys(
         funcObj,
         where,
-        Set("name", "kind", "params", "promise", "nodes"),
+        Set("name", "kind", "params", "variadic", "promise", "nodes"),
         Set("name", "kind", "params", "promise", "nodes"),
         "func",
         problems,
@@ -137,6 +138,16 @@ object Validation:
         param <- params
         if param.asString.isEmpty
       } problems += s"$where: a parameter name is not a string"
+      for (variadic <- funcObj("variadic"))
+        val declared = funcObj("params").flatMap(_.asArray).map(_.length)
+        variadic.asNumber.flatMap(_.toInt) match
+          case Some(position)
+              if position >= 0 && declared.exists(position < _) =>
+            restParams += 1
+          case _ =>
+            problems +=
+              s"$where: variadic is not a position among the " +
+              s"${declared.getOrElse(0)} declared parameters"
       for {
         nodes <- funcObj("nodes").flatMap(_.asArray)
         node <- nodes
@@ -170,7 +181,7 @@ object Validation:
     for (name <- representative if !names(name))
       problems += s"the representative method '$name' is missing"
 
-    problems ++= missingSignals(nodeCounts, guardCounts, promises)
+    problems ++= missingSignals(nodeCounts, guardCounts, promises, restParams)
 
     println(s"validating $path ...")
     for ((kind, count) <- kindCounts.toList.sorted) println(s"  $count $kind")
@@ -179,6 +190,7 @@ object Validation:
     for ((guard, count) <- guardCounts.toList.sorted)
       println(s"  $count '$guard' guards")
     println(s"  $promises promise-returning functions")
+    println(s"  $restParams functions declaring a rest parameter")
     println(
       s"  $resolvedCallees of $callNodes call nodes name an abstract operation",
     )
@@ -188,20 +200,22 @@ object Validation:
       fail(s"${problems.length} schema problems in $path")
     println("  schema OK")
 
-  /** Names any signal the lowering reconstructs that came out empty.
+  /** Names any signal the lowering recovers that came out empty.
     *
-    * Each of these is recovered by matching a shape ESMeta's IR compiler
-    * produces, so a change to that compiler can leave the output schema-valid
-    * while silently emptying one of them: every call falling back to a `plain`
-    * guard, say, or no `Throw` step being recognized. A count that drops to
-    * zero is that failure. The check is deliberately a presence test and not a
-    * floor, because a spec bump moves every one of these counts for legitimate
-    * reasons, and a floor would fail the bump rather than the drift.
+    * Most are recovered by matching a shape ESMeta's IR compiler produces, and
+    * the rest parameters are read off the algorithm head. Either source can
+    * change and leave the output schema-valid while silently emptying one of
+    * these: every call falling back to a `plain` guard, say, or no `Throw` step
+    * being recognized. A count that drops to zero is that failure. The check is
+    * deliberately a presence test and not a floor, because a spec bump moves
+    * every one of these counts for legitimate reasons, and a floor would fail
+    * the bump rather than the drift.
     */
   private def missingSignals(
     nodeCounts: MMap[String, Int],
     guardCounts: MMap[String, Int],
     promises: Int,
+    restParams: Int,
   ): List[String] =
     val expected = List(
       "'?' guards" -> guardCounts(Guards.Question),
@@ -210,9 +224,10 @@ object Validation:
       "slot writes" -> nodeCounts(NodeKinds.SlotWrite),
       "return nodes" -> nodeCounts(NodeKinds.Return),
       "promise-returning functions" -> promises,
+      "functions declaring a rest parameter" -> restParams,
     )
     for ((what, count) <- expected if count == 0)
-      yield s"no $what, so the shape they are recovered from has changed"
+      yield s"no $what, so the source they are read from has changed"
 
   private def checkNode(
     node: Json,
