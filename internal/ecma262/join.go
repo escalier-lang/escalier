@@ -209,14 +209,18 @@ func (j *Join) Match(decls Declarations) JoinReport {
 // The converter's operator reads it the way ReportPartition's summary is read,
 // as a list of gaps rather than a failure.
 func WriteJoinReport(report JoinReport, w io.Writer) error {
-	classified := 0
+	// A matched fact does not always carry a receiver claim. The mutation
+	// fixpoint withholds one it could not read whole, which is the
+	// determination §7 auto-applies, so the count is worth reporting apart
+	// from the match count.
+	withReceiver := 0
 	for _, m := range report.Matched {
-		if m.Fact.Classified {
-			classified++
+		if m.Fact.Classified.Receiver {
+			withReceiver++
 		}
 	}
-	_, err := fmt.Fprintf(w, "  join: %d matched (%d classified), %d declarations without a fact, %d facts without a declaration, %d unkeyed declarations, %d unjoinable facts\n",
-		len(report.Matched), classified, len(report.DeclsWithoutFact),
+	_, err := fmt.Fprintf(w, "  join: %d matched (%d with a receiver claim), %d declarations without a fact, %d facts without a declaration, %d unkeyed declarations, %d unjoinable facts\n",
+		len(report.Matched), withReceiver, len(report.DeclsWithoutFact),
 		len(report.FactsWithoutDecl), len(report.UnkeyedDecls), len(report.UnjoinableFacts))
 	if err != nil {
 		return err
