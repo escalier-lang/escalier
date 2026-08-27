@@ -1121,15 +1121,26 @@ func receiverKind(M):
     if M.Kind != BuiltinMethod: return RecvNone    // static / namespace function: no receiver
     return RecvMutBorrow if M in MutatesReceiver else RecvBorrow
 
-func returnAlias(M) AliasKind:
-    acc = Bottom
+func returnAlias(M) AliasSet:
+    acc = {}                                  // the distinct values the returns handed back
     for node in M.Nodes where node.Kind == Return:
         acc = join(acc, aliasOf(eval(M, node.Value)))
     return acc
-// aliasOf: Receiver→Receiver; Param(j)→ParamJ; Fresh→FreshReturn; Unknown→UnknownReturn
-// join:    equal→same; FreshReturn⊔FreshReturn→FreshReturn;
-//          two distinct input origins→Union; anything⊔UnknownReturn→UnknownReturn
+// aliasOf: Receiver→{Receiver}; Param(j)→{Param(j)}; Fresh→{Fresh}; Unknown→⊤
+// join:    set union below ⊤; anything ⊔ ⊤ → ⊤
+// kind:    ⊤ or {} → Unknown; one member → that member's kind; more → Union
 ```
+
+The accumulator is a set rather than a single kind, so a union names the
+values it joined. `Object` returns an `OrdinaryObjectCreate` result on one
+path and `ToObject(value)` on another, and publishes `{Fresh, Param(0)}`
+rather than a bare `union`. Those members are what §8.2 spells a lifetime
+union from, and Appendix B's `ReturnFact` is where they are written.
+
+A position joined into `⊤` is gone, and that is the right answer rather
+than a loss. `RegExp` returns parameter 0 on one path and an unresolved
+value on another. A return that is unresolved on some path cannot have its
+lifetime bounded, so §8.2 has nothing to emit for it.
 
 An `Unattributable` method has a mutation the analysis could not pin to
 a formal — a write through an `Unknown`-origin value, including deep
@@ -1185,6 +1196,10 @@ because the alias is curated rather than applied.
   the call built out of the arguments, so the write is discarded ⇒
   `receiver: borrow`; the array `ArraySpeciesCreate` allocated and it
   hands back ⇒ `returns: fresh`.
+- `Object` — `OrdinaryObjectCreate(…)` on one path and `ToObject(value)`
+  on another ⇒ `receiver: none`, `returns: union` naming `fresh` and
+  `param(0)`. A hand-written graph returning two different parameters
+  names both positions, a shape no builtin in the pinned graph has.
 
 Methods with a withheld receiver are listed. The `returns` tally spans
 every builtin, and the `receiver` tally leaves out only the 24 methods
@@ -1461,7 +1476,21 @@ remain the mechanism; the facts only inform the curation. Document the
 mapping: `returns: receiver` ⇒ the return borrows the receiver
 (`-> &self` / `-> &mut self`); `returns: param` ⇒ the return borrows that
 parameter; `returns: fresh` ⇒ an owned return; `returns: union` ⇒ a
-lifetime union.
+lifetime union over the members the fact names.
+
+**What a union's members mean.** A union's members are the values the
+algorithm hands back on its several paths, and the annotation has to cover
+every one of them, so the return borrows all of them at once. The lifetime
+is the union of the members' lifetimes. `fresh` is the identity of that
+union rather than a member of it. An owned value has no lifetime to bound,
+so a caller holding it constrains nothing, and dropping `fresh` from the
+set leaves the same annotation the remaining members already require.
+
+`Object` is that shape. It publishes `{fresh, param(0)}`, and the
+annotation is the borrow of `value` alone, because a caller that keeps the
+returned object alive keeps the argument alive on the path that hands it
+back. A union of two input origins instead names both, and neither drops
+out.
 
 **Gate.** Disposition present in `facts.json` — `Array.prototype.push`
 and `Map.prototype.set` mark their stored parameters `escape`,
@@ -2002,11 +2031,26 @@ type ParamFact struct {
 type AliasKind string
 const (
     AliasReceiver AliasKind = "receiver" // return borrows the receiver (&self / &mut self)
-    AliasParam    AliasKind = "param"    // return borrows ParamIndex
+    AliasParam    AliasKind = "param"    // return borrows the parameter at Index
     AliasFresh    AliasKind = "fresh"    // owned return: fresh / primitive values
     AliasUnion    AliasKind = "union"    // returns borrow differing inputs (lifetime union)
     AliasUnknown  AliasKind = "unknown"  // a return origin could not be resolved
 )
+
+// AliasRef names one value a return hands back.
+type AliasRef struct {
+    Kind  AliasKind `json:"kind"`            // receiver | param | fresh
+    Index *int      `json:"index,omitempty"` // set exactly when Kind == "param"
+}
+
+// ReturnFact is FR4's return-borrow seed. At most one of Index and Members
+// is set. A union names the values it joined, so §8.2 can spell the
+// lifetime union rather than read only that there was more than one.
+type ReturnFact struct {
+    Kind    AliasKind  `json:"kind"`
+    Index   *int       `json:"index,omitempty"`   // set exactly when Kind == "param"
+    Members []AliasRef `json:"members,omitempty"` // set exactly when Kind == "union"
+}
 
 // Coverage says which determinations the analysis resolved. Each axis is
 // withheld on its own, so a method that hides a mutation still publishes
@@ -2020,19 +2064,19 @@ type Coverage struct {
     Rejects  bool `json:"rejects"`  // §9.3
 }
 
-// The effect fields are pointers/slices so an uncovered determination is
-// ABSENT (JSON null or omitted) — an unanalyzed axis, distinct from a
-// proven-empty result, which is covered with an empty effect field. The
-// three slices carry no omitempty, which would drop the [] that spells
-// that second case. Uncovered they encode as null.
+// An uncovered determination is ABSENT from the JSON — an unanalyzed axis,
+// distinct from a proven-empty result, which is covered with an empty
+// effect field. Receiver is a kind with no empty member and Returns is a
+// struct, so omitempty and omitzero spell their absence. The three slices
+// carry neither, which would drop the [] that spells that second case.
+// Uncovered they encode as null.
 type MethodFact struct {
-    Classified Coverage      `json:"classified"`           // per-determination coverage (FR5)
-    Receiver   *ReceiverKind `json:"receiver,omitempty"`   // borrow | mutBorrow | none (FR2)
-    Params     []ParamFact   `json:"params"`               // only non-borrow parameters (FR12)
-    Returns    *AliasKind    `json:"returns,omitempty"`    // return-borrow lifetime seed (FR4)
-    ParamIndex *int          `json:"paramIndex,omitempty"` // set exactly when Returns == "param"
-    Throws     []string      `json:"throws"`               // sync throws post-filter (FR10, FR11)
-    Rejects    []string      `json:"rejects"`              // async rejects → Promise<T,E>.Err (FR13)
+    Classified Coverage     `json:"classified"`         // per-determination coverage (FR5)
+    Receiver   ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none (FR2)
+    Params     []ParamFact  `json:"params"`             // only non-borrow parameters (FR12)
+    Returns    ReturnFact   `json:"returns,omitzero"`   // return-borrow lifetime seed (FR4)
+    Throws     []string     `json:"throws"`             // sync throws post-filter (FR10, FR11)
+    Rejects    []string     `json:"rejects"`            // async rejects → Promise<T,E>.Err (FR13)
 }
 ```
 
@@ -2059,15 +2103,31 @@ not.
 The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
 
-`ParamIndex` is a pointer for a different reason than the fields above it.
-`Receiver` and `Returns` are kinds with no empty member, so an omitted
-field is unambiguous either way. A position of 0 is one a fact really
-carries — it is the first declared parameter, and the receiver is not in
-that index space — so writing it as an absence would spell the common case
-as missing data. Every parameter the pinned graph returns sits at position
-0, so `omitempty` on a plain `int` would keep `paramIndex` out of
+`Receiver` is a kind with no empty member, so `omitempty` spells its
+absence. `Returns` is a struct, and `omitzero` spells the same absence for
+it.
+
+An `Index` is a pointer for a different reason. A position of 0 is one a
+fact really carries — it is the first declared parameter, and the receiver
+is not in that index space — so writing it as an absence would spell the
+common case as missing data. Every parameter the pinned graph returns sits
+at position 0, so `omitempty` on a plain `int` would keep `index` out of
 `facts.json` entirely and leave a consumer no example to read the
 convention from.
+
+A `union` entry carries its members and no `index`, since a union can join
+two positions and a single field could name only one of them:
+
+```json
+"Object": {
+  "classified": { "receiver": true, "returns": true },
+  "receiver": "none",
+  "returns": {
+    "kind": "union",
+    "members": [{ "kind": "fresh" }, { "kind": "param", "index": 0 }]
+  }
+}
+```
 
 ## Appendix C. Canonical spec keys
 

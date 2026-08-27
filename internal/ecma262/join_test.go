@@ -43,8 +43,17 @@ func TestMethodFactForSignature(t *testing.T) {
 	returnsParam1 := MethodFact{
 		Classified: Coverage{Receiver: true, Returns: true},
 		Receiver:   RecvBorrow,
-		Returns:    AliasParam,
-		ParamIndex: position(1),
+		Returns:    returnsParam(1),
+	}
+	// A union of two positions, which resolves only against a signature that
+	// declares both. No builtin in the committed graph has this shape.
+	returnsEitherParam := MethodFact{
+		Classified: Coverage{Receiver: true, Returns: true},
+		Receiver:   RecvBorrow,
+		Returns: ReturnFact{Kind: AliasUnion, Members: []AliasRef{
+			{Kind: AliasParam, Index: position(0)},
+			{Kind: AliasParam, Index: position(2)},
+		}},
 	}
 
 	tests := map[string]struct {
@@ -71,9 +80,38 @@ func TestMethodFactForSignature(t *testing.T) {
 		},
 		// A claim that names no position applies to every overload as it is.
 		"NoPositionClaimed": {
-			fact: MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Receiver: RecvMutBorrow, Returns: AliasReceiver},
+			fact: MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasReceiver}},
 			sig:  Signature{},
 			want: "receiver:mutBorrow returns:receiver",
+		},
+		// Every member of the union names a position the overload declares, so
+		// the whole set carries over.
+		"UnionPositionsDeclared": {
+			fact: returnsEitherParam,
+			sig:  Signature{Params: 3},
+			want: "receiver:borrow returns:union(param(0), param(2))",
+		},
+		// One member names a position the overload lacks. Dropping that member
+		// alone would publish a narrower set of lifetimes than the algorithm
+		// can return, so the whole return drops to unknown.
+		"UnionPositionMissing": {
+			fact: returnsEitherParam,
+			sig:  Signature{Params: 2},
+			want: "receiver:borrow returns:unknown",
+		},
+		// A union with no members and a parameter return with no position are
+		// the two shapes a hand-edited facts.json can hold and this package
+		// cannot build. Neither states the value it claims to return, so both
+		// resolve to unknown.
+		"UnionWithNoMembers": {
+			fact: MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnion}},
+			sig:  Signature{Params: 2},
+			want: "receiver:borrow returns:unknown",
+		},
+		"ParamReturnWithNoPosition": {
+			fact: MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasParam}},
+			sig:  Signature{Params: 2},
+			want: "receiver:borrow returns:unknown",
 		},
 		"Unclassified": {
 			fact: MethodFact{},
@@ -95,7 +133,7 @@ func TestMethodFactForSignature(t *testing.T) {
 func TestMethodFactForSignatureLeavesTheFactAlone(t *testing.T) {
 	t.Parallel()
 
-	fact := MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Returns: AliasParam, ParamIndex: position(3)}
+	fact := MethodFact{Classified: Coverage{Receiver: true, Returns: true}, Returns: returnsParam(3)}
 	require.Equal(t, "returns:unknown", strings.TrimPrefix(
 		fact.ForSignature(Signature{Params: 1}).String(), "receiver: "))
 	require.Equal(t, "receiver: returns:param(3)", fact.String())
@@ -120,22 +158,22 @@ func joinFixture() *Facts {
 		SpecTarget: "test",
 		Methods: map[string]MethodFact{
 			// An instance member, string-keyed and symbol-keyed.
-			"Array.prototype.push":            {Classified: covered, Receiver: RecvMutBorrow, Returns: AliasFresh},
-			"String.prototype [ @@iterator ]": {Classified: covered, Receiver: RecvBorrow, Returns: AliasFresh},
+			"Array.prototype.push":            {Classified: covered, Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasFresh}},
+			"String.prototype [ @@iterator ]": {Classified: covered, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}},
 			// An accessor, whose fixed mutability the join must not overwrite.
-			"get Map.prototype.size": {Classified: covered, Receiver: RecvBorrow, Returns: AliasFresh},
+			"get Map.prototype.size": {Classified: covered, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}},
 			// A static that hands back one of its own parameters.
-			"Object.assign": {Classified: covered, Receiver: RecvNone, Returns: AliasParam, ParamIndex: position(0)},
+			"Object.assign": {Classified: covered, Receiver: RecvNone, Returns: returnsParam(0)},
 			// A namespace function, which has no receiver.
-			"Math.max": {Classified: covered, Receiver: RecvNone, Returns: AliasUnknown},
+			"Math.max": {Classified: covered, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasUnknown}},
 			// A method the mutation fixpoint could not read whole, so its
 			// receiver claim is withheld while its return alias stands.
-			"Array.prototype.toLocaleString": {Classified: Coverage{Returns: true}, Returns: AliasFresh},
+			"Array.prototype.toLocaleString": {Classified: Coverage{Returns: true}, Returns: ReturnFact{Kind: AliasFresh}},
 			// A function the global object holds, which addresses no owner and
 			// so is refused by Normalize.
-			"parseInt": {Classified: covered, Receiver: RecvNone, Returns: AliasFresh},
+			"parseInt": {Classified: covered, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasFresh}},
 			// Not a builtin. See the note above.
-			"Fixture.prototype.returnsSecond": {Classified: covered, Receiver: RecvBorrow, Returns: AliasParam, ParamIndex: position(1)},
+			"Fixture.prototype.returnsSecond": {Classified: covered, Receiver: RecvBorrow, Returns: returnsParam(1)},
 		},
 	}
 }
