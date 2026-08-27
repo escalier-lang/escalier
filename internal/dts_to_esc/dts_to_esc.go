@@ -36,6 +36,12 @@ import (
 type StandaloneModule struct {
 	Module *ast.Module
 	Docs   map[ast.Decl]string
+	// Paths maps each emitted declaration to its dotted runtime path — the
+	// same string the `@js("...")` decorator carries, kept as a side map so
+	// the declarations that erase at codegen have one too. `InterfaceDecl`
+	// and `TypeDecl` carry no Decorators field by design (§3.3), yet the
+	// ECMA-262 join still has to address the members an interface declares.
+	Paths map[ast.Decl]string
 }
 
 // ConvertToStandaloneModule converts a dts_parser.Module to a form
@@ -58,11 +64,14 @@ type StandaloneModule struct {
 //   - Preserves the source's leading JSDoc on each top-level decl (see
 //     StandaloneModule.Docs); trio fusion takes the doc from the
 //     instance interface (the constructor interface's doc is dropped).
+//   - Records each emitted decl's dotted runtime path (see
+//     StandaloneModule.Paths).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
 	trios := detectTrios(dtsModule.Statements)
 	singletons := detectSingletons(dtsModule.Statements, trios)
 	docs := make(map[ast.Decl]string)
+	paths := make(map[ast.Decl]string)
 
 	var decls []ast.Decl
 	for _, stmt := range dtsModule.Statements {
@@ -75,6 +84,9 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 			if dd.doc != "" {
 				docs[dd.decl] = dd.doc
 			}
+			if dd.path != "" {
+				paths[dd.decl] = dd.path
+			}
 		}
 	}
 
@@ -83,13 +95,16 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 	return &StandaloneModule{
 		Module: ast.NewModule(namespaces),
 		Docs:   docs,
+		Paths:  paths,
 	}, nil
 }
 
-// docDecl pairs a converted top-level declaration with the JSDoc string
-// taken from its dts source statement (empty when there was none).
+// docDecl pairs a converted top-level declaration with the dotted runtime
+// path it is reached by and the JSDoc string taken from its dts source
+// statement. The JSDoc is empty when the source carried none.
 type docDecl struct {
 	doc  string
+	path string
 	decl ast.Decl
 }
 
@@ -353,16 +368,18 @@ func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
 				return nil, fmt.Errorf("flattening singleton method %s.%s: %w",
 					info.iface.Name.Name, propertyKeyName(sig.Name), err)
 			}
-			attachJSDecorator(decl, jsBase+"."+propertyKeyName(sig.Name))
-			out = append(out, docDecl{doc: sig.Doc(), decl: decl})
+			path := jsBase + "." + propertyKeyName(sig.Name)
+			attachJSDecorator(decl, path)
+			out = append(out, docDecl{doc: sig.Doc(), path: path, decl: decl})
 		case *dts_parser.PropertySignature:
 			decl, err := singletonPropertyToVarDecl(sig)
 			if err != nil {
 				return nil, fmt.Errorf("flattening singleton property %s.%s: %w",
 					info.iface.Name.Name, propertyKeyName(sig.Name), err)
 			}
-			attachJSDecorator(decl, jsBase+"."+propertyKeyName(sig.Name))
-			out = append(out, docDecl{doc: sig.Doc(), decl: decl})
+			path := jsBase + "." + propertyKeyName(sig.Name)
+			attachJSDecorator(decl, path)
+			out = append(out, docDecl{doc: sig.Doc(), path: path, decl: decl})
 		}
 	}
 	return out, nil
@@ -732,11 +749,12 @@ func convertStandaloneStmt(
 			if err != nil {
 				return nil, fmt.Errorf("fusing trio for %s: %w", s.Name.Name, err)
 			}
-			attachJSDecorator(classDecl, jsName(nsPath, s.Name.Name))
+			path := jsName(nsPath, s.Name.Name)
+			attachJSDecorator(classDecl, path)
 			// Trio class doc comes from the instance interface; the
 			// constructor interface's doc (if any) is dropped — the
 			// instance side is the one users see and document.
-			return []docDecl{{doc: info.instance.Doc(), decl: classDecl}}, nil
+			return []docDecl{{doc: info.instance.Doc(), path: path, decl: classDecl}}, nil
 		}
 		if singletons != nil {
 			if info, ok := singletons.byName[s.Name.Name]; ok {
@@ -750,9 +768,10 @@ func convertStandaloneStmt(
 		if decl == nil {
 			return nil, nil
 		}
-		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
+		path := jsName(nsPath, s.Name.Name)
+		attachJSDecorator(decl, path)
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.VarDecl:
 		if trios.consumedVar.Contains(s.Name.Name) {
@@ -765,18 +784,20 @@ func convertStandaloneStmt(
 		if err != nil {
 			return nil, err
 		}
-		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
+		path := jsName(nsPath, s.Name.Name)
+		attachJSDecorator(decl, path)
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.FuncDecl:
 		decl, err := convertFuncDecl(s)
 		if err != nil {
 			return nil, err
 		}
-		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
+		path := jsName(nsPath, s.Name.Name)
+		attachJSDecorator(decl, path)
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.TypeDecl:
 		decl, err := convertTypeDecl(s)
@@ -786,18 +807,20 @@ func convertStandaloneStmt(
 		if decl == nil {
 			return nil, nil
 		}
-		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
+		path := jsName(nsPath, s.Name.Name)
+		attachJSDecorator(decl, path)
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.ClassDecl:
 		decl, err := convertClassDecl(cctx, s)
 		if err != nil {
 			return nil, err
 		}
-		attachJSDecorator(decl, jsName(nsPath, s.Name.Name))
+		path := jsName(nsPath, s.Name.Name)
+		attachJSDecorator(decl, path)
 		decl.SetExport(true)
-		return []docDecl{{doc: s.Doc(), decl: decl}}, nil
+		return []docDecl{{doc: s.Doc(), path: path, decl: decl}}, nil
 
 	case *dts_parser.EnumDecl, *dts_parser.ImportDecl,
 		*dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt,
