@@ -303,22 +303,13 @@ func TestMutationSummaryDiscardsAComputedSlotWriteOnARestParameter(t *testing.T)
 }
 
 // Every write in the committed graph whose slot the algorithm computes and
-// whose object the analysis places at a declared parameter, as `name: position`
-// with one entry per write.
+// whose object sits at a declared parameter, as `name: position`. Nothing can
+// say what such a write reached, so it leaves its function `Incomplete`. None
+// is in a builtin, and a spec bump that puts one there fails here rather than
+// quietly costing that builtin its receiver claim.
 //
-// Each one leaves its function `Incomplete`, since neither the curated slot
-// list nor a fresh origin can answer for what it reached.
-// TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue states that outcome
-// on a graph of its own. No builtin is among them, which is what lets §4.3
-// publish a receiver claim for every builtin the rest of the analysis reads
-// whole.
-//
-// An interior of a parameter is a different case and is left out. A write to
-// one is charged to the parameter holding it, which
-// TestMutationSummaryChargesAComputedSlotWriteOnAnInterior covers.
-//
-// A spec bump that grows one of these fails here rather than quietly costing a
-// builtin its receiver claim. Read the new step before changing anything.
+// A write on a parameter's interior is charged to the parameter holding it, so
+// it is not one of these.
 func TestGraphComputedSlotWritesOnADeclaredParameter(t *testing.T) {
 	cfg := testCFG(t)
 
