@@ -31,10 +31,19 @@ object FuncKinds:
     */
   val AbstractOp = "abstract-op"
 
+/** One algorithm.
+  *
+  * @param variadic
+  *   the 0-based position of the formal that takes the remaining arguments as a
+  *   List, absent when the head declares no such formal. `Function (
+  *   ...parameterArgs, bodyArg )` declares one that is not last, so the
+  *   position is carried rather than read off the end of `params`.
+  */
 final case class FuncJson(
   name: String,
   kind: String,
   params: List[String],
+  variadic: Option[Int],
   promise: Boolean,
   nodes: Vector[NodeJson],
 )
@@ -127,6 +136,9 @@ object JsonWriter:
     writeString(out, func.kind)
     out.write(",\"params\":")
     writeStrings(out, func.params)
+    for (position <- func.variadic)
+      out.write(",\"variadic\":")
+      out.write(position.toString)
     out.write(",\"promise\":")
     out.write(if (func.promise) "true" else "false")
     out.write(",\"nodes\":[")

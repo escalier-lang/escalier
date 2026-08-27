@@ -114,15 +114,15 @@ func TestMutationSummarySampleFunctions(t *testing.T) {
 		// rather than a receiver, so the store lands on a parameter.
 		"DataBlockWriteOnAParameter": {"Atomics.store", "args{0}"},
 		// TypedArray.prototype.slice writes the buffer behind the array
-		// TypedArraySpeciesCreate handed it. That allocator captures none of
-		// its arguments, so the buffer is fresh and the write is discarded.
+		// TypedArraySpeciesCreate handed it. That allocator holds none of its
+		// arguments, so the buffer is fresh and the write is discarded.
 		// Only the prose step §3 could not lower is left to report.
 		"InteriorOfAFreshAllocation": {"TypedArray.prototype.slice", "incomplete"},
 		// InitializeTypedArrayFromTypedArray writes the buffer behind an
 		// AllocateTypedArray result, and that allocator stores the name it was
 		// given into the array, so reading inside its result can reach a
 		// caller's value and the write cannot be placed.
-		"InteriorOfACapturingAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
+		"InteriorOfAShallowAllocation": {"InitializeTypedArrayFromTypedArray", "args{0} unattributable"},
 		// indexOf only reads the receiver, and every String method coerces its
 		// receiver to a fresh string before touching it.
 		"ReadOnlyMethod": {"Array.prototype.indexOf", "none"},
@@ -289,6 +289,57 @@ func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, "incomplete", NewMutationSummary(cfg).Of(cfg.Builtin("Demo")).String())
+}
+
+// A write whose slot the algorithm computes is discarded when it lands on a
+// rest parameter, because that List is what the call built out of the caller's
+// arguments. `Array.prototype.concat` opens with "Let _items_ be a List whose
+// first element is _O_ and whose subsequent elements are, in left to right
+// order, the arguments passed to this function", which lowers to a write into
+// `items` at a slot the algorithm computes. The prepend reaches nothing the
+// caller holds, so the method mutates nothing and reads whole.
+func TestMutationSummaryDiscardsAComputedSlotWriteOnARestParameter(t *testing.T) {
+	require.Equal(t, "none", mutationsOf(t, "Array.prototype.concat").String())
+}
+
+// Every write in the committed graph whose slot the algorithm computes and
+// whose object sits at a declared parameter. Nothing can say what such a write
+// reached, so it leaves its function `Incomplete`. None is in a builtin, and a
+// spec bump that puts one there fails here rather than quietly costing that
+// builtin its receiver claim.
+//
+// A write on a parameter's interior is charged to the parameter holding it, so
+// it is not one of these.
+func TestGraphComputedSlotWritesOnADeclaredParameter(t *testing.T) {
+	cfg := testCFG(t)
+
+	var found []string
+	for _, fn := range cfg.Funcs {
+		origins := NewOriginMap(fn)
+		for _, node := range fn.Nodes {
+			write, ok := node.(*SlotWriteNode)
+			if !ok || write.Slot != "" {
+				continue
+			}
+			if o := origins.Eval(write.Object); o.Kind == OriginParam && !o.Interior {
+				require.Equal(t, AbstractOp, fn.Kind, "%s is a builtin", fn.Name)
+				found = append(found, fmt.Sprintf("%s: %s", fn.Name, fn.Params[o.Index]))
+			}
+		}
+	}
+	sort.Strings(found)
+
+	// One line per write, as `operation: the parameter it writes`. Every one is
+	// a container the operation appends to or removes from, addressed by an
+	// index it computes, so the same operation appears once per such step.
+	snaps.MatchInlineSnapshot(t, strings.Join(found, "\n"), snaps.Inline(`AddValueToKeyedGroup: groups
+CopyDataBlockBytes: toBlock
+CopyDataBlockBytes: toBlock
+GatherAvailableAncestors: execList
+InnerModuleEvaluation: stack
+InnerModuleLinking: stack
+__APPEND_LIST__: to
+__REMOVE_ELEM__: list`))
 }
 
 // The origin map decides what a callee is before the seed does. A callee bound
@@ -635,6 +686,6 @@ func TestMutationSummaryTallies(t *testing.T) {
 	}
 	sort.Strings(kinds)
 	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 49, unattributable 37, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 23, classifiable 288
+builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 22, classifiable 289
 builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
 }

@@ -188,6 +188,12 @@ func TestFactsSampleMethods(t *testing.T) {
 		// reads the write out of the wording. Without that the method publishes
 		// no receiver claim at all.
 		"MutationStatedInProse": {"Set.prototype.clear", "receiver:mutBorrow returns:fresh"},
+		// A rest parameter is the List the call builds out of the arguments
+		// the caller passed, so a write into it reaches nothing the caller
+		// holds. concat prepends its receiver onto `items` with a write whose
+		// slot the algorithm computes, and hands back an array
+		// `ArraySpeciesCreate` allocated.
+		"WriteIntoARestParameter": {"Array.prototype.concat", "receiver:borrow returns:fresh"},
 		// union reads its receiver's payload and builds a new set from it. The
 		// step copying that payload is prose too, so leaving it unrecognized
 		// costs the method a borrow claim it can support.
@@ -300,7 +306,7 @@ func TestFactsJSON(t *testing.T) {
 		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":"receiver"}`},
 		// A withheld receiver falls through to FR5's `&mut self`, so the entry
 		// carries the return alias alone.
-		"WithheldReceiver": {factOf(t, "Array.prototype.concat"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
+		"WithheldReceiver": {factOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":"fresh"}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave paramIndex absent from the whole file and spell the common case
@@ -360,10 +366,10 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 225
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 226
 receiver mutBorrow: 63
 receiver none: 188
-receiver unclassified: 25
+receiver unclassified: 24
 returns fresh: 229
 returns param: 6
 returns receiver: 15

@@ -130,7 +130,7 @@ func joinFixture() *Facts {
 			"Math.max": {Classified: covered, Receiver: RecvNone, Returns: AliasUnknown},
 			// A method the mutation fixpoint could not read whole, so its
 			// receiver claim is withheld while its return alias stands.
-			"Array.prototype.concat": {Classified: Coverage{Returns: true}, Returns: AliasFresh},
+			"Array.prototype.toLocaleString": {Classified: Coverage{Returns: true}, Returns: AliasFresh},
 			// A function the global object holds, which addresses no owner and
 			// so is refused by Normalize.
 			"parseInt": {Classified: covered, Receiver: RecvNone, Returns: AliasFresh},
@@ -293,7 +293,7 @@ func TestJoinMatch(t *testing.T) {
 Fixture.prototype.returnsSecond -> instance Fixture.returnsSecond receiverApplies:yes [ receiver:borrow returns:unknown | receiver:borrow returns:param(1) ]
 get Map.prototype.size -> get instance Map.size receiverApplies:no [ receiver:borrow returns:fresh ]
 no fact: instance Array.toSorted
-no declaration: Array.prototype.concat
+no declaration: Array.prototype.toLocaleString
 no declaration: Math.max
 no declaration: Object.assign
 no declaration: String.prototype [ @@iterator ]
@@ -314,7 +314,7 @@ func TestWriteJoinReport(t *testing.T) {
 	report := NewJoin(joinFixture()).Match(Declarations{
 		Keyed: []Declaration{
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, Rest: true}}},
-			{Ref: MemberRef{Owner: "Array", Member: StrMember("concat"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, Rest: true}}},
+			{Ref: MemberRef{Owner: "Array", Member: StrMember("toLocaleString"), Sort: SortInstance}, Signatures: []Signature{{Params: 0}}},
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("toSorted"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
 		},
 		Unkeyed: []string{"parseInt"},

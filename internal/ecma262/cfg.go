@@ -45,12 +45,20 @@ const (
 // Func is one algorithm. Params holds the declared parameters in order. A
 // method's receiver is not among them; it is the `this` value, reached through
 // a ThisExpr.
+//
+// Variadic is the position of the rest parameter, the formal that takes the
+// arguments the head does not name one by one. `Array.prototype.push (
+// ...items )` declares one at position 0. The position is carried rather than
+// read off the end of Params, because such a formal need not come last.
+// `Function ( ...parameterArgs, bodyArg )` declares one at position 0 and an
+// ordinary formal after it.
 type Func struct {
-	Name    string   // canonical spec key or abstract-operation name
-	Kind    FuncKind //
-	Params  []string // declared parameters, in order, 0-based
-	Promise bool     // the algorithm returns a promise
-	Nodes   []Node   // CFG nodes in flat order
+	Name     string   // canonical spec key or abstract-operation name
+	Kind     FuncKind //
+	Params   []string // declared parameters, in order, 0-based
+	Variadic *int     // rest-parameter position; nil when the head declares none
+	Promise  bool     // the algorithm returns a promise
+	Nodes    []Node   // CFG nodes in flat order
 }
 
 // Node is one step of an algorithm.
@@ -303,11 +311,12 @@ type decodeCFG struct {
 }
 
 type decodeFunc struct {
-	Name    string        `json:"name"`
-	Kind    FuncKind      `json:"kind"`
-	Params  []string      `json:"params"`
-	Promise bool          `json:"promise"`
-	Nodes   []*decodeNode `json:"nodes"`
+	Name     string        `json:"name"`
+	Kind     FuncKind      `json:"kind"`
+	Params   []string      `json:"params"`
+	Variadic *int          `json:"variadic"`
+	Promise  bool          `json:"promise"`
+	Nodes    []*decodeNode `json:"nodes"`
 }
 
 type decodeNode struct {
@@ -395,12 +404,17 @@ func (d *decodeFunc) toFunc(index int) (*Func, error) {
 		return nil, fmt.Errorf("funcs[%d] has no name", index)
 	}
 
+	if d.Variadic != nil && (*d.Variadic < 0 || *d.Variadic >= len(d.Params)) {
+		return nil, fmt.Errorf("%s declares a rest parameter at position %d, outside its %d parameters", d.Name, *d.Variadic, len(d.Params))
+	}
+
 	fn := &Func{
-		Name:    d.Name,
-		Kind:    d.Kind,
-		Params:  d.Params,
-		Promise: d.Promise,
-		Nodes:   make([]Node, 0, len(d.Nodes)),
+		Name:     d.Name,
+		Kind:     d.Kind,
+		Params:   d.Params,
+		Variadic: d.Variadic,
+		Promise:  d.Promise,
+		Nodes:    make([]Node, 0, len(d.Nodes)),
 	}
 	for i, dn := range d.Nodes {
 		if dn == nil {
