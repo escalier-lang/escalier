@@ -100,7 +100,8 @@ func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {
 
 	err := run([]string{"partition", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
 
-	require.ErrorContains(t, err, "loading no/such/cfg.json")
+	require.EqualError(t, err,
+		"loading no/such/cfg.json: reading no/such/cfg.json: open no/such/cfg.json: no such file or directory")
 	require.Empty(t, treeOf(t, outDir))
 }
 
