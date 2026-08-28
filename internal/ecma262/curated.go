@@ -41,9 +41,14 @@ const (
 // spec name of Appendix C. It carries the same determination fields as
 // MethodFact plus the provenance a reviewer needs.
 //
-// Classified says which determinations the entry claims, exactly as it does on
-// a MethodFact. An axis the entry leaves unset is not curated and keeps the
-// analysis's answer, whatever that was.
+// Classified marks the axes this entry answers. That is not what the field
+// means on a MethodFact, where it marks the axes the analysis resolved. An axis
+// an entry leaves unset is simply not curated, and the analysis's answer for it
+// stands, settled or withheld alike.
+//
+// So the two axes of one method can come from different sources.
+// `Date.prototype.getTime` claims `returns` alone, because the analysis already
+// reads its receiver as `borrow` and only the return alias needs review.
 type CuratedEntry struct {
 	// Reason is why the curated answer is right, in the reviewer's words. It
 	// is required, because a claim that outranks the analysis without a stated

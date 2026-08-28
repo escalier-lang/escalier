@@ -190,8 +190,11 @@ func receiverCovered(fn *Func, mutations Mutations) bool {
 	return !mutations.Unattributable && !mutations.Incomplete
 }
 
-// Coverage records which of MethodFact's determinations the analysis resolved.
-// A step it could not read withholds only the ones that read it (FR5).
+// Coverage marks a subset of the determinations a builtin carries. On a
+// MethodFact it marks the ones the analysis resolved, and a step the analysis
+// could not read withholds only the ones that read it (FR5). On a CuratedEntry
+// it marks the ones that entry answers by review. The two share the type
+// because the merge reads them the same way, one axis at a time.
 type Coverage struct {
 	// Receiver is set for a static or namespace function, which has no receiver
 	// to claim, and for a method the mutation fixpoint read whole.
