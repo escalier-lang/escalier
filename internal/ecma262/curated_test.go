@@ -12,8 +12,9 @@ import (
 
 // demoCFG is a two-method graph standing in for the shapes the committed one
 // holds. `read` returns its receiver and writes nothing, so the analysis
-// classifies both determinations. `opaque` is a step the serializer could not
-// lower, which withholds the receiver and leaves the return unresolved.
+// classifies both its determinations. `opaque`'s one step is prose the
+// serializer could not lower, which withholds its receiver and leaves its
+// return unresolved.
 const demoCFG = `{"specTarget":"abc","funcs":[` +
 	`{"name":"Demo.prototype.read","kind":"builtin-method","params":[],"nodes":[` +
 	`{"kind":"return","value":{"kind":"this"}}]},` +

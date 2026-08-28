@@ -13,7 +13,7 @@ import (
 // curated.go holds the hand-written fact layer described in
 // planning/ecma-262/implementation_plan.md §4.4. The analyses in origin.go,
 // mutation.go, and throws.go answer the determinations they can read off the
-// control-flow graph; this layer answers the rest by review, so a determination
+// control-flow graph. This layer answers the rest by review, so a determination
 // the graph does not settle costs a curated entry rather than more analyzer.
 //
 // The layer is merged per determination, never per method. A curated entry that
@@ -52,9 +52,9 @@ type CuratedEntry struct {
 	// Evidence names where the reason was checked, such as a spec clause, an
 	// MDN page, or an engine the behavior was observed in.
 	Evidence string `json:"evidence,omitempty"`
-	// ReviewedAt is the Func.Digest of the algorithm at review time. When the
-	// graph's digest no longer matches, the algorithm was rewritten under the
-	// entry and curationReport lists it as stale.
+	// ReviewedAt is the Func.Digest of the algorithm at review time. A graph
+	// whose digest differs holds an algorithm rewritten since the review, and
+	// CurationReport lists that entry as stale.
 	ReviewedAt string `json:"reviewedAt"`
 
 	Classified Coverage     `json:"classified"`
@@ -80,7 +80,7 @@ const (
 	// CurationCorrection is a curated axis contradicting a claim the analysis
 	// published. §6's validation diff reads these first, because a correction
 	// is either a spec subtlety the graph cannot express or an analyzer bug,
-	// and the two look alike from here.
+	// and the report cannot tell the two apart.
 	CurationCorrection CurationNoteKind = "correction"
 	// CurationRedundant is a curated axis repeating what the analysis already
 	// concluded. The entry can be deleted, which is how the layer shrinks as
@@ -93,8 +93,8 @@ type CurationNote struct {
 	Name string
 	Axis Axis
 	Kind CurationNoteKind
-	// Analyzed renders the claim the analysis published, and is empty when it
-	// withheld the axis.
+	// Analyzed renders the claim the analysis published. It is empty on a
+	// fill-in, where there was no claim to displace.
 	Analyzed string
 	// Curated renders the claim the entry supplied.
 	Curated string
@@ -126,13 +126,13 @@ type CurationReport struct {
 	// failing build.
 	Unmatched []string
 	// Refused holds the curated axes the graph contradicts outright, one
-	// rendered line each, in the order the entries were read. The axis is not
-	// applied. See receiverConflict for the one contradiction there is.
+	// rendered line each, in the order the entries were read. A refused axis is
+	// not applied. receiverConflict is the only contradiction this can hold.
 	Refused []string
 }
 
-// Counts renders the report's tallies by note kind, sorted, for the one-line
-// summary WriteCurationReport prints.
+// Counts tallies the notes by kind, which is what WriteCurationReport's
+// one-line summary is built from.
 func (r CurationReport) Counts() map[CurationNoteKind]int {
 	counts := map[CurationNoteKind]int{}
 	for _, note := range r.Notes {
@@ -152,10 +152,10 @@ func mustParseCuration(data []byte) *Curation {
 	return curation
 }
 
-// ParseCuration decodes the curated layer and rejects an entry that cannot be
-// reviewed or applied. A claim with no reason, no reviewed digest, no axis, or
-// an axis whose value is not one this package can spell is a defect in the data
-// rather than an entry to apply as written.
+// ParseCuration decodes the curated layer, rejects an entry that cannot be
+// reviewed or applied, and puts each union's members in canonical order. An
+// entry validate refuses is a defect in committed data rather than one to merge
+// as written. See CuratedEntry.validate for what it refuses.
 func ParseCuration(data []byte) (*Curation, error) {
 	var curation Curation
 	if err := json.Unmarshal(data, &curation); err != nil {
@@ -172,10 +172,10 @@ func ParseCuration(data []byte) (*Curation, error) {
 	return &curation, nil
 }
 
-// sortMembers puts a union's members in the order newReturnFact leaves them,
-// by kind and then by position. A curated union is written by hand in whatever
-// order reads best, and every comparison against an analyzed fact and every
-// rendering assumes the one canonical order.
+// sortMembers puts a union's members in the order newReturnFact leaves them, by
+// kind and then by position. A curated union is written by hand in whatever
+// order reads best. Comparing one against an analyzed fact and rendering one
+// both assume the single canonical order, so parsing imposes it.
 func sortMembers(members []AliasRef) {
 	sort.Slice(members, func(i, j int) bool {
 		if members[i].Kind != members[j].Kind {
@@ -194,7 +194,8 @@ func refPosition(ref AliasRef) int {
 	return *ref.Index
 }
 
-// validate reports why an entry cannot be applied, or nil.
+// validate reports why an entry cannot be reviewed or applied, and nil when it
+// can.
 func (e CuratedEntry) validate() error {
 	if e.Reason == "" {
 		return fmt.Errorf("has no reason")
@@ -224,9 +225,10 @@ func (e CuratedEntry) validate() error {
 	return nil
 }
 
-// validate reports why a return fact cannot be applied, or nil. It holds the
-// same invariants newReturnFact builds: a parameter return names its position,
-// a union names its members, and no other kind carries either.
+// validate reports why a return fact cannot be applied, and nil when it can.
+// It holds the same invariants newReturnFact builds. A parameter return names
+// its position. A union names at least two distinct members, none of which is
+// itself a union or an `unknown`. No other kind carries a position or members.
 func (r ReturnFact) validate() error {
 	switch r.Kind {
 	case AliasParam:
@@ -247,9 +249,9 @@ func (r ReturnFact) validate() error {
 				return fmt.Errorf("returns a union naming %s twice", member)
 			}
 			seen.Add(value)
-			// A union names the values its several returns hand back. Neither
-			// lattice point that stands for more than one value is such a
-			// value, so neither can be a member.
+			// A union names the values its several returns hand back.
+			// `union` names a set of them and `unknown` names none, so
+			// neither is a value a member could stand for.
 			if member.Kind == AliasUnion || member.Kind == AliasUnknown {
 				return fmt.Errorf("returns a union holding %s", member.Kind)
 			}
@@ -337,13 +339,14 @@ func mergeCuration(cfg *CFG, curation *Curation, methods map[string]MethodFact) 
 	return report
 }
 
-// receiverConflict reports why fn cannot take the curated receiver kind, or "".
+// receiverConflict reports why fn cannot take the curated receiver kind, and ""
+// when it can.
 //
 // Whether a builtin has a receiver at all follows from Func.Kind rather than
-// from any step, so the graph settles it outright and no review can move it.
-// §7 auto-applies the receiver claim, so a curated `borrow` on a static would
-// put a `&self` on a declaration that has no self, which is the one curated
-// mistake the converter cannot absorb.
+// from any algorithm step, so the graph settles it outright and no review can
+// move it. §7 auto-applies the receiver claim, so a `borrow` curated onto a
+// static would put a `&self` on a declaration that has no self. That is the one
+// curated mistake the converter cannot absorb.
 func receiverConflict(fn *Func, kind ReceiverKind) string {
 	switch {
 	case fn.Kind == BuiltinMethod && kind == RecvNone:

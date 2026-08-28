@@ -1226,15 +1226,21 @@ lattice member for every method it cannot read.
 **Why the layer, rather than more analysis.** §4 is past the knee of its
 curve on the axis §7 auto-applies. 477 of 501 builtins carry a receiver
 claim. Every determination still open is curation-grade by §7's own
-design, reaching the generated `.esc` through review rather than straight
-from the facts, so sharpening the analyzer further improves the input to a
-review step that was going to happen anyway. The cost of doing that is
-measured: the origin-map refinement for the species allocators grew
-`origin.go` by 232 lines and moved three statics; the interior-return
-alias kind is five methods; the property-path origin is 47 builtins. The
-24 withheld receivers, by contrast, are an hour of review. Roughly twenty
-are read-only formatters and the mutating remainder is the two iterator
-`next` methods, `RegExp.prototype [ @@replace ]`, and
+design. Each reaches the generated `.esc` through review rather than
+straight from the facts. So sharpening the analyzer further only improves
+the input to a review step that happens either way. The cost of that
+sharpening is measured:
+
+| Analysis work | Cost | Methods it reaches |
+| --- | --- | --- |
+| Species-allocator origins | `origin.go` +232 lines | 3 statics |
+| The interior-return alias kind | a new lattice member, join and schema changes | 5 |
+| The property-path origin | a new lattice member, read by §4.1 and §4.3 | 47 |
+| The escape fixpoint of §8.1 | a second transitive fixpoint | ~20 |
+
+The 24 withheld receivers, by contrast, are an hour of review. Roughly
+twenty are read-only formatters. The mutating remainder is the two
+iterator `next` methods, `RegExp.prototype [ @@replace ]`, and
 `SharedArrayBuffer.prototype.grow`.
 
 This does not reverse FR5 or §11, both of which already reserve the tail

@@ -63,9 +63,9 @@ type Func struct {
 	Nodes    []Node   // CFG nodes in flat order
 
 	// Digest fingerprints this algorithm as cfg.json serializes it. A curated
-	// entry records the digest of the algorithm its author reviewed, so a spec
-	// bump that rewrites the algorithm can flag the entry for re-review while
-	// leaving every untouched entry alone. See curated.go.
+	// entry records the digest of the algorithm its author reviewed. A spec
+	// bump then flags the entries whose algorithm it rewrote and leaves the
+	// rest alone. See curated.go.
 	Digest string
 }
 
@@ -617,9 +617,9 @@ func toExprs(ds []*decodeExpr) ([]Expr, error) {
 const digestLen = 12
 
 // digest fingerprints one serialized algorithm. It changes when any step,
-// parameter, or kind does, and not when cfg.json's key order or whitespace
-// does, so a curated entry that names a digest is flagged for re-review by a
-// spec bump that rewrote the algorithm and by nothing else.
+// parameter, or kind does. It does not change when cfg.json's key order or
+// whitespace does. So a curated entry naming a digest is flagged for re-review
+// by a spec bump that rewrote its algorithm, and by nothing else.
 //
 // The fingerprint is taken over the decode type rather than over Func because
 // Node is a sealed interface. encoding/json writes no tag for the variant an
