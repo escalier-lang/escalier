@@ -1,7 +1,7 @@
 // Command dts_to_esc converts TypeScript `.d.ts` files into Escalier
 // `.esc` source. The three subcommands that operate on the pinned lib
-// set are the TS-version-bump workflow of §6.6; tools/dts_to_esc/README.md
-// walks through a bump.
+// set are the TS-version-bump workflow of §6.6. See
+// tools/dts_to_esc/README.md for a walkthrough of a bump.
 //
 //	dts_to_esc <path-to-d.ts>
 //	    Single-file MVP path: convert one .d.ts to a standalone .esc
@@ -16,7 +16,7 @@
 //	    declaration through dts_to_esc.Route, and write the partitioned
 //	    tree (std/*.esc, web/*.esc) under <out-dir>. Every package file
 //	    is written whole, so a committed tree under <out-dir> is
-//	    overwritten and its hand-edits lost — use regenerate to fold
+//	    overwritten and its hand-edits lost. Use regenerate to fold
 //	    upstream changes into a tree that already exists. <out-dir>/node/
 //	    is scaffolded with a README explaining its reserved status per
 //	    §6.1/§6.3; no `.esc` files are emitted there. The unmapped-
@@ -29,9 +29,9 @@
 //	    planning/ecma-262/implementation_plan.md §5.
 //
 //	dts_to_esc check <lib-dir> <esc-dir>
-//	    Read-only verification per §6.4, used by CI: convert the pinned
-//	    lib set and print the unified diff a regenerate run would apply
-//	    to the committed `.esc` tree under <esc-dir>. Exits non-zero
+//	    Read-only verification per §6.4: convert the pinned lib set and
+//	    print the unified diff a regenerate run would apply to the
+//	    committed `.esc` tree under <esc-dir>. Exits non-zero
 //	    when anything is missing. Signature and property-type drift are
 //	    not checked yet — see internal/dts_to_esc/rerun.go.
 //

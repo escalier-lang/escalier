@@ -2,7 +2,6 @@ package dts_to_esc
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"testing"
 
@@ -35,8 +34,8 @@ func after(t *testing.T, contents, needle string) int {
 	return i + len(needle)
 }
 
-// diffCase is one committed file plus the insertions a re-run would
-// make into it, and the patch that renders.
+// diffCase is one committed file, the insertions a re-run would make
+// into it, and the patch those render as.
 type diffCase struct {
 	name     string
 	exists   bool
@@ -225,23 +224,9 @@ func TestUnifiedDiff_SortsEditsByOffset(t *testing.T) {
 `))
 }
 
-// applyEdits inserts every edit into contents the way the write pass
-// does, from the end backwards so each offset still indexes into the
-// text it was measured against.
-func applyEdits(contents string, edits []textEdit) string {
-	sorted := make([]textEdit, len(edits))
-	copy(sorted, edits)
-	sort.Slice(sorted, func(i, j int) bool { return sorted[i].at > sorted[j].at })
-	out := contents
-	for _, e := range sorted {
-		out = out[:e.at] + e.text + out[e.at:]
-	}
-	return out
-}
-
 // applyUnifiedDiff reconstructs the new file from a patch and the text
-// it was rendered against. It reads only what unifiedDiff emits: a two
-// line header, then hunks in committed-line order.
+// it was rendered against. It reads only what unifiedDiff emits: a
+// two-line header, then hunks in committed-line order.
 func applyUnifiedDiff(t *testing.T, contents, patch string) string {
 	t.Helper()
 	committed := splitLinesKeepEnds(contents)
@@ -265,9 +250,9 @@ func applyUnifiedDiff(t *testing.T, contents, patch string) string {
 			out = append(out, committed[at:first]...)
 			at = first
 		case line == `\ No newline at end of file`:
-			// The line before it was written with a newline this file
-			// does not have. A removed line contributed nothing to
-			// strip.
+			// The line before the marker was written with a newline
+			// this file does not have. A removed line contributed
+			// nothing to strip.
 			if prev != '-' {
 				out[len(out)-1] = strings.TrimSuffix(out[len(out)-1], "\n")
 			}
@@ -305,9 +290,9 @@ func parseHunkStart(t *testing.T, header string) (start, count int) {
 // TestUnifiedDiff_ReproducesTheWrite applies each rendered patch back to
 // the committed text and checks the result against what the write pass
 // would leave on disk. Both are built from one set of edits, so a patch
-// that does not reproduce the write is a rendering bug — and a
-// contributor who applies the `check` output by hand would land
-// somewhere `regenerate` never would.
+// that does not reproduce the write is a rendering bug. A contributor
+// who applied such a patch by hand would land somewhere `regenerate`
+// never would.
 func TestUnifiedDiff_ReproducesTheWrite(t *testing.T) {
 	t.Parallel()
 	for _, tc := range diffCases(t) {

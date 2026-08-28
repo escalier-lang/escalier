@@ -52,9 +52,9 @@ func unifiedDiff(path string, exists bool, contents string, edits []textEdit) st
 }
 
 // lineChange is one committed line and what the write pass leaves in
-// its place. The line at index len(lines) is the position past the end
-// of the file, where appended declarations land; a change there has no
-// old line.
+// its place. The index len(lines) names the position past the end of
+// the file, where appended declarations land. A change there has no old
+// line, so it renders as a plain insertion.
 type lineChange struct {
 	line int
 	old  []string
@@ -114,9 +114,9 @@ func lineIndexes(lines []string, starts []int, edits []textEdit) []int {
 
 // insertionOnly turns a change whose rebuilt text opens with a copy of
 // the committed line into an insertion after that line. A member
-// spliced in at the end of a line leaves that line's own bytes alone,
-// so reporting it as a rewrite of the line to itself would put an
-// unchanged line on both sides of the diff.
+// spliced in at the end of a line leaves that line's own bytes alone.
+// Reporting it as a rewrite would put the same unchanged line on both
+// sides of the diff.
 func insertionOnly(c lineChange) lineChange {
 	if len(c.old) == 1 && len(c.new) > 0 && c.new[0] == c.old[0] {
 		c.line++
@@ -195,8 +195,8 @@ func writeHunk(sb *strings.Builder, lines []string, changes []lineChange, delta 
 
 	next := 0
 	for line := oldStart; line < oldEnd; line++ {
-		// A change with no old line inserts before this one and leaves
-		// it to be written as context.
+		// A change with no old line inserts before the committed line
+		// this iteration is on and leaves it to be written as context.
 		replaced := false
 		for ; next < len(changes) && changes[next].line == line; next++ {
 			writeDiffLines(sb, "-", changes[next].old)
@@ -215,9 +215,9 @@ func writeHunk(sb *strings.Builder, lines []string, changes []lineChange, delta 
 }
 
 // hunkRange renders one side of a hunk header. Line numbers are
-// 1-based, except that an empty range is numbered by the line it
-// follows, which is what makes a hunk against an empty file read
-// `-0,0`.
+// 1-based. An empty range is the exception: it is numbered by the line
+// it follows, so a hunk against a file that is not on disk yet opens
+// `@@ -0,0 +1,6 @@`.
 func hunkRange(start, count int) string {
 	if count == 0 {
 		return fmt.Sprintf("%d,0", start)
@@ -226,8 +226,9 @@ func hunkRange(start, count int) string {
 }
 
 // writeDiffLines writes each line under the given marker. A line with
-// no trailing newline is the last line of a file that ends without one,
-// and takes the marker diff uses to say so.
+// no trailing newline is the last line of a file that ends without one.
+// It is followed by `\ No newline at end of file`, which is how diff
+// records that.
 func writeDiffLines(sb *strings.Builder, marker string, lines []string) {
 	for _, line := range lines {
 		sb.WriteString(marker)

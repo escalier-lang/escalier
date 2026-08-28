@@ -802,14 +802,15 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 	}
 
 	spliced := p.splice()
-	if p.diff.Exists && spliced.text == p.contents {
+	updated := applyEdits(p.contents, spliced.edits)
+	if p.diff.Exists && updated == p.contents {
 		// Every owner was skipped and nothing was appended, so there is
 		// no byte to write. Rewriting identical contents would move the
 		// file's mtime for no change.
 		res.Skipped = spliced.skipped
 		return res, nil
 	}
-	if err := os.WriteFile(dest, []byte(spliced.text), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
 		return res, fmt.Errorf("writing %s: %w", dest, err)
 	}
 
@@ -819,15 +820,12 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 	return res, nil
 }
 
-// spliceResult is the committed file with the re-run's additions
-// applied, plus what it took to get there.
+// spliceResult is the change a re-run would make to one committed file,
+// worked out but not applied. The check mode renders it and the write
+// mode carries it out.
 type spliceResult struct {
-	// text is the new file contents.
-	text string
-
-	// edits are the insertions text is made of, each an offset into
-	// the committed source and the bytes that go in there. The check
-	// mode renders them as a unified diff.
+	// edits are the insertions, each an offset into the committed
+	// source and the bytes that go in there.
 	edits []textEdit
 
 	// inserted counts the members that landed.
@@ -838,9 +836,10 @@ type spliceResult struct {
 	skipped []string
 }
 
-// splice produces the new file contents: missing members spliced into
-// the bodies they belong on, then missing declarations appended. Every
-// byte the committed file already held is carried over unchanged.
+// splice works out where every missing member goes in the body it
+// belongs on and where the missing declarations go on the end. It
+// builds no text of its own, so the check mode renders the result
+// without assembling the file the write mode would.
 func (p *packagePlan) splice() spliceResult {
 	var res spliceResult
 
@@ -871,17 +870,22 @@ func (p *packagePlan) splice() spliceResult {
 	if text := p.appendedDecls(); text != "" {
 		res.edits = append(res.edits, textEdit{at: len(p.contents), text: text})
 	}
-
-	// Apply from the end backwards so each offset still indexes into
-	// the text the spans were measured against.
-	applied := make([]textEdit, len(res.edits))
-	copy(applied, res.edits)
-	sort.Slice(applied, func(i, j int) bool { return applied[i].at > applied[j].at })
-	res.text = p.contents
-	for _, e := range applied {
-		res.text = res.text[:e.at] + e.text + res.text[e.at:]
-	}
 	return res
+}
+
+// applyEdits inserts every edit into contents, producing the file the
+// write pass leaves on disk. The edits go in from the end backwards so
+// each offset still indexes into the text the spans were measured
+// against.
+func applyEdits(contents string, edits []textEdit) string {
+	ordered := make([]textEdit, len(edits))
+	copy(ordered, edits)
+	sort.Slice(ordered, func(i, j int) bool { return ordered[i].at > ordered[j].at })
+	out := contents
+	for _, e := range ordered {
+		out = out[:e.at] + e.text + out[e.at:]
+	}
+	return out
 }
 
 // appendedDecls renders the missing declarations as the block that goes

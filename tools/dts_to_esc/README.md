@@ -36,11 +36,12 @@ the `std/`, `web/`, and `node/` subtrees.
 | `dts_to_esc bootstrap [--cfg …] <lib-dir> <out>` | tree    | Seed a tree from scratch.                  |
 
 `check` prints the unified diff a `regenerate` run would apply and exits
-non-zero when that diff is non-empty. `regenerate` only ever inserts: it
-adds declarations and members upstream has and the committed tree lacks,
-and leaves every existing declaration byte-for-byte alone, so hand-edits
-survive a re-run. `bootstrap` writes each package file whole, so pointing
-it at the committed tree discards those hand-edits.
+non-zero when anything upstream is missing from the committed tree.
+`regenerate` only ever inserts: it adds declarations and members
+upstream has and the committed tree lacks, and leaves every existing
+declaration byte-for-byte alone, so hand-edits survive a re-run.
+`bootstrap` writes each package file whole, so pointing it at the
+committed tree discards those hand-edits.
 
 `bootstrap --cfg <cfg.json>` additionally joins every `std:*` member it
 emits against the ECMA-262 effect facts derived from that control-flow
@@ -68,8 +69,9 @@ graph and reports the names present on one side only. See §5 of
    ./bin/dts_to_esc regenerate node_modules/typescript/lib internal/interop/data
    ```
 
-   Review `git diff` and commit. Running `check` again should now report
-   nothing missing.
+   Review `git diff` and commit. `check` now reports nothing missing,
+   unless it named a declaration whose body the write pass could not
+   locate — step 4 covers those.
 
 4. Port the rest by hand. `regenerate` never deletes and never rewrites,
    so three kinds of upstream change are left for you:
