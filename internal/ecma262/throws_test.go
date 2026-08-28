@@ -39,9 +39,9 @@ func throwsOf(t *testing.T, name string) Throws {
 	return testThrows(t).Of(fn)
 }
 
-func TestRaisedString(t *testing.T) {
+func TestExceptionString(t *testing.T) {
 	tests := map[string]struct {
-		raised Raised
+		raised Exception
 		want   string
 	}{
 		"Class":    {Class("TypeError"), "TypeError"},
@@ -66,7 +66,7 @@ func TestThrowsString(t *testing.T) {
 		"Incomplete": {Throws{Incomplete: true}, "incomplete"},
 		"Every": {
 			Throws{
-				Raised:     []Raised{Class("TypeError"), Propagated(Param(0)), CallbackThrows(Param(1)), Untraced},
+				Raised:     []Exception{Class("TypeError"), Propagated(Param(0)), CallbackThrows(Param(1)), Untraced},
 				Incomplete: true,
 			},
 			"TypeError Origin(Param(0)) CallbackThrows(Param(1)) Unknown incomplete",
@@ -119,7 +119,7 @@ func TestThrowSummarySampleFunctions(t *testing.T) {
 func TestThrowSummaryCallbackEffect(t *testing.T) {
 	tests := map[string]struct {
 		fn   string
-		want Raised
+		want Exception
 	}{
 		// `? Call(callback, thisArg, « kValue, 𝔽(k), O »)` invokes the method's
 		// first declared parameter.
@@ -214,7 +214,7 @@ func TestThrowSiteBase(t *testing.T) {
 
 	base := propagated.Base()
 	require.True(t, base.Root.Direct())
-	require.Equal(t, Class("RangeError"), base.Raised)
+	require.Equal(t, Class("RangeError"), base.Exception)
 	require.Equal(t, 1, base.Index)
 }
 
@@ -388,10 +388,10 @@ func TestThrowSummaryIsIndependentOfFuncOrder(t *testing.T) {
 		lines := make([]string, 0, len(throws.Sites))
 		for _, site := range throws.Sites {
 			base := site.Base()
-			lines = append(lines, fmt.Sprintf("#%d %s from #%d %s", site.Index, site.Raised, base.Index, base.Raised))
+			lines = append(lines, fmt.Sprintf("#%d %s %s from #%d %s", site.Index, site.Sink, site.Exception, base.Index, base.Exception))
 		}
 		sort.Strings(lines)
-		return throws.String() + "\n" + strings.Join(lines, "\n")
+		return throws.String() + " / " + throws.RejectsString() + "\n" + strings.Join(lines, "\n")
 	}
 
 	forward := testThrows(t)

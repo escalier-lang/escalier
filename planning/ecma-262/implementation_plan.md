@@ -44,9 +44,9 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
-| §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Raised` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
+| §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | filtered throws — toFixed keeps RangeError, drops the receiver-coercion TypeError; param branch runs post-join |
-| §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ⬜ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled |
+| §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.4 | Throws validation + auto-apply gate        | FR14       | ⬜      | §9.1–§9.3, §7 | spec-independent (dynamically-observed) ground truth; false-negative rate report gates auto-apply |
 | §10  | Maintenance workflow                       | NFR        | ⬜      | §7         | spec-bump runbook; `--check`-style drift report in CI |
 | §11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | ⬜ | §7, §8, §9 | override layer populated per pseudo-package by review; fans out into per-package PRs |
@@ -1107,7 +1107,7 @@ func classify(M) MethodFact:
     fact.Params     = paramDispositions(M)         // §8: escape / mutBorrow (borrow omitted)
     fact.Returns    = returnAlias(M)               // below
     fact.Throws     = filterThrows(M)              // §9.2
-    fact.Rejects    = rejectSet(M)                 // §9.3
+    fact.Rejects    = rejectSet(M)                 // §9.3, published alongside Throws in §9.2
     // Soundness bias (FR5), applied per determination. A method the
     // analysis could not fully cover OR could not fully attribute
     // withholds the determinations that read the steps it missed. A
@@ -1507,7 +1507,7 @@ type-guard noise.
 
 ### §9.1. Throw-set fixpoint (FR10)
 
-Compute `Throws(F) ⊆ Raised`, the exceptions `F` can raise (a constructed
+Compute `Throws(F) ⊆ Exception`, the exceptions `F` can raise (a constructed
 error class, or a `Param(k)`/`Receiver` origin for a propagated value),
 directly or transitively. The structure is identical to the §4.1
 mutation-summary fixpoint: a worklist over the call graph, a per-call
@@ -1515,13 +1515,13 @@ transfer, re-enqueue callers on change. The transfer differs and depends
 on each call's completion guard, which §3 now records on the `Node`.
 
 ```
-Throws : map[FuncName] Set[Raised]      // Class(TypeError), Origin(Param(k)), Unknown, ...
+Throws : map[FuncName] Set[Exception]      // Class(TypeError), Origin(Param(k)), Unknown, ...
 ThrowSites : map[FuncName] []ThrowSite  // provenance chains for §9.2 / §9.3
 
 // A site preserves where the value ULTIMATELY came from, so a coercion
 // throw stays recognizable however many `?`-hops it propagates through.
 type ThrowSite:
-    Raised : Class(name)                 // a constructed error class (Throw a T exception)
+    Exception : Class(name)                 // a constructed error class (Throw a T exception)
            | Origin(Param(k) | Receiver) // a propagated value, resolved to a type at the join (FR13)
            | CallbackThrows(Param(k))    // throwsOf:param:k — the method throws whatever the
                                          // function-typed parameter k throws (FR13); throws polymorphism
@@ -1540,15 +1540,15 @@ while worklist nonempty:
             raised = node.ErrorType ? Class(node.ErrorType)   // "Throw a T exception" → class
                                     : raisedOf(F, node.Value)  // "throw <value>" → origin (rare in std:*)
             Throws[F].add(raised)
-            ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
+            ThrowSites[F].append(ThrowSite{ Exception: raised, Root: Direct(node), Node: node })
         case Call where node.Guard == GuardQuestion:   // ? propagates the callee's throws
             if node.Callee is a function-typed Param(k):   // ? Call(callbackfn, …) → the callback's throws
                 raised = CallbackThrows(Param(k))          // throwsOf:param:k (FR13)
                 Throws[F].add(raised)
-                ThrowSites[F].append(ThrowSite{ Raised: raised, Root: Direct(node), Node: node })
+                ThrowSites[F].append(ThrowSite{ Exception: raised, Root: Direct(node), Node: node })
             else for s in ThrowSites[node.Callee]:         // resolvable AO: carry its OWN sites, by name
-                Throws[F].add(s.Raised)
-                ThrowSites[F].append(ThrowSite{ Raised: s.Raised,
+                Throws[F].add(s.Exception)
+                ThrowSites[F].append(ThrowSite{ Exception: s.Exception,
                                                 Root: Propagated(node.Callee, s), Node: node })
         // GuardBang (! asserts no abrupt completion) and GuardPlain
         // (result not completion-checked) contribute nothing.
@@ -1595,12 +1595,12 @@ unreachable.
 CoercionAOs = { ToObject, RequireObjectCoercible,
                 ToString, ToNumber, ToNumeric, ToPrimitive }
 
-func filterThrows(M) []Raised:
+func filterThrows(M) []Exception:
     kept = {}
     for site in syncSites(M):                        // §9.3: sites reaching the synchronous exit
-        if site.Raised == Class(TypeError) and precludedCoercion(M, site):
+        if site.Exception == Class(TypeError) and precludedCoercion(M, site):
             continue                                  // statically unreachable
-        kept.add(site.Raised)                         // a class name, an Origin, or Unknown
+        kept.add(site.Exception)                         // a class name, an Origin, or Unknown
     return sorted(kept)
 
 // precludedCoercion: the throw's Root bottoms out at a coercion AO whose
@@ -1645,15 +1645,14 @@ feeds `rejects` (the `Promise<T, E>` reject type). The two use the same
 fixpoint; they differ only in classifying the site:
 
 ```
-func rejectSet(M) []Raised:
+func rejectSet(M) []Exception:
     if not returnsPromise(M): return []          // no async channel (source below)
-    if M in PromiseCombinators: return combinatorRejects(M)   // hand-modeled (below)
-    kept = {}
+    kept = combinatorRejects(M)                  // hand-modeled (below); empty for anything else
     // (a) abrupt completions routed to the reject sink — IfAbruptRejectPromise,
     //     or a throw value reaching [[Reject]]. These ARE ThrowSites.
     for site in rejectSites(M):
-        if not (site.Raised == Class(TypeError) and precludedCoercion(M, site)):
-            kept.add(site.Raised)                // a class name, an Origin, or Unknown
+        if not (site.Exception == Class(TypeError) and precludedCoercion(M, site)):
+            kept.add(site.Exception)                // a class name, an Origin, or Unknown
     // (b) direct rejections — Call(cap.[[Reject]], reason) whose reason is a
     //     plain value, not an abrupt completion, as in Promise.reject(r).
     //     These are NOT ThrowSites; scan them and record the reason's origin.
@@ -1696,10 +1695,65 @@ func rejectSet(M) []Raised:
 Recognizing a rejection site needs the CFG to represent the promise
 capability and its `[[Reject]]` field access, and — for the direct-reject
 source (b) — the argument passed to `[[Reject]]`, so `raisedOf` can read
-its origin. Whether ESMeta's CFG surfaces `IfAbruptRejectPromise` as an
-inlined reject or an opaque helper is a **§1 spike question**; if opaque,
-hand-model `IfAbruptRejectPromise(x, cap)` as a reject of `cap` with `x`'s
-raised value. The four combinators are hand-modeled unconditionally
+its origin. Both are there. The graph writes every rejection the same way,
+as `Call(capability.[[Reject]], undefined, « reason »)`. The capability's
+field access is the argument the invoke reads, and the reason is the first
+operand of the argument list.
+
+Six findings shape what landed in
+[internal/ecma262/rejects.go](../../internal/ecma262/rejects.go).
+
+- **ESMeta inlines `IfAbruptRejectPromise`**, which settles the §1 spike
+  question the paragraph above raised, so no hand model is needed for it.
+  What arrives instead is four steps: a plain call, a `Completion(...)`
+  capture of its result, a binding of that capture to a name, and the
+  reject call reading `.[[Value]]` off the name. So a routed site is not a
+  `ThrowSite` the §9.1 fixpoint already found — the call is unguarded and
+  §9.1 records nothing for it. `rejectPlan` walks each rejection's reason
+  back through those steps to the call, and the fixpoint then records what
+  that call raises on the reject channel.
+- **A capture the walk read through stops being a source of
+  incompleteness.** §9.1 flags a function that captures an abrupt
+  completion, because it can no longer name the step that raised it. The
+  walk names it, so the four `Promise` combinators come out complete rather
+  than unclassifiable.
+- **The combinator model is unioned with the walk, not substituted for
+  it.** `rejectSet`'s early return above would drop the `TypeError` a
+  combinator rejects with on a non-iterable argument, which is a real fact
+  the walk finds. `Promise.allSettled` is where the difference shows: its
+  element channel is empty and its iterator rejection stands.
+- **A rejection built from a fresh error object cannot be named.**
+  `AsyncFromSyncIteratorPrototype.return` rejects with a newly created
+  `TypeError` that never passes through a `Throw` step, and the graph
+  carries an error class only on that step, so the reject set records
+  `unknown` there. Naming it needs the serializer to record the class on
+  the allocation, which is a §10 spec-bump change.
+- **A capability handed to a helper leaves the caller flagged.**
+  `AsyncFromSyncIteratorPrototype.next` builds a capability, passes it to
+  `AsyncFromSyncIteratorContinuation`, and returns its promise, and three
+  of that promise's four rejections happen inside the continuation.
+  Following the value in would take a per-function summary of which
+  parameter each function rejects, which §9.3 does not build, so a caller
+  that passes a capability it built to a function with a reject step is
+  incomplete. The check is on the immediate callee. It leaves the four
+  combinators alone, since each passes its capability to a `PerformPromise*`
+  operation that only resolves it, and it misses
+  `AsyncGeneratorPrototype.next`, whose capability is stored in the
+  generator's request queue and rejected by a job much later. That queue is
+  the resolution machinery FR13 already says origin tagging cannot see, so
+  an async generator's body rejections are a §11 curation entry rather than
+  an extraction gap.
+- **`ThrowCompletion(v)` reaches the graph as a `Throw` step.** The lowering
+  is right in 19 of the 20 places it occurs, because `Let error be
+  ThrowCompletion(...)` is followed by `Return ? IteratorClose(iterated,
+  error)` and the value does leave synchronously.
+  `AsyncGeneratorPrototype.throw` is the exception: it builds a throw
+  completion, enqueues it, and returns a promise, so its own first argument
+  is reported on both channels where only the reject one is real. Telling
+  the two apart needs the serializer to distinguish a `Throw` step from a
+  completion the algorithm builds as a value, which is a §3 change.
+
+The four combinators are hand-modeled unconditionally
 (`combinatorRejects`), and that model needs the CFG only to identify the
 iterable parameter whose element-promise `E` is forwarded, not to trace
 the value through the resolution machinery.
