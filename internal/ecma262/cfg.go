@@ -624,6 +624,10 @@ const digestLen = 12
 // The fingerprint is taken over the decode type rather than over Func because
 // Node is a sealed interface. encoding/json writes no tag for the variant an
 // interface holds, so two different steps could fingerprint alike.
+//
+// The decode types hold only strings, ints, bools, and slices and pointers to
+// those, so the marshal cannot fail. The error is returned rather than dropped
+// in case a later field can, which leaves that path untestable as it stands.
 func (d *decodeFunc) digest() (string, error) {
 	encoded, err := json.Marshal(d)
 	if err != nil {

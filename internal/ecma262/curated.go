@@ -242,13 +242,12 @@ func (r ReturnFact) validate() error {
 		if len(r.Members) < 2 {
 			return fmt.Errorf("returns a union of %d members", len(r.Members))
 		}
+		// Each member is checked whole before it is compared against the ones
+		// already seen, so a member missing its position is reported as
+		// malformed rather than colliding at the position refPosition falls
+		// back to.
 		seen := set.NewSet[alias]()
 		for _, member := range r.Members {
-			value := alias{Kind: member.Kind, Index: refPosition(member)}
-			if seen.Contains(value) {
-				return fmt.Errorf("returns a union naming %s twice", member)
-			}
-			seen.Add(value)
 			// A union names the values its several returns hand back.
 			// `union` names a set of them and `unknown` names none, so
 			// neither is a value a member could stand for.
@@ -258,6 +257,11 @@ func (r ReturnFact) validate() error {
 			if err := (ReturnFact{Kind: member.Kind, Index: member.Index}).validate(); err != nil {
 				return fmt.Errorf("union member: %w", err)
 			}
+			value := alias{Kind: member.Kind, Index: refPosition(member)}
+			if seen.Contains(value) {
+				return fmt.Errorf("returns a union naming %s twice", member)
+			}
+			seen.Add(value)
 		}
 	case AliasReceiver, AliasFresh, AliasUnknown:
 	default:

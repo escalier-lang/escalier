@@ -1,6 +1,7 @@
 package ecma262
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"testing"
@@ -41,6 +42,17 @@ func entry(t *testing.T, cfg *CFG, name string, kind ReceiverKind) CuratedEntry 
 		Classified: Coverage{Receiver: true},
 		Receiver:   kind,
 	}
+}
+
+// returnsEntry builds a curated entry claiming one return alias, reviewed
+// against the digest the graph currently holds for name.
+func returnsEntry(t *testing.T, cfg *CFG, name string, returns ReturnFact) CuratedEntry {
+	t.Helper()
+	e := entry(t, cfg, name, RecvBorrow)
+	e.Classified = Coverage{Returns: true}
+	e.Receiver = ""
+	e.Returns = returns
+	return e
 }
 
 // The analysis leaves Demo.prototype.opaque's receiver open and settles
@@ -101,6 +113,29 @@ func TestMergeCuration(t *testing.T) {
 			name: "Demo.prototype.read",
 			want: "receiver:borrow returns:receiver",
 			note: "Demo.prototype.read receiver: redundant borrow over borrow",
+		},
+		// A return the analysis did name, contradicted. `read` ends in
+		// `Return this`, so the analysis calls it `receiver`.
+		"ReturnsCorrection": {
+			entries: func(cfg *CFG) map[string]CuratedEntry {
+				return map[string]CuratedEntry{
+					"Demo.prototype.read": returnsEntry(t, cfg, "Demo.prototype.read", ReturnFact{Kind: AliasFresh}),
+				}
+			},
+			name: "Demo.prototype.read",
+			want: "receiver:borrow returns:fresh",
+			note: "Demo.prototype.read returns: correction fresh over receiver",
+		},
+		// The same claim the analysis made, so the entry is deletable.
+		"ReturnsRedundant": {
+			entries: func(cfg *CFG) map[string]CuratedEntry {
+				return map[string]CuratedEntry{
+					"Demo.prototype.read": returnsEntry(t, cfg, "Demo.prototype.read", ReturnFact{Kind: AliasReceiver}),
+				}
+			},
+			name: "Demo.prototype.read",
+			want: "receiver:borrow returns:receiver",
+			note: "Demo.prototype.read returns: redundant receiver over receiver",
 		},
 		// Curating one axis leaves the other where the analysis left it, which
 		// is what makes the layer compose with the analysis rather than shadow
@@ -291,6 +326,14 @@ func TestParseCurationRejects(t *testing.T) {
 			`{"reason":"r","reviewedAt":"abc","classified":{"receiver":true},"receiver":"borrow","returns":{"kind":"fresh"}}`,
 			"curated entry Demo.m: names returns fresh on an axis its coverage leaves unclaimed",
 		},
+		"NegativeParamPosition": {
+			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"param","index":-1}}`,
+			"curated entry Demo.m: returns the parameter at position -1",
+		},
+		"UnionMemberWithNoPosition": {
+			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param"}]}}`,
+			"curated entry Demo.m: union member: returns a parameter but names no position",
+		},
 		"UnionNamingOneValueTwice": {
 			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"param","index":1},{"kind":"param","index":1}]}}`,
 			"curated entry Demo.m: returns a union naming param(1) twice",
@@ -332,6 +375,109 @@ func TestParseCurationAcceptsEveryReturnShape(t *testing.T) {
 			curation, err := ParseCuration([]byte(`{"entries":{"Demo.m":` + body + returns + `}}}`))
 			require.NoError(t, err)
 			require.Equal(t, want[name], curation.Entries["Demo.m"].Returns.String())
+		})
+	}
+}
+
+// A layer that is not JSON at all fails before any entry is read, which is the
+// other way committed data can be wrong.
+func TestParseCurationRejectsMalformedJSON(t *testing.T) {
+	t.Parallel()
+
+	_, err := ParseCuration([]byte(`{"entries":`))
+	require.ErrorContains(t, err, "decoding curation:")
+}
+
+// The committed layer parses. mustParseCuration is what the package-level
+// `curated` var runs at init, and it panics rather than returning, so this
+// pins both halves of that contract.
+func TestMustParseCuration(t *testing.T) {
+	t.Parallel()
+
+	require.NotEmpty(t, mustParseCuration(curatedJSON).Entries)
+	require.PanicsWithValue(t,
+		"ecma262: committed curated.json is invalid: curated entry Demo.m: has no reason",
+		func() {
+			mustParseCuration([]byte(`{"entries":{"Demo.m":{"reviewedAt":"abc",` +
+				`"classified":{"receiver":true},"receiver":"borrow"}}}`))
+		})
+}
+
+// failAfter is a writer that accepts n writes and then fails, so a test can put
+// the failure on any one line of the report.
+type failAfter struct {
+	n int
+}
+
+func (w *failAfter) Write(p []byte) (int, error) {
+	if w.n == 0 {
+		return 0, errWriteFailed
+	}
+	w.n--
+	return len(p), nil
+}
+
+var errWriteFailed = errors.New("write failed")
+
+// Every line of the report propagates a writer error rather than reporting a
+// truncated merge as a clean one. The counts are one write and each listed line
+// is another, so failing after k writes puts the failure on line k.
+func TestWriteCurationReportPropagatesAWriteError(t *testing.T) {
+	t.Parallel()
+
+	report := CurationReport{
+		Notes: []CurationNote{
+			{Name: "Demo.a", Axis: AxisReceiver, Kind: CurationFillIn, Curated: "borrow"},
+			{Name: "Demo.b", Axis: AxisReceiver, Kind: CurationCorrection, Curated: "borrow", Analyzed: "mutBorrow"},
+		},
+		Stale:     []string{"Demo.c"},
+		Unmatched: []string{"Demo.d"},
+		Refused:   []string{"Demo.e receiver: curated borrow, but a builtin-static has no receiver"},
+	}
+
+	// Five writes succeed: the counts, the correction, the stale name, the
+	// unmatched name, and the refused axis. The fill-in is summarized rather
+	// than listed, so it is not one of them.
+	for writes := range 5 {
+		require.ErrorIs(t, WriteCurationReport(report, &failAfter{n: writes}), errWriteFailed,
+			"a failure on write %d was swallowed", writes)
+	}
+	require.NoError(t, WriteCurationReport(report, &failAfter{n: 5}))
+}
+
+// equal is what sorts a curated entry into redundant or correction, so every
+// way two return facts can differ has to register. Members are compared in
+// order, which parsing and newReturnFact both establish.
+func TestReturnFactEqual(t *testing.T) {
+	t.Parallel()
+
+	union := func(members ...AliasRef) ReturnFact {
+		return ReturnFact{Kind: AliasUnion, Members: members}
+	}
+	param := func(i int) AliasRef { return AliasRef{Kind: AliasParam, Index: position(i)} }
+	fresh := AliasRef{Kind: AliasFresh}
+
+	tests := map[string]struct {
+		a, b ReturnFact
+		want bool
+	}{
+		"SameKind":          {ReturnFact{Kind: AliasFresh}, ReturnFact{Kind: AliasFresh}, true},
+		"DifferingKind":     {ReturnFact{Kind: AliasFresh}, ReturnFact{Kind: AliasReceiver}, false},
+		"SamePosition":      {returnsParam(1), returnsParam(1), true},
+		"DifferingPosition": {returnsParam(0), returnsParam(1), false},
+		// A position on one side only. The fields are pointers, so this is the
+		// case a plain dereference would panic on.
+		"PositionOnOneSide":       {returnsParam(0), ReturnFact{Kind: AliasParam}, false},
+		"SameMembers":             {union(fresh, param(0)), union(fresh, param(0)), true},
+		"DifferingMemberKind":     {union(fresh, param(0)), union(AliasRef{Kind: AliasReceiver}, param(0)), false},
+		"DifferingMemberPosition": {union(fresh, param(0)), union(fresh, param(2)), false},
+		"DifferingMemberCount":    {union(fresh, param(0)), union(fresh, param(0), param(1)), false},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.want, test.a.equal(test.b))
+			require.Equal(t, test.want, test.b.equal(test.a), "equal is not symmetric")
 		})
 	}
 }
