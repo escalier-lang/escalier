@@ -89,6 +89,13 @@ func (m *CommentMap) Unattached() []*Comment {
 	return m.unattached
 }
 
+// Walkable is anything a Visitor can walk. Every Node is Walkable, and so
+// are the Module and Script containers, which hold declarations and
+// statements without being nodes themselves.
+type Walkable interface {
+	Accept(v Visitor)
+}
+
 // NewCommentMap walks root and assigns each comment to the innermost node
 // enclosing it.
 //
@@ -96,7 +103,7 @@ func (m *CommentMap) Unattached() []*Comment {
 // in. A visitor exits a node's children before the node itself, so a child
 // that encloses the comment always claims it first and the innermost node
 // wins without the walk tracking depth.
-func NewCommentMap(root Node, comments []*Comment) *CommentMap {
+func NewCommentMap(root Walkable, comments []*Comment) *CommentMap {
 	m := &CommentMap{byNode: map[Node][]*Comment{}}
 	if len(comments) == 0 {
 		return m

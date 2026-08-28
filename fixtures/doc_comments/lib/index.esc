@@ -1,0 +1,33 @@
+/** The answer to everything. */
+export val answer = 42
+
+// A plain line comment ahead of a declaration carries no doc.
+export val greeting = "hello"
+
+/**
+ * Adds two numbers.
+ *
+ * @param a the first number
+ * @param b the second number
+ */
+export fn add(a: number, b: number) -> number {
+    // A comment inside a function body.
+    return a + b
+}
+
+/** A point in the plane. */
+export class Point {
+    /** The x coordinate. */
+    x: number,
+    /** The y coordinate. */
+    y: number,
+    constructor(mut self, x: number, y: number) {
+        self.x = x
+        self.y = y
+    }
+}
+
+/* A plain block comment is not a doc. */
+export type Answer = number
+
+// A comment at the end of the file has no declaration to attach to.
