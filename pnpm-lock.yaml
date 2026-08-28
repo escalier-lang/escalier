@@ -107,10 +107,6 @@ importers:
 
   fixtures/class_field_name_collision: {}
 
-  fixtures/class_inheritance: {}
-
-  fixtures/class_inheritance_namespaces: {}
-
   fixtures/class_with_computed_members: {}
 
   fixtures/class_with_fluent_mutating_methods: {}
@@ -132,8 +128,6 @@ importers:
   fixtures/enum_script: {}
 
   fixtures/exception_handling: {}
-
-  fixtures/export_keyword_visibility: {}
 
   fixtures/extractor_arg_with_init: {}
 
@@ -169,8 +163,6 @@ importers:
 
   fixtures/generic_enum: {}
 
-  fixtures/grouping: {}
-
   fixtures/incomplete_fn: {}
 
   fixtures/interface: {}
@@ -186,8 +178,6 @@ importers:
   fixtures/member_access: {}
 
   fixtures/mut_class_reference: {}
-
-  fixtures/namespace_bin_import: {}
 
   fixtures/namespace_complex_chain: {}
 
