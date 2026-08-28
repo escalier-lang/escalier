@@ -32,12 +32,13 @@ type commentLog struct {
 }
 
 func newCommentLog() *commentLog {
-	return &commentLog{seen: set.NewSet[int]()}
+	return &commentLog{comments: nil, seen: set.NewSet[int]()}
 }
 
 // record adds a comment token to the log, ignoring one already recorded.
 func (l *commentLog) record(token *Token) {
 	var kind ast.CommentKind
+	//nolint: exhaustive
 	switch token.Type {
 	case LineComment:
 		kind = ast.LineCommentKind

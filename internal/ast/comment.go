@@ -104,7 +104,7 @@ type Walkable interface {
 // that encloses the comment always claims it first and the innermost node
 // wins without the walk tracking depth.
 func NewCommentMap(root Walkable, comments []*Comment) *CommentMap {
-	m := &CommentMap{byNode: map[Node][]*Comment{}}
+	m := &CommentMap{byNode: map[Node][]*Comment{}, unattached: nil}
 	if len(comments) == 0 {
 		return m
 	}
@@ -115,7 +115,12 @@ func NewCommentMap(root Walkable, comments []*Comment) *CommentMap {
 		return sorted[i].span.Start.Offset < sorted[j].span.Start.Offset
 	})
 
-	c := &commentClaimer{comments: sorted, claimed: make([]bool, len(sorted)), m: m}
+	c := &commentClaimer{
+		DefaultVisitor: DefaultVisitor{},
+		comments:       sorted,
+		claimed:        make([]bool, len(sorted)),
+		m:              m,
+	}
 	root.Accept(c)
 
 	for i, comment := range sorted {
