@@ -2,6 +2,7 @@ package ecma262
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -38,7 +39,12 @@ func TestOriginJoin(t *testing.T) {
 		"EqualOriginsSurvive":      {Param(1), Param(1), Param(1)},
 		"DifferentIndicesCollapse": {Param(0), Param(1), Unknown},
 		"DifferentKindsCollapse":   {Receiver, Fresh, Unknown},
-		"UnknownAbsorbs":           {Unknown, Receiver, Unknown},
+		// Fresh on one path and shallow-fresh on the other is the one pair of
+		// origins that disagrees without collapsing. Writing the value is
+		// invisible to the caller on both paths, so only what it holds is in
+		// doubt.
+		"FreshAndShallowFreshMeetAtShallow": {Fresh, ShallowFresh, ShallowFresh},
+		"UnknownAbsorbs":                    {Unknown, Receiver, Unknown},
 	}
 
 	for name, test := range tests {
@@ -309,6 +315,108 @@ func TestOriginMapEval(t *testing.T) {
 	require.Equal(t, Unknown, m.Eval(get))
 }
 
+// A constructor-running operation's result is fresh only when the constructor
+// was handed nothing the caller passed in. The callee alone cannot answer, so
+// the rule is settled one call site at a time. See constructedOrigin.
+func TestOriginMapConstructResult(t *testing.T) {
+	tests := map[string]struct {
+		fn, value string
+		want      Origin
+	}{
+		// `Let A be ? Construct(C, « lenNumber »)`. `C` is the `this` value of a
+		// static, which resolves to `Unknown`, and `lenNumber` is a length
+		// `Array.of` computed. The array is the algorithm's own.
+		"NothingOfTheCallersReachesTheConstructor": {"Array.of", "A", Fresh},
+		// `Let matcher be ? Construct(C, « R, flags »)` hands the receiver to
+		// the constructor inside the argument list.
+		"TheReceiverIsAnArgument": {"RegExp.prototype [ @@matchAll ]", "matcher", Unknown},
+		// The same shape one algorithm over, with `Let splitter be ?
+		// Construct(C, « rx, newFlags »)` over the receiver `rx`.
+		"TheReceiverIsAnArgumentOfSplit": {"RegExp.prototype [ @@split ]", "splitter", Unknown},
+		// `Return ? Construct(target, args, newTarget)`, where every argument is
+		// a parameter of the algorithm itself.
+		"EveryArgumentIsAParameter": {"Reflect.construct", "%7", Unknown},
+		// The same rule through a forwarding wrapper. `TypedArray.prototype.
+		// subarray` calls `TypedArraySpeciesCreate(O, argumentsList)` with an
+		// `argumentsList` built over `O.[[ViewedArrayBuffer]]`, so a `@@species`
+		// constructor can hand back the receiver's own buffer.
+		"AWrapperForwardsTheReceiversBuffer": {"TypedArray.prototype.subarray", "%7", Unknown},
+		// The same wrapper called with a length the algorithm computed.
+		// `TypedArray.prototype.slice` passes `« 𝔽(count) »`.
+		"AWrapperForwardsALength": {"TypedArray.prototype.slice", "A", Fresh},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.want, originsOf(t, test.fn).Of(test.value))
+		})
+	}
+}
+
+// The argument list of a `Construct` has to be a value the algorithm made
+// whole, since the constructor receives what is inside it rather than the list.
+// The constructor itself is held to the looser half of the rule, which is what
+// lets `Array.of` run the `Unknown` its `this` value resolves to.
+func TestOriginMapConstructReadsTheArgumentList(t *testing.T) {
+	m := originsOf(t, "Array.prototype.push")
+	require.Equal(t, Receiver, m.Of("O"))
+	unplaceable := &CallExpr{Callee: "Get", Args: []Expr{&VarExpr{Var: "O"}}}
+	require.Equal(t, Unknown, m.Eval(unplaceable))
+
+	tests := map[string]struct {
+		args []Expr
+		want Origin
+	}{
+		// A constructor the analysis could not place is one value rather than a
+		// list of them, so a result equal to it is a value the analysis already
+		// could not place.
+		"UnplaceableConstructor": {[]Expr{unplaceable}, Fresh},
+		// The receiver as the constructor. `Construct(O)` can hand `O` back.
+		"TheReceiverIsTheConstructor": {[]Expr{&VarExpr{Var: "O"}}, Unknown},
+		// An argument list the algorithm built over its own values.
+		"ListOfTheAlgorithmsOwnValues": {[]Expr{unplaceable, &AllocExpr{Args: []Expr{&LitExpr{}}}}, Fresh},
+		// The receiver inside the list, which is what `« R, flags »` marks
+		// shallow.
+		"TheReceiverIsInTheList": {[]Expr{unplaceable, &AllocExpr{Args: []Expr{&VarExpr{Var: "O"}}}}, Unknown},
+		// A list the analysis could not place hides its elements, so one of
+		// them can be the caller's.
+		"UnplaceableList": {[]Expr{unplaceable, unplaceable}, Unknown},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, test.want, m.Eval(&CallExpr{Callee: "Construct", Args: test.args}))
+		})
+	}
+}
+
+// A value the algorithm allocates in place is shallow when it holds one of the
+// caller's, the same split that shallowAllocators and paramOrigin mark. Writing the
+// allocation is invisible to the caller either way, and reading inside one that
+// holds the receiver reaches the receiver.
+func TestOriginMapInPlaceAllocation(t *testing.T) {
+	m := originsOf(t, "Array.prototype.push")
+
+	require.Equal(t, Fresh, m.Eval(&AllocExpr{Args: nil}))
+	require.Equal(t, Fresh, m.Eval(&AllocExpr{Args: []Expr{&LitExpr{}}}))
+	require.Equal(t, ShallowFresh, m.Eval(&AllocExpr{Args: []Expr{&VarExpr{Var: "O"}}}))
+
+	// Holding a shallow value makes the allocation shallow too, so nesting one
+	// list inside another does not launder what the inner one holds.
+	nested := &AllocExpr{Args: []Expr{&AllocExpr{Args: []Expr{&VarExpr{Var: "O"}}}}}
+	require.Equal(t, ShallowFresh, m.Eval(nested))
+
+	// An operand the analysis could not place is not one the algorithm made
+	// either, so an allocation holding it is shallow as well.
+	unplaceable := &CallExpr{Callee: "Get", Args: []Expr{&VarExpr{Var: "O"}}}
+	require.Equal(t, Unknown, m.Eval(unplaceable))
+	require.Equal(t, ShallowFresh, m.Eval(&AllocExpr{Args: []Expr{unplaceable}}))
+
+	// Reading inside a shallow allocation reaches the value it was built over.
+	require.Equal(t, Fresh, interiorOf(m.Eval(&AllocExpr{Args: []Expr{&LitExpr{}}})))
+	require.Equal(t, Unknown, interiorOf(m.Eval(&AllocExpr{Args: []Expr{&VarExpr{Var: "O"}}})))
+}
+
 // The walk repeats until nothing moves, so a name a loop's back edge redefines
 // takes the join of both definitions rather than whichever the serializer
 // emitted first. ForBodyEvaluation binds `%4` from a literal ahead of its loop
@@ -404,6 +512,145 @@ func allocatesShallowly(fn *Func) bool {
 		}
 	}
 	return false
+}
+
+// constructorCallees is derived from the graph, so this recomputes it. An
+// operation forwards one of its arguments when that argument reaches the
+// constructor of a call whose result the operation hands back, either a
+// `Construct` or another forwarding operation.
+//
+// Every other allocator has to forward nothing. An allocator that forwards one
+// of its arguments can be handed that argument straight back by the
+// constructor, and calling its result fresh would then discard a write its
+// caller can see.
+func TestConstructorCalleesMatchTheGraph(t *testing.T) {
+	cfg := testCFG(t)
+
+	derived := map[string][]argRole{}
+	for _, name := range append(sorted(allocators), sortedKeys(constructorCallees)...) {
+		fn := cfg.AbstractOp(name)
+		require.NotNil(t, fn, "no abstract operation named %s", name)
+		if roles := forwardedArgs(fn); slices.Contains(roles, argValue) || slices.Contains(roles, argList) {
+			derived[name] = roles
+		}
+	}
+
+	require.Equal(t, constructorCallees, derived)
+}
+
+// forwardedArgs returns the role each of fn's parameters takes at a constructor
+// fn runs and whose result fn hands back. A parameter that reaches no such
+// constructor takes argHeld.
+//
+// A parameter is matched by its own name and by fn's origin map, so one reached
+// through an intermediate binding still counts. Neither route alone is enough.
+// `Construct` rebinds `argumentsList` to an empty List on one path, which joins
+// its seed to `Unknown` and leaves only the name, while a parameter the
+// algorithm binds to a fresh name first has only the origin map to place it.
+//
+// A read off a parameter counts as that parameter, the way allocatesShallowly
+// treats one. `Map.groupBy` passes its constructor as a slot chain rather than
+// a name, and an operation that forwarded such a chain would otherwise go
+// unnoticed.
+func forwardedArgs(fn *Func) []argRole {
+	origins := NewOriginMap(fn)
+	returned := returnedNames(fn)
+	roles := make([]argRole, len(fn.Params))
+
+	// at raises the role of every parameter an argument expression names. An
+	// element of an argument List is one value the constructor receives, so a
+	// parameter inside an allocation takes argValue rather than argList.
+	var at func(Expr, argRole)
+	at = func(e Expr, role argRole) {
+		switch e := e.(type) {
+		case *AllocExpr:
+			for _, operand := range e.Args {
+				at(operand, argValue)
+			}
+		case *SlotExpr:
+			at(e.Object, role)
+		case *PropExpr:
+			at(e.Object, role)
+		case *VarExpr:
+			for i, param := range fn.Params {
+				o := origins.Of(e.Var)
+				named := e.Var == param
+				placed := o.Kind == OriginParam && o.Index == i
+				if (named || placed) && role > roles[i] {
+					roles[i] = role
+				}
+			}
+		}
+	}
+
+	for _, node := range fn.Nodes {
+		call, ok := node.(*CallNode)
+		if !ok || len(constructorCallees[call.Callee]) == 0 || !returned.Contains(call.Target) {
+			continue
+		}
+		for i, arg := range call.Args {
+			if role := roleAt(call.Callee, i); role != argHeld {
+				at(arg, role)
+			}
+		}
+	}
+	return roles
+}
+
+// returnedNames returns the value names fn hands back to its caller. A Let
+// carries the return to the name it was bound from, and so does a completion
+// wrap, whose caller-side unwrap §3 drops.
+//
+// A value held inside an allocation fn returns is not one of them.
+// `NewPromiseCapability` ends in `« promise, resolve, reject »`, a record of
+// its own whatever `Construct(C, « executor »)` handed it, which is why it
+// stays an ordinary allocator.
+func returnedNames(fn *Func) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, node := range fn.Nodes {
+		ret, ok := node.(*ReturnNode)
+		if !ok {
+			continue
+		}
+		if read, ok := ret.Value.(*VarExpr); ok {
+			names.Add(read.Var)
+		}
+	}
+
+	for {
+		grew := false
+		carry := func(source Expr) {
+			read, ok := source.(*VarExpr)
+			if ok && !names.Contains(read.Var) {
+				names.Add(read.Var)
+				grew = true
+			}
+		}
+		for _, node := range fn.Nodes {
+			switch node := node.(type) {
+			case *LetNode:
+				if names.Contains(node.Target) {
+					carry(node.Source)
+				}
+			case *CallNode:
+				if names.Contains(node.Target) && identityCoercions.Contains(node.Callee) && len(node.Args) > 0 {
+					carry(node.Args[0])
+				}
+			}
+		}
+		if !grew {
+			return names
+		}
+	}
+}
+
+func sortedKeys(roles map[string][]argRole) []string {
+	names := make([]string, 0, len(roles))
+	for name := range roles {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 func sorted(s set.Set[string]) []string {

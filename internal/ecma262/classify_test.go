@@ -221,18 +221,27 @@ func TestFactsSampleMethods(t *testing.T) {
 		// its receiver claim. TypedArray.prototype.slice reaches a prose step
 		// that could have written the receiver for all the analysis can tell.
 		// The typed array it hands back is one TypedArraySpeciesCreate
-		// allocated.
+		// allocated over a length the method computed.
 		"IncompleteMethodReturningAFreshValue": {"TypedArray.prototype.slice", "returns:fresh"},
+		// The same wrapper handed the receiver's own buffer. subarray builds
+		// `« buffer, 𝔽(beginByteOffset), 𝔽(newLength) »` out of
+		// `O.[[ViewedArrayBuffer]]`, so a `@@species` constructor can return
+		// that buffer's own view and the method cannot claim a fresh result.
+		"MethodForwardingItsReceiversBuffer": {"TypedArray.prototype.subarray", "receiver:borrow returns:unknown"},
 		// The same withheld receiver over a return the walk could not resolve.
 		// toLowerCase returns what a prose step reaching the Unicode case-mapping
 		// table produced.
 		"IncompleteMethodReturningAnUnresolvedValue": {"String.prototype.toLowerCase", "returns:unknown"},
 		// A static keeps its receiver claim through either warning, since having
-		// none follows from `Func.Kind` rather than from a step. Array.of builds
-		// its array through `Construct(C, ...)`, whose result the origin map
-		// cannot place, so the write to it is unattributable and the return
-		// unresolved.
-		"UnattributableStatic": {"Array.of", "receiver:none returns:unknown"},
+		// none follows from `Func.Kind` rather than from a step. JSON.parse
+		// reaches `InternalizeJSONProperty`, whose write the analysis cannot
+		// place, and hands back a value the walk could not resolve.
+		"UnattributableStatic": {"JSON.parse", "receiver:none returns:unknown"},
+		// A static that builds its result with `Construct(C, « lenNumber »)`,
+		// where nothing the caller passed in reaches the constructor. §4.2 calls
+		// such a result fresh, so the writes that fill the array are the
+		// algorithm's own and so is the array it hands back.
+		"ConstructedStatic": {"Array.of", "receiver:none returns:fresh"},
 		// A method whose only mutation the specification states in prose. clear
 		// empties `S.[[SetData]]` with a step ESMeta does not formalize, and §3
 		// reads the write out of the wording. Without that the method publishes
@@ -464,10 +473,10 @@ func TestFactsTallies(t *testing.T) {
 receiver mutBorrow: 63
 receiver none: 188
 receiver unclassified: 24
-returns fresh: 229
+returns fresh: 232
 returns param: 6
 returns receiver: 15
 returns union: 1
-returns unknown: 250
+returns unknown: 247
 total: 501`))
 }

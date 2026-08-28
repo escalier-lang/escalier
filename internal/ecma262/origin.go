@@ -58,10 +58,11 @@ const (
 //
 // Shallow marks a value that is fresh only at the top. The algorithm allocated
 // the value itself but not what it holds, so writing it stays invisible to the
-// caller while reading inside it can reach a value the caller owns. An
-// allocator that stores one of its arguments into the value it returns builds
-// one, and so does the call that builds a rest parameter's List out of the
-// caller's arguments. See shallowAllocators and paramOrigin.
+// caller while reading inside it can reach a value the caller owns. Three
+// things build one. An allocator stores one of its arguments into the value it
+// returns. The call builds a rest parameter's List out of the caller's
+// arguments. The algorithm allocates a value in place over one of the caller's.
+// See shallowAllocators, paramOrigin and allocated.
 type Origin struct {
 	Kind     OriginKind
 	Index    int
@@ -175,9 +176,10 @@ func (o Origin) String() string {
 }
 
 // join is the least upper bound of two origins. Two definitions that agree keep
-// their origin and two that disagree collapse to `Unknown`. That collapse is
-// what makes the analysis path-insensitive. A name assigned on two branches
-// takes the join of both rather than whichever the walk reached last.
+// their origin and two that disagree collapse to `Unknown`, with fresh and
+// shallow-fresh the one pair that meets below `Unknown`. That collapse is what
+// makes the analysis path-insensitive. A name assigned on two branches takes
+// the join of both rather than whichever the walk reached last.
 func (o Origin) join(other Origin) Origin {
 	switch {
 	case o.Kind == originUnset:
@@ -186,6 +188,12 @@ func (o Origin) join(other Origin) Origin {
 		return o
 	case o == other:
 		return o
+	case o.Kind == OriginFresh && other.Kind == OriginFresh:
+		// Fresh on one path and shallow-fresh on the other, which is the only
+		// way two OriginFresh origins differ. Writing the value is invisible to
+		// the caller on both paths, and reading inside it reaches a value the
+		// caller owns on the shallow one, so the join is shallow.
+		return ShallowFresh
 	default:
 		return Unknown
 	}
@@ -276,16 +284,30 @@ var freshPrimitives = set.FromSlice([]string{
 // its caller. Listing an operation that can hand back a value the caller
 // already holds would turn a real mutation invisible.
 //
-// Construct and ProxyCreate are absent for that reason. Construct runs a
-// constructor chosen at runtime and may return any object, including one of its
-// arguments. A write to a proxy reaches its target, so ProxyCreate's result is
-// not independent of its argument. Both resolve to `Unknown`.
+// An operation that runs a constructor the caller can replace is listed only
+// when the graph shows it hands that constructor nothing it was given. Such a
+// constructor may return any object it can reach, including one of the
+// arguments it was called with, so an operation that forwards one of its own
+// arguments can be handed that argument straight back. constructorCallees names
+// every operation that does forward one, and constructedOrigin settles those
+// one call site at a time.
 //
-// ArraySpeciesCreate and the TypedArray create family run a constructor the
-// caller can replace, so they carry the same risk. They are listed anyway,
-// because `Array.prototype.slice` and its neighbours build their result through
-// one. Reading a value back out of that result is a slot or property access,
-// which breaks the chain regardless.
+// `ArraySpeciesCreate` is listed because it forwards nothing. It reads the
+// species constructor off `originalArray` and then runs
+// `Construct(C, « length »)`, where the graph has already reduced `𝔽(length)`
+// to a literal, so the constructor receives no value the caller supplied
+// whatever the call site passes. `Array.prototype.slice` and its neighbours
+// build their result through it. Reading a value back out of that result is a
+// slot or property access, which breaks the chain regardless.
+//
+// `OrdinaryCreateFromConstructor` is listed because it runs no constructor at
+// all. It reads the prototype off `constructor` through
+// `GetPrototypeFromConstructor` and builds an ordinary object over it, so the
+// object it returns is its own however that prototype was chosen.
+//
+// `ProxyCreate` is absent for an unrelated reason. A write to a proxy reaches
+// its target, so its result is never independent of its argument and no
+// argument test would change that.
 var allocators = set.FromSlice([]string{
 	// Ordinary objects and records.
 	"MakeBasicObject",
@@ -307,9 +329,6 @@ var allocators = set.FromSlice([]string{
 	"CreateSharedByteDataBlock",
 	"MakeDataViewWithBufferWitnessRecord",
 	"MakeTypedArrayWithBufferWitnessRecord",
-	"TypedArrayCreateFromConstructor",
-	"TypedArrayCreateSameType",
-	"TypedArraySpeciesCreate",
 	// Iterators and iterator results.
 	"CreateArrayIterator",
 	"CreateAsyncFromSyncIterator",
@@ -549,7 +568,9 @@ func (m *OriginMap) eval(e Expr) Origin {
 		return Unknown
 	case *CallExpr:
 		return m.evalCall(e.Callee, e.Args)
-	case *AllocExpr, *LitExpr:
+	case *AllocExpr:
+		return m.allocated(e.Args)
+	case *LitExpr:
 		return Fresh
 	case *SlotExpr:
 		// A backing-store slot holds the object's own payload, so the value
@@ -583,6 +604,8 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 			return ShallowFresh
 		}
 		return Fresh
+	case len(constructorCallees[callee]) > 0:
+		return m.constructedOrigin(callee, args)
 	case freshPrimitives.Contains(callee):
 		// A new primitive holds nothing, so it is fresh all the way down.
 		return Fresh
@@ -595,6 +618,158 @@ func (m *OriginMap) evalCall(callee string, args []Expr) Origin {
 		// its arguments.
 		return Unknown
 	}
+}
+
+// argRole says what one argument of a constructor-running operation becomes at
+// the constructor that operation runs.
+type argRole uint8
+
+const (
+	// argHeld is an argument the operation keeps to itself. The constructor
+	// never sees it, so the caller can pass anything. `TypedArraySpeciesCreate`
+	// reads `exemplar` for its `@@species` constructor and passes on only the
+	// argument list beside it.
+	argHeld argRole = iota
+	// argValue is one value the constructor receives, the constructor itself
+	// and a `newTarget` among them. A result equal to it is that one value, so
+	// it need only not be the caller's.
+	argValue
+	// argList is the List of arguments the constructor is called with. The
+	// constructor receives what is inside the List rather than the List itself,
+	// so it has to be one the algorithm made whole.
+	argList
+)
+
+func (r argRole) String() string {
+	switch r {
+	case argHeld:
+		return "held"
+	case argValue:
+		return "value"
+	case argList:
+		return "list"
+	default:
+		return fmt.Sprintf("argRole(%d)", uint8(r))
+	}
+}
+
+// constructorCallees are the operations that run a constructor the caller can
+// replace and forward one of their own arguments to it, with the role each
+// argument takes at that constructor. Their result is fresh only at a call site
+// that forwards nothing of the caller's, which is what constructedOrigin
+// decides. An operation that runs such a constructor and forwards nothing is an
+// ordinary entry in allocators instead.
+//
+// `TypedArray.prototype.subarray` is why the typed-array family is here rather
+// than there. It calls `TypedArraySpeciesCreate(O, argumentsList)` with an
+// `argumentsList` that opens with `O.[[ViewedArrayBuffer]]`, so a `@@species`
+// constructor can hand back the receiver's own buffer.
+//
+// TestConstructorCalleesMatchTheGraph derives the table, so a spec bump that
+// gives an allocator a forwarded argument fails there rather than silently
+// calling its result fresh.
+var constructorCallees = map[string][]argRole{
+	"Construct":                       {argValue, argList, argValue},
+	"TypedArrayCreateFromConstructor": {argValue, argList},
+	"TypedArrayCreateSameType":        {argHeld, argList},
+	"TypedArraySpeciesCreate":         {argHeld, argList},
+}
+
+// roleAt returns the role callee's i-th argument takes at the constructor it
+// runs. An argument beyond the roles the table spells takes argList, the
+// strictest of them, so an operation the spec grows an argument fails closed.
+func roleAt(callee string, i int) argRole {
+	roles := constructorCallees[callee]
+	if i >= len(roles) {
+		return argList
+	}
+	return roles[i]
+}
+
+// constructedOrigin returns the origin of a constructorCallees result at one
+// call site.
+//
+// The constructor runs at runtime and may return any value it received,
+// including one of the arguments it was called with. When the call site shows
+// that no value the caller passed in reaches the constructor, there is no value
+// of the caller's for the result to be, and the result is `Fresh` for the same
+// reason a listed allocator's result is. Otherwise it is `Unknown`. This is the
+// rule allocators states, applied where the callee alone cannot answer.
+//
+// An argument list is held to the stricter half of that rule. It has to be a
+// value the algorithm made itself and made whole, meaning `Fresh` and not
+// shallow, because the constructor receives what is inside it rather than the
+// list. A list the analysis could not place hides its elements, and one of them
+// can be the caller's. `Record[BoundFunctionExoticObject].Construct` builds the
+// list it passes on by flattening its own `argumentsList` parameter into the
+// bound arguments, through a call the walk cannot see through.
+//
+// A single forwarded value is held to the looser half. It is one value rather
+// than a list of them, so a result equal to it is a value the analysis already
+// could not place. Refusing `Unknown` there would cost `Array.of`, whose
+// `Let C be the this value` is `Unknown` by design.
+//
+// `Array.of` is the case this admits. `Let A be ? Construct(C, « lenNumber »)`
+// runs that `C` over a length `Array.of` computed itself. The array
+// `CreateDataPropertyOrThrow(A, ...)` then fills is the algorithm's own.
+//
+// `RegExp.prototype [ @@matchAll ]` is the case it refuses.
+// `Construct(C, « R, flags »)` hands the receiver to the constructor, which may
+// return it, so the later `Set(matcher, "lastIndex", ...)` stays a write the
+// analysis cannot place.
+//
+// Admitting `Unknown` while refusing the origins beneath it makes this the one
+// place the walk does not climb the lattice. An argument that moves from the
+// receiver to `Unknown` moves the result from `Unknown` to `Fresh`. The
+// fixpoint stays sound because bind joins rather than assigns, so a name that
+// reached `Unknown` on any pass stays there.
+func (m *OriginMap) constructedOrigin(callee string, args []Expr) Origin {
+	for i, arg := range args {
+		role := roleAt(callee, i)
+		if role == argHeld {
+			continue
+		}
+		switch o := m.eval(arg); {
+		case o.Kind == originUnset:
+			// A definition the walk has not reached yet. Answering `Fresh` now
+			// would bind the result before the argument takes its origin, and a
+			// join never retracts. See originUnset.
+			return o
+		case role == argList:
+			if o.Kind != OriginFresh || o.Shallow {
+				return Unknown
+			}
+		case o.Kind == OriginReceiver, o.Kind == OriginParam, o.Shallow:
+			return Unknown
+		}
+	}
+	return Fresh
+}
+
+// allocated returns the origin of a value the algorithm allocates in place,
+// given the operands the graph spells the allocation over.
+//
+// The allocation is the algorithm's own, so writing it is invisible to the
+// caller. It holds whatever it was built over, so it is fresh all the way down
+// only when every operand is. `RegExp.prototype [ @@matchAll ]` builds the
+// argument list `« R, flags »` over its receiver, and reading inside that list
+// reaches the receiver.
+//
+// An operand the analysis could not place makes the allocation shallow too. The
+// value inside it is one the walk knows nothing about, so calling the
+// allocation fresh all the way down would claim more than the walk established.
+func (m *OriginMap) allocated(operands []Expr) Origin {
+	for _, operand := range operands {
+		o := m.eval(operand)
+		if o.Kind == originUnset {
+			// A definition the walk has not reached yet. See originUnset.
+			return o
+		}
+		if o.Kind != OriginFresh || o.Shallow {
+			return ShallowFresh
+		}
+	}
+	return Fresh
 }
 
 // Names returns every value name the map binds, sorted. A name beginning with

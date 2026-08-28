@@ -658,7 +658,7 @@ function the analysis reads. A warning withholds a receiver claim only for
 a `BuiltinMethod` (§4.3), where FR5's heuristic fall-through then decides
 the mutability rather than the analysis emitting a claim it cannot stand
 behind. A static or a namespace function has no receiver to claim, so a
-warning leaves its `receiver: none` standing. `Array.of` is unattributable
+warning leaves its `receiver: none` standing. `JSON.parse` is unattributable
 and publishes it. Neither warning withholds the return alias.
 
 **How the seed works, and why it is not inlining.** The seed entries are the
@@ -1006,15 +1006,80 @@ interior, and 5210 unknown. The gate is
   result. Without the entry, `key` joins `Param(0)` with `Unknown` and
   collapses, losing the parameter §8.1 has to follow into the `[[MapData]]`
   record.
-- **`Construct` and `ProxyCreate` are deliberately not allocators.**
-  `Fresh` is the one origin whose mutations the fixpoint discards, so an entry
-  that can hand back a value the caller already holds turns a real mutation
-  invisible. `Construct` runs a constructor chosen at runtime and may return
-  one of its arguments, and a write to a proxy reaches its target. Both resolve
-  to `Unknown` instead. `ArraySpeciesCreate` and the typed-array species
-  operations carry the same risk and are listed anyway, as §4.2 specifies,
-  because `Array.prototype.slice` and its neighbours build their result through
-  them.
+- **A caller-replaceable constructor's result is fresh only when nothing the
+  caller passed in reaches that constructor.** `Fresh` is the one origin whose
+  mutations the fixpoint discards, so an entry that can hand back a value the
+  caller already holds turns a real mutation invisible. A constructor chosen at
+  runtime may return any value it received, including one of the arguments it
+  was called with. That is the hazard, and it is empty when none of those values
+  is the caller's. One rule covers every operation that runs such a constructor.
+
+  `constructorCallees` names the operations that forward one of their own
+  arguments to that constructor, with the role each argument takes there.
+  `Construct` is one, and so are `TypedArraySpeciesCreate`,
+  `TypedArrayCreateSameType`, and `TypedArrayCreateFromConstructor`, each of
+  which passes its `argumentList` on unchanged. None of them can be an
+  allocator, because the answer depends on the arguments at the call site rather
+  than on the callee. `constructedOrigin` settles them one call site at a time.
+
+  An argument list is held to the stricter half of the rule. It has to be
+  `Fresh` and not shallow, a value the algorithm made itself and made whole,
+  because the constructor receives what is inside it rather than the list. A
+  list the analysis could not place hides its elements, and one of them can be
+  the caller's. `Record[BoundFunctionExoticObject].Construct` is where that
+  shows, flattening its own `argumentsList` parameter into the list it passes on
+  through a call the walk cannot see through. A single forwarded value is held
+  to the looser half, needing only to not be the receiver, a parameter, or
+  shallow. It is one value rather than a list of them, so a result equal to it
+  is a value the analysis already could not place, and refusing `Unknown` there
+  would cost `Array.of`, whose `Let C be the this value` is `Unknown` by design.
+
+  `ArraySpeciesCreate` stays an allocator because it forwards nothing. It reads
+  the species constructor off `originalArray` and runs `Construct(C, « length »)`
+  with `𝔽(length)` already reduced to a literal in the graph, so the constructor
+  receives no value the caller supplied whatever the call site passes.
+  `OrdinaryCreateFromConstructor` stays one because it runs no constructor at
+  all, reading the prototype off `constructor` and building an ordinary object
+  over it. `ProxyCreate` is absent for an unrelated reason. A write to a proxy
+  reaches its target, so its result is never independent of its argument and no
+  argument test would change that.
+
+  `TestConstructorCalleesMatchTheGraph` derives the table by asking which of an
+  operation's parameters reach the constructor of a call whose result the
+  operation hands back, and it requires every other allocator to reach none. An
+  allocator that forwards an argument would fail there rather than silently
+  calling its result fresh.
+
+  Three statics leave `unattributable` — `Array.from`, `Array.of`, and
+  `Map.groupBy` — taking the static count from 21 to 18, and they are the only
+  mutation summaries the rule moves. Four return aliases move from `unknown` to
+  `fresh`: those of `Array.of`, `Map.groupBy`, `ArrayBuffer.prototype.slice`,
+  and `SharedArrayBuffer.prototype.slice`. One moves the other way.
+  `TypedArray.prototype.subarray` calls `TypedArraySpeciesCreate(O, argumentsList)`
+  with an `argumentsList` that opens with `O.[[ViewedArrayBuffer]]`, so a
+  `@@species` constructor can hand back the receiver's own buffer and the
+  method cannot claim a fresh result. No receiver claim moves, so the
+  unclassified methods are the same 24.
+  `RegExp.prototype [ @@matchAll ]` and `RegExp.prototype [ @@split ]` stay
+  among them, each handing its receiver to the species constructor through
+  `Construct(C, « R, flags »)` and then writing `lastIndex` on what comes back.
+
+- **A value allocated in place is shallow when it holds one of the caller's,
+  and `Fresh` joined with shallow-fresh is shallow.** The argument list
+  `« R, flags »` is a List the algorithm made around the receiver, which is the
+  split `Shallow` already marks for an allocator that stores an argument into
+  its result and for a rest parameter's List. Reading `Fresh` off every
+  in-place allocation would let `constructedOrigin` accept that list. An operand
+  the walk could not place makes the allocation shallow too, since calling it
+  fresh all the way down would claim more than the walk established. The join
+  follows from the marker. Two `Fresh` origins can differ only in it, writing
+  the value is invisible to the caller on both paths, and only what it holds is
+  in doubt, so they meet at shallow-fresh rather than collapsing to `Unknown`. That
+  collapse cost the four dynamic-function constructors a spurious `Incomplete`.
+  `Function ( ...parameterArgs, bodyArg )` seeds `parameterArgs` as the List the
+  call built and rebinds it to an empty List when the call passed none, then
+  appends to it at a computed slot. The builtin-static incomplete count falls
+  from 38 to 34 and no other tally moves.
 
 - **A backing-store slot read yields an interior origin, not `Unknown`.** The
   value a collection or buffer keeps in its payload slot is not the object, but
@@ -1189,9 +1254,9 @@ because the alias is curated rather than applied.
 - `TypedArray.prototype.slice` — a prose step leaves a possible receiver
   write unread, so no `receiver`; the array `TypedArraySpeciesCreate`
   allocated and it hands back ⇒ `returns: fresh`.
-- `Array.of` — `Construct(C, …)` leaves a write unattributable, but a
-  static has no receiver either way ⇒ `receiver: none`, `returns:
-  unknown`.
+- `Array.of` — `Construct(C, « lenNumber »)` hands the constructor
+  nothing the caller passed in, so `A` is fresh and the writes filling it
+  are discarded ⇒ `receiver: none`, `returns: fresh`.
 - `Array.prototype.concat` — prepends its receiver onto `items`, the List
   the call built out of the arguments, so the write is discarded ⇒
   `receiver: borrow`; the array `ArraySpeciesCreate` allocated and it

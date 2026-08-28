@@ -224,13 +224,37 @@ func TestMutationSummaryReadsThePositionTheCallPassesTheObjectAt(t *testing.T) {
 }
 
 // A write the analysis cannot place leaves the function unattributable rather
-// than silently non-mutating. `Array.of` builds its array through
-// `CreateDataPropertyOrThrow(A, ...)`, where `A` came out of `Construct(C, ...)`.
-// §4.2 leaves a constructor's result Unknown rather than fresh, since the
-// constructor runs at runtime and may hand back a value the caller already
-// holds.
+// than silently non-mutating. `RegExp.prototype [ @@matchAll ]` builds its
+// iterator with `Construct(C, « R, flags »)`, which hands the receiver to a
+// constructor chosen at runtime. That constructor may return the receiver, so
+// §4.2 leaves `matcher` `Unknown` and the later
+// `Set(matcher, "lastIndex", lastIndex, true)` has nowhere to land.
 func TestMutationSummaryUnattributableWrite(t *testing.T) {
-	require.Equal(t, "unattributable", mutationsOf(t, "Array.of").String())
+	require.Equal(t, "unattributable", mutationsOf(t, "RegExp.prototype [ @@matchAll ]").String())
+}
+
+// A name that is fresh on one path and shallow-fresh on the other is a value
+// the algorithm allocated on both, so a write to it at a computed slot is
+// discarded rather than leaving the function incomplete.
+// `Function ( ...parameterArgs, bodyArg )` seeds `parameterArgs` as the List
+// the call built out of the caller's arguments and rebinds it to an empty List
+// when the call passed none. It then appends to that List at a slot the
+// algorithm computes. The four dynamic-function constructors share the shape,
+// and each stays unattributable because `CreateDynamicFunction` is.
+func TestMutationSummaryWriteIntoAFreshAndShallowJoin(t *testing.T) {
+	for _, name := range []string{"AsyncFunction", "AsyncGeneratorFunction", "Function", "GeneratorFunction"} {
+		t.Run(name, func(t *testing.T) {
+			require.Equal(t, "unattributable", mutationsOf(t, name).String())
+		})
+	}
+}
+
+// The same operation with nothing of the caller's among its arguments.
+// `Let A be ? Construct(C, « lenNumber »)` runs the `C` that `Let C be the this
+// value` leaves `Unknown`, over a length `Array.of` computed, so the array
+// `CreateDataPropertyOrThrow(A, ...)` fills is the algorithm's own.
+func TestMutationSummaryConstructWithoutACallerArgument(t *testing.T) {
+	require.Equal(t, "none", mutationsOf(t, "Array.of").String())
 }
 
 // A write to any slot of a record read out of a backing store is charged to the
@@ -687,5 +711,5 @@ func TestMutationSummaryTallies(t *testing.T) {
 	sort.Strings(kinds)
 	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 49, unattributable 37, incomplete 226, classifiable 449
 builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 22, classifiable 289
-builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
+builtin-static: total 188, receiver 0, args 20, unattributable 18, incomplete 34, classifiable 148`))
 }
