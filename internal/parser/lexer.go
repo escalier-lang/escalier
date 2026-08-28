@@ -569,6 +569,7 @@ func (lexer *Lexer) lexQuasi() *Token {
 	end.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
+	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
 	if i >= n {
@@ -609,6 +610,7 @@ func (lexer *Lexer) lexJSXText() *Token {
 	end.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
+	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
 	if i >= n {

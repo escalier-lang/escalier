@@ -632,6 +632,12 @@ func TestLastCodeOffset_StepsOverCommentsAndStrings(t *testing.T) {
 		{"unterminated line comment", "a: number,\n// note", "a: number,"},
 		{"unterminated block comment", "a: number,\n/* note", "a: number,"},
 		{"only a comment", "// nothing yet\n", ""},
+		{"line comment with trailing spaces", "a: number,\n// note   \n", "a: number,"},
+		{"line comment with a trailing tab", "a: number,\n// note\t\n", "a: number,"},
+		{"line comment ending in CRLF", "a: number,\r\n// note\r\n", "a: number,"},
+		{"block comment with trailing spaces", "a: number,\n/* note */   \n", "a: number,"},
+		{"two comments in a row", "a: number,\n// one\n// two\n", "a: number,"},
+		{"comment then blank lines", "a: number,\n// note\n\n\n", "a: number,"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

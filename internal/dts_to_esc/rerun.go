@@ -911,20 +911,24 @@ func bodyInsertPoint(contents string, comments []*ast.Comment, decl ast.Decl) (a
 // whitespace that trail it. It returns `from` when the range holds
 // nothing but comments and whitespace.
 //
-// comments are the file's comments as the lexer read them, so a `//` inside
-// a string literal never opens one here. The write pass passes the comments
-// parseCommitted collected, which the parser's own lexer produced, so the
-// same holds for a `//` inside a template literal.
+// comments are the file's comments as the lexer read them, so a `//` inside a
+// string literal never opens one here. The write pass supplies the comments
+// parseCommitted collected. Those came from the parser's own lexer, so a `//`
+// inside a template literal is excluded too.
 func lastCodeOffset(contents string, comments []*ast.Comment, from, to int) int {
 	inRange := ast.CommentsInRange(comments, from, to)
 	at := to
 	for {
 		at = from + len(strings.TrimRight(contents[from:at], " \t\r\n"))
+		// A line comment's token runs to the newline, so it holds whatever
+		// spaces were written after its text. Trimming whitespace therefore
+		// lands inside that comment rather than at its end. The step back
+		// tests for a comment containing `at`, not for one ending there.
 		last := len(inRange) - 1
-		for last >= 0 && inRange[last].Span().End.Offset > at {
+		for last >= 0 && inRange[last].Span().Start.Offset >= at {
 			last--
 		}
-		if last < 0 || inRange[last].Span().End.Offset != at {
+		if last < 0 || inRange[last].Span().End.Offset < at {
 			return at
 		}
 		at = inRange[last].Span().Start.Offset

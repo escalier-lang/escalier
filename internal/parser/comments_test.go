@@ -259,9 +259,13 @@ func TestParserComments_NestedTemplateLiterals(t *testing.T) {
 
 func TestSpanOffsets_AgreeWithLineAndColumn(t *testing.T) {
 	t.Parallel()
-	// Every span the lexer produces must be sliceable by offset. A token kind
-	// lexed outside next(), such as a template literal's text, is the case
-	// that can leave the offset behind while line and column advance.
+	// A declaration's span must be sliceable by offset. A token kind lexed
+	// outside next(), such as a template literal's text, is the case that can
+	// leave the offset behind while line and column advance.
+	//
+	// The check covers declaration spans rather than every token, because a
+	// block comment's end Column skips its delimiters and so does not line up
+	// with its Offset.
 	tests := []struct {
 		name string
 		src  string
@@ -309,4 +313,53 @@ func lineColumnOffset(contents string, loc ast.Location) int {
 		}
 	}
 	return len(contents)
+}
+
+func TestParserComments_SkipsJSXText(t *testing.T) {
+	t.Parallel()
+	// jsxChildren peeks a token before handing the run to lexJSXText, and the
+	// peek reads text starting with `//` as a line comment. Once the run has
+	// been lexed as JSX text, that comment is dropped.
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "line comment marker in JSX text",
+			src:  "val x = <div>// nope</div>\n",
+			want: nil,
+		},
+		{
+			name: "block comment marker in JSX text",
+			src:  "val x = <div>/* nope */</div>\n",
+			want: nil,
+		},
+		{
+			name: "a URL in JSX text",
+			src:  "val x = <div>see http://example.com</div>\n",
+			want: nil,
+		},
+		{
+			name: "a real comment in a JSX expression container",
+			src:  "val x = <div>{/* yes */ 1}</div>\n",
+			want: []string{"/* yes */"},
+		},
+		{
+			name: "a real comment beside JSX",
+			src:  "// yes\nval x = <div>hi</div>\n",
+			want: []string{"// yes"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			module, source := parseSource(t, tc.src)
+			text := make([]string, 0, len(module.Comments[source.ID]))
+			for _, c := range module.Comments[source.ID] {
+				text = append(text, c.Text)
+			}
+			require.Equal(t, tc.want, nilIfEmpty(text))
+		})
+	}
 }

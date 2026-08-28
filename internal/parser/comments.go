@@ -9,12 +9,12 @@ import (
 
 // commentLog collects the comments a lexer produces.
 //
-// The lexer records into it rather than the parser collecting comments as it
-// consumes tokens, and rather than a separate pass over the file. Recording
-// at the lexer is what keeps a `//` inside a template literal or inside JSX
-// text from being taken for a comment: those regions are read by lexQuasi and
-// lexJSXText, which produce one token for the whole run of text and never
-// produce a comment token.
+// The lexer records into it, rather than the parser collecting comments as it
+// consumes tokens or a separate pass reading the file again. Recording at the
+// lexer is what keeps a `//` inside a template literal or inside JSX text
+// from being taken for a comment. lexQuasi and lexJSXText read those regions,
+// and each produces one token for the whole run of text rather than a comment
+// token.
 //
 // A parser backtracks by restoring a saved lexer state, so it lexes the same
 // region more than once and offers the same comment more than once. seen
@@ -22,6 +22,10 @@ import (
 // makes the second offer a no-op. Every lexer derived from a parser's save
 // point shares one log, so a comment recorded on an abandoned attempt is
 // still recorded once.
+//
+// A lookahead can read a region as ordinary tokens before the parser hands it
+// to lexQuasi or lexJSXText, recording a comment inside text that only looks
+// like one. Both functions call discard to drop it.
 type commentLog struct {
 	comments []*ast.Comment
 	seen     set.Set[int]
@@ -48,6 +52,27 @@ func (l *commentLog) record(token *Token) {
 	}
 	l.seen.Add(start)
 	l.comments = append(l.comments, ast.NewComment(kind, token.Value, token.Span))
+}
+
+// discard drops the comments recorded to start within [start, end).
+//
+// A lookahead reaches a region before the parser knows what it is. jsxChildren
+// peeks a token before handing the run to lexJSXText, and that peek reads the
+// `// nope` in `<div>// nope</div>` as a line comment. Lexing the region as
+// one token of text drops the comment recorded inside it. Backtracking that
+// re-reads the region as ordinary source records it again, and there it is a
+// comment.
+func (l *commentLog) discard(start, end int) {
+	kept := l.comments[:0]
+	for _, comment := range l.comments {
+		at := comment.Span().Start.Offset
+		if at >= start && at < end {
+			l.seen.Remove(at)
+			continue
+		}
+		kept = append(kept, comment)
+	}
+	l.comments = kept
 }
 
 // sorted returns the recorded comments ordered by start offset. Backtracking

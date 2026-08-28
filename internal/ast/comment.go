@@ -21,9 +21,9 @@ const (
 // hangs off the Script or Module the file parsed into, and associated with
 // nodes on demand by NewCommentMap.
 //
-// Text is the comment's source text with its delimiters kept, so a line
-// comment starts with `//` and a block comment starts with `/*` and ends
-// with `*/` unless the file ended first.
+// Text is the comment's source text with its delimiters kept. A line comment
+// starts with `//` and a block comment starts with `/*`. A block comment ends
+// with `*/`, except when the file ended before the closing delimiter.
 type Comment struct {
 	Kind CommentKind
 	Text string
@@ -38,8 +38,8 @@ func (c *Comment) Span() Span { return c.span }
 
 // IsDoc reports whether the comment is a JSDoc block, meaning a `/** ... */`
 // comment. A declaration's own JSDoc is retained separately through the
-// Documented interface, so a comment map built over a parsed file reports
-// the same text twice: once here and once as the owning node's Doc.
+// Documented interface. A parsed file therefore holds that text in two
+// places, once as a comment here and once as the owning node's Doc.
 func (c *Comment) IsDoc() bool {
 	return c.Kind == BlockCommentKind && lexer_util.IsJSDoc(c.Text)
 }
@@ -50,8 +50,8 @@ func (c *Comment) IsDoc() bool {
 // the order every parse entry point stores.
 //
 // The range is a byte range rather than a Span because the callers that need
-// it are splicing source text, and because a caller holding only an offset
-// has no line and column to build a Span from.
+// it are splicing source text. Such a caller holds an offset and has no line
+// and column to build a Span from.
 func CommentsInRange(comments []*Comment, start, end int) []*Comment {
 	lo := sort.Search(len(comments), func(i int) bool {
 		return comments[i].span.Start.Offset >= start
@@ -68,9 +68,9 @@ func CommentsInRange(comments []*Comment, start, end int) []*Comment {
 //
 // Enclosure is the only rule applied. A comment written above a declaration
 // sits outside that declaration's span, so it belongs to whatever larger node
-// encloses it and is unattached at the top level of a file. Deciding that such
-// a comment leads the declaration below it is a separate question, tracked in
-// #1311; nothing here presumes an answer to it.
+// encloses it. At the top level of a file no node does, and the comment is
+// unattached. Whether such a comment leads the declaration below it is a
+// separate question, and nothing here presumes an answer to it. See #1311.
 type CommentMap struct {
 	byNode     map[Node][]*Comment
 	unattached []*Comment
@@ -126,9 +126,9 @@ func NewCommentMap(root Walkable, comments []*Comment) *CommentMap {
 	return m
 }
 
-// commentClaimer is the visitor NewCommentMap runs. It holds the comments
-// sorted by start offset alongside a parallel flag per comment recording
-// whether some node has already claimed it.
+// commentClaimer is the visitor NewCommentMap runs. comments holds the
+// comments sorted by start offset. claimed runs parallel to it and records
+// which of them a node has already taken.
 type commentClaimer struct {
 	DefaultVisitor
 	comments []*Comment

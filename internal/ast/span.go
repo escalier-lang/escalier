@@ -8,14 +8,18 @@ type Source struct {
 	ID       int
 }
 
-// Location is a position in a source file. Line and Column are 1-based
-// and Column counts code points rather than bytes.
+// Location is a position in a source file. Line and Column are 1-based and
+// Column counts code points rather than bytes.
 //
-// Offset is the 0-based byte offset of the same position. Only the lexer
-// fills it in, so it is meaningful on a span that came from parsing and
-// zero on a span the checker or a converter synthesized. Code that slices
-// source text by Offset must therefore be reading a span it knows came
-// from the parser.
+// Offset is the 0-based byte offset of the position. The lexer tracks it as
+// it advances rather than deriving it from Line and Column. Slice source text
+// with Offset, not with Line and Column. A few token kinds report a Column
+// that does not correspond to Offset. A block comment is one of them, since
+// its end Column skips the delimiters.
+//
+// Only the lexer fills Offset in, so it is meaningful on a span that came
+// from parsing and zero on one the checker or a converter synthesized. Code
+// that slices by Offset must therefore know its span came from the parser.
 type Location struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
