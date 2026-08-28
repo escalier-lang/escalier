@@ -56,9 +56,9 @@ type StandaloneModule struct {
 //   - Forces `export` on every emitted decl.
 //   - Emits everything into the root namespace (key ""); no nested
 //     ast.Namespace entries are produced.
-//   - Preserves the source's leading JSDoc on each top-level decl (see
-//     StandaloneModule.Docs); trio fusion takes the doc from the
-//     instance interface (the constructor interface's doc is dropped).
+//   - Preserves the source's leading JSDoc on each top-level decl, kept on
+//     the decl itself through ast.Documented. Trio fusion takes the doc from
+//     the instance interface and drops the constructor interface's.
 //   - Records each emitted decl's dotted runtime path (see
 //     StandaloneModule.Paths).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {

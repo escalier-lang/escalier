@@ -238,3 +238,75 @@ func innerFuncDecl(t *testing.T, decl ast.Decl) ast.Decl {
 	require.Fail(t, "no nested declaration found")
 	return nil
 }
+
+func TestParserComments_SkipsTemplateLiteralText(t *testing.T) {
+	t.Parallel()
+	// A template literal's text is read by lexQuasi as one run, so slashes
+	// inside it never open a comment. The interpolation between `${` and `}`
+	// is ordinary source again, so a comment there is a comment.
+	module, source := parseSource(t, "val x = `see http://example.com`\n"+
+		"val y = `a ${ /* inner */ 1 } b`\n")
+	comments := module.Comments[source.ID]
+	require.Len(t, comments, 1)
+	require.Equal(t, "/* inner */", comments[0].Text)
+}
+
+func TestParserComments_NestedTemplateLiterals(t *testing.T) {
+	t.Parallel()
+	module, source := parseSource(t, "val x = `a ${ `b ${ 1 } // not a comment` } c`\n")
+	require.Empty(t, module.Comments[source.ID])
+}
+
+func TestSpanOffsets_AgreeWithLineAndColumn(t *testing.T) {
+	t.Parallel()
+	// Every span the lexer produces must be sliceable by offset. A token kind
+	// lexed outside next(), such as a template literal's text, is the case
+	// that can leave the offset behind while line and column advance.
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{"plain decl", "val x = 42\n"},
+		{"template literal", "val x = `hi`\n"},
+		{"template literal with interpolation", "val x = `a ${ 1 } b`\n"},
+		{"multi-byte character", "val π = 1\n"},
+		{"string literal", "val x = \"hi\"\n"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			module, _ := parseSource(t, tc.src)
+			decls := namespacesOf(module)[0].Decls
+			require.Len(t, decls, 1)
+
+			span := decls[0].Span()
+			require.Equal(t,
+				lineColumnOffset(tc.src, span.End),
+				span.End.Offset,
+				"end offset disagrees with line %d column %d", span.End.Line, span.End.Column)
+			require.Equal(t,
+				lineColumnOffset(tc.src, span.Start),
+				span.Start.Offset,
+				"start offset disagrees with line %d column %d", span.Start.Line, span.Start.Column)
+		})
+	}
+}
+
+// lineColumnOffset converts a location's line and column into a byte offset by
+// counting code points, the independent derivation the lexer's own offset
+// bookkeeping is checked against.
+func lineColumnOffset(contents string, loc ast.Location) int {
+	line, column := 1, 1
+	for i, r := range contents {
+		if line == loc.Line && column == loc.Column {
+			return i
+		}
+		if r == '\n' {
+			line++
+			column = 1
+		} else {
+			column++
+		}
+	}
+	return len(contents)
+}

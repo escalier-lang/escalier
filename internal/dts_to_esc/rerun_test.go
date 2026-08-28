@@ -636,6 +636,9 @@ func TestLastCodeOffset_StepsOverCommentsAndStrings(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
+			// The fragments are member bodies rather than whole files, so
+			// they are lexed directly. The write pass instead passes the
+			// comments parseCommitted collected.
 			comments := parser.LexComments(&ast.Source{Contents: tc.contents})
 			got := lastCodeOffset(tc.contents, comments, 0, len(tc.contents))
 			require.Equal(t, tc.want, tc.contents[:got])

@@ -108,7 +108,7 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	}
 
 	script := ast.NewScript(*stmts, span)
-	script.Comments = LexComments(p.lexer.source)
+	script.Comments = p.Comments()
 	return script, p.errors
 }
 
@@ -232,6 +232,7 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 	allErrors := []*Error{}
 	files := []*ast.File{}
 	sourcesMap := make(map[int]*ast.Source)
+	comments := make(map[int][]*ast.Comment)
 
 	for _, source := range sources {
 		if source == nil {
@@ -266,15 +267,11 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		ns, _ := namespaces.Get(nsName)
 		ns.Decls = append(ns.Decls, parsed.Decls...)
 		allErrors = append(allErrors, parser.errors...)
+		comments[source.ID] = parser.Comments()
 	}
 
 	module := ast.NewModuleWithFiles(namespaces, files, sourcesMap)
-	for _, source := range sources {
-		if source == nil {
-			continue
-		}
-		module.Comments[source.ID] = LexComments(source)
-	}
+	module.Comments = comments
 	return module, allErrors
 }
 

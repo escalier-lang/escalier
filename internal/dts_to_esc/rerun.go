@@ -911,8 +911,10 @@ func bodyInsertPoint(contents string, comments []*ast.Comment, decl ast.Decl) (a
 // whitespace that trail it. It returns `from` when the range holds
 // nothing but comments and whitespace.
 //
-// comments are the file's comments as the parser lexed them, so a `//`
-// inside a string literal never opens one here.
+// comments are the file's comments as the lexer read them, so a `//` inside
+// a string literal never opens one here. The write pass passes the comments
+// parseCommitted collected, which the parser's own lexer produced, so the
+// same holds for a `//` inside a template literal.
 func lastCodeOffset(contents string, comments []*ast.Comment, from, to int) int {
 	inRange := ast.CommentsInRange(comments, from, to)
 	at := to
