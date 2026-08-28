@@ -686,7 +686,7 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	}
 }
 
-// TestCallStoreEdgeCutWalkStaysSound covers what a walk that runs out of alias fuel records.
+// TestCallStoreEdgeTruncatedWalkStaysSound covers what a walk that spends its alias depth records.
 // The borrow sits deeper in the chain than the fuel reaches, so the exact field path is
 // unknown; recording no store would drop the escape that borrow raises. The store lands at
 // the whole target instead, which every field read through it follows.
@@ -694,7 +694,7 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 // The observable is the escape the store reports into an owned parameter target. #1262 will
 // stop reporting that, correctly, so this test needs a different observable when it lands.
 // A borrow parameter target keeps reporting and is the likely replacement.
-func TestCallStoreEdgeCutWalkStaysSound(t *testing.T) {
+func TestCallStoreEdgeTruncatedWalkStaysSound(t *testing.T) {
 	// One alias per level, each naming the next, with the borrow past maxAliasExpansionDepth.
 	depth := maxAliasExpansionDepth * 2
 	var b strings.Builder
