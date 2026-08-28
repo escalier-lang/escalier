@@ -1064,6 +1064,33 @@ interior, and 5210 unknown. The gate is
   among them, each handing its receiver to the species constructor through
   `Construct(C, « R, flags »)` and then writing `lastIndex` on what comes back.
 
+- **What the constructor rule does not prove.** The looser half of the rule
+  admits a constructor the walk could not place, and that is where the analysis
+  claims more than it establishes. A constructor the caller supplies may return
+  an object it captured beforehand rather than one it allocated. The origin map
+  reads one algorithm at a time and cannot tell such a constructor from one that
+  reaches nothing of the caller's, so it treats both as safe.
+
+  Two shapes follow. `Array.of.call(F, obj)` with an `F` that returns `obj`
+  binds `A` to `obj`, so the `CreateDataPropertyOrThrow(A, ...)` steps write
+  argument 0 while `Array.of` publishes `mutations: none`. `Array.prototype.slice`
+  is the wider one and predates the rule: `ArraySpeciesCreate` reads `C` off the
+  receiver, a `@@species` constructor can return the receiver itself, and slice
+  then fills that result while publishing `receiver: borrow`. Neither is ruled
+  out by the type surface. The pinned `lib.es5.d.ts` types `call` through
+  `ThisParameterType<T>`, which is `unknown` for a declaration without a `this`
+  parameter.
+
+  Refusing `Unknown` at the constructor closes the narrower shape and leaves the
+  wider one open, at a cost that lands below where the analysis started.
+  `Array.from`, `Array.of`, `Map.groupBy`, `TypedArray.from`, and
+  `TypedArray.of` all go `unattributable`, the last two from `none`. Statics
+  read `unattributable 23, classifiable 144` against `21` and `145` before the
+  rule, and `returns fresh` reads 226 against 229. Telling a constructor that
+  cannot reach the caller's values from one the walk lost track of needs capture
+  tracking across function identity, which is a separate piece of work over both
+  shapes rather than a tightening of this rule.
+
 - **A value allocated in place is shallow when it holds one of the caller's,
   and `Fresh` joined with shallow-fresh is shallow.** The argument list
   `« R, flags »` is a List the algorithm made around the receiver, which is the

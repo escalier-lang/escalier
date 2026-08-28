@@ -300,6 +300,11 @@ var freshPrimitives = set.FromSlice([]string{
 // build their result through it. Reading a value back out of that result is a
 // slot or property access, which breaks the chain regardless.
 //
+// Listing it makes the same claim constructedOrigin makes, over a wider range.
+// `C` is read off `originalArray`, so a `@@species` constructor can return the
+// receiver itself, and `Array.prototype.slice` then fills that result while
+// publishing `receiver: borrow`. §4.2 records the limit.
+//
 // `OrdinaryCreateFromConstructor` is listed because it runs no constructor at
 // all. It reads the prototype off `constructor` through
 // `GetPrototypeFromConstructor` and builds an ordinary object over it, so the
@@ -704,10 +709,20 @@ func roleAt(callee string, i int) argRole {
 // list it passes on by flattening its own `argumentsList` parameter into the
 // bound arguments, through a call the walk cannot see through.
 //
-// A single forwarded value is held to the looser half. It is one value rather
-// than a list of them, so a result equal to it is a value the analysis already
-// could not place. Refusing `Unknown` there would cost `Array.of`, whose
-// `Let C be the this value` is `Unknown` by design.
+// A single forwarded value is held to the looser half, needing only to not be
+// the receiver, a parameter, or shallow. `Array.of` is why. `Let C be the this
+// value` leaves its constructor `Unknown`, and refusing `Unknown` there costs
+// every call site the analysis can still answer for.
+//
+// That looser half claims more than the walk proves, and it does so
+// deliberately. A constructor the caller supplies may return an object it
+// captured beforehand rather than one it allocated, including an object the
+// caller also passed as an argument. `Array.of.call(F, obj)` with an `F` that
+// returns `obj` binds `A` to `obj`, so the `CreateDataPropertyOrThrow(A, ...)`
+// steps write argument 0 while `Array.of` publishes `mutations: none`. Refusing
+// that needs to tell a constructor which cannot reach the caller's values from
+// one the walk merely lost track of, which an origin map over a single
+// algorithm cannot express. §4.2 records the limit and what closing it costs.
 //
 // `Array.of` is the case this admits. `Let A be ? Construct(C, « lenNumber »)`
 // runs that `C` over a length `Array.of` computed itself. The array
