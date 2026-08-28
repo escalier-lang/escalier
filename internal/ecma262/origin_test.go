@@ -514,6 +514,57 @@ func allocatesShallowly(fn *Func) bool {
 	return false
 }
 
+func TestArgRoleString(t *testing.T) {
+	require.Equal(t, "held", argHeld.String())
+	require.Equal(t, "value", argValue.String())
+	require.Equal(t, "list", argList.String())
+
+	// A role outside the three renders as its number, so a failing derivation
+	// stays legible.
+	require.Equal(t, "argRole(9)", argRole(9).String())
+}
+
+// An argument past the roles the table spells takes the strictest of them, so
+// an operation the spec grows an argument refuses rather than admits it.
+func TestRoleAtBeyondTheTable(t *testing.T) {
+	require.Equal(t, argValue, roleAt("Construct", 0))
+	require.Equal(t, argList, roleAt("Construct", 1))
+	require.Equal(t, argValue, roleAt("Construct", 2))
+	require.Equal(t, argList, roleAt("Construct", 3))
+}
+
+// A definition the walk has not reached leaves the reader unset for that pass
+// rather than pinning it at `Unknown`, which is what lets an argument defined
+// after its use still place the value built from it. Both constructedOrigin and
+// allocated read an operand that way.
+//
+// The graph the serializer emits puts these definitions first, so the shape is
+// written by hand.
+func TestOriginMapReadsAnOperandDefinedLater(t *testing.T) {
+	tests := map[string]struct {
+		nodes []Node
+		name  string
+	}{
+		// `Construct` over an argument list the next node binds.
+		"ConstructArgumentList": {[]Node{
+			&CallNode{Target: "%0", Callee: "Construct", Args: []Expr{&LitExpr{}, &VarExpr{Var: "list"}}},
+			&LetNode{Target: "list", Source: &AllocExpr{Args: []Expr{&LitExpr{}}}},
+		}, "%0"},
+		// An allocation over a value the next node binds.
+		"AllocationOperand": {[]Node{
+			&LetNode{Target: "outer", Source: &AllocExpr{Args: []Expr{&VarExpr{Var: "inner"}}}},
+			&LetNode{Target: "inner", Source: &AllocExpr{Args: []Expr{&LitExpr{}}}},
+		}, "outer"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			m := NewOriginMap(&Func{Name: name, Kind: AbstractOp, Nodes: test.nodes})
+			require.Equal(t, Fresh, m.Of(test.name))
+		})
+	}
+}
+
 // constructorCallees is derived from the graph, so this recomputes it. An
 // operation forwards one of its arguments when that argument reaches the
 // constructor of a call whose result the operation hands back, either a
