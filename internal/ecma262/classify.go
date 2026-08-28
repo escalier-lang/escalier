@@ -383,8 +383,8 @@ func (f *Facts) Curation() CurationReport {
 // mutation fixpoint itself, which supplies the receiver axis and the two
 // warnings that withhold a method's mutability claim.
 //
-// This is what §4 is measured by, and Facts.Unclassified over its result is
-// the objective made visible. NewFacts is what a consumer reads, since a
+// This is what §4 is measured by, and Facts.Unclassified over its result is the
+// objective made visible, per axis. NewFacts is what a consumer reads, since a
 // determination §4 cannot reach is answered by review rather than left open.
 func analyze(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
@@ -421,21 +421,43 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 	return fact, ok
 }
 
-// Unclassified returns the names whose receiver claim FR5 hands to the
-// converter's name-based heuristics, sorted. Only a method appears, and it
-// still publishes its return alias, so the list marks a withheld determination
-// rather than an empty fact.
+// Unclassified returns the names carrying no answer on axis, sorted.
 //
 // Over an analyze result the list is what §4 is measured by. Over a NewFacts
 // result it is what neither the analysis nor the curated layer answers, which
-// is the list §7 actually falls back to heuristics for.
-func (f *Facts) Unclassified() []string {
+// is the surface still waiting on review.
+//
+// The two axes are worth reading apart rather than summed. §7 auto-applies the
+// receiver, so a name on that list is a method whose mutability falls to the
+// converter's name heuristics — a soundness gap. A name on the returns list
+// costs only the lifetime precision §8.2 would have seeded from it.
+func (f *Facts) Unclassified(axis Axis) []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
-		if !fact.Classified.Receiver {
+		if !fact.answers(axis) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+// answers reports whether the fact carries a real answer on axis.
+//
+// The two axes spell the absence of one differently. ReceiverKind has no member
+// meaning "could not tell", so an unanswered receiver is one whose coverage is
+// unset. The alias lattice does have a top and returnAlias is total, so an
+// unanswered return is a covered `unknown` rather than a missing field.
+//
+// An axis this does not name reads as unanswered, so an axis §8 or §9 adds
+// shows up as wholly open until it is wired in here.
+func (f MethodFact) answers(axis Axis) bool {
+	switch axis {
+	case AxisReceiver:
+		return f.Classified.Receiver
+	case AxisReturns:
+		return f.Classified.Returns && f.Returns.Kind != AliasUnknown
+	default:
+		return false
+	}
 }

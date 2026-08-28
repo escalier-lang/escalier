@@ -1344,10 +1344,23 @@ bump, where the fixpoints re-derive all 501 for free. The layer is for the
 tail. The mutation fixpoint and the origin map carry the bulk mechanically
 and stay as they are.
 
+**What is still open.** The unresolved-determination report reads per
+axis, because the two axes spell an unanswered determination differently
+and cost different things. A `ReceiverKind` has no member meaning "could
+not tell", so an unanswered receiver is one whose coverage is unset. The
+alias lattice has a top and `returnAlias` is total, so an unanswered return
+is a covered `unknown`. Summing them would hide the difference that
+matters: §7 auto-applies the receiver, so an open one is a soundness gap
+that falls to the name heuristics, while an open return costs only the
+lifetime precision §8.2 would have seeded.
+
+Published today: **0** receivers open, **247** returns open. The receiver
+axis is closed; the return axis is where the next curation batch goes.
+
 **Gate.** `curated.json` merges per determination; the published
-`receiver unclassified` tally is zero; each of the three guards and the
-receiver-kind refusal has a test; the report distinguishes a curated
-determination from an analyzed one.
+`receiver unclassified` tally is zero; the unresolved report reads both
+axes; each of the three guards and the receiver-kind refusal has a test;
+the report distinguishes a curated determination from an analyzed one.
 
 ## §5. Keying and join (FR7, FR15)
 

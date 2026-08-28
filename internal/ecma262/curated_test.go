@@ -64,6 +64,26 @@ func TestDemoGraphClassification(t *testing.T) {
 	require.Equal(t, "returns:unknown", methods["Demo.prototype.opaque"].String())
 }
 
+// Both axes report an open determination, each spelled the way that axis
+// spells it. `opaque` has its receiver withheld and its return resolved to the
+// lattice top, so it is open on both; `read` answers both.
+func TestUnclassifiedReadsBothAxes(t *testing.T) {
+	t.Parallel()
+
+	cfg, methods := demoFacts(t)
+	facts := &Facts{SpecTarget: cfg.SpecTarget, Methods: methods}
+
+	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReceiver))
+	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReturns))
+
+	// Answering one axis takes the method off that list alone.
+	mergeCuration(cfg, &Curation{Entries: map[string]CuratedEntry{
+		"Demo.prototype.opaque": entry(t, cfg, "Demo.prototype.opaque", RecvBorrow),
+	}}, methods)
+	require.Empty(t, facts.Unclassified(AxisReceiver))
+	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReturns))
+}
+
 // A curated axis reaches the published fact, and the note says what it did to
 // the analysis's answer.
 func TestMergeCuration(t *testing.T) {

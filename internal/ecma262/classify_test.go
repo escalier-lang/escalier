@@ -461,8 +461,26 @@ func TestFactsJSON(t *testing.T) {
 // curated.json, so nothing reaches §7's name heuristics, which is what the
 // second assertion holds.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
-	snaps.MatchSnapshot(t, strings.Join(testAnalyzedFacts(t).Unclassified(), "\n"))
-	require.Empty(t, testFacts(t).Unclassified())
+	snaps.MatchSnapshot(t, strings.Join(testAnalyzedFacts(t).Unclassified(AxisReceiver), "\n"))
+	require.Empty(t, testFacts(t).Unclassified(AxisReceiver))
+}
+
+// The return axis is where the published surface still has gaps, and they are
+// visible rather than hidden behind a coverage flag returnAlias always sets.
+//
+// `Date.prototype.getTime` is off the list because an entry answered it. The
+// two `buffer` getters stay on it deliberately: what they hand back is a borrow
+// of state the receiver holds, and no member of the alias lattice spells that
+// without claiming the return is the receiver itself.
+func TestFactsUnclassifiedReturnsAreListed(t *testing.T) {
+	unresolved := testFacts(t).Unclassified(AxisReturns)
+
+	require.Contains(t, unresolved, "get DataView.prototype.buffer")
+	require.Contains(t, unresolved, "get TypedArray.prototype.buffer")
+	require.NotContains(t, unresolved, "Date.prototype.getTime")
+	require.NotContains(t, unresolved, "Date.prototype.valueOf")
+	// The same count the tallies below record as `returns unknown`.
+	require.Len(t, unresolved, 247)
 }
 
 // The tallies over every published builtin, which move when the mutation
