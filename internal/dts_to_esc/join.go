@@ -67,7 +67,7 @@ func CollectDeclarations(mod *StandaloneModule) ecma262.Declarations {
 			case *ast.FuncDecl:
 				// A namespace member is flattened to a top-level function
 				// whose path is already the spec key that names it.
-				add(path, signatureOf(d.Params))
+				add(path, signatureOf(d.Params, d.Return))
 			case *ast.ClassDecl:
 				for _, elem := range d.Body {
 					collectClassElem(path, elem, add)
@@ -184,20 +184,17 @@ func isFunctionObject(ifaces map[string]*ast.InterfaceDecl, name string, seen se
 func collectClassElem(path string, elem ast.ClassElem, add func(string, ecma262.Signature)) {
 	var (
 		name   ast.ObjKey
-		params []*ast.Param
+		fn     *ast.FuncExpr
 		static bool
 		prefix string
 	)
 	switch e := elem.(type) {
 	case *ast.MethodElem:
-		name, static = e.Name, e.Static
-		params = funcExprParams(e.Fn)
+		name, fn, static = e.Name, e.Fn, e.Static
 	case *ast.GetterElem:
-		name, static, prefix = e.Name, e.Static, "get "
-		params = funcExprParams(e.Fn)
+		name, fn, static, prefix = e.Name, e.Fn, e.Static, "get "
 	case *ast.SetterElem:
-		name, static, prefix = e.Name, e.Static, "set "
-		params = funcExprParams(e.Fn)
+		name, fn, static, prefix = e.Name, e.Fn, e.Static, "set "
 	default:
 		return
 	}
@@ -205,7 +202,14 @@ func collectClassElem(path string, elem ast.ClassElem, add func(string, ecma262.
 	if !static {
 		owner += ".prototype"
 	}
-	add(specKey(prefix, owner, name), signatureOf(params))
+	var (
+		params []*ast.Param
+		ret    ast.TypeAnn
+	)
+	if fn != nil {
+		params, ret = fn.Params, fn.Return
+	}
+	add(specKey(prefix, owner, name), signatureOf(params, ret))
 }
 
 // collectObjTypeElem addresses one member of an emitted interface. `owner` is
@@ -227,11 +231,14 @@ func collectObjTypeElem(owner string, elem ast.ObjTypeAnnElem, add func(string, 
 	default:
 		return
 	}
-	var params []*ast.Param
+	var (
+		params []*ast.Param
+		ret    ast.TypeAnn
+	)
 	if fn != nil {
-		params = fn.Params
+		params, ret = fn.Params, fn.Return
 	}
-	add(specKey(prefix, owner, name), signatureOf(params))
+	add(specKey(prefix, owner, name), signatureOf(params, ret))
 }
 
 // specKey spells the canonical spec key for one member of owner. A
@@ -259,30 +266,58 @@ func specKey(prefix, owner string, name ast.ObjKey) string {
 	return prefix + owner + ".[computed]"
 }
 
-// funcExprParams returns a function expression's declared parameters, or nil
-// when the member carries no function at all.
-func funcExprParams(fn *ast.FuncExpr) []*ast.Param {
-	if fn == nil {
-		return nil
-	}
-	return fn.Params
-}
-
-// signatureOf reads the declared parameter shape the join needs. A leading
-// `this` parameter is a TypeScript receiver annotation rather than an
+// signatureOf reads the declared shape the join needs from one overload. A
+// leading `this` parameter is a TypeScript receiver annotation rather than an
 // argument, so dropping it keeps the remaining positions aligned with the
 // spec algorithm's own parameter numbering.
-func signatureOf(params []*ast.Param) ecma262.Signature {
+func signatureOf(params []*ast.Param, ret ast.TypeAnn) ecma262.Signature {
 	if len(params) > 0 {
 		if ident, ok := params[0].Pattern.(*ast.IdentPat); ok && ident.Name == "this" {
 			params = params[1:]
 		}
 	}
-	sig := ecma262.Signature{Params: len(params)}
+	sig := ecma262.Signature{Params: len(params), PrimitiveReturn: primitiveTypeAnn(ret)}
 	if len(params) > 0 {
 		_, sig.Rest = params[len(params)-1].Pattern.(*ast.RestPat)
 	}
 	return sig
+}
+
+// primitiveTypeAnn reports whether every value ta can hold is a primitive. A
+// primitive keyword, a literal of one, and `never` count. A union counts when
+// all of its members do, and an empty union does not. Every other annotation
+// is refused, a type reference and `unknown` among them.
+func primitiveTypeAnn(ta ast.TypeAnn) bool {
+	switch t := ta.(type) {
+	case *ast.NumberTypeAnn, *ast.StringTypeAnn, *ast.BooleanTypeAnn,
+		*ast.BigintTypeAnn, *ast.SymbolTypeAnn, *ast.UniqueSymbolTypeAnn,
+		*ast.NeverTypeAnn:
+		return true
+	case *ast.LitTypeAnn:
+		// `null` and `undefined` reach here as literals. So would a regex
+		// literal, the one JS literal that is an object rather than a
+		// primitive, which is why this names the literals it accepts instead
+		// of accepting whatever a literal type turns out to hold.
+		switch t.Lit.(type) {
+		case *ast.BoolLit, *ast.NumLit, *ast.StrLit, *ast.BigIntLit,
+			*ast.NullLit, *ast.UndefinedLit:
+			return true
+		}
+		return false
+	case *ast.UnionTypeAnn:
+		// A union of nothing names no value to read, so it settles nothing.
+		if len(t.Types) == 0 {
+			return false
+		}
+		for _, member := range t.Types {
+			if !primitiveTypeAnn(member) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
 }
 
 // StdDeclarations collects the declarations of the `std:*` packages across a

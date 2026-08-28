@@ -274,14 +274,19 @@ interface Fixture {
 
 	require.Len(t, report.Matched, 1)
 	match := report.Matched[0]
-	require.Equal(t, []ecma262.Signature{{Params: 1}, {Params: 2}}, match.Decl.Signatures)
+	require.Equal(t, []ecma262.Signature{
+		{Params: 1, PrimitiveReturn: true},
+		{Params: 2, PrimitiveReturn: true},
+	}, match.Decl.Signatures)
 
 	resolved := make([]string, 0, len(match.PerSignature))
 	for _, fact := range match.PerSignature {
 		resolved = append(resolved, fact.String())
 	}
+	// Both overloads return `string`, so the return the shorter one drops is
+	// settled as owned by the type that names it.
 	require.Equal(t, []string{
-		"receiver:borrow returns:unknown",
+		"receiver:borrow returns:unknown settled:owned",
 		"receiver:borrow returns:param(1)",
 	}, resolved)
 
@@ -301,6 +306,134 @@ interface CallableFunction extends Function {
 }
 `)
 	snaps.MatchInlineSnapshot(t, got, snaps.Inline(`instance CallableFunction.apply (1)`))
+}
+
+// returnsFrom converts one `.d.ts` source and renders, per overload, whether
+// the declared return type is one the join can settle a return's ownership
+// from.
+func returnsFrom(t *testing.T, src string) string {
+	t.Helper()
+	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", src).Module)
+	require.NoError(t, err)
+
+	var lines []string
+	for _, decl := range CollectDeclarations(mod).Keyed {
+		shapes := make([]string, 0, len(decl.Signatures))
+		for _, sig := range decl.Signatures {
+			if sig.PrimitiveReturn {
+				shapes = append(shapes, "primitive")
+			} else {
+				shapes = append(shapes, "-")
+			}
+		}
+		lines = append(lines, decl.Ref.String()+" ("+strings.Join(shapes, ", ")+")")
+	}
+	return strings.Join(lines, "\n")
+}
+
+// A primitive return is owned, so the join reads whether each overload
+// declares one. A union counts only when every member is primitive.
+//
+// Two of the refusals are worth reading off the list. A type reference may
+// name an alias that expands to primitives, and resolving it needs the checker
+// the join does without. TypeScript's `void` arrives as `unknown`, since
+// convertReturnTypeAnn lowers it that way, and `unknown` also holds every
+// object.
+func TestCollectDeclarationsReadsPrimitiveReturns(t *testing.T) {
+	t.Parallel()
+
+	got := returnsFrom(t, `
+interface Sample {
+    num(): number;
+    str(): string;
+    bool(): boolean;
+    big(): bigint;
+    sym(): symbol;
+    lit(): "a";
+    nul(): null;
+    undef(): undefined;
+    nev(): never;
+    optional(): string | undefined;
+    mixed(): string | ArrayBuffer;
+    obj(): object;
+    ref(): Date;
+    list(): number[];
+    anything(): any;
+    unk(): unknown;
+    nothing(): void;
+}
+`)
+	snaps.MatchInlineSnapshot(t, got, snaps.Inline(`instance Sample.num (primitive)
+instance Sample.str (primitive)
+instance Sample.bool (primitive)
+instance Sample.big (primitive)
+instance Sample.sym (primitive)
+instance Sample.lit (primitive)
+instance Sample.nul (primitive)
+instance Sample.undef (primitive)
+instance Sample.nev (primitive)
+instance Sample.optional (primitive)
+instance Sample.mixed (-)
+instance Sample.obj (-)
+instance Sample.ref (-)
+instance Sample.list (-)
+instance Sample.anything (-)
+instance Sample.unk (-)
+instance Sample.nothing (-)`))
+}
+
+// The gate on settlement: a return the ECMA-262 walk could not read settles as
+// owned wherever the pinned lib declares a primitive return.
+//
+// The four members below carry the shapes `lib.es5.d.ts` really declares for
+// them, and the committed graph reads no return for any of the four. ESMeta
+// lowers `localeCompare`'s two argument coercions and stops, because the
+// comparison itself is implementation-defined. Each `DataView` accessor hands
+// back a value read out of a Data Block, which resolves to no origin the walk
+// can name. The setter is the one that stays unsettled, since its `void`
+// return reaches the join as `unknown`.
+func TestPrimitiveReturnsSettleUnnamedReturns(t *testing.T) {
+	t.Parallel()
+
+	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", `
+interface String {
+    localeCompare(that: string): number;
+}
+interface DataView {
+    getFloat64(byteOffset: number, littleEndian?: boolean): number;
+    getUint8(byteOffset: number): number;
+    setFloat64(byteOffset: number, value: number, littleEndian?: boolean): void;
+}
+`).Module)
+	require.NoError(t, err)
+
+	covered := ecma262.Coverage{Receiver: true, Returns: true}
+	unnamed := ecma262.ReturnFact{Kind: ecma262.AliasUnknown}
+	facts := &ecma262.Facts{
+		SpecTarget: "test",
+		Methods: map[string]ecma262.MethodFact{
+			"String.prototype.localeCompare": {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.getFloat64":  {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.getUint8":    {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.setFloat64":  {Classified: covered, Receiver: ecma262.RecvMutBorrow, Returns: unnamed},
+		},
+	}
+	report := ecma262.NewJoin(facts).Match(CollectDeclarations(mod))
+
+	var lines []string
+	for _, match := range report.Matched {
+		for _, resolved := range match.PerSignature {
+			lines = append(lines, match.Decl.Ref.String()+": "+resolved.String())
+		}
+	}
+	lines = append(lines, fmt.Sprintf("settled %d, left %d",
+		report.SettledReturns, report.UnsettledReturns))
+
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`instance String.localeCompare: receiver:borrow returns:unknown settled:owned
+instance DataView.getFloat64: receiver:borrow returns:unknown settled:owned
+instance DataView.getUint8: receiver:borrow returns:unknown settled:owned
+instance DataView.setFloat64: receiver:mutBorrow returns:unknown
+settled 3, left 1`))
 }
 
 // The join is the §5 gate: every std:* method the converter emits either
@@ -349,6 +482,7 @@ declare function parseInt(string: string, radix?: number): number;
 	var out strings.Builder
 	require.NoError(t, ecma262.WriteJoinReport(report, &out))
 	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  join: 4 matched (4 with a receiver claim), 0 declarations without a fact, 1 facts without a declaration, 1 unkeyed declarations, 1 unjoinable facts
+  returns: 0 settled as owned by the declared type, 0 left unknown
     no declaration: Math.min
     unkeyed declaration: parseInt
     unjoinable fact: parseInt

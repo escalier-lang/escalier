@@ -39,7 +39,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / per-determination coverage for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
+| §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
@@ -1281,10 +1281,40 @@ func normalize(specKey string) (owner []string, member MemberKey, sort MemberSor
   ([../../internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)).
   A fact with no declaration and a declaration with no fact are both
   informational, since the spec and the TS lib drift independently.
+- Settle a return the analysis could not read against the declared return
+  type. Half of the classified builtins carry `returns: unknown`, which
+  records that the walk read no usable return rather than that the return is
+  unknowable. A primitive return is owned, since a primitive carries no
+  identity a lifetime could be tied to, and Appendix B already spells that
+  `fresh`. The type is simply on the other side of FR7's split: `cfg.json` is
+  typeless by design, and §5 is the first point where the return type exists.
+  `String.prototype.localeCompare` is the case. ESMeta lowers its two argument
+  coercions and stops, because the comparison itself is implementation-defined,
+  and `lib.es5.d.ts` declares `localeCompare(that: string): number`. The rules:
+    - A union settles only when every member is primitive. `string | undefined`
+      is owned and `string | ArrayBuffer` is not.
+    - The settlement rides on the join's per-signature result and does not
+      rewrite `returns`, so a `fresh` the analysis proved stays apart from an
+      ownership the type answered. `facts.json` is unchanged, so §6's diff and
+      any audit of the facts source keep reading only what the analysis
+      concluded.
+    - It resolves per signature. FR15 gives one fact per algorithm while the
+      return type belongs to each overload, so two signatures of one method
+      can settle differently.
+    - A non-primitive `unknown` is left alone. An object return the walk could
+      not read has no ownership answer the type can give. TypeScript's `void`
+      is one: the converter lowers a `void` return to `unknown` to keep a
+      callback slot permissive, so `DataView.prototype.setFloat64` and the rest
+      of the setters keep a return the join cannot name.
+  The join reports how many of these returns it settled and how many it left,
+  so the number is read off the report rather than inferred.
 
 **Gate.** Every `std:*` method the converter emits either resolves to a
 fact or is reported as unmatched; symbol-keyed and accessor members
-resolve correctly.
+resolve correctly. A return the analysis could not read settles as owned
+where the joined signature declares a primitive return, which
+`String.prototype.localeCompare` and the `DataView.prototype.get*` family
+show, and the join's report carries the settled and unsettled counts.
 
 ## §6. Validation diff
 

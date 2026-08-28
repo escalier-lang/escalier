@@ -55,6 +55,13 @@ func TestMethodFactForSignature(t *testing.T) {
 			{Kind: AliasParam, Index: position(2)},
 		}},
 	}
+	// An algorithm whose returns the walk never read, which is the shape
+	// `String.prototype.localeCompare` has in the committed graph.
+	readsNoReturn := MethodFact{
+		Classified: Coverage{Receiver: true, Returns: true},
+		Receiver:   RecvBorrow,
+		Returns:    ReturnFact{Kind: AliasUnknown},
+	}
 
 	tests := map[string]struct {
 		fact MethodFact
@@ -118,6 +125,43 @@ func TestMethodFactForSignature(t *testing.T) {
 			sig:  Signature{},
 			want: "unclassified",
 		},
+		// The walk read no return, and the overload declares a primitive one.
+		// A primitive carries no identity to borrow, so the declared type
+		// settles the ownership the analysis could not read.
+		"UnnamedReturnSettledByPrimitive": {
+			fact: readsNoReturn,
+			sig:  Signature{Params: 1, PrimitiveReturn: true},
+			want: "receiver:borrow returns:unknown settled:owned",
+		},
+		// An object return the walk could not read has no ownership answer
+		// the type can give, so the `unknown` stands.
+		"UnnamedReturnLeftByNonPrimitive": {
+			fact: readsNoReturn,
+			sig:  Signature{Params: 1},
+			want: "receiver:borrow returns:unknown",
+		},
+		// A return dropped because this overload lacks the position it names
+		// is `unknown` for the same reason one the walk never read is, and a
+		// primitive return type settles it the same way.
+		"DroppedPositionSettledByPrimitive": {
+			fact: returnsParam1,
+			sig:  Signature{Params: 1, PrimitiveReturn: true},
+			want: "receiver:borrow returns:unknown settled:owned",
+		},
+		// The analysis named the value handed back, so there is nothing left
+		// for the type to settle.
+		"ResolvedReturnNotSettled": {
+			fact: returnsParam1,
+			sig:  Signature{Params: 2, PrimitiveReturn: true},
+			want: "receiver:borrow returns:param(1)",
+		},
+		// A fact whose return the analysis never covered makes no claim, so
+		// the type settles nothing onto it.
+		"UncoveredReturnNotSettled": {
+			fact: MethodFact{Classified: Coverage{Receiver: true}, Receiver: RecvBorrow},
+			sig:  Signature{PrimitiveReturn: true},
+			want: "receiver:borrow",
+		},
 	}
 
 	for name, tc := range tests {
@@ -166,6 +210,14 @@ func joinFixture() *Facts {
 			"Object.assign": {Classified: covered, Receiver: RecvNone, Returns: returnsParam(0)},
 			// A namespace function, which has no receiver.
 			"Math.max": {Classified: covered, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasUnknown}},
+			// Two methods whose returns the walk never read, which the type
+			// source settles apart. `lib.es5.d.ts` declares
+			// `localeCompare(that: string): number`, a primitive, so the
+			// return is owned. It declares `exec(string: string):
+			// RegExpExecArray | null`, a union with a member that is not, so
+			// the `unknown` stands.
+			"String.prototype.localeCompare": {Classified: covered, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
+			"RegExp.prototype.exec":          {Classified: covered, Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
 			// A method the mutation fixpoint could not read whole, so its
 			// receiver claim is withheld while its return alias stands.
 			"Array.prototype.toLocaleString": {Classified: Coverage{Returns: true}, Returns: ReturnFact{Kind: AliasFresh}},
@@ -297,6 +349,18 @@ func TestJoinMatch(t *testing.T) {
 			Ref:        MemberRef{Owner: "Array", Member: StrMember("toSorted"), Sort: SortInstance},
 			Signatures: []Signature{{Params: 1}},
 		},
+		{
+			// A primitive return type settles the ownership of a return the
+			// walk never read.
+			Ref:        MemberRef{Owner: "String", Member: StrMember("localeCompare"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 1, PrimitiveReturn: true}},
+		},
+		{
+			// The same return against a declaration that hands back an
+			// object, which the type cannot settle.
+			Ref:        MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 1}},
+		},
 	}
 
 	report := NewJoin(joinFixture()).Match(Declarations{
@@ -330,6 +394,8 @@ func TestJoinMatch(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`Array.prototype.push -> instance Array.push receiverApplies:yes [ receiver:mutBorrow returns:fresh ]
 Fixture.prototype.returnsSecond -> instance Fixture.returnsSecond receiverApplies:yes [ receiver:borrow returns:unknown | receiver:borrow returns:param(1) ]
 get Map.prototype.size -> get instance Map.size receiverApplies:no [ receiver:borrow returns:fresh ]
+String.prototype.localeCompare -> instance String.localeCompare receiverApplies:yes [ receiver:borrow returns:unknown settled:owned ]
+RegExp.prototype.exec -> instance RegExp.exec receiverApplies:yes [ receiver:mutBorrow returns:unknown ]
 no fact: instance Array.toSorted
 no declaration: Array.prototype.toLocaleString
 no declaration: Math.max
@@ -337,6 +403,36 @@ no declaration: Object.assign
 no declaration: String.prototype [ @@iterator ]
 unjoinable fact: parseInt
 unkeyed declaration: parseInt`))
+}
+
+// The §5 gate on settlement. The join counts the returns it could not name,
+// split by whether the declared return type settled one as owned, so an
+// operator reads the share off the report rather than inferring it from the
+// matches.
+func TestJoinMatchCountsSettledReturns(t *testing.T) {
+	t.Parallel()
+
+	report := NewJoin(joinFixture()).Match(Declarations{Keyed: []Declaration{
+		// Two overloads of one return the join cannot name, only one of which
+		// declares a primitive. The return type belongs to the overload, so the
+		// two settle apart and each is counted on its own.
+		{
+			Ref:        MemberRef{Owner: "String", Member: StrMember("localeCompare"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 1, PrimitiveReturn: true}, {Params: 2}},
+		},
+		{
+			Ref:        MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 1}},
+		},
+		// A return the walk read, which neither count covers.
+		{
+			Ref:        MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance},
+			Signatures: []Signature{{Params: 1, Rest: true, PrimitiveReturn: true}},
+		},
+	}})
+
+	require.Equal(t, 1, report.SettledReturns)
+	require.Equal(t, 2, report.UnsettledReturns)
 }
 
 func boolWord(b bool) string {
@@ -354,13 +450,18 @@ func TestWriteJoinReport(t *testing.T) {
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, Rest: true}}},
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("toLocaleString"), Sort: SortInstance}, Signatures: []Signature{{Params: 0}}},
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("toSorted"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
+			// One return the declared type settles and one it leaves, so the
+			// report's return counts carry both.
+			{Ref: MemberRef{Owner: "String", Member: StrMember("localeCompare"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, PrimitiveReturn: true}}},
+			{Ref: MemberRef{Owner: "RegExp", Member: StrMember("exec"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
 		},
 		Unkeyed: []string{"parseInt"},
 	})
 
 	var out strings.Builder
 	require.NoError(t, WriteJoinReport(report, &out))
-	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  join: 2 matched (1 with a receiver claim), 1 declarations without a fact, 5 facts without a declaration, 1 unkeyed declarations, 1 unjoinable facts
+	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  join: 4 matched (3 with a receiver claim), 1 declarations without a fact, 5 facts without a declaration, 1 unkeyed declarations, 1 unjoinable facts
+  returns: 1 settled as owned by the declared type, 1 left unknown
     no fact: instance Array.toSorted
     no declaration: Fixture.prototype.returnsSecond
     no declaration: Math.max
