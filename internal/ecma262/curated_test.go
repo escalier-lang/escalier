@@ -84,6 +84,21 @@ func TestUnclassifiedReadsBothAxes(t *testing.T) {
 	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReturns))
 }
 
+// An axis `answers` does not name reads as unanswered, so each determination §8
+// and §9 add shows up as wholly open until it is wired in. The alternative
+// would have a new axis read as complete for every builtin the moment it is
+// declared, which is the direction that hides work rather than surfacing it.
+func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
+	t.Parallel()
+
+	cfg, methods := demoFacts(t)
+	facts := &Facts{SpecTarget: cfg.SpecTarget, Methods: methods}
+
+	require.Equal(t,
+		[]string{"Demo.prototype.opaque", "Demo.prototype.read"},
+		facts.Unclassified(Axis("throws")))
+}
+
 // A curated axis reaches the published fact, and the note says what it did to
 // the analysis's answer.
 func TestMergeCuration(t *testing.T) {
