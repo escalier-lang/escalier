@@ -169,7 +169,7 @@ func runPartition(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("partition", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the §5 effect-fact join report")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the §4.4 curation and §5 effect-fact join reports")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, partitionUsage)
@@ -186,13 +186,15 @@ func runPartition(args []string, stderr io.Writer) error {
 
 	// Derive the facts before any output is written, so a bad --cfg path
 	// fails the run before it leaves a half-joined tree on disk.
+	var facts *ecma262.Facts
 	var join *ecma262.Join
 	if *cfgPath != "" {
 		cfg, err := ecma262.LoadCFG(*cfgPath)
 		if err != nil {
 			return fmt.Errorf("loading %s: %w", *cfgPath, err)
 		}
-		join = ecma262.NewJoin(ecma262.NewFacts(cfg))
+		facts = ecma262.NewFacts(cfg)
+		join = ecma262.NewJoin(facts)
 	}
 
 	result, err := partitionLibDir(libDir, stderr)
@@ -220,8 +222,12 @@ func runPartition(args []string, stderr io.Writer) error {
 	if join == nil {
 		return nil
 	}
-	// The join is informational. The spec and the TypeScript lib drift
-	// independently, so a name on one side only is a gap to close rather than
-	// a failed run.
+	// Both reports are informational. A curated entry the analysis caught up
+	// with is an entry to delete, and the spec and the TypeScript lib drift
+	// independently, so a name on one side only is a gap to close. Neither is a
+	// failed run.
+	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
+		return err
+	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
 }

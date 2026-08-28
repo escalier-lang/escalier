@@ -1,0 +1,30 @@
+
+[TestCurationReportOverTheCommittedGraph - 1]
+Array.prototype.toLocaleString receiver: fill-in borrow
+Date.prototype.getTime returns: correction fresh over unknown
+Date.prototype.getTimezoneOffset receiver: fill-in borrow
+Date.prototype.toISOString receiver: fill-in borrow
+Date.prototype.toUTCString receiver: fill-in borrow
+Date.prototype.valueOf returns: correction fresh over unknown
+ForInIteratorPrototype.next receiver: fill-in mutBorrow
+Number.prototype.toExponential receiver: fill-in borrow
+Number.prototype.toFixed receiver: fill-in borrow
+Number.prototype.toLocaleString receiver: fill-in borrow
+Number.prototype.toPrecision receiver: fill-in borrow
+RegExp.prototype [ @@matchAll ] receiver: fill-in borrow
+RegExp.prototype [ @@replace ] receiver: fill-in mutBorrow
+RegExp.prototype [ @@split ] receiver: fill-in borrow
+RegExpStringIteratorPrototype.next receiver: fill-in mutBorrow
+SharedArrayBuffer.prototype.grow receiver: fill-in mutBorrow
+String.prototype.normalize receiver: fill-in borrow
+String.prototype.repeat receiver: fill-in borrow
+String.prototype.split receiver: fill-in borrow
+String.prototype.toLocaleLowerCase receiver: fill-in borrow
+String.prototype.toLocaleUpperCase receiver: fill-in borrow
+String.prototype.toLowerCase receiver: fill-in borrow
+String.prototype.toUpperCase receiver: fill-in borrow
+TypedArray.prototype.slice receiver: fill-in borrow
+TypedArray.prototype.toLocaleString receiver: fill-in borrow
+get RegExp.prototype.flags receiver: fill-in borrow
+get TypedArray.prototype [ @@toStringTag ] returns: correction fresh over unknown
+---

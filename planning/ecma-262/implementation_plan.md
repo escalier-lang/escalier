@@ -39,20 +39,27 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / per-determination coverage for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
+| §4.4 | Curated fact layer                         | FR5, FR7   | ✅      | §4.3       | `curated.json` merges per determination; published `receiver unclassified` is zero; each of the three guards tested — met, see [internal/ecma262/curated.go](../../internal/ecma262/curated.go) |
 | §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
-| §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §7   | push/Map.set `escape`, Reflect.set `mutBorrow`+`escape`, indexOf `borrow` in facts.json |
+| §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | filtered throws — toFixed keeps RangeError, drops the receiver-coercion TypeError; param branch runs post-join |
+| §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is dropped in favour of curated throws — see §9.2 |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §9.4 | Throws validation + auto-apply gate        | FR14       | ⬜      | §9.1–§9.3, §7 | spec-independent (dynamically-observed) ground truth; false-negative rate report gates auto-apply |
+| §9.4 | Throws validation                          | FR14       | ⬜      | §9.1–§9.3, §4.4, §7 | spec-independent, dynamically-observed ground truth, run as a spot-check over the curated throws. The false-negative auto-apply gate is dropped — see §9.4 |
 | §10  | Maintenance workflow                       | NFR        | ⬜      | §7         | spec-bump runbook; `--check`-style drift report in CI |
-| §11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | ⬜ | §7, §8, §9 | override layer populated per pseudo-package by review; fans out into per-package PRs |
+| §11  | Curation of the override layer             | FR12, FR4, FR13, FR14 | 🚧 | §4.4, §7, §8, §9 | override layer populated per pseudo-package by review; fans out into per-package PRs. The 24 receivers and three interior returns are curated; disposition and throws follow |
 
 Within a section the sub-section PRs sequence per the "Depends on" column —
 `§4.1` reads the origin map, so `§4.2` lands first despite the numbering.
+
+§4.4 changes the shape of the phases after it. A determination the graph
+does not settle is answered by a curated entry rather than by a new
+lattice member, so §8.1, §9.2, and §9.4 each carry less analysis than
+their original scope. Each row above names what it drops and its section
+gives the reasoning.
 
 **Dependency graph** (all PRs plus the external dependencies this plan
 names in other planning docs; edges are "must land before"):
@@ -65,6 +72,7 @@ flowchart TD
     S42["§4.2 Origin map"]
     S41["§4.1 Mutation-summary fixpoint"]
     S43["§4.3 Method classification"]
+    S44["§4.4 Curated fact layer"]
     S5["§5 Keying and join"]
     S6["§6 Validation diff"]
     S7["§7 Integration"]
@@ -73,7 +81,7 @@ flowchart TD
     S91["§9.1 Throw-set fixpoint"]
     S92["§9.2 Coercion filter"]
     S93["§9.3 Throw/reject split, origins, combinators"]
-    S94["§9.4 Throws validation + auto-apply gate"]
+    S94["§9.4 Throws validation"]
     S10["§10 Maintenance"]
     S11["§11 Curation (per-package PRs)"]
 
@@ -83,8 +91,9 @@ flowchart TD
     S42 --> S41
     S41 --> S43
     S42 --> S43
-    S43 --> S5 --> S6 --> S7
+    S43 --> S44 --> S5 --> S6 --> S7
     S41 --> S81
+    S44 --> S81
     S7 --> S81
     S43 --> S82
     S42 --> S91
@@ -93,8 +102,10 @@ flowchart TD
     S91 --> S93
     S92 --> S94
     S93 --> S94
+    S44 --> S94
     S7 --> S94
     S7 --> S10
+    S44 --> S11
     S81 --> S11
     S82 --> S11
     S93 --> S11
@@ -194,11 +205,11 @@ that would introduce new PRs:
   review sits between the fact and the committed annotation (see §7 "Two
   application paths"; `throws`/`rejects` and the `&`/lifetime annotations
   are added by the curator, disposition gets a provisional baseline the
-  curator corrects). These are not permanently curation-grade,
-  though: `throws`/`rejects` have a defined graduation path — §9.4
-  measures the false-negative rate, and a measured zero flips them to
-  auto-apply (FR14). Whether disposition is confident enough to auto-apply
-  like receiver mutability is a similar open call to settle when §8 lands.
+  curator corrects). §9.4 measures those annotations against observed
+  behavior rather than authorizing them to skip review; §4.4 explains why
+  the review is the cheaper half of that pair. Whether disposition is
+  confident enough to auto-apply like receiver mutability is an open call
+  to settle when §8 lands.
 - **`escape` spelling depends on external affine work.** §8 records the
   `escape` disposition; curation spells it a `move` (owning container) or
   a lifetime-bounded borrow (borrow-holding container), per requirements
@@ -1203,7 +1214,117 @@ because the alias is curated rather than applied.
 
 Methods with a withheld receiver are listed. The `returns` tally spans
 every builtin, and the `receiver` tally leaves out only the 24 methods
-whose mutability is withheld.
+whose mutability is withheld. §4.4 answers all 24 by review, so the
+published tally leaves out none.
+
+### §4.4. The curated fact layer (FR5, FR7)
+
+**Goal.** Answer a determination the graph does not settle by review,
+recorded as committed data, so the analysis does not have to grow a new
+lattice member for every method it cannot read.
+
+**Why the layer, rather than more analysis.** §4 is past the knee of its
+curve on the axis §7 auto-applies. 477 of 501 builtins carry a receiver
+claim. Every determination still open is curation-grade by §7's own
+design, reaching the generated `.esc` through review rather than straight
+from the facts, so sharpening the analyzer further improves the input to a
+review step that was going to happen anyway. The cost of doing that is
+measured: the origin-map refinement for the species allocators grew
+`origin.go` by 232 lines and moved three statics; the interior-return
+alias kind is five methods; the property-path origin is 47 builtins. The
+24 withheld receivers, by contrast, are an hour of review. Roughly twenty
+are read-only formatters and the mutating remainder is the two iterator
+`next` methods, `RegExp.prototype [ @@replace ]`, and
+`SharedArrayBuffer.prototype.grow`.
+
+This does not reverse FR5 or §11, both of which already reserve the tail
+for curation. It gives that reservation a mechanism early, where §11 would
+otherwise wait behind §7.
+
+**The layer.** `internal/ecma262/curated.json`, keyed by the Appendix C
+canonical spec names — the key space `cfg.json` and the §5 join already
+share. Each entry carries the same determination fields a `MethodFact`
+does, plus the provenance a reviewer needs:
+
+```json
+"Number.prototype.toFixed": {
+  "reason": "The receiver is statically a number, so ToNumber cannot throw.",
+  "evidence": "ECMA-262 \"Number.prototype.toFixed\"",
+  "reviewedAt": "1836cd89dd25",
+  "classified": { "receiver": true, "returns": false },
+  "receiver": "borrow"
+}
+```
+
+`reason` is required. A claim that outranks the analysis without a stated
+argument cannot be re-reviewed later.
+
+**The merge is per determination, never per method.** `NewFacts` runs the
+analysis and then merges the layer over the result, one axis at a time.
+An axis an entry leaves unset keeps whatever the analysis concluded, so
+the two sources compose. `Date.prototype.getTime` is the shape: the
+analysis settles its receiver and the entry corrects only its return.
+
+Each curated axis is one of three things, and the merge reports which:
+
+- a **fill-in**, where the analysis withheld the axis. This is the
+  ordinary case and carries no conflict.
+- a **correction**, where the analysis published a claim the review
+  contradicts. §6 reads these first, because a correction is either a spec
+  subtlety the graph cannot express or an analyzer bug, and the two look
+  alike from the report.
+- a **redundant** entry, repeating what the analysis already concluded.
+
+**Three guards keep the layer from becoming a second source of truth.**
+
+1. A curated name the graph holds no builtin for is reported and applied
+   to nothing, and `TestCurationMatchesTheGraph` fails the build on one.
+   A misspelled key and a key carried over from another spec revision both
+   land there.
+2. Each entry names the `Func.Digest` of the algorithm it was reviewed
+   against, a fingerprint over that one serialized algorithm. A spec bump
+   that rewrites the algorithm flags the entry for re-review and leaves
+   every untouched entry alone. A stale entry is still applied, since
+   dropping it would trade a visible prompt for a silent loss of coverage.
+3. A redundant entry is reported so it can be deleted, which is how the
+   layer shrinks as the analysis improves rather than accumulating.
+
+**Provenance is not on the wire.** `facts.json` records the merged
+determination and not which source produced it, because §7 applies a
+curated receiver claim and an analyzed one identically. The
+`CurationReport` is where a reviewer reads the split, and §6 diffs against
+it.
+
+**What the layer closes.** Curating the 24 receivers takes the published
+`receiver unclassified` tally to zero and retires the fallback to §7's
+name heuristics for `std:*`. Three of the five interior returns of §4.3
+are curated `fresh`, because a primitive read out of a slot is a copy —
+`Date.prototype.getTime`, `Date.prototype.valueOf`, and `get
+TypedArray.prototype [ @@toStringTag ]`. The two `buffer` getters stay
+`unknown`: what they hand back is a real borrow of an object the receiver
+holds, and no member of the alias lattice spells that without claiming
+identity. That residue is a type-system question rather than an analysis
+gap, which is the distinction the layer makes visible.
+
+**The species exception.** `Array.prototype.slice`, `TypedArray.prototype.slice`,
+`RegExp.prototype [ @@matchAll ]`, and `RegExp.prototype [ @@split ]`
+build their result through a constructor a caller can replace through
+`@@species`. A hostile `@@species` can hand back the receiver, which makes
+the write the algorithm aims at its fresh result land on the receiver
+instead. The curated entries record `borrow` and state that shape as out
+of scope. That is a policy decision a reviewer can make and the analysis
+cannot, and writing it down is what closes the question rather than
+another origin-lattice member.
+
+**The bound.** Curation is per-method human work that recurs on every spec
+bump, where the fixpoints re-derive all 501 for free. The layer is for the
+tail. The mutation fixpoint and the origin map carry the bulk mechanically
+and stay as they are.
+
+**Gate.** `curated.json` merges per determination; the published
+`receiver unclassified` tally is zero; each of the three guards has a
+test; the join report distinguishes a curated determination from an
+analyzed one.
 
 ## §5. Keying and join (FR7, FR15)
 
@@ -1344,7 +1465,10 @@ entry. This is the gate that authorizes removing override entries in §7.
   after explicit author signals, before the `get*` prefix and name
   heuristics.
 - Set receiver mutability from a fact whose `classified.receiver` is set;
-  leave the rest to the existing tiers.
+  leave the rest to the existing tiers. The lookup reads one merged source.
+  §4.4 merges the curated layer inside `NewFacts`, so the converter never
+  sees the two halves apart and applies a curated claim and an analyzed one
+  identically.
 - Apply the FR5 defaults for every determination a record leaves uncovered,
   whose field is absent. Receiver mutability falls through to the name
   tiers, defaulting to `&mut self`. For the curation-grade determinations
@@ -1403,14 +1527,15 @@ merge; that split is per determination, not per method:
   author-from-scratch. So disposition is written but not trusted; the
   other three are not written until curated.
 
-Once §9.4's FR14 gate measures a zero false-negative rate, `throws` /
-`rejects` graduate from the reviewed path to the auto-applied one for the
-covered subset.
+`throws` and `rejects` stay on the reviewed path. §9.4 measures what that
+path produces against observed behavior and feeds the disagreements back
+into the curated entries, rather than authorizing an extracted set to skip
+the review.
 
 **A determination `facts.json` does not carry falls back to a default.**
 When a `std:*` method is unmatched by the join (§5), or its fact leaves a
-determination uncovered (§4.3), that part of the declaration is `.d.ts`
-types plus the FR5 defaults — `&mut self`, `&mut` parameters, empty
+determination uncovered after §4.4's merge, that part of the declaration
+is `.d.ts` types plus the FR5 defaults — `&mut self`, `&mut` parameters, empty
 `throws`/`rejects` — carrying no spec-derived effect. This is the degraded
 path, not a preferred one. FR5 lists every method with a withheld receiver
 and §5 reports every unmatched declaration, precisely so these are visible
@@ -1482,16 +1607,19 @@ the call:
   does not default conservatively, and it is not treated as `Incomplete`.
   The parameter's mutation axis is decided separately by `MutArgs`.
 
-Escape is **transitive** by the same fixpoint as FR2. Define, per abstract
-operation `G`, `StoreEdges(G) ⊆ {(k, m)}` meaning `G` stores its `k`-th
-argument into its `m`-th argument. Seed it from direct stores —
-`Set(args[m], _, args[k])` yields `(k, m)` — and propagate along the call
-graph: if `G` calls `H`, and `H` has edge `(k', m')`, and `G` passes its
-own formals at `H`'s positions `k'` and `m'`, then `G` gains that edge.
-A method then has an escape whenever it passes a parameter value at `k`
-and an escaping destination at `m`. Value-typed arguments are copied at
-runtime regardless (requirements ownership section), so the fact records
-`escape` without committing to a spelling.
+**Escape is not chased through the call graph.** The direct check above
+reads the store sites one algorithm holds. Making it transitive would mean
+a second fixpoint in the shape of FR2: per abstract operation `G`, a set
+of edges `(k, m)` meaning `G` stores its `k`-th argument into its `m`-th,
+seeded from direct stores and propagated along the call graph. That is
+substantial machinery for a short list. The container methods with an
+escape are `push`, `unshift`, `splice`, `fill`, `Map.prototype.set`,
+`Set.prototype.add`, the two weak-collection setters, `Reflect.set`,
+`Object.assign`, and `Object.defineProperty`. §4.4 answers what the direct
+check misses with a curated entry, at a fraction of the cost and with a
+stated reason per method. Value-typed arguments are copied at runtime
+regardless per the requirements ownership section, so the fact records
+`escape` without committing to a spelling either way.
 
 ### §8.2. Return-borrow seed (FR4)
 
@@ -1645,17 +1773,23 @@ func precludedCoercion(M, site) bool:
     return false
 ```
 
-Receiver coercions are filtered unconditionally, because the receiver's
-type is always statically known. **Parameter coercions are filtered only
-when the joined declaration proves the parameter's type already is the
-coercion's target** — `ToNumber(p)` on a `p: number` cannot throw, but
-`ToNumber(p)` on a `p: unknown` can. That check needs the typed
-signature, which the shape-free facts do not carry (FR7), so the
-parameter branch of the filter **runs after the FR7 join** (or is fed the
-parameter types from it); the receiver branch can run earlier. A
+**Only the receiver branch is built.** A receiver coercion is filtered
+unconditionally, because the receiver's type is always statically known,
+and that check reads nothing the facts do not already carry. A
 `RangeError`, `SyntaxError`, `URIError`, or a `TypeError` from an explicit
-domain check survives. Each filter decision is recorded for review, since
-FR11 is a heuristic. Channel assignment is **per throw site, not per
+domain check survives it. Each filter decision is recorded for review,
+since FR11 is a heuristic.
+
+Filtering a **parameter** coercion is a different proposition. It is sound
+only where the joined declaration proves the parameter's type already is
+the coercion's target — `ToNumber(p)` on a `p: number` cannot throw, but
+`ToNumber(p)` on a `p: unknown` can. The shape-free facts carry no types
+per FR7, so that branch would have to run after the join or be fed the
+parameter types from it, which is the plumbing #1301 describes. §4.4
+answers it instead: the methods whose surviving throws are worth
+annotating are a short list, and a curated `throws` states the filtered
+set directly with the reasoning attached. The parameter branch and its
+typed-signature plumbing are dropped. Channel assignment is **per throw site, not per
 error type**: `filterThrows` sees only the synchronous sites, `rejectSet`
 (§9.3) only the rejection sites, so the same error type can legitimately
 appear in both `throws` and `rejects` when raised on both a synchronous
@@ -1797,12 +1931,21 @@ element-`E` / `AggregateError` / `never` rejects. Because concrete `std:*`
 domain rejections are rare (FR13), most `std:*` `rejects` sets are empty
 or a forwarded element `E`, and that is recorded as an origin, not hidden.
 
-### §9.4. Throws validation and the auto-apply gate (FR14)
+### §9.4. Throws validation (FR14)
 
-The throws counterpart of §6's mutability diff. It decides, by
-measurement, whether throws stay a reviewed candidate set or graduate to
-auto-apply — so it is the phase that could later retire the "Throws as a
-finished, unreviewed annotation" non-goal.
+The throws counterpart of §6's mutability diff: an empirical check on the
+`throws` and `rejects` a builtin carries, built from observed behavior
+rather than from the specification the extractor already reads.
+
+**The auto-apply gate is dropped.** It existed to decide, by measuring a
+false-negative rate, whether an *extracted* throw set could reach the
+generated `.esc` without a human. Under §4.4 the throw sets that matter
+are curated, so they are reviewed by construction and there is nothing for
+the gate to authorize. What remains worth building is the ground-truth
+corpus, run as a spot-check over the curated entries: it is the one source
+of evidence about throws that does not share the extractor's blind spots,
+and it catches a reviewer's mistake the same way it would have caught an
+extractor's.
 
 **Work.**
 
@@ -1832,22 +1975,20 @@ finished, unreviewed annotation" non-goal.
   Apply the documented host-throws exclusion throughout, so stack-overflow
   `RangeError` and OOM are filtered from the observations and never enter
   the ground truth. A human verifies and commits the result.
-- Diff the extracted sets against it and report two rates (FR14):
-  - the **false-negative rate** — real throws the emitted set omits —
-    measured in two layers: against the *raw* FR10 set (should be zero
-    when the CFG is faithful — isolates §9.1 soundness) and against the
-    *filtered* FR11 set (its false negatives are the coercion filter's
-    over-prunes);
-  - the **false-positive rate** — phantom throws — which costs only a
-    redundant handler and carries less weight.
-- Triage every filtered false negative: a genuine over-prune fixes the
-  §9.2 filter; a ground-truth error fixes the sample.
+- Diff the published sets against it, in two layers. Against the *raw*
+  FR10 set a false negative isolates a §9.1 soundness gap, and should be
+  zero where the control-flow graph is faithful. Against the *published*
+  set, curated entries and all, a false negative is a real throw a caller
+  would have to handle and nothing declares.
+- Report the false positives too. A phantom throw costs only a redundant
+  handler, so it carries less weight than a false negative.
+- Triage every published false negative to one of three causes: an
+  over-prune by §9.2's receiver branch, a curated entry that is wrong, or
+  an error in the sample.
 
-**Gate.** A reviewed rate report. While the filtered false-negative rate
-is above zero, the converter treats `throws`/`rejects` as curation input
-(§7 does not auto-apply them). A measured filtered false-negative rate of
-zero on the sample is the evidence that authorizes flipping throws to
-auto-apply, mirroring how §6 authorizes trusting the mutability facts.
+**Gate.** A reviewed disagreement report over the curated `throws` and
+`rejects`, with every disagreement triaged to a corrected curated entry or
+a corrected sample.
 
 ## §10. Maintenance workflow
 
@@ -1880,13 +2021,20 @@ recording the accepted or corrected annotations. It is data work, and
 treating it as such — its own PRs, reviewed on their own terms — keeps it
 legible.
 
-**Sequencing.** Curation cannot begin until the facts exist (§4, §8, §9)
-and the override-layer path is wired (§7 plus the builtins converter that
-generates `.esc`). It is independent of the M7.5 solver-side application —
-the override layer can be populated against the converter's output before
-the active checker ingests it. Some curation-adjacent review is embedded
-earlier: §6 triages the receiver-mutability diff, and §9.4 builds the FR14
-ground-truth corpus.
+**Sequencing.** Curation of the effect annotations cannot begin until the
+facts exist (§4, §8, §9) and the override-layer path is wired (§7 plus the
+builtins converter that generates `.esc`). It is independent of the M7.5
+solver-side application — the override layer can be populated against the
+converter's output before the active checker ingests it. Some
+curation-adjacent review is embedded earlier: §6 triages the
+receiver-mutability diff, and §9.4 builds the FR14 ground-truth corpus.
+
+The **fact-level** curation of §4.4 runs ahead of all of it, because it
+needs only the facts and not the converter. Its mechanism is the one this
+phase uses: a committed data file keyed by canonical spec name, merged per
+determination, with a stated reason per entry. §11 populates the effect
+axes of that same file as §8 and §9 make them available. The receiver
+axis is already done, and the three interior returns with it.
 
 **PR shape.** Curation lands as its own PRs, separate from the infra
 phases and incremental — one per pseudo-package or batch (`std:array`,
@@ -1896,11 +2044,13 @@ PRs because a diff of hand-reviewed annotations reviews on different terms
 than a diff that changes the analyzer, and because the volume is large and
 recurs as deltas on spec bumps.
 
-**A shrinking surface.** Receiver mutability is already auto-applied (no
-curation). Once §9.4's FR14 gate measures a zero false-negative rate,
-`throws`/`rejects` graduate to auto-apply for the covered subset. So the
-curation surface contracts over time toward mostly disposition and
-lifetime annotations.
+**A shrinking surface, in two directions.** Receiver mutability is
+auto-applied, whether the claim came from the analysis or from a curated
+entry. And a curated entry the analysis later catches up with is reported
+as redundant and deleted, so the layer contracts as §4 improves rather
+than accumulating. What is left grows toward disposition, lifetime, and
+throws annotations, which is where the spec states an effect no
+control-flow graph carries.
 
 **Where an assistant can and cannot stand in.** The labor is largely
 mechanical and an assistant (including Claude) can take much of it on:
@@ -2080,8 +2230,15 @@ closure argument prologues writing into `__args__`, as in
 
 ## Appendix B. `facts.json` schema
 
-The committed output of §4, consumed by the converter (§7). Small,
-reviewable, keyed by canonical spec name.
+The output of §4, consumed by the converter (§7). Small, reviewable, keyed
+by canonical spec name.
+
+The file is derived rather than committed. `NewFacts` runs the analysis
+over the committed `cfg.json` and merges the curated layer of §4.4 over
+the result, so nothing on disk holds a fact to hand-edit. That is what
+keeps a curated answer out of the generated artifact and in
+`curated.json`, where FR7 re-applies it on every run. The curated entry
+shape is Appendix D.
 
 ```go
 type Facts struct {
@@ -2178,9 +2335,10 @@ effect refs resolve to types at the FR7 join. An entry carries no receiver,
 disposition, throw, or reject claim its `classified` coverage does not
 cover — those fields are absent or null, never empty — so the converter
 cannot mistake "unanalyzed" for "proven none"; it applies the FR5 default
-for that axis itself. A method whose `receiver` is uncovered falls through to
+for that axis itself. A method whose `receiver` is uncovered after §4.4's merge falls through to
 the name heuristics and is collected into a separate `unclassified` report
-alongside `facts.json` for auditing (FR5). Where `classified.params` is
+alongside `facts.json` for auditing (FR5). No `std:*` method is in that
+state today. Where `classified.params` is
 set, a parameter absent from `Params` was proven read-only (`&`) — not to
 be confused with the FR5 `&mut` default the converter applies where it is
 not.
@@ -2256,3 +2414,53 @@ A prototype with no name of its own in the language is the root of the
 path rather than a `prototype` segment, so `%ArrayIteratorPrototype%`'s
 `next` is keyed `ArrayIteratorPrototype.next`. It still has a receiver
 and carries `Kind: builtin-method`.
+
+## Appendix D. `curated.json` schema
+
+The committed curated layer of §4.4, keyed by the same canonical spec
+names as Appendix C.
+
+```go
+// Curation is the whole committed layer.
+type Curation struct {
+    Entries map[string]CuratedEntry `json:"entries"`
+}
+
+type CuratedEntry struct {
+    Reason     string `json:"reason"`             // why the curated answer is right
+    Evidence   string `json:"evidence,omitempty"` // where the reason was checked
+    ReviewedAt string `json:"reviewedAt"`         // Func.Digest at review time
+
+    Classified Coverage     `json:"classified"`         // which determinations this entry claims
+    Receiver   ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none
+    Returns    ReturnFact   `json:"returns,omitzero"`   // the return-borrow seed
+}
+```
+
+`Classified` means on an entry exactly what it means on a `MethodFact`: it
+says which determinations the entry claims. An axis it leaves unset is not
+curated, and keeps whatever the analysis concluded. `Coverage` gains a
+flag per axis as §8 and §9 add one, and an entry claims the new axis by
+the same rule.
+
+Three fields exist only for review and never reach `facts.json`.
+
+`Reason` is required. It is the argument for the curated answer in the
+reviewer's words, which is what makes the entry re-reviewable when the
+spec changes under it. `Evidence` names where that argument was checked, a
+specification heading, an MDN page, or an engine the behavior was observed
+in.
+
+`ReviewedAt` is the `Func.Digest` of the algorithm at review time, a
+fingerprint over that one serialized algorithm. It is taken over the
+decoded function rather than over the raw JSON text, so reformatting
+`cfg.json` or reordering its keys leaves every digest alone and only a
+real change to a step, a parameter, or a kind moves one. When the graph's
+digest no longer matches, the entry is reported stale and still applied.
+
+Parsing rejects an entry that cannot be reviewed or applied: one with no
+reason, no reviewed digest, no claimed determination, or a receiver kind
+or alias kind this package cannot spell. A return fact holds the same
+invariants `newReturnFact` builds — a parameter return names its position,
+a union names at least two members and holds neither a union nor an
+`unknown`, and no other kind carries either field.

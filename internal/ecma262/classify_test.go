@@ -13,11 +13,15 @@ import (
 )
 
 var (
-	factsOnce sync.Once
-	allFacts  *Facts
+	factsOnce     sync.Once
+	allFacts      *Facts
+	analyzedOnce  sync.Once
+	analyzedFacts *Facts
 )
 
-// testFacts classifies the committed graph once for the whole package.
+// testFacts is the published fact set over the committed graph, curated layer
+// merged in, classified once for the whole package. A test pinning what the
+// converter consumes reads this.
 func testFacts(t *testing.T) *Facts {
 	t.Helper()
 	cfg := testCFG(t)
@@ -25,6 +29,18 @@ func testFacts(t *testing.T) *Facts {
 		allFacts = NewFacts(cfg)
 	})
 	return allFacts
+}
+
+// testAnalyzedFacts is what the committed graph alone concludes, before
+// curated.json is merged over it. A test pinning what §4 can read off the graph
+// reads this, so a curated entry never disguises what the analysis found.
+func testAnalyzedFacts(t *testing.T) *Facts {
+	t.Helper()
+	cfg := testCFG(t)
+	analyzedOnce.Do(func() {
+		analyzedFacts = analyze(cfg)
+	})
+	return analyzedFacts
 }
 
 // fullCoverage is what NewFacts builds for a builtin it read whole.
@@ -42,11 +58,19 @@ func returnsParam(i int) ReturnFact {
 	return ReturnFact{Kind: AliasParam, Index: position(i)}
 }
 
-// factOf returns the fact for one builtin, failing when the graph does not
-// hold it.
+// factOf returns the published fact for one builtin, failing when the graph
+// does not hold it.
 func factOf(t *testing.T, name string) MethodFact {
 	t.Helper()
 	fact, ok := testFacts(t).Of(name)
+	require.True(t, ok, "no builtin named %s", name)
+	return fact
+}
+
+// analyzedFactOf returns what the analysis alone concluded about one builtin.
+func analyzedFactOf(t *testing.T, name string) MethodFact {
+	t.Helper()
+	fact, ok := testAnalyzedFacts(t).Of(name)
 	require.True(t, ok, "no builtin named %s", name)
 	return fact
 }
@@ -165,6 +189,10 @@ func TestAliasJoin(t *testing.T) {
 	}
 }
 
+// What §4.3 concludes from the graph alone, one method per shape. These read
+// the analysis rather than the published facts, so a curated entry that later
+// fills one of these determinations cannot hide what the graph does and does
+// not settle.
 func TestFactsSampleMethods(t *testing.T) {
 	tests := map[string]struct {
 		method string
@@ -252,7 +280,7 @@ func TestFactsSampleMethods(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.want, factOf(t, test.method).String())
+			require.Equal(t, test.want, analyzedFactOf(t, test.method).String())
 		})
 	}
 }
@@ -265,7 +293,7 @@ func TestFactsSampleMethods(t *testing.T) {
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int
 	var unread []string
-	for name, fact := range testFacts(t).Methods {
+	for name, fact := range testAnalyzedFacts(t).Methods {
 		if !strings.HasPrefix(name, "String.prototype") {
 			continue
 		}
@@ -392,7 +420,7 @@ func TestFactsJSON(t *testing.T) {
 		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":{"kind":"receiver"}}`},
 		// A withheld receiver falls through to FR5's `&mut self`, so the entry
 		// carries the return alias alone.
-		"WithheldReceiver": {factOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":{"kind":"fresh"}}`},
+		"WithheldReceiver": {analyzedFactOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":{"kind":"fresh"}}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave the index absent from the whole file and spell the common case
@@ -423,22 +451,28 @@ func TestFactsJSON(t *testing.T) {
 	}
 }
 
-// The methods whose receiver claim FR5 hands to the converter's name
-// heuristics. Each carries a mutation the analysis could not place or a step it
-// could not read, so its mutability is withheld rather than guessed, and each
-// still publishes its return alias. A static is absent, having no receiver for
-// a warning to cost it.
+// The methods whose receiver the analysis withholds. Each carries a mutation it
+// could not place or a step it could not read, so the mutability is withheld
+// rather than guessed, and each still publishes its return alias. A static is
+// absent, having no receiver for a warning to cost it.
 //
-// This list is the §4 objective made visible. Shrinking it is what a change to
-// the analysis is measured by, and the tallies below record the same count.
+// This list is the §4 objective made visible, and shrinking it is what a change
+// to the analysis is measured by. Every name on it is answered by an entry in
+// curated.json, so nothing reaches §7's name heuristics, which is what the
+// second assertion holds.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
-	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(), "\n"))
+	snaps.MatchSnapshot(t, strings.Join(testAnalyzedFacts(t).Unclassified(), "\n"))
+	require.Empty(t, testFacts(t).Unclassified())
 }
 
-// The tallies over every builtin, which move when the mutation analysis, the
-// origin map, or the classification changes. Each determination is counted on
-// its own, so the return-alias distribution spans every builtin while the
-// receiver one leaves out the methods that withhold it.
+// The tallies over every published builtin, which move when the mutation
+// analysis, the origin map, the classification, or curated.json changes. Each
+// determination is counted on its own, so the return-alias distribution spans
+// every builtin while the receiver one leaves out any method that withholds it.
+//
+// No method withholds one today. The analysis leaves 24 receivers open and the
+// curated layer answers all 24, which is why `receiver unclassified` is absent
+// rather than zero.
 func TestFactsTallies(t *testing.T) {
 	counts := map[string]int{}
 	for _, fact := range testFacts(t).Methods {
@@ -460,14 +494,13 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 226
-receiver mutBorrow: 63
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 246
+receiver mutBorrow: 67
 receiver none: 188
-receiver unclassified: 24
-returns fresh: 229
+returns fresh: 232
 returns param: 6
 returns receiver: 15
 returns union: 1
-returns unknown: 250
+returns unknown: 247
 total: 501`))
 }

@@ -102,6 +102,36 @@ func treeOf(t *testing.T, root string) []string {
 //
 // The out-dir is a fresh temp path on every run, so the report has it
 // replaced by a placeholder before the comparison.
+// committedCFG is the control-flow graph tools/spec-extract commits, which the
+// --cfg flag reads.
+const committedCFG = "../spec-extract/cfg.json"
+
+// The --cfg run adds both ECMA-262 reports. What each one says is pinned in
+// internal/ecma262; what this covers is that the partition command prints them,
+// since neither reaches stderr without the flag.
+func TestRun_PartitionWithCFGPrintsBothReports(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, arrayLib)
+
+	var stderr strings.Builder
+	require.NoError(t, run([]string{"partition", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
+
+	require.Contains(t, stderr.String(), "  curation: ")
+	require.Contains(t, stderr.String(), "  join: ")
+}
+
+// A --cfg path that does not resolve fails the run before anything is written,
+// so a mistyped flag leaves no half-joined tree behind.
+func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {
+	t.Parallel()
+	outDir := t.TempDir()
+
+	err := run([]string{"partition", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+
+	require.ErrorContains(t, err, "loading no/such/cfg.json")
+	require.Empty(t, treeOf(t, outDir))
+}
+
 func TestRun_PartitionWritesTheTree(t *testing.T) {
 	t.Parallel()
 	libDir := seedLib(t, arrayLib)

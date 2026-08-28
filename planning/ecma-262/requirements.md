@@ -87,7 +87,10 @@ name heuristics.
   - **The filter needs type information ECMA-262 does not carry.** Whether
     a parameter coercion can throw depends on the parameter's declared
     type, available only at the FR7 join, plus a judgment about which
-    coercions the types truly preclude.
+    coercions the types truly preclude. Both are what a reviewer supplies,
+    so the parameter half of the filter is a curated entry rather than a
+    stage of the analysis. Only the receiver half, where the type is always
+    statically known, is filtered automatically.
 
   Host and implementation-defined throws are **out of scope**, not a
   review driver: stack-overflow `RangeError`, out-of-memory, and host
@@ -98,9 +101,8 @@ name heuristics.
   `RangeError` from an explicit spec domain check, such as
   `Number.prototype.toFixed`, is a tracked domain throw.
 
-  The claim is falsifiable and evidence-revisable: a measured
-  false-negative rate near zero from the FR14 validation would let throws
-  graduate to auto-apply. This refines the builtins workstream's
+  The claim is falsifiable and evidence-revisable, and the FR14 validation
+  is what would falsify it. This refines the builtins workstream's
   hand-curation plan rather than replacing it
   ([../builtins/requirements.md](../builtins/requirements.md), FR10
   "throws annotations are hand-curated for now"): the spec generates the
@@ -463,9 +465,14 @@ merely stricter.
   **unclassified**, not as a guess. Coverage is per determination, so a
   method withholds only the axes that read the step it could not resolve.
   An axis that reads no step is never withheld: a static and a namespace
-  function have `receiver: none` whatever the analysis missed. An
-  unclassified determination falls through to the existing name heuristics
-  and hand-curation in the converter.
+  function have `receiver: none` whatever the analysis missed.
+- An unclassified determination is answered by **review**, recorded as a
+  curated entry keyed by the same canonical spec name and merged over the
+  analysis one axis at a time. Only what neither the analysis nor a curated
+  entry answers falls through to the name heuristics in the converter.
+  Curating an answer is the cheaper of the two ways to close a gap, and it
+  states a reason the next reader can check, where a new lattice member in
+  the analysis states only a result.
 - Receiver mutability defaults to **mutating** (`&mut self`) when
   unclassified, consistent with the interop core principle "default to
   mutating"
@@ -500,8 +507,8 @@ impractical:**
   every `this`-touching method carries `throws TypeError` from its
   receiver coercion, pervasive noise a parameter default does not produce.
   So the throw set (FR10) and reject set (FR13) under-report instead,
-  accepting that this is the unsound direction, and both are curation-grade
-  and gated by the FR14 validation before they could ever auto-apply.
+  accepting that this is the unsound direction. Both are curation-grade,
+  and FR14 measures what reaches the `.esc` against observed behavior.
 
 These defaults are applied by the **converter**, not serialized as facts.
 A record's `classified` object marks each determination covered or not,
@@ -522,7 +529,10 @@ it. A static's `receiver: none` reads no step at all, so nothing the
 analysis missed can put it in doubt.
 
 Every method whose receiver mutability is unclassified is reported by name
-so the gap is visible and auditable rather than silent.
+so the gap is visible and auditable rather than silent. The report is
+taken over the analysis alone as well as over the merged result. The first
+is what the analysis is measured by, and the second is what actually
+reaches the heuristics.
 
 ### FR6. Output contract
 
@@ -639,7 +649,16 @@ bump — and the effect annotations come from this workstream's ECMA-262
 facts, regenerated on a spec bump. A generated `.esc` builtin is the join
 of those two, plus a small hand-curated override layer for the
 curation-grade residue (reviewed throws and lifetimes) that is re-applied
-at generation rather than edited into the output. This keeps signatures
+at generation rather than edited into the output.
+
+Curated data enters at two points, and they answer different questions.
+The **fact layer** answers a determination the spec extraction cannot
+settle, and it is keyed by canonical spec name and merged into the facts
+before the join. The **override layer** answers what the facts under-report
+by design, the annotations FR5 makes the extractor omit, and it is keyed
+by declaration and applied after the join. Both are committed data
+re-applied at generation. A determination the facts could carry belongs in
+the first, so the second never has to restate a fact. This keeps signatures
 out of hand-maintenance entirely, which is the whole point: hand-authored
 `.esc` signatures are the path to **avoid**, because they would drift from
 the upstream types and multiply the maintenance surface.
@@ -935,41 +954,43 @@ FR13 is specified here for completeness and to fix the
 `throws`-versus-`rejects` split, but it delivers most of its value once
 the WebIDL extractor lands.
 
-### FR14. Throws validation and the auto-apply gate
+### FR14. Throws validation
 
-Whether the extracted `throws`/`rejects` are trustworthy without review is
-an empirical question, settled by measurement, not asserted. FR14 is the
-throws counterpart of FR9's mutability validation: diff the extracted
-throw sets against a ground-truth sample of high-value methods and measure
-two rates. The sample must be **independent of the spec extraction** — a
-corpus read out of the same algorithm would agree by construction, so it
-is seeded by dynamic observation in a real engine (fuzzing each method and
-recording what it throws or rejects with) rather than by re-reading the
-spec, with only the parametric and combinator entries hand-authored (the
-plan's §9.4 gives the mechanics).
+Whether a method's published `throws`/`rejects` is right is an empirical
+question, settled by measurement rather than asserted. FR14 is the throws
+counterpart of FR9's mutability validation: diff the published throw sets
+against a ground-truth sample of high-value methods and measure two rates.
+The sample must be **independent of the spec extraction**. A corpus read
+out of the same algorithm would agree by construction, so it is seeded by
+dynamic observation in a real engine, fuzzing each method and recording
+what it throws or rejects with, rather than by re-reading the spec. Only
+the parametric and combinator entries are hand-authored. The plan's §9.4
+gives the mechanics.
+
+The check covers curated entries as much as extracted ones. Dynamic
+observation is the one source of evidence about throws that shares neither
+the extractor's blind spots nor a reviewer's, so it catches a wrong
+curated `throws` the same way it catches an over-prune.
 
 - **False-negative rate — the soundness metric.** Real throws that the
-  method can raise but the emitted set omits, almost always because the
-  FR11 coercion filter over-pruned. This is the rate that matters: a
-  false negative is an unsound `throws` clause. Measure it in two layers
-  so the blame is unambiguous:
-  - against the *raw* FR10 set (pre-filter), which should be zero when the
-    CFG is faithful — this isolates FR10 extraction soundness;
-  - against the *filtered* FR11 set, whose false negatives are exactly the
-    filter's over-prunes.
+  method can raise but the published set omits. This is the rate that
+  matters, since a false negative is an unsound `throws` clause. Measure
+  it in two layers so the blame is unambiguous:
+  - against the *raw* FR10 set, before the FR11 filter, which should be
+    zero when the control-flow graph is faithful. This isolates FR10
+    extraction soundness.
+  - against the *published* set, curated entries and all. A false negative
+    there is a real throw a caller has to handle and nothing declares, and
+    it is charged to the filter's over-prune or to the curated entry.
 - **False-positive rate — the ergonomics metric.** Phantom throws the
   method cannot actually raise. These only cost callers a redundant
-  handler; they are not a soundness problem, so they carry less weight.
+  handler, so they carry less weight than a false negative.
 
-The gate: while the filtered false-negative rate is above zero on the
-sample, throws remain a reviewed candidate set (the Non-goals entry
-stands). A measured filtered false-negative rate of zero on a
-representative sample is the evidence that would **graduate throws to
-auto-apply**, the same way FR9's diff authorizes trusting the mutability
-facts. Host and implementation-defined throws are excluded from the
-ground-truth sample by an explicit, documented policy so they do not
-register as false negatives against a spec-derived set that cannot
-contain them.
+Every published false negative is triaged and fixed, in the filter or in
+the curated entry it came from. Host and implementation-defined throws are
+excluded from the ground-truth sample by an explicit, documented policy so
+they do not register as false negatives against a set that cannot contain
+them.
 
 ### FR15. Overloaded methods
 
@@ -1038,8 +1059,11 @@ types and arity.
   per-directory `mise.toml`.
 - **Auditability.** Every classification carries its provenance, and
   every method whose receiver mutability is unclassified is listed, so a
-  reviewer can see exactly which methods the spec proved and which fell
-  through to heuristics.
+  reviewer can see exactly which methods the spec proved, which review
+  answered, and which fell through to heuristics. A curated answer that the
+  analysis later reaches on its own is reported so the entry can be
+  deleted, which keeps the curated layer from growing into a second source
+  of truth.
 
 ## Coverage and limitations
 
@@ -1051,12 +1075,13 @@ types and arity.
   This exclusion is only for those pervasive host errors: a `RangeError`
   raised by an explicit spec domain check (`Number.prototype.toFixed`
   out of range, `Array(-1)`) is a tracked domain throw. The exclusion is
-  what keeps the throw sets ergonomic and removes a would-be permanent
-  blocker to the FR14 auto-apply gate.
-- A handful of algorithms are prose-only or host-defined, so a method
-  among them has its receiver mutability fall through to the name
-  heuristic per FR5. The return alias is published regardless, since FR4
-  curates it rather than applying it.
+  what keeps the throw sets ergonomic and keeps FR14's false-negative rate
+  measuring something a reviewer can act on.
+- A handful of algorithms are prose-only or host-defined, so the analysis
+  withholds the receiver mutability of a method among them. A curated
+  entry answers it, and only what neither settles falls through to the
+  name heuristic per FR5. The return alias is published regardless, since
+  FR4 curates it rather than applying it.
 - Generic and array-like receivers operate on `O ← ? ToObject(this
   value)`; the analysis treats `ToObject(this value)` as
   receiver-origin so that a write to `O` is a write to the receiver.
