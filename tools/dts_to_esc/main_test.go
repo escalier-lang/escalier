@@ -44,7 +44,12 @@ func TestRun_CheckFailsOnAnEmptyTree(t *testing.T) {
 	var stdout strings.Builder
 	err := run([]string{"check", libDir, escDir}, &stdout, io.Discard)
 	require.ErrorIs(t, err, errCheckFailed)
-	require.Contains(t, stdout.String(), "missing declaration: Array (class)")
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`std:array (std/array.esc)
+  missing file
+  missing declaration: Array (class)
+check: 1 missing declarations, 0 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
 }
 
 // TestRun_SingleFileWritesEscToStdout covers the §5 single-file mode:
@@ -142,8 +147,9 @@ func TestRun_CheckPassesOnASeededTree(t *testing.T) {
 
 	var stdout strings.Builder
 	require.NoError(t, run([]string{"check", libDir, escDir}, &stdout, io.Discard))
-	require.Contains(t, stdout.String(),
-		"check: 0 missing declarations, 0 extra declarations")
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
 }
 
 func TestRun_RejectsWrongArgumentCounts(t *testing.T) {

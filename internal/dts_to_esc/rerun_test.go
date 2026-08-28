@@ -10,6 +10,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
@@ -156,6 +157,13 @@ export type MyArrayHelper<T> = Array<T>
 	require.False(t, report.Failed())
 }
 
+// The report an operator reads, over a tree with nothing in it. The
+// snapshot holds all of it, so the section heading, the per-finding
+// indentation, and the summary line are pinned alongside the footer.
+//
+// That footer is what the test is named for. A green check means every
+// `.d.ts` name has an `.esc` counterpart, not that the counterpart still
+// means the same thing, and every run says so.
 func TestCheckReport_WriteNamesTheUnimplementedDriftChecks(t *testing.T) {
 	t.Parallel()
 	res := partitionOf(t, "lib.es5.d.ts", `
@@ -168,15 +176,12 @@ declare var Array: ArrayConstructor;
 
 	var sb strings.Builder
 	require.NoError(t, report.Write(&sb))
-	out := sb.String()
-	require.Contains(t, out, "std:array (std/array.esc)")
-	require.Contains(t, out, "missing file")
-	require.Contains(t, out, "missing declaration: Array (class)")
-	require.Contains(t, out, "check: 1 missing declarations, 0 extra declarations")
-	require.Contains(t, out,
-		"note: signature and property-type drift are not checked yet; "+
-			"those compare both sides through the solver's constrain "+
-			"(SimpleSub M7.5)")
+	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`std:array (std/array.esc)
+  missing file
+  missing declaration: Array (class)
+check: 1 missing declarations, 0 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
 }
 
 func TestCheckPartition_HandFusedTrioIsSticky(t *testing.T) {
@@ -195,9 +200,22 @@ declare var WeakRef: WeakRefConstructor;
 	require.NoError(t, err)
 	rendered, err := RenderStandaloneModule(mod)
 	require.NoError(t, err)
-	require.Contains(t, rendered, "interface WeakRef<T: {}>",
-		"this input must reach the diff as an unfused interface/var pair")
-	require.Contains(t, rendered, "var WeakRef: WeakRefConstructor")
+
+	// The precondition, shown rather than probed for. This input has to
+	// reach the diff as an unfused interface/var pair. Were trio
+	// detection to start firing on it, the snapshot would show one class
+	// and the rest of the test would stop exercising the fusion.
+	snaps.MatchInlineSnapshot(t, rendered, snaps.Inline(`export declare interface WeakRef<T: {}> {
+    deref() -> T | undefined
+}
+
+export declare interface WeakRefConstructor {
+    readonly prototype: WeakRef<{}>
+}
+
+@js("WeakRef")
+export declare var WeakRef: WeakRefConstructor
+`))
 
 	root := t.TempDir()
 	writeEsc(t, root, "std/weak_ref.esc", `@js("WeakRef")
