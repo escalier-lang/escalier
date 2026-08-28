@@ -1257,19 +1257,23 @@ does, plus the provenance a reviewer needs:
   "reason": "The receiver is statically a number, so ToNumber cannot throw.",
   "evidence": "ECMA-262 \"Number.prototype.toFixed\"",
   "reviewedAt": "1836cd89dd25",
-  "classified": { "receiver": true, "returns": false },
   "receiver": "borrow"
 }
 ```
+
+An entry answers the axes it carries a value for, and no others. Neither
+determination has a valid zero value, so a field left out is unambiguously
+an axis left to the analysis. The entry above answers the receiver and
+leaves the return alias where the analysis put it.
 
 `reason` is required. A claim that outranks the analysis without a stated
 argument cannot be re-reviewed later.
 
 **The merge is per determination, never per method.** `NewFacts` runs the
 analysis and then merges the layer over the result, one axis at a time.
-An axis an entry leaves unset keeps whatever the analysis concluded, so
-the two sources compose. `Date.prototype.getTime` is the shape: the
-analysis settles its receiver and the entry corrects only its return.
+An axis an entry leaves out keeps whatever the analysis concluded, so the
+two sources compose. `Date.prototype.getTime` is the shape: the analysis
+settles its receiver and the entry answers only its return.
 
 Each curated axis is one of three things, and the merge reports which:
 
@@ -2450,17 +2454,21 @@ type CuratedEntry struct {
     Evidence   string `json:"evidence,omitempty"` // where the reason was checked
     ReviewedAt string `json:"reviewedAt"`         // Func.Digest at review time
 
-    Classified Coverage     `json:"classified"`         // which determinations this entry claims
-    Receiver   ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none
-    Returns    ReturnFact   `json:"returns,omitzero"`   // the return-borrow seed
+    Receiver ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none
+    Returns  ReturnFact   `json:"returns,omitzero"`   // the return-borrow seed
 }
 ```
 
-`Classified` means on an entry exactly what it means on a `MethodFact`: it
-says which determinations the entry claims. An axis it leaves unset is not
-curated, and keeps whatever the analysis concluded. `Coverage` gains a
-flag per axis as §8 and §9 add one, and an entry claims the new axis by
-the same rule.
+An entry answers the axes it carries a value for. `""` is neither a
+`ReceiverKind` nor an `AliasKind`, so an omitted field is unambiguously an
+axis left to the analysis, and needs no flag beside it saying so.
+
+A published `MethodFact` does carry the `classified` flags, and the two
+records differ here on purpose. The fact gains three slice-valued axes in
+§8 and §9, where a proven-empty result and an unanalyzed one differ only
+by `[]` versus `null`. That is too easy a distinction to lose to rest a
+soundness contract on. A curated entry has no such axis, because a
+reviewer either writes an answer or does not.
 
 Three fields exist only for review and never reach `facts.json`.
 
@@ -2478,11 +2486,8 @@ real change to a step, a parameter, or a kind moves one. When the graph's
 digest no longer matches, the entry is reported stale and still applied.
 
 Parsing rejects an entry that cannot be reviewed or applied: one with no
-reason, no reviewed digest, no claimed determination, or a receiver kind
-or alias kind this package cannot spell. It also rejects a value written
-on an axis the entry's `classified` leaves unclaimed, which the merge
-would otherwise drop with no report line, leaving the reviewer to see
-silence where they wrote a claim.
+reason, no reviewed digest, no determination at all, or a receiver kind or
+alias kind this package cannot spell.
 
 A return fact holds the same invariants `newReturnFact` builds. A
 parameter return names its position. A union names at least two distinct

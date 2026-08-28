@@ -4,189 +4,162 @@
       "reason": "Reads the receiver's elements and calls toLocaleString on each. The one step the serializer left opaque binds the host's list separator, which writes nothing.",
       "evidence": "ECMA-262 \"Array.prototype.toLocaleString\"",
       "reviewedAt": "f3203d8f63ec",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Date.prototype.getTime": {
       "reason": "Returns the Number held in [[DateValue]]. A primitive read out of a slot is a copy, so the return borrows nothing the caller holds. The analysis withholds the alias because telling a primitive slot from an object one needs the declared return type, which cfg.json does not carry.",
       "evidence": "ECMA-262 \"Date.prototype.getTime\"",
       "reviewedAt": "0d4b34259cd2",
-      "classified": { "receiver": false, "returns": true },
       "returns": { "kind": "fresh" }
     },
     "Date.prototype.getTimezoneOffset": {
       "reason": "Reads [[DateValue]] and computes an offset from it. The opaque step is the local time zone calculation, which writes nothing.",
       "evidence": "ECMA-262 \"Date.prototype.getTimezoneOffset\"",
       "reviewedAt": "0f3dbfa75247",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Date.prototype.toISOString": {
       "reason": "Formats [[DateValue]] as a string. The opaque steps build that string and write nothing.",
       "evidence": "ECMA-262 \"Date.prototype.toISOString\"",
       "reviewedAt": "e0ab062821e6",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Date.prototype.toUTCString": {
       "reason": "Formats [[DateValue]] as a string. The opaque steps build that string and write nothing.",
       "evidence": "ECMA-262 \"Date.prototype.toUTCString\"",
       "reviewedAt": "2a344681528d",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Date.prototype.valueOf": {
       "reason": "Returns the Number held in [[DateValue]]. A primitive read out of a slot is a copy, so the return borrows nothing the caller holds.",
       "evidence": "ECMA-262 \"Date.prototype.valueOf\"",
       "reviewedAt": "f9599ef775ef",
-      "classified": { "receiver": false, "returns": true },
       "returns": { "kind": "fresh" }
     },
     "ForInIteratorPrototype.next": {
       "reason": "Advances the iterator by writing [[RemainingKeys]], [[VisitedKeys]], [[Object]], and [[ObjectWasVisited]] on the receiver. The opaque step is the assertion over those slots.",
       "evidence": "ECMA-262 \"%ForInIteratorPrototype%.next\"",
       "reviewedAt": "9ac59fc3b816",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "mutBorrow"
     },
     "Number.prototype.toExponential": {
       "reason": "Reads the receiver's number value and formats it. Every opaque step names a digit string it computes.",
       "evidence": "ECMA-262 \"Number.prototype.toExponential\"",
       "reviewedAt": "243e70d48235",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Number.prototype.toFixed": {
       "reason": "Reads the receiver's number value and formats it. Every opaque step names a digit string it computes, such as \"Let a be the first k - f code units of m\".",
       "evidence": "ECMA-262 \"Number.prototype.toFixed\"",
       "reviewedAt": "1836cd89dd25",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Number.prototype.toLocaleString": {
       "reason": "Reads the receiver's number value and formats it for the host locale. The formatting is implementation-defined and writes nothing.",
       "evidence": "ECMA-262 \"Number.prototype.toLocaleString\"",
       "reviewedAt": "3229a7c40342",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "Number.prototype.toPrecision": {
       "reason": "Reads the receiver's number value and formats it. Every opaque step names a digit string it computes.",
       "evidence": "ECMA-262 \"Number.prototype.toPrecision\"",
       "reviewedAt": "99d8cac517b0",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "RegExp.prototype [ @@matchAll ]": {
       "reason": "Reads flags and lastIndex off the receiver, then writes lastIndex on matcher, the object SpeciesConstructor built. The write the analysis could not place lands on matcher rather than on the receiver. A @@species that hands the receiver back would make the two one object, which is the documented species exception.",
       "evidence": "ECMA-262 \"RegExp.prototype [ %Symbol.matchAll% ]\"",
       "reviewedAt": "c2cb8f3fdb97",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "RegExp.prototype [ @@replace ]": {
       "reason": "Writes lastIndex on the receiver through Set(rx, \"lastIndex\", ...) when the pattern is global. The opaque steps build the replacement string.",
       "evidence": "ECMA-262 \"RegExp.prototype [ %Symbol.replace% ]\"",
       "reviewedAt": "4b29b7f53c9e",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "mutBorrow"
     },
     "RegExp.prototype [ @@split ]": {
       "reason": "Writes only into A, the array it allocates, and into splitter, the object SpeciesConstructor built. Every step touching the receiver reads it. Same species exception as RegExp.prototype [ @@matchAll ].",
       "evidence": "ECMA-262 \"RegExp.prototype [ %Symbol.split% ]\"",
       "reviewedAt": "64e67b1e3216",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "RegExpStringIteratorPrototype.next": {
       "reason": "Writes [[Done]] on the receiver. It also writes lastIndex on the regular expression held in [[IteratingRegExp]], which it reaches through the receiver.",
       "evidence": "ECMA-262 \"%RegExpStringIteratorPrototype%.next\"",
       "reviewedAt": "496d4222b7b1",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "mutBorrow"
     },
     "SharedArrayBuffer.prototype.grow": {
       "reason": "Grows the buffer by writing, through AtomicCompareExchangeInSharedBlock, the block it read out of the receiver's [[ArrayBufferByteLengthData]]. The new byte length is observable on the receiver afterwards.",
       "evidence": "ECMA-262 \"SharedArrayBuffer.prototype.grow\"",
       "reviewedAt": "78f695c8902d",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "mutBorrow"
     },
     "String.prototype.normalize": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The opaque step is the Unicode normalization itself.",
       "evidence": "ECMA-262 \"String.prototype.normalize\"",
       "reviewedAt": "9c0df67c56b0",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.repeat": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The opaque step builds the repeated string.",
       "evidence": "ECMA-262 \"String.prototype.repeat\"",
       "reviewedAt": "1a54e17c9f5e",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.split": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. Reading @@split off separator can run arbitrary code, and that code reaches nothing the receiver holds.",
       "evidence": "ECMA-262 \"String.prototype.split\"",
       "reviewedAt": "3120ebfb8574",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.toLocaleLowerCase": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The whole algorithm is opaque because the case mapping is a locale-sensitive Unicode table lookup.",
       "evidence": "ECMA-262 \"String.prototype.toLocaleLowerCase\"",
       "reviewedAt": "d75a8d944557",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.toLocaleUpperCase": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The whole algorithm is opaque because the case mapping is a locale-sensitive Unicode table lookup.",
       "evidence": "ECMA-262 \"String.prototype.toLocaleUpperCase\"",
       "reviewedAt": "fc11d8ee1b51",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.toLowerCase": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The whole algorithm is opaque because the case mapping is a Unicode table lookup ESMeta does not formalize.",
       "evidence": "ECMA-262 \"String.prototype.toLowerCase\"",
       "reviewedAt": "2bf52d68c976",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "String.prototype.toUpperCase": {
       "reason": "A String is an immutable primitive, so no step can write the receiver. The whole algorithm is opaque because the case mapping is a Unicode table lookup ESMeta does not formalize.",
       "evidence": "ECMA-262 \"String.prototype.toUpperCase\"",
       "reviewedAt": "d1c5c3231872",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "TypedArray.prototype.slice": {
       "reason": "Reads the receiver's elements and writes into A, the array TypedArraySpeciesCreate built. The opaque step clamps endIndex against the receiver's length. Same species exception as RegExp.prototype [ @@matchAll ].",
       "evidence": "ECMA-262 \"%TypedArray%.prototype.slice\"",
       "reviewedAt": "b6c7f0d042a5",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "TypedArray.prototype.toLocaleString": {
       "reason": "Reads the receiver's elements and calls toLocaleString on each. The opaque step binds the host's list separator.",
       "evidence": "ECMA-262 \"%TypedArray%.prototype.toLocaleString\"",
       "reviewedAt": "cf74dfcb19a6",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "get RegExp.prototype.flags": {
       "reason": "Reads each flag off the receiver with Get and appends code units to codeUnits, a list the getter allocates. The opaque step turns that list into the returned String.",
       "evidence": "ECMA-262 \"get RegExp.prototype.flags\"",
       "reviewedAt": "c509f1f9469f",
-      "classified": { "receiver": true, "returns": false },
       "receiver": "borrow"
     },
     "get TypedArray.prototype [ @@toStringTag ]": {
       "reason": "Returns the String held in [[TypedArrayName]]. A primitive read out of a slot is a copy, so the return borrows nothing the caller holds.",
       "evidence": "ECMA-262 \"get %TypedArray%.prototype [ %Symbol.toStringTag% ]\"",
       "reviewedAt": "75c3313dedc9",
-      "classified": { "receiver": false, "returns": true },
       "returns": { "kind": "fresh" }
     }
   }

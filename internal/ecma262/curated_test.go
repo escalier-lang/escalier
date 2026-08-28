@@ -39,7 +39,6 @@ func entry(t *testing.T, cfg *CFG, name string, kind ReceiverKind) CuratedEntry 
 	return CuratedEntry{
 		Reason:     "stated for the test",
 		ReviewedAt: fn.Digest,
-		Classified: Coverage{Receiver: true},
 		Receiver:   kind,
 	}
 }
@@ -49,7 +48,6 @@ func entry(t *testing.T, cfg *CFG, name string, kind ReceiverKind) CuratedEntry 
 func returnsEntry(t *testing.T, cfg *CFG, name string, returns ReturnFact) CuratedEntry {
 	t.Helper()
 	e := entry(t, cfg, name, RecvBorrow)
-	e.Classified = Coverage{Returns: true}
 	e.Receiver = ""
 	e.Returns = returns
 	return e
@@ -142,11 +140,9 @@ func TestMergeCuration(t *testing.T) {
 		// it.
 		"OneAxisLeavesTheOther": {
 			entries: func(cfg *CFG) map[string]CuratedEntry {
-				e := entry(t, cfg, "Demo.prototype.opaque", RecvBorrow)
-				e.Classified = Coverage{Returns: true}
-				e.Receiver = ""
-				e.Returns = ReturnFact{Kind: AliasFresh}
-				return map[string]CuratedEntry{"Demo.prototype.opaque": e}
+				return map[string]CuratedEntry{
+					"Demo.prototype.opaque": returnsEntry(t, cfg, "Demo.prototype.opaque", ReturnFact{Kind: AliasFresh}),
+				}
 			},
 			name: "Demo.prototype.opaque",
 			want: "returns:fresh",
@@ -215,7 +211,6 @@ func TestMergeCurationReportsAnUnmatchedName(t *testing.T) {
 		"Demo.prototype.gone": {
 			Reason:     "stated for the test",
 			ReviewedAt: "000000000000",
-			Classified: Coverage{Receiver: true},
 			Receiver:   RecvBorrow,
 		},
 	}}, methods)
@@ -276,70 +271,61 @@ func TestParseCurationRejects(t *testing.T) {
 		want  string
 	}{
 		"NoReason": {
-			`{"reviewedAt":"abc","classified":{"receiver":true},"receiver":"borrow"}`,
+			`{"reviewedAt":"abc","receiver":"borrow"}`,
 			"curated entry Demo.m: has no reason",
 		},
 		"NoReviewedAt": {
-			`{"reason":"r","classified":{"receiver":true},"receiver":"borrow"}`,
+			`{"reason":"r","receiver":"borrow"}`,
 			"curated entry Demo.m: has no reviewedAt digest",
 		},
 		"NoDetermination": {
-			`{"reason":"r","reviewedAt":"abc","classified":{}}`,
-			"curated entry Demo.m: claims no determination",
+			`{"reason":"r","reviewedAt":"abc"}`,
+			"curated entry Demo.m: answers no determination",
 		},
 		"UnknownReceiverKind": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"receiver":true},"receiver":"shared"}`,
-			`curated entry Demo.m: claims receiver "shared", which is not a receiver kind`,
+			`{"reason":"r","reviewedAt":"abc","receiver":"shared"}`,
+			`curated entry Demo.m: names receiver "shared", which is not a receiver kind`,
 		},
-		"MissingReceiverKind": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"receiver":true}}`,
-			`curated entry Demo.m: claims receiver "", which is not a receiver kind`,
+		// A return carrying a position but no kind is malformed rather than
+		// absent, so it answers the axis and is refused on the kind.
+		"ReturnsWithNoKind": {
+			`{"reason":"r","reviewedAt":"abc","returns":{"index":0}}`,
+			`curated entry Demo.m: returns "", which is not an alias kind`,
 		},
 		"UnknownAliasKind": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"borrowed"}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"borrowed"}}`,
 			`curated entry Demo.m: returns "borrowed", which is not an alias kind`,
 		},
 		"ParamWithNoPosition": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"param"}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"param"}}`,
 			"curated entry Demo.m: returns a parameter but names no position",
 		},
 		"PositionOnANonParamReturn": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"fresh","index":0}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"fresh","index":0}}`,
 			"curated entry Demo.m: returns fresh but names a position",
 		},
 		"UnionOfOne": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"fresh"}]}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"union","members":[{"kind":"fresh"}]}}`,
 			"curated entry Demo.m: returns a union of 1 members",
 		},
 		"UnionHoldingUnknown": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"unknown"}]}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"unknown"}]}}`,
 			"curated entry Demo.m: returns a union holding unknown",
 		},
-		// A value on an axis the coverage leaves unclaimed would be dropped by
-		// the merge with no report line, so a reviewer would see silence rather
-		// than the claim they wrote.
-		"ReceiverOnAnUnclaimedAxis": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"fresh"},"receiver":"borrow"}`,
-			`curated entry Demo.m: names receiver "borrow" on an axis its coverage leaves unclaimed`,
-		},
-		"ReturnsOnAnUnclaimedAxis": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"receiver":true},"receiver":"borrow","returns":{"kind":"fresh"}}`,
-			"curated entry Demo.m: names returns fresh on an axis its coverage leaves unclaimed",
-		},
 		"NegativeParamPosition": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"param","index":-1}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"param","index":-1}}`,
 			"curated entry Demo.m: returns the parameter at position -1",
 		},
 		"UnionMemberWithNoPosition": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param"}]}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param"}]}}`,
 			"curated entry Demo.m: union member: returns a parameter but names no position",
 		},
 		"UnionNamingOneValueTwice": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"union","members":[{"kind":"param","index":1},{"kind":"param","index":1}]}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"union","members":[{"kind":"param","index":1},{"kind":"param","index":1}]}}`,
 			"curated entry Demo.m: returns a union naming param(1) twice",
 		},
 		"MembersOnANonUnionReturn": {
-			`{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":{"kind":"fresh","members":[{"kind":"fresh"}]}}`,
+			`{"reason":"r","reviewedAt":"abc","returns":{"kind":"fresh","members":[{"kind":"fresh"}]}}`,
 			"curated entry Demo.m: returns fresh but names union members",
 		},
 	}
@@ -357,7 +343,7 @@ func TestParseCurationRejects(t *testing.T) {
 func TestParseCurationAcceptsEveryReturnShape(t *testing.T) {
 	t.Parallel()
 
-	body := `{"reason":"r","reviewedAt":"abc","classified":{"returns":true},"returns":`
+	body := `{"reason":"r","reviewedAt":"abc","returns":`
 	tests := map[string]string{
 		"Fresh":    `{"kind":"fresh"}`,
 		"Receiver": `{"kind":"receiver"}`,
@@ -398,8 +384,7 @@ func TestMustParseCuration(t *testing.T) {
 	require.PanicsWithValue(t,
 		"ecma262: committed curated.json is invalid: curated entry Demo.m: has no reason",
 		func() {
-			mustParseCuration([]byte(`{"entries":{"Demo.m":{"reviewedAt":"abc",` +
-				`"classified":{"receiver":true},"receiver":"borrow"}}}`))
+			mustParseCuration([]byte(`{"entries":{"Demo.m":{"reviewedAt":"abc","receiver":"borrow"}}}`))
 		})
 }
 
@@ -490,7 +475,7 @@ func TestParseCurationSortsUnionMembers(t *testing.T) {
 	t.Parallel()
 
 	curation, err := ParseCuration([]byte(`{"entries":{"Demo.m":{"reason":"r","reviewedAt":"abc",` +
-		`"classified":{"returns":true},"returns":{"kind":"union","members":[` +
+		`"returns":{"kind":"union","members":[` +
 		`{"kind":"receiver"},{"kind":"param","index":2},{"kind":"fresh"},{"kind":"param","index":0}]}}}}`))
 	require.NoError(t, err)
 
@@ -558,7 +543,6 @@ func TestWriteCurationReport(t *testing.T) {
 		"Demo.prototype.gone": {
 			Reason:     "stated for the test",
 			ReviewedAt: "000000000000",
-			Classified: Coverage{Receiver: true},
 			Receiver:   RecvBorrow,
 		},
 	}}, methods)

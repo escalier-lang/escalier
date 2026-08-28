@@ -38,17 +38,18 @@ const (
 )
 
 // CuratedEntry is one reviewed record, keyed in curated.json by the canonical
-// spec name of Appendix C. It carries the same determination fields as
-// MethodFact plus the provenance a reviewer needs.
+// spec name of Appendix C. It carries the determination fields of a MethodFact
+// plus the provenance a reviewer needs.
 //
-// Classified marks the axes this entry answers. That is not what the field
-// means on a MethodFact, where it marks the axes the analysis resolved. An axis
-// an entry leaves unset is simply not curated, and the analysis's answer for it
-// stands, settled or withheld alike.
+// An entry answers the axes it carries a value for, and no others. Neither
+// determination has a valid zero value — "" is not a ReceiverKind and not an
+// AliasKind — so a field left out is unambiguously an axis left to the
+// analysis, whose answer for it stands, settled or withheld alike.
 //
 // So the two axes of one method can come from different sources.
-// `Date.prototype.getTime` claims `returns` alone, because the analysis already
-// reads its receiver as `borrow` and only the return alias needs review.
+// `Date.prototype.getTime` carries a return alias and no receiver, because the
+// analysis already reads its receiver as `borrow` and only the return needs
+// review.
 type CuratedEntry struct {
 	// Reason is why the curated answer is right, in the reviewer's words. It
 	// is required, because a claim that outranks the analysis without a stated
@@ -62,10 +63,17 @@ type CuratedEntry struct {
 	// CurationReport lists that entry as stale.
 	ReviewedAt string `json:"reviewedAt"`
 
-	Classified Coverage     `json:"classified"`
-	Receiver   ReceiverKind `json:"receiver,omitempty"`
-	Returns    ReturnFact   `json:"returns,omitzero"`
+	Receiver ReceiverKind `json:"receiver,omitempty"`
+	Returns  ReturnFact   `json:"returns,omitzero"`
 }
+
+// claimsReceiver reports whether the entry answers the receiver axis.
+func (e CuratedEntry) claimsReceiver() bool { return e.Receiver != "" }
+
+// claimsReturns reports whether the entry answers the return axis. A fact that
+// carries a position or members but no kind is malformed rather than absent, so
+// it claims the axis and validate refuses it.
+func (e CuratedEntry) claimsReturns() bool { return !e.Returns.IsZero() }
 
 // Curation is the whole committed layer.
 type Curation struct {
@@ -208,24 +216,18 @@ func (e CuratedEntry) validate() error {
 	if e.ReviewedAt == "" {
 		return fmt.Errorf("has no reviewedAt digest")
 	}
-	if !e.Classified.Receiver && !e.Classified.Returns {
-		return fmt.Errorf("claims no determination")
+	if !e.claimsReceiver() && !e.claimsReturns() {
+		return fmt.Errorf("answers no determination")
 	}
-	if e.Classified.Receiver {
+	if e.claimsReceiver() {
 		switch e.Receiver {
 		case RecvBorrow, RecvMutBorrow, RecvNone:
 		default:
-			return fmt.Errorf("claims receiver %q, which is not a receiver kind", e.Receiver)
+			return fmt.Errorf("names receiver %q, which is not a receiver kind", e.Receiver)
 		}
 	}
-	if !e.Classified.Receiver && e.Receiver != "" {
-		return fmt.Errorf("names receiver %q on an axis its coverage leaves unclaimed", e.Receiver)
-	}
-	if e.Classified.Returns {
+	if e.claimsReturns() {
 		return e.Returns.validate()
-	}
-	if !e.Returns.IsZero() {
-		return fmt.Errorf("names returns %s on an axis its coverage leaves unclaimed", e.Returns)
 	}
 	return nil
 }
@@ -328,7 +330,7 @@ func mergeCuration(cfg *CFG, curation *Curation, methods map[string]MethodFact) 
 		}
 
 		fact := methods[name]
-		if entry.Classified.Receiver {
+		if entry.claimsReceiver() {
 			if reason := receiverConflict(fn, entry.Receiver); reason != "" {
 				report.Refused = append(report.Refused,
 					fmt.Sprintf("%s %s: curated %s, but %s", name, AxisReceiver, entry.Receiver, reason))
@@ -338,7 +340,7 @@ func mergeCuration(cfg *CFG, curation *Curation, methods map[string]MethodFact) 
 				fact.Classified.Receiver = true
 			}
 		}
-		if entry.Classified.Returns {
+		if entry.claimsReturns() {
 			report.Notes = append(report.Notes, returnsNote(name, fact, entry))
 			fact.Returns = entry.Returns
 			fact.Classified.Returns = true
