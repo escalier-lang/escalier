@@ -514,6 +514,9 @@ func allocatesShallowly(fn *Func) bool {
 	return false
 }
 
+// Each role renders as its own word, and a role outside the three renders as
+// its number. TestConstructorCalleesMatchTheGraph compares whole role slices,
+// so a rendering that lost the names would cost a failing run its diagnosis.
 func TestArgRoleString(t *testing.T) {
 	require.Equal(t, "held", argHeld.String())
 	require.Equal(t, "value", argValue.String())
@@ -695,6 +698,8 @@ func returnedNames(fn *Func) set.Set[string] {
 	}
 }
 
+// sortedKeys returns the operations a role table names, sorted, so the
+// derivation visits them in an order that does not depend on map iteration.
 func sortedKeys(roles map[string][]argRole) []string {
 	names := make([]string, 0, len(roles))
 	for name := range roles {

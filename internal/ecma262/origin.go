@@ -645,6 +645,8 @@ const (
 	argList
 )
 
+// String renders a role as the word the derivation test prints, so a failing
+// table comparison reads as `held` and `list` rather than as two integers.
 func (r argRole) String() string {
 	switch r {
 	case argHeld:
