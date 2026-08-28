@@ -3,6 +3,7 @@ package printer
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"strconv"
 	"strings"
 
@@ -2089,6 +2090,48 @@ func PrintBlock(block *ast.Block, opts Options) (string, error) {
 	var builder strings.Builder
 	NewPrinter(&builder, opts).printBlock(block)
 	return builder.String(), nil
+}
+
+// PrintClassElem prints one class member — a field, method, getter,
+// setter, or constructor — without the enclosing class body. Print
+// dispatches over the six node families a whole declaration is built
+// from and a member is not one of them, so it cannot reach a ClassElem.
+// The output carries no leading indent and no trailing separator. The
+// caller places both.
+func PrintClassElem(elem ast.ClassElem, opts Options) (string, error) {
+	if isNilMember(elem) {
+		return "", fmt.Errorf("cannot print a nil class member")
+	}
+	var builder strings.Builder
+	NewPrinter(&builder, opts).printClassElem(elem)
+	return builder.String(), nil
+}
+
+// PrintObjTypeAnnElem prints one member of an object type annotation or
+// interface body, without the enclosing braces. An ObjTypeAnnElem is
+// not an ast.Node at all — it declares no Span — so this is the only
+// way to print one on its own. Same no-indent, no-separator contract as
+// PrintClassElem.
+func PrintObjTypeAnnElem(elem ast.ObjTypeAnnElem, opts Options) (string, error) {
+	if isNilMember(elem) {
+		return "", fmt.Errorf("cannot print a nil object type member")
+	}
+	var builder strings.Builder
+	NewPrinter(&builder, opts).printObjTypeAnnElem(elem)
+	return builder.String(), nil
+}
+
+// isNilMember reports whether a member interface holds nothing to
+// print. Every ClassElem and ObjTypeAnnElem variant is a pointer type,
+// so an interface can carry a typed nil: `elem == nil` reports false
+// for it and the first method call then panics. A caller handing over
+// an absent member gets the same error either way.
+func isNilMember(elem any) bool {
+	if elem == nil {
+		return true
+	}
+	value := reflect.ValueOf(elem)
+	return value.Kind() == reflect.Ptr && value.IsNil()
 }
 
 // PrintToWriter prints an AST node to an io.Writer
