@@ -3,6 +3,7 @@ module github.com/escalier-lang/escalier
 go 1.26.5
 
 require (
+	github.com/aymanbagabas/go-udiff v0.4.1
 	github.com/gkampitakis/go-snaps v0.5.22
 	github.com/stretchr/testify v1.10.0
 	github.com/tidwall/btree v1.8.0

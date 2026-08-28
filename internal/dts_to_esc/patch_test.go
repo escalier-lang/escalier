@@ -1,11 +1,11 @@
 package dts_to_esc
 
 import (
-	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/stretchr/testify/require"
 )
 
@@ -68,7 +68,7 @@ func diffCases(t *testing.T) []diffCase {
 			edits:  []textEdit{{at: 0, text: oneDecl + "\n"}},
 			want: `--- /dev/null
 +++ b/std/array.esc
-@@ -0,0 +1,1 @@
+@@ -0,0 +1 @@
 +declare fn one() -> number
 `,
 		},
@@ -135,7 +135,7 @@ func diffCases(t *testing.T) []diffCase {
 			}},
 			want: `--- a/std/array.esc
 +++ b/std/array.esc
-@@ -1,1 +1,3 @@
+@@ -1 +1,3 @@
 -declare fn one() -> number
 \ No newline at end of file
 +declare fn one() -> number
@@ -194,103 +194,39 @@ func diffCases(t *testing.T) []diffCase {
 // TestUnifiedDiff pins the rendered patch for every shape in diffCases,
 // and pins it against the edits in either order. The write pass hands
 // its edits over grouped by owner, which need not run down the file, so
-// the renderer sorts them itself.
+// the order they arrive in must not reach the output.
 func TestUnifiedDiff(t *testing.T) {
 	t.Parallel()
 	for _, tc := range diffCases(t) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.want,
-				unifiedDiff("std/array.esc", tc.exists, tc.contents, tc.edits))
+			got, err := unifiedDiff("std/array.esc", tc.exists, tc.contents, tc.edits)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
 
 			backwards := slices.Clone(tc.edits)
 			slices.Reverse(backwards)
-			require.Equal(t, tc.want,
-				unifiedDiff("std/array.esc", tc.exists, tc.contents, backwards))
+			got, err = unifiedDiff("std/array.esc", tc.exists, tc.contents, backwards)
+			require.NoError(t, err)
+			require.Equal(t, tc.want, got)
 		})
 	}
 }
 
-// applyUnifiedDiff reconstructs the new file from a patch and the text
-// it was rendered against. It reads only what unifiedDiff emits: a
-// two-line header, then hunks in committed-line order.
-func applyUnifiedDiff(t *testing.T, contents, patch string) string {
-	t.Helper()
-	committed := splitLinesKeepEnds(contents)
-	var out []string
-	at := 0
-	prev := byte(0)
-
-	body := splitLinesKeepEnds(patch)
-	require.GreaterOrEqual(t, len(body), 2, "a patch opens with its two header lines")
-	for _, raw := range body[2:] {
-		line := strings.TrimSuffix(raw, "\n")
-		switch {
-		case strings.HasPrefix(line, "@@ "):
-			// Copy the committed lines the hunk skipped over.
-			start, count := parseHunkStart(t, line)
-			first := start
-			if count > 0 {
-				first = start - 1
-			}
-			require.LessOrEqual(t, at, first, "hunks run in committed-line order")
-			out = append(out, committed[at:first]...)
-			at = first
-		case line == `\ No newline at end of file`:
-			// The line before the marker was written with a newline
-			// this file does not have. A removed line contributed
-			// nothing to strip.
-			if prev != '-' {
-				out[len(out)-1] = strings.TrimSuffix(out[len(out)-1], "\n")
-			}
-		case strings.HasPrefix(line, " "):
-			require.Less(t, at, len(committed), "a context line names a committed line")
-			out = append(out, committed[at])
-			at++
-		case strings.HasPrefix(line, "-"):
-			require.Less(t, at, len(committed), "a removed line names a committed line")
-			at++
-		case strings.HasPrefix(line, "+"):
-			out = append(out, line[1:]+"\n")
-		default:
-			require.Fail(t, "unexpected patch line", "%q", line)
-		}
-		if line != `\ No newline at end of file` && line != "" {
-			prev = line[0]
-		}
-	}
-	out = append(out, committed[at:]...)
-	return strings.Join(out, "")
-}
-
-// parseHunkStart reads the committed-side start and count off a hunk
-// header such as `@@ -4,5 +4,10 @@`.
-func parseHunkStart(t *testing.T, header string) (start, count int) {
-	t.Helper()
-	fields := strings.Fields(header)
-	require.Len(t, fields, 4, "a hunk header has four fields")
-	_, err := fmt.Sscanf(fields[1], "-%d,%d", &start, &count)
-	require.NoError(t, err, "parsing %q", fields[1])
-	return start, count
-}
-
-// TestUnifiedDiff_ReproducesTheWrite applies each rendered patch back to
-// the committed text and checks the result against what the write pass
-// would leave on disk. Both are built from one set of edits, so a patch
-// that does not reproduce the write is a rendering bug. A contributor
-// who applied such a patch by hand would land somewhere `regenerate`
-// never would.
+// TestUnifiedDiff_ReproducesTheWrite checks that the edits handed to
+// the renderer still produce the file the write pass leaves on disk.
+// lineAligned rotates an insertion onto the following line boundary to
+// keep it reading as a plain addition, and that rotation has to be
+// byte-for-byte neutral. A contributor applying the `check` output
+// would otherwise land somewhere `regenerate` never would.
 func TestUnifiedDiff_ReproducesTheWrite(t *testing.T) {
 	t.Parallel()
 	for _, tc := range diffCases(t) {
-		if len(tc.edits) == 0 {
-			continue
-		}
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			patch := unifiedDiff("std/array.esc", tc.exists, tc.contents, tc.edits)
-			require.Equal(t, applyEdits(tc.contents, tc.edits),
-				applyUnifiedDiff(t, tc.contents, patch))
+			rendered, err := udiff.Apply(tc.contents, udiffEdits(tc.contents, tc.edits))
+			require.NoError(t, err)
+			require.Equal(t, applyEdits(tc.contents, tc.edits), rendered)
 		})
 	}
 }
