@@ -2,10 +2,10 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
-	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
@@ -191,8 +191,10 @@ func diffCases(t *testing.T) []diffCase {
 	}
 }
 
-// TestUnifiedDiff pins the rendered patch for every shape in
-// diffCases.
+// TestUnifiedDiff pins the rendered patch for every shape in diffCases,
+// and pins it against the edits in either order. The write pass hands
+// its edits over grouped by owner, which need not run down the file, so
+// the renderer sorts them itself.
 func TestUnifiedDiff(t *testing.T) {
 	t.Parallel()
 	for _, tc := range diffCases(t) {
@@ -200,28 +202,13 @@ func TestUnifiedDiff(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tc.want,
 				unifiedDiff("std/array.esc", tc.exists, tc.contents, tc.edits))
+
+			backwards := slices.Clone(tc.edits)
+			slices.Reverse(backwards)
+			require.Equal(t, tc.want,
+				unifiedDiff("std/array.esc", tc.exists, tc.contents, backwards))
 		})
 	}
-}
-
-// TestUnifiedDiff_SortsEditsByOffset pins that the renderer orders the
-// edits itself. The write pass applies them from the end backwards, so
-// the slice it hands over runs the other way from the diff.
-func TestUnifiedDiff_SortsEditsByOffset(t *testing.T) {
-	t.Parallel()
-	const contents = "declare fn one() -> number\ndeclare fn two() -> number\n"
-	patch := unifiedDiff("std/array.esc", true, contents, []textEdit{
-		{at: len(contents), text: "declare fn three() -> number\n"},
-		{at: after(t, contents, "declare fn one() -> number"), text: " // first"},
-	})
-	snaps.MatchInlineSnapshot(t, patch, snaps.Inline(`--- a/std/array.esc
-+++ b/std/array.esc
-@@ -1,2 +1,3 @@
--declare fn one() -> number
-+declare fn one() -> number // first
- declare fn two() -> number
-+declare fn three() -> number
-`))
 }
 
 // applyUnifiedDiff reconstructs the new file from a patch and the text

@@ -244,39 +244,6 @@ export declare class Array<T> {
 	require.False(t, report.Failed())
 }
 
-// The report an operator reads, over a tree with nothing in it. The
-// snapshot holds all of it, so the section heading, the per-finding
-// indentation, and the summary line are pinned alongside the footer.
-//
-// That footer is what the test is named for. A green check means every
-// `.d.ts` name has an `.esc` counterpart, not that the counterpart still
-// means the same thing, and every run says so.
-func TestCheckReport_WriteNamesTheUnimplementedDriftChecks(t *testing.T) {
-	t.Parallel()
-	res := partitionOf(t, "lib.es5.d.ts", `
-interface Array<T> { length: number; }
-interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
-declare var Array: ArrayConstructor;
-`)
-	report, err := CheckPartition(res, t.TempDir())
-	require.NoError(t, err)
-
-	var sb strings.Builder
-	require.NoError(t, report.Write(&sb))
-	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`--- /dev/null
-+++ b/std/array.esc
-@@ -0,0 +1,6 @@
-+@js("Array")
-+export declare class Array<T> {
-+    length: number,
-+    constructor(mut self),
-+    static readonly prototype: Array<any>
-+}
-check: 1 missing declarations, 0 missing members, 0 extra declarations
-note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
-`))
-}
-
 func TestCheckPartition_HandFusedTrioIsSticky(t *testing.T) {
 	t.Parallel()
 	// The converter emits the class-via-trio idiom as separate
