@@ -73,6 +73,17 @@ type PackageDiff struct {
 	// Removed names committed declarations absent from the converted
 	// output, usually a TS-side removal. Neither mode deletes anything.
 	Removed []string
+
+	// Patch is the unified diff between the committed file and what a
+	// regenerate run would leave in its place, empty when the two
+	// already agree. Only the check mode fills it in.
+	Patch string
+
+	// Skipped names declarations whose body braces could not be located
+	// in the committed source. Their missing members are in NewMembers
+	// but not in Patch, since a splice into a body the pass cannot find
+	// would be blind.
+	Skipped []string
 }
 
 // Empty reports whether the committed file already covers everything
@@ -114,15 +125,6 @@ type NewMember struct {
 	Text string
 }
 
-// Label renders a member as it appears in a report, e.g.
-// "Array.isArray (static)".
-func (m *NewMember) Label() string {
-	if m.Static {
-		return fmt.Sprintf("%s.%s (static)", m.Owner, m.Name)
-	}
-	return fmt.Sprintf("%s.%s", m.Owner, m.Name)
-}
-
 // CheckReport is the outcome of a read-only check run: one PackageDiff
 // per package that produced a bucket, in package-URI order.
 type CheckReport struct {
@@ -135,14 +137,22 @@ type CheckReport struct {
 // escDir is the directory holding the `std/`, `web/`, and `node/`
 // subtrees — internal/interop/data/ in the repo, the same root
 // WritePartitionedTree writes into.
+//
+// Each package's diff carries the patch a regenerate run would apply,
+// so a contributor reads the same change here that the write mode
+// would make.
 func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error) {
 	plans, err := planPartition(result, escDir)
 	if err != nil {
 		return nil, err
 	}
 	report := &CheckReport{Packages: make([]PackageDiff, 0, len(plans))}
-	for _, plan := range plans {
-		report.Packages = append(report.Packages, plan.diff)
+	for i := range plans {
+		diff := plans[i].diff
+		spliced := plans[i].splice()
+		diff.Patch = unifiedDiff(diff.Path, diff.Exists, plans[i].contents, spliced.edits)
+		diff.Skipped = spliced.skipped
+		report.Packages = append(report.Packages, diff)
 	}
 	return report, nil
 }
@@ -172,35 +182,27 @@ func (r *CheckReport) Counts() (decls, members, removed int) {
 	return decls, members, removed
 }
 
-// Write prints the report to w, one section per package with findings,
-// then a summary. The footer names the drift checks that are not
+// Write prints the report to w: the unified diff for every package the
+// re-run would change, then a note for each finding the diff cannot
+// show, then a summary. The footer names the drift checks that are not
 // implemented so a passing run is not read as full coverage.
 func (r *CheckReport) Write(w io.Writer) error {
 	for i := range r.Packages {
 		p := &r.Packages[i]
-		if p.Empty() && len(p.Removed) == 0 {
-			continue
-		}
-		if _, err := fmt.Fprintf(w, "%s (%s)\n", p.Pkg, p.Path); err != nil {
+		if _, err := fmt.Fprint(w, p.Patch); err != nil {
 			return err
 		}
-		if !p.Exists {
-			if _, err := fmt.Fprintf(w, "  missing file\n"); err != nil {
-				return err
-			}
-		}
-		for _, d := range p.NewDecls {
-			if _, err := fmt.Fprintf(w, "  missing declaration: %s (%s)\n", d.Name, d.Kind); err != nil {
-				return err
-			}
-		}
-		for j := range p.NewMembers {
-			if _, err := fmt.Fprintf(w, "  missing member: %s\n", p.NewMembers[j].Label()); err != nil {
+		for _, name := range p.Skipped {
+			if _, err := fmt.Fprintf(w,
+				"note: %s: could not locate the body of %s; its missing members are not in the diff\n",
+				p.Path, name); err != nil {
 				return err
 			}
 		}
 		for _, name := range p.Removed {
-			if _, err := fmt.Fprintf(w, "  extra declaration: %s (absent from the .d.ts; not removed)\n", name); err != nil {
+			if _, err := fmt.Fprintf(w,
+				"note: %s: %s is absent from the .d.ts; the diff does not remove it\n",
+				p.Path, name); err != nil {
 				return err
 			}
 		}
@@ -799,36 +801,48 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 		return res, fmt.Errorf("creating package dir for %s: %w", p.diff.Pkg, err)
 	}
 
-	updated, inserted, skipped := p.splice()
-	if p.diff.Exists && updated == p.contents {
+	spliced := p.splice()
+	if p.diff.Exists && spliced.text == p.contents {
 		// Every owner was skipped and nothing was appended, so there is
 		// no byte to write. Rewriting identical contents would move the
 		// file's mtime for no change.
-		res.Skipped = skipped
+		res.Skipped = spliced.skipped
 		return res, nil
 	}
-	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
+	if err := os.WriteFile(dest, []byte(spliced.text), 0o644); err != nil {
 		return res, fmt.Errorf("writing %s: %w", dest, err)
 	}
 
 	res.AddedDecls = len(p.diff.NewDecls)
-	res.AddedMembers = inserted
-	res.Skipped = skipped
+	res.AddedMembers = spliced.inserted
+	res.Skipped = spliced.skipped
 	return res, nil
+}
+
+// spliceResult is the committed file with the re-run's additions
+// applied, plus what it took to get there.
+type spliceResult struct {
+	// text is the new file contents.
+	text string
+
+	// edits are the insertions text is made of, each an offset into
+	// the committed source and the bytes that go in there. The check
+	// mode renders them as a unified diff.
+	edits []textEdit
+
+	// inserted counts the members that landed.
+	inserted int
+
+	// skipped names the declarations whose body braces could not be
+	// located; their members were left out rather than spliced blind.
+	skipped []string
 }
 
 // splice produces the new file contents: missing members spliced into
 // the bodies they belong on, then missing declarations appended. Every
 // byte the committed file already held is carried over unchanged.
-//
-// `inserted` counts the members that landed. `skipped` names the
-// declarations whose body braces could not be located; their members
-// were left out rather than spliced blind.
-func (p *packagePlan) splice() (out string, inserted int, skipped []string) {
-	type edit struct {
-		at   int
-		text string
-	}
+func (p *packagePlan) splice() spliceResult {
+	var res spliceResult
 
 	// Group members by owner so one declaration takes one insertion.
 	order := make([]ast.Decl, 0, len(p.inserts))
@@ -842,43 +856,54 @@ func (p *packagePlan) splice() (out string, inserted int, skipped []string) {
 		byOwner[ins.owner] = append(byOwner[ins.owner], ins.text)
 	}
 
-	var edits []edit
 	for _, owner := range order {
 		at, brace, ok := bodyInsertPoint(p.contents, owner)
 		if !ok {
-			skipped = append(skipped, names[owner])
+			res.skipped = append(res.skipped, names[owner])
 			continue
 		}
-		inserted += len(byOwner[owner])
-		edits = append(edits, edit{
+		res.inserted += len(byOwner[owner])
+		res.edits = append(res.edits, textEdit{
 			at:   at,
 			text: memberInsertText(p.contents, at, brace, byOwner[owner]),
 		})
 	}
+	if text := p.appendedDecls(); text != "" {
+		res.edits = append(res.edits, textEdit{at: len(p.contents), text: text})
+	}
 
 	// Apply from the end backwards so each offset still indexes into
 	// the text the spans were measured against.
-	sort.Slice(edits, func(i, j int) bool { return edits[i].at > edits[j].at })
-	out = p.contents
-	for _, e := range edits {
-		out = out[:e.at] + e.text + out[e.at:]
+	applied := make([]textEdit, len(res.edits))
+	copy(applied, res.edits)
+	sort.Slice(applied, func(i, j int) bool { return applied[i].at > applied[j].at })
+	res.text = p.contents
+	for _, e := range applied {
+		res.text = res.text[:e.at] + e.text + res.text[e.at:]
 	}
+	return res
+}
 
-	if len(p.diff.NewDecls) > 0 {
-		var sb strings.Builder
-		sb.WriteString(out)
-		if out != "" && !strings.HasSuffix(out, "\n") {
+// appendedDecls renders the missing declarations as the block that goes
+// on the end of the committed file, blank lines and all. A committed
+// file that does not end with a newline gets one first, so the appended
+// block starts on a line of its own. The result is "" when nothing is
+// missing.
+func (p *packagePlan) appendedDecls() string {
+	if len(p.diff.NewDecls) == 0 {
+		return ""
+	}
+	var sb strings.Builder
+	if p.contents != "" && !strings.HasSuffix(p.contents, "\n") {
+		sb.WriteString("\n")
+	}
+	for i, d := range p.diff.NewDecls {
+		if p.contents != "" || i > 0 {
 			sb.WriteString("\n")
 		}
-		for i, d := range p.diff.NewDecls {
-			if out != "" || i > 0 {
-				sb.WriteString("\n")
-			}
-			sb.WriteString(d.Text)
-		}
-		out = sb.String()
+		sb.WriteString(d.Text)
 	}
-	return out, inserted, skipped
+	return sb.String()
 }
 
 // bodyInsertPoint locates where a new member goes inside a
