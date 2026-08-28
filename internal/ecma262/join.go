@@ -6,13 +6,17 @@ import (
 	"sort"
 )
 
-// Signature is the declared parameter shape of one overload, which is all the
-// join needs from the type source. Params counts the declared parameters,
-// excluding a receiver. Rest is true when the last declared parameter takes
-// the remaining arguments, so every position from Params-1 onward exists.
+// Signature is the declared shape of one overload, which is all the join needs
+// from the type source. Params counts the declared parameters, excluding a
+// receiver. Rest is true when the last declared parameter takes the remaining
+// arguments, so every position from Params-1 onward exists.
 type Signature struct {
 	Params int
 	Rest   bool
+	// PrimitiveReturn is true when every value the declared return type can
+	// hold is a primitive. A union counts only when all of its members do, so
+	// `string | undefined` counts and `string | ArrayBuffer` does not.
+	PrimitiveReturn bool
 }
 
 // Holds reports whether the signature declares a parameter at the 0-based
@@ -29,19 +33,48 @@ func (s Signature) Holds(pos int) bool {
 	return pos < s.Params
 }
 
-// ForSignature resolves the position-keyed parts of a fact against one
-// overload. A spec algorithm maps to a single member even where the type
-// source declares an overload set, so the algorithm-level claims apply to
-// every signature unchanged. A claim that names a parameter position applies
-// only to a signature that declares that position. Where it does not, the
-// return alias drops to AliasUnknown, since the value handed back is one the
-// signature cannot name.
-//
-// A union goes the same way as soon as one of its members names a position the
-// signature lacks. Keeping the other members would publish a narrower set of
-// lifetimes than the algorithm can return, which claims more than the analysis
-// showed.
-func (f MethodFact) ForSignature(s Signature) MethodFact {
+// SignatureFact is one algorithm's fact resolved against one overload. Fact is
+// what the analysis concluded. ReturnOwned is what the declared return type
+// settled on top of it.
+type SignatureFact struct {
+	// Fact is the algorithm's fact with its position-keyed claims resolved
+	// against this overload.
+	Fact MethodFact
+	// ReturnOwned is set when the resolved return is `unknown` and the
+	// overload declares a primitive return type. Fact.Returns is left as the
+	// analysis published it.
+	ReturnOwned bool
+}
+
+func (f SignatureFact) String() string {
+	if !f.ReturnOwned {
+		return f.Fact.String()
+	}
+	return f.Fact.String() + " settled:owned"
+}
+
+// unnamedReturn reports whether the resolved fact hands back a value the join
+// cannot name. Two things leave one. The walk read no return it could
+// resolve, or ForSignature dropped a return naming a position this overload
+// does not declare. A fact with no return coverage makes no claim either way.
+func (f SignatureFact) unnamedReturn() bool {
+	return f.Fact.Classified.Returns && f.Fact.Returns.Kind == AliasUnknown
+}
+
+// ForSignature resolves a fact against one overload. A return naming a
+// parameter position the signature does not declare drops to AliasUnknown, and
+// a union drops whole as soon as one member names such a position. A return
+// left `unknown` is then settled as owned where the signature declares a
+// primitive return type. Every other claim carries over unchanged.
+func (f MethodFact) ForSignature(s Signature) SignatureFact {
+	resolved := SignatureFact{Fact: f.resolvePositions(s)}
+	resolved.ReturnOwned = s.PrimitiveReturn && resolved.unnamedReturn()
+	return resolved
+}
+
+// resolvePositions drops a return claim naming a parameter position this
+// overload does not declare.
+func (f MethodFact) resolvePositions(s Signature) MethodFact {
 	refs := f.Returns.refs()
 	// A union names its members, so one naming none claims values the fact
 	// does not carry and no signature can resolve it. A parameter return with
@@ -89,7 +122,7 @@ type Match struct {
 	Fact     MethodFact
 	// PerSignature is Fact resolved against each of Decl.Signatures, in the
 	// same order.
-	PerSignature []MethodFact
+	PerSignature []SignatureFact
 }
 
 // ReceiverApplies reports whether the join may write the fact's receiver
@@ -121,6 +154,11 @@ type JoinReport struct {
 	// names, sorted. They are the declaration-side counterpart of the
 	// Normalize refusals in UnjoinableFacts.
 	UnkeyedDecls []string
+	// SettledReturns and UnsettledReturns split the resolved signatures whose
+	// return the join cannot name, by whether the declared return type settled
+	// it as owned. Both count per signature rather than per declaration.
+	SettledReturns   int
+	UnsettledReturns int
 }
 
 // Join indexes classified facts by the MemberRef that addresses them, so a
@@ -196,7 +234,14 @@ func (j *Join) Match(decls Declarations) JoinReport {
 		claimed[name] = true
 		match := Match{Decl: decl, SpecName: name, Fact: fact}
 		for _, sig := range decl.Signatures {
-			match.PerSignature = append(match.PerSignature, fact.ForSignature(sig))
+			resolved := fact.ForSignature(sig)
+			match.PerSignature = append(match.PerSignature, resolved)
+			switch {
+			case resolved.ReturnOwned:
+				report.SettledReturns++
+			case resolved.unnamedReturn():
+				report.UnsettledReturns++
+			}
 		}
 		report.Matched = append(report.Matched, match)
 	}
@@ -236,6 +281,11 @@ func WriteJoinReport(report JoinReport, w io.Writer) error {
 	_, err := fmt.Fprintf(w, "  join: %d matched (%d with a receiver claim), %d declarations without a fact, %d facts without a declaration, %d unkeyed declarations, %d unjoinable facts\n",
 		len(report.Matched), withReceiver, len(report.DeclsWithoutFact),
 		len(report.FactsWithoutDecl), len(report.UnkeyedDecls), len(report.UnjoinableFacts))
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(w, "  returns: %d settled as owned by the declared type, %d left unknown\n",
+		report.SettledReturns, report.UnsettledReturns)
 	if err != nil {
 		return err
 	}
