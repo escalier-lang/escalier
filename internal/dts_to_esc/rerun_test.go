@@ -522,16 +522,6 @@ regenerate: +0 declarations, +1 members
 `))
 }
 
-func TestOffsetOf_CountsRunesNotBytes(t *testing.T) {
-	t.Parallel()
-	// Columns count code points, matching the lexer, so a multi-byte
-	// character earlier on the line must not shift the offset.
-	contents := "val π = 1\nval x = 2\n"
-	require.Equal(t, 0, offsetOf(contents, ast.Location{Line: 1, Column: 1}))
-	require.Equal(t, len("val π = 1\n"), offsetOf(contents, ast.Location{Line: 2, Column: 1}))
-	require.Equal(t, len(contents), offsetOf(contents, ast.Location{Line: 9, Column: 1}))
-}
-
 func TestRegeneratePartition_KeepsATrailingComment(t *testing.T) {
 	t.Parallel()
 	// A §7 contributor may close a body with a note. The splice goes
@@ -646,7 +636,8 @@ func TestLastCodeOffset_StepsOverCommentsAndStrings(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := lastCodeOffset(tc.contents, 0, len(tc.contents))
+			comments := parser.LexComments(&ast.Source{Contents: tc.contents})
+			got := lastCodeOffset(tc.contents, comments, 0, len(tc.contents))
 			require.Equal(t, tc.want, tc.contents[:got])
 		})
 	}

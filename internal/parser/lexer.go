@@ -464,6 +464,11 @@ func (lexer *Lexer) next() *Token {
 		}
 	}
 
+	// Byte offsets are tracked alongside line and column so a consumer that
+	// slices the source does not have to re-derive them by counting columns.
+	end.Offset = endOffset
+	token.Span.Start.Offset = startOffset
+	token.Span.End.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
 	lexer.lastToken = token // Track the last token for regex context

@@ -8,9 +8,18 @@ type Source struct {
 	ID       int
 }
 
+// Location is a position in a source file. Line and Column are 1-based
+// and Column counts code points rather than bytes.
+//
+// Offset is the 0-based byte offset of the same position. Only the lexer
+// fills it in, so it is meaningful on a span that came from parsing and
+// zero on a span the checker or a converter synthesized. Code that slices
+// source text by Offset must therefore be reading a span it knows came
+// from the parser.
 type Location struct {
 	Line   int `json:"line"`
 	Column int `json:"column"`
+	Offset int `json:"-"`
 }
 
 func (l Location) String() string {
