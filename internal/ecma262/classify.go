@@ -363,7 +363,7 @@ type Facts struct {
 // reads Curation to tell a curated claim from an analyzed one.
 func NewFacts(cfg *CFG) *Facts {
 	facts := analyze(cfg)
-	facts.curation = curate(cfg, curated, facts.Methods)
+	facts.curation = mergeCuration(cfg, curated, facts.Methods)
 	return facts
 }
 

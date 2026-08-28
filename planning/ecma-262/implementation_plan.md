@@ -1267,13 +1267,24 @@ analysis settles its receiver and the entry corrects only its return.
 
 Each curated axis is one of three things, and the merge reports which:
 
-- a **fill-in**, where the analysis withheld the axis. This is the
-  ordinary case and carries no conflict.
+- a **fill-in**, where the analysis left the axis open. This is the
+  ordinary case and carries no conflict. An axis is open when its coverage
+  is unset, and a return alias is open when it resolved to `unknown` as
+  well, since the top of the alias lattice names no value the return hands
+  back.
 - a **correction**, where the analysis published a claim the review
   contradicts. §6 reads these first, because a correction is either a spec
   subtlety the graph cannot express or an analyzer bug, and the two look
   alike from the report.
 - a **redundant** entry, repeating what the analysis already concluded.
+
+One curated claim is refused rather than merged. Whether a builtin has a
+receiver at all follows from `Func.Kind` and reads no algorithm step, so
+the graph settles it outright. A `borrow` curated onto a static would put
+a `&self` on a declaration that has no self, which is the one curated
+mistake §7 cannot absorb, since receiver mutability is the determination
+it auto-applies. The merge refuses that axis, reports it, and leaves the
+analysis's answer standing.
 
 **Three guards keep the layer from becoming a second source of truth.**
 
@@ -1297,8 +1308,10 @@ it.
 
 **What the layer closes.** Curating the 24 receivers takes the published
 `receiver unclassified` tally to zero and retires the fallback to §7's
-name heuristics for `std:*`. Three of the five interior returns of §4.3
-are curated `fresh`, because a primitive read out of a slot is a copy —
+name heuristics for `std:*`. All 27 committed entries are fill-ins, so
+nothing in the layer yet contradicts a claim the analysis made and §6 has
+no disagreement to triage. Three of the five interior returns of §4.3 are
+curated `fresh`, because a primitive read out of a slot is a copy —
 `Date.prototype.getTime`, `Date.prototype.valueOf`, and `get
 TypedArray.prototype [ @@toStringTag ]`. The two `buffer` getters stay
 `unknown`: what they hand back is a real borrow of an object the receiver
@@ -1322,9 +1335,9 @@ tail. The mutation fixpoint and the origin map carry the bulk mechanically
 and stay as they are.
 
 **Gate.** `curated.json` merges per determination; the published
-`receiver unclassified` tally is zero; each of the three guards has a
-test; the join report distinguishes a curated determination from an
-analyzed one.
+`receiver unclassified` tally is zero; each of the three guards and the
+receiver-kind refusal has a test; the report distinguishes a curated
+determination from an analyzed one.
 
 ## §5. Keying and join (FR7, FR15)
 
@@ -2460,7 +2473,16 @@ digest no longer matches, the entry is reported stale and still applied.
 
 Parsing rejects an entry that cannot be reviewed or applied: one with no
 reason, no reviewed digest, no claimed determination, or a receiver kind
-or alias kind this package cannot spell. A return fact holds the same
-invariants `newReturnFact` builds — a parameter return names its position,
-a union names at least two members and holds neither a union nor an
-`unknown`, and no other kind carries either field.
+or alias kind this package cannot spell. It also rejects a value written
+on an axis the entry's `classified` leaves unclaimed, which the merge
+would otherwise drop with no report line, leaving the reviewer to see
+silence where they wrote a claim.
+
+A return fact holds the same invariants `newReturnFact` builds. A
+parameter return names its position. A union names at least two distinct
+members and holds neither a union nor an `unknown`, since neither names a
+single value a return hands back. No other kind carries a position or
+members. Parsing sorts a union's members by kind and then position, the
+order `newReturnFact` leaves them in, so a curated union compares equal to
+the analyzed fact it repeats and publishes in the order every other fact
+uses.

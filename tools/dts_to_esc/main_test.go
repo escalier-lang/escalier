@@ -74,34 +74,6 @@ export declare class Array<T> {
 `))
 }
 
-// treeOf lists every file under root as a slash-separated path relative
-// to it, sorted. Dropping the root keeps the listing free of the temp
-// directory the test ran in.
-func treeOf(t *testing.T, root string) []string {
-	t.Helper()
-	var out []string
-	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, relErr := filepath.Rel(root, path)
-		if relErr != nil {
-			return relErr
-		}
-		out = append(out, filepath.ToSlash(rel))
-		return nil
-	}))
-	sort.Strings(out)
-	return out
-}
-
-// TestRun_PartitionWritesTheTree covers the §6 PR A mode. The snapshot
-// holds the operator-facing report, the tree the run laid down, and the
-// one package file it emitted, so a change to any of the three shows up
-// in the diff rather than behind a Contains check.
-//
-// The out-dir is a fresh temp path on every run, so the report has it
-// replaced by a placeholder before the comparison.
 // committedCFG is the control-flow graph tools/spec-extract commits, which the
 // --cfg flag reads.
 const committedCFG = "../spec-extract/cfg.json"
@@ -132,6 +104,34 @@ func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {
 	require.Empty(t, treeOf(t, outDir))
 }
 
+// treeOf lists every file under root as a slash-separated path relative
+// to it, sorted. Dropping the root keeps the listing free of the temp
+// directory the test ran in.
+func treeOf(t *testing.T, root string) []string {
+	t.Helper()
+	var out []string
+	require.NoError(t, filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		rel, relErr := filepath.Rel(root, path)
+		if relErr != nil {
+			return relErr
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	}))
+	sort.Strings(out)
+	return out
+}
+
+// TestRun_PartitionWritesTheTree covers the §6 PR A mode. The snapshot
+// holds the operator-facing report, the tree the run laid down, and the
+// one package file it emitted, so a change to any of the three shows up
+// in the diff rather than behind a Contains check.
+//
+// The out-dir is a fresh temp path on every run, so the report has it
+// replaced by a placeholder before the comparison.
 func TestRun_PartitionWritesTheTree(t *testing.T) {
 	t.Parallel()
 	libDir := seedLib(t, arrayLib)

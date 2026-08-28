@@ -1,11 +1,11 @@
 
 [TestCurationReportOverTheCommittedGraph - 1]
 Array.prototype.toLocaleString receiver: fill-in borrow
-Date.prototype.getTime returns: correction fresh over unknown
+Date.prototype.getTime returns: fill-in fresh
 Date.prototype.getTimezoneOffset receiver: fill-in borrow
 Date.prototype.toISOString receiver: fill-in borrow
 Date.prototype.toUTCString receiver: fill-in borrow
-Date.prototype.valueOf returns: correction fresh over unknown
+Date.prototype.valueOf returns: fill-in fresh
 ForInIteratorPrototype.next receiver: fill-in mutBorrow
 Number.prototype.toExponential receiver: fill-in borrow
 Number.prototype.toFixed receiver: fill-in borrow
@@ -26,5 +26,5 @@ String.prototype.toUpperCase receiver: fill-in borrow
 TypedArray.prototype.slice receiver: fill-in borrow
 TypedArray.prototype.toLocaleString receiver: fill-in borrow
 get RegExp.prototype.flags receiver: fill-in borrow
-get TypedArray.prototype [ @@toStringTag ] returns: correction fresh over unknown
+get TypedArray.prototype [ @@toStringTag ] returns: fill-in fresh
 ---
