@@ -16,8 +16,8 @@ type Sink uint8
 const (
 	// SinkSync is a value that leaves as a synchronous abrupt completion.
 	SinkSync Sink = iota
-	// SinkReject is a value handed to the reject function of the promise
-	// capability the algorithm returns.
+	// SinkReject is a value handed to the reject function of the
+	// PromiseCapability Record the algorithm returns. See newPromiseCapability.
 	SinkReject
 )
 
@@ -28,7 +28,7 @@ func (s Sink) String() string {
 	return "throws"
 }
 
-// A promise capability record holds the promise and the two functions that
+// A PromiseCapability Record holds the promise and the two functions that
 // settle it. These are the field names the graph reads off one.
 const (
 	// rejectSlot holds the function that rejects the promise. A step calling it
@@ -38,9 +38,13 @@ const (
 	resolveSlot = "Resolve"
 )
 
-// newCapability is the abstract operation that builds a promise capability: the
-// promise, the function that resolves it, and the function that rejects it.
-const newCapability = "NewPromiseCapability"
+// newPromiseCapability is the abstract operation that builds a
+// PromiseCapability Record. The record holds a promise, the function that
+// resolves it, and the function that rejects it, which is what `new
+// Promise((resolve, reject) => ...)` hands its executor. An algorithm builds
+// one, returns its `[[Promise]]`, and settles that promise later by calling
+// one of the two functions.
+const newPromiseCapability = "NewPromiseCapability"
 
 // completionValue is the field of a completion record holding the value it
 // carries. The inlined `IfAbruptRejectPromise` reads it off a captured
@@ -56,11 +60,12 @@ var argLists = map[string]int{
 	"Construct": 1,
 }
 
-// capabilityInvoke reports whether a call invokes one of the two functions a
-// promise capability holds, and which. `? Call(promiseCapability.[[Reject]],
-// undefined, « reason »)` is the shape, and the graph writes the invoked
-// function as the argument an invoker reads rather than as the callee.
-func capabilityInvoke(node *CallNode) (string, bool) {
+// promiseCapabilityInvoke reports whether a call settles a promise by invoking
+// one of the two functions its capability holds, and which of them.
+// `? Call(promiseCapability.[[Reject]], undefined, « reason »)` is the shape,
+// and the graph writes the invoked function as the argument an invoker reads
+// rather than as the callee.
+func promiseCapabilityInvoke(node *CallNode) (string, bool) {
 	position, invoking := invokers[node.Callee]
 	if !invoking || position >= len(node.Args) {
 		return "", false
@@ -75,7 +80,7 @@ func capabilityInvoke(node *CallNode) (string, bool) {
 // rejectReason returns the value a step hands to a promise capability's reject
 // function, and whether the step is such a call at all.
 func rejectReason(node *CallNode) (Expr, bool) {
-	slot, settling := capabilityInvoke(node)
+	slot, settling := promiseCapabilityInvoke(node)
 	if !settling || slot != rejectSlot {
 		return nil, false
 	}
@@ -145,7 +150,7 @@ func newRejectPlan(fn *Func, rejecters set.Set[string]) *rejectPlan {
 		return plan
 	}
 	plan.modeled = combinatorRejects(fn)
-	plan.delegated = delegatesCapability(fn, rejecters)
+	plan.delegated = delegatesPromiseCapability(fn, rejecters)
 
 	scan := &rejectScan{fn: fn, defs: definitions(fn), plan: plan}
 	routed := set.NewSet[int]()
@@ -197,7 +202,7 @@ func rejecters(cfg *CFG) set.Set[string] {
 			if !ok {
 				continue
 			}
-			if slot, settling := capabilityInvoke(call); settling && slot == rejectSlot {
+			if slot, settling := promiseCapabilityInvoke(call); settling && slot == rejectSlot {
 				names.Add(fn.Name)
 				break
 			}
@@ -206,7 +211,7 @@ func rejecters(cfg *CFG) set.Set[string] {
 	return names
 }
 
-// delegatesCapability reports whether fn passes a promise capability it built to
+// delegatesPromiseCapability reports whether fn passes a capability it built to
 // a function that rejects one. `AsyncFromSyncIteratorPrototype.next` is the
 // shape: it hands its capability to `AsyncFromSyncIteratorContinuation`, where
 // three of the four rejections of the promise it returns happen. Following the
@@ -214,8 +219,8 @@ func rejecters(cfg *CFG) set.Set[string] {
 // §9.3 does not build, so the caller is flagged instead. The check is on the
 // immediate callee, which leaves the combinators alone; each passes its
 // capability to a `PerformPromise*` operation that only resolves it.
-func delegatesCapability(fn *Func, rejecters set.Set[string]) bool {
-	held := capabilityNames(fn)
+func delegatesPromiseCapability(fn *Func, rejecters set.Set[string]) bool {
+	held := promiseCapabilityNames(fn)
 	if held.Len() == 0 {
 		return false
 	}
@@ -233,17 +238,17 @@ func delegatesCapability(fn *Func, rejecters set.Set[string]) bool {
 	return false
 }
 
-// capabilityNames returns the value names a function binds to a promise
-// capability it built. A binding that renames one carries it along, which is how
-// `let promiseCapability be %0` reaches the name the steps below it use.
-func capabilityNames(fn *Func) set.Set[string] {
+// promiseCapabilityNames returns the value names a function binds to a
+// capability it built. A binding that renames one carries it along, which is
+// how `let promiseCapability be %0` reaches the name the steps below it use.
+func promiseCapabilityNames(fn *Func) set.Set[string] {
 	held := set.NewSet[string]()
 	for {
 		grew := false
 		for _, node := range fn.Nodes {
 			switch node := node.(type) {
 			case *CallNode:
-				if node.Callee == newCapability && node.Target != "" && !held.Contains(node.Target) {
+				if node.Callee == newPromiseCapability && node.Target != "" && !held.Contains(node.Target) {
 					held.Add(node.Target)
 					grew = true
 				}

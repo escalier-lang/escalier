@@ -520,7 +520,7 @@ func (a *throwAnalysis) callees(cfg *CFG, fn *Func) []*Func {
 	var called []*Func
 	seen := set.NewSet[*Func]()
 	add := func(call *CallNode) {
-		if _, settling := capabilityInvoke(call); settling {
+		if _, settling := promiseCapabilityInvoke(call); settling {
 			return
 		}
 		target := resolveCallee(cfg, a.origins[fn], call.Callee)
@@ -649,10 +649,10 @@ func raisedOf(origin *OriginMap, e Expr) Exception {
 // propagate records what one call hands on to fn through sink, and reports
 // whether that grew fn's throws.
 func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *OriginMap, node *CallNode, index int, sink Sink) bool {
-	if _, settling := capabilityInvoke(node); settling {
-		// `? Call(promiseCapability.[[Reject]], undefined, « reason »)` and its
-		// resolve counterpart. The function invoked is one
-		// NewPromiseCapability built, which settles a promise and raises
+	if _, settling := promiseCapabilityInvoke(node); settling {
+		// `? Call(promiseCapability.[[Reject]], undefined, « reason »)` and
+		// its resolve counterpart. The function invoked is one
+		// `NewPromiseCapability` built, which settles a promise and raises
 		// nothing, so the step contributes to neither channel. The reason it
 		// carries is the reject plan's business.
 		return false

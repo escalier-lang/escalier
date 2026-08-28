@@ -307,14 +307,14 @@ func TestRejectWalkRecordsAnUnplaceableReason(t *testing.T) {
 // rather than run code the caller supplied, and reading the step as an invoke
 // of an untraceable function value would leave every promise-returning method
 // incomplete and raising an unknown value.
-func TestCapabilityInvokeContributesToNeitherChannel(t *testing.T) {
+func TestSettlingAPromiseContributesToNeitherChannel(t *testing.T) {
 	cfg := directRejectGraph(t, `{"kind":"var","var":"r"}`)
 	demo := cfg.Builtin("Demo")
 	throws := NewThrowSummary(cfg).Of(demo)
 	require.False(t, throws.Incomplete)
 	require.Equal(t, "none", throws.String())
 
-	settle, ok := capabilityInvoke(demo.Nodes[0].(*CallNode))
+	settle, ok := promiseCapabilityInvoke(demo.Nodes[0].(*CallNode))
 	require.True(t, ok)
 	require.Equal(t, rejectSlot, settle)
 }
@@ -324,7 +324,7 @@ func TestCapabilityInvokeContributesToNeitherChannel(t *testing.T) {
 // and no source above sees them.
 // `AsyncFromSyncIteratorPrototype.next` passes its capability to
 // `AsyncFromSyncIteratorContinuation`, which rejects it three times over.
-func TestRejectSetFlagsADelegatedCapability(t *testing.T) {
+func TestRejectSetFlagsADelegatedPromiseCapability(t *testing.T) {
 	require.True(t, throwsOf(t, "AsyncFromSyncIteratorPrototype.next").Incomplete)
 
 	// The combinators pass their capability to a `PerformPromise*` operation
