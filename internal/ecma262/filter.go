@@ -27,6 +27,28 @@ var coercionAOs = set.FromSlice([]string{
 	"ThisSymbolValue",
 })
 
+// receiverIdentityCoercions maps a coercion to the owner whose receiver it
+// hands straight back. `ToString(O)` returns `O` at its first step when `O` is
+// already a String, so on a `String.prototype` method the `ToPrimitive` call
+// further down its body never runs and nothing under that call can raise.
+//
+// This is what separates the two rules the filter applies. The base rule drops
+// the coercion's own type check, which a declared receiver type excludes
+// whatever that type is. This one drops everything the coercion would reach
+// below it, which is sound only where the receiver's type is already the
+// coercion's target, so it reads the owner of the member key to check that.
+//
+// The owner is not a type channel. It is fixed by the member the declaration
+// hangs off, so it comes out of the spec key by Normalize and needs no join.
+//
+// The entries are the coercions with a body to reach past. `ToObject`,
+// `RequireObjectCoercible`, and the `This*Value` operations return or raise
+// without calling anything, so there is nothing under them to drop.
+var receiverIdentityCoercions = map[string]string{
+	"ToNumber": "Number",
+	"ToString": "String",
+}
+
 // coercionGuardArg is the position of the value a coercion operation checks.
 // Every entry in coercionAOs declares that one parameter and nothing else, and
 // TestCoercionAOsRaiseOnTheirFirstArgument names it per operation.
@@ -52,6 +74,10 @@ type FilterDecision struct {
 	Coercion string
 	Coerced  string
 	Dropped  bool
+	// Under marks a site the coercion did not raise but sits below, dropped
+	// because the receiver's type makes that coercion an identity and the steps
+	// it would reach past one unreachable. See underReceiverIdentity.
+	Under bool
 }
 
 func (d FilterDecision) String() string {
@@ -64,6 +90,8 @@ func (d FilterDecision) String() string {
 		return fmt.Sprintf("%s: %s %s", d.Method, verdict, d.Site)
 	case d.Coerced == "":
 		return fmt.Sprintf("%s: %s %s [%s, value untraced]", d.Method, verdict, d.Site, d.Coercion)
+	case d.Under:
+		return fmt.Sprintf("%s: %s %s [under %s of %s]", d.Method, verdict, d.Site, d.Coercion, d.Coerced)
 	default:
 		return fmt.Sprintf("%s: %s %s [%s of %s]", d.Method, verdict, d.Site, d.Coercion, d.Coerced)
 	}
@@ -174,18 +202,101 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 		return false
 	}
 	guard := f.coerced(fn, &site)
-	dropped := guard.threaded && guard.value.Kind == OriginReceiver
 	decision := FilterDecision{
 		Method:   fn.Name,
 		Site:     site.String(),
 		Coercion: guard.ao,
-		Dropped:  dropped,
+		Dropped:  guard.threaded && guard.value.Kind == OriginReceiver,
 	}
 	if guard.threaded {
 		decision.Coerced = originRef(guard.value)
 	}
+	// A site the base rule keeps can still sit under a coercion the receiver's
+	// type makes an identity, which never reaches the steps below it.
+	if !decision.Dropped {
+		if ao := f.underReceiverIdentity(fn, &site); ao != "" {
+			decision.Coercion, decision.Coerced = ao, originRef(Receiver)
+			decision.Dropped, decision.Under = true, true
+		}
+	}
 	f.report.Decisions = append(f.report.Decisions, decision)
-	return dropped
+	return decision.Dropped
+}
+
+// underReceiverIdentity returns the coercion the site's chain passes through
+// whose receiver argument makes it an identity, or the empty string when it
+// passes through no such call. Every step that coercion would reach past the
+// identity is unreachable, and so is the site under them.
+//
+// `String.prototype.charAt` runs `? ToString(O)` on a receiver the declaration
+// types as a String. `ToString` hands a String straight back at its first step,
+// so the `? ToPrimitive(argument, string)` further down its body never runs,
+// nor does the `@@toPrimitive` lookup and call under that.
+//
+// Both guards have to hold. The coercion has to be an identity for this
+// owner's receiver, and the value it was handed has to be that receiver rather
+// than a parameter that happens to reach the same operation. `charAt` coerces
+// `pos` through `ToNumber` on the same algorithm, and that stands.
+func (f *coercionFilter) underReceiverIdentity(fn *Func, site *ThrowSite) string {
+	ref, ok := Normalize(fn.Name)
+	if !ok {
+		return ""
+	}
+	hops := f.chain(fn, site)
+	for depth, hop := range hops {
+		callee := hop.site.Root.Callee
+		if receiverIdentityCoercions[callee] == ref.Owner && f.threadsToReceiver(hops, depth) {
+			return callee
+		}
+	}
+	return ""
+}
+
+// hop is one link of a provenance chain: the function a propagating step sits
+// in, and the site that step recorded.
+type hop struct {
+	fn   *Func
+	site *ThrowSite
+}
+
+// chain returns the propagating steps of site's chain, outermost first. A site
+// that raised its own value has none.
+func (f *coercionFilter) chain(fn *Func, site *ThrowSite) []hop {
+	var hops []hop
+	for site.Root.Inner != nil {
+		callee := resolveCallee(f.cfg, f.summary.originsOf(fn), site.Root.Callee)
+		if callee == nil {
+			break
+		}
+		hops = append(hops, hop{fn, site})
+		fn, site = callee, site.Root.Inner
+	}
+	return hops
+}
+
+// threadsToReceiver reports whether the value the call at hops[depth] passes at
+// coercionGuardArg came from the receiver of the outermost function. It reads
+// each frame's origin map the way coerced does, carrying the position it finds
+// to the next frame out.
+func (f *coercionFilter) threadsToReceiver(hops []hop, depth int) bool {
+	pos := coercionGuardArg
+	for i := depth; i >= 0; i-- {
+		call, ok := hops[i].site.Node.(*CallNode)
+		if !ok || pos >= len(call.Args) {
+			return false
+		}
+		outer := f.summary.originsOf(hops[i].fn).Eval(call.Args[pos])
+		switch {
+		case outer.Interior:
+			return false
+		case i == 0:
+			return outer.Kind == OriginReceiver
+		case outer.Kind != OriginParam:
+			return false
+		}
+		pos = outer.Index
+	}
+	return false
 }
 
 // coercionGuard is what the base of a provenance chain checked. ao names the

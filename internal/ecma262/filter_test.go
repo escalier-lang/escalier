@@ -66,20 +66,23 @@ Number.prototype.toFixed: kept #3 TypeError <- ToIntegerOrInfinity#0 <- ToNumber
 	require.Empty(t, fact.Rejects)
 }
 
-// A receiver coercion is filtered whichever operation performs it. charAt opens
-// with `? RequireObjectCoercible(this value)` and then `? ToString(O)`, and both
-// checks read a value Escalier types as the receiver.
+// Every step of a receiver coercion goes, not only the step that checks the
+// type. charAt opens with `? RequireObjectCoercible(this value)` and then `?
+// ToString(O)`, and its whole step 3 falls: `ToString`'s own Symbol check by the
+// base rule, and the `@@toPrimitive` machinery below it because a String
+// receiver leaves `ToString` at its first step and never reaches that call.
 //
-// The same `ToString` chain applied to `pos` is kept, so one method shows the
-// two branches side by side.
+// The same operations applied to `pos` are all kept, so one method shows the
+// two branches side by side and the value each coercion was handed is the whole
+// difference.
 func TestFilterDropsEveryCoercionOfTheReceiver(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, decisionsFor(t, "String.prototype.charAt"), snaps.Inline(`String.prototype.charAt: dropped #1 TypeError <- RequireObjectCoercible#5 [RequireObjectCoercible of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3 [ToObject of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6 [ToObject of receiver]
-String.prototype.charAt: kept #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#8
-String.prototype.charAt: kept #3 TypeError <- ToString#32 <- ToPrimitive#17
-String.prototype.charAt: kept #3 TypeError <- ToString#32 <- ToPrimitive#20 <- OrdinaryToPrimitive#20
-String.prototype.charAt: kept #3 TypeError <- ToString#32 <- ToPrimitive#9 <- Call#5
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#8 [under ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#17 [under ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#20 <- OrdinaryToPrimitive#20 [under ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#9 <- Call#5 [under ToString of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#7 [ToString of receiver]
 String.prototype.charAt: kept #5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3 [ToObject of param:0]
 String.prototype.charAt: kept #5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6 [ToObject of param:0]
@@ -103,57 +106,32 @@ func TestFilterDropsNothingWithoutAReceiver(t *testing.T) {
 	require.Equal(t, []string{"TypeError", "URIError"}, analyzedFactOf(t, "decodeURIComponent").Throws)
 }
 
-// A throw the chain reaches below a coercion is kept, because it reports the
-// caller's own code failing rather than a type the declaration rules out.
-// `ToString` on an object calls `ToPrimitive`, which looks up and invokes the
-// object's `@@toPrimitive` method, and the throws under that are the lookup
-// finding a non-callable, the method itself raising, and the method handing
-// back an object.
+// A throw the chain reaches below a coercion of a parameter is kept. `charAt`
+// coerces `pos` with `ToIntegerOrInfinity`, which reaches `ToNumber` and then
+// the `@@toPrimitive` machinery, and the receiver branch settles none of it: a
+// `pos` the declaration types loosely can be an object with a `@@toPrimitive`
+// that raises.
 //
-// The chains reach `GetMethod`, `Call`, `OrdinaryToPrimitive`, and
-// `ToPrimitive`'s own throw for a method that returned an object. None of those
-// is a coercion, so the guard is unnamed rather than named and untraced.
-func TestFilterKeepsAThrowBelowACoercion(t *testing.T) {
-	var below []string
+// The same steps under the receiver's own `ToString` are dropped, which is what
+// TestFilterDropsEveryCoercionOfTheReceiver holds. The two chains run through
+// the same operations, so the value each coercion was handed is the whole
+// difference.
+func TestFilterKeepsAThrowBelowACoercionOfAParameter(t *testing.T) {
+	var kept []string
 	for _, decision := range testFilterReport(t).Decisions {
-		if decision.Method == "String.prototype.charAt" && decision.Coercion == "" {
-			below = append(below, decision.Site)
+		if decision.Method == "String.prototype.charAt" && !decision.Dropped {
+			kept = append(kept, decision.Site)
 		}
 	}
 	require.Equal(t, []string{
-		"#3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#8",
-		"#3 TypeError <- ToString#32 <- ToPrimitive#17",
-		"#3 TypeError <- ToString#32 <- ToPrimitive#20 <- OrdinaryToPrimitive#20",
-		"#3 TypeError <- ToString#32 <- ToPrimitive#9 <- Call#5",
+		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3",
+		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6",
 		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#8",
 		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#17",
 		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#20 <- OrdinaryToPrimitive#20",
 		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#9 <- Call#5",
-	}, below)
-}
-
-// A coercion of a value read out of the receiver is kept. push reads its length
-// with `? LengthOfArrayLike(O)`, which coerces `Get(O, "length")` — a value the
-// receiver holds rather than the receiver, and one a getter on the prototype
-// chain can make anything at all. The decision names the operation and reports
-// the value untraced.
-//
-// The two `ToObject(this value)` sites at step 0 are dropped in the same method,
-// so the difference is the value each checks rather than the operation.
-func TestFilterKeepsACoercionOfAnInteriorValue(t *testing.T) {
-	snaps.MatchInlineSnapshot(t, decisionsFor(t, "Array.prototype.push"), snaps.Inline(`Array.prototype.push: dropped #0 TypeError <- ToObject#3 [ToObject of receiver]
-Array.prototype.push: dropped #0 TypeError <- ToObject#6 [ToObject of receiver]
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3 [ToObject, value untraced]
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6 [ToObject, value untraced]
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#8
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#17
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#20 <- OrdinaryToPrimitive#20
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#9 <- Call#5
-Array.prototype.push: kept #2 TypeError <- LengthOfArrayLike#1 <- ToLength#0 <- ToIntegerOrInfinity#0 <- ToNumber#7 [ToNumber, value untraced]
-Array.prototype.push: kept #7 TypeError
-Array.prototype.push: kept #13 TypeError <- Set#4
-Array.prototype.push: kept #16 TypeError <- Set#4`),
-	)
+		"#5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#7",
+	}, kept)
 }
 
 // Only a `TypeError` is adjudicated. Every other class says something about the
@@ -179,7 +157,7 @@ func TestFilterReportTallies(t *testing.T) {
 		guards[decision.Coercion]++
 	}
 	require.Equal(t, 4882, adjudicated)
-	require.Equal(t, 242, dropped)
+	require.Equal(t, 362, dropped)
 	require.Equal(t, map[string]int{
 		"RequireObjectCoercible": 31,
 		"ThisBigIntValue":        2,
@@ -188,8 +166,18 @@ func TestFilterReportTallies(t *testing.T) {
 		"ThisStringValue":        2,
 		"ThisSymbolValue":        4,
 		"ToObject":               166,
-		"ToString":               30,
+		"ToString":               150,
 	}, guards)
+
+	// The identity rule accounts for 120 of the ToString drops, every one of
+	// them a `String.prototype` method whose receiver `ToString` hands back.
+	under := map[string]int{}
+	for _, decision := range report.Dropped() {
+		if decision.Under {
+			under[decision.Coercion]++
+		}
+	}
+	require.Equal(t, map[string]int{"ToString": 120}, under)
 }
 
 // Every dropped site names the receiver as the value it checked, which is the
@@ -295,17 +283,19 @@ func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
 	require.NotNil(t, fn)
 	require.Equal(t, "#17 TypeError", throwSteps(fn))
 
-	// Every site that bottoms out there is kept, and the decision names no
-	// coercion, so the report reads it as a throw below a coercion rather than
-	// as one the filter weighed and let through.
+	// No site is dropped on its account. One that bottoms out there survives
+	// unless a coercion further out is an identity for the receiver, which is
+	// underReceiverIdentity's rule and not this one.
 	var reached int
 	for _, decision := range testFilterReport(t).Decisions {
 		if !strings.HasSuffix(decision.Site, "<- ToPrimitive#17") {
 			continue
 		}
 		reached++
-		require.Falsef(t, decision.Dropped, "%s", decision)
-		require.Emptyf(t, decision.Coercion, "%s", decision)
+		require.NotEqualf(t, "ToPrimitive", decision.Coercion, "%s", decision)
+		if decision.Dropped {
+			require.Truef(t, decision.Under, "%s", decision)
+		}
 	}
 	require.NotZero(t, reached)
 }
@@ -347,6 +337,30 @@ func TestFilterReportsWhichChannelIsShort(t *testing.T) {
     Demo.prototype.load: a step the throw analysis could not read leaves its throws and its rejections short
     Demo.prototype.read: a step the throw analysis could not read leaves its throws short
 `))
+}
+
+// Both guards on the identity rule hold over the committed graph. The coercion
+// has to be one that hands this owner's receiver straight back, and the value it
+// was handed has to be that receiver.
+//
+// Dropping a step below a coercion is sound only under both. `ToString` reaches
+// its `@@toPrimitive` machinery whenever the value is an Object, so the same
+// drop on a `Date.prototype` method, or on a parameter of any method, would
+// discard a `TypeError` a caller can raise.
+func TestFilterIdentityRuleChecksTheOwnerAndTheValue(t *testing.T) {
+	var under int
+	for _, decision := range testFilterReport(t).Dropped() {
+		if !decision.Under {
+			continue
+		}
+		under++
+		ref, ok := Normalize(decision.Method)
+		require.Truef(t, ok, "%s", decision)
+		require.Equalf(t, ref.Owner, receiverIdentityCoercions[decision.Coercion],
+			"%s drops under a coercion that is no identity for a %s receiver", decision, ref.Owner)
+		require.Equalf(t, "receiver", decision.Coerced, "%s drops a value that is not the receiver", decision)
+	}
+	require.NotZero(t, under)
 }
 
 // throwSteps renders every step of fn that raises an error class it names, as

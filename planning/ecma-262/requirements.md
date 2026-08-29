@@ -800,6 +800,14 @@ already-typed value:
   `ThisNumberValue`, `ThisStringValue`, `ThisBooleanValue`,
   `ThisBigIntValue`, `ThisSymbolValue` — which raise on a receiver of the
   wrong type and nothing else. `Number.prototype.toFixed` opens with one.
+- Every `TypeError` under a coercion the receiver's declared type makes an
+  identity. `ToString(O)` returns `O` at its first step when `O` is
+  already a String, so on a `String.prototype` method the `ToPrimitive`
+  call further down its body is unreachable, and so is the
+  `@@toPrimitive` lookup and call under it. This needs the receiver's
+  type, which the member key's owner fixes, and it does not extend to a
+  receiver the coercion has real work to do on: `ToString` of a
+  `Date.prototype` receiver does reach that machinery.
 - `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`, or
   `ToObject` applied to a parameter whose Escalier type is already the
   coerced type. `ToPrimitive` is not among them. Its one `Throw` step is

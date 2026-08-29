@@ -1839,6 +1839,39 @@ and that check reads nothing the facts do not already carry. A
 domain check survives it. Each filter decision is recorded for review,
 since FR11 is a heuristic.
 
+The branch drops two things, under separate rules. The first is the
+coercion's own type check, which the pseudocode above states and which a
+declared receiver type excludes whatever that type is. The second is
+every step the coercion would reach *past* the identity path:
+
+```
+ReceiverIdentityCoercions = { ToNumber: Number, ToString: String }
+
+// underReceiverIdentity: the chain passes through a coercion this owner's
+// receiver leaves at its first step, so nothing below that call runs.
+func underReceiverIdentity(M, site) bool:
+    for hop in chain(site):                       // propagating steps, outermost first
+        if ReceiverIdentityCoercions[hop.Callee] != ownerOf(M): continue
+        if threadBack(M, hop, 0) is Receiver: return true
+    return false
+```
+
+`String.prototype.charAt` is the shape. It runs `? ToString(O)` on a
+receiver the declaration types as a String, `ToString` hands a String back
+at its first step, and the `? ToPrimitive(argument, string)` further down
+its body never runs — nor the `@@toPrimitive` lookup and call under that.
+Without this rule `charAt` drops `ToString`'s Symbol check and keeps four
+throws from machinery a string receiver cannot reach.
+
+Both guards are load-bearing. `ToString` reaches that machinery whenever
+its argument is an Object, so the same drop on a `Date.prototype` method,
+or on a parameter of any method, would discard a `TypeError` a caller can
+raise. The owner is not a type channel: it is fixed by the member the
+declaration hangs off, so `Normalize` reads it off the spec key and no
+join is involved. The table holds the coercions with a body to reach past;
+`ToObject`, `RequireObjectCoercible`, and the `This*Value` operations
+return or raise without calling anything.
+
 `threadBack` walks the chain outward one hop at a time. A hop reads the
 call the site propagated through, evaluates the argument at the callee's
 checked position against §4.2's origin map, and carries the position it
@@ -1878,13 +1911,15 @@ is the PR that brings both axes into `facts.json` and under the totality
 rule of Appendix B.
 
 **Gate.** Over the committed graph the filter adjudicates 4882 `TypeError`
-sites and drops 242, every one of them a coercion of the receiver.
+sites and drops 362, every one of them a coercion of the receiver — 242 by
+the type check itself and 120 below a `ToString` a `String.prototype`
+receiver leaves at its first step.
 `Number.prototype.toFixed` keeps the `RangeError` it raises on a
 `fractionDigits` outside 0..100 and drops the `TypeError` from
 `ThisNumberValue(this value)`. `String.prototype.charAt` shows both
-branches in one method: the `RequireObjectCoercible` and `ToString` checks
-of its receiver are dropped and the same `ToString` chain applied to `pos`
-is kept. The dropped type-guard throws are listed in the review report, which
+branches in one method: its whole receiver coercion goes, `RequireObjectCoercible`
+and every step of `ToString` alike, and the same operations applied to
+`pos` are all kept. The dropped type-guard throws are listed in the review report, which
 `dts_to_esc bootstrap` prints beside the curation and join reports. The
 report also names the 103 methods whose channels are published short
 because §9.1's fixpoint could not read every step, which is FR10's "left
