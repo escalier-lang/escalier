@@ -136,17 +136,26 @@ String.endsWith              String.replace        String.trimStart
 ### Sequencing: the deletion is not safe on its own
 
 §7 inserts the facts into `dts_to_esc.Classify`, and the prelude's
-`UpdateMethodMutability` is the only code that reads the override table. So
-deleting the 24 entries in the same change that wires the facts into the
-converter would leave the prelude reaching those methods through the name
-heuristics alone, and the heuristics are what the entries exist to correct:
+`UpdateMethodMutability` is the only code that applies the override table. A
+`Classify` answer does not stand in for an entry: the receiver it writes does
+not reach the `.d.ts`-loaded lib types the prelude builds. Removing `charAt`
+from the `String` entry while making `Classify` answer `borrow` for it through
+a tier `ClassifyMethodByName` cannot reach leaves
+`TestPreludeOverridesCallableOnNonMutReceiver` failing with "Callee is not
+callable" on `s.charAt(0)`. The entry is what carries the claim.
+
+So deleting the 24 entries in the same change that wires the facts into
+`Classify` would leave the prelude reaching those methods through the name
+heuristics alone, and the heuristics are what the entries exist to correct.
 `String.prototype.replace` would go back to a mutating receiver.
 
-The deletion is safe once either holds. The facts reach whichever path applies
-receiver mutability to the `.d.ts`-loaded lib types, or the prelude path is
-gone, which is what the M12 flip of the builtins workstream does to
+The deletion is safe once either holds. The facts reach the pass that applies
+receiver mutability to the `.d.ts`-loaded lib types, or that pass is gone,
+which is what the M12 flip of the builtins workstream does to
 `UpdateMethodMutability`. §7 states which of the two it is relying on before
-removing an entry.
+removing an entry. The same condition governs §6.B and §6.C of
+[../interop_mutability/implementation_plan.md](../interop_mutability/implementation_plan.md),
+which drop entries as the `data/builtins/` overrides land.
 
 ## The 37 entries §7 keeps
 

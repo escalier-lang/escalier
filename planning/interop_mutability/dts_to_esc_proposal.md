@@ -591,8 +591,9 @@ that needs a prior global scope to type-check against.
 are loaded on demand when a program imports them.
 `loadGlobalDefinitions`, `populateSelfParams`,
 `UpdateMethodMutability`, and `mergeReadonlyVariant` all become dead
-code. The `nonMutatingOverrides` table they read lives in
-`internal/dts_to_esc` and stays, because the converter reads it too.
+code. The `nonMutatingOverrides` table lives in `internal/dts_to_esc`,
+but `UpdateMethodMutability` is the only thing that applies it, so it
+becomes dead code with them.
 
 ### Override pipeline scope after the shift
 

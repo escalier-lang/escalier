@@ -10,15 +10,22 @@ into Escalier declarations and seeds receiver mutability by running
 `dts_to_esc.Classify` — the name-based tiers in
 [../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go).
 Those tiers are heuristics over method *names*: a `get*` prefix is
-non-mutating, a `set*`/`push`/`delete` prefix is mutating, and the
-hand-maintained `nonMutatingOverrides` table in the same file patches the
-cases the names get wrong.
+non-mutating and a `set*`/`push`/`delete` prefix is mutating. Names are
+the whole of what the converter consults today, since the override store
+`Classify` reads at tier 4 carries no builtin entries yet.
+
+The checker prelude patches that baseline afterwards. Its
+`UpdateMethodMutability` pass applies the hand-maintained
+`nonMutatingOverrides` table in the same file, then falls through to the
+same name heuristics, and strips `mut self` wherever either answers
+non-mutating.
 
 Name heuristics are guesses. They misclassify methods whose names look
 mutating but are not — `String.prototype.replace` returns a fresh
-string, yet `replace` is a mutating-prefix, so it needs a hand override.
-They miss methods whose names carry no signal —
-`String.prototype.charAt`, `Object.prototype.propertyIsEnumerable`. And
+string, yet `replace` is a mutating-prefix. They miss methods whose names
+carry no signal — `String.prototype.charAt`,
+`Object.prototype.propertyIsEnumerable`. Each of those costs a table
+entry on the prelude path and goes uncorrected on the converter path. And
 they cannot speak to non-receiver parameter mutability or to aliasing at
 all.
 
@@ -126,9 +133,12 @@ ranking.
 1. **Receiver mutability — high confidence, high payoff.** The receiver
    is always `this value`, usually bound via `O ← ? ToObject(this
    value)`. Mutation of that value is explicit in the algorithm. This
-   determination retires the `nonMutatingOverrides` table for `std:*`
-   types and corrects the misses and misclassifications the name
-   heuristics produce. It is the primary deliverable.
+   determination retires every `nonMutatingOverrides` entry the facts
+   cover and corrects the misses and misclassifications the name
+   heuristics produce. It does not retire the table outright: a `std:*`
+   method the graph does not carry, such as the Annex B
+   `String.prototype.substr`, keeps its entry. It is the primary
+   deliverable.
 
 2. **Parameter disposition — medium confidence.** The same analysis
    aimed at parameter-origin values, sorting each parameter into borrow,

@@ -110,10 +110,11 @@ Three consequences shape the remaining phases.
    `populateSelfParams`, `UpdateMethodMutability`,
    `mergeReadonlyVariant`, `BuildBuiltinStore`, and `js_globals.go`
    all live in `internal/checker/` and go out with that tree. The
-   `nonMutatingOverrides` table they read sits in
-   `internal/dts_to_esc/` and outlives them, since the converter
-   consults it too. §9.3 keeps the list as an audit that nothing in
-   it grew a solver-side twin.
+   `nonMutatingOverrides` table sits in `internal/dts_to_esc/`, but
+   `UpdateMethodMutability` is the only thing that applies it, so it
+   goes out with the flip as well. `Classify` reads the override
+   store and the name heuristics, never that table. §9.3 keeps the
+   list as an audit that nothing in it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so
    §5 and §6 PR A need no rework at the source level. §6.7 PR D
@@ -2350,8 +2351,11 @@ replacement:
   converter emits into the `.esc` files (§6.1)
 - `UpdateMethodMutability` — replaced by the converter's receiver
   classification plus the hand-edited mutability refinements
-  committed in §7. The `nonMutatingOverrides` table it reads stays,
-  shrinking as the ECMA-262 facts subsume its entries
+  committed in §7. It is the only caller that applies
+  `nonMutatingOverrides`, so the table retires with it. Until then an
+  entry cannot be dropped on the strength of a converter-side answer:
+  a receiver `Classify` marks non-mutating does not reach the
+  `.d.ts`-loaded lib types, so the entry is what carries the claim
 - `mergeReadonlyVariant` — replaced by the converter's
   readonly-twin fusion (§6.1)
 - `BuildBuiltinStore`
