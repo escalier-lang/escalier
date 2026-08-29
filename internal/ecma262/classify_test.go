@@ -13,18 +13,37 @@ import (
 )
 
 var (
-	factsOnce sync.Once
-	allFacts  *Facts
+	factsOnce     sync.Once
+	allFacts      *Facts
+	factsErr      error
+	analyzedOnce  sync.Once
+	analyzedFacts *Facts
 )
 
-// testFacts classifies the committed graph once for the whole package.
+// testFacts is the published fact set over the committed graph, curated layer
+// merged in, classified once for the whole package. A test pinning what the
+// converter consumes reads this.
 func testFacts(t *testing.T) *Facts {
 	t.Helper()
 	cfg := testCFG(t)
-	factsOnce.Do(func() {
-		allFacts = NewFacts(cfg)
-	})
+	// The error is stored rather than asserted inside the Once, so every caller
+	// sees a failure. Asserting in there would fail the first test to arrive and
+	// hand every later one a nil fact set to dereference.
+	factsOnce.Do(func() { allFacts, factsErr = NewFacts(cfg) })
+	require.NoError(t, factsErr)
 	return allFacts
+}
+
+// testAnalyzedFacts is what the committed graph alone concludes, before
+// curated.json is merged over it. A test pinning what §4 can read off the graph
+// reads this, so a curated entry never disguises what the analysis found.
+func testAnalyzedFacts(t *testing.T) *Facts {
+	t.Helper()
+	cfg := testCFG(t)
+	analyzedOnce.Do(func() {
+		analyzedFacts = analyze(cfg)
+	})
+	return analyzedFacts
 }
 
 // fullCoverage is what NewFacts builds for a builtin it read whole.
@@ -42,11 +61,19 @@ func returnsParam(i int) ReturnFact {
 	return ReturnFact{Kind: AliasParam, Index: position(i)}
 }
 
-// factOf returns the fact for one builtin, failing when the graph does not
-// hold it.
+// factOf returns the published fact for one builtin, failing when the graph
+// does not hold it.
 func factOf(t *testing.T, name string) MethodFact {
 	t.Helper()
 	fact, ok := testFacts(t).Of(name)
+	require.True(t, ok, "no builtin named %s", name)
+	return fact
+}
+
+// analyzedFactOf returns what the analysis alone concluded about one builtin.
+func analyzedFactOf(t *testing.T, name string) MethodFact {
+	t.Helper()
+	fact, ok := testAnalyzedFacts(t).Of(name)
 	require.True(t, ok, "no builtin named %s", name)
 	return fact
 }
@@ -165,6 +192,10 @@ func TestAliasJoin(t *testing.T) {
 	}
 }
 
+// What §4.3 concludes from the graph alone, one method per shape. These read
+// the analysis rather than the published facts, so a curated entry that later
+// fills one of these determinations cannot hide what the graph does and does
+// not settle.
 func TestFactsSampleMethods(t *testing.T) {
 	tests := map[string]struct {
 		method string
@@ -252,7 +283,7 @@ func TestFactsSampleMethods(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.want, factOf(t, test.method).String())
+			require.Equal(t, test.want, analyzedFactOf(t, test.method).String())
 		})
 	}
 }
@@ -265,7 +296,7 @@ func TestFactsSampleMethods(t *testing.T) {
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int
 	var unread []string
-	for name, fact := range testFacts(t).Methods {
+	for name, fact := range testAnalyzedFacts(t).Methods {
 		if !strings.HasPrefix(name, "String.prototype") {
 			continue
 		}
@@ -360,7 +391,9 @@ func TestFactsUnionOverTwoReturnedParameters(t *testing.T) {
 			`{"kind":"return","value":{"kind":"var","var":"b"}}]}]}`))
 	require.NoError(t, err)
 
-	fact, ok := NewFacts(cfg).Of("Demo.pick")
+	facts, err := NewFacts(cfg)
+	require.NoError(t, err)
+	fact, ok := facts.Of("Demo.pick")
 	require.True(t, ok)
 	require.Equal(t, "receiver:none returns:union(param(0), param(1))", fact.String())
 
@@ -390,9 +423,10 @@ func TestFactsJSON(t *testing.T) {
 		want string
 	}{
 		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":{"kind":"receiver"}}`},
-		// A withheld receiver falls through to FR5's `&mut self`, so the entry
-		// carries the return alias alone.
-		"WithheldReceiver": {factOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":{"kind":"fresh"}}`},
+		// A receiver the analysis withheld carries the return alias alone. An
+		// entry in curated.json answers this one, so the rendering only ever
+		// comes off an analyze result.
+		"WithheldReceiver": {analyzedFactOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":{"kind":"fresh"}}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave the index absent from the whole file and spell the common case
@@ -423,33 +457,38 @@ func TestFactsJSON(t *testing.T) {
 	}
 }
 
-// The methods whose receiver claim FR5 hands to the converter's name
-// heuristics. Each carries a mutation the analysis could not place or a step it
-// could not read, so its mutability is withheld rather than guessed, and each
-// still publishes its return alias. A static is absent, having no receiver for
-// a warning to cost it.
+// The methods whose receiver the analysis withholds. Each carries a mutation it
+// could not place or a step it could not read, so the mutability is withheld
+// rather than guessed, and each still publishes its return alias. A static is
+// absent, having no receiver for a warning to cost it.
 //
-// This list is the §4 objective made visible. Shrinking it is what a change to
-// the analysis is measured by, and the tallies below record the same count.
+// This list is the §4 objective made visible, and shrinking it is what a change
+// to the analysis is measured by. Every name on it is answered by an entry in
+// curated.json, so nothing reaches §7's name heuristics, which is what the
+// second assertion holds.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
-	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(AxisReceiver), "\n"))
+	snaps.MatchSnapshot(t, strings.Join(testAnalyzedFacts(t).Unclassified(AxisReceiver), "\n"))
+	require.Empty(t, testFacts(t).Unclassified(AxisReceiver))
 }
 
-// The return axis has its own gaps, and they are far wider than the receiver's.
-// `returnAlias` is total, so the coverage flag is set for every builtin. An
-// `unknown` return is a value the walk did produce, and it names nothing the
-// caller holds, which is the case `answers` reports as open.
+// The return axis is where the published surface still has gaps. `returnAlias`
+// is total, so the coverage flag is set for every builtin, and `answers` is what
+// separates a return naming a value the caller holds from an `unknown` naming
+// none.
 //
-// The two `buffer` getters are the shape behind most of the list. What they
-// hand back is a borrow of state the receiver holds, and no member of the alias
-// lattice spells that without claiming the return is the receiver itself.
+// `Date.prototype.getTime` is off the list because an entry answered it. The
+// two `buffer` getters stay on it deliberately: what they hand back is a borrow
+// of state the receiver holds, and no member of the alias lattice spells that
+// without claiming the return is the receiver itself.
 func TestFactsUnclassifiedReturnsAreListed(t *testing.T) {
 	unresolved := testFacts(t).Unclassified(AxisReturns)
 
 	require.Contains(t, unresolved, "get DataView.prototype.buffer")
 	require.Contains(t, unresolved, "get TypedArray.prototype.buffer")
+	require.NotContains(t, unresolved, "Date.prototype.getTime")
+	require.NotContains(t, unresolved, "Date.prototype.valueOf")
 	// The same count the tallies below record as `returns unknown`.
-	require.Len(t, unresolved, 250)
+	require.Len(t, unresolved, 247)
 }
 
 // demoCFG is a two-method graph standing in for the shapes the committed one
@@ -463,12 +502,12 @@ const demoCFG = `{"specTarget":"abc","funcs":[` +
 	`{"name":"Demo.prototype.opaque","kind":"builtin-method","params":[],"nodes":[` +
 	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`
 
-// demoFacts parses demoCFG and classifies it.
+// demoFacts parses demoCFG and classifies it from the graph alone.
 func demoFacts(t *testing.T) (*CFG, map[string]MethodFact) {
 	t.Helper()
 	cfg, err := ParseCFG([]byte(demoCFG))
 	require.NoError(t, err)
-	return cfg, NewFacts(cfg).Methods
+	return cfg, analyze(cfg).Methods
 }
 
 // The analysis leaves Demo.prototype.opaque's receiver open and settles
@@ -508,10 +547,10 @@ func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
 		facts.Unclassified(Axis("throws")))
 }
 
-// The tallies over every builtin, which move when the mutation analysis, the
-// origin map, or the classification changes. Each determination is counted on
-// its own, so the return-alias distribution spans every builtin while the
-// receiver one leaves out the methods that withhold it.
+// The tallies over every published builtin, which move when the mutation
+// analysis, the origin map, the classification, or curated.json changes. Each
+// determination is counted on its own. No `receiver unclassified` line appears,
+// because curated.json answers every receiver the analysis withheld.
 func TestFactsTallies(t *testing.T) {
 	counts := map[string]int{}
 	for _, fact := range testFacts(t).Methods {
@@ -533,14 +572,13 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 226
-receiver mutBorrow: 63
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 246
+receiver mutBorrow: 67
 receiver none: 188
-receiver unclassified: 24
-returns fresh: 229
+returns fresh: 232
 returns param: 6
 returns receiver: 15
 returns union: 1
-returns unknown: 250
+returns unknown: 247
 total: 501`))
 }

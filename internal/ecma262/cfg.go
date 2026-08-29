@@ -11,6 +11,8 @@
 package ecma262
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -59,6 +61,12 @@ type Func struct {
 	Variadic *int     // rest-parameter position; nil when the head declares none
 	Promise  bool     // the algorithm returns a promise
 	Nodes    []Node   // CFG nodes in flat order
+
+	// Digest fingerprints this algorithm as cfg.json serializes it. A curated
+	// entry records the digest of the algorithm its author reviewed. A spec
+	// bump then flags the entries whose algorithm it rewrote and leaves the
+	// rest alone. See curated.go.
+	Digest string
 }
 
 // Node is one step of an algorithm.
@@ -302,8 +310,9 @@ func (c *CFG) Builtin(name string) *Func {
 // The decode types mirror the serialized schema in Appendix A, where a node and
 // an expression are each one object tagged by kind. encoding/json cannot pick a
 // variant of a sealed interface on its own, so decoding lands here first and the
-// conversions below rebuild the graph as the sum types above. Nothing marshals
-// back, so these types are read only when a graph is parsed.
+// conversions below rebuild the graph as the sum types above. A decoded
+// function marshals back once, to fingerprint it for Func.Digest; nothing else
+// writes this schema.
 
 type decodeCFG struct {
 	SpecTarget string        `json:"specTarget"`
@@ -408,6 +417,11 @@ func (d *decodeFunc) toFunc(index int) (*Func, error) {
 		return nil, fmt.Errorf("%s declares a rest parameter at position %d, outside its %d parameters", d.Name, *d.Variadic, len(d.Params))
 	}
 
+	digest, err := d.digest()
+	if err != nil {
+		return nil, fmt.Errorf("fingerprinting %s: %w", d.Name, err)
+	}
+
 	fn := &Func{
 		Name:     d.Name,
 		Kind:     d.Kind,
@@ -415,6 +429,7 @@ func (d *decodeFunc) toFunc(index int) (*Func, error) {
 		Variadic: d.Variadic,
 		Promise:  d.Promise,
 		Nodes:    make([]Node, 0, len(d.Nodes)),
+		Digest:   digest,
 	}
 	for i, dn := range d.Nodes {
 		if dn == nil {
@@ -594,4 +609,30 @@ func toExprs(ds []*decodeExpr) ([]Expr, error) {
 		exprs = append(exprs, e)
 	}
 	return exprs, nil
+}
+
+// digestLen is how much of the fingerprint Func.Digest keeps. Twelve hex digits
+// distinguish the roughly twelve hundred algorithms in one graph with room to
+// spare, and stay short enough to read in curated.json.
+const digestLen = 12
+
+// digest fingerprints one serialized algorithm. It changes when any step,
+// parameter, or kind does. It does not change when cfg.json's key order or
+// whitespace does. So a curated entry naming a digest is flagged for re-review
+// by a spec bump that rewrote its algorithm, and by nothing else.
+//
+// The fingerprint is taken over the decode type rather than over Func because
+// Node is a sealed interface. encoding/json writes no tag for the variant an
+// interface holds, so two different steps could fingerprint alike.
+//
+// The decode types hold only strings, ints, bools, and slices and pointers to
+// those, so the marshal cannot fail. The error is returned rather than dropped
+// in case a later field can, which leaves that path untestable as it stands.
+func (d *decodeFunc) digest() (string, error) {
+	encoded, err := json.Marshal(d)
+	if err != nil {
+		return "", err
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])[:digestLen], nil
 }

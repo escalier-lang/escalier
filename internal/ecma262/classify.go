@@ -345,17 +345,48 @@ func (f MethodFact) String() string {
 type Facts struct {
 	SpecTarget string                `json:"specTarget"`
 	Methods    map[string]MethodFact `json:"methods"`
+
+	// curationReport is what the curated layer did to the analyzed
+	// determinations. It is unexported because facts.json records the merged
+	// answer and not where each half of it came from. The name says report to
+	// keep it distinct from the Curation the merge reads. See CurationReport.
+	curationReport CurationReport
 }
 
-// NewFacts classifies every builtin in cfg. It runs the mutation fixpoint
-// itself, which supplies the receiver axis and the two warnings that withhold
-// a method's mutability claim.
+// NewFacts is the published fact set for cfg, what the converter consumes. It
+// classifies every builtin from the graph and then merges the curated layer of
+// curated.go over the result, one determination at a time.
 //
-// A published receiver claim is only as strong as §4.1. A mutation the analysis
-// does not see leaves no warning, so the borrow is published rather than
-// withheld. §6's diff against the hand-written overrides is what authorizes §7
-// to trust this source.
-func NewFacts(cfg *CFG) *Facts {
+// A published receiver claim is only as strong as the mutation analysis or as
+// the review behind a curated entry. A mutation the analysis does not see
+// leaves no warning, so the borrow is published rather than withheld. What
+// authorizes the converter to trust this source is the validation diff against
+// the hand-written overrides, which reads Curation to tell a curated claim from
+// an analyzed one.
+func NewFacts(cfg *CFG) (*Facts, error) {
+	curation, err := parseCommitted(curatedJSON)
+	if err != nil {
+		return nil, err
+	}
+	facts := analyze(cfg)
+	facts.curationReport = mergeCuration(cfg, curation, facts.Methods)
+	return facts, nil
+}
+
+// Curation reports what the curated layer did to this run's analyzed
+// determinations.
+func (f *Facts) Curation() CurationReport {
+	return f.curationReport
+}
+
+// analyze classifies every builtin in cfg from the graph alone. It runs the
+// mutation fixpoint itself, which supplies the receiver axis and the two
+// warnings that withhold a method's mutability claim.
+//
+// This is what §4 is measured by, and Facts.Unclassified over its result is the
+// objective made visible, per axis. NewFacts is what a consumer reads, since a
+// determination §4 cannot reach is answered by review rather than left open.
+func analyze(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
 
 	facts := &Facts{

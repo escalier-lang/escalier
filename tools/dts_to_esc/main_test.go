@@ -74,6 +74,56 @@ export declare class Array<T> {
 `))
 }
 
+// committedCFG is the control-flow graph tools/spec-extract commits, which the
+// --cfg flag reads.
+const committedCFG = "../spec-extract/cfg.json"
+
+// Both ECMA-262 reports reach stderr, and neither does without the flag. The
+// rendering of each line is pinned in internal/ecma262 against a demo graph;
+// what the snapshot below adds is what a real run over the committed graph and
+// the seeded lib reports, the partition summary above them included.
+//
+// The counts move when curated.json or cfg.json changes, which is the point:
+// the diff shows what a data change did to the reports an operator reads.
+func TestRun_PartitionWithCFGPrintsBothReports(t *testing.T) {
+	libDir := seedLib(t, arrayLib)
+
+	var stderr strings.Builder
+	require.NoError(t, run([]string{"partition", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
+
+	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  std:array: 3 decls
+  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
+  join: 1 matched (1 with a receiver claim), 0 declarations without a fact, 436 facts without a declaration, 0 unkeyed declarations, 64 unjoinable facts
+  returns: 1 settled as owned by the declared type, 0 left unknown`))
+}
+
+// reportSummaries keeps the summary line of each report and drops the per-name
+// detail under it. A summary carries two leading spaces and a detail line four,
+// so the indent is what tells them apart. The detail is every name the join
+// could not match, hundreds of lines that internal/ecma262 already pins.
+func reportSummaries(stderr string) string {
+	var kept []string
+	for _, line := range strings.Split(stderr, "\n") {
+		if strings.HasPrefix(line, "  ") && !strings.HasPrefix(line, "   ") {
+			kept = append(kept, line)
+		}
+	}
+	return strings.Join(kept, "\n")
+}
+
+// A --cfg path that does not resolve fails the run before anything is written,
+// so a mistyped flag leaves no half-joined tree behind.
+func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {
+	t.Parallel()
+	outDir := t.TempDir()
+
+	err := run([]string{"partition", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+
+	require.EqualError(t, err,
+		"loading no/such/cfg.json: reading no/such/cfg.json: open no/such/cfg.json: no such file or directory")
+	require.Empty(t, treeOf(t, outDir))
+}
+
 // treeOf lists every file under root as a slash-separated path relative
 // to it, sorted. Dropping the root keeps the listing free of the temp
 // directory the test ran in.

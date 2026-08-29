@@ -399,3 +399,27 @@ func renderExpr(e Expr) string {
 	}
 	return "none"
 }
+
+// Two algorithms that differ fingerprint differently, and re-parsing the same
+// graph reproduces each fingerprint. Together those are what let a digest stand
+// in for "the algorithm this entry was reviewed against".
+func TestFuncDigestIdentifiesTheAlgorithm(t *testing.T) {
+	t.Parallel()
+
+	first, _ := demoFacts(t)
+	second, err := ParseCFG([]byte(demoCFG))
+	require.NoError(t, err)
+
+	read := first.Builtin("Demo.prototype.read")
+	opaque := first.Builtin("Demo.prototype.opaque")
+	require.Len(t, read.Digest, digestLen)
+	require.NotEqual(t, read.Digest, opaque.Digest)
+	require.Equal(t, read.Digest, second.Builtin("Demo.prototype.read").Digest)
+
+	// Editing one step changes that algorithm's digest and leaves the other's
+	// alone, which is what keeps a spec bump from flagging every entry.
+	edited, err := ParseCFG([]byte(strings.Replace(demoCFG, "whatever the host decides", "something else", 1)))
+	require.NoError(t, err)
+	require.Equal(t, read.Digest, edited.Builtin("Demo.prototype.read").Digest)
+	require.NotEqual(t, opaque.Digest, edited.Builtin("Demo.prototype.opaque").Digest)
+}

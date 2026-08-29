@@ -184,18 +184,26 @@ func TestMethodFactForSignatureLeavesTheFactAlone(t *testing.T) {
 }
 
 // joinFixture is a hand-built fact set covering each keying shape the join has
-// to resolve. Every entry but one carries the fact the committed control-flow
-// graph really holds for that name, so the fixture doubles as a description of
-// the fact set rather than reading as a claim the graph does not make.
+// to resolve. Every entry naming a builtin carries the fact the published set
+// really holds for that name, so the fixture doubles as a description of that
+// set rather than reading as a claim the graph does not make.
 //
-// The exception is the Fixture owner, which names no builtin. No real fact
-// returns a parameter above position 0 — every one that returns a parameter is
-// an `Object.*` static at position 0 — so the case where a signature declares
-// no parameter at the position a fact names has no ECMA-262 instance yet. The
-// shape is real even though the fact is not: the spec's
-// `Array.prototype.splice(start, deleteCount, ...items)` meets a TypeScript
-// overload set whose shortest member is `splice(start: number): T[]`. The
-// position-keyed facts of §8.1 are what will populate it.
+// The two Fixture entries name no builtin, because no published fact has their
+// shape.
+//
+// `returnsSecond` returns a parameter above position 0. Every published fact
+// that returns a parameter is an `Object.*` static at position 0, so a
+// signature that declares no parameter at the position a fact names has no
+// ECMA-262 instance yet. The shape is real even though the fact is not: the
+// spec's `Array.prototype.splice(start, deleteCount, ...items)` meets a
+// TypeScript overload set whose shortest member is `splice(start: number):
+// T[]`. The position-keyed facts of §8.1 are what will populate it.
+//
+// `withheldReceiver` leaves its receiver unclassified, which the join has to
+// carry through to the report's receiver-claim count. The analysis withholds 24
+// receivers and curated.json answers every one, so no published fact is left in
+// that state. A `web:*` method, which has no ECMA-262 algorithm at all, is
+// where the shape returns.
 func joinFixture() *Facts {
 	covered := Coverage{Receiver: true, Returns: true}
 	return &Facts{
@@ -218,9 +226,9 @@ func joinFixture() *Facts {
 			// the `unknown` stands.
 			"String.prototype.localeCompare": {Classified: covered, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
 			"RegExp.prototype.exec":          {Classified: covered, Receiver: RecvMutBorrow, Returns: ReturnFact{Kind: AliasUnknown}},
-			// A method the mutation fixpoint could not read whole, so its
-			// receiver claim is withheld while its return alias stands.
-			"Array.prototype.toLocaleString": {Classified: Coverage{Returns: true}, Returns: ReturnFact{Kind: AliasFresh}},
+			// A fact whose receiver claim is withheld while its return alias
+			// stands. See the note above.
+			"Fixture.prototype.withheldReceiver": {Classified: Coverage{Returns: true}, Returns: ReturnFact{Kind: AliasFresh}},
 			// A function the global object holds, which addresses no owner and
 			// so is refused by Normalize.
 			"parseInt": {Classified: covered, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasFresh}},
@@ -397,7 +405,7 @@ get Map.prototype.size -> get instance Map.size receiverApplies:no [ receiver:bo
 String.prototype.localeCompare -> instance String.localeCompare receiverApplies:yes [ receiver:borrow returns:unknown settled:owned ]
 RegExp.prototype.exec -> instance RegExp.exec receiverApplies:yes [ receiver:mutBorrow returns:unknown ]
 no fact: instance Array.toSorted
-no declaration: Array.prototype.toLocaleString
+no declaration: Fixture.prototype.withheldReceiver
 no declaration: Math.max
 no declaration: Object.assign
 no declaration: String.prototype [ @@iterator ]
@@ -448,7 +456,7 @@ func TestWriteJoinReport(t *testing.T) {
 	report := NewJoin(joinFixture()).Match(Declarations{
 		Keyed: []Declaration{
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("push"), Sort: SortInstance}, Signatures: []Signature{{Params: 1, Rest: true}}},
-			{Ref: MemberRef{Owner: "Array", Member: StrMember("toLocaleString"), Sort: SortInstance}, Signatures: []Signature{{Params: 0}}},
+			{Ref: MemberRef{Owner: "Fixture", Member: StrMember("withheldReceiver"), Sort: SortInstance}, Signatures: []Signature{{Params: 0}}},
 			{Ref: MemberRef{Owner: "Array", Member: StrMember("toSorted"), Sort: SortInstance}, Signatures: []Signature{{Params: 1}}},
 			// One return the declared type settles and one it leaves, so the
 			// report's return counts carry both.
