@@ -99,6 +99,56 @@ func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
 		facts.Unclassified(Axis("throws")))
 }
 
+// Every published fact carries a value on every axis, which is the invariant
+// that lets facts.json omit coverage flags entirely. The analysis alone does
+// not hold it — it withholds 24 receivers — and the curated layer is what
+// closes the gap.
+func TestFactsCarryEveryAxis(t *testing.T) {
+	require.Empty(t, testFacts(t).Incomplete())
+	require.Len(t, testAnalyzedFacts(t).Incomplete(), 24)
+}
+
+// A hole is named with the axis that has it, so the operator knows which
+// determination to curate rather than only which method.
+func TestIncompleteNamesTheAxis(t *testing.T) {
+	t.Parallel()
+
+	cfg, methods := demoFacts(t)
+	facts := &Facts{SpecTarget: cfg.SpecTarget, Methods: methods}
+
+	// `opaque` has no receiver; its return is `unknown`, which is a value.
+	require.Equal(t,
+		[]string{"Demo.prototype.opaque: no receiver determination"},
+		facts.Incomplete())
+
+	mergeCuration(cfg, &Curation{Entries: map[string]CuratedEntry{
+		"Demo.prototype.opaque": entry(t, cfg, "Demo.prototype.opaque", RecvBorrow),
+	}}, methods)
+	require.Empty(t, facts.Incomplete())
+}
+
+// The two predicates read an axis they do not name in opposite directions, on
+// purpose. A determination §8 or §9 has not added yet must not make an
+// otherwise complete fact look like a hole that fails the run, and must show up
+// as open work for a reviewer.
+func TestCarriesAndAnswersDisagreeOnAnUnwiredAxis(t *testing.T) {
+	t.Parallel()
+
+	fact := MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}}
+	require.True(t, fact.carries(Axis("throws")))
+	require.False(t, fact.answers(Axis("throws")))
+}
+
+// They also disagree on an `unknown` return, which is a value the converter can
+// act on and an open question for a reviewer.
+func TestCarriesAndAnswersDisagreeOnAnUnknownReturn(t *testing.T) {
+	t.Parallel()
+
+	fact := MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnknown}}
+	require.True(t, fact.carries(AxisReturns))
+	require.False(t, fact.answers(AxisReturns))
+}
+
 // A curated axis reaches the published fact, and the note says what it did to
 // the analysis's answer.
 func TestMergeCuration(t *testing.T) {

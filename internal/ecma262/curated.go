@@ -28,8 +28,9 @@ var curatedJSON []byte
 // data rather than a condition a caller can meet or recover from.
 var curated = mustParseCuration(curatedJSON)
 
-// Axis names one determination of a MethodFact. Coverage carries a flag per
-// axis, and a curated entry supplies or corrects the axes it names.
+// Axis names one determination of a MethodFact. A curated entry supplies or
+// corrects the axes it names, and every published fact carries a value on all
+// of them.
 type Axis string
 
 const (
@@ -337,13 +338,11 @@ func mergeCuration(cfg *CFG, curation *Curation, methods map[string]MethodFact) 
 			} else {
 				report.Notes = append(report.Notes, receiverNote(name, fact, entry))
 				fact.Receiver = entry.Receiver
-				fact.Classified.Receiver = true
 			}
 		}
 		if entry.claimsReturns() {
 			report.Notes = append(report.Notes, returnsNote(name, fact, entry))
 			fact.Returns = entry.Returns
-			fact.Classified.Returns = true
 		}
 		methods[name] = fact
 	}
@@ -374,7 +373,7 @@ func receiverConflict(fn *Func, kind ReceiverKind) string {
 func receiverNote(name string, analyzed MethodFact, entry CuratedEntry) CurationNote {
 	note := CurationNote{Name: name, Axis: AxisReceiver, Curated: string(entry.Receiver)}
 	switch {
-	case !analyzed.Classified.Receiver:
+	case analyzed.Receiver == "":
 		note.Kind = CurationFillIn
 	case analyzed.Receiver == entry.Receiver:
 		note.Kind = CurationRedundant
@@ -397,7 +396,7 @@ func receiverNote(name string, analyzed MethodFact, entry CuratedEntry) Curation
 func returnsNote(name string, analyzed MethodFact, entry CuratedEntry) CurationNote {
 	note := CurationNote{Name: name, Axis: AxisReturns, Curated: entry.Returns.String()}
 	switch {
-	case !analyzed.Classified.Returns || analyzed.Returns.Kind == AliasUnknown:
+	case analyzed.Returns.Kind == "" || analyzed.Returns.Kind == AliasUnknown:
 		note.Kind = CurationFillIn
 	case analyzed.Returns.equal(entry.Returns):
 		note.Kind = CurationRedundant

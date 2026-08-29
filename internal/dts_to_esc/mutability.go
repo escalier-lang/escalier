@@ -467,4 +467,3 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	}
 	return false
 }
-

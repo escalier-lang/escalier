@@ -58,7 +58,7 @@ func (f SignatureFact) String() string {
 // resolve, or ForSignature dropped a return naming a position this overload
 // does not declare. A fact with no return coverage makes no claim either way.
 func (f SignatureFact) unnamedReturn() bool {
-	return f.Fact.Classified.Returns && f.Fact.Returns.Kind == AliasUnknown
+	return f.Fact.Returns.Kind == AliasUnknown
 }
 
 // ForSignature resolves a fact against one overload. A return naming a
@@ -274,7 +274,7 @@ func WriteJoinReport(report JoinReport, w io.Writer) error {
 	// from the match count.
 	withReceiver := 0
 	for _, m := range report.Matched {
-		if m.Fact.Classified.Receiver {
+		if m.Fact.Receiver != "" {
 			withReceiver++
 		}
 	}

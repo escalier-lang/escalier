@@ -72,7 +72,7 @@ name heuristics.
 - **Throws as a finished, unreviewed annotation.** Emitting the throw
   set is an in-scope deliverable (FR10, FR11), but it ships as a reviewed
   candidate set, not a trusted final annotation. The review need is not
-  that the extraction is inaccurate — where `classified.throws` is set,
+  that the extraction is inaccurate — where an entry carries `throws`,
   FR10's *raw* throw set is a sound, complete enumeration of what
   ECMA-262 models the algorithm as throwing, and could ship unreviewed at
   the cost of noise. Review guards the two things downstream of that,
@@ -510,15 +510,20 @@ impractical:**
   accepting that this is the unsound direction. Both are curation-grade,
   and FR14 measures what reaches the `.esc` against observed behavior.
 
-These defaults are applied by the **converter**, not serialized as facts.
-A record's `classified` object marks each determination covered or not,
-and an uncovered one omits its field — `receiver`, `params`, `throws`,
-`rejects` are absent, or null, on the wire. So the format never conflates
-"the analysis proved this method borrows and throws nothing" with "the
-analysis could not tell." A proven-empty result is a covered determination
-with an empty effect field; an unanalyzed one is an uncovered
-determination with its field absent. FR6 and Appendix B use this one
-contract.
+These defaults are applied by the **converter**, not serialized as facts,
+and the converter applies one only where no fact addresses the method at
+all. A published fact answers every determination it carries: an axis
+neither the analysis nor review settles fails generation, naming the method
+and the axis, rather than being written as a hole. So the format cannot
+conflate "the analysis proved this method borrows and throws nothing" with
+"the analysis could not tell" — the second never reaches the file. A
+proven-empty result is an empty effect field, and there is no encoding for
+an unanalyzed one. FR6 and Appendix B use this one contract.
+
+Failing generation is the loud direction, which is the same reasoning as
+the defaults above. A coverage flag would leave the hole in the data for
+every consumer to remember to check, and §7 auto-applies the receiver, so a
+forgotten check there becomes a silent `&mut self`.
 
 Splitting coverage this way keeps the conservative bias where it buys
 safety and drops it where it does not. A method's receiver mutability is
@@ -542,35 +547,40 @@ provenance. `receiver` is `borrow` (`&self`), `mutBorrow` (`&mut self`),
 or `none` (a static or namespace function with no receiver). `params`
 lists only the parameters the analysis found `mutBorrow` (`&mut`) or
 `escape` (stored into the receiver, spelled at curation — see FR12).
-Where `classified.params` is set, a parameter omitted from the entry was
-proven read-only (`borrow`). That proven-read-only omission is distinct
-from the FR5
-uncertain default, which is `&mut`: the omission means "the analysis
-showed this parameter is only read," whereas the FR5 default applies where
-`classified.params` is unset and the parameters are absent entirely.
+A parameter omitted from the entry was proven read-only (`borrow`). That
+omission is distinct from the FR5 uncertain default, which is `&mut`: the
+omission means "the analysis showed this parameter is only read," whereas
+the FR5 default applies only where no entry addresses the method.
+
+**Every entry is total.** A determination neither the analysis nor review
+settles is not encoded. Generation fails instead, naming the method and the
+axis on stderr, so the file carries no coverage flags and a consumer never
+has to tell a hole from a claim.
 
 ```json
 {
-  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [] },
+  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [] },
+  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [] },
+  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [] },
+  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [] },
 
-  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [] },
+  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [] },
 
-  "String.prototype.toLowerCase": { "returns": "unknown", "classified": {"receiver":false,"params":false,"returns":true,"throws":false,"rejects":false} }
+  "String.prototype.toLowerCase": { "receiver": "borrow", "params": [], "returns": "unknown", "throws": [], "rejects": [] }
 }
 ```
 
-- `classified` marks each determination covered or not, and an uncovered
-  one leaves its field out. `String.prototype.toLowerCase` reaches the
-  Unicode case-mapping table through a prose step, so the analysis cannot
-  say what that step wrote and the entry carries no `receiver`. The return
-  alias survives, because FR4 curates it rather than applying it. A static
-  keeps `receiver: none` through the same warning, since its having no
-  receiver is a fact about the declaration rather than about a step.
+- Every entry carries every determination, so there is no coverage object
+  and no absent field to interpret. `String.prototype.toLowerCase` reaches
+  the Unicode case-mapping table through a prose step, so the analysis
+  cannot say what that step wrote; the `borrow` above comes from review,
+  and without it generation would fail rather than publish the method. Its
+  `returns: unknown` is a value the analysis did produce, meaning the walk
+  tied the return to nothing the caller holds. A static keeps
+  `receiver: none` through any warning, since its having no receiver is a
+  fact about the declaration rather than about a step.
 - `receiver` maps a non-mutating method to `&self` and a mutating one to
   `&mut self` (FR2). A method that stores an argument into the receiver
   marks that parameter `escape`, because the argument outlives the call
@@ -621,10 +631,10 @@ The key space therefore covers prototype methods
 (`X.prototype.method`), static methods (`X.method`), symbol-keyed
 methods, and namespace-qualified forms where `X` is a dotted path naming
 a namespace and optionally a nested constructor — all joined by FR7.
-The `classified` object marks each determination covered or not. An
-uncovered one is an FR5 fall-through, and its field — `receiver`,
-`params`, `throws`, or `rejects` — is absent, distinct from a proven-empty
-result (§FR5).
+Every entry answers every determination, so a fall-through to the FR5
+defaults happens only where no entry addresses the method — an unmatched
+`std:*` declaration, or the `web:*` and `node:*` surfaces that are out of
+scope by construction.
 
 ### FR7. Keying and join to typed declarations
 

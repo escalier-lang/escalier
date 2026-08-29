@@ -43,9 +43,6 @@ func testAnalyzedFacts(t *testing.T) *Facts {
 	return analyzedFacts
 }
 
-// fullCoverage is what NewFacts builds for a builtin it read whole.
-var fullCoverage = Coverage{Receiver: true, Returns: true}
-
 // position is the 0-based parameter position a fact returns, as AliasRef
 // holds it.
 func position(i int) *int {
@@ -85,20 +82,20 @@ func TestMethodFactString(t *testing.T) {
 		// render, and a returned position past 0, which no builtin has.
 		"NoDetermination": {MethodFact{}, "unclassified"},
 		"ParamReturn": {
-			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: returnsParam(2)},
+			MethodFact{Receiver: RecvNone, Returns: returnsParam(2)},
 			"receiver:none returns:param(2)",
 		},
 		// A parameter return with no position reads as the missing position
 		// rather than as position 0. Nothing in the package builds such a fact;
 		// a hand-edited facts.json is where one would come from.
 		"ParamReturnWithNoPosition": {
-			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasParam}},
+			MethodFact{Receiver: RecvNone, Returns: ReturnFact{Kind: AliasParam}},
 			"receiver:none returns:param(?)",
 		},
 		// A union names every value it joined, which is what §8.2 spells the
 		// lifetime union from.
 		"UnionOverThreeValues": {
-			MethodFact{Classified: fullCoverage, Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnion, Members: []AliasRef{
+			MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasUnion, Members: []AliasRef{
 				{Kind: AliasFresh},
 				{Kind: AliasParam, Index: position(1)},
 				{Kind: AliasReceiver},
@@ -108,7 +105,7 @@ func TestMethodFactString(t *testing.T) {
 		// A union with no members is the counterpart of the positionless
 		// parameter return above, and comes from the same place.
 		"UnionWithNoMembers": {
-			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: ReturnFact{Kind: AliasUnion}},
+			MethodFact{Receiver: RecvNone, Returns: ReturnFact{Kind: AliasUnion}},
 			"receiver:none returns:union(?)",
 		},
 	}
@@ -297,7 +294,7 @@ func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 		if !strings.HasPrefix(name, "String.prototype") {
 			continue
 		}
-		if !fact.Classified.Receiver {
+		if fact.Receiver == "" {
 			unread = append(unread, name)
 			continue
 		}
@@ -337,16 +334,11 @@ func TestFactsCoverEveryBuiltin(t *testing.T) {
 		fact, ok := f.Of(fn.Name)
 		require.True(t, ok, "%s has no fact", fn.Name)
 		// Every builtin resolves a return alias, warning or not.
-		require.True(t, fact.Classified.Returns, "%s has no return alias", fn.Name)
-		require.NotEmpty(t, fact.Returns.Kind, "%s covers a return alias it does not carry", fn.Name)
-		switch {
-		case fn.Kind != BuiltinMethod:
+		require.NotEmpty(t, fact.Returns.Kind, "%s has no return alias", fn.Name)
+		if fn.Kind != BuiltinMethod {
 			// `none` follows from the function kind, so no warning withholds it.
-			require.True(t, fact.Classified.Receiver, "%s has no receiver claim", fn.Name)
 			require.Equal(t, RecvNone, fact.Receiver, "%s has no receiver", fn.Name)
-		case !fact.Classified.Receiver:
-			require.Empty(t, fact.Receiver, "%s carries a receiver claim it is not classified for", fn.Name)
-		default:
+		} else {
 			require.Contains(t, []ReceiverKind{RecvBorrow, RecvMutBorrow}, fact.Receiver, fn.Name)
 		}
 		if fact.Returns.Kind != AliasParam {
@@ -395,7 +387,7 @@ func TestFactsUnionOverTwoReturnedParameters(t *testing.T) {
 	encoded, err := json.Marshal(fact)
 	require.NoError(t, err)
 	require.Equal(t,
-		`{"classified":{"receiver":true,"returns":true},"receiver":"none",`+
+		`{"receiver":"none",`+
 			`"returns":{"kind":"union","members":[{"kind":"param","index":0},{"kind":"param","index":1}]}}`,
 		string(encoded))
 }
@@ -409,37 +401,38 @@ func TestFactsOfAnAbsentName(t *testing.T) {
 	require.Equal(t, MethodFact{}, fact)
 }
 
-// A fact serializes as Appendix B describes. A determination its coverage
-// leaves unset omits its field, so the converter cannot read an absent claim
-// as a proven-empty one.
+// A fact serializes as Appendix B describes. Every published fact carries both
+// determinations, so a field absent from one is a hole Facts.Incomplete refuses
+// to write rather than a claim a consumer has to interpret.
 func TestFactsJSON(t *testing.T) {
 	tests := map[string]struct {
 		fact MethodFact
 		want string
 	}{
-		"Method": {factOf(t, "Array.prototype.fill"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":{"kind":"receiver"}}`},
-		// A withheld receiver falls through to FR5's `&mut self`, so the entry
-		// carries the return alias alone.
-		"WithheldReceiver": {analyzedFactOf(t, "Array.prototype.toLocaleString"), `{"classified":{"receiver":false,"returns":true},"returns":{"kind":"fresh"}}`},
+		"Method": {factOf(t, "Array.prototype.fill"), `{"receiver":"mutBorrow","returns":{"kind":"receiver"}}`},
+		// The analysis withheld this receiver, which is the shape Incomplete
+		// refuses. Curation answers it before anything is written, so this
+		// rendering only ever comes off an analyze result.
+		"WithheldReceiver": {analyzedFactOf(t, "Array.prototype.toLocaleString"), `{"returns":{"kind":"fresh"}}`},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave the index absent from the whole file and spell the common case
 		// as missing data.
-		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"classified":{"receiver":true,"returns":true},"receiver":"none","returns":{"kind":"param","index":0}}`},
+		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"receiver":"none","returns":{"kind":"param","index":0}}`},
 		"ReturnedPositionPastZero": {
-			MethodFact{Classified: fullCoverage, Receiver: RecvNone, Returns: returnsParam(2)},
-			`{"classified":{"receiver":true,"returns":true},"receiver":"none","returns":{"kind":"param","index":2}}`,
+			MethodFact{Receiver: RecvNone, Returns: returnsParam(2)},
+			`{"receiver":"none","returns":{"kind":"param","index":2}}`,
 		},
 		// A fact that returns no parameter carries no position at all.
-		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"classified":{"receiver":true,"returns":true},"receiver":"mutBorrow","returns":{"kind":"fresh"}}`},
+		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"receiver":"mutBorrow","returns":{"kind":"fresh"}}`},
 		// The §4.3 union gate. The `Object` constructor hands back an
 		// `OrdinaryObjectCreate` result on one path and `ToObject(value)` on
 		// another, and the entry names both so §8.2 can spell the lifetime
 		// union they seed.
-		"Union": {factOf(t, "Object"), `{"classified":{"receiver":true,"returns":true},"receiver":"none","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param","index":0}]}}`},
-		// A fact covering no determination carries neither field. `returns` is
-		// a struct rather than a kind, so its absence is spelled by omitzero.
-		"NoDetermination": {MethodFact{}, `{"classified":{"receiver":false,"returns":false}}`},
+		"Union": {factOf(t, "Object"), `{"receiver":"none","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param","index":0}]}}`},
+		// The zero fact carries neither field, which is what Of returns for a
+		// name the graph does not hold.
+		"NoDetermination": {MethodFact{}, `{}`},
 	}
 
 	for name, test := range tests {
@@ -495,12 +488,12 @@ func TestFactsTallies(t *testing.T) {
 	counts := map[string]int{}
 	for _, fact := range testFacts(t).Methods {
 		counts["total"]++
-		if fact.Classified.Receiver {
+		if fact.Receiver != "" {
 			counts["receiver "+string(fact.Receiver)]++
 		} else {
 			counts["receiver unclassified"]++
 		}
-		if fact.Classified.Returns {
+		if fact.Returns.Kind != "" {
 			counts["returns "+string(fact.Returns.Kind)]++
 		} else {
 			counts["returns unclassified"]++

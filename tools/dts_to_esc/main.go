@@ -42,6 +42,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -194,6 +195,13 @@ func runPartition(args []string, stderr io.Writer) error {
 			return fmt.Errorf("loading %s: %w", *cfgPath, err)
 		}
 		facts = ecma262.NewFacts(cfg)
+		// A fact with a hole in it would leave the converter to guess a
+		// determination nobody answered, and the receiver is auto-applied, so
+		// the guess would be silent. Refuse the run instead.
+		if holes := facts.Incomplete(); len(holes) > 0 {
+			return fmt.Errorf("%s leaves determinations unanswered:\n  %s",
+				*cfgPath, strings.Join(holes, "\n  "))
+		}
 		join = ecma262.NewJoin(facts)
 	}
 

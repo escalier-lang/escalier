@@ -38,7 +38,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §3   | Scala CFG→JSON serializer                  | FR6 (cfg)  | ✅      | §2         | `cfg.json` covers all 501 builtin algorithms plus the 701 functions reachable from them, at the pinned spec revision, and round-trips the schema check the run ends with — met |
 | §4.1 | Mutation-summary fixpoint                  | FR1–FR3    | ✅      | §3, §4.2   | `MutArgs`/`MutatesReceiver` spot-checked — push/fill mutate the receiver, slice does not, Map.set via `[[MapData]]` — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.2 | Origin map                                 | FR2, FR4   | ✅      | §3         | origins asserted for sample functions — `ToObject(this)`→Receiver, allocators→Fresh, reads→Unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver / returns / per-determination coverage for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
+| §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver and returns resolved per determination for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.4 | Curated fact layer                         | FR5, FR7   | ✅      | §4.3       | `curated.json` merges per determination; published `receiver unclassified` is zero; each of the three guards tested — met, see [internal/ecma262/curated.go](../../internal/ecma262/curated.go) |
 | §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
 | §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
@@ -1278,10 +1278,10 @@ settles its receiver and the entry answers only its return.
 Each curated axis is one of three things, and the merge reports which:
 
 - a **fill-in**, where the analysis left the axis open. This is the
-  ordinary case and carries no conflict. An axis is open when its coverage
-  is unset, and a return alias is open when it resolved to `unknown` as
-  well, since the top of the alias lattice names no value the return hands
-  back.
+  ordinary case and carries no conflict. A receiver is open when the
+  analysis carried no value for it, and a return alias is open when it
+  resolved to `unknown` as well, since the top of the alias lattice names no
+  value the return hands back.
 - a **correction**, where the analysis published a claim the review
   contradicts. §6 reads these first, because a correction is either a spec
   subtlety the graph cannot express or an analyzer bug, and the two look
@@ -1347,9 +1347,9 @@ and stay as they are.
 **What is still open.** The unresolved-determination report reads per
 axis, because the two axes spell an unanswered determination differently
 and cost different things. A `ReceiverKind` has no member meaning "could
-not tell", so an unanswered receiver is one whose coverage is unset. The
-alias lattice has a top and `returnAlias` is total, so an unanswered return
-is a covered `unknown`. Summing them would hide the difference that
+not tell", so an unanswered receiver is one the analysis carried no value
+for. The alias lattice has a top and `returnAlias` is total, so an
+unanswered return is a published `unknown`. Summing them would hide the difference that
 matters: §7 auto-applies the receiver, so an open one is a soundness gap
 that falls to the name heuristics, while an open return costs only the
 lifetime precision §8.2 would have seeded.
@@ -1358,9 +1358,11 @@ Published today: **0** receivers open, **247** returns open. The receiver
 axis is closed; the return axis is where the next curation batch goes.
 
 **Gate.** `curated.json` merges per determination; the published
-`receiver unclassified` tally is zero; the unresolved report reads both
-axes; each of the three guards and the receiver-kind refusal has a test;
-the report distinguishes a curated determination from an analyzed one.
+`receiver unclassified` tally is zero; every published fact carries a value
+on every axis, so `facts.json` needs no coverage flags and a hole fails the
+run instead; the unresolved report reads both axes; each of the three
+guards and the receiver-kind refusal has a test; the report distinguishes a
+curated determination from an analyzed one.
 
 ## §5. Keying and join (FR7, FR15)
 
@@ -1500,8 +1502,9 @@ entry. This is the gate that authorizes removing override entries in §7.
 - Insert the facts lookup into `dts_to_esc.Classify` at rung 2 (FR8):
   after explicit author signals, before the `get*` prefix and name
   heuristics.
-- Set receiver mutability from a fact whose `classified.receiver` is set;
-  leave the rest to the existing tiers. The lookup reads one merged source.
+- Set receiver mutability from the fact, and leave the rest to the existing
+  tiers. Every published fact carries one, so there is no coverage flag to
+  consult and no hole to fall through. The lookup reads one merged source:
   §4.4 merges the curated layer inside `NewFacts`, so the converter never
   sees the two halves apart and applies a curated claim and an analyzed one
   identically.
@@ -1537,7 +1540,7 @@ it. What differs is only how the two `facts.json` contributions reach the
 merge; that split is per determination, not per method:
 
 - **Auto-applied (trusted).** Receiver mutability is read straight from a
-  classified fact and written into the `.esc` — no human in the loop. It
+  published fact and written into the `.esc` — no human in the loop. It
   is the only determination §6 has validated (FR9) as trustworthy.
 - **Curation-grade (reviewed).** Parameter disposition, the return-borrow
   seed, `throws`, and `rejects` reach the `.esc` only through a
@@ -1557,8 +1560,8 @@ merge; that split is per determination, not per method:
   absent `throws` clause is `never`), so the human genuinely *adds* them.
 - Parameter **disposition** is the exception: every parameter must carry a
   disposition for the signature to be valid, so the converter writes a
-  **provisional baseline** — the analyzed disposition for a classified
-  method, the FR5 `&mut` default when uncertain — which the override
+  **provisional baseline** — the disposition the published fact carries, or
+  the FR5 `&mut` default where no fact addresses the method — which the override
   layer, if present, corrects. That is review-and-**correct**, not
   author-from-scratch. So disposition is written but not trusted; the
   other three are not written until curated.
@@ -1568,10 +1571,10 @@ path produces against observed behavior and feeds the disagreements back
 into the curated entries, rather than authorizing an extracted set to skip
 the review.
 
-**A determination `facts.json` does not carry falls back to a default.**
-When a `std:*` method is unmatched by the join (§5), or its fact leaves a
-determination uncovered after §4.4's merge, that part of the declaration
-is `.d.ts` types plus the FR5 defaults — `&mut self`, `&mut` parameters, empty
+**A method `facts.json` does not address falls back to a default.**
+This is now the only degraded path, because a published fact answers every
+determination it carries. When a `std:*` method is unmatched by the join
+(§5), the declaration is `.d.ts` types plus the FR5 defaults — `&mut self`, `&mut` parameters, empty
 `throws`/`rejects` — carrying no spec-derived effect. This is the degraded
 path, not a preferred one. FR5 lists every method with a withheld receiver
 and §5 reports every unmatched declaration, precisely so these are visible
@@ -2296,8 +2299,8 @@ const (
                                             // move or a lifetime-bounded borrow at curation (FR12)
     // A parameter the analysis PROVED read-only (&) is omitted from Params.
     // That omission is distinct from the FR5 uncertain default (&mut): it
-    // means "shown read-only", and reads that way only where
-    // Coverage.Params is set.
+    // means "shown read-only". A method whose parameters the analysis could
+    // not read is not written at all, per the totality rule below.
 )
 
 type ParamFact struct {
@@ -2329,33 +2332,49 @@ type ReturnFact struct {
     Members []AliasRef `json:"members,omitempty"` // set exactly when Kind == "union"
 }
 
-// Coverage says which determinations the analysis resolved. Each axis is
-// withheld on its own, so a method that hides a mutation still publishes
-// its return alias. An axis no step decides is always covered, such as a
-// static's "receiver": "none" (§4.3).
-type Coverage struct {
-    Receiver bool `json:"receiver"` // §4.3; always set for a static
-    Returns  bool `json:"returns"`  // returnAlias ran; true for every builtin
-    Params   bool `json:"params"`   // §8.1
-    Throws   bool `json:"throws"`   // §9.2
-    Rejects  bool `json:"rejects"`  // §9.3
-}
-
-// An uncovered determination is ABSENT from the JSON — an unanalyzed axis,
-// distinct from a proven-empty result, which is covered with an empty
-// effect field. Receiver is a kind with no empty member and Returns is a
-// struct, so omitempty and omitzero spell their absence. The three slices
-// carry neither, which would drop the [] that spells that second case.
-// Uncovered they encode as null.
+// MethodFact carries every determination. Neither Receiver nor Returns has
+// a valid zero value, and the three slices are written whenever their axis
+// is computed, so an absent field is a hole rather than a claim. Facts
+// records no coverage flags because a hole never reaches the file: the run
+// fails first.
 type MethodFact struct {
-    Classified Coverage     `json:"classified"`         // per-determination coverage (FR5)
-    Receiver   ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none (FR2)
-    Params     []ParamFact  `json:"params"`             // only non-borrow parameters (FR12)
-    Returns    ReturnFact   `json:"returns,omitzero"`   // return-borrow lifetime seed (FR4)
-    Throws     []string     `json:"throws"`             // sync throws post-filter (FR10, FR11)
-    Rejects    []string     `json:"rejects"`            // async rejects → Promise<T,E>.Err (FR13)
+    Receiver ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none (FR2)
+    Params   []ParamFact  `json:"params"`             // only non-borrow parameters (FR12)
+    Returns  ReturnFact   `json:"returns,omitzero"`   // return-borrow lifetime seed (FR4)
+    Throws   []string     `json:"throws"`             // sync throws post-filter (FR10, FR11)
+    Rejects  []string     `json:"rejects"`            // async rejects → Promise<T,E>.Err (FR13)
 }
 ```
+
+**Every published fact is total.** A determination neither the analysis nor
+§4.4's curated layer answers is not encoded — `Facts.Incomplete` names it
+and generation refuses to write the file. That is the rule the schema rests
+on, and it is why there is no `classified` object: an axis is present, or
+the run failed with the method and axis on stderr.
+
+The alternative was a per-axis coverage flag saying which determinations
+were resolved, so a consumer could tell "unanalyzed" from "proven none".
+Making the file total is stronger. A flag leaves a hole in the data that
+every consumer must remember to check, and §7 auto-applies the receiver, so
+a forgotten check there becomes a silent `&mut self`. Failing the run puts
+the same information in front of the one person who can act on it.
+
+**`unknown` is a value, not a hole.** The alias lattice's top says the walk
+read the returns and could tie none of them to a value the caller holds,
+which is a fact §8.2 acts on by leaving the lifetime to elision. 247 of the
+501 builtins publish it. The methods still wanting an answer there are
+`Facts.Unclassified(AxisReturns)`, a review report rather than a wire
+concern. The receiver axis has no counterpart, because `ReceiverKind` has
+no member meaning "could not tell" — which is exactly why a missing
+receiver is the case that fails the run.
+
+**A slice axis reads the same way once §8 and §9 add one.** `[]` is a
+proven-empty result and the axis being uncomputed fails the run, so a
+consumer never has to tell `null` from `[]`. The one wrinkle is FR5's
+deliberate under-reporting for `throws` and `rejects`: until §9.2 lands
+those axes are not computed at all, so they are absent from the schema
+rather than present-and-empty, and the totality rule starts applying to
+them when they are wired in.
 
 Each entry in `Throws` / `Rejects` is one of (requirements FR13): a
 standard error-class name the spec constructs (`TypeError`, `RangeError`,
@@ -2366,18 +2385,12 @@ form (`Promise.all`/`race`/`any` forwarding their element promises' `E`);
 the **effect ref** `"throwsOf:param:k"` for a method that propagates a
 callback parameter's throws (`Array.prototype.forEach`/`map`/…), resolved
 at the FR7 join to throws polymorphism; or the sentinel `"unknown"` for a
-propagated value the analysis can neither name nor trace. All origin and
-effect refs resolve to types at the FR7 join. An entry carries no receiver,
-disposition, throw, or reject claim its `classified` coverage does not
-cover — those fields are absent or null, never empty — so the converter
-cannot mistake "unanalyzed" for "proven none"; it applies the FR5 default
-for that axis itself. A method whose `receiver` is uncovered after §4.4's merge falls through to
-the name heuristics and is collected into a separate `unclassified` report
-alongside `facts.json` for auditing (FR5). No `std:*` method is in that
-state today. Where `classified.params` is
-set, a parameter absent from `Params` was proven read-only (`&`) — not to
-be confused with the FR5 `&mut` default the converter applies where it is
-not.
+propagated value the analysis can neither name nor trace. All origin and effect refs resolve to types at the FR7 join.
+
+A parameter absent from `Params` was proven read-only (`&`). That is a
+claim, not a gap, because a method whose parameters the analysis could not
+read is not published at all. It is distinct from the FR5 `&mut` default,
+which the converter applies only where no fact addresses the method.
 The receiver-returning and fresh-returning alias kinds carry the return's
 borrow lifetime per FR4.
 
@@ -2398,7 +2411,6 @@ two positions and a single field could name only one of them:
 
 ```json
 "Object": {
-  "classified": { "receiver": true, "returns": true },
   "receiver": "none",
   "returns": {
     "kind": "union",
@@ -2476,12 +2488,10 @@ An entry answers the axes it carries a value for. `""` is neither a
 `ReceiverKind` nor an `AliasKind`, so an omitted field is unambiguously an
 axis left to the analysis, and needs no flag beside it saying so.
 
-A published `MethodFact` does carry the `classified` flags, and the two
-records differ here on purpose. The fact gains three slice-valued axes in
-§8 and §9, where a proven-empty result and an unanalyzed one differ only
-by `[]` versus `null`. That is too easy a distinction to lose to rest a
-soundness contract on. A curated entry has no such axis, because a
-reviewer either writes an answer or does not.
+A published `MethodFact` reads the same way, for the same reason. The
+difference is what an omission means: on an entry it defers to the
+analysis, and on a published fact it is a hole that fails the run per
+Appendix B.
 
 Three fields exist only for review and never reach `facts.json`.
 
