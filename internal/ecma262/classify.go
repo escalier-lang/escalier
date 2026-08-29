@@ -457,10 +457,11 @@ func (f MethodFact) answers(axis Axis) bool {
 // generation requires, and Unclassified's `answers` is the reviewer's stricter
 // reading of the same fact.
 //
-// An axis this does not name reads as carried, because a fact cannot be faulted
-// for a determination §8 or §9 has not added yet. That permissive default is
-// also how the switch could fall out of step with publishedAxes and let a hole
-// through, which TestCarriesCoversEveryPublishedAxis is there to catch.
+// An axis this does not name reads as a hole. Incomplete asks only about
+// publishedAxes, so that answer is reachable exactly when an axis joins that
+// list without gaining a case here. Failing the run on every method is the safe
+// reading of that drift; the alternative passes the hole the gate exists to
+// catch. TestCarriesCoversEveryPublishedAxis catches it one step earlier.
 func (f MethodFact) carries(axis Axis) bool {
 	switch axis {
 	case AxisReceiver:
@@ -468,7 +469,7 @@ func (f MethodFact) carries(axis Axis) bool {
 	case AxisReturns:
 		return f.Returns.Kind != ""
 	default:
-		return true
+		return false
 	}
 }
 

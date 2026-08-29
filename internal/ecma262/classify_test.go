@@ -573,28 +573,33 @@ func TestIncompleteNamesTheAxis(t *testing.T) {
 	require.Empty(t, facts.Incomplete())
 }
 
-// Every axis Incomplete walks has a case in `carries`. Without this, adding one
-// to publishedAxes and forgetting the switch would leave `carries` returning
-// its permissive default, and the gate would pass a fact holding exactly the
-// hole it exists to catch.
+// Every axis Incomplete walks has a case in `carries`. A fact populated on
+// every axis carries all of them, and an empty fact carries none. Adding an
+// axis to publishedAxes and forgetting the switch fails the first assertion,
+// because the fail-closed default reads that axis as a hole however the fact is
+// populated. Catching it here names the missing case; the gate would otherwise
+// report every method as incomplete.
 func TestCarriesCoversEveryPublishedAxis(t *testing.T) {
 	t.Parallel()
 
+	full := MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}}
 	for _, axis := range publishedAxes {
-		require.Falsef(t, MethodFact{}.carries(axis),
+		require.Truef(t, full.carries(axis),
 			"%s is a published axis that carries does not name", axis)
+		require.Falsef(t, MethodFact{}.carries(axis),
+			"%s reads as carried on a fact holding nothing", axis)
 	}
 }
 
-// The two predicates read an axis they do not name in opposite directions, on
-// purpose. A determination §8 or §9 has not added yet must not make an
-// otherwise complete fact look like a hole that fails the run, and must show up
-// as open work for a reviewer.
-func TestCarriesAndAnswersDisagreeOnAnUnwiredAxis(t *testing.T) {
+// An axis neither predicate names reads as a hole for generation and as open
+// work for a reviewer. Both directions fail closed, so an axis §8 or §9 adds to
+// publishedAxes without wiring up stops the run rather than shipping a
+// determination nothing populates.
+func TestCarriesReadsAnUnwiredAxisAsAHole(t *testing.T) {
 	t.Parallel()
 
 	fact := MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}}
-	require.True(t, fact.carries(Axis("throws")))
+	require.False(t, fact.carries(Axis("throws")))
 	require.False(t, fact.answers(Axis("throws")))
 }
 
