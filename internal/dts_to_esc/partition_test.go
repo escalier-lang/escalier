@@ -126,6 +126,106 @@ func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {
 	}
 }
 
+func TestRoute_LibSetGaps(t *testing.T) {
+	t.Parallel()
+	// Names the pinned lib set declares outside lib.es5.d.ts and
+	// lib.dom.d.ts. Each one aborted the bootstrap run before it had a
+	// partition entry.
+	cases := []struct {
+		name       string
+		sourceFile string
+		wantURI    string
+	}{
+		{"FlatArray", "lib.es2019.array.d.ts", "std:array"},
+		{"BigIntToLocaleStringOptions", "lib.es2020.bigint.d.ts", "std:bigint"},
+		{"RegExpIndicesArray", "lib.es2022.regexp.d.ts", "std:regexp"},
+		{"PromiseWithResolvers", "lib.es2024.promise.d.ts", "std:async"},
+		{"ReadonlySetLike", "lib.esnext.collection.d.ts", "std:set"},
+		{"Disposable", "lib.esnext.disposable.d.ts", "std:disposable"},
+		{"AsyncDisposableStack", "lib.esnext.disposable.d.ts", "std:disposable"},
+		{"SuppressedError", "lib.esnext.disposable.d.ts", "std:error"},
+		{"DecoratorContext", "lib.decorators.d.ts", "std:decorators"},
+		{"ClassMemberDecoratorContext", "lib.decorators.d.ts", "std:decorators"},
+		{"DecoratorMetadataObject", "lib.decorators.d.ts", "std:decorators"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(tc.name, tc.sourceFile)
+			require.False(t, got.Drop)
+			require.False(t, got.Unmapped)
+			require.Equal(t, tc.wantURI, got.Pkg.URI)
+		})
+	}
+}
+
+func TestRoute_WorkerOnlySymbols(t *testing.T) {
+	t.Parallel()
+	// Surface only lib.webworker.d.ts declares. It reaches Route
+	// because no file outside WorkerHostSources declares these names,
+	// so PartitionLib does not skip them as redeclarations.
+	cases := []struct {
+		name    string
+		wantURI string
+	}{
+		{"ServiceWorkerGlobalScope", "web:service_worker"},
+		{"FetchEvent", "web:service_worker"},
+		{"ExtendableMessageEvent", "web:service_worker"},
+		{"Clients", "web:service_worker"},
+		{"WindowClient", "web:service_worker"},
+		{"PushEvent", "web:push"},
+		{"PushMessageData", "web:push"},
+		{"RTCTransformEvent", "web:web_rtc"},
+		{"RTCRtpScriptTransformer", "web:web_rtc"},
+		{"WorkerGlobalScopeEventMap", "web:workers"},
+		{"importScripts", "web:workers"},
+		{"onrtctransform", "web:workers"},
+		{"FileReaderSync", "web:file"},
+		{"FileSystemSyncAccessHandle", "web:dom"},
+		{"MediaStreamTrackProcessor", "web:dom"},
+		{"NotificationEvent", "web:dom"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(tc.name, "lib.webworker.d.ts")
+			require.False(t, got.Drop)
+			require.False(t, got.Unmapped)
+			require.Equal(t, tc.wantURI, got.Pkg.URI)
+		})
+	}
+}
+
+func TestRoute_HostMachineryDrops(t *testing.T) {
+	t.Parallel()
+	// Two families the converter emits nothing for: TypeScript's
+	// legacy `experimentalDecorators` signatures, and the Windows
+	// Script Host surface in lib.scripthost.d.ts.
+	cases := []struct {
+		name       string
+		sourceFile string
+	}{
+		{"ClassDecorator", "lib.decorators.legacy.d.ts"},
+		{"PropertyDecorator", "lib.decorators.legacy.d.ts"},
+		{"MethodDecorator", "lib.decorators.legacy.d.ts"},
+		{"ParameterDecorator", "lib.decorators.legacy.d.ts"},
+		{"ActiveXObject", "lib.scripthost.d.ts"},
+		{"Enumerator", "lib.scripthost.d.ts"},
+		{"VBArray", "lib.scripthost.d.ts"},
+		{"VarDate", "lib.scripthost.d.ts"},
+		{"WScript", "lib.scripthost.d.ts"},
+		{"WSH", "lib.scripthost.d.ts"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(tc.name, tc.sourceFile)
+			require.True(t, got.Drop)
+			require.False(t, got.Unmapped)
+		})
+	}
+}
+
 func TestPackageList_IncludesDOMAndIsSorted(t *testing.T) {
 	t.Parallel()
 	list := PackageList()

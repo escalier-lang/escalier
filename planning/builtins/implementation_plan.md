@@ -1614,6 +1614,8 @@ output and the LSP name-index (§10.3). Driven by the
 | `std:intl`        | bundled             | unchanged; needs `import "std:date"`                                                                                             |
 | `std:temporal`    | bundled             | unchanged                                                                                                                        |
 | `std:wasm`        | bundled             | unchanged                                                                                                                        |
+| `std:disposable`  | bundled             | `Disposable`, `AsyncDisposable`, `DisposableStack`, `AsyncDisposableStack` — the `using` / `await using` protocol. `SuppressedError` is an `Error` subclass and goes to `std:error` |
+| `std:decorators`  | bundled             | The TC39 decorator context types (`DecoratorContext`, `ClassMethodDecoratorContext`, …) and the `Symbol.metadata` types. TypeScript's legacy `experimentalDecorators` aliases are dropped instead — see Drops |
 
 **`web/` partition.** Per §4.2, the DOM partition is **one big
 package + standalone web siblings**:
@@ -1670,6 +1672,37 @@ previously-ambient name and has nothing to take its union over
 in the new model. The converter recognizes both and skips
 emission with a logged note. `intrinsic`-typed declarations
 (FR13) skip the same way.
+
+Two families join them. `ClassDecorator`, `PropertyDecorator`,
+`MethodDecorator`, and `ParameterDecorator` from
+`lib.decorators.legacy.d.ts` type the calling convention `tsc`
+emitted before TC39 decorators, so they describe a compiler
+output shape rather than a runtime one. The whole of
+`lib.scripthost.d.ts` — `ActiveXObject`, `WScript`, `VBArray`,
+the `TextStream` types — is the Windows Script Host surface,
+and Escalier targets browsers and Node.
+
+**The Web Worker host lib.** TypeScript ships `lib.dom` and
+`lib.webworker` as alternatives that a `tsconfig.json` picks
+between, so the worker files restate every shared global in
+full. `interface ReadableStream<R = any>` is byte-identical in
+`lib.dom.d.ts` and `lib.webworker.d.ts`. Routing both copies
+into one bucket would let the within-bucket declaration merging
+below concatenate the two member lists, leaving one interface
+with each member twice.
+
+The converter emits one tree rather than one per host, so it
+keeps the copy the rest of the lib set declares and skips the
+worker one. What survives from `lib.webworker.*.d.ts` is the
+surface only a worker has, and it routes through the table like
+any other name: the service-worker globals and events
+(`ServiceWorkerGlobalScope`, `FetchEvent`, `ExtendableEvent`,
+`Client`, `Clients`, `WindowClient`) to `web:service_worker`,
+the push events to `web:push`, the encoded-frame transforms to
+`web:web_rtc`, `FileReaderSync` to `web:file`, and the global
+scope event maps plus `importScripts` to `web:workers`. See
+`WorkerHostSources` in
+[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
 
 **Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level
 TS-lib declaration name absent from both this partition table

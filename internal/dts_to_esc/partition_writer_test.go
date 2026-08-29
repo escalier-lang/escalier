@@ -22,6 +22,60 @@ func parseLib(t *testing.T, name, src string) LibInput {
 	return LibInput{SourceFile: name, Module: mod}
 }
 
+func TestPartitionLib_SkipsWorkerHostRedeclarations(t *testing.T) {
+	t.Parallel()
+	// lib.dom.d.ts and lib.webworker.d.ts each declare the whole
+	// ReadableStream interface. Routing both copies into web:streams
+	// would let mergeDecls concatenate the two member lists, leaving
+	// one interface with `locked` twice. The worker copy is skipped
+	// instead.
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+interface FileReaderSync { readAsText(blob: Blob): string; }
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets["web:streams"], 1)
+	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, stream.Members, 1)
+
+	// FileReaderSync has no counterpart outside the worker host lib,
+	// so it routes normally.
+	require.Len(t, res.Buckets["web:file"], 1)
+	require.Equal(t, "FileReaderSync", topLevelName(res.Buckets["web:file"][0]))
+
+	require.Equal(t,
+		[]DropNote{{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"}},
+		res.Redeclarations)
+}
+
+func TestPartitionLib_WorkerHostInputOrderDoesNotMatter(t *testing.T) {
+	t.Parallel()
+	// The skip consults every input up front, so the worker file
+	// coming first does not make its copy the one that survives.
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+`)
+
+	res, err := PartitionLib([]LibInput{worker, dom})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets["web:streams"], 1)
+	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, stream.Members, 1)
+	require.Len(t, res.Redeclarations, 1)
+}
+
 func TestPartitionLib_RoutesByName(t *testing.T) {
 	t.Parallel()
 	// Array → std:array (explicit map). HTMLCanvasElement → web:dom

@@ -337,6 +337,36 @@ func TestStandalone_InterfaceVarSingletonFlattened(t *testing.T) {
 		"no surviving interface in output")
 }
 
+// symbolKeyedSingletonSlice mirrors the shape lib.es2015.symbol.wellknown.d.ts
+// gives `Math`, `JSON`, and `Atomics`: a singleton interface carrying a
+// `[Symbol.toStringTag]` member alongside its named ones.
+const symbolKeyedSingletonSlice = `
+interface Math {
+    /** Returns the absolute value. */
+    abs(x: number): number;
+    readonly [Symbol.toStringTag]: string;
+}
+
+declare var Math: Math;
+`
+
+func TestStandalone_SingletonSkipsSymbolKeyedMember(t *testing.T) {
+	astModule, printed := convertSlice(t, symbolKeyedSingletonSlice)
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok)
+
+	// Flattening names each member at the top level and in its
+	// `@js(...)` path, and a computed key has no name to use. The
+	// symbol-keyed member is dropped; `abs` is the only decl left.
+	require.Len(t, rootNS.Decls, 1)
+	fn, ok := rootNS.Decls[0].(*ast.FuncDecl)
+	require.True(t, ok, "decl is a FuncDecl")
+	require.Equal(t, "abs", fn.Name.Name)
+	require.Len(t, fn.Decorators, 1)
+	require.Equal(t, "Math.abs", printDecoratorArg(t, fn.Decorators[0]))
+	require.NotContains(t, printed, "toStringTag")
+}
+
 // sharedInterfaceSlice pins the negative case for the singleton flattener:
 // an interface referenced as a type by multiple vars is a shared shape,
 // not a singleton structure, and must NOT be flattened. The interface

@@ -23,15 +23,21 @@ type Package struct {
 // Partition routes a TS-lib top-level declaration name to its target
 // pseudo-package. Source of truth: the §6.1 partition table.
 //
+// PartitionLib filters the input before Route sees it: a declaration
+// from the Web Worker host lib that another input already declares is
+// skipped, because the two host libs restate the same globals. See
+// WorkerHostSources.
+//
 // Lookup order at the routing site (see Route below):
 //
 //  1. ExplicitDrops — symbols intentionally dropped (`globalThis`,
 //     `eval`). The routing site logs and skips emission.
 //  2. Partition (this map) — the hand-maintained, full enumeration of
 //     std:* and web:* siblings.
-//  3. DOMResidual — a `.d.ts` source-file allowlist (lib.dom.d.ts and
-//     its DOM-coupled siblings). Any unmapped name that originates in
-//     one of these files routes to `web:dom`. This is the catch-all
+//  3. DOMResidual — a `.d.ts` source-file allowlist. lib.dom.d.ts and
+//     its DOM-coupled siblings are on it. Any unmapped name that
+//     originates in one of these files routes to `web:dom`. This is
+//     the catch-all
 //     for the DOM mass, kept as a file allowlist rather than a per-
 //     symbol map because lib.dom.d.ts contains thousands of element
 //     classes, interfaces, and event types that all share one target
@@ -53,6 +59,7 @@ var stdPackages = []struct {
 		"Array", "ArrayConstructor",
 		"ReadonlyArray", "ConcatArray", "ArrayLike",
 		"ArrayIterator",
+		"FlatArray",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -69,10 +76,15 @@ var stdPackages = []struct {
 	}},
 	{"std:bigint", "std/bigint.esc", []string{
 		"BigInt", "BigIntConstructor",
+		// The options bag for BigInt.prototype.toLocaleString. TS
+		// declares it standalone in lib.es2020.bigint.d.ts rather than
+		// under Intl, so it follows BigInt rather than std:intl.
+		"BigIntToLocaleStringOptions",
 	}},
 	{"std:regexp", "std/regexp.esc", []string{
 		"RegExp", "RegExpConstructor",
 		"RegExpMatchArray", "RegExpExecArray",
+		"RegExpIndicesArray",
 		"RegExpStringIterator",
 	}},
 	{"std:symbol", "std/symbol.esc", []string{
@@ -102,7 +114,7 @@ var stdPackages = []struct {
 		"MapIterator",
 	}},
 	{"std:set", "std/set.esc", []string{
-		"Set", "SetConstructor", "ReadonlySet",
+		"Set", "SetConstructor", "ReadonlySet", "ReadonlySetLike",
 		"WeakSet", "WeakSetConstructor",
 		"SetIterator",
 	}},
@@ -122,6 +134,7 @@ var stdPackages = []struct {
 		"Promise", "PromiseConstructor", "PromiseLike",
 		"PromiseFulfilledResult", "PromiseRejectedResult", "PromiseSettledResult",
 		"Awaited",
+		"PromiseWithResolvers",
 		"AsyncIterator", "AsyncIterable", "AsyncIterableIterator",
 		"AsyncIteratorObject",
 		"AsyncGenerator", "AsyncGeneratorFunction", "AsyncGeneratorFunctionConstructor",
@@ -134,6 +147,7 @@ var stdPackages = []struct {
 		"RangeError", "RangeErrorConstructor",
 		"SyntaxError", "SyntaxErrorConstructor",
 		"ReferenceError", "ReferenceErrorConstructor",
+		"SuppressedError", "SuppressedErrorConstructor",
 		"ErrorOptions", "ErrorCause",
 	}},
 	{"std:url", "std/url.esc", []string{
@@ -185,6 +199,32 @@ var stdPackages = []struct {
 	{"std:wasm", "std/wasm.esc", []string{
 		"WebAssembly",
 	}},
+	{"std:disposable", "std/disposable.esc", []string{
+		// Explicit resource management: the `using` / `await using`
+		// protocol. `SuppressedError` is the one member of
+		// lib.esnext.disposable.d.ts that routes elsewhere — it is an
+		// `Error` subclass, so it joins std:error.
+		"Disposable", "AsyncDisposable",
+		"DisposableStack", "DisposableStackConstructor",
+		"AsyncDisposableStack", "AsyncDisposableStackConstructor",
+	}},
+	{"std:decorators", "std/decorators.esc", []string{
+		// The context objects a TC39 decorator receives as its second
+		// argument, plus the metadata types keyed off `Symbol.metadata`.
+		// These describe an ECMAScript runtime shape, so they get a
+		// package rather than joining ExplicitDrops, even though
+		// Escalier has no decorator syntax for user code today. The
+		// `@js(...)` decorator Escalier does have is a declaration
+		// annotation the converter emits; it is unrelated to these
+		// types. TypeScript's own legacy `experimentalDecorators`
+		// aliases are dropped instead — see ExplicitDrops.
+		"DecoratorContext", "DecoratorMetadata", "DecoratorMetadataObject",
+		"ClassDecoratorContext", "ClassMemberDecoratorContext",
+		"ClassFieldDecoratorContext", "ClassMethodDecoratorContext",
+		"ClassGetterDecoratorContext", "ClassSetterDecoratorContext",
+		"ClassAccessorDecoratorContext",
+		"ClassAccessorDecoratorTarget", "ClassAccessorDecoratorResult",
+	}},
 }
 
 // Standalone web sibling packages, per the §6.1 table. The DOM mass
@@ -212,6 +252,7 @@ var stdPackages = []struct {
 //     - CSS Object Model (CSSOM)
 //     - CSSOM view API
 //     - Device orientation events
+//     - File System API
 //     - Fullscreen API
 //     - Gamepad API
 //     - Geolocation API
@@ -268,7 +309,6 @@ var stdPackages = []struct {
 //     - Device Memory API
 //     - Document Picture-in-Picture API
 //     - Encrypted Media Extensions API
-//     - File System API
 //     - File and Directory Entries API
 //     - HTML Sanitizer API
 //     - Houdini APIs
@@ -371,6 +411,16 @@ var webPackages = []struct {
 		"SharedWorkerGlobalScope",
 		"WorkerLocation", "WorkerNavigator",
 		"AbstractWorker", "WorkerEventMap",
+		// Declared only by the worker host lib — see
+		// WorkerHostSources. The event maps close the registry for
+		// each global scope. `importScripts`, `fonts`, and
+		// `onrtctransform` are globals a worker has and a document
+		// does not; the RTCTransformEvent that `onrtctransform`
+		// receives lives in web:web_rtc.
+		"WorkerGlobalScopeEventMap",
+		"DedicatedWorkerGlobalScopeEventMap",
+		"SharedWorkerGlobalScopeEventMap",
+		"importScripts", "fonts", "onrtctransform",
 	}},
 	{"web:webgl", "web/webgl.esc", []string{
 		"WebGLRenderingContext", "WebGLRenderingContextBase",
@@ -443,8 +493,7 @@ var webPackages = []struct {
 		// RTCDTMFSender, RTCDTMFToneChangeEvent,
 		// RTCDTMFToneChangeEventInit, RTCIdentityAssertion,
 		// RTCIdentityProvider, RTCIdentityProviderRegistrar,
-		// RTCTransformEvent, RTCRtpScriptTransformer, and the
-		// per-source/codec stats variants (RTCAudioSourceStats,
+		// and the per-source/codec stats variants (RTCAudioSourceStats,
 		// RTCVideoSourceStats, RTCCodecStats, RTCIceCandidateStats,
 		// RTCPeerConnectionStats). Add here if a future TS version
 		// bump ships them.
@@ -494,6 +543,10 @@ var webPackages = []struct {
 		"RTCTransportStats",
 		"RTCPeerConnectionErrorCallback",
 		"RTCSessionDescriptionCallback",
+		// Declared only by the worker host lib — see WorkerHostSources.
+		// Encoded-frame transforms run in a worker, so lib.dom.d.ts
+		// has no copy of either type.
+		"RTCTransformEvent", "RTCRtpScriptTransformer",
 	}},
 	{"web:web_codecs", "web/web_codecs.esc", []string{
 		"AudioData", "AudioDataInit", "AudioDataCopyToOptions",
@@ -544,12 +597,15 @@ var webPackages = []struct {
 		// own APIs (https://developer.mozilla.org/en-US/docs/Web/API/Service_Worker_API);
 		// see web:push and web:cache below.
 		//
-		// Symbols that MDN documents under the Service Worker API but
-		// that aren't present in the pinned lib.dom.d.ts (so they need
-		// no partition entry here): Client, Clients, WindowClient,
-		// ExtendableEvent, ExtendableMessageEvent, FetchEvent,
-		// InstallEvent, ServiceWorkerGlobalScope. If a TS version bump
-		// adds them, add the corresponding entries here.
+		// The service-worker global scope and the events dispatched
+		// into it are declared only by the worker host lib — see
+		// WorkerHostSources. `InstallEvent` is the one name MDN
+		// documents here that no pinned lib file declares.
+		"ServiceWorkerGlobalScope", "ServiceWorkerGlobalScopeEventMap",
+		"Client", "Clients", "WindowClient",
+		"ExtendableEvent", "ExtendableEventInit",
+		"ExtendableMessageEvent", "ExtendableMessageEventInit",
+		"FetchEvent", "FetchEventInit",
 		"ServiceWorker", "ServiceWorkerEventMap", "ServiceWorkerState",
 		"ServiceWorkerContainer", "ServiceWorkerContainerEventMap",
 		"ServiceWorkerRegistration", "ServiceWorkerRegistrationEventMap",
@@ -564,6 +620,10 @@ var webPackages = []struct {
 		"PushManager", "PushSubscription", "PushSubscriptionJSON",
 		"PushSubscriptionOptions", "PushSubscriptionOptionsInit",
 		"PushEncryptionKeyName", "PushPermissionState",
+		// A push message is delivered to a service worker, so only the
+		// worker host lib declares these — see WorkerHostSources.
+		"PushEvent", "PushEventInit",
+		"PushMessageData", "PushMessageDataInit",
 	}},
 	{"web:cache", "web/cache.esc", []string{
 		// MDN documents the Cache API as a separate API (defined in the
@@ -594,6 +654,9 @@ var webPackages = []struct {
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
 		"FileList", "FileReader", "FileReaderEventMap",
+		// The blocking reader is exposed only inside a worker, so only
+		// the worker host lib declares it — see WorkerHostSources.
+		"FileReaderSync",
 	}},
 	{"web:performance", "web/performance.esc", []string{
 		// Symbols MDN documents under Performance that are absent from
@@ -694,6 +757,34 @@ var ExplicitDrops = set.FromSlice([]string{
 	"ImportAssertions",
 	"ImportAttributes",
 	"ImportCallOptions",
+
+	// TypeScript's legacy `experimentalDecorators` signatures. They
+	// type the decorator calling convention `tsc` emitted before TC39
+	// decorators, so they describe a compiler output shape rather than
+	// a runtime one. The TC39 context types route to std:decorators.
+	"ClassDecorator",
+	"PropertyDecorator",
+	"MethodDecorator",
+	"ParameterDecorator",
+
+	// Windows Script Host, from lib.scripthost.d.ts. `cscript` and
+	// `wscript` are the host this surface belongs to, and Escalier
+	// targets browsers and Node. `SafeArray`, `VarDate`, and the
+	// TextStream types exist only to describe COM values the host
+	// hands back.
+	"ActiveXObject",
+	"Enumerator",
+	"EnumeratorConstructor",
+	"ITextWriter",
+	"SafeArray",
+	"TextStreamBase",
+	"TextStreamReader",
+	"TextStreamWriter",
+	"VBArray",
+	"VBArrayConstructor",
+	"VarDate",
+	"WSH",
+	"WScript",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose
@@ -710,6 +801,45 @@ var DOMResidualSources = set.FromSlice([]string{
 	"lib.dom.d.ts",
 	"lib.dom.iterable.d.ts",
 	"lib.dom.asynciterable.d.ts",
+})
+
+// webDOMExtras names declarations that belong in web:dom but reach the
+// converter from a source file the residual rule does not cover. Each
+// one is declared only by the worker host lib while the rest of its
+// MDN API lives in lib.dom.d.ts, so pinning it here keeps the API in
+// one package. `FileSystemHandle` and `FileSystemDirectoryHandle` are
+// in lib.dom.d.ts and route to web:dom; `FileSystemSyncAccessHandle`
+// is the handle a worker gets, and it belongs beside them.
+var webDOMExtras = []string{
+	// File System API.
+	"FileSystemSyncAccessHandle", "FileSystemReadWriteOptions",
+	// Media Capture and Streams API: the reader that turns a
+	// MediaStreamTrack into a stream of WebCodecs frames.
+	"MediaStreamTrackProcessor", "MediaStreamTrackProcessorInit",
+	// Notifications API: the event a service worker receives when a
+	// notification it posted is clicked or closed.
+	"NotificationEvent", "NotificationEventInit",
+}
+
+// WorkerHostSources is the set of `.d.ts` source-file basenames that
+// make up the Web Worker host lib. TypeScript ships lib.dom and
+// lib.webworker as alternatives — a `tsconfig.json` picks one — so the
+// worker files restate every shared global in full. `interface
+// ReadableStream<R = any>` is byte-identical in lib.dom.d.ts and
+// lib.webworker.d.ts, for one.
+//
+// Both copies describe the same runtime interface, and the converter
+// emits one tree rather than one per host. PartitionLib therefore keeps
+// the copy the rest of the lib set declares and skips the worker one,
+// which stops declaration merging from concatenating the two member
+// lists into a single interface with every member twice. What remains
+// is the surface only a worker has, and it routes through Partition
+// like any other name.
+var WorkerHostSources = set.FromSlice([]string{
+	"lib.webworker.d.ts",
+	"lib.webworker.iterable.d.ts",
+	"lib.webworker.asynciterable.d.ts",
+	"lib.webworker.importscripts.d.ts",
 })
 
 func init() {
@@ -732,6 +862,13 @@ func init() {
 			}
 			Partition[m] = pkg
 		}
+	}
+	for _, m := range webDOMExtras {
+		if existing, ok := Partition[m]; ok {
+			panic(fmt.Sprintf("partition: %q listed in both %s and %s",
+				m, existing.URI, WebDOM.URI))
+		}
+		Partition[m] = WebDOM
 	}
 }
 

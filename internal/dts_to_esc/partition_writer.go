@@ -42,9 +42,16 @@ type PartitionResult struct {
 	// surface these as informational warnings — they are intentional,
 	// not errors.
 	Drops []DropNote
+
+	// Redeclarations records (name, source-file basename) pairs for
+	// every worker-host declaration skipped because a file outside
+	// WorkerHostSources already declares that name. Like Drops, these
+	// are intentional rather than errors.
+	Redeclarations []DropNote
 }
 
-// DropNote is one entry in PartitionResult.Drops.
+// DropNote is one (name, source-file basename) pair in
+// PartitionResult.Drops or PartitionResult.Redeclarations.
 type DropNote struct {
 	Name       string
 	SourceFile string
@@ -53,6 +60,11 @@ type DropNote struct {
 // PartitionLib routes every top-level declaration across the inputs
 // into its target package per Route. Returns an error on the first
 // unmapped symbol (§6.1 fail-safe).
+//
+// Declarations from the Web Worker host lib are skipped when another
+// input already declares the same name — see WorkerHostSources for why
+// the two host libs overlap. The skipped names are recorded in
+// Redeclarations.
 //
 // Inputs are processed in the order given so that interface-merge and
 // namespace-merge results are stable. Routing keys off the input's
@@ -67,6 +79,10 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
+	}
+	hostShared := namesOutsideWorkerHost(inputs)
+	for _, in := range inputs {
+		workerHost := WorkerHostSources.Contains(in.SourceFile)
 		for _, stmt := range in.Module.Statements {
 			name := topLevelName(stmt)
 			if name == "" {
@@ -75,6 +91,11 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				// The standalone converter already drops these for
 				// MVP — keep parity here so PartitionLib doesn't push
 				// unroutable statements into a bucket.
+				continue
+			}
+			if workerHost && hostShared.Contains(name) {
+				out.Redeclarations = append(out.Redeclarations,
+					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
 			}
 			res := Route(name, in.SourceFile)
@@ -92,6 +113,26 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 		out.Buckets[uri] = mergeDecls(stmts)
 	}
 	return out, nil
+}
+
+// namesOutsideWorkerHost returns every top-level declaration name the
+// inputs declare from a file outside WorkerHostSources. PartitionLib
+// uses it to tell a worker-host declaration that restates a shared
+// global from one that introduces worker-only surface. Every input
+// must carry a parsed module; PartitionLib checks that first.
+func namesOutsideWorkerHost(inputs []LibInput) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, in := range inputs {
+		if WorkerHostSources.Contains(in.SourceFile) {
+			continue
+		}
+		for _, stmt := range in.Module.Statements {
+			if name := topLevelName(stmt); name != "" {
+				names.Add(name)
+			}
+		}
+	}
+	return names
 }
 
 // topLevelName returns the addressable name of a top-level statement,
@@ -727,7 +768,8 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 }
 
 // ReportPartition prints a short summary of a PartitionResult to w:
-// per-package decl count, drop count. Used by the CLI to give the
+// per-package decl count, drop count, and the number of worker-host
+// declarations skipped as redeclarations. Used by the CLI to give the
 // operator a sense of what landed where without dumping the full
 // output. The btree.Map keeps the package list sorted.
 func ReportPartition(result *PartitionResult, w io.Writer) error {
@@ -760,6 +802,15 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 		}
 		sort.Strings(names)
 		if _, err := fmt.Fprintf(w, "%s)\n", strings.Join(names, ", ")); err != nil {
+			return err
+		}
+	}
+	if len(result.Redeclarations) > 0 {
+		// A count rather than the names. The worker host lib restates
+		// hundreds of globals, and listing them would bury the
+		// per-package counts above.
+		if _, err := fmt.Fprintf(w, "  worker-host redeclarations skipped: %d\n",
+			len(result.Redeclarations)); err != nil {
 			return err
 		}
 	}

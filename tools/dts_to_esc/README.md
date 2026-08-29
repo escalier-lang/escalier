@@ -23,6 +23,16 @@ is the `<lib-dir>` argument below. Files ending in `.full.d.ts` are
 skipped: they declare nothing themselves and only pull in the lib files
 beside them through `/// <reference lib="..." />`.
 
+The `lib.webworker.*.d.ts` files are read, but a declaration in them is
+skipped when another lib file already declares that name. TypeScript
+ships `lib.dom` and `lib.webworker` as alternatives, so the worker files
+restate every shared global in full — `interface ReadableStream` is
+byte-identical in both. Taking both copies would leave one interface
+carrying each member twice. What survives from the worker files is the
+surface only a worker has: `ServiceWorkerGlobalScope`, `FetchEvent`,
+`importScripts`, and the rest. Each run reports how many declarations
+this skipped.
+
 The `<esc-dir>` argument is `internal/interop/data`, the root holding
 the `std/`, `web/`, and `node/` subtrees.
 
