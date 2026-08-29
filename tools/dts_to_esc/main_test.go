@@ -92,11 +92,11 @@ const committedCFG = "../spec-extract/cfg.json"
 //
 // The counts move when curated.json or cfg.json changes, which is the point:
 // the diff shows what a data change did to the reports an operator reads.
-func TestRun_PartitionWithCFGPrintsBothReports(t *testing.T) {
+func TestRun_BootstrapWithCFGPrintsBothReports(t *testing.T) {
 	libDir := seedLib(t, arrayLib)
 
 	var stderr strings.Builder
-	require.NoError(t, run([]string{"partition", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
+	require.NoError(t, run([]string{"bootstrap", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
 
 	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  std:array: 3 decls
   curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
@@ -122,7 +122,7 @@ func reportSummaries(stderr string) string {
 // layer answered fails the run rather than writing a hole. The committed graph
 // has none, so the case is built here: one method whose only step is prose the
 // serializer could not lower, which withholds its receiver.
-func TestRun_PartitionRejectsAnUnansweredDetermination(t *testing.T) {
+func TestRun_BootstrapRejectsAnUnansweredDetermination(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "cfg.json")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(
@@ -131,7 +131,7 @@ func TestRun_PartitionRejectsAnUnansweredDetermination(t *testing.T) {
 			`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`), 0o644))
 	outDir := t.TempDir()
 
-	err := run([]string{"partition", "--cfg", cfgPath, seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+	err := run([]string{"bootstrap", "--cfg", cfgPath, seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
 
 	require.EqualError(t, err, cfgPath+" leaves determinations unanswered:\n"+
 		"  Demo.prototype.opaque: no receiver determination")
@@ -140,11 +140,11 @@ func TestRun_PartitionRejectsAnUnansweredDetermination(t *testing.T) {
 
 // A --cfg path that does not resolve fails the run before anything is written,
 // so a mistyped flag leaves no half-joined tree behind.
-func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {
+func TestRun_BootstrapRejectsABadCFGPath(t *testing.T) {
 	t.Parallel()
 	outDir := t.TempDir()
 
-	err := run([]string{"partition", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+	err := run([]string{"bootstrap", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
 
 	require.EqualError(t, err,
 		"loading no/such/cfg.json: reading no/such/cfg.json: open no/such/cfg.json: no such file or directory")
