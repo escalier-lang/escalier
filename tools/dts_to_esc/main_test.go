@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -345,6 +346,29 @@ regenerate: +1 declarations, +0 members, 1 unreadable files
 	after, err := os.ReadFile(dest)
 	require.NoError(t, err)
 	require.Equal(t, unparseableEsc, string(after))
+}
+
+// failWriter fails every write, standing in for a closed pipe on stdout.
+type failWriter struct{}
+
+var errWriteFailed = errors.New("write failed")
+
+func (failWriter) Write([]byte) (int, error) { return 0, errWriteFailed }
+
+// TestRun_SurfacesAReportWriteError covers the run ending on a broken
+// stdout. The tree was written, but the caller hears about the failed
+// report rather than a clean exit.
+func TestRun_SurfacesAReportWriteError(t *testing.T) {
+	t.Parallel()
+	cases := []string{"check", "regenerate"}
+	for _, mode := range cases {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			err := run([]string{mode, seedLib(t, arrayLib), t.TempDir()},
+				failWriter{}, io.Discard)
+			require.ErrorIs(t, err, errWriteFailed)
+		})
+	}
 }
 
 func TestRun_RejectsWrongArgumentCounts(t *testing.T) {

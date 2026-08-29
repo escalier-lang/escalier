@@ -2,7 +2,9 @@ package dts_to_esc
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -388,6 +390,100 @@ func TestRegeneratePartition_SkipsAnUnparseableFile(t *testing.T) {
 		"error: std/math.esc: 2:5-2:6: Expected a property name; std:math was left unchanged\n")
 	require.Contains(t, out.String(),
 		"regenerate: +1 declarations, +0 members, 1 unreadable files\n")
+}
+
+// errWriteFailed is what failWriter hands back once its budget runs
+// out.
+var errWriteFailed = errors.New("write failed")
+
+// failWriter accepts budget bytes in total and fails on the write that
+// would exceed it, so a test can cut a report off after any number of
+// bytes and watch the error propagate.
+type failWriter struct {
+	budget int
+}
+
+func (w *failWriter) Write(p []byte) (int, error) {
+	if len(p) > w.budget {
+		n := w.budget
+		w.budget = 0
+		return n, errWriteFailed
+	}
+	w.budget -= len(p)
+	return len(p), nil
+}
+
+// TestReportWrite_PropagatesAWriterError cuts each report off after
+// every prefix length short of its full output. A report that swallowed
+// a writer error would tell its caller the run succeeded when part of
+// the report never reached the reader.
+func TestReportWrite_PropagatesAWriterError(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
+
+	checkRoot := t.TempDir()
+	writeEsc(t, checkRoot, "std/math.esc", unparseableEsc)
+	check, err := CheckPartition(res, checkRoot)
+	require.NoError(t, err)
+
+	regenRoot := t.TempDir()
+	writeEsc(t, regenRoot, "std/math.esc", unparseableEsc)
+	regen, err := RegeneratePartition(res, regenRoot)
+	require.NoError(t, err)
+
+	cases := []struct {
+		name  string
+		write func(io.Writer) error
+	}{
+		{"check", check.Write},
+		{"regenerate", regen.Write},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			var full strings.Builder
+			require.NoError(t, tc.write(&full))
+			require.NotEmpty(t, full.String())
+
+			for budget := 0; budget < full.Len(); budget++ {
+				require.ErrorIs(t, tc.write(&failWriter{budget: budget}), errWriteFailed,
+					"a writer that failed after %d bytes should surface its error", budget)
+			}
+		})
+	}
+}
+
+// TestCheckPartition_StillAbortsOnAnIOError separates the two ways a
+// committed file can be unreadable. A file the parser rejects is
+// collected and the run continues; a file the process cannot read at all
+// is a broken tree, and the run stops. A directory standing where a
+// package file belongs is the second case, since os.ReadFile fails on
+// it.
+func TestCheckPartition_StillAbortsOnAnIOError(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
+	root := t.TempDir()
+	dest := filepath.Join(root, "std", "math.esc")
+	require.NoError(t, os.MkdirAll(dest, 0o755))
+
+	_, err := CheckPartition(res, root)
+	require.EqualError(t, err,
+		fmt.Sprintf("reading %s: read %s: is a directory", dest, dest))
+	require.NotErrorIs(t, err, ErrUnreadableTree)
+}
+
+// TestUnparseableError_NamesTheFileAndPosition pins the message the
+// error carries. planPartition reads its fields rather than the string,
+// so this is what a caller that propagated the error instead would
+// print.
+func TestUnparseableError_NamesTheFileAndPosition(t *testing.T) {
+	t.Parallel()
+	err := &unparseableError{
+		path:   "/tmp/tree/std/array.esc",
+		reason: "313:5-313:9: Expected a property name",
+	}
+	require.EqualError(t, err,
+		"parsing /tmp/tree/std/array.esc: 313:5-313:9: Expected a property name")
 }
 
 func TestRegeneratePartition_CreatesMissingFile(t *testing.T) {
