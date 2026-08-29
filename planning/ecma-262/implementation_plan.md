@@ -44,7 +44,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §6   | Validation diff                            | FR9        | ✅      | §5         | receiver facts diffed against the override entries and the name heuristics; every disagreement triaged — met, see [validation_diff.md](validation_diff.md) |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
-| §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
+| §8.2 | Return-borrow seed                         | FR4        | ✅      | §4.3       | documented `returns` → `&`/lifetime annotation mapping — met, see [return_annotations.md](return_annotations.md) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.2 | Coercion filter                            | FR11       | ✅      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is #1301, and curated throws cover the methods worth annotating meanwhile — met, see [internal/ecma262/filter.go](../../internal/ecma262/filter.go) |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
@@ -1328,7 +1328,8 @@ TypedArray.prototype [ @@toStringTag ]`. The two `buffer` getters stay
 `unknown`: what they hand back is a real borrow of an object the receiver
 holds, and no member of the alias lattice spells that without claiming
 identity. That residue is a type-system question rather than an analysis
-gap, which is the distinction the layer makes visible.
+gap, which is the distinction the layer makes visible. §8.2 answers it and
+says what adding the missing member would take.
 
 **The species exception.** `Array.prototype.slice`, `TypedArray.prototype.slice`,
 `RegExp.prototype [ @@matchAll ]`, and `RegExp.prototype [ @@split ]`
@@ -1695,6 +1696,11 @@ stated reason per method. Value-typed arguments are copied at runtime
 regardless per the requirements ownership section, so the fact records
 `escape` without committing to a spelling either way.
 
+**Gate.** Disposition present in `facts.json` — `Array.prototype.push`
+and `Map.prototype.set` mark their stored parameters `escape`,
+`Reflect.set` marks `target` `mutBorrow` and `value` `escape`,
+`Array.prototype.indexOf` leaves `searchElement` a borrow.
+
 ### §8.2. Return-borrow seed (FR4)
 
 Surface the `returns` alias kind to whoever curates the `&` and lifetime
@@ -1704,32 +1710,52 @@ the `.esc` is generated, not hand-edited into it. The checker's lifetime
 inference and elision rules
 ([../lifetimes/requirements.md](../lifetimes/requirements.md)) and the
 borrow model ([../affine_semantics/requirements.md](../affine_semantics/requirements.md))
-remain the mechanism; the facts only inform the curation. Document the
-mapping: `returns: receiver` ⇒ the return borrows the receiver
-(`-> &self` / `-> &mut self`); `returns: param` ⇒ the return borrows that
-parameter; `returns: fresh` ⇒ an owned return; `returns: union` ⇒ a
-lifetime union over the members the fact names.
+remain the mechanism; the facts only inform the curation.
 
-**What a union's members mean.** A union's members are the values the
-algorithm hands back on its several paths, and the annotation has to cover
-every one of them, so the return borrows all of them at once. The lifetime
-is the union of the members' lifetimes. `fresh` is the identity of that
-union rather than a member of it. An owned value has no lifetime to bound,
-so a caller holding it constrains nothing, and dropping `fresh` from the
-set leaves the same annotation the remaining members already require.
+**The mapping is [return_annotations.md](return_annotations.md).** It gives
+each alias kind the annotation it stands for, names the builtins carrying
+it, and compares each row against what the generated `.esc` gets without an
+override, so a curator can see which rows to write and which to leave
+alone. Three of its findings are worth restating here.
 
-`Object` is that shape. It publishes `{fresh, param(0)}`, and the
-annotation is the borrow of `value` alone, because a caller that keeps the
-returned object alive keeps the argument alive on the path that hands it
-back. A union of two input origins instead names both, and neither drops
-out.
+**Elision does not cover a return that borrows the receiver.** Per §7 the
+generated `.esc` omits the annotation unless the override layer supplies
+one, and lifetime elision then fills what is missing. It cannot fill this,
+for two reasons. `ApplyLifetimeElision` counts a signature's parameters,
+and a method's receiver is `FuncType.SelfParam`, a field of its own. And
+elision is wired into body-less `declare fn` declarations only, so a method
+emitted as an interface member never reaches it at all. All fifteen
+`returns: receiver` builtins therefore need a written annotation, and a
+method with exactly one reference-typed parameter is worse off than an
+unannotated one, because elision binds its return to that parameter
+instead. That raises what FR4 is worth, because the alias kind is the only
+thing in the pipeline that reaches these fifteen. requirements.md's
+confidence ranking carries the same correction.
 
-**Gate.** Disposition present in `facts.json` — `Array.prototype.push`
-and `Map.prototype.set` mark their stored parameters `escape`,
-`Reflect.set` marks `target` `mutBorrow` and `value` `escape`,
-`Array.prototype.indexOf` leaves `searchElement` a borrow. A documented
-`returns` → annotation mapping for the receiver-returning methods
-(`fill`, `sort`, `reverse`, `Map.set`).
+**Three receiver returns need mutability polymorphism, not none.**
+`Object.prototype.valueOf`, `Iterator.prototype [ @@iterator ]`, and
+`AsyncIteratorPrototype [ @@asyncIterator ]` publish `receiver: borrow`
+with `returns: receiver`. Each returns `this` without writing it, so the
+return-borrow rule gives `-> &Self` and a `mut` caller gets an immutable
+receiver back. requirements.md's ownership-model section names them. The
+annotation that preserves the caller's mutability is deferred to the
+affine_semantics workstream. The two `@@iterator` methods are
+also where §11's iterator-protocol decision lands, since a `&mut self`
+`next` cannot be called on a `-> &Self` result.
+
+**The §4.4 residue is answered.** A borrow carrying the receiver's lifetime
+without its identity annotates as the receiver's lifetime on the declared
+return type, `-> 'a ArrayBuffer` rather than a borrow of `Self`. Both
+`buffer` getters declare no parameter, so elision reads their return as
+freshly allocated, which is unsound. That gives the `receiverInterior`
+alias kind of
+[#1284](https://github.com/escalier-lang/escalier/issues/1284) the consumer
+it lacks, which is the reason that issue names for not adding it. Adding
+the member is its own change: `aliasOf` maps `Interior(Receiver)` to it, Appendix B
+and the tallies follow, and §5 resolves it against the joined return type.
+
+**Gate.** A documented `returns` → annotation mapping for the
+receiver-returning methods `fill`, `sort`, `reverse`, and `Map.set`.
 
 ## §9. Throw-set extraction, filter, and validation (FR10, FR11, FR13, FR14)
 
