@@ -72,7 +72,7 @@ name heuristics.
 - **Throws as a finished, unreviewed annotation.** Emitting the throw
   set is an in-scope deliverable (FR10, FR11), but it ships as a reviewed
   candidate set, not a trusted final annotation. The review need is not
-  that the extraction is inaccurate — where `classified.throws` is set,
+  that the extraction is inaccurate — where an entry carries `throws`,
   FR10's *raw* throw set is a sound, complete enumeration of what
   ECMA-262 models the algorithm as throwing, and could ship unreviewed at
   the cost of noise. Review guards the two things downstream of that,
@@ -87,7 +87,10 @@ name heuristics.
   - **The filter needs type information ECMA-262 does not carry.** Whether
     a parameter coercion can throw depends on the parameter's declared
     type, available only at the FR7 join, plus a judgment about which
-    coercions the types truly preclude.
+    coercions the types truly preclude. Both are what a reviewer supplies,
+    so the parameter half of the filter is a curated entry rather than a
+    stage of the analysis. Only the receiver half, where the type is always
+    statically known, is filtered automatically.
 
   Host and implementation-defined throws are **out of scope**, not a
   review driver: stack-overflow `RangeError`, out-of-memory, and host
@@ -98,9 +101,8 @@ name heuristics.
   `RangeError` from an explicit spec domain check, such as
   `Number.prototype.toFixed`, is a tracked domain throw.
 
-  The claim is falsifiable and evidence-revisable: a measured
-  false-negative rate near zero from the FR14 validation would let throws
-  graduate to auto-apply. This refines the builtins workstream's
+  The claim is falsifiable and evidence-revisable, and the FR14 validation
+  is what would falsify it. This refines the builtins workstream's
   hand-curation plan rather than replacing it
   ([../builtins/requirements.md](../builtins/requirements.md), FR10
   "throws annotations are hand-curated for now"): the spec generates the
@@ -463,9 +465,16 @@ merely stricter.
   **unclassified**, not as a guess. Coverage is per determination, so a
   method withholds only the axes that read the step it could not resolve.
   An axis that reads no step is never withheld: a static and a namespace
-  function have `receiver: none` whatever the analysis missed. An
-  unclassified determination falls through to the existing name heuristics
-  and hand-curation in the converter.
+  function have `receiver: none` whatever the analysis missed.
+- An unclassified determination is answered by **review**, recorded as a
+  curated entry keyed by the same canonical spec name and merged over the
+  analysis one axis at a time. What neither the analysis nor a curated entry
+  answers is not published: generation fails, naming the method and the axis,
+  so the gap is closed before anything consumes it. The name heuristics stay
+  the fallback for a method no entry addresses at all.
+  Curating an answer is the cheaper of the two ways to close a gap, and it
+  states a reason the next reader can check, where a new lattice member in
+  the analysis states only a result.
 - Receiver mutability defaults to **mutating** (`&mut self`) when
   unclassified, consistent with the interop core principle "default to
   mutating"
@@ -500,18 +509,23 @@ impractical:**
   every `this`-touching method carries `throws TypeError` from its
   receiver coercion, pervasive noise a parameter default does not produce.
   So the throw set (FR10) and reject set (FR13) under-report instead,
-  accepting that this is the unsound direction, and both are curation-grade
-  and gated by the FR14 validation before they could ever auto-apply.
+  accepting that this is the unsound direction. Both are curation-grade,
+  and FR14 measures what reaches the `.esc` against observed behavior.
 
-These defaults are applied by the **converter**, not serialized as facts.
-A record's `classified` object marks each determination covered or not,
-and an uncovered one omits its field — `receiver`, `params`, `throws`,
-`rejects` are absent, or null, on the wire. So the format never conflates
-"the analysis proved this method borrows and throws nothing" with "the
-analysis could not tell." A proven-empty result is a covered determination
-with an empty effect field; an unanalyzed one is an uncovered
-determination with its field absent. FR6 and Appendix B use this one
-contract.
+These defaults are applied by the **converter**, not serialized as facts,
+and the converter applies one only where no fact addresses the method at
+all. A published fact answers every determination it carries: an axis
+neither the analysis nor review settles fails generation, naming the method
+and the axis, rather than being written as a hole. So the format cannot
+conflate "the analysis proved this method borrows and throws nothing" with
+"the analysis could not tell" — the second never reaches the file. A
+proven-empty result is an empty effect field, and there is no encoding for
+an unanalyzed one. FR6 and Appendix B use this one contract.
+
+Failing generation is the loud direction, which is the same reasoning as
+the defaults above. A coverage flag would leave the hole in the data for
+every consumer to remember to check, and §7 auto-applies the receiver, so a
+forgotten check there becomes a silent `&mut self`.
 
 Splitting coverage this way keeps the conservative bias where it buys
 safety and drops it where it does not. A method's receiver mutability is
@@ -522,7 +536,10 @@ it. A static's `receiver: none` reads no step at all, so nothing the
 analysis missed can put it in doubt.
 
 Every method whose receiver mutability is unclassified is reported by name
-so the gap is visible and auditable rather than silent.
+so the gap is visible and auditable rather than silent. The report is
+taken over the analysis alone as well as over the merged result. The first
+is what the analysis is measured by, and the second is what actually
+reaches the heuristics.
 
 ### FR6. Output contract
 
@@ -532,35 +549,40 @@ provenance. `receiver` is `borrow` (`&self`), `mutBorrow` (`&mut self`),
 or `none` (a static or namespace function with no receiver). `params`
 lists only the parameters the analysis found `mutBorrow` (`&mut`) or
 `escape` (stored into the receiver, spelled at curation — see FR12).
-Where `classified.params` is set, a parameter omitted from the entry was
-proven read-only (`borrow`). That proven-read-only omission is distinct
-from the FR5
-uncertain default, which is `&mut`: the omission means "the analysis
-showed this parameter is only read," whereas the FR5 default applies where
-`classified.params` is unset and the parameters are absent entirely.
+A parameter omitted from the entry was proven read-only (`borrow`). That
+omission is distinct from the FR5 uncertain default, which is `&mut`: the
+omission means "the analysis showed this parameter is only read," whereas
+the FR5 default applies only where no entry addresses the method.
+
+**Every entry is total.** A determination neither the analysis nor review
+settles is not encoded. Generation fails instead, naming the method and the
+axis on stderr, so the file carries no coverage flags and a consumer never
+has to tell a hole from a claim.
 
 ```json
 {
-  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Array.prototype.push":  { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"}], "returns": "fresh",    "throws": [], "rejects": [] },
+  "Array.prototype.fill":  { "receiver": "mutBorrow", "params": [],                                    "returns": "receiver", "throws": [], "rejects": [] },
+  "Array.prototype.slice": { "receiver": "borrow",    "params": [],                                    "returns": "fresh",    "throws": [], "rejects": [] },
+  "Map.prototype.set":     { "receiver": "mutBorrow", "params": [{"index":0,"disposition":"escape"},{"index":1,"disposition":"escape"}], "returns": "receiver", "throws": [], "rejects": [] },
+  "Number.prototype.toFixed": { "receiver": "borrow", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [] },
 
-  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
-  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [], "classified": {"receiver":true,"params":true,"returns":true,"throws":true,"rejects":true} },
+  "Reflect.set":              { "receiver": "none", "params": [{"index":0,"disposition":"mutBorrow"},{"index":2,"disposition":"escape"}], "returns": "fresh", "throws": [], "rejects": [] },
+  "Intl.getCanonicalLocales": { "receiver": "none", "params": [],                                    "returns": "fresh",    "throws": ["RangeError"], "rejects": [] },
 
-  "String.prototype.toLowerCase": { "returns": "unknown", "classified": {"receiver":false,"params":false,"returns":true,"throws":false,"rejects":false} }
+  "String.prototype.toLowerCase": { "receiver": "borrow", "params": [], "returns": "unknown", "throws": [], "rejects": [] }
 }
 ```
 
-- `classified` marks each determination covered or not, and an uncovered
-  one leaves its field out. `String.prototype.toLowerCase` reaches the
-  Unicode case-mapping table through a prose step, so the analysis cannot
-  say what that step wrote and the entry carries no `receiver`. The return
-  alias survives, because FR4 curates it rather than applying it. A static
-  keeps `receiver: none` through the same warning, since its having no
-  receiver is a fact about the declaration rather than about a step.
+- Every entry carries every determination, so there is no coverage object
+  and no absent field to interpret. `String.prototype.toLowerCase` reaches
+  the Unicode case-mapping table through a prose step, so the analysis
+  cannot say what that step wrote; the `borrow` above comes from review,
+  and without it generation would fail rather than publish the method. Its
+  `returns: unknown` is a value the analysis did produce, meaning the walk
+  tied the return to nothing the caller holds. A static keeps
+  `receiver: none` through any warning, since its having no receiver is a
+  fact about the declaration rather than about a step.
 - `receiver` maps a non-mutating method to `&self` and a mutating one to
   `&mut self` (FR2). A method that stores an argument into the receiver
   marks that parameter `escape`, because the argument outlives the call
@@ -611,10 +633,10 @@ The key space therefore covers prototype methods
 (`X.prototype.method`), static methods (`X.method`), symbol-keyed
 methods, and namespace-qualified forms where `X` is a dotted path naming
 a namespace and optionally a nested constructor — all joined by FR7.
-The `classified` object marks each determination covered or not. An
-uncovered one is an FR5 fall-through, and its field — `receiver`,
-`params`, `throws`, or `rejects` — is absent, distinct from a proven-empty
-result (§FR5).
+Every entry answers every determination, so a fall-through to the FR5
+defaults happens only where no entry addresses the method — an unmatched
+`std:*` declaration, or the `web:*` and `node:*` surfaces that are out of
+scope by construction.
 
 ### FR7. Keying and join to typed declarations
 
@@ -639,7 +661,16 @@ bump — and the effect annotations come from this workstream's ECMA-262
 facts, regenerated on a spec bump. A generated `.esc` builtin is the join
 of those two, plus a small hand-curated override layer for the
 curation-grade residue (reviewed throws and lifetimes) that is re-applied
-at generation rather than edited into the output. This keeps signatures
+at generation rather than edited into the output.
+
+Curated data enters at two points, and they answer different questions.
+The **fact layer** answers a determination the spec extraction cannot
+settle, and it is keyed by canonical spec name and merged into the facts
+before the join. The **override layer** answers what the facts under-report
+by design, the annotations FR5 makes the extractor omit, and it is keyed
+by declaration and applied after the join. Both are committed data
+re-applied at generation. A determination the facts could carry belongs in
+the first, so the second never has to restate a fact. This keeps signatures
 out of hand-maintenance entirely, which is the whole point: hand-authored
 `.esc` signatures are the path to **avoid**, because they would drift from
 the upstream types and multiply the maintenance surface.
@@ -935,41 +966,43 @@ FR13 is specified here for completeness and to fix the
 `throws`-versus-`rejects` split, but it delivers most of its value once
 the WebIDL extractor lands.
 
-### FR14. Throws validation and the auto-apply gate
+### FR14. Throws validation
 
-Whether the extracted `throws`/`rejects` are trustworthy without review is
-an empirical question, settled by measurement, not asserted. FR14 is the
-throws counterpart of FR9's mutability validation: diff the extracted
-throw sets against a ground-truth sample of high-value methods and measure
-two rates. The sample must be **independent of the spec extraction** — a
-corpus read out of the same algorithm would agree by construction, so it
-is seeded by dynamic observation in a real engine (fuzzing each method and
-recording what it throws or rejects with) rather than by re-reading the
-spec, with only the parametric and combinator entries hand-authored (the
-plan's §9.4 gives the mechanics).
+Whether a method's published `throws`/`rejects` is right is an empirical
+question, settled by measurement rather than asserted. FR14 is the throws
+counterpart of FR9's mutability validation: diff the published throw sets
+against a ground-truth sample of high-value methods and measure two rates.
+The sample must be **independent of the spec extraction**. A corpus read
+out of the same algorithm would agree by construction, so it is seeded by
+dynamic observation in a real engine, fuzzing each method and recording
+what it throws or rejects with, rather than by re-reading the spec. Only
+the parametric and combinator entries are hand-authored. The plan's §9.4
+gives the mechanics.
+
+The check covers curated entries as much as extracted ones. Dynamic
+observation is the one source of evidence about throws that shares neither
+the extractor's blind spots nor a reviewer's, so it catches a wrong
+curated `throws` the same way it catches an over-prune.
 
 - **False-negative rate — the soundness metric.** Real throws that the
-  method can raise but the emitted set omits, almost always because the
-  FR11 coercion filter over-pruned. This is the rate that matters: a
-  false negative is an unsound `throws` clause. Measure it in two layers
-  so the blame is unambiguous:
-  - against the *raw* FR10 set (pre-filter), which should be zero when the
-    CFG is faithful — this isolates FR10 extraction soundness;
-  - against the *filtered* FR11 set, whose false negatives are exactly the
-    filter's over-prunes.
+  method can raise but the published set omits. This is the rate that
+  matters, since a false negative is an unsound `throws` clause. Measure
+  it in two layers so the blame is unambiguous:
+  - against the *raw* FR10 set, before the FR11 filter, which should be
+    zero when the control-flow graph is faithful. This isolates FR10
+    extraction soundness.
+  - against the *published* set, curated entries and all. A false negative
+    there is a real throw a caller has to handle and nothing declares, and
+    it is charged to the filter's over-prune or to the curated entry.
 - **False-positive rate — the ergonomics metric.** Phantom throws the
   method cannot actually raise. These only cost callers a redundant
-  handler; they are not a soundness problem, so they carry less weight.
+  handler, so they carry less weight than a false negative.
 
-The gate: while the filtered false-negative rate is above zero on the
-sample, throws remain a reviewed candidate set (the Non-goals entry
-stands). A measured filtered false-negative rate of zero on a
-representative sample is the evidence that would **graduate throws to
-auto-apply**, the same way FR9's diff authorizes trusting the mutability
-facts. Host and implementation-defined throws are excluded from the
-ground-truth sample by an explicit, documented policy so they do not
-register as false negatives against a spec-derived set that cannot
-contain them.
+Every published false negative is triaged and fixed, in the filter or in
+the curated entry it came from. Host and implementation-defined throws are
+excluded from the ground-truth sample by an explicit, documented policy so
+they do not register as false negatives against a set that cannot contain
+them.
 
 ### FR15. Overloaded methods
 
@@ -1038,8 +1071,11 @@ types and arity.
   per-directory `mise.toml`.
 - **Auditability.** Every classification carries its provenance, and
   every method whose receiver mutability is unclassified is listed, so a
-  reviewer can see exactly which methods the spec proved and which fell
-  through to heuristics.
+  reviewer can see exactly which methods the spec proved, which review
+  answered, and which fell through to heuristics. A curated answer that the
+  analysis later reaches on its own is reported so the entry can be
+  deleted, which keeps the curated layer from growing into a second source
+  of truth.
 
 ## Coverage and limitations
 
@@ -1051,12 +1087,13 @@ types and arity.
   This exclusion is only for those pervasive host errors: a `RangeError`
   raised by an explicit spec domain check (`Number.prototype.toFixed`
   out of range, `Array(-1)`) is a tracked domain throw. The exclusion is
-  what keeps the throw sets ergonomic and removes a would-be permanent
-  blocker to the FR14 auto-apply gate.
-- A handful of algorithms are prose-only or host-defined, so a method
-  among them has its receiver mutability fall through to the name
-  heuristic per FR5. The return alias is published regardless, since FR4
-  curates it rather than applying it.
+  what keeps the throw sets ergonomic and keeps FR14's false-negative rate
+  measuring something a reviewer can act on.
+- A handful of algorithms are prose-only or host-defined, so the analysis
+  withholds the receiver mutability of a method among them. A curated
+  entry answers it, and only what neither settles falls through to the
+  name heuristic per FR5. The return alias is published regardless, since
+  FR4 curates it rather than applying it.
 - Generic and array-like receivers operate on `O ← ? ToObject(this
   value)`; the analysis treats `ToObject(this value)` as
   receiver-origin so that a write to `O` is a write to the receiver.
