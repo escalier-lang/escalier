@@ -1673,14 +1673,23 @@ in the new model. The converter recognizes both and skips
 emission with a logged note. `intrinsic`-typed declarations
 (FR13) skip the same way.
 
-Two families join them. `ClassDecorator`, `PropertyDecorator`,
-`MethodDecorator`, and `ParameterDecorator` from
-`lib.decorators.legacy.d.ts` type the calling convention `tsc`
-emitted before TC39 decorators, so they describe a compiler
-output shape rather than a runtime one. The whole of
-`lib.scripthost.d.ts` — `ActiveXObject`, `WScript`, `VBArray`,
-the `TextStream` types — is the Windows Script Host surface,
-and Escalier targets browsers and Node.
+`ClassDecorator`, `PropertyDecorator`, `MethodDecorator`, and
+`ParameterDecorator` from `lib.decorators.legacy.d.ts` join
+them. They type the calling convention `tsc` emitted before
+TC39 decorators, so they describe a compiler output shape
+rather than a runtime one.
+
+**Dropped source files.** `lib.scripthost.d.ts` is dropped
+whole rather than name by name. It declares the Windows Script
+Host surface — `ActiveXObject`, `WScript`, `VBArray`, the
+`TextStream` types, and the COM value wrappers `SafeArray` and
+`VarDate` — and Escalier targets browsers and Node. It also
+augments `Date` with `getVarDate(): VarDate` and
+`DateConstructor` with `new (vd: VarDate): Date`. Both of those
+names route to `std:date` by name, so dropping `VarDate` alone
+would leave `std/date.esc` referring to a type nothing
+declares. See `DroppedSources` in
+[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
 
 **The Web Worker host lib.** TypeScript ships `lib.dom` and
 `lib.webworker` as alternatives that a `tsconfig.json` picks
@@ -1691,17 +1700,26 @@ into one bucket would let the within-bucket declaration merging
 below concatenate the two member lists, leaving one interface
 with each member twice.
 
-The converter emits one tree rather than one per host, so it
-keeps the copy the rest of the lib set declares and skips the
-worker one. What survives from `lib.webworker.*.d.ts` is the
-surface only a worker has, and it routes through the table like
-any other name: the service-worker globals and events
-(`ServiceWorkerGlobalScope`, `FetchEvent`, `ExtendableEvent`,
-`Client`, `Clients`, `WindowClient`) to `web:service_worker`,
-the push events to `web:push`, the encoded-frame transforms to
-`web:web_rtc`, `FileReaderSync` to `web:file`, and the global
-scope event maps plus `importScripts` to `web:workers`. See
-`WorkerHostSources` in
+The converter emits one tree rather than one per host. It
+routes everything outside `lib.webworker.*.d.ts` first, then
+keeps from each worker declaration only what that pass did not
+already place. In the pinned lib set that is
+`FileSystemFileHandle.createSyncAccessHandle`, the one member a
+worker file adds to an interface the DOM set also declares,
+plus the declarations with no non-worker counterpart at all.
+Those route through the table like any other name:
+
+- the service-worker global scope and the events dispatched
+  into it — `ServiceWorkerGlobalScope`, `FetchEvent`,
+  `ExtendableEvent`, `Client`, `Clients`, `WindowClient` — to
+  `web:service_worker`
+- the push events to `web:push`
+- the encoded-frame transforms to `web:web_rtc`
+- `FileReaderSync` to `web:file`
+- the global scope event maps and `importScripts` to
+  `web:workers`
+
+See `WorkerHostSources` in
 [internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
 
 **Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level

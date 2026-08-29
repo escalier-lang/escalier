@@ -23,10 +23,11 @@ type Package struct {
 // Partition routes a TS-lib top-level declaration name to its target
 // pseudo-package. Source of truth: the §6.1 partition table.
 //
-// PartitionLib filters the input before Route sees it: a declaration
-// from the Web Worker host lib that another input already declares is
-// skipped, because the two host libs restate the same globals. See
-// WorkerHostSources.
+// PartitionLib filters the input before Route sees it. A file in
+// DroppedSources contributes nothing. A declaration from the Web Worker
+// host lib is trimmed to the part the rest of the lib set does not
+// already declare, because the two host libs restate the same globals.
+// See DroppedSources and WorkerHostSources.
 //
 // Lookup order at the routing site (see Route below):
 //
@@ -37,11 +38,10 @@ type Package struct {
 //  3. DOMResidual — a `.d.ts` source-file allowlist. lib.dom.d.ts and
 //     its DOM-coupled siblings are on it. Any unmapped name that
 //     originates in one of these files routes to `web:dom`. This is
-//     the catch-all
-//     for the DOM mass, kept as a file allowlist rather than a per-
-//     symbol map because lib.dom.d.ts contains thousands of element
-//     classes, interfaces, and event types that all share one target
-//     package per §4.2 (single-`web:dom` package).
+//     the catch-all for the DOM mass. It is a file allowlist rather
+//     than a per-symbol map because lib.dom.d.ts contains thousands of
+//     element classes, interfaces, and event types that all share one
+//     target package, the single `web:dom` package of §4.2.
 //  4. Otherwise — the unmapped-symbol fail-safe trips (see §6.1).
 //
 // Keys are the bare TS declaration name as it appears at the top level
@@ -212,12 +212,12 @@ var stdPackages = []struct {
 		// The context objects a TC39 decorator receives as its second
 		// argument, plus the metadata types keyed off `Symbol.metadata`.
 		// These describe an ECMAScript runtime shape, so they get a
-		// package rather than joining ExplicitDrops, even though
-		// Escalier has no decorator syntax for user code today. The
-		// `@js(...)` decorator Escalier does have is a declaration
-		// annotation the converter emits; it is unrelated to these
-		// types. TypeScript's own legacy `experimentalDecorators`
-		// aliases are dropped instead — see ExplicitDrops.
+		// package rather than joining ExplicitDrops. Escalier has no
+		// decorator syntax for user code today. Its `@js(...)`
+		// decorator is a declaration annotation the converter emits,
+		// unrelated to these types. TypeScript's own legacy
+		// `experimentalDecorators` aliases are dropped instead — see
+		// ExplicitDrops.
 		"DecoratorContext", "DecoratorMetadata", "DecoratorMetadataObject",
 		"ClassDecoratorContext", "ClassMemberDecoratorContext",
 		"ClassFieldDecoratorContext", "ClassMethodDecoratorContext",
@@ -414,9 +414,9 @@ var webPackages = []struct {
 		// Declared only by the worker host lib — see
 		// WorkerHostSources. The event maps close the registry for
 		// each global scope. `importScripts`, `fonts`, and
-		// `onrtctransform` are globals a worker has and a document
-		// does not; the RTCTransformEvent that `onrtctransform`
-		// receives lives in web:web_rtc.
+		// `onrtctransform` are globals a worker has and a document does
+		// not. The `RTCTransformEvent` that `onrtctransform` receives
+		// lives in web:web_rtc.
 		"WorkerGlobalScopeEventMap",
 		"DedicatedWorkerGlobalScopeEventMap",
 		"SharedWorkerGlobalScopeEventMap",
@@ -766,7 +766,6 @@ var ExplicitDrops = set.FromSlice([]string{
 	"PropertyDecorator",
 	"MethodDecorator",
 	"ParameterDecorator",
-
 })
 
 // DroppedSources is the set of `.d.ts` source-file basenames the
@@ -781,7 +780,7 @@ var ExplicitDrops = set.FromSlice([]string{
 // name, so dropping `VarDate` alone would leave std/date.esc referring
 // to a type nothing declares.
 //
-// lib.scripthost.d.ts is the Windows Script Host surface —
+// lib.scripthost.d.ts declares the Windows Script Host surface:
 // `ActiveXObject`, `WScript`, `VBArray`, the `TextStream` types, and
 // the COM value wrappers `SafeArray` and `VarDate`. `cscript` and
 // `wscript` are the host it belongs to, and Escalier targets browsers
@@ -811,7 +810,7 @@ var DOMResidualSources = set.FromSlice([]string{
 // one is declared only by the worker host lib while the rest of its
 // MDN API lives in lib.dom.d.ts, so pinning it here keeps the API in
 // one package. `FileSystemHandle` and `FileSystemDirectoryHandle` are
-// in lib.dom.d.ts and route to web:dom; `FileSystemSyncAccessHandle`
+// in lib.dom.d.ts and route to web:dom. `FileSystemSyncAccessHandle`
 // is the handle a worker gets, and it belongs beside them.
 var webDOMExtras = []string{
 	// File System API.

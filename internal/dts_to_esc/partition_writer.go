@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -72,12 +73,12 @@ type DropNote struct {
 //     dropped is recorded in Redeclarations.
 //
 // Inputs are processed in the order given so that interface-merge and
-// namespace-merge results are stable, except that the worker host lib
-// is routed last whatever position it holds in inputs. Routing keys off
-// the input's SourceFile, not where a declaration physically lives in a
-// nested namespace — top-level `declare namespace Intl { ... }` routes
-// as a single unit to std:intl regardless of which lib file declared
-// it.
+// namespace-merge results are stable. The worker host lib is the
+// exception: it is routed last whatever position it holds in inputs.
+// Routing keys off the input's SourceFile, not where a declaration
+// physically lives in a nested namespace — top-level `declare namespace
+// Intl { ... }` routes as a single unit to std:intl regardless of which
+// lib file declared it.
 func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	out := &PartitionResult{
 		Buckets: make(map[string][]dts_parser.Statement),
@@ -101,12 +102,13 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	}
 
 	// First pass: everything outside the worker host lib. `placed`
-	// records where each name landed and `shared` the member keys each
-	// interface already carries, which is what the second pass compares
-	// against. Doing this first is what makes the outcome independent
-	// of where the worker files sit in inputs.
+	// records the package each name landed in. `shared` records the
+	// type-parameter names and member keys of each interface. The
+	// second pass compares the worker copies against both. Running this
+	// pass first is what makes the outcome independent of where the
+	// worker files sit in inputs.
 	placed := make(map[string]Package)
-	shared := make(map[string]set.Set[string])
+	shared := make(map[string]*sharedIface)
 	for _, in := range routable {
 		if WorkerHostSources.Contains(in.SourceFile) {
 			continue
@@ -132,14 +134,20 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 			out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
 			placed[name] = res.Pkg
 			if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok {
-				keys, ok := shared[name]
+				si, ok := shared[name]
 				if !ok {
-					keys = set.NewSet[string]()
-					shared[name] = keys
+					// mergeDecls keeps the first occurrence's type
+					// params, so the first copy routed is the one whose
+					// parameter names the merged interface will use.
+					si = &sharedIface{
+						typeParams: typeParamNames(iface.TypeParams),
+						members:    set.NewSet[string](),
+					}
+					shared[name] = si
 				}
 				for _, m := range iface.Members {
 					if key := memberKey(m); key != "" {
-						keys.Add(key)
+						si.members.Add(key)
 					}
 				}
 			}
@@ -147,7 +155,7 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	}
 
 	// Second pass: the worker host lib. A name the first pass did not
-	// place is worker-only surface and routes like any other.
+	// place is surface only a worker has, and it routes like any other.
 	for _, in := range routable {
 		if !WorkerHostSources.Contains(in.SourceFile) {
 			continue
@@ -186,8 +194,17 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	return out, nil
 }
 
+// sharedIface is what the lib files outside the worker host declare for
+// one interface name. typeParams holds the parameter names on the copy
+// whose metadata survives declaration merging, and members every member
+// key across the copies that merge into it.
+type sharedIface struct {
+	typeParams []string
+	members    set.Set[string]
+}
+
 // workerOnlyMembers returns a copy of a worker-host interface carrying
-// only the members whose keys are absent from `shared`, the keys the
+// only the members whose keys are absent from `shared`, the surface the
 // same interface already has elsewhere in the lib set. Returns nil when
 // the worker copy adds nothing, which is the common case — the worker
 // files restate whole interfaces verbatim.
@@ -198,20 +215,35 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 // member is what makes the pinned `FileSystemSyncAccessHandle` type
 // reachable.
 //
-// A statement that is not an interface returns nil. A var, function, or
-// type alias has no members to compare, so the copy the rest of the lib
-// set declares stands. Comparison is by member key, so a worker-only
-// *overload* of a name the shared copy also declares is dropped along
-// with the rest; no such overload exists in the pinned set.
-func workerOnlyMembers(stmt dts_parser.Statement, shared set.Set[string]) *dts_parser.InterfaceDecl {
+// Three shapes return nil so that the copy the rest of the lib set
+// declares stands on its own:
+//
+//   - A statement that is not an interface. A var, function, or type
+//     alias has no members to compare.
+//   - A name nothing outside the worker host declares as an interface.
+//     The returned copy relies on a shared interface in the same bucket
+//     to supply the inheritance chain and the call, construct, and
+//     index signatures it leaves behind, and there is none.
+//   - An interface whose type-parameter names differ from the shared
+//     copy's. Merging is by name and keeps the shared copy's
+//     parameters, so a kept member written against `T` would land under
+//     a `R` it cannot see.
+//
+// Comparison is by member key, so a worker-only *overload* of a name
+// the shared copy also declares is dropped along with the rest. No such
+// overload exists in the pinned set.
+func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) *dts_parser.InterfaceDecl {
 	iface, ok := stmt.(*dts_parser.InterfaceDecl)
-	if !ok {
+	if !ok || shared == nil {
+		return nil
+	}
+	if !slices.Equal(shared.typeParams, typeParamNames(iface.TypeParams)) {
 		return nil
 	}
 	var extra []dts_parser.InterfaceMember
 	for _, m := range iface.Members {
 		key := memberKey(m)
-		if key == "" || shared.Contains(key) {
+		if key == "" || shared.members.Contains(key) {
 			continue
 		}
 		extra = append(extra, m)
@@ -227,6 +259,16 @@ func workerOnlyMembers(stmt dts_parser.Statement, shared set.Set[string]) *dts_p
 	trimmed.Members = extra
 	trimmed.Extends = nil
 	return &trimmed
+}
+
+// typeParamNames returns the declared names of a type-parameter list,
+// in order.
+func typeParamNames(params []*dts_parser.TypeParam) []string {
+	names := make([]string, len(params))
+	for i, p := range params {
+		names[i] = p.Name.Name
+	}
+	return names
 }
 
 // topLevelName returns the addressable name of a top-level statement,

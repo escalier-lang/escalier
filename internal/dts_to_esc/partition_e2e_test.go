@@ -80,13 +80,13 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	require.EqualError(t, err, UnmappedError("__TotallyUnknown__", "lib.es99.fake.d.ts").Error())
 }
 
-// TestPartitionLib_PinnedLibSet_Bootstraps is the #1325 gate: routing
-// the whole pinned TypeScript lib set must complete and write a tree,
-// rather than aborting on the §6.1 unmapped-symbol fail-safe. It runs
-// the same three steps `dts_to_esc bootstrap` does — route, convert,
-// write — against node_modules/typescript/lib.
+// TestPartitionLib_PinnedLibSet_Bootstraps gates the whole pinned
+// TypeScript lib set. Routing it must complete and write a tree rather
+// than abort on the §6.1 unmapped-symbol fail-safe. The test runs the
+// three steps `dts_to_esc bootstrap` runs — route, convert, write —
+// against node_modules/typescript/lib.
 //
-// Whether the emitted files parse is a separate gate; see #1324.
+// Whether the files it emits parse is a separate gate. See #1324.
 func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 	t.Parallel()
 
@@ -119,12 +119,12 @@ func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 
 	// lib.dom.d.ts and lib.webworker.d.ts declare `interface
 	// ReadableStream` identically, and mergeDecls concatenates the
-	// members of every same-named interface in a bucket. Skipping the
+	// members of every same-named interface in a bucket. Trimming the
 	// worker copy is what keeps the merged interface from carrying two
 	// of each. `readonly locked: boolean` is declared once per copy and
-	// is not overloaded, so counting it distinguishes a merge that took
-	// both copies from one that took a single copy. Overloaded names
-	// like `getReader` legitimately repeat, so they cannot serve here.
+	// is not overloaded, so its count tells a merge that took both
+	// copies from one that took a single copy. An overloaded name like
+	// `getReader` repeats for its own reasons and cannot serve here.
 	var stream *dts_parser.InterfaceDecl
 	for _, stmt := range res.Buckets["web:streams"] {
 		if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok &&

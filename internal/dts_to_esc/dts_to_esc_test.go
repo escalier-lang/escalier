@@ -357,7 +357,7 @@ func TestStandalone_SingletonSkipsSymbolKeyedMember(t *testing.T) {
 
 	// Flattening names each member at the top level and in its
 	// `@js(...)` path, and a computed key has no name to use. The
-	// symbol-keyed member is dropped; `abs` is the only decl left.
+	// symbol-keyed member is dropped, leaving `abs` as the only decl.
 	require.Len(t, rootNS.Decls, 1)
 	fn, ok := rootNS.Decls[0].(*ast.FuncDecl)
 	require.True(t, ok, "decl is a FuncDecl")
