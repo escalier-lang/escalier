@@ -432,7 +432,80 @@ func TestFactsJSON(t *testing.T) {
 // This list is the §4 objective made visible. Shrinking it is what a change to
 // the analysis is measured by, and the tallies below record the same count.
 func TestFactsUnclassifiedMethodsAreListed(t *testing.T) {
-	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(), "\n"))
+	snaps.MatchSnapshot(t, strings.Join(testFacts(t).Unclassified(AxisReceiver), "\n"))
+}
+
+// The return axis has its own gaps, and they are far wider than the receiver's.
+// `returnAlias` is total, so the coverage flag is set for every builtin. An
+// `unknown` return is a value the walk did produce, and it names nothing the
+// caller holds, which is the case `answers` reports as open.
+//
+// The two `buffer` getters are the shape behind most of the list. What they
+// hand back is a borrow of state the receiver holds, and no member of the alias
+// lattice spells that without claiming the return is the receiver itself.
+func TestFactsUnclassifiedReturnsAreListed(t *testing.T) {
+	unresolved := testFacts(t).Unclassified(AxisReturns)
+
+	require.Contains(t, unresolved, "get DataView.prototype.buffer")
+	require.Contains(t, unresolved, "get TypedArray.prototype.buffer")
+	// The same count the tallies below record as `returns unknown`.
+	require.Len(t, unresolved, 250)
+}
+
+// demoCFG is a two-method graph standing in for the shapes the committed one
+// holds. `read` returns its receiver and writes nothing, so the analysis
+// classifies both its determinations. `opaque`'s one step is prose the
+// serializer could not lower, which withholds its receiver and leaves its
+// return unresolved.
+const demoCFG = `{"specTarget":"abc","funcs":[` +
+	`{"name":"Demo.prototype.read","kind":"builtin-method","params":[],"nodes":[` +
+	`{"kind":"return","value":{"kind":"this"}}]},` +
+	`{"name":"Demo.prototype.opaque","kind":"builtin-method","params":[],"nodes":[` +
+	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`
+
+// demoFacts parses demoCFG and classifies it.
+func demoFacts(t *testing.T) (*CFG, map[string]MethodFact) {
+	t.Helper()
+	cfg, err := ParseCFG([]byte(demoCFG))
+	require.NoError(t, err)
+	return cfg, NewFacts(cfg).Methods
+}
+
+// The analysis leaves Demo.prototype.opaque's receiver open and settles
+// Demo.prototype.read's, which is what the axis cases below are written
+// against.
+func TestDemoGraphClassification(t *testing.T) {
+	t.Parallel()
+
+	_, methods := demoFacts(t)
+	require.Equal(t, "receiver:borrow returns:receiver", methods["Demo.prototype.read"].String())
+	require.Equal(t, "returns:unknown", methods["Demo.prototype.opaque"].String())
+}
+
+// Both axes report an open determination, each spelled the way that axis
+// spells it. `opaque` has its receiver withheld and its return resolved to the
+// lattice top, so it is open on both; `read` answers both.
+func TestUnclassifiedReadsBothAxes(t *testing.T) {
+	t.Parallel()
+
+	cfg, methods := demoFacts(t)
+	facts := &Facts{SpecTarget: cfg.SpecTarget, Methods: methods}
+
+	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReceiver))
+	require.Equal(t, []string{"Demo.prototype.opaque"}, facts.Unclassified(AxisReturns))
+}
+
+// An axis `answers` does not name reads as unanswered, so each determination §8
+// and §9 add shows up as wholly open until it is wired in.
+func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
+	t.Parallel()
+
+	cfg, methods := demoFacts(t)
+	facts := &Facts{SpecTarget: cfg.SpecTarget, Methods: methods}
+
+	require.Equal(t,
+		[]string{"Demo.prototype.opaque", "Demo.prototype.read"},
+		facts.Unclassified(Axis("throws")))
 }
 
 // The tallies over every builtin, which move when the mutation analysis, the
