@@ -7,10 +7,10 @@ import (
 )
 
 // TestPreludeOverridesCallableOnNonMutReceiver locks in that the
-// mutabilityOverrides entries in checker/prelude.go are actually
-// applied — i.e. the override map's class-name keys match the lib
-// type aliases and the methods named in each entry exist on the
-// corresponding interface. Without this coverage, a typo like
+// dts_to_esc.NonMutatingOverrides entries the prelude reads are
+// actually applied. The override map's owner keys have to match the
+// lib type aliases, and the methods named in each entry have to exist
+// on the corresponding interface. Without this coverage, a typo like
 // `"chatAt"` (for `String.charAt`) or a missing entry for
 // `Object.toString` silently dead-codes the override and the method
 // becomes invisible on a non-mut receiver post-#612 polarity flip;

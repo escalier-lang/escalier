@@ -108,10 +108,12 @@ Three consequences shape the remaining phases.
 2. **The legacy builtin machinery is deleted by the M12 flip, not
    by this workstream.** `loadGlobalDefinitions`,
    `populateSelfParams`, `UpdateMethodMutability`,
-   `mergeReadonlyVariant`, the `mutabilityOverrides` map,
-   `BuildBuiltinStore`, and `js_globals.go` all live in
-   `internal/checker/` and go out with that tree. §9.3 keeps the
-   list as an audit that nothing in it grew a solver-side twin.
+   `mergeReadonlyVariant`, `BuildBuiltinStore`, and `js_globals.go`
+   all live in `internal/checker/` and go out with that tree. The
+   `nonMutatingOverrides` table they read sits in
+   `internal/dts_to_esc/` and outlives them, since the converter
+   consults it too. §9.3 keeps the list as an audit that nothing in
+   it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so
    §5 and §6 PR A need no rework at the source level. §6.7 PR D
@@ -2346,9 +2348,10 @@ replacement:
   — replaced by import ingestion (M7.5) plus §9.1's trigger map
 - `populateSelfParams` — replaced by the `self` receivers the
   converter emits into the `.esc` files (§6.1)
-- `UpdateMethodMutability` and the `mutabilityOverrides` Go map —
-  replaced by the converter's receiver classification plus the
-  hand-edited mutability refinements committed in §7
+- `UpdateMethodMutability` — replaced by the converter's receiver
+  classification plus the hand-edited mutability refinements
+  committed in §7. The `nonMutatingOverrides` table it reads stays,
+  shrinking as the ECMA-262 facts subsume its entries
 - `mergeReadonlyVariant` — replaced by the converter's
   readonly-twin fusion (§6.1)
 - `BuildBuiltinStore`

@@ -345,11 +345,6 @@ func TestClassifyTier6_NameHeuristics(t *testing.T) {
 		{"reduceRight", "reduceRight", false, TierNameHeuristic},
 		{"countItems", "countItems", false, TierNameHeuristic},
 		{"cloneDeep", "cloneDeep", false, TierNameHeuristic},
-		// copyWithin matches the `copy` non-mutating prefix at tier 6.
-		// Array.prototype.copyWithin is actually mutating in JS, but
-		// that's the job of tier 4 (builtin overrides) — tier 6 only
-		// reflects the name-based heuristic.
-		{"copyWithin", "copyWithin", false, TierNameHeuristic},
 		// Non-mutating exact.
 		{"contains", "contains", false, TierNameHeuristic},
 		{"includes", "includes", false, TierNameHeuristic},
@@ -392,6 +387,10 @@ func TestClassifyTier6_NameHeuristics(t *testing.T) {
 		// Mutating exact.
 		{"sort", "sort", true, TierNameHeuristic},
 		{"reverse", "reverse", true, TierNameHeuristic},
+		// `copyWithin` matches the `copy` non-mutating prefix as well, and
+		// the exact match wins under the prefer-mutating rule.
+		// `Array.prototype.copyWithin` writes its receiver in place.
+		{"copyWithin", "copyWithin", true, TierNameHeuristic},
 		// Both prefixes → mutating wins.
 		{"setToString (mut wins)", "setToString", true, TierNameHeuristic},
 		// Counter-examples — must NOT match a prefix.

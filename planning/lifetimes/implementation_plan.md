@@ -3375,7 +3375,7 @@ Phase 2 "open-object finalization pass" + Phase 4 pattern-level `mut`):
   on the value side stays as a definite-mut construction.
 - **Constructor call default mutability** (Phase 8.6's `DefaultMutable`)
   is still TBD — currently driven by per-class entries in
-  `mutabilityOverrides` (`internal/checker/prelude.go:223`). TODO(#500)
+  `nonMutatingOverrides` (`internal/dts_to_esc/mutability.go`). TODO(#500)
   tracks populating overrides for `Date`, `Promise`, `Error`, etc.
 
 ### Snapshot tests
