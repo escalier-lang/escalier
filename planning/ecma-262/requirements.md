@@ -795,7 +795,11 @@ already-typed value:
 
 - `TypeError` raised inside `ToObject(this value)` or
   `RequireObjectCoercible(this value)`. The receiver type is statically
-  known, so the null/undefined-receiver path is unreachable.
+  known, so the null/undefined-receiver path is unreachable. The same
+  holds for the operations that unwrap a wrapper receiver —
+  `ThisNumberValue`, `ThisStringValue`, `ThisBooleanValue`,
+  `ThisBigIntValue`, `ThisSymbolValue` — which raise on a receiver of the
+  wrong type and nothing else. `Number.prototype.toFixed` opens with one.
 - `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`,
   `ToPrimitive`, or `ToObject` applied to a parameter whose Escalier
   type is already the coerced type.

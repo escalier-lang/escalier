@@ -169,6 +169,54 @@ func (r Exception) String() string {
 	}
 }
 
+// Ref renders the exception the way facts.json spells it, per Appendix B of
+// planning/ecma-262/implementation_plan.md. A constructed error is its class
+// name, a propagated value is the origin it arrived at, and a value the
+// analysis could not place is the `unknown` sentinel. The three parametric
+// kinds prefix the origin with what they name by it, since each stands for
+// something different from the value at that position: an effect, the reject
+// type of a promise the iterable there yields, or an aggregate over those.
+//
+// An origin ref resolves to a type at the FR7 join, so `param:0` on
+// `Promise.reject` becomes that parameter's declared type.
+func (r Exception) Ref() string {
+	switch r.Kind {
+	case ExceptionClass:
+		return r.Class
+	case ExceptionOrigin:
+		return originRef(r.Origin)
+	case ExceptionCallback:
+		return "throwsOf:" + originRef(r.Origin)
+	case ExceptionElementErr:
+		return "elementErrOf:" + originRef(r.Origin)
+	case ExceptionAggregate:
+		return "aggregateErrorOf:" + originRef(r.Origin)
+	default:
+		return "unknown"
+	}
+}
+
+// originRef spells where a propagated value came from. Only the receiver and a
+// declared parameter reach here, because raisedOf leaves every other origin
+// untraced.
+func originRef(o Origin) string {
+	if o.Kind == OriginReceiver {
+		return "receiver"
+	}
+	return fmt.Sprintf("param:%d", o.Index)
+}
+
+// exceptionRefs renders a channel for the wire. An empty channel reads back as
+// an empty slice rather than nil, because a published fact spells a
+// proven-empty result and an uncomputed axis differently.
+func exceptionRefs(exceptions []Exception) []string {
+	refs := make([]string, 0, len(exceptions))
+	for _, exception := range exceptions {
+		refs = append(refs, exception.Ref())
+	}
+	return refs
+}
+
 // carriesOrigin reports whether the raised value names an origin. Every kind
 // but an error class and an untraced value does, and remap threads each of them
 // back through a call's arguments the same way.
@@ -293,8 +341,14 @@ func (s ThrowSite) String() string {
 // flag on most of the builtins, since nearly every algorithm reaches an object
 // internal method through some callee.
 type Throws struct {
-	Raised     []Exception
-	Rejects    []Exception
+	Raised  []Exception
+	Rejects []Exception
+	// Modeled holds the subset of Rejects the combinator model supplied, sorted.
+	// Those rejections reach the returned promise through the promise-resolution
+	// machinery rather than through a step of the algorithm, so they have no
+	// site. §9.2 filters the reject channel per site and reads this to carry the
+	// siteless rejections across.
+	Modeled    []Exception
 	Sites      []ThrowSite
 	Incomplete bool
 }
@@ -397,6 +451,7 @@ type throwFacts struct {
 	order      []*ThrowSite
 	raised     set.Set[Exception]
 	rejected   set.Set[Exception]
+	modeled    set.Set[Exception]
 	incomplete bool
 }
 
@@ -405,6 +460,10 @@ type throwFacts struct {
 // it raises itself and the ones its `?`-guarded calls hand on.
 type ThrowSummary struct {
 	facts map[*Func]*throwFacts
+	// origins holds the map each function's raised values were read through.
+	// §9.2 threads a coercion's argument back through a provenance chain, which
+	// means reading the map of every function on that chain.
+	origins map[*Func]*OriginMap
 }
 
 // NewThrowSummary runs the throw fixpoint over cfg.
@@ -427,9 +486,13 @@ type ThrowSummary struct {
 // rejections are worked out.
 func NewThrowSummary(cfg *CFG) *ThrowSummary {
 	rejecting := rejecters(cfg)
+	origins := make(map[*Func]*OriginMap, len(cfg.Funcs))
 	a := &throwAnalysis{
-		summary: &ThrowSummary{facts: make(map[*Func]*throwFacts, len(cfg.Funcs))},
-		origins: make(map[*Func]*OriginMap, len(cfg.Funcs)),
+		summary: &ThrowSummary{
+			facts:   make(map[*Func]*throwFacts, len(cfg.Funcs)),
+			origins: origins,
+		},
+		origins: origins,
 		plans:   make(map[*Func]*rejectPlan, len(cfg.Funcs)),
 		callers: make(map[*Func][]*Func, len(cfg.Funcs)),
 	}
@@ -438,6 +501,7 @@ func NewThrowSummary(cfg *CFG) *ThrowSummary {
 			sites:    make(map[siteKey]*ThrowSite),
 			raised:   set.NewSet[Exception](),
 			rejected: set.NewSet[Exception](),
+			modeled:  set.NewSet[Exception](),
 		}
 		a.origins[fn] = NewOriginMap(fn)
 		a.plans[fn] = newRejectPlan(fn, rejecting)
@@ -483,7 +547,19 @@ func (s *ThrowSummary) Of(fn *Func) Throws {
 		})
 	}
 
-	return Throws{Raised: raised, Rejects: rejects, Sites: sites, Incomplete: f.incomplete}
+	return Throws{
+		Raised:     raised,
+		Rejects:    rejects,
+		Modeled:    sortedExceptions(f.modeled),
+		Sites:      sites,
+		Incomplete: f.incomplete,
+	}
+}
+
+// originsOf returns the origin map fn's raised values were read through. A
+// function the summary was not computed for has none.
+func (s *ThrowSummary) originsOf(fn *Func) *OriginMap {
+	return s.origins[fn]
 }
 
 // sortedExceptions reads a channel's set back in a fixed order, so a rendered set
@@ -779,6 +855,7 @@ func (f *throwFacts) model(raised Exception) bool {
 		return false
 	}
 	f.rejected.Add(raised)
+	f.modeled.Add(raised)
 	return true
 }
 

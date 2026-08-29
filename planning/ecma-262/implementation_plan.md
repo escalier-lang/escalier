@@ -46,7 +46,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §9.2 | Coercion filter                            | FR11       | ⬜      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is dropped in favour of curated throws — see §9.2 |
+| §9.2 | Coercion filter                            | FR11       | ✅      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is dropped in favour of curated throws — met, see [internal/ecma262/filter.go](../../internal/ecma262/filter.go) |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.4 | Throws validation                          | FR14       | ⬜      | §9.1–§9.3, §4.4, §7 | spec-independent, dynamically-observed ground truth, run as a spot-check over the curated throws. The false-negative auto-apply gate is dropped — see §9.4 |
 | §10  | Maintenance workflow                       | NFR        | ⬜      | §7         | spec-bump runbook; `--check`-style drift report in CI |
@@ -1785,13 +1785,14 @@ only at explicit `Throw` nodes and flow outward through `?`.
 
 ### §9.2. Coercion filter (FR11)
 
-Prune throws whose provenance is a coercion of an already-typed receiver
-or parameter, because Escalier's static types make those paths
-unreachable.
+Prune throws whose provenance is a coercion of an already-typed receiver,
+because Escalier's static types make that path unreachable.
 
 ```
 CoercionAOs = { ToObject, RequireObjectCoercible,
-                ToString, ToNumber, ToNumeric, ToPrimitive }
+                ToString, ToNumber, ToNumeric,
+                ThisBigIntValue, ThisBooleanValue, ThisNumberValue,
+                ThisStringValue, ThisSymbolValue }
 
 func filterThrows(M) []Exception:
     kept = {}
@@ -1802,16 +1803,35 @@ func filterThrows(M) []Exception:
     return sorted(kept)
 
 // precludedCoercion: the throw's Root bottoms out at a coercion AO whose
-// coerced value threads back to M's receiver, or to a parameter whose
-// DECLARED type already is the coercion's target type.
+// checked value threads back to M's receiver.
 func precludedCoercion(M, site) bool:
     (ao, coerced) = rootCoercion(site.Root)          // unwrap Propagated(..) to the base Direct
     if ao not in CoercionAOs: return false
     place = threadBack(M, site.Root, coerced)        // map coerced value back to M's receiver/param
-    if place is Receiver:  return true               // receiver type is always statically known
-    if place is Param(j):  return targetTypeProven(M, j, ao)  // needs the joined signature type
-    return false
+    return place is Receiver                         // receiver type is always statically known
 ```
+
+Each entry in `CoercionAOs` checks the value at position 0 and raises a
+`TypeError` when its dynamic type is wrong. The first group is the
+coercions ECMA-262 applies to a value before working with it. The
+`This*Value` operations are the receiver's counterpart:
+`Number.prototype.toFixed` opens with `? ThisNumberValue(this value)`,
+which raises when the receiver is neither a Number nor a Number wrapper.
+
+`ToPrimitive` is the one operation FR11 names that the list leaves out.
+Its only `Throw` step is the one reached after an `@@toPrimitive` method
+has handed back an object rather than a primitive, so it reports the
+caller's own code failing and not a check on the value `ToPrimitive` was
+given. Listing it would drop 31 sites a declared receiver type does not
+rule out. `ToPrimitive` still appears mid-chain, where the base is the
+`ToObject` inside its `@@toPrimitive` lookup, and that base is weighed on
+its own account.
+
+A brand check such as `RequireInternalSlot` is left out for a weaker
+reason. A declared receiver type implies the slot as surely as it implies
+the Number value, but §9.4's validation harness is not built, so nothing
+would catch a wrong entry. The list grows by review, and every entry is
+read against the operation's own `Throw` steps in the graph.
 
 **Only the receiver branch is built.** A receiver coercion is filtered
 unconditionally, because the receiver's type is always statically known,
@@ -1819,6 +1839,18 @@ and that check reads nothing the facts do not already carry. A
 `RangeError`, `SyntaxError`, `URIError`, or a `TypeError` from an explicit
 domain check survives it. Each filter decision is recorded for review,
 since FR11 is a heuristic.
+
+`threadBack` walks the chain outward one hop at a time. A hop reads the
+call the site propagated through, evaluates the argument at the callee's
+checked position against §4.2's origin map, and carries the position it
+finds to the next hop out. It stops, and the throw is kept, where the
+argument is neither the receiver nor a parameter. A value read out of the
+receiver's backing store is the case that arises:
+`Array.prototype.push` reads its length through `? LengthOfArrayLike(O)`,
+which coerces `Get(O, "length")`, and a getter on the prototype chain can
+make that anything at all. The two `ToObject(this value)` sites in the
+same method are dropped, so what separates them is the value each checks
+rather than the operation.
 
 Filtering a **parameter** coercion is a different proposition. It is sound
 only where the joined declaration proves the parameter's type already is
@@ -1829,17 +1861,35 @@ parameter types from it, which is the plumbing #1301 describes. §4.4
 answers it instead: the methods whose surviving throws are worth
 annotating are a short list, and a curated `throws` states the filtered
 set directly with the reasoning attached. The parameter branch and its
-typed-signature plumbing are dropped. Channel assignment is **per throw site, not per
-error type**: `filterThrows` sees only the synchronous sites, `rejectSet`
-(§9.3) only the rejection sites, so the same error type can legitimately
-appear in both `throws` and `rejects` when raised on both a synchronous
-and an asynchronous path.
+typed-signature plumbing are dropped. A site whose coercion threads back
+to a parameter is still recorded, with the position, so §11 curates from
+the report rather than from the spec.
 
-**Gate.** Spot-check: `Number.prototype.toFixed` keeps `RangeError`
-(out-of-range `fractionDigits`) and drops the receiver-coercion
-`TypeError`; `decodeURIComponent` keeps `URIError`; `Array.prototype.push`
-keeps nothing. The dropped type-guard throws are listed in the review
-report.
+Channel assignment is **per throw site, not per error type**:
+`filterThrows` sees only the synchronous sites, `rejectSet` (§9.3) only
+the rejection sites, so the same error type can legitimately appear in
+both `throws` and `rejects` when raised on both a synchronous and an
+asynchronous path. Both channels run through the same filter, since a
+site's channel is settled by the exit it reaches and both carry coercion
+guards. The rejections the combinator model supplies have no site of their
+own and pass through untouched.
+
+This is where §4.3's `fact.Throws` and `fact.Rejects` are populated, so it
+is the PR that brings both axes into `facts.json` and under the totality
+rule of Appendix B.
+
+**Gate.** Over the committed graph the filter adjudicates 4882 `TypeError`
+sites and drops 242, every one of them a coercion of the receiver.
+`Number.prototype.toFixed` keeps the `RangeError` it raises on a
+`fractionDigits` outside 0..100 and drops the `TypeError` from
+`ThisNumberValue(this value)`. `String.prototype.charAt` shows both
+branches in one method: the `RequireObjectCoercible` and `ToString` checks
+of its receiver are dropped and the same `ToString` chain applied to `pos`
+is kept. The dropped type-guard throws are listed in the review report, which
+`dts_to_esc partition` prints beside the curation and join reports. The
+report also names the 103 methods whose channels are published short
+because §9.1's fixpoint could not read every step, which is FR10's "left
+out of the throw set and flagged, never guessed" made visible.
 
 ### §9.3. Synchronous throws versus asynchronous rejections (FR13)
 
@@ -2340,10 +2390,10 @@ type ReturnFact struct {
 // fails first.
 type MethodFact struct {
     Receiver ReceiverKind `json:"receiver,omitempty"` // borrow | mutBorrow | none (FR2)
-    Params   []ParamFact  `json:"params"`             // only non-borrow parameters (FR12)
+    Params   []ParamFact  `json:"params,omitzero"`    // only non-borrow parameters (FR12)
     Returns  ReturnFact   `json:"returns,omitzero"`   // return-borrow lifetime seed (FR4)
-    Throws   []string     `json:"throws"`             // sync throws post-filter (FR10, FR11)
-    Rejects  []string     `json:"rejects"`            // async rejects → Promise<T,E>.Err (FR13)
+    Throws   []string     `json:"throws,omitzero"`    // sync throws post-filter (FR10, FR11)
+    Rejects  []string     `json:"rejects,omitzero"`   // async rejects → Promise<T,E>.Err (FR13)
 }
 ```
 
@@ -2369,13 +2419,22 @@ concern. The receiver axis has no counterpart, because `ReceiverKind` has
 no member meaning "could not tell" — which is exactly why a missing
 receiver is the case that fails the run.
 
-**A slice axis reads the same way once §8 and §9 add one.** `[]` is a
-proven-empty result and the axis being uncomputed fails the run, so a
-consumer never has to tell `null` from `[]`. The one wrinkle is FR5's
-deliberate under-reporting for `throws` and `rejects`: until §9.2 lands
-those axes are not computed at all, so they are absent from the schema
-rather than present-and-empty, and the totality rule starts applying to
-them when they are wired in.
+**A slice axis reads the same way.** `[]` is a proven-empty result and the
+axis being uncomputed fails the run, so a consumer never has to tell
+`null` from `[]`. `omitzero` is what keeps the two apart in the encoding:
+a nil slice is the axis's zero value and is left out, an empty slice is
+written as `[]`. `Params` is still uncomputed, so it is absent from every
+entry until §8.1 lands.
+
+FR5's deliberate under-reporting for `throws` and `rejects` sits inside
+that rule rather than beside it. §9.1's fixpoint flags a method with a
+step whose throws it could not read, and both channels are published for
+such a method all the same, under-reported rather than withheld. The flag
+is what `Facts.Unclassified(AxisThrows)` reports, so the method reaches a
+reviewer without the run failing. 103 of the 501 builtins carry it. On the
+reject channel an algorithm that builds no promise has no sink for a
+missed step to feed, so its empty channel is settled whatever the fixpoint
+missed, and only 3 methods are left open there.
 
 Each entry in `Throws` / `Rejects` is one of (requirements FR13): a
 standard error-class name the spec constructs (`TypeError`, `RangeError`,
@@ -2387,6 +2446,16 @@ the **effect ref** `"throwsOf:param:k"` for a method that propagates a
 callback parameter's throws (`Array.prototype.forEach`/`map`/…), resolved
 at the FR7 join to throws polymorphism; or the sentinel `"unknown"` for a
 propagated value the analysis can neither name nor trace. All origin and effect refs resolve to types at the FR7 join.
+
+The parametric refs prefix the origin with what they name by it, since
+each stands for something other than the value at that position:
+
+| Ref                        | Names                                                          | Example                    |
+| -------------------------- | -------------------------------------------------------------- | -------------------------- |
+| `receiver`, `param:k`      | the raised value itself                                          | `Promise.reject` → `param:0` |
+| `throwsOf:param:k`         | the throws of the function at that position                      | `Array.prototype.forEach`  |
+| `elementErrOf:param:k`     | the reject type of the promises the iterable there yields        | `Promise.all`, `Promise.race` |
+| `aggregateErrorOf:param:k` | an `AggregateError` over those reject types                      | `Promise.any`              |
 
 A parameter absent from `Params` was proven read-only (`&`). That is a
 claim, not a gap, because a method whose parameters the analysis could not

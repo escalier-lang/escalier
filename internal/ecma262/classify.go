@@ -288,23 +288,50 @@ func newReturnFact(s aliasSet) ReturnFact {
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// A published fact carries every determination. Neither field has a valid zero
-// value — "" is not a ReceiverKind and not an AliasKind — so a field a fact
-// does not carry is a hole rather than a claim, and Facts.Incomplete names the
-// methods that have one. Generation refuses to write those, which is why the
-// entries hold no coverage flags: an axis is present or the run failed.
+// A published fact carries every determination. No field has a valid zero
+// value — "" is neither a ReceiverKind nor an AliasKind, and a nil channel is
+// not an empty one — so a field a fact does not carry is a hole rather than a
+// claim, and Facts.Incomplete names the methods that have one. Generation
+// refuses to write those, which is why the entries hold no coverage flags: an
+// axis is present or the run failed.
 //
 // `unknown` is a value, not a hole. The alias lattice's top says the walk read
 // the returns and could tie none of them to a value the caller holds, which is
 // something §8.2 can act on. The methods still waiting on an answer there are
 // Facts.Unclassified(AxisReturns), a review report rather than a wire concern.
 //
-// Params, Throws, and Rejects join this shape in §8 and §9, and the same rule
-// covers them: an axis a fact cannot answer fails the run rather than encoding
-// a hole a consumer might read as a proven-empty result.
+// Params joins this shape in §8.1 under the same rule: an axis a fact cannot
+// answer fails the run rather than encoding a hole a consumer might read as a
+// proven-empty result.
 type MethodFact struct {
 	Receiver ReceiverKind `json:"receiver,omitempty"`
 	Returns  ReturnFact   `json:"returns,omitzero"`
+	// Throws holds the synchronous exceptions that survive §9.2's coercion
+	// filter, and Rejects the ones a promise-returning method hands to the
+	// reject function of the promise it returns. Each entry is an
+	// Exception.Ref: an error class name, an origin ref, a callback effect, or
+	// the `unknown` sentinel.
+	//
+	// An empty channel is written as `[]` and a nil one is left out. A nil
+	// channel is the axis being uncomputed, which carries reports as a hole and
+	// fails generation, so a consumer never reads one.
+	//
+	// `[]` says the filter left nothing standing, which is a proven-empty
+	// channel only where the analysis read every step. It is short by whatever
+	// an unread step raises otherwise, the under-reporting FR5 prefers to a
+	// guess. throwsSettled is what separates the two, and 12 builtins publish
+	// an empty channel while carrying an unread step.
+	Throws  []string `json:"throws,omitzero"`
+	Rejects []string `json:"rejects,omitzero"`
+
+	// throwsSettled and rejectsSettled say whether the analysis read every step
+	// that feeds each channel. FR10 asks for a method whose throw paths it
+	// could not resolve to be flagged rather than guessed at, and the flag is a
+	// reviewer's concern rather than a wire one: the channels are published
+	// either way, under FR5's bias to under-report a throw rather than
+	// over-report one. Unclassified is where they read.
+	throwsSettled  bool
+	rejectsSettled bool
 }
 
 // String renders the determinations the fact carries in one line, so a test can
@@ -318,10 +345,31 @@ func (f MethodFact) String() string {
 	if f.Returns.Kind != "" {
 		parts = append(parts, "returns:"+f.Returns.String())
 	}
+	if f.Throws != nil {
+		parts = append(parts, "throws:"+channelString(f.Throws))
+	}
+	if f.Rejects != nil {
+		parts = append(parts, "rejects:"+channelString(f.Rejects))
+	}
+	// The flag belongs to the throw fixpoint that computed both channels, so it
+	// reads once, after them, and off the channel computed with it.
+	if f.Throws != nil && !f.throwsSettled {
+		parts = append(parts, "incomplete")
+	}
 	if len(parts) == 0 {
 		return "unclassified"
 	}
 	return strings.Join(parts, " ")
+}
+
+// channelString renders a throws or rejects channel for MethodFact.String. A
+// proven-empty channel reads "none", so it stays distinct from the axis being
+// left out of the line altogether.
+func channelString(refs []string) string {
+	if len(refs) == 0 {
+		return "none"
+	}
+	return strings.Join(refs, "|")
 }
 
 // Facts is the classification of every builtin in one graph, keyed by the
@@ -337,6 +385,12 @@ type Facts struct {
 	// answer and not where each half of it came from. The name says report to
 	// keep it distinct from the Curation the merge reads. See CurationReport.
 	curationReport CurationReport
+
+	// filterReport is what §9.2's coercion filter dropped from the raw throw
+	// sets. It is unexported for the same reason: facts.json records the
+	// surviving exceptions, and which sites produced them is a reviewer's
+	// concern. See FilterReport.
+	filterReport FilterReport
 }
 
 // NewFacts is the published fact set for cfg, what the converter consumes. It
@@ -365,6 +419,13 @@ func (f *Facts) Curation() CurationReport {
 	return f.curationReport
 }
 
+// Filter reports every decision the coercion filter made over this run's raw
+// throw sets. FR11 is a heuristic, so its decisions are reviewed rather than
+// trusted.
+func (f *Facts) Filter() FilterReport {
+	return f.filterReport
+}
+
 // analyze classifies every builtin in cfg from the graph alone. It runs the
 // mutation fixpoint itself, which supplies the receiver axis and the two
 // warnings that withhold a method's mutability claim.
@@ -374,6 +435,7 @@ func (f *Facts) Curation() CurationReport {
 // determination §4 cannot reach is answered by review rather than left open.
 func analyze(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
+	filter := &coercionFilter{cfg: cfg, summary: NewThrowSummary(cfg)}
 
 	facts := &Facts{
 		SpecTarget: cfg.SpecTarget,
@@ -384,14 +446,28 @@ func analyze(cfg *CFG) *Facts {
 			continue
 		}
 		mutations := summary.Of(fn)
+		filtered := filter.filterThrows(fn)
 		fact := MethodFact{
-			Returns: newReturnFact(returnAlias(summary.originsOf(fn))),
+			Returns:       newReturnFact(returnAlias(summary.originsOf(fn))),
+			Throws:        exceptionRefs(filtered.raised),
+			Rejects:       exceptionRefs(filtered.rejects),
+			throwsSettled: filtered.settled,
+			// An algorithm that builds no promise has no reject sink for a
+			// missed step to feed, so its empty reject channel is settled
+			// whatever the fixpoint could not read.
+			rejectsSettled: filtered.settled || !fn.Promise,
 		}
 		if receiverCovered(fn, mutations) {
 			fact.Receiver = receiverKind(fn, mutations)
 		}
+		if !filtered.settled {
+			filter.report.UnderReported = append(filter.report.UnderReported, fn.Name)
+		}
 		facts.Methods[fn.Name] = fact
 	}
+	sortDecisions(filter.report.Decisions)
+	sort.Strings(filter.report.UnderReported)
+	facts.filterReport = filter.report
 	return facts
 }
 
@@ -412,6 +488,8 @@ type Axis string
 const (
 	AxisReceiver Axis = "receiver"
 	AxisReturns  Axis = "returns"
+	AxisThrows   Axis = "throws"
+	AxisRejects  Axis = "rejects"
 )
 
 // Unclassified returns the names carrying no answer on axis, sorted.
@@ -448,6 +526,10 @@ func (f MethodFact) answers(axis Axis) bool {
 		return f.Receiver != ""
 	case AxisReturns:
 		return f.Returns.Kind != "" && f.Returns.Kind != AliasUnknown
+	case AxisThrows:
+		return f.carries(axis) && f.throwsSettled
+	case AxisRejects:
+		return f.carries(axis) && f.rejectsSettled
 	default:
 		return false
 	}
@@ -468,6 +550,10 @@ func (f MethodFact) carries(axis Axis) bool {
 		return f.Receiver != ""
 	case AxisReturns:
 		return f.Returns.Kind != ""
+	case AxisThrows:
+		return f.Throws != nil
+	case AxisRejects:
+		return f.Rejects != nil
 	default:
 		return false
 	}
@@ -475,7 +561,7 @@ func (f MethodFact) carries(axis Axis) bool {
 
 // publishedAxes are the determinations every published fact must carry. §8 and
 // §9 add to it, and each axis added here needs a case in MethodFact.carries.
-var publishedAxes = []Axis{AxisReceiver, AxisReturns}
+var publishedAxes = []Axis{AxisReceiver, AxisReturns, AxisThrows, AxisRejects}
 
 // Incomplete returns the names whose fact holds a hole, one rendered line each,
 // sorted. A hole is a determination neither the analysis nor the curated layer
