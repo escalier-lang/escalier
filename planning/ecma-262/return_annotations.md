@@ -288,8 +288,10 @@ itself. The return lifetime is unaffected and stays a curated annotation.
 This is the accessor pattern, and the set grows with every such getter the spec
 adds. Answering it makes the `receiverInterior` alias kind proposed in
 [#1284](https://github.com/escalier-lang/escalier/issues/1284) worth adding,
-because this row is what would read it. `aliasOf` in
-[../../internal/ecma262/classify.go](../../internal/ecma262/classify.go)
-already resolves these returns to `Interior(Receiver)` and then discards the
-provenance, so the analysis holds the fact and the lattice has nowhere to put
-it.
+because this row is what would read it. The provenance already exists:
+`NewOriginMap` in
+[../../internal/ecma262/origin.go](../../internal/ecma262/origin.go) resolves
+both getters to `Interior(Receiver)`, and `aliasOf` in
+[../../internal/ecma262/classify.go](../../internal/ecma262/classify.go) reads
+that origin and returns the lattice top. The graph settles this today, and the
+lattice has nowhere to carry it.
