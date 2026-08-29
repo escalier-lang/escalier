@@ -83,10 +83,16 @@ func TestValidateReceivers(t *testing.T) {
 		// where the object type is built, and a symbol-keyed member is
 		// addressable by neither hand-written source. A withheld receiver
 		// claim leaves the fact with nothing to compare.
+		//
+		// `Demo.prototype.set` is the case the two spellings of "no receiver"
+		// disagree on. Its name normalizes to an instance member and its fact
+		// says the algorithm takes no receiver. Reading `none` as a borrow
+		// would score it a disagreement against the mutating `set` prefix.
 		"ShapesTheDiffLeavesOut": {
 			receivers: map[string]ecma262.ReceiverKind{
 				"Array.isArray":                  ecma262.RecvNone,
 				"Math.max":                       ecma262.RecvNone,
+				"Demo.prototype.set":             ecma262.RecvNone,
 				"get Map.prototype.size":         ecma262.RecvBorrow,
 				"Array.prototype [ @@iterator ]": ecma262.RecvBorrow,
 				"Array.prototype.sort":           "",

@@ -10,14 +10,15 @@ import (
 
 // validate.go is the receiver-mutability validation diff of
 // planning/ecma-262/implementation_plan.md §6. It measures the spec-derived
-// receiver claim of every ECMA-262 builtin against the hand-written answer the
-// converter reaches today, so §7 can rank the facts above the name tiers with
-// evidence rather than on faith.
+// receiver claim of every ECMA-262 builtin against the hand-written answer in
+// force today, so §7 can rank the facts above the name tiers with evidence
+// rather than on faith.
 //
 // The hand-written answer is the union of two sources. nonMutatingOverrides
 // names, per owner, the methods an override marks non-mutating.
 // ClassifyMethodByName answers from the method's name alone. An entry outranks
-// the heuristics, matching the tier order Classify walks.
+// the heuristics, matching the order `checker.UpdateMethodMutability` reads the
+// two in.
 //
 // The diff is over methods, not statics. A fact for a static carries the
 // receiver kind `none`, which claims nothing about mutability, and the
@@ -43,9 +44,9 @@ const (
 	// VerdictRedundant is an override entry the fact agrees with. §7 deletes
 	// these, since the fact answers the method on its own.
 	VerdictRedundant ReceiverVerdict = "redundant"
-	// VerdictConfirmed is a heuristic the fact agrees with. Nothing to delete,
-	// because a heuristic classifies by name rather than per method, but the
-	// agreement is what makes the fact source trustworthy at scale.
+	// VerdictConfirmed is a heuristic the fact agrees with. There is nothing to
+	// delete, because a heuristic classifies by name rather than per method.
+	// These agreements are the bulk of the evidence the §6 gate rests on.
 	VerdictConfirmed ReceiverVerdict = "confirmed"
 	// VerdictDisagreement is a method the two sources answer differently. Each
 	// one is either a hand-written answer the fact corrects or an analyzer bug
@@ -79,8 +80,8 @@ func (d ReceiverDiff) String() string {
 		d.SpecName, receiverWord(d.FactMut), d.Source, receiverWord(d.HandMut))
 }
 
-// receiverWord spells a receiver-mutability answer the way both sides of the
-// diff read it.
+// receiverWord spells a receiver-mutability answer with the two words
+// ecma262.ReceiverKind uses, so both sides of the diff render alike.
 func receiverWord(mut bool) string {
 	if mut {
 		return "mutBorrow"
@@ -93,8 +94,8 @@ type ValidationReport struct {
 	// Compared holds every method both sources answer, sorted by spec name.
 	Compared []ReceiverDiff
 	// FactOnly holds the methods only the facts answer, sorted by spec name.
-	// These are what §7 adds: today each falls through to the `&mut self`
-	// default whatever the spec says.
+	// These are what §7 adds. Each one falls through to the `&mut self`
+	// default today, whatever the spec says about it.
 	FactOnly []string
 	// OverrideOnly holds the override entries no fact answers, one rendered
 	// `Owner.member` line each, sorted. §7 keeps every one of them. A `web:*`
@@ -143,10 +144,14 @@ func (r ValidationReport) Counts() map[ReceiverVerdict]int {
 // the hand-written answer for the same method.
 //
 // A fact takes part only when it addresses an instance method by a string key
-// and carries a receiver claim. The three exclusions each name a method the
+// and claims a receiver to borrow. The exclusions each name a method the
 // hand-written sources cannot answer:
 //
-//   - A static or a namespace function has no receiver to mutate.
+//   - A static or a namespace function has no receiver to mutate. Two things
+//     say so, the `none` receiver kind the fact carries and the member sort
+//     the spec name normalizes to, and either one is enough to leave the
+//     method out. So a name whose shape disagrees with its algorithm's kind is
+//     dropped rather than read as a borrow.
 //   - An accessor's polarity is fixed where the object type is built, so no
 //     tier is consulted for it.
 //   - A symbol-keyed member cannot be addressed by the string-keyed override
@@ -158,7 +163,7 @@ func ValidateReceivers(facts *ecma262.Facts) ValidationReport {
 	for _, specName := range sortedFactNames(facts) {
 		fact, _ := facts.Of(specName)
 		ref, ok := ecma262.Normalize(specName)
-		if !ok || !comparableRef(ref) || fact.Receiver == "" {
+		if !ok || !comparableRef(ref) || !claimsBorrow(fact.Receiver) {
 			continue
 		}
 		diff := ReceiverDiff{
@@ -186,6 +191,14 @@ func ValidateReceivers(facts *ecma262.Facts) ValidationReport {
 		}
 	}
 	return report
+}
+
+// claimsBorrow reports whether a receiver kind is a mutability claim about a
+// value the caller holds. A withheld claim is empty, and `none` says the
+// builtin takes no receiver at all, so neither is one of the two answers the
+// diff compares.
+func claimsBorrow(kind ecma262.ReceiverKind) bool {
+	return kind == ecma262.RecvBorrow || kind == ecma262.RecvMutBorrow
 }
 
 // comparableRef reports whether a fact's member address is one the
@@ -255,9 +268,9 @@ func overrideEntries() []string {
 // deletes, and an override entry no fact answers is one §7 keeps, so each of
 // those is printed in full.
 //
-// The fact-only names are counted and not listed. There are dozens, and each
-// one says only that the facts answer a method the name tiers leave to the
-// `&mut self` default, which is what §7 is for rather than something to
+// The fact-only names are counted and not listed. There are dozens of them,
+// and each one says only that the facts answer a method the name tiers leave to
+// the `&mut self` default. That is what §7 is for rather than something to
 // review.
 func WriteValidationReport(report ValidationReport, w io.Writer) error {
 	counts := report.Counts()

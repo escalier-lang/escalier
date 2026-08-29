@@ -1550,7 +1550,11 @@ edits it. The checker prelude reads it through
 - Remove the `nonMutatingOverrides` entries that §6 proved redundant for
   `std:*`, which
   [validation_diff.md](validation_diff.md) lists. Keep entries the facts
-  source does not cover, such as `web:*` classes, untouched.
+  source does not cover, such as `web:*` classes, untouched. The table's one
+  production reader is the checker prelude, not `Classify`, so removing an
+  entry is safe only once the facts reach the path that applies mutability to
+  the `.d.ts`-loaded lib types, or that path is gone. See the sequencing note
+  in [validation_diff.md](validation_diff.md).
 
 **How a method's `.esc` is assembled.** Each generated method declaration
 is a **merge** of its type shape with its effects, combined per method —

@@ -15,12 +15,11 @@ above the name tiers and to delete the 24 override entries listed below.
 ## What the diff compares
 
 The hand-written answer is the union of two sources, read in the order
-`dts_to_esc.Classify` walks its tiers:
+`checker.UpdateMethodMutability` reads them:
 
 1. `nonMutatingOverrides` in
-   [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go),
-   the built-in half of tier 4. An entry names one method of one owner as
-   non-mutating.
+   [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go).
+   An entry names one method of one owner as non-mutating.
 2. `dts_to_esc.ClassifyMethodByName` in the same file, which answers from the
    method's name alone. It covers the well-known allow-list of tier 3, the
    `get*` prefix rule of tier 5, and the name-based prefixes of tier 6.
@@ -28,6 +27,12 @@ The hand-written answer is the union of two sources, read in the order
 A method neither source answers falls through to the tier-7 `&mut self`
 default. That default is an absence of a claim rather than a claim, so the diff
 counts those methods apart instead of scoring them as disagreements.
+
+The override table is not a rung of `dts_to_esc.Classify`. Classify's tier 4
+reads the override store of `internal/interop`, whose built-in subtree holds
+only a README, so the converter reaches a `.d.ts` method through the name-only
+tiers alone. The prelude is the table's one production reader today, which is
+what §7 has to sequence around — see below.
 
 The comparison is `internal/dts_to_esc.ValidateReceivers`. A fact takes part
 only when it addresses an instance method by a string key and carries a
@@ -124,6 +129,21 @@ String.charCodeAt            String.padStart       String.trim
 String.codePointAt           String.repeat         String.trimEnd
 String.endsWith              String.replace        String.trimStart
 ```
+
+### Sequencing: the deletion is not safe on its own
+
+§7 inserts the facts into `dts_to_esc.Classify`, and the prelude's
+`UpdateMethodMutability` is the only code that reads the override table. So
+deleting the 24 entries in the same change that wires the facts into the
+converter would leave the prelude reaching those methods through the name
+heuristics alone, and the heuristics are what the entries exist to correct:
+`String.prototype.replace` would go back to a mutating receiver.
+
+The deletion is safe once either holds. The facts reach whichever path applies
+receiver mutability to the `.d.ts`-loaded lib types, or the prelude path is
+gone, which is what the M12 flip of the builtins workstream does to
+`UpdateMethodMutability`. §7 states which of the two it is relying on before
+removing an entry.
 
 ## The 37 entries §7 keeps
 

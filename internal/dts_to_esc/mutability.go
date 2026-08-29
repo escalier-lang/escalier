@@ -180,15 +180,20 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 type MethodNames = set.Set[string]
 
 // nonMutatingOverrides names, per owner, the methods whose receiver the
-// name-only tiers get wrong. It is the built-in half of tier 4, the rung
-// Classify consults just above the `get*` prefix rule.
+// name-only tiers get wrong.
 //
 // An entry is warranted when ClassifyMethodByName misses the name outright,
 // as it does for `String.charAt`, which matches no prefix, or answers it the
 // wrong way, as it does for `String.replace`, whose `replace` prefix reads as
 // mutating. A name the heuristics already answer correctly is redundant and
-// does not belong here: every caller applies the heuristics as a fall-through
-// for a method with no entry.
+// does not belong here. The reader applies the heuristics as a fall-through
+// for any method with no entry.
+//
+// The one production reader is `checker.UpdateMethodMutability`, which strips
+// `mut self` from the `.d.ts`-loaded lib types. Classify does not consult this
+// table. Its tier 4 reads the override store of `internal/interop`, whose
+// built-in subtree is still empty, so the converter reaches a `.d.ts` method
+// through the name-only tiers alone.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //
@@ -296,7 +301,7 @@ var nonMutatingOverrides = map[string]MethodNames{
 
 // NonMutatingOverrides returns the methods of owner an override marks
 // non-mutating. An owner with no entry reads back empty, which leaves every
-// one of its methods to the remaining tiers.
+// one of its methods to the name-only heuristics.
 func NonMutatingOverrides(owner string) MethodNames {
 	return nonMutatingOverrides[owner]
 }
@@ -435,10 +440,10 @@ var mutatingPrefixes = append([]string{
 
 var mutatingExact = set.FromSlice([]string{
 	"sort", "reverse",
-	// The `copy` prefix reads as non-mutating, and `Array.prototype.copyWithin`
-	// and `TypedArray.prototype.copyWithin` write their receiver in place. The
-	// ECMA-262 validation diff of planning/ecma-262/validation_diff.md is what
-	// found the two.
+	// `Array.prototype.copyWithin` and `TypedArray.prototype.copyWithin` write
+	// their receiver in place, and the `copy` prefix would otherwise read them
+	// as projections. The exact match wins under the prefer-mutating rule. See
+	// planning/ecma-262/validation_diff.md for the spec evidence.
 	"copyWithin",
 })
 
