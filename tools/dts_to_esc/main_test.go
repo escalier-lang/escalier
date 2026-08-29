@@ -44,9 +44,16 @@ func TestRun_CheckFailsOnAnEmptyTree(t *testing.T) {
 	var stdout strings.Builder
 	err := run([]string{"check", libDir, escDir}, &stdout, io.Discard)
 	require.ErrorIs(t, err, errCheckFailed)
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`std:array (std/array.esc)
-  missing file
-  missing declaration: Array (class)
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- /dev/null
++++ b/std/array.esc
+@@ -0,0 +1,7 @@
++@js("Array")
++export declare class Array<T> {
++    length: number,
++    constructor(mut self),
++    static isArray(arg: any) -> boolean,
++    static readonly prototype: Array<any>
++}
 check: 1 missing declarations, 0 missing members, 0 extra declarations
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
@@ -165,20 +172,20 @@ func treeOf(t *testing.T, root string) []string {
 	return out
 }
 
-// TestRun_PartitionWritesTheTree covers the §6 PR A mode. The snapshot
+// TestRun_BootstrapWritesTheTree covers the seeding mode. The snapshot
 // holds the operator-facing report, the tree the run laid down, and the
 // one package file it emitted, so a change to any of the three shows up
 // in the diff rather than behind a Contains check.
 //
 // The out-dir is a fresh temp path on every run, so the report has it
 // replaced by a placeholder before the comparison.
-func TestRun_PartitionWritesTheTree(t *testing.T) {
+func TestRun_BootstrapWritesTheTree(t *testing.T) {
 	t.Parallel()
 	libDir := seedLib(t, arrayLib)
 	outDir := t.TempDir()
 
 	var stderr strings.Builder
-	require.NoError(t, run([]string{"partition", libDir, outDir}, io.Discard, &stderr))
+	require.NoError(t, run([]string{"bootstrap", libDir, outDir}, io.Discard, &stderr))
 
 	contents, err := os.ReadFile(filepath.Join(outDir, "std", "array.esc"))
 	require.NoError(t, err)
@@ -213,7 +220,7 @@ func TestRun_CheckPassesOnASeededTree(t *testing.T) {
 	libDir := seedLib(t, arrayLib)
 	escDir := t.TempDir()
 
-	require.NoError(t, run([]string{"partition", libDir, escDir}, io.Discard, io.Discard))
+	require.NoError(t, run([]string{"bootstrap", libDir, escDir}, io.Discard, io.Discard))
 
 	var stdout strings.Builder
 	require.NoError(t, run([]string{"check", libDir, escDir}, &stdout, io.Discard))
@@ -223,7 +230,7 @@ note: signature and property-type drift are not checked yet; those compare both 
 }
 
 // TestRun_CheckPassesAfterRegenerate is the same happy path seeded by
-// the write mode instead of by `partition`. The two entry points share
+// the write mode instead of by `bootstrap`. The two entry points share
 // one diff, so what `regenerate` writes is exactly what `check` then
 // finds nothing missing in.
 func TestRun_CheckPassesAfterRegenerate(t *testing.T) {
@@ -263,6 +270,8 @@ func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
 		args    []string
 		message string
 	}{
+		{"bootstrap without out dir", []string{"bootstrap", "lib"},
+			"usage: dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>"},
 		{"check without esc dir", []string{"check", "lib"},
 			"usage: dts_to_esc check <lib-dir> <esc-dir>"},
 		{"regenerate without esc dir", []string{"regenerate", "lib"},
@@ -276,4 +285,54 @@ func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
 			require.EqualError(t, err, tc.message)
 		})
 	}
+}
+
+// bumpedArrayLib is arrayLib one TypeScript version on: `Array` gained
+// a member and a new interface joined the same bucket.
+const bumpedArrayLib = `
+interface Array<T> { length: number; at(index: number): T | undefined; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+interface ArrayLike<T> { readonly length: number; }
+`
+
+// TestRun_CheckDiffsACommittedFile is the §6.6 bump case: the committed
+// tree is a TypeScript version behind, so `check` prints the patch a
+// `regenerate` run would apply. The hand-written comment the test
+// splices into the committed file stands in for the §7 edits a bump has
+// to preserve, and appears in the diff as context rather than as a
+// change.
+func TestRun_CheckDiffsACommittedFile(t *testing.T) {
+	t.Parallel()
+	escDir := t.TempDir()
+	require.NoError(t, run(
+		[]string{"bootstrap", seedLib(t, arrayLib), escDir}, io.Discard, io.Discard))
+
+	dest := filepath.Join(escDir, "std", "array.esc")
+	committed, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(dest, []byte(strings.Replace(string(committed),
+		"    static readonly prototype",
+		"    // Hand-written note.\n    static readonly prototype", 1)), 0o644))
+
+	var stdout strings.Builder
+	err = run([]string{"check", seedLib(t, bumpedArrayLib), escDir}, &stdout, io.Discard)
+	require.ErrorIs(t, err, errCheckFailed)
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- a/std/array.esc
++++ b/std/array.esc
+@@ -4,5 +4,10 @@
+     constructor(mut self),
+     static isArray(arg: any) -> boolean,
+     // Hand-written note.
+-    static readonly prototype: Array<any>
++    static readonly prototype: Array<any>,
++    at(self, index: number) -> T | undefined,
+ }
++
++export declare interface ArrayLike<T> {
++    readonly length: number
++}
+check: 1 missing declarations, 1 missing members, 0 extra declarations
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
 }
