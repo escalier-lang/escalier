@@ -54,11 +54,11 @@ func (f SignatureFact) String() string {
 }
 
 // unnamedReturn reports whether the resolved fact hands back a value the join
-// cannot name. Two things leave one. The walk read no return it could
-// resolve, or ForSignature dropped a return naming a position this overload
-// does not declare. A fact with no return coverage makes no claim either way.
+// cannot name. Two things leave one. The walk read no return it could resolve,
+// or ForSignature dropped a return naming a position this overload does not
+// declare.
 func (f SignatureFact) unnamedReturn() bool {
-	return f.Fact.Classified.Returns && f.Fact.Returns.Kind == AliasUnknown
+	return f.Fact.Returns.Kind == AliasUnknown
 }
 
 // ForSignature resolves a fact against one overload. A return naming a
@@ -274,7 +274,7 @@ func WriteJoinReport(report JoinReport, w io.Writer) error {
 	// from the match count.
 	withReceiver := 0
 	for _, m := range report.Matched {
-		if m.Fact.Classified.Receiver {
+		if m.Fact.Receiver != "" {
 			withReceiver++
 		}
 	}
