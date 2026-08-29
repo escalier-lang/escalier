@@ -1747,12 +1747,18 @@ also where §11's iterator-protocol decision lands, since a `&mut self`
 without its identity annotates as the receiver's lifetime on the declared
 return type, `-> 'a ArrayBuffer` rather than a borrow of `Self`. Both
 `buffer` getters declare no parameter, so elision reads their return as
-freshly allocated, which is unsound. That gives the `receiverInterior`
-alias kind of
-[#1284](https://github.com/escalier-lang/escalier/issues/1284) the consumer
-it lacks, which is the reason that issue names for not adding it. Adding
-the member is its own change: `aliasOf` maps `Interior(Receiver)` to it, Appendix B
-and the tallies follow, and §5 resolves it against the joined return type.
+freshly allocated, which is unsound. That gives `receiverInterior`, the
+alias kind
+[#1284](https://github.com/escalier-lang/escalier/issues/1284) proposes, a
+consumer. Having none is why that issue was closed with the member unbuilt.
+
+Adding it is its own change, and it adds no analysis. `NewOriginMap`
+already resolves both getters to `Interior(Receiver)`, and `aliasOf` reads
+that origin and drops the provenance, so the graph settles this today. The
+new member carries the origin out through the public alias lattice instead:
+`aliasOf` maps `Interior(Receiver)` to it, the schema and Appendix B gain
+the member, the tallies move, and §5 resolves it against the joined return
+type.
 
 **Gate.** A documented `returns` → annotation mapping for the
 receiver-returning methods `fill`, `sort`, `reverse`, and `Map.set`.

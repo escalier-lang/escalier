@@ -325,23 +325,29 @@ them:
   there. Only a reference-typed return carries a borrow/lifetime, and
   reference-versus-value is the return **type**, which comes from the
   typed source at the FR7 join, not from the shape-free fact.
-- **Elision covers return-fresh, and not return-self.** Escalier's
-  lifetime elision needs no annotation for an owned return. It never binds
-  a method's return to its receiver, though. It counts a signature's
-  parameters, and a method's receiver is a field of its own. So every
-  `receiver` return needs its annotation written. A method with exactly
-  one reference-typed parameter comes out worse still, because elision
-  binds its return to that parameter instead of leaving it alone.
+- **Elision covers some return-fresh, and no return-self.** Escalier's
+  lifetime elision needs no annotation for a value-typed return, and none
+  for a reference-typed one whose signature declares no reference
+  parameter. Those are the owned returns it gets right. A signature with
+  exactly one reference-typed parameter is where it goes wrong: elision
+  binds the return to that parameter whatever the algorithm actually hands
+  back, so even a `fresh` return there is over-constrained and needs its
+  annotation written. Elision also never binds a method's return to its
+  receiver. It counts a signature's parameters, and a method's receiver is
+  a field of its own, so every `receiver` return needs one written too.
   The `.d.ts` import path skips elision and is annotated by the FR7
   interop rules instead. Those rules read the declared types rather than
   the algorithm, so they miss the aliasing wherever the declared return
   type hides it. `Array.prototype.reverse` returns `this` and declares
-  `T[]`. `get DataView.prototype.buffer` hands out an object the receiver
-  holds and declares an array buffer. FR4 corrects both paths, alongside
-  the `param` and `union` shapes neither covers at all. Even there the
-  concrete annotation needs the typed signature for the borrow's
-  mutability and the union's lifetime variables, so it is review input,
-  not an auto-annotator.
+  `T[]`, and its `receiver` fact corrects both paths. `get
+  DataView.prototype.buffer` hands out an object the receiver holds and
+  declares an array buffer, and there FR4 only names the gap. The fact it
+  publishes is `unknown`, so closing that one waits on the
+  `receiverInterior` alias kind or on a hand-written override entry. FR4
+  also reaches the `param` and `union` shapes neither path covers at all.
+  Even there the concrete annotation needs the typed signature for the
+  borrow's mutability and the union's lifetime variables, so it is review
+  input, not an auto-annotator.
 
 ### Synchronous throws versus asynchronous rejections
 
@@ -469,8 +475,10 @@ automatically converted into a `&`/lifetime annotation: the alias edge
 under-determines the annotation (return type reference-vs-value from the
 FR7 join, the borrow mutability, union lifetime variables). Where it does
 change the annotation is every `receiver` return, which elision cannot
-reach, plus `param` and `union`, which no rule covers. See the
-ownership-model section above.
+reach, a `fresh` reference return whose signature has one reference
+parameter, which elision over-constrains, and `param` and `union`, which
+no rule covers. A return the analysis leaves `unknown` is not among them.
+It names a gap without closing it. See the ownership-model section above.
 
 ### FR5. Soundness bias
 
