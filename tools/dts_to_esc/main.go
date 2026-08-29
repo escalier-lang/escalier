@@ -41,6 +41,16 @@
 //	    Additive write per §6.4: add the declarations and members
 //	    `check` reports to the committed tree, leaving every existing
 //	    declaration byte-for-byte intact so hand-edits survive.
+//
+// The exit status of check and regenerate has three values, so the §6.6
+// CI job can tell a bump from a broken tool:
+//
+//	0  the run finished and the tree covers the .d.ts inputs
+//	1  check found the tree out of date, or the run failed outright
+//	2  a committed .esc file did not parse
+//
+// A status of 2 leaves the packages that did parse checked and reported
+// as usual; only the unreadable ones are left out.
 package main
 
 import (
@@ -57,9 +67,18 @@ import (
 	"github.com/escalier-lang/escalier/internal/ecma262"
 )
 
+// exitUnreadableTree is the status a run ends with when a committed
+// `.esc` file did not parse. It is distinct from the status a check
+// failure ends with so the §6.6 CI job does not read "the tool could not
+// read the tree" as "a bump is needed".
+const exitUnreadableTree = 2
+
 func main() {
 	if err := run(os.Args[1:], os.Stdout, os.Stderr); err != nil {
 		fmt.Fprintln(os.Stderr, "dts_to_esc:", err)
+		if errors.Is(err, dts_to_esc.ErrUnreadableTree) {
+			os.Exit(exitUnreadableTree)
+		}
 		os.Exit(1)
 	}
 }
@@ -106,6 +125,12 @@ func runCheck(args []string, stdout, stderr io.Writer) error {
 	if err := report.Write(stdout); err != nil {
 		return err
 	}
+	// An unreadable file outranks a missing declaration: the packages it
+	// covers were never compared, so the run cannot claim the tree is
+	// merely out of date.
+	if err := report.UnreadableErr(); err != nil {
+		return err
+	}
 	if report.Failed() {
 		return errCheckFailed
 	}
@@ -124,7 +149,13 @@ func runRegenerate(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	return report.Write(stdout)
+	if err := report.Write(stdout); err != nil {
+		return err
+	}
+	// A run that skipped packages wrote less than the report's counts
+	// suggest, and a second run over the same tree would skip them
+	// again. Ending non-zero keeps that from reading as a clean no-op.
+	return report.UnreadableErr()
 }
 
 // partitionLibDir discovers, parses, and routes every lib.*.d.ts under

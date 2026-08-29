@@ -170,7 +170,7 @@ export type MyArrayHelper<T> = Array<T>
 	var sb strings.Builder
 	require.NoError(t, report.Write(&sb))
 	snaps.MatchInlineSnapshot(t, sb.String(), snaps.Inline(`note: std/array.esc: MyArrayHelper is absent from the .d.ts; the diff does not remove it
-check: 0 missing declarations, 0 missing members, 1 extra declarations
+check: 0 missing declarations, 0 missing members, 1 extra declarations, 0 unreadable files
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 
@@ -215,7 +215,7 @@ export declare class Array<T> {
 +    static isArray(arg: any) -> boolean,
 +    static readonly prototype: Array<any>,
  }
-check: 0 missing declarations, 4 missing members, 0 extra declarations
+check: 0 missing declarations, 4 missing members, 0 extra declarations, 0 unreadable files
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }
@@ -294,6 +294,100 @@ export declare interface WeakRefConstructor {
 	require.Empty(t, diff.NewDecls, "the fused class covers both converted halves")
 	require.Empty(t, diff.NewMembers)
 	require.False(t, report.Failed())
+}
+
+// twoPackageLib routes into std:array and std:math, so a test can break
+// one committed file and still assert the other package is reported.
+const twoPackageLib = `
+interface Array<T> { length: number; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+declare var Array: ArrayConstructor;
+interface Math { max(...values: number[]): number; }
+declare var Math: Math;
+`
+
+// unparseableEsc is a committed file the Escalier parser rejects: a
+// member with a `+` where its name belongs.
+const unparseableEsc = `export declare interface Math {
+    + max(values: Array<number>) -> number
+}
+`
+
+func TestCheckPartition_ReportsEveryUnparseableFileAndChecksTheRest(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
+	root := t.TempDir()
+	writeEsc(t, root, "std/math.esc", unparseableEsc)
+
+	report, err := CheckPartition(res, root)
+	require.NoError(t, err)
+
+	require.Len(t, report.Unreadable, 1)
+	require.Equal(t, "std:math", report.Unreadable[0].Pkg)
+	require.Equal(t, "std/math.esc", report.Unreadable[0].Path)
+	require.Equal(t, "2:5-2:6: Expected a property name", report.Unreadable[0].Reason)
+	require.ErrorIs(t, report.UnreadableErr(), ErrUnreadableTree)
+	require.EqualError(t, report.UnreadableErr(),
+		"1 committed .esc files could not be parsed")
+
+	// std:array is missing from the tree entirely and is still reported.
+	require.Len(t, report.Packages, 1)
+	diff := findDiff(t, report, "std:array")
+	require.Len(t, diff.NewDecls, 1)
+	require.Equal(t, "Array", diff.NewDecls[0].Name)
+
+	var out strings.Builder
+	require.NoError(t, report.Write(&out))
+	require.Contains(t, out.String(),
+		"error: std/math.esc: 2:5-2:6: Expected a property name; std:math was not checked\n")
+	require.Contains(t, out.String(),
+		"check: 1 missing declarations, 0 missing members, 0 extra declarations, 1 unreadable files\n")
+}
+
+func TestCheckPartition_ReportsNoUnreadableFilesForATreeThatParses(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
+	root := t.TempDir()
+	_, err := WritePartitionedTree(res, root)
+	require.NoError(t, err)
+
+	report, err := CheckPartition(res, root)
+	require.NoError(t, err)
+	require.Empty(t, report.Unreadable)
+	require.NoError(t, report.UnreadableErr())
+	require.False(t, report.Failed())
+}
+
+// TestRegeneratePartition_SkipsAnUnparseableFile pins the write mode's
+// half of the same contract. The file the parser rejects is left
+// byte-for-byte alone rather than spliced blind, and the other package
+// is still written.
+func TestRegeneratePartition_SkipsAnUnparseableFile(t *testing.T) {
+	t.Parallel()
+	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
+	root := t.TempDir()
+	dest := writeEsc(t, root, "std/math.esc", unparseableEsc)
+
+	report, err := RegeneratePartition(res, root)
+	require.NoError(t, err)
+	require.Len(t, report.Unreadable, 1)
+	require.Equal(t, "std:math", report.Unreadable[0].Pkg)
+	require.ErrorIs(t, report.UnreadableErr(), ErrUnreadableTree)
+
+	after, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.Equal(t, unparseableEsc, string(after))
+
+	require.Len(t, report.Packages, 1)
+	require.Equal(t, "std:array", report.Packages[0].Pkg)
+	require.True(t, report.Packages[0].Created)
+
+	var out strings.Builder
+	require.NoError(t, report.Write(&out))
+	require.Contains(t, out.String(),
+		"error: std/math.esc: 2:5-2:6: Expected a property name; std:math was left unchanged\n")
+	require.Contains(t, out.String(),
+		"regenerate: +1 declarations, +0 members, 1 unreadable files\n")
 }
 
 func TestRegeneratePartition_CreatesMissingFile(t *testing.T) {
@@ -496,7 +590,7 @@ export type RemovedUpstream = number
 --- report ---
 updated std:array (std/array.esc): +0 declarations, +1 members
   RemovedUpstream is absent from the .d.ts; left in place for review
-regenerate: +0 declarations, +1 members
+regenerate: +0 declarations, +1 members, 0 unreadable files
 `))
 }
 

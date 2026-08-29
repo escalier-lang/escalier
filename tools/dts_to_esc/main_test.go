@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +30,30 @@ interface Array<T> { length: number; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
 declare var Array: ArrayConstructor;
 `
+
+// twoPackageLib routes into std:array and std:math, so a test can break
+// one committed file and still assert the other package is reported.
+const twoPackageLib = arrayLib + `
+interface Math { max(...values: number[]): number; }
+declare var Math: Math;
+`
+
+// unparseableEsc is a committed file the Escalier parser rejects: a
+// member with a `+` where its name belongs.
+const unparseableEsc = `export declare interface Math {
+    + max(values: Array<number>) -> number
+}
+`
+
+// writeEsc seeds one committed `.esc` file under the tree root and
+// returns its path.
+func writeEsc(t *testing.T, root, rel, contents string) string {
+	t.Helper()
+	dest := filepath.Join(root, filepath.FromSlash(rel))
+	require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o755))
+	require.NoError(t, os.WriteFile(dest, []byte(contents), 0o644))
+	return dest
+}
 
 // TestRun_CheckFailsOnAnEmptyTree runs `check` against a committed
 // `.esc` tree with nothing in it. The two directories play opposite
@@ -54,7 +79,7 @@ func TestRun_CheckFailsOnAnEmptyTree(t *testing.T) {
 +    static isArray(arg: any) -> boolean,
 +    static readonly prototype: Array<any>
 +}
-check: 1 missing declarations, 0 missing members, 0 extra declarations
+check: 1 missing declarations, 0 missing members, 0 extra declarations, 0 unreadable files
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }
@@ -226,7 +251,7 @@ func TestRun_CheckPassesOnASeededTree(t *testing.T) {
 
 	var stdout strings.Builder
 	require.NoError(t, run([]string{"check", libDir, escDir}, &stdout, io.Discard))
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 missing members, 0 extra declarations
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 missing members, 0 extra declarations, 0 unreadable files
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }
@@ -263,6 +288,63 @@ func TestRun_RegenerateIsIdempotent(t *testing.T) {
 	var second strings.Builder
 	require.NoError(t, run([]string{"regenerate", libDir, escDir}, &second, io.Discard))
 	require.Contains(t, second.String(), "regenerate: +0 declarations, +0 members")
+}
+
+// TestRun_CheckReportsAnUnparseableFile is the §7 case: the committed
+// tree holds a mix of files that parse and files that do not. The run
+// diffs the packages it can read, lists the one it cannot, and ends with
+// ErrUnreadableTree so the CI job reads "the tool could not read the
+// tree" rather than "a bump is needed".
+func TestRun_CheckReportsAnUnparseableFile(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, twoPackageLib)
+	escDir := t.TempDir()
+	writeEsc(t, escDir, "std/math.esc", unparseableEsc)
+
+	var stdout strings.Builder
+	err := run([]string{"check", libDir, escDir}, &stdout, io.Discard)
+	require.ErrorIs(t, err, dts_to_esc.ErrUnreadableTree)
+	require.NotErrorIs(t, err, errCheckFailed)
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- /dev/null
++++ b/std/array.esc
+@@ -0,0 +1,7 @@
++@js("Array")
++export declare class Array<T> {
++    length: number,
++    constructor(mut self),
++    static isArray(arg: any) -> boolean,
++    static readonly prototype: Array<any>
++}
+error: std/math.esc: 2:5-2:6: Expected a property name; std:math was not checked
+check: 1 missing declarations, 0 missing members, 0 extra declarations, 1 unreadable files
+note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
+`))
+}
+
+// TestRun_RegenerateReportsAnUnparseableFile covers the false pass a
+// distinct outcome prevents: a second `regenerate` over a tree it cannot
+// read leaves that tree unchanged, which on its own looks exactly like
+// an idempotent no-op.
+func TestRun_RegenerateReportsAnUnparseableFile(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, twoPackageLib)
+	escDir := t.TempDir()
+	dest := writeEsc(t, escDir, "std/math.esc", unparseableEsc)
+
+	var stdout strings.Builder
+	err := run([]string{"regenerate", libDir, escDir}, &stdout, io.Discard)
+	require.ErrorIs(t, err, dts_to_esc.ErrUnreadableTree)
+	require.EqualError(t, err, "1 committed .esc files could not be parsed")
+	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`created std:array (std/array.esc): +1 declarations, +0 members
+error: std/math.esc: 2:5-2:6: Expected a property name; std:math was left unchanged
+regenerate: +1 declarations, +0 members, 1 unreadable files
+`))
+
+	// std:array was written even though std:math could not be read.
+	require.FileExists(t, filepath.Join(escDir, "std", "array.esc"))
+	after, err := os.ReadFile(dest)
+	require.NoError(t, err)
+	require.Equal(t, unparseableEsc, string(after))
 }
 
 func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
@@ -334,7 +416,7 @@ func TestRun_CheckDiffsACommittedFile(t *testing.T) {
 +export declare interface ArrayLike<T> {
 +    readonly length: number
 +}
-check: 1 missing declarations, 1 missing members, 0 extra declarations
+check: 1 missing declarations, 1 missing members, 0 extra declarations, 0 unreadable files
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
 }

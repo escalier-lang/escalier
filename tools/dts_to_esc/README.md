@@ -63,6 +63,30 @@ receiver claim of every instance method against the hand-written mutability
 sources. See §5, §6, and §9.2 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
 
+### Exit status
+
+`check` and `regenerate` read the committed tree, so their exit status
+has three values:
+
+| Status | Meaning                                                         |
+| ------ | --------------------------------------------------------------- |
+| 0      | The run finished and the tree covers the `.d.ts` inputs.          |
+| 1      | `check` found the tree out of date, or the run failed outright.   |
+| 2      | A committed `.esc` file did not parse.                            |
+
+A status of 2 is not a bump. It says the tool could not read part of the
+tree. Both modes leave the unreadable packages alone and carry on with
+the rest, so one run names every file the Escalier parser rejects:
+
+```
+error: std/array.esc: 313:5-313:9: Expected a property name; std:array was not checked
+check: 4 missing declarations, 0 missing members, 0 extra declarations, 1 unreadable files
+```
+
+`regenerate` reports the same files as `error: …; std:array was left
+unchanged` and writes nothing into them. Fix the source of each one and
+re-run.
+
 ## Bumping the pinned TypeScript version
 
 1. Raise the `typescript` version in `package.json` and run
@@ -87,6 +111,11 @@ sources. See §5, §6, and §9.2 of
    Review `git diff` and commit. `check` now reports nothing missing,
    unless it named a declaration whose body the write pass could not
    locate — step 4 covers those.
+
+   A package `regenerate` reports as unreadable is one it did not
+   write, so re-running it changes nothing there and the second run
+   looks like a clean no-op. Read the exit status rather than the
+   absence of a diff. A run that skipped a package ends with 2.
 
 4. Port the rest by hand. `regenerate` never deletes and never rewrites,
    so three kinds of upstream change are left for you:
