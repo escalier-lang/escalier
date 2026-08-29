@@ -11,17 +11,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPartitionLib_LibES5_EndToEnd runs the full partitioning pipeline over the
-// pinned TypeScript's lib.es5.d.ts and requires that every `.esc` file it emits
-// parses with Escalier's own parser. That is the §6 round-trip gate: the
-// printer must never emit a construct the parser rejects, because `check` and
-// `regenerate` both re-read every committed file before diffing it.
-//
-// The whole set of lib files the partition table routes produces 22 packages,
-// and lib.es5 alone covers 17 of them. The gate does not yet span the rest.
-// Two converter-side gaps block that: the partition table has no entry for
-// names such as `FlatArray` and `Disposable`, and flattening a singleton whose
-// key is computed, as in `Atomics[Symbol.toStringTag]`, is unsupported.
+// TestPartitionLib_LibES5_EndToEnd is the §6 round-trip gate: every `.esc` file
+// the pipeline emits from the pinned TypeScript's lib.es5.d.ts must parse with
+// Escalier's own parser, because `check` and `regenerate` re-read each committed
+// file before diffing it. It covers 17 of the 22 packages the routed lib files
+// produce; two converter gaps block the rest, unmapped names such as `FlatArray`
+// and computed singleton keys such as `Atomics[Symbol.toStringTag]`.
 func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	t.Parallel()
 

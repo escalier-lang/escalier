@@ -103,19 +103,11 @@ func isKeyword(tokenType TokenType) bool {
 	return keywordTokens.Contains(tokenType)
 }
 
-// bindingKeywords names the keywords a binding position accepts as an ordinary
-// name, meaning a parameter or a function declaration. Every entry is a word
-// JavaScript itself allows as an identifier, because codegen emits a binding
-// name verbatim: `fn f(in: number)` would become `const in = ...`, a syntax
-// error. A keyword JavaScript reserves is left out. A keyword added to Escalier
-// later stays out until someone adds it here, so an unchecked one is rejected
-// rather than emitted into invalid JavaScript.
-//
-// A property name has no such limit. `{ catch: 1 }` and `obj.catch` are both
-// valid JavaScript, so objExprKey accepts every keyword.
-// `undefined`, `null`, `true`, and `false` are left out for a second reason: a
-// pattern reads each of them as the literal it names, and a binding name must
-// not shift with position.
+// bindingKeywords names the keywords a parameter or function declaration
+// accepts as an ordinary name. Codegen emits a binding name verbatim, so every
+// entry is a word JavaScript allows as an identifier: `fn f(in: number)` would
+// become `const in = ...`. The literals `undefined`, `null`, `true`, and
+// `false` are out too, since a pattern reads each as the value it names.
 var bindingKeywords = set.FromSlice([]TokenType{
 	Any, Asserts, Async, Bigint, Boolean, Declare, Final, Fn, From, Gen, Get,
 	Infer, Is, Keyof, Match, Mut, Never, Number, Override, Readonly, Set,
