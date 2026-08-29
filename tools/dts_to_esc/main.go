@@ -185,8 +185,10 @@ func runPartition(args []string, stderr io.Writer) error {
 	}
 	libDir, outDir := flags.Arg(0), flags.Arg(1)
 
-	// Derive the facts before any output is written, so a bad --cfg path
-	// fails the run before it leaves a half-joined tree on disk.
+	// Derive the facts before any output is written, so neither a bad --cfg
+	// path nor a fact with a hole in it leaves a half-joined tree on disk. The
+	// tree does not read the facts, but a run that ends in an error should not
+	// leave output behind that looks like it succeeded.
 	var facts *ecma262.Facts
 	var join *ecma262.Join
 	if *cfgPath != "" {
@@ -195,10 +197,16 @@ func runPartition(args []string, stderr io.Writer) error {
 			return fmt.Errorf("loading %s: %w", *cfgPath, err)
 		}
 		facts = ecma262.NewFacts(cfg)
-		// A fact with a hole in it would leave the converter to guess a
-		// determination nobody answered, and the receiver is auto-applied, so
-		// the guess would be silent. Refuse the run instead.
 		if holes := facts.Incomplete(); len(holes) > 0 {
+			// The curation report goes first, because a hole is often the
+			// downstream of a refused entry and that line names the cause. The
+			// error below names only the axis left unanswered.
+			if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
+				return err
+			}
+			// A hole would leave the converter to guess a determination nobody
+			// answered, and §7 auto-applies the receiver, so the guess would be
+			// silent. Refuse the run instead.
 			return fmt.Errorf("%s leaves determinations unanswered:\n  %s",
 				*cfgPath, strings.Join(holes, "\n  "))
 		}

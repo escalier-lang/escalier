@@ -87,9 +87,9 @@ type CurationNoteKind string
 const (
 	// CurationFillIn is a curated axis the analysis left open, so the entry
 	// adds a claim where there was none. It is the ordinary case and carries no
-	// conflict. An axis reads as open when its coverage is unset, and a return
-	// alias reads as open when it resolved to `unknown` too, since the top of
-	// the alias lattice names no value the return hands back.
+	// conflict. A receiver is open when the analysis carried no value for it,
+	// and a return alias is open when it resolved to `unknown` too, since the
+	// top of the alias lattice names no value the return hands back.
 	CurationFillIn CurationNoteKind = "fill-in"
 	// CurationCorrection is a curated axis contradicting a claim the analysis
 	// published. §6's validation diff reads these first, because a correction
@@ -285,8 +285,9 @@ func (r ReturnFact) validate() error {
 }
 
 // IsZero reports whether the fact carries no claim at all. encoding/json's
-// omitzero consults it, which is how a MethodFact with an uncovered return
-// omits the field entirely.
+// omitzero consults it, so a curated entry that answers only the receiver
+// leaves `returns` out. A published MethodFact never renders that way, because
+// generation refuses a fact with a hole in it.
 func (r ReturnFact) IsZero() bool {
 	return r.Kind == "" && r.Index == nil && len(r.Members) == 0
 }

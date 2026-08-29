@@ -468,8 +468,10 @@ merely stricter.
   function have `receiver: none` whatever the analysis missed.
 - An unclassified determination is answered by **review**, recorded as a
   curated entry keyed by the same canonical spec name and merged over the
-  analysis one axis at a time. Only what neither the analysis nor a curated
-  entry answers falls through to the name heuristics in the converter.
+  analysis one axis at a time. What neither the analysis nor a curated entry
+  answers is not published: generation fails, naming the method and the axis,
+  so the gap is closed before anything consumes it. The name heuristics stay
+  the fallback for a method no entry addresses at all.
   Curating an answer is the cheaper of the two ways to close a gap, and it
   states a reason the next reader can check, where a new lattice member in
   the analysis states only a result.

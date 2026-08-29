@@ -1120,13 +1120,13 @@ func classify(M) MethodFact:
     fact.Throws     = filterThrows(M)              // §9.2
     fact.Rejects    = rejectSet(M)                 // §9.3, published alongside Throws in §9.2
     // Soundness bias (FR5), applied per determination. A method the
-    // analysis could not fully cover OR could not fully attribute
-    // withholds the determinations that read the steps it missed. A
-    // static's RecvNone reads no step, so no warning withholds it.
-    fact.Classified.Receiver = M.Kind != BuiltinMethod
-        or (M not in Unattributable and M not in Incomplete)
-    fact.Classified.Returns  = true   // returnAlias is total, top Unknown
-    return fact
+    // analysis could not fully cover OR could not fully attribute leaves
+    // out the determinations that read the steps it missed, and §4.4's
+    // review answers them before anything is published. A static's
+    // RecvNone reads no step, so no warning withholds it.
+    if M.Kind == BuiltinMethod and (M in Unattributable or M in Incomplete):
+        fact.Receiver = <absent>       // §4.4 answers it, or generation fails
+    return fact                        // returnAlias is total, top Unknown
 
 func receiverKind(M):
     if M.Kind != BuiltinMethod: return RecvNone    // static / namespace function: no receiver
@@ -1156,18 +1156,19 @@ lifetime bounded, so §8.2 has nothing to emit for it.
 An `Unattributable` method has a mutation the analysis could not pin to
 a formal — a write through an `Unknown`-origin value, including deep
 mutation reached through a property read. Its receiver claim is withheld
-and its name listed, so the converter falls the method through to the
-name heuristics and the receiver defaults to `&mut self` (FR5).
+and its name listed, which is what §4.4 curates. Nothing is published for
+a method whose receiver neither source answers.
 
-**Coverage is per determination, not per method.** The two axes carry
-different risk. Receiver mutability is a soundness claim §7 auto-applies,
+**A withheld determination is per determination, not per method.** The two
+axes carry different risk. Receiver mutability is a soundness claim §7 auto-applies,
 and a wrong `borrow` lets an immutable value call a mutating method. The
 return alias is FR4's lifetime seed, which §7 records for curation rather
 than applies, so withholding it costs precision and buys no safety. A
 method whose only problem is a possible hidden mutation therefore keeps
 its `returns` and loses only its `receiver`. That is §2's per-signal
-finding — a determination is unclassified only when a `yet` sits on a step
-it reads.
+finding — a determination is withheld only when a `yet` sits on a step it
+reads. §4.4 then answers what the analysis withheld, so nothing reaches
+`facts.json` with a determination missing.
 
 A method's receiver mutability cannot be recovered the same way. An opaque
 node carries no operands, so there is no way to tell what a missed step

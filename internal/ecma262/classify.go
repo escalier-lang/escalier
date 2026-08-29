@@ -441,7 +441,9 @@ func (f MethodFact) answers(axis Axis) bool {
 // reading of the same fact.
 //
 // An axis this does not name reads as carried, because a fact cannot be faulted
-// for a determination §8 or §9 has not added yet.
+// for a determination §8 or §9 has not added yet. That permissive default is
+// also how the switch could fall out of step with publishedAxes and let a hole
+// through, which TestCarriesCoversEveryPublishedAxis is there to catch.
 func (f MethodFact) carries(axis Axis) bool {
 	switch axis {
 	case AxisReceiver:
@@ -452,6 +454,10 @@ func (f MethodFact) carries(axis Axis) bool {
 		return true
 	}
 }
+
+// publishedAxes are the determinations every published fact must carry. §8 and
+// §9 add to it, and each axis added here needs a case in MethodFact.carries.
+var publishedAxes = []Axis{AxisReceiver, AxisReturns}
 
 // Incomplete returns the names whose fact holds a hole, one rendered line each,
 // sorted. A hole is a determination neither the analysis nor the curated layer
@@ -465,7 +471,7 @@ func (f MethodFact) carries(axis Axis) bool {
 func (f *Facts) Incomplete() []string {
 	var holes []string
 	for name, fact := range f.Methods {
-		for _, axis := range []Axis{AxisReceiver, AxisReturns} {
+		for _, axis := range publishedAxes {
 			if !fact.carries(axis) {
 				holes = append(holes, fmt.Sprintf("%s: no %s determination", name, axis))
 			}

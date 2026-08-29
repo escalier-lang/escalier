@@ -127,6 +127,19 @@ func TestIncompleteNamesTheAxis(t *testing.T) {
 	require.Empty(t, facts.Incomplete())
 }
 
+// Every axis Incomplete walks has a case in `carries`. Without this, adding one
+// to publishedAxes and forgetting the switch would leave `carries` returning
+// its permissive default, and the gate would pass a fact holding exactly the
+// hole it exists to catch.
+func TestCarriesCoversEveryPublishedAxis(t *testing.T) {
+	t.Parallel()
+
+	for _, axis := range publishedAxes {
+		require.Falsef(t, MethodFact{}.carries(axis),
+			"%s is a published axis that carries does not name", axis)
+	}
+}
+
 // The two predicates read an axis they do not name in opposite directions, on
 // purpose. A determination §8 or §9 has not added yet must not make an
 // otherwise complete fact look like a hole that fails the run, and must show up
