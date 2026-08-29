@@ -331,16 +331,11 @@ func mergeCuration(cfg *CFG, curation *Curation, methods map[string]MethodFact) 
 			} else {
 				report.Notes = append(report.Notes, receiverNote(name, fact, entry))
 				fact.Receiver = entry.Receiver
-				// A reviewed answer covers the axis as fully as an analyzed
-				// one, so the flag reads the same for both. Facts.Unclassified
-				// is what tells them apart, over analyze rather than NewFacts.
-				fact.Classified.Receiver = true
 			}
 		}
 		if entry.claimsReturns() {
 			report.Notes = append(report.Notes, returnsNote(name, fact, entry))
 			fact.Returns = entry.Returns
-			fact.Classified.Returns = true
 		}
 		methods[name] = fact
 	}

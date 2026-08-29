@@ -111,6 +111,26 @@ func reportSummaries(stderr string) string {
 	return strings.Join(kept, "\n")
 }
 
+// A graph whose facts hold a determination neither the analysis nor the curated
+// layer answered fails the run rather than writing a hole. The committed graph
+// has none, so the case is built here: one method whose only step is prose the
+// serializer could not lower, which withholds its receiver.
+func TestRun_PartitionRejectsAnUnansweredDetermination(t *testing.T) {
+	t.Parallel()
+	cfgPath := filepath.Join(t.TempDir(), "cfg.json")
+	require.NoError(t, os.WriteFile(cfgPath, []byte(
+		`{"specTarget":"abc","funcs":[`+
+			`{"name":"Demo.prototype.opaque","kind":"builtin-method","params":[],"nodes":[`+
+			`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`), 0o644))
+	outDir := t.TempDir()
+
+	err := run([]string{"partition", "--cfg", cfgPath, seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+
+	require.EqualError(t, err, cfgPath+" leaves determinations unanswered:\n"+
+		"  Demo.prototype.opaque: no receiver determination")
+	require.Empty(t, treeOf(t, outDir))
+}
+
 // A --cfg path that does not resolve fails the run before anything is written,
 // so a mistyped flag leaves no half-joined tree behind.
 func TestRun_PartitionRejectsABadCFGPath(t *testing.T) {

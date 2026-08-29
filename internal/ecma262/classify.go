@@ -190,18 +190,6 @@ func receiverCovered(fn *Func, mutations Mutations) bool {
 	return !mutations.Unattributable && !mutations.Incomplete
 }
 
-// Coverage records which of MethodFact's determinations the analysis resolved.
-// A step it could not read withholds only the ones that read it (FR5).
-type Coverage struct {
-	// Receiver is set for a static or namespace function, which has no receiver
-	// to claim, and for a method the mutation fixpoint read whole.
-	Receiver bool `json:"receiver"`
-	// Returns is set for every builtin, since returnAlias is total. A return
-	// hidden in a step the analysis could not read drops out of the join, a
-	// loss FR4 accepts because §7 curates the alias rather than applying it.
-	Returns bool `json:"returns"`
-}
-
 // AliasRef names one value a return hands back, as Appendix B of
 // planning/ecma-262/implementation_plan.md serializes it. Index is the 0-based
 // position among the declared parameters, which do not include a method's
@@ -300,36 +288,34 @@ func newReturnFact(s aliasSet) ReturnFact {
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// A determination Coverage leaves unset carries no claim, and its field is
-// absent from the JSON, so a consumer never reads "unanalyzed" as "proven
-// none". The converter applies requirements.md FR5's default instead, `&mut
-// self` for an absent receiver.
+// A published fact carries every determination. Neither field has a valid zero
+// value — "" is not a ReceiverKind and not an AliasKind — so a field a fact
+// does not carry is a hole rather than a claim, and Facts.Incomplete names the
+// methods that have one. Generation refuses to write those, which is why the
+// entries hold no coverage flags: an axis is present or the run failed.
 //
-// Receiver is a plain kind with no empty member, so omitempty encodes its
-// absence. Returns is a struct, and omitzero encodes the same absence for it.
+// `unknown` is a value, not a hole. The alias lattice's top says the walk read
+// the returns and could tie none of them to a value the caller holds, which is
+// something §8.2 can act on. The methods still waiting on an answer there are
+// Facts.Unclassified(AxisReturns), a review report rather than a wire concern.
 //
-// Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
-// Params, no fact makes a parameter claim, so an absent Params is not yet
-// Appendix B's proven-read-only one.
-//
-// Both throw fields land together, in §9.2. ThrowSummary already computes each
-// channel, but publishing the reject set on its own would spell a method whose
-// synchronous throws are simply not published yet as one that throws nothing.
+// Params, Throws, and Rejects join this shape in §8 and §9, and the same rule
+// covers them: an axis a fact cannot answer fails the run rather than encoding
+// a hole a consumer might read as a proven-empty result.
 type MethodFact struct {
-	Classified Coverage     `json:"classified"`
-	Receiver   ReceiverKind `json:"receiver,omitempty"`
-	Returns    ReturnFact   `json:"returns,omitzero"`
+	Receiver ReceiverKind `json:"receiver,omitempty"`
+	Returns  ReturnFact   `json:"returns,omitzero"`
 }
 
-// String renders the covered determinations in one line, so a test can assert
-// a fact whole. An uncovered one is left out, and a fact covering nothing reads
+// String renders the determinations the fact carries in one line, so a test can
+// assert a fact whole. A hole is left out, and a fact with nothing in it reads
 // "unclassified".
 func (f MethodFact) String() string {
 	var parts []string
-	if f.Classified.Receiver {
+	if f.Receiver != "" {
 		parts = append(parts, "receiver:"+string(f.Receiver))
 	}
-	if f.Classified.Returns {
+	if f.Returns.Kind != "" {
 		parts = append(parts, "returns:"+f.Returns.String())
 	}
 	if len(parts) == 0 {
@@ -399,13 +385,9 @@ func analyze(cfg *CFG) *Facts {
 		}
 		mutations := summary.Of(fn)
 		fact := MethodFact{
-			Classified: Coverage{
-				Receiver: receiverCovered(fn, mutations),
-				Returns:  true,
-			},
 			Returns: newReturnFact(returnAlias(summary.originsOf(fn))),
 		}
-		if fact.Classified.Receiver {
+		if receiverCovered(fn, mutations) {
 			fact.Receiver = receiverKind(fn, mutations)
 		}
 		facts.Methods[fn.Name] = fact
@@ -432,13 +414,16 @@ const (
 	AxisReturns  Axis = "returns"
 )
 
-// Unclassified returns the names carrying no answer on axis, sorted. Shrinking
-// these lists is what §4 is measured by.
+// Unclassified returns the names carrying no answer on axis, sorted.
+//
+// Over an analyze result the list is what §4 is measured by. Over a NewFacts
+// result it is what neither the analysis nor the curated layer answers, which
+// is the surface still waiting on review.
 //
 // The two axes are worth reading apart rather than summed. §7 auto-applies the
-// receiver, so a name on that list is a method whose mutability falls to FR5's
-// name-based heuristics — a soundness gap. A name on the returns list costs
-// only the lifetime precision §8.2 would have seeded from it.
+// receiver, so a name on that list is a method whose mutability falls to the
+// converter's name heuristics — a soundness gap. A name on the returns list
+// costs only the lifetime precision §8.2 would have seeded from it.
 func (f *Facts) Unclassified(axis Axis) []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
@@ -451,21 +436,65 @@ func (f *Facts) Unclassified(axis Axis) []string {
 }
 
 // answers reports whether the fact settles axis, which is a stronger question
-// than whether Coverage marked it analyzed. A return of `unknown` is covered,
-// and it is a value §8.2 can act on, but it names nothing the caller holds. So
-// it stays an open question for a reviewer.
+// than whether it carries a value there. A return of `unknown` is a value the
+// converter can act on and an open question for a reviewer, so it is carried
+// but not settled.
 //
 // An axis this does not name reads as unsettled, so an axis §8 or §9 adds shows
-// up as wholly open until it is wired in here. The alternative would have a new
-// axis read as complete for every builtin the moment it is declared, which
-// hides work rather than surfacing it.
+// up as wholly open until it is wired in here.
 func (f MethodFact) answers(axis Axis) bool {
 	switch axis {
 	case AxisReceiver:
-		return f.Classified.Receiver
+		return f.Receiver != ""
 	case AxisReturns:
-		return f.Classified.Returns && f.Returns.Kind != AliasUnknown
+		return f.Returns.Kind != "" && f.Returns.Kind != AliasUnknown
 	default:
 		return false
 	}
+}
+
+// carries reports whether the fact holds a value on axis at all. This is what
+// generation requires, and Unclassified's `answers` is the reviewer's stricter
+// reading of the same fact.
+//
+// An axis this does not name reads as a hole. Incomplete asks only about
+// publishedAxes, so that answer is reachable exactly when an axis joins that
+// list without gaining a case here. Failing the run on every method is the safe
+// reading of that drift; the alternative passes the hole the gate exists to
+// catch. TestCarriesCoversEveryPublishedAxis catches it one step earlier.
+func (f MethodFact) carries(axis Axis) bool {
+	switch axis {
+	case AxisReceiver:
+		return f.Receiver != ""
+	case AxisReturns:
+		return f.Returns.Kind != ""
+	default:
+		return false
+	}
+}
+
+// publishedAxes are the determinations every published fact must carry. §8 and
+// §9 add to it, and each axis added here needs a case in MethodFact.carries.
+var publishedAxes = []Axis{AxisReceiver, AxisReturns}
+
+// Incomplete returns the names whose fact holds a hole, one rendered line each,
+// sorted. A hole is a determination neither the analysis nor the curated layer
+// answered, and writing one to facts.json would leave a consumer to guess.
+//
+// The receiver axis is where this bites. §7 auto-applies it, so a hole there
+// would silently become the FR5 `&mut self` default, and a spec bump that
+// withholds a receiver nobody has curated is exactly the case that must be loud.
+// The list is empty for the committed graph, and TestFactsCarryEveryAxis holds
+// it that way.
+func (f *Facts) Incomplete() []string {
+	var holes []string
+	for name, fact := range f.Methods {
+		for _, axis := range publishedAxes {
+			if !fact.carries(axis) {
+				holes = append(holes, fmt.Sprintf("%s: no %s determination", name, axis))
+			}
+		}
+	}
+	sort.Strings(holes)
+	return holes
 }
