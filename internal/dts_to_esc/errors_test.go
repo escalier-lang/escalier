@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/stretchr/testify/require"
 )
 
@@ -191,4 +192,23 @@ func TestJoin(t *testing.T) {
 	var convert *BucketConvertError
 	require.ErrorAs(t, Join([]Error{first, second}), &convert)
 	require.Equal(t, "std:array", convert.Pkg())
+}
+
+// TestPlanPartition_ReportsABucketOutsideThePackageList covers the guard
+// on Route's output. Every bucket is supposed to carry a URI from
+// PackageList, so a bucket that does not is a routing bug: the pass
+// names it and moves on to the packages it can place, rather than
+// planning against a package it cannot locate on disk.
+func TestPlanPartition_ReportsABucketOutsideThePackageList(t *testing.T) {
+	t.Parallel()
+	res := &PartitionResult{
+		Buckets: map[string][]dts_parser.Statement{"std:nope": nil},
+	}
+
+	_, errs := CheckPartition(res, t.TempDir())
+	require.Len(t, errs, 1)
+	require.Equal(t, "std:nope", errs[0].Pkg())
+	require.EqualError(t, errs[0],
+		`unknown package URI "std:nope"; every bucket should come from `+
+			"Route, which only returns URIs in PackageList")
 }
