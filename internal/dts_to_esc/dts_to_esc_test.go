@@ -339,12 +339,15 @@ func TestStandalone_InterfaceVarSingletonFlattened(t *testing.T) {
 
 // symbolKeyedSingletonSlice mirrors the shape lib.es2015.symbol.wellknown.d.ts
 // gives `Math`, `JSON`, and `Atomics`: a singleton interface carrying a
-// `[Symbol.toStringTag]` member alongside its named ones.
+// `[Symbol.toStringTag]` member alongside its named ones. The symbol-keyed
+// method has no counterpart in the pinned lib set and covers the other
+// half of the skip.
 const symbolKeyedSingletonSlice = `
 interface Math {
     /** Returns the absolute value. */
     abs(x: number): number;
     readonly [Symbol.toStringTag]: string;
+    [Symbol.iterator](): number;
 }
 
 declare var Math: Math;
@@ -356,8 +359,8 @@ func TestStandalone_SingletonSkipsSymbolKeyedMember(t *testing.T) {
 	require.True(t, ok)
 
 	// Flattening names each member at the top level and in its
-	// `@js(...)` path, and a computed key has no name to use. The
-	// symbol-keyed member is dropped, leaving `abs` as the only decl.
+	// `@js(...)` path, and a computed key has no name to use. Both
+	// symbol-keyed members are dropped, leaving `abs` as the only decl.
 	require.Len(t, rootNS.Decls, 1)
 	fn, ok := rootNS.Decls[0].(*ast.FuncDecl)
 	require.True(t, ok, "decl is a FuncDecl")
@@ -365,6 +368,7 @@ func TestStandalone_SingletonSkipsSymbolKeyedMember(t *testing.T) {
 	require.Len(t, fn.Decorators, 1)
 	require.Equal(t, "Math.abs", printDecoratorArg(t, fn.Decorators[0]))
 	require.NotContains(t, printed, "toStringTag")
+	require.NotContains(t, printed, "Symbol.iterator")
 }
 
 // sharedInterfaceSlice pins the negative case for the singleton flattener:

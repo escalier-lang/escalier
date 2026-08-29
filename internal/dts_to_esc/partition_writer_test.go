@@ -1,8 +1,10 @@
 package dts_to_esc
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -716,6 +718,109 @@ func TestReportPartition_FormatsSortedSummary(t *testing.T) {
 	require.Contains(t, out, "drops: 2 (eval, globalThis)")
 	// Sorted: std comes before web.
 	require.Less(t, strings.Index(out, "std:array"), strings.Index(out, "web:dom"))
+}
+
+func TestReportPartition_SeparatesDropCauses(t *testing.T) {
+	t.Parallel()
+	// A name in ExplicitDrops is named; a source file dropped whole
+	// gets a count. Listing the file's declarations would name `Date`,
+	// which lib.scripthost.d.ts only augments, and read as though
+	// std:date had lost its class.
+	res := &PartitionResult{
+		Buckets: map[string][]dts_parser.Statement{
+			"std:date": make([]dts_parser.Statement, 3),
+		},
+		Drops: []DropNote{
+			{Name: "eval", SourceFile: "lib.es5.d.ts"},
+			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
+			{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
+		},
+		Redeclarations: []DropNote{
+			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
+			{Name: "Blob", SourceFile: "lib.webworker.d.ts"},
+		},
+	}
+	var sb strings.Builder
+	require.NoError(t, ReportPartition(res, &sb))
+	out := sb.String()
+	require.Contains(t, out, "std:date: 3 decls")
+	require.Contains(t, out, "drops: 1 (eval)")
+	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
+	require.Contains(t, out, "worker-host redeclarations skipped: 2")
+	require.NotContains(t, out, "VarDate")
+}
+
+// shortWriter fails every write after the first n. ReportPartition
+// writes one line per section, so n selects which section's write error
+// the test observes.
+type shortWriter struct {
+	remaining int
+}
+
+var errShortWrite = errors.New("short writer is full")
+
+func (w *shortWriter) Write(p []byte) (int, error) {
+	if w.remaining <= 0 {
+		return 0, errShortWrite
+	}
+	w.remaining--
+	return len(p), nil
+}
+
+func TestReportPartition_PropagatesWriteErrors(t *testing.T) {
+	t.Parallel()
+	res := &PartitionResult{
+		Buckets: map[string][]dts_parser.Statement{
+			"std:date": make([]dts_parser.Statement, 1),
+		},
+		Drops: []DropNote{
+			{Name: "eval", SourceFile: "lib.es5.d.ts"},
+			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
+		},
+		Redeclarations: []DropNote{
+			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
+		},
+	}
+	// One line per section, in the order ReportPartition writes them.
+	for _, section := range []string{"packages", "drops", "dropped sources", "redeclarations"} {
+		t.Run(section, func(t *testing.T) {
+			t.Parallel()
+			w := &shortWriter{remaining: slices.Index(
+				[]string{"packages", "drops", "dropped sources", "redeclarations"}, section)}
+			require.ErrorIs(t, ReportPartition(res, w), errShortWrite)
+		})
+	}
+}
+
+func TestPartitionLib_UnmappedWorkerOnlyNameTripsFailSafe(t *testing.T) {
+	t.Parallel()
+	// A worker-only name reaches Route like any other, so the §6.1
+	// fail-safe still covers the worker host lib. Only a name the rest
+	// of the lib set also declares is skipped ahead of Route.
+	worker := parseLib(t, "lib.webworker.d.ts",
+		`declare var __TotallyUnknown__: number;`)
+
+	_, err := PartitionLib([]LibInput{worker})
+	require.Error(t, err)
+	require.EqualError(t, err,
+		UnmappedError("__TotallyUnknown__", "lib.webworker.d.ts").Error())
+}
+
+func TestPartitionLib_WorkerHostSkipsUnnamedStatements(t *testing.T) {
+	t.Parallel()
+	// An import carries no addressable top-level name, so it lands in
+	// no bucket rather than reaching Route. The worker host pass has
+	// its own copy of that check.
+	worker := parseLib(t, "lib.webworker.d.ts", `
+import { Thing } from "./thing";
+interface FileReaderSync { readAsText(blob: Blob): string; }
+`)
+
+	res, err := PartitionLib([]LibInput{worker})
+	require.NoError(t, err)
+	require.Len(t, res.Buckets, 1)
+	require.Len(t, res.Buckets["web:file"], 1)
+	require.Equal(t, "FileReaderSync", topLevelName(res.Buckets["web:file"][0]))
 }
 
 // WritePartitionedTree is ConvertBuckets followed by WriteConvertedTree. A
