@@ -390,17 +390,51 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 	return fact, ok
 }
 
-// Unclassified returns the names whose receiver claim FR5 hands to the
-// converter's name-based heuristics, sorted. Shrinking this list is what §4 is
-// measured by. Only a method appears, and it still publishes its return alias,
-// so the list marks a withheld determination rather than an empty fact.
-func (f *Facts) Unclassified() []string {
+// Axis names one determination a MethodFact carries. It is the unit the
+// classification is reported and reviewed in, because the analysis settles
+// each one independently and a method can be answered on one while still open
+// on another.
+type Axis string
+
+const (
+	AxisReceiver Axis = "receiver"
+	AxisReturns  Axis = "returns"
+)
+
+// Unclassified returns the names carrying no answer on axis, sorted. Shrinking
+// these lists is what §4 is measured by.
+//
+// The two axes are worth reading apart rather than summed. §7 auto-applies the
+// receiver, so a name on that list is a method whose mutability falls to FR5's
+// name-based heuristics — a soundness gap. A name on the returns list costs
+// only the lifetime precision §8.2 would have seeded from it.
+func (f *Facts) Unclassified(axis Axis) []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
-		if !fact.Classified.Receiver {
+		if !fact.answers(axis) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+// answers reports whether the fact settles axis, which is a stronger question
+// than whether Coverage marked it analyzed. A return of `unknown` is covered,
+// and it is a value §8.2 can act on, but it names nothing the caller holds. So
+// it stays an open question for a reviewer.
+//
+// An axis this does not name reads as unsettled, so an axis §8 or §9 adds shows
+// up as wholly open until it is wired in here. The alternative would have a new
+// axis read as complete for every builtin the moment it is declared, which
+// hides work rather than surfacing it.
+func (f MethodFact) answers(axis Axis) bool {
+	switch axis {
+	case AxisReceiver:
+		return f.Classified.Receiver
+	case AxisReturns:
+		return f.Classified.Returns && f.Returns.Kind != AliasUnknown
+	default:
+		return false
+	}
 }
