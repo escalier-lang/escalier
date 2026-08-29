@@ -39,6 +39,24 @@ The lifetimes requirements define that form under
 The counts are over the 501 builtins of the pinned graph, read from the merged
 facts of §4.4.
 
+**The roster is the converter's output, not this file.** Running
+`tools/dts_to_esc` with `--cfg` prints every builtin whose return seeds an
+annotation, one line per method, grouped by kind:
+
+```
+  return seeds: 22 to annotate, 232 owned, 247 open
+    param(0): Object.assign
+    ...
+    receiver: Array.prototype.fill
+    ...
+    union(fresh, param(0)): Object
+```
+
+`Facts.ReturnSeeds` produces it and `TestFactsReturnSeedsAreListed` snapshots
+it, so a spec bump that adds or retires a borrowing return moves the list
+rather than staling this file. The methods named below are the ones the
+reasoning needs, not the list to work from.
+
 Three things a `returns` value leaves open, which is why no row is applied
 without review:
 
@@ -53,16 +71,10 @@ without review:
 
 ## `receiver`
 
-Fifteen builtins hand back the value they were called on. Twelve of them mutate
-it first, and those are the fluent chains:
-
-```
-Array.prototype.copyWithin   Array.prototype.fill   Array.prototype.reverse   Array.prototype.sort
-TypedArray.prototype.copyWithin   TypedArray.prototype.fill   TypedArray.prototype.reverse   TypedArray.prototype.sort
-Map.prototype.set   Set.prototype.add   WeakMap.prototype.set   WeakSet.prototype.add
-```
-
-Each already takes `&mut self`, so each returns `-> &mut Self`:
+Fifteen builtins hand back the value they were called on. Twelve mutate it
+first — the four `Array` and four `TypedArray` in-place methods, plus the two
+map setters and the two set adders. Those are the fluent chains. Each already
+takes `&mut self`, so each returns `-> &mut Self`:
 
 ```esc
 declare fn Array.fill<'a, T>(self: mut 'a Array<T>, value: T) -> mut 'a Array<T>
@@ -81,15 +93,9 @@ open case of the section below.
 
 ## `param:<n>`
 
-Six builtins hand back a declared parameter, all of them `Object` statics and
-all of them position 0:
-
-```
-Object.assign   Object.defineProperty   Object.freeze
-Object.preventExtensions   Object.seal   Object.setPrototypeOf
-```
-
-The return borrows that parameter's lifetime:
+Six builtins hand back a declared parameter. All six are `Object` statics that
+take the object they operate on first and hand it back, and all six name
+position 0. The return borrows that parameter's lifetime:
 
 ```esc
 declare fn Object.seal<'a, T>(o: 'a T) -> 'a T

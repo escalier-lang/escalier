@@ -687,3 +687,64 @@ returns union: 1
 returns unknown: 247
 total: 501`))
 }
+
+// The seed surface §8.2 reads. Every name here is an annotation a curator
+// writes, so the snapshot is the work list, and a spec bump that adds or
+// retires a borrowing return moves it rather than staling a hand-kept list in
+// the planning docs.
+func TestFactsReturnSeedsAreListed(t *testing.T) {
+	report := testFacts(t).ReturnSeeds()
+
+	var sb strings.Builder
+	require.NoError(t, WriteReturnsReport(report, &sb))
+	snaps.MatchSnapshot(t, sb.String())
+
+	// The three tallies partition the published builtins, so nothing falls
+	// between the returns that need an annotation and the two kinds that
+	// need none.
+	require.Equal(t, len(testFacts(t).Methods), len(report.Seeds)+report.Owned+report.Open)
+	// The open count is the same set Unclassified names on the returns axis.
+	require.Equal(t, len(testFacts(t).Unclassified(AxisReturns)), report.Open)
+}
+
+// A `fresh` return is owned and an `unknown` one names no value, so neither
+// reaches the seed list. `Demo.prototype.read` returns its receiver and
+// `Demo.prototype.opaque` resolves to the lattice top.
+func TestReturnSeedsExcludeTheKindsThatSeedNothing(t *testing.T) {
+	_, methods := demoFacts(t)
+	facts := &Facts{Methods: methods}
+
+	report := facts.ReturnSeeds()
+
+	require.Equal(t, []ReturnSeed{
+		{Name: "Demo.prototype.read", Fact: ReturnFact{Kind: AliasReceiver}},
+	}, report.Seeds)
+	require.Equal(t, 0, report.Owned)
+	require.Equal(t, 1, report.Open)
+}
+
+// Seeds sort by alias kind, then by the returned position, then by name, so a
+// curator reads the parameter returns in position order rather than in the
+// order `param(10)` would take lexically.
+func TestReturnSeedsSortByKindThenPositionThenName(t *testing.T) {
+	facts := &Facts{Methods: map[string]MethodFact{
+		"C.two":   {Returns: returnsParam(10)},
+		"C.one":   {Returns: returnsParam(2)},
+		"C.three": {Returns: ReturnFact{Kind: AliasReceiver}},
+		"C.four":  {Returns: ReturnFact{Kind: AliasUnion, Members: []AliasRef{{Kind: AliasFresh}, {Kind: AliasParam, Index: position(0)}}}},
+		"C.five":  {Returns: returnsParam(2)},
+	}}
+
+	var names []string
+	for _, seed := range facts.ReturnSeeds().Seeds {
+		names = append(names, seed.Fact.String()+" "+seed.Name)
+	}
+
+	require.Equal(t, []string{
+		"param(2) C.five",
+		"param(2) C.one",
+		"param(10) C.two",
+		"receiver C.three",
+		"union(fresh, param(0)) C.four",
+	}, names)
+}
