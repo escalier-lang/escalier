@@ -55,18 +55,11 @@ func udiffEdits(contents string, edits []textEdit) []udiff.Edit {
 }
 
 // lineAligned moves an insertion sitting at the end of a line to the
-// start of the next one, rotating the newline from the front of the
-// text to the back. Both forms produce the same bytes.
-//
-// Only the second is a whole-line insertion, and that is what decides
-// how the edit reads. The renderer widens every edit to the lines it
-// touches, so a member appended after the committed file's last one
-// would otherwise put that untouched line on both sides of the hunk,
-// once as a removal and once as an addition.
-//
-// An insertion that opens with anything but a newline does change the
-// line it lands on. `memberInsertText` prepends a comma when the member
-// before it lacks one, and that edit stays where it is.
+// start of the next one, rotating the newline from the front of the text
+// to the back. Both forms produce the same bytes, but the renderer widens
+// every edit to the lines it touches, so only the whole-line form keeps
+// the line it followed off both sides of the hunk. An insertion opening
+// with anything else does change that line, and stays put.
 func lineAligned(contents string, at int, text string) (int, string) {
 	if !strings.HasPrefix(text, "\n") || at >= len(contents) || contents[at] != '\n' {
 		return at, text
