@@ -460,13 +460,18 @@ func analyze(cfg *CFG) *Facts {
 		if receiverCovered(fn, mutations) {
 			fact.Receiver = receiverKind(fn, mutations)
 		}
-		if !filtered.settled {
-			filter.report.UnderReported = append(filter.report.UnderReported, fn.Name)
+		if !fact.throwsSettled {
+			filter.report.UnderReported = append(filter.report.UnderReported, UnderReport{
+				Method:  fn.Name,
+				Rejects: !fact.rejectsSettled,
+			})
 		}
 		facts.Methods[fn.Name] = fact
 	}
 	sortDecisions(filter.report.Decisions)
-	sort.Strings(filter.report.UnderReported)
+	sort.Slice(filter.report.UnderReported, func(i, j int) bool {
+		return filter.report.UnderReported[i].Method < filter.report.UnderReported[j].Method
+	})
 	facts.filterReport = filter.report
 	return facts
 }

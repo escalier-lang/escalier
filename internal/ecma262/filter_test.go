@@ -279,11 +279,11 @@ ToObject(argument) raises at #3 TypeError, #6 TypeError
 ToString(argument) raises at #7 TypeError`))
 }
 
-// `ToPrimitive` is the operation FR11 names that the list leaves out. Its one
-// `Throw` step is the one ECMA-262 reaches after an `@@toPrimitive` method has
-// handed back an object rather than a primitive, so it reports the caller's own
-// code failing and not a check on the value `ToPrimitive` was given. A declared
-// receiver type rules out neither.
+// `ToPrimitive` is the coercion the list leaves out. Its one `Throw` step is
+// the one ECMA-262 reaches after an `@@toPrimitive` method has handed back an
+// object rather than a primitive, so it reports the caller's own code failing
+// and not a check on the value `ToPrimitive` was given. A declared receiver
+// type rules out neither.
 //
 // Listing it would drop 31 sites over the committed graph. `ToPrimitive` still
 // appears mid-chain, where the base is the `ToObject` inside its
@@ -308,6 +308,45 @@ func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
 		require.Emptyf(t, decision.Coercion, "%s", decision)
 	}
 	require.NotZero(t, reached)
+}
+
+// underReportedCFG is a two-method graph whose algorithms both hold a step the
+// serializer could not lower, so the throw fixpoint reads neither whole.
+// `read` returns a value, and `load` builds a promise and returns it.
+const underReportedCFG = `{"specTarget":"abc","funcs":[` +
+	`{"name":"Demo.prototype.read","kind":"builtin-method","params":[],"nodes":[` +
+	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]},` +
+	`{"name":"Demo.prototype.load","kind":"builtin-method","params":[],"promise":true,"nodes":[` +
+	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`
+
+// An unread step leaves the throws of both methods short and the rejections of
+// only the one that builds a promise. `read` has no reject sink for the step to
+// feed, so its empty rejection channel is a proven-empty result, and the report
+// says so rather than claiming a gap on both channels.
+//
+// Both methods are named all the same, because FR10 asks for a method whose
+// throw paths the analysis could not resolve to be flagged rather than guessed
+// at, and that holds whichever channel is short.
+func TestFilterReportsWhichChannelIsShort(t *testing.T) {
+	t.Parallel()
+
+	cfg, err := ParseCFG([]byte(underReportedCFG))
+	require.NoError(t, err)
+	facts := analyze(cfg)
+
+	require.Equal(t, []UnderReport{
+		{Method: "Demo.prototype.load", Rejects: true},
+		{Method: "Demo.prototype.read"},
+	}, facts.Filter().UnderReported)
+	require.Equal(t, []string{"Demo.prototype.load", "Demo.prototype.read"}, facts.Unclassified(AxisThrows))
+	require.Equal(t, []string{"Demo.prototype.load"}, facts.Unclassified(AxisRejects))
+
+	var out strings.Builder
+	require.NoError(t, WriteFilterReport(facts.Filter(), &out))
+	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  coercion filter: 0 TypeError sites adjudicated, 0 dropped, 2 methods under-reported
+    Demo.prototype.load: a step the throw analysis could not read leaves its throws and its rejections short
+    Demo.prototype.read: a step the throw analysis could not read leaves its throws short
+`))
 }
 
 // throwSteps renders every step of fn that raises an error class it names, as

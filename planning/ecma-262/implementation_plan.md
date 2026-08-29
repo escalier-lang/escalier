@@ -1818,12 +1818,11 @@ coercions ECMA-262 applies to a value before working with it. The
 `Number.prototype.toFixed` opens with `? ThisNumberValue(this value)`,
 which raises when the receiver is neither a Number nor a Number wrapper.
 
-`ToPrimitive` is the one operation FR11 names that the list leaves out.
-Its only `Throw` step is the one reached after an `@@toPrimitive` method
-has handed back an object rather than a primitive, so it reports the
-caller's own code failing and not a check on the value `ToPrimitive` was
-given. Listing it would drop 31 sites a declared receiver type does not
-rule out. `ToPrimitive` still appears mid-chain, where the base is the
+`ToPrimitive` is the coercion the list leaves out. Its only `Throw` step
+is the one reached after an `@@toPrimitive` method has handed back an
+object rather than a primitive, so it reports the caller's own code
+failing and not a check on the value `ToPrimitive` was given. Listing it
+would drop 31 sites a declared receiver type does not rule out. `ToPrimitive` still appears mid-chain, where the base is the
 `ToObject` inside its `@@toPrimitive` lookup, and that base is weighed on
 its own account.
 

@@ -800,9 +800,13 @@ already-typed value:
   `ThisNumberValue`, `ThisStringValue`, `ThisBooleanValue`,
   `ThisBigIntValue`, `ThisSymbolValue` — which raise on a receiver of the
   wrong type and nothing else. `Number.prototype.toFixed` opens with one.
-- `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`,
-  `ToPrimitive`, or `ToObject` applied to a parameter whose Escalier
-  type is already the coerced type.
+- `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`, or
+  `ToObject` applied to a parameter whose Escalier type is already the
+  coerced type. `ToPrimitive` is not among them. Its one `Throw` step is
+  the one reached after an object's `@@toPrimitive` method has handed back
+  another object, so it reports the caller's code failing rather than the
+  wrong dynamic type for the value it was given, and no declared type
+  rules it out.
 
 A throw survives the filter when it originates from an explicit domain
 check — an `If <condition>, throw a *RangeError*` over a value range, a

@@ -23,13 +23,13 @@ import (
 //
 // Each entry checks the value at position 0, which coercionGuardArg names.
 //
-// `ToPrimitive` is the one operation FR11 names that is absent. Its only
-// `Throw` step is the one reached when the object's own `@@toPrimitive` method
-// returned an object rather than a primitive, which is the caller's code
-// failing and not a check on the value `ToPrimitive` was handed. Nothing about
-// a declared receiver type rules it out. `ToPrimitive` still appears mid-chain,
-// where the base is the `ToObject` its `GetMethod` lookup reaches, and that
-// base is a check the declaration does rule out.
+// `ToPrimitive` is the coercion the list leaves out. Its only `Throw` step is
+// the one reached when the object's own `@@toPrimitive` method returned an
+// object rather than a primitive, which is the caller's code failing and not a
+// check on the value `ToPrimitive` was handed. Nothing about a declared
+// receiver type rules it out. It still appears mid-chain, where the base is the
+// `ToObject` its `GetMethod` lookup reaches, and that base is a check the
+// declaration does rule out.
 //
 // A brand check such as `RequireInternalSlot` is deliberately absent too,
 // though a declared receiver type implies the slot as surely as it implies the
@@ -110,12 +110,32 @@ type FilterReport struct {
 	// Decisions holds one entry per `TypeError` site the filter adjudicated,
 	// grouped by method. See sortDecisions for the order within a method.
 	Decisions []FilterDecision
-	// UnderReported holds the methods whose channels the throw fixpoint could
-	// not read whole, sorted. Both channels are published for such a method all
-	// the same, missing whatever the unread step raises, which is the direction
-	// FR5 prefers and FR10 asks to have flagged. It is the same list as
-	// Facts.Unclassified(AxisThrows), reported here so a run names it.
-	UnderReported []string
+	// UnderReported holds the methods the throw fixpoint could not read whole,
+	// sorted by name. The channels are published for such a method all the
+	// same, missing whatever the unread step raises, which is the direction FR5
+	// prefers and FR10 asks to have flagged. The methods are the same ones
+	// Facts.Unclassified(AxisThrows) names, reported here so a run states them.
+	UnderReported []UnderReport
+}
+
+// UnderReport is one method whose published channels are short because the
+// throw fixpoint could not read every step of its algorithm.
+//
+// Rejects says the rejection channel is short too, which holds only for an
+// algorithm that builds a promise. Any other has no reject sink for the unread
+// step to feed, so its empty rejection channel is a proven-empty result whatever
+// the fixpoint missed. Facts.Unclassified reads the two axes the same way.
+type UnderReport struct {
+	Method  string
+	Rejects bool
+}
+
+func (u UnderReport) String() string {
+	channels := "its throws"
+	if u.Rejects {
+		channels = "its throws and its rejections"
+	}
+	return fmt.Sprintf("%s: a step the throw analysis could not read leaves %s short", u.Method, channels)
 }
 
 // Dropped returns the decisions that discounted a site, which is the list the
@@ -292,8 +312,8 @@ func WriteFilterReport(report FilterReport, w io.Writer) error {
 			return err
 		}
 	}
-	for _, name := range report.UnderReported {
-		if _, err := fmt.Fprintf(w, "    %s: a step the throw analysis could not read leaves both channels short\n", name); err != nil {
+	for _, under := range report.UnderReported {
+		if _, err := fmt.Fprintf(w, "    %s\n", under); err != nil {
 			return err
 		}
 	}
