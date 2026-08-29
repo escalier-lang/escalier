@@ -8,8 +8,25 @@ rows a curator has to act on from the rows the compiler already reaches on its
 own.
 
 The fact is review input rather than an annotator. Annotations are re-applied
-when the `.esc` is generated, so a curator edits the override layer and never
-the generated file. The checker's lifetime inference and elision rules,
+when the `.esc` is generated, so a curator edits committed data and never the
+generated file.
+
+**Two committed layers hold that data, and an annotation belongs in one of
+them.** FR7 keys them differently because they answer different questions:
+
+- The **fact layer**,
+  [../../internal/ecma262/curated.json](../../internal/ecma262/curated.json),
+  is keyed by canonical spec name and merged into the facts before the §5 join.
+  It answers a determination the graph could not settle, so it is where a
+  `returns` value is corrected rather than where an annotation is written. §4.4
+  already uses it, and the three curated `fresh` returns below are its entries.
+- The **override layer** is keyed by declaration and applied after the join. It
+  holds the annotations this file maps to, because they are what FR5 makes the
+  extractor omit rather than something the facts get wrong. It does not exist
+  yet. §7 wires it into generation and §11 populates it, so every annotation
+  below is a decision recorded now and applied when those land.
+
+The checker's lifetime inference and elision rules,
 [../lifetimes/requirements.md](../lifetimes/requirements.md), and the borrow
 model, [../affine_semantics/requirements.md](../affine_semantics/requirements.md),
 stay the mechanism.
