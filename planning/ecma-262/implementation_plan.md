@@ -1886,7 +1886,7 @@ sites and drops 242, every one of them a coercion of the receiver.
 branches in one method: the `RequireObjectCoercible` and `ToString` checks
 of its receiver are dropped and the same `ToString` chain applied to `pos`
 is kept. The dropped type-guard throws are listed in the review report, which
-`dts_to_esc partition` prints beside the curation and join reports. The
+`dts_to_esc bootstrap` prints beside the curation and join reports. The
 report also names the 103 methods whose channels are published short
 because §9.1's fixpoint could not read every step, which is FR10's "left
 out of the throw set and flagged, never guessed" made visible.
