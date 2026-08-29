@@ -8,35 +8,11 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// coercionAOs are the abstract operations whose `TypeError` reports that the
-// value they were handed has the wrong dynamic type. FR11 discounts such a
-// throw when the value is one Escalier already types, because a well-typed
-// caller cannot reach the path that raises it. See
-// planning/ecma-262/implementation_plan.md §9.2.
-//
-// Two groups sit here. The first are the coercions ECMA-262 applies to a value
-// before working with it, and they raise on a value no coercion accepts, such
-// as `ToString` on a Symbol or `ToObject` on `undefined`. The `This*Value`
-// operations are the receiver's counterpart: `Number.prototype.toFixed` opens
-// with `? ThisNumberValue(this value)`, which hands back the receiver's Number
-// value and raises when the receiver is neither a Number nor a Number wrapper.
-//
-// Each entry checks the value at position 0, which coercionGuardArg names.
-//
-// `ToPrimitive` is the coercion the list leaves out. Its only `Throw` step is
-// the one reached when the object's own `@@toPrimitive` method returned an
-// object rather than a primitive, which is the caller's code failing and not a
-// check on the value `ToPrimitive` was handed. Nothing about a declared
-// receiver type rules it out. It still appears mid-chain, where the base is the
-// `ToObject` its `GetMethod` lookup reaches, and that base is a check the
-// declaration does rule out.
-//
-// A brand check such as `RequireInternalSlot` is deliberately absent too,
-// though a declared receiver type implies the slot as surely as it implies the
-// Number value. FR11 is a heuristic and §9.4's validation harness is not built
-// yet, so nothing would catch a wrong entry. The list grows by review, and
-// TestCoercionAOsRaiseOnTheirFirstArgument is what an addition is read
-// against.
+// coercionAOs are the abstract operations whose `TypeError` reports the wrong
+// dynamic type for the value at coercionGuardArg, which a declared receiver
+// type rules out. `ToPrimitive` is absent: its throw reports an `@@toPrimitive`
+// method handing back an object, which no declared type rules out. See §9.2 of
+// planning/ecma-262/implementation_plan.md for the reasoning behind each entry.
 var coercionAOs = set.FromSlice([]string{
 	"RequireObjectCoercible",
 	"ToNumber",
@@ -65,20 +41,11 @@ type coercionFilter struct {
 	report  FilterReport
 }
 
-// FilterDecision is one adjudicated throw site. Method is the builtin the site
-// belongs to and Site renders the site and its provenance chain as
-// ThrowSite.String does. Coercion names the operation whose type check the
-// chain bottoms out at, and Coerced spells where in Method the value it checked
-// came from. Dropped says which way the decision went.
-//
-// Only a `TypeError` reaches a decision. Every other exception leaves the
-// filter untouched, so recording it would say nothing a reviewer can act on.
-//
-// Coercion is empty where the chain bottoms out at something else, such as an
-// explicit domain check or a method the algorithm called on an object the
-// caller supplied. Coerced is empty where the chain does reach a coercion but
-// the value it checked could not be threaded back to Method's own receiver or
-// parameters.
+// FilterDecision is one adjudicated throw site, which is only ever a
+// `TypeError`. Site renders the chain as ThrowSite.String does. Coercion names
+// the operation whose check the chain bottoms out at, empty where it bottoms
+// out elsewhere, and Coerced spells where in Method that operation's value came
+// from, empty where the walk could not thread it back.
 type FilterDecision struct {
 	Method   string
 	Site     string
@@ -111,20 +78,13 @@ type FilterReport struct {
 	// grouped by method. See sortDecisions for the order within a method.
 	Decisions []FilterDecision
 	// UnderReported holds the methods the throw fixpoint could not read whole,
-	// sorted by name. The channels are published for such a method all the
-	// same, missing whatever the unread step raises, which is the direction FR5
-	// prefers and FR10 asks to have flagged. The methods are the same ones
-	// Facts.Unclassified(AxisThrows) names, reported here so a run states them.
+	// sorted by name. Facts.Unclassified(AxisThrows) names the same ones.
 	UnderReported []UnderReport
 }
 
-// UnderReport is one method whose published channels are short because the
-// throw fixpoint could not read every step of its algorithm.
-//
-// Rejects says the rejection channel is short too, which holds only for an
-// algorithm that builds a promise. Any other has no reject sink for the unread
-// step to feed, so its empty rejection channel is a proven-empty result whatever
-// the fixpoint missed. Facts.Unclassified reads the two axes the same way.
+// UnderReport is one method whose channels are published short because the
+// throw fixpoint could not read every step. Rejects is set only for an
+// algorithm that builds a promise; any other has no reject sink to miss.
 type UnderReport struct {
 	Method  string
 	Rejects bool
@@ -240,25 +200,10 @@ type coercionGuard struct {
 }
 
 // coerced walks site's provenance chain to its base and threads the value the
-// coercion there checked back out to fn. It returns that operation's name and
-// where in fn the value came from.
-//
-// The chain runs outward from the step that raised. `Array.prototype.push`
-// begins `Let O be ? ToObject(this value)`, so the site in `push` propagates
-// from `ToObject`'s own site, that site raises the `TypeError` itself, and
-// `ToObject` checks its first parameter. Reading `push`'s call at that position
-// finds `this value`, so the value is the receiver and the throw is discounted.
-//
-// The operation comes back unnamed when the chain bottoms out somewhere else,
-// which is an explicit domain check or a step below a coercion. `ToString` on
-// an object calls `ToPrimitive`, which calls the object's `@@toPrimitive`
-// method, and a `TypeError` from that method is the caller's own code failing
-// rather than a type the declaration rules out.
-//
-// The operation is named and the value untraced where the walk reaches a value
-// that is neither the receiver nor a parameter. `LengthOfArrayLike(O)` coerces
-// `Get(O, "length")`, which is read out of the receiver's backing store rather
-// than being the receiver, so the coercion stands.
+// coercion there checked back out to fn, returning that operation and where in
+// fn the value came from. The operation is unnamed where the base is not a
+// coercion, and the value untraced where a hop lands on something that is
+// neither the receiver nor a parameter, such as `Get(O, "length")`.
 func (f *coercionFilter) coerced(fn *Func, site *ThrowSite) coercionGuard {
 	if site.Root.Inner == nil {
 		if !coercionAOs.Contains(fn.Name) {

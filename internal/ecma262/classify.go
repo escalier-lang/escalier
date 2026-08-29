@@ -307,29 +307,15 @@ type MethodFact struct {
 	Receiver ReceiverKind `json:"receiver,omitempty"`
 	Returns  ReturnFact   `json:"returns,omitzero"`
 	// Throws holds the synchronous exceptions that survive §9.2's coercion
-	// filter, and Rejects the ones a promise-returning method hands to the
-	// reject function of the promise it returns. Each entry is an
-	// Exception.Ref: an error class name, an origin ref, a callback effect, or
-	// the `unknown` sentinel.
-	//
-	// An empty channel is written as `[]` and a nil one is left out. A nil
-	// channel is the axis being uncomputed, which carries reports as a hole and
-	// fails generation, so a consumer never reads one.
-	//
-	// `[]` says the filter left nothing standing, which is a proven-empty
-	// channel only where the analysis read every step. It is short by whatever
-	// an unread step raises otherwise, the under-reporting FR5 prefers to a
-	// guess. throwsSettled is what separates the two, and 12 builtins publish
-	// an empty channel while carrying an unread step.
+	// filter, Rejects the ones a promise-returning method rejects with. Each
+	// entry is an Exception.Ref. A nil channel is the axis uncomputed, which
+	// reports as a hole and fails generation; `[]` is what the filter left
+	// standing, proven empty only where throwsSettled holds.
 	Throws  []string `json:"throws,omitzero"`
 	Rejects []string `json:"rejects,omitzero"`
 
-	// throwsSettled and rejectsSettled say whether the analysis read every step
-	// that feeds each channel. FR10 asks for a method whose throw paths it
-	// could not resolve to be flagged rather than guessed at, and the flag is a
-	// reviewer's concern rather than a wire one: the channels are published
-	// either way, under FR5's bias to under-report a throw rather than
-	// over-report one. Unclassified is where they read.
+	// throwsSettled and rejectsSettled say whether the fixpoint read every step
+	// feeding each. FR10 asks to flag one it could not; Unclassified names them.
 	throwsSettled  bool
 	rejectsSettled bool
 }
