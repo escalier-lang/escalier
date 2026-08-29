@@ -315,6 +315,10 @@ const unparseableEsc = `export declare interface Math {
 }
 `
 
+// TestCheckPartition_ReportsEveryUnparseableFileAndChecksTheRest is the
+// read-only half of the §7 contract. std:math does not parse and std:array
+// is missing from the tree; the run names the first and still reports the
+// second, rather than stopping at the parse failure.
 func TestCheckPartition_ReportsEveryUnparseableFileAndChecksTheRest(t *testing.T) {
 	t.Parallel()
 	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
@@ -346,6 +350,9 @@ func TestCheckPartition_ReportsEveryUnparseableFileAndChecksTheRest(t *testing.T
 		"check: 1 missing declarations, 0 missing members, 0 extra declarations, 1 unreadable files\n")
 }
 
+// TestCheckPartition_ReportsNoUnreadableFilesForATreeThatParses pins the
+// other end: a tree the converter itself wrote parses, so the unreadable
+// list stays empty and the run reports the ordinary outcome.
 func TestCheckPartition_ReportsNoUnreadableFilesForATreeThatParses(t *testing.T) {
 	t.Parallel()
 	res := partitionOf(t, "lib.es5.d.ts", twoPackageLib)
@@ -403,6 +410,8 @@ type failWriter struct {
 	budget int
 }
 
+// Write accepts p while the budget covers it and fails otherwise,
+// reporting the partial byte count the way a short write does.
 func (w *failWriter) Write(p []byte) (int, error) {
 	if len(p) > w.budget {
 		n := w.budget

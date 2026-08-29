@@ -353,6 +353,7 @@ type failWriter struct{}
 
 var errWriteFailed = errors.New("write failed")
 
+// Write always fails, so a report written to it never reaches its reader.
 func (failWriter) Write([]byte) (int, error) { return 0, errWriteFailed }
 
 // TestRun_SurfacesAReportWriteError covers the run ending on a broken
