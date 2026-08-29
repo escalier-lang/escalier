@@ -118,9 +118,9 @@ func runCheck(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	report, err := dts_to_esc.CheckPartition(result, args[1])
-	if err != nil {
-		return err
+	report, errs := dts_to_esc.CheckPartition(result, args[1])
+	if len(errs) > 0 {
+		return dts_to_esc.Join(errs)
 	}
 	if err := report.Write(stdout); err != nil {
 		return err
@@ -145,9 +145,9 @@ func runRegenerate(args []string, stdout, stderr io.Writer) error {
 	if err != nil {
 		return err
 	}
-	report, err := dts_to_esc.RegeneratePartition(result, args[1])
-	if err != nil {
-		return err
+	report, errs := dts_to_esc.RegeneratePartition(result, args[1])
+	if len(errs) > 0 {
+		return dts_to_esc.Join(errs)
 	}
 	if err := report.Write(stdout); err != nil {
 		return err

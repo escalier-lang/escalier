@@ -26,7 +26,8 @@ import (
 //
 // Both modes run the same diff. CheckPartition reports it and
 // RegeneratePartition applies it, so the two cannot disagree about what
-// a re-run would change.
+// a re-run would change. Both hand their failures back as []Error,
+// whose cases errors.go names.
 //
 // §6.4 states check 1 over declarations. Members are checked on the
 // same footing here. The §6.4 write mode adds them, so a check that
@@ -125,32 +126,10 @@ type NewMember struct {
 	Text string
 }
 
-// ErrUnreadableTree marks a run that could not parse part of the
-// committed `.esc` tree. Both modes keep going and report every package
-// they could read, so this error is what a caller keys on to tell a tree
-// the tool could not read from a tree that is merely out of date.
-var ErrUnreadableTree = errors.New("committed .esc files could not be parsed")
-
-// UnreadableFile names a committed `.esc` file the Escalier parser
-// rejected. Its package is left out of the diff, since neither mode can
-// tell what a file it cannot read already declares.
-type UnreadableFile struct {
-	// Pkg is the package URI, e.g. "std:array".
-	Pkg string
-
-	// Path is the file's path relative to the `.esc` tree root, e.g.
-	// "std/array.esc".
-	Path string
-
-	// Reason is the first parse error, in the parser's own
-	// "line:col-line:col: message" form.
-	Reason string
-}
-
 // unreadableErr wraps ErrUnreadableTree with the number of files that
 // failed to parse, and returns nil when none did. The files themselves
 // are named in the report, so the message stays one line.
-func unreadableErr(files []UnreadableFile) error {
+func unreadableErr(files []*UnparseableFileError) error {
 	if len(files) == 0 {
 		return nil
 	}
@@ -164,7 +143,7 @@ type CheckReport struct {
 
 	// Unreadable are the committed files the parser rejected, in the
 	// same order. Their packages have no entry in Packages.
-	Unreadable []UnreadableFile
+	Unreadable []*UnparseableFileError
 }
 
 // UnreadableErr returns ErrUnreadableTree when a committed file failed
@@ -185,25 +164,36 @@ func (r *CheckReport) UnreadableErr() error { return unreadableErr(r.Unreadable)
 // A committed file the parser rejects is reported in the report's
 // Unreadable list and its package is skipped. Every other package is
 // still diffed, so one run names every unreadable file at once.
-func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error) {
-	plans, unreadable, err := planPartition(result, escDir)
-	if err != nil {
-		return nil, err
+//
+// Any other failure comes back in the Error slice, one entry per
+// package that hit one, and the report is nil. The types are in
+// errors.go.
+func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, []Error) {
+	planned, errs := planPartition(result, escDir)
+	if len(errs) > 0 {
+		return nil, errs
 	}
 	report := &CheckReport{
-		Packages:   make([]PackageDiff, 0, len(plans)),
-		Unreadable: unreadable,
+		Packages:   make([]PackageDiff, 0, len(planned.plans)),
+		Unreadable: planned.unreadable,
 	}
-	for _, plan := range plans {
+	for _, plan := range planned.plans {
 		diff := plan.diff
 		spliced := plan.splice()
 		patch, err := unifiedDiff(diff.Path, diff.Exists, plan.contents, spliced.edits)
 		if err != nil {
-			return nil, fmt.Errorf("rendering the diff for %s: %w", diff.Pkg, err)
+			errs = append(errs, &DiffRenderError{
+				pkgError: pkgError{PkgURI: diff.Pkg},
+				Cause:    err,
+			})
+			continue
 		}
 		diff.Patch = patch
 		diff.Skipped = spliced.skipped
 		report.Packages = append(report.Packages, diff)
+	}
+	if len(errs) > 0 {
+		return nil, errs
 	}
 	return report, nil
 }
@@ -262,7 +252,7 @@ func (r *CheckReport) Write(w io.Writer) error {
 	for _, f := range r.Unreadable {
 		if _, err := fmt.Fprintf(w,
 			"error: %s: %s; %s was not checked\n",
-			f.Path, f.Reason, f.Pkg); err != nil {
+			f.Path, f.Reason, f.Pkg()); err != nil {
 			return err
 		}
 	}
@@ -287,7 +277,7 @@ type RegenReport struct {
 
 	// Unreadable are the committed files the parser rejected, in the
 	// same order. Their packages were left on disk untouched.
-	Unreadable []UnreadableFile
+	Unreadable []*UnparseableFileError
 }
 
 // UnreadableErr returns ErrUnreadableTree when a committed file failed
@@ -328,21 +318,29 @@ type RegenResult struct {
 // is missing. A package whose file is present but does not parse is
 // left on disk untouched and reported in the report's Unreadable list,
 // since a splice into source the pass cannot read would be blind.
-func RegeneratePartition(result *PartitionResult, escDir string) (*RegenReport, error) {
-	plans, unreadable, err := planPartition(result, escDir)
-	if err != nil {
-		return nil, err
+//
+// Any other failure comes back in the Error slice and the report is
+// nil. Packages planned before the failure may already be on disk: the
+// write pass works one file at a time and does not roll back.
+func RegeneratePartition(result *PartitionResult, escDir string) (*RegenReport, []Error) {
+	planned, errs := planPartition(result, escDir)
+	if len(errs) > 0 {
+		return nil, errs
 	}
 	report := &RegenReport{
-		Packages:   make([]RegenResult, 0, len(plans)),
-		Unreadable: unreadable,
+		Packages:   make([]RegenResult, 0, len(planned.plans)),
+		Unreadable: planned.unreadable,
 	}
-	for i := range plans {
-		res, err := plans[i].apply(escDir)
+	for i := range planned.plans {
+		res, err := planned.plans[i].apply(escDir)
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 		report.Packages = append(report.Packages, res)
+	}
+	if len(errs) > 0 {
+		return nil, errs
 	}
 	return report, nil
 }
@@ -383,7 +381,7 @@ func (r *RegenReport) Write(w io.Writer) error {
 	for _, f := range r.Unreadable {
 		if _, err := fmt.Fprintf(w,
 			"error: %s: %s; %s was left unchanged\n",
-			f.Path, f.Reason, f.Pkg); err != nil {
+			f.Path, f.Reason, f.Pkg()); err != nil {
 			return err
 		}
 	}
@@ -423,62 +421,77 @@ type memberInsert struct {
 	text string
 }
 
+// partitionPlans is what one planning pass produced: a plan for every
+// package it could read, and the committed files the parser rejected.
+type partitionPlans struct {
+	plans      []packagePlan
+	unreadable []*UnparseableFileError
+}
+
 // planPartition converts every bucket and diffs it against the
-// committed tree, returning one plan per package it could read and one
-// UnreadableFile per package whose committed file the parser rejected.
-// Buckets are visited in package-URI order so both modes report in the
-// same sequence regardless of map iteration.
+// committed tree. Buckets are visited in package-URI order so both
+// modes report in the same sequence regardless of map iteration.
 //
 // A committed file that does not parse takes its own package out of the
 // run and leaves the rest of the tree diffed as usual. During §7 the
 // tree holds a mix of files that round-trip and files that do not, and
 // a contributor wants the whole list of the second kind plus whatever
 // the readable packages report, not the first failure alone.
-func planPartition(result *PartitionResult, escDir string) ([]packagePlan, []UnreadableFile, error) {
+func planPartition(result *PartitionResult, escDir string) (partitionPlans, []Error) {
 	uris := make([]string, 0, len(result.Buckets))
 	for uri := range result.Buckets {
 		uris = append(uris, uri)
 	}
 	sort.Strings(uris)
 
-	plans := make([]packagePlan, 0, len(uris))
-	var unreadable []UnreadableFile
+	planned := partitionPlans{plans: make([]packagePlan, 0, len(uris))}
+	var errs []Error
 	for _, uri := range uris {
 		pkg, ok := PackageForURI(uri)
 		if !ok {
-			return nil, nil, fmt.Errorf("planPartition: unknown package URI %q "+
-				"(every bucket should come from Route, which only returns "+
-				"URIs in PackageList)", uri)
+			errs = append(errs, &UnknownPackageError{pkgError: pkgError{PkgURI: uri}})
+			continue
 		}
 		mod, err := ConvertBucket(result.Buckets[uri])
 		if err != nil {
-			return nil, nil, fmt.Errorf("converting bucket %s: %w", uri, err)
+			errs = append(errs, &BucketConvertError{
+				pkgError: pkgError{PkgURI: uri},
+				Cause:    err,
+			})
+			continue
 		}
-		plan, err := planPackage(pkg, mod, escDir)
-		if err != nil {
-			var unparseable *unparseableError
-			if errors.As(err, &unparseable) {
-				unreadable = append(unreadable, UnreadableFile{
-					Pkg:    uri,
-					Path:   pkg.File,
-					Reason: unparseable.reason,
-				})
+		plan, planErrs := planPackage(pkg, mod, escDir)
+		for _, planErr := range planErrs {
+			// The parser rejecting a file costs that package and nothing
+			// more, so it travels in the report rather than in the
+			// failures that stop the run.
+			if unparseable, ok := planErr.(*UnparseableFileError); ok {
+				planned.unreadable = append(planned.unreadable, unparseable)
 				continue
 			}
-			return nil, nil, err
+			errs = append(errs, planErr)
 		}
-		plans = append(plans, *plan)
+		if len(planErrs) > 0 {
+			continue
+		}
+		planned.plans = append(planned.plans, *plan)
 	}
-	return plans, unreadable, nil
+	return planned, errs
 }
 
 // planPackage compares one converted bucket against its committed file
-// and returns the plan for closing the gap.
-func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePlan, error) {
+// and returns the plan for closing the gap. A package that produced any
+// failure returns no plan, since a plan missing the declarations that
+// failed to render would understate what the package needs.
+//
+// A file that cannot be read or parsed ends the package there. Past
+// that point the pass keeps going and collects every declaration the
+// printer refused, so one run names them all.
+func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePlan, []Error) {
 	dest := filepath.Join(escDir, filepath.FromSlash(pkg.File))
-	contents, exists, err := readCommitted(dest)
-	if err != nil {
-		return nil, err
+	contents, exists, readErr := readCommitted(pkg, dest)
+	if readErr != nil {
+		return nil, []Error{readErr}
 	}
 
 	plan := &packagePlan{
@@ -489,11 +502,16 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 
 	var committed []ast.Decl
 	if exists {
-		committed, err = parseCommitted(dest, contents)
-		if err != nil {
-			return nil, err
+		var parseErr Error
+		committed, parseErr = parseCommitted(pkg, dest, contents)
+		if parseErr != nil {
+			return nil, []Error{parseErr}
 		}
 	}
+
+	// A declaration the printer refuses costs its own entry and no more,
+	// so the pass keeps going and hands back everything it found.
+	var errs []Error
 
 	byName := make(map[string][]ast.Decl, len(committed))
 	for _, decl := range committed {
@@ -512,7 +530,12 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 		if !spaceCovered(byName[name], decl) {
 			text, err := renderStandaloneDecl(mod, decl)
 			if err != nil {
-				return nil, fmt.Errorf("rendering %s in %s: %w", name, pkg.URI, err)
+				errs = append(errs, &DeclRenderError{
+					pkgError: pkgError{PkgURI: pkg.URI},
+					Name:     name,
+					Cause:    err,
+				})
+				continue
 			}
 			diff.NewDecls = append(diff.NewDecls, NewDecl{
 				Name: name,
@@ -527,7 +550,12 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 		}
 		members, err := missingMembers(name, host, decl)
 		if err != nil {
-			return nil, fmt.Errorf("comparing members of %s in %s: %w", name, pkg.URI, err)
+			errs = append(errs, &MemberCompareError{
+				pkgError: pkgError{PkgURI: pkg.URI},
+				Name:     name,
+				Cause:    err,
+			})
+			continue
 		}
 		for _, m := range members {
 			diff.NewMembers = append(diff.NewMembers, m)
@@ -550,49 +578,44 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 		reported.Add(name)
 		diff.Removed = append(diff.Removed, name)
 	}
+	if len(errs) > 0 {
+		return nil, errs
+	}
 	return plan, nil
 }
 
 // readCommitted reads a committed `.esc` file. A file that is not on
 // disk is not an error — every declaration in its package is missing,
 // which is exactly what a first run against an unseeded tree means.
-func readCommitted(path string) (string, bool, error) {
+func readCommitted(pkg Package, path string) (string, bool, Error) {
 	contents, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("reading %s: %w", path, err)
+		return "", false, &FileReadError{
+			pkgError: pkgError{PkgURI: pkg.URI},
+			File:     path,
+			Cause:    err,
+		}
 	}
 	return string(contents), true, nil
-}
-
-// unparseableError reports a committed `.esc` file the Escalier parser
-// rejected. planPartition sorts it out of the errors that abort a run
-// and collects it instead, so one unreadable file costs its own package
-// and nothing more.
-type unparseableError struct {
-	// path is the file's path on disk.
-	path string
-
-	// reason is the first parse error, in the parser's own
-	// "line:col-line:col: message" form.
-	reason string
-}
-
-func (e *unparseableError) Error() string {
-	return fmt.Sprintf("parsing %s: %s", e.path, e.reason)
 }
 
 // parseCommitted parses a committed `.esc` file into its top-level
 // declarations. ParseLibFiles is used rather than ParseDecls because a
 // package file may open with `import "std:date"` and only ParseLibFiles
 // admits import statements.
-func parseCommitted(path, contents string) ([]ast.Decl, error) {
+func parseCommitted(pkg Package, path, contents string) ([]ast.Decl, Error) {
 	src := &ast.Source{Path: path, Contents: contents}
 	mod, errs := parser.ParseLibFiles(context.Background(), []*ast.Source{src})
 	if len(errs) > 0 {
-		return nil, &unparseableError{path: path, reason: errs[0].String()}
+		return nil, &UnparseableFileError{
+			pkgError: pkgError{PkgURI: pkg.URI},
+			Path:     pkg.File,
+			File:     path,
+			Reason:   errs[0].String(),
+		}
 	}
 	var decls []ast.Decl
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
@@ -901,7 +924,7 @@ func escDeclKind(decl ast.Decl) string {
 // apply writes this package's additions to disk and returns what it
 // did. A package whose contents would not change is not rewritten, so
 // an unchanged file keeps its mtime.
-func (p *packagePlan) apply(escDir string) (RegenResult, error) {
+func (p *packagePlan) apply(escDir string) (RegenResult, Error) {
 	res := RegenResult{
 		Pkg:     p.diff.Pkg,
 		Path:    p.diff.Path,
@@ -914,7 +937,11 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 
 	dest := filepath.Join(escDir, filepath.FromSlash(p.diff.Path))
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return res, fmt.Errorf("creating package dir for %s: %w", p.diff.Pkg, err)
+		return res, &PackageDirError{
+			pkgError: pkgError{PkgURI: p.diff.Pkg},
+			Dir:      filepath.Dir(dest),
+			Cause:    err,
+		}
 	}
 
 	spliced := p.splice()
@@ -927,7 +954,11 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 		return res, nil
 	}
 	if err := os.WriteFile(dest, []byte(updated), 0o644); err != nil {
-		return res, fmt.Errorf("writing %s: %w", dest, err)
+		return res, &FileWriteError{
+			pkgError: pkgError{PkgURI: p.diff.Pkg},
+			File:     dest,
+			Cause:    err,
+		}
 	}
 
 	res.AddedDecls = len(p.diff.NewDecls)

@@ -74,8 +74,8 @@ interface Array<T> { length: number; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
 declare var Array: ArrayConstructor;
 `)
-	report, err := CheckPartition(res, t.TempDir())
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, t.TempDir())
+	require.Empty(t, errs)
 	require.True(t, report.Failed())
 
 	diff := findDiff(t, report, "std:array")
@@ -100,8 +100,8 @@ declare var Array: ArrayConstructor;
 	_, err := WritePartitionedTree(res, root)
 	require.NoError(t, err)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.False(t, report.Failed())
 
 	decls, members, removed := report.Counts()
@@ -128,8 +128,8 @@ declare var Math: Math;
 export declare val PI: number
 `)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.False(t, report.Failed(), "dropped declarations must not fail the check")
 
 	// The exemption is the routing pass's own decision — every one of
@@ -161,8 +161,8 @@ export declare class Array<T> {
 export type MyArrayHelper<T> = Array<T>
 `)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 
 	// Nothing is missing on either side; the one finding is the `.esc`
 	// declaration the `.d.ts` has no counterpart for, which the report
@@ -193,8 +193,8 @@ export declare class Array<T> {
 }
 `)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.True(t, report.Failed())
 
 	// The rendered report carries every fact this test is about: no
@@ -239,8 +239,8 @@ export declare class Array<T> {
 }
 `)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.False(t, report.Failed())
 }
 
@@ -288,8 +288,8 @@ export declare interface WeakRefConstructor {
 }
 `)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	diff := findDiff(t, report, "std:weak_ref")
 	require.Empty(t, diff.NewDecls, "the fused class covers both converted halves")
 	require.Empty(t, diff.NewMembers)
@@ -323,13 +323,15 @@ func TestCheckPartition_ReportsEveryUnparseableFileAndChecksTheRest(t *testing.T
 	root := t.TempDir()
 	writeEsc(t, root, "std/math.esc", unparseableEsc)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 
 	require.Len(t, report.Unreadable, 1)
-	require.Equal(t, "std:math", report.Unreadable[0].Pkg)
+	require.Equal(t, "std:math", report.Unreadable[0].Pkg())
 	require.Equal(t, "std/math.esc", report.Unreadable[0].Path)
+	require.Equal(t, filepath.Join(root, "std", "math.esc"), report.Unreadable[0].File)
 	require.Equal(t, "2:5-2:6: Expected a property name", report.Unreadable[0].Reason)
+	require.ErrorIs(t, report.Unreadable[0], ErrUnreadableTree)
 	require.ErrorIs(t, report.UnreadableErr(), ErrUnreadableTree)
 	require.EqualError(t, report.UnreadableErr(),
 		"1 committed .esc files could not be parsed")
@@ -358,8 +360,8 @@ func TestCheckPartition_ReportsNoUnreadableFilesForATreeThatParses(t *testing.T)
 	_, err := WritePartitionedTree(res, root)
 	require.NoError(t, err)
 
-	report, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.Empty(t, report.Unreadable)
 	require.NoError(t, report.UnreadableErr())
 	require.False(t, report.Failed())
@@ -375,10 +377,10 @@ func TestRegeneratePartition_SkipsAnUnparseableFile(t *testing.T) {
 	root := t.TempDir()
 	dest := writeEsc(t, root, "std/math.esc", unparseableEsc)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Len(t, report.Unreadable, 1)
-	require.Equal(t, "std:math", report.Unreadable[0].Pkg)
+	require.Equal(t, "std:math", report.Unreadable[0].Pkg())
 	require.ErrorIs(t, report.UnreadableErr(), ErrUnreadableTree)
 
 	after, err := os.ReadFile(dest)
@@ -410,24 +412,34 @@ func TestCheckPartition_StillAbortsOnAnIOError(t *testing.T) {
 	dest := filepath.Join(root, "std", "math.esc")
 	require.NoError(t, os.MkdirAll(dest, 0o755))
 
-	_, err := CheckPartition(res, root)
-	require.EqualError(t, err,
+	_, errs := CheckPartition(res, root)
+	require.Len(t, errs, 1)
+	readErr, ok := errs[0].(*FileReadError)
+	require.True(t, ok, "an unreadable file is a FileReadError, got %T", errs[0])
+	require.Equal(t, "std:math", readErr.Pkg())
+	require.Equal(t, dest, readErr.File)
+	require.EqualError(t, readErr,
 		fmt.Sprintf("reading %s: read %s: is a directory", dest, dest))
-	require.NotErrorIs(t, err, ErrUnreadableTree)
+
+	// The tree is broken rather than unreadable in the parser's sense,
+	// so the run stops instead of reporting the package and carrying on.
+	require.NotErrorIs(t, Join(errs), ErrUnreadableTree)
 }
 
-// TestUnparseableError_NamesTheFileAndPosition pins the message the
-// error carries. planPartition reads its fields rather than the string,
-// so this is what a caller that propagated the error instead would
-// print.
-func TestUnparseableError_NamesTheFileAndPosition(t *testing.T) {
+// TestUnparseableFileError_NamesTheFileAndPosition pins the message the
+// error carries. The reports read its fields rather than the string, so
+// this is what a caller that propagated the error instead would print.
+func TestUnparseableFileError_NamesTheFileAndPosition(t *testing.T) {
 	t.Parallel()
-	err := &unparseableError{
-		path:   "/tmp/tree/std/array.esc",
-		reason: "313:5-313:9: Expected a property name",
+	err := &UnparseableFileError{
+		pkgError: pkgError{PkgURI: "std:array"},
+		Path:     "std/array.esc",
+		File:     "/tmp/tree/std/array.esc",
+		Reason:   "313:5-313:9: Expected a property name",
 	}
 	require.EqualError(t, err,
 		"parsing /tmp/tree/std/array.esc: 313:5-313:9: Expected a property name")
+	require.Equal(t, "std:array", err.Pkg())
 }
 
 func TestRegeneratePartition_CreatesMissingFile(t *testing.T) {
@@ -439,8 +451,8 @@ declare var Array: ArrayConstructor;
 `)
 	root := t.TempDir()
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Len(t, report.Packages, 1)
 	require.True(t, report.Packages[0].Created)
 	require.Equal(t, 1, report.Packages[0].AddedDecls)
@@ -457,8 +469,8 @@ export declare class Array<T> {
 `))
 
 	// A second run has nothing left to add.
-	after, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	after, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.False(t, after.Failed())
 }
 
@@ -479,8 +491,8 @@ export declare fn parse(text: string) -> unknown throws SyntaxError
 `
 	path := writeEsc(t, root, "std/json.esc", committed)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Len(t, report.Packages, 1)
 	require.False(t, report.Packages[0].Created)
 	require.Equal(t, 1, report.Packages[0].AddedDecls)
@@ -512,8 +524,8 @@ declare var Array: ArrayConstructor;
 export declare class Array<T> {}
 `)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Equal(t, 0, report.Packages[0].AddedDecls)
 	require.Equal(t, 4, report.Packages[0].AddedMembers)
 	require.Empty(t, report.Packages[0].Skipped)
@@ -528,8 +540,8 @@ export declare class Array<T> {
 }
 `))
 
-	after, err := CheckPartition(res, root)
-	require.NoError(t, err)
+	after, errs := CheckPartition(res, root)
+	require.Empty(t, errs)
 	require.False(t, after.Failed())
 }
 
@@ -548,8 +560,8 @@ export declare class Number {
 }
 `)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Equal(t, 1, report.Packages[0].AddedDecls)
 
 	// The committed class keeps its place and gains the two members it
@@ -582,8 +594,8 @@ declare var Array: ArrayConstructor;
 	require.NoError(t, err)
 	original := readEsc(t, path)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Equal(t, 0, report.Packages[0].AddedDecls)
 	require.Equal(t, 0, report.Packages[0].AddedMembers)
 
@@ -611,8 +623,8 @@ export declare class Array<T> {
 export type RemovedUpstream = number
 `)
 
-	report, err := RegeneratePartition(res, root)
-	require.NoError(t, err)
+	report, errs := RegeneratePartition(res, root)
+	require.Empty(t, errs)
 	require.Equal(t, []string{"RemovedUpstream"}, report.Packages[0].Removed)
 
 	// The file keeps the declaration the `.d.ts` dropped, and the report
@@ -695,8 +707,8 @@ export declare class Array<T> {
 		root := t.TempDir()
 		path := writeEsc(t, root, "std/array.esc", tc.committed)
 
-		report, err := RegeneratePartition(res, root)
-		require.NoError(t, err)
+		report, errs := RegeneratePartition(res, root)
+		require.Empty(t, errs)
 		require.Equal(t, 1, report.Packages[0].AddedMembers, tc.name)
 		require.Empty(t, report.Packages[0].Skipped, tc.name)
 
@@ -848,8 +860,8 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 	}
 	require.NotEmpty(t, reparsed.Buckets, "at least one package must reparse")
 
-	report, err := CheckPartition(reparsed, root)
-	require.NoError(t, err)
+	report, errs := CheckPartition(reparsed, root)
+	require.Empty(t, errs)
 
 	var sb strings.Builder
 	require.NoError(t, report.Write(&sb))
@@ -857,8 +869,8 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 		"a freshly written tree must have nothing missing:\n%s", sb.String())
 
 	// The write mode agrees: a re-run over the same tree adds nothing.
-	regen, err := RegeneratePartition(reparsed, root)
-	require.NoError(t, err)
+	regen, errs := RegeneratePartition(reparsed, root)
+	require.Empty(t, errs)
 	for _, p := range regen.Packages {
 		require.Equal(t, 0, p.AddedDecls, "%s should need no new declarations", p.Pkg)
 		require.Equal(t, 0, p.AddedMembers, "%s should need no new members", p.Pkg)
