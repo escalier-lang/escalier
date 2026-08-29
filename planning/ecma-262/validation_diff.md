@@ -3,14 +3,15 @@
 Records the outcome of [implementation_plan.md](implementation_plan.md) §6,
 which proves the ECMA-262 fact source before §7 lets the converter trust it.
 That is requirements.md FR9. The diff measures the receiver-mutability claim of
-every published fact against the hand-written answer the converter reaches
-today. This document gives a disposition for each entry the diff turned up.
+every published fact against the hand-written answer in force today. This
+document gives a disposition for each entry the diff turned up.
 
 **Verdict: the fact source holds.** Over the committed graph the diff compares
 218 methods. Before the fixes recorded below, the two sources agreed on 215 of
-them. All three disagreements are resolved, so they now agree on every one. Two of the three were a heuristic mis-classification the facts caught, and
-one was an analyzer gap the facts missed. §7 is authorized to rank the facts
-above the name tiers and to delete the 24 override entries listed below.
+them. All three disagreements are resolved, so they now agree on every one. Two
+of the three were a heuristic mis-classification the facts caught, and one was
+an analyzer gap the facts missed. §7 is authorized to rank the facts above the
+name tiers and to delete the 24 override entries listed below.
 
 ## What the diff compares
 
@@ -35,11 +36,13 @@ tiers alone. The prelude is the table's one production reader today, which is
 what §7 has to sequence around — see below.
 
 The comparison is `internal/dts_to_esc.ValidateReceivers`. A fact takes part
-only when it addresses an instance method by a string key and carries a
-receiver claim. Three shapes are left out, each because the hand-written
-sources cannot answer them:
+only when it addresses an instance method by a string key and claims a receiver
+to borrow. Three shapes are left out, each because the hand-written sources
+cannot answer them:
 
-- A static or a namespace function has no receiver to mutate.
+- A static or a namespace function has no receiver to mutate. Two things say
+  so, the `none` receiver kind the fact carries and the member sort the spec
+  name normalizes to, and either one is enough to leave the method out.
 - An accessor's polarity is fixed where the object type is built, so no tier is
   consulted for it.
 - A symbol-keyed member cannot be addressed by the string-keyed override table,
@@ -52,7 +55,7 @@ sources cannot answer them:
 | Confirmed | 194 | A heuristic the fact agrees with. |
 | Redundant | 24 | An override entry the fact agrees with. §7 deletes it. |
 | Disagreement | 0 | The two sources answer differently. |
-| Answered by the facts alone | 48 | Neither hand-written source answers. The converter reaches these through the `&mut self` default today. |
+| Answered by the facts alone | 48 | Neither hand-written source answers. Each of these falls through to the `&mut self` default today. |
 | Override with no fact | 37 | An override entry no fact answers. §7 keeps it. |
 
 The run prints these counts. `dts_to_esc bootstrap --cfg <cfg.json> <lib-dir>
