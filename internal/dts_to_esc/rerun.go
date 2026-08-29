@@ -147,10 +147,10 @@ func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error
 		return nil, err
 	}
 	report := &CheckReport{Packages: make([]PackageDiff, 0, len(plans))}
-	for i := range plans {
-		diff := plans[i].diff
-		spliced := plans[i].splice()
-		patch, err := unifiedDiff(diff.Path, diff.Exists, plans[i].contents, spliced.edits)
+	for _, plan := range plans {
+		diff := plan.diff
+		spliced := plan.splice()
+		patch, err := unifiedDiff(diff.Path, diff.Exists, plan.contents, spliced.edits)
 		if err != nil {
 			return nil, fmt.Errorf("rendering the diff for %s: %w", diff.Pkg, err)
 		}
