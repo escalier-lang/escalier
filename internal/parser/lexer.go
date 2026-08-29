@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/lexer_util"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 type Lexer struct {
@@ -82,6 +83,50 @@ var keywords = map[string]TokenType{
 	"implements": Implements,
 	"is":         Is,
 	"asserts":    Asserts,
+}
+
+// keywordTokens holds the token type of every entry in keywords. A keyword
+// token carries its source text in Value, so a parser position that accepts a
+// name can turn one back into an identifier.
+var keywordTokens = func() set.Set[TokenType] {
+	types := set.NewSet[TokenType]()
+	for _, tokenType := range keywords {
+		types.Add(tokenType)
+	}
+	return types
+}()
+
+// isKeyword reports whether tokenType is the type the lexer gives a keyword.
+// Property names accept keywords, so `catch`, `match`, and `symbol` name
+// members the way an identifier does.
+func isKeyword(tokenType TokenType) bool {
+	return keywordTokens.Contains(tokenType)
+}
+
+// bindingKeywords names the keywords a binding position accepts as an ordinary
+// name, meaning a parameter or a function declaration. Every entry is a word
+// JavaScript itself allows as an identifier, because codegen emits a binding
+// name verbatim: `fn f(in: number)` would become `const in = ...`, a syntax
+// error. A keyword JavaScript reserves is left out. A keyword added to Escalier
+// later stays out until someone adds it here, so an unchecked one is rejected
+// rather than emitted into invalid JavaScript.
+//
+// A property name has no such limit. `{ catch: 1 }` and `obj.catch` are both
+// valid JavaScript, so objExprKey accepts every keyword.
+// `undefined`, `null`, `true`, and `false` are left out for a second reason: a
+// pattern reads each of them as the literal it names, and a binding name must
+// not shift with position.
+var bindingKeywords = set.FromSlice([]TokenType{
+	Any, Asserts, Async, Bigint, Boolean, Declare, Final, Fn, From, Gen, Get,
+	Infer, Is, Keyof, Match, Mut, Never, Number, Override, Readonly, Set,
+	String, Symbol, Throws, Type, Unique, Unknown, Val,
+})
+
+// bindsAsAName reports whether a keyword can stand where a binding name
+// belongs. `String.prototype.substr(from, length)` converts to a parameter
+// named `from`, and `Reflect.get` to a function named `get`.
+func bindsAsAName(tokenType TokenType) bool {
+	return bindingKeywords.Contains(tokenType)
 }
 
 // isRegexContext determines if a '/' should be treated as the start of a regex literal

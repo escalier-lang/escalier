@@ -2301,3 +2301,126 @@ func TestPrintThrowsClause(t *testing.T) {
 		})
 	}
 }
+
+// Every declaration the `.d.ts` converter emits has to parse back, because both
+// `check` and `regenerate` re-read the committed tree before diffing it. Each
+// case round-trips one construct the TypeScript lib surface produces. The input
+// is what the printer writes, so an exact match on the output pins both halves
+// of the pair at once.
+func TestPrintRoundTripsConverterOutput(t *testing.T) {
+	opts := DefaultOptions()
+
+	declTests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			// The `fn (…) -> T` call signature, printed for a
+			// CallableTypeAnn. `ArrayConstructor` carries three of them.
+			name:  "call signature in an interface",
+			input: "declare interface C {\n    fn (n?: number) -> Array<any>\n}",
+			want:  "declare interface C {\n    fn (n?: number) -> Array<any>\n}",
+		},
+		{
+			name:  "generic call signature beside a construct signature",
+			input: "declare interface C {\n    new<T> (n: number) -> T,\n    fn<T> (n: number) -> T\n}",
+			want:  "declare interface C {\n    new<T> (n: number) -> T,\n    fn<T> (n: number) -> T\n}",
+		},
+		{
+			// `Promise.prototype.catch` and `String.prototype.match`.
+			name:  "keyword method names",
+			input: "declare class C {\n    catch(self) -> undefined,\n    match(self) -> undefined\n}",
+			want:  "declare class C {\n    catch(self) -> undefined,\n    match(self) -> undefined\n}",
+		},
+		{
+			// `Intl.NumberFormatOptionsStyleRegistry` has both.
+			name:  "keyword property names",
+			input: "declare interface C {\n    symbol: never,\n    string: never\n}",
+			want:  "declare interface C {\n    symbol: never,\n    string: never\n}",
+		},
+		{
+			// `PropertyDescriptor.get` and `TypedArray.prototype.set`, where
+			// `get` and `set` name a member rather than marking an accessor.
+			name:  "get and set as member names",
+			input: "declare interface C {\n    get() -> any,\n    set(v: any) -> unknown\n}",
+			want:  "declare interface C {\n    get() -> any,\n    set(v: any) -> unknown\n}",
+		},
+		{
+			name:  "get and set still mark accessors when a name follows",
+			input: "declare class C {\n    get x(self) -> number,\n    set x(mut self, v: number)\n}",
+			want:  "declare class C {\n    get x(self) -> number,\n    set x(mut self, v: number)\n}",
+		},
+		{
+			// Every prototype carries a `constructor` property, which a
+			// `.d.ts` declares as a field rather than a signature.
+			name:  "constructor as a field name",
+			input: "declare class C {\n    constructor: Function\n}",
+			want:  "declare class C {\n    constructor: Function\n}",
+		},
+		{
+			// `String.prototype.substr(from, length)`.
+			name:  "keyword parameter name",
+			input: "declare fn f(from: number, type: string) -> string",
+			want:  "declare fn f(from: number, type: string) -> string",
+		},
+		{
+			// `Reflect.get`.
+			name:  "keyword function name",
+			input: "declare fn get<T>(target: T) -> T",
+			want:  "declare fn get<T>(target: T) -> T",
+		},
+		{
+			name:  "keyword rest parameter name",
+			input: "declare fn f(...from: Array<number>) -> string",
+			want:  "declare fn f(...from: Array<number>) -> string",
+		},
+		{
+			// `fn` and `new` open a signature only when one follows, so an
+			// interface can still declare properties under those names.
+			name:  "fn and new as property names",
+			input: "declare interface C {\n    fn: number,\n    new?: string\n}",
+			want:  "declare interface C {\n    fn: number,\n    new?: string\n}",
+		},
+	}
+	for _, tt := range declTests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Print(parseDecl(t, tt.input), opts)
+			require.NoError(t, err)
+			require.Equal(t, tt.want, result)
+		})
+	}
+
+	// JavaScript has no static member named `constructor`, so a `static` element of
+	// that name is never the field. It stays a constructor and reports the modifier a
+	// constructor cannot carry.
+	t.Run("static constructor is not a field", func(t *testing.T) {
+		_, errors := parser.ParseDecls(context.Background(), &ast.Source{
+			Path:     "test.esc",
+			Contents: "declare class C {\n    static constructor: number\n}",
+		})
+		require.NotEmpty(t, errors)
+		require.Equal(t, "constructors cannot be static", errors[0].Message)
+	})
+
+	// A binding name reaches JavaScript verbatim, so a keyword JavaScript itself
+	// reserves is still rejected there. `catch` names a member freely and a
+	// parameter never.
+	t.Run("a JavaScript reserved word does not name a parameter", func(t *testing.T) {
+		_, errors := parser.ParseDecls(context.Background(), &ast.Source{
+			Path:     "test.esc",
+			Contents: "declare fn f(catch: number) -> string",
+		})
+		require.NotEmpty(t, errors)
+		require.Equal(t, "Expected a pattern", errors[0].Message)
+	})
+
+	// `Awaited<T>` matches a rest element it never reads back, which TypeScript
+	// writes as `...args: infer _`.
+	t.Run("infer _ in a conditional type", func(t *testing.T) {
+		input := "if T : {\n    then(onfulfilled: infer F, ...args: infer _) -> any\n} { F } else { T }"
+		result, err := Print(parseTypeAnn(t, input), opts)
+		require.NoError(t, err)
+		require.Equal(t, input, result)
+	})
+}

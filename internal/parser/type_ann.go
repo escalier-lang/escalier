@@ -425,7 +425,10 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Infer: // infer type
 			p.lexer.consume() // consume 'infer'
 			nameToken := p.lexer.peek()
-			if nameToken.Type != Identifier {
+			// `infer _` names a position the conditional type matches but never reads
+			// back, which is how TypeScript writes a rest element it only needs to
+			// consume: `then(onfulfilled: infer F, ...args: infer _) -> any`.
+			if nameToken.Type != Identifier && nameToken.Type != Underscore {
 				p.reportError(nameToken.Span, "expected identifier after 'infer'")
 				typeAnn = ast.NewErrorTypeAnn(token.Span)
 				break
@@ -854,13 +857,24 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		return ast.NewRestSpreadTypeAnn(value, span)
 	}
 
-	// A `new (x: number) -> T` construct signature. `new` is a keyword, so it can never be
-	// an object key and the arm needs no lookahead past it. The signature parses through the
-	// same tail the `fn` annotation uses, which gives it type parameters, an inexact marker,
-	// and a `throws` clause for free.
-	if token.Type == New {
-		p.lexer.consume() // consume 'new'
-		return &ast.ConstructorTypeAnn{Fn: p.funcTypeAnnTail(token)}
+	// A `new (x: number) -> T` construct signature and a `fn (x: number) -> T` call
+	// signature. Each claims its keyword only where a signature follows, so `fn: number`
+	// and `new?: T` still declare properties under those names.
+	//
+	// A method does collide: `fn(x: number) -> T` differs from the call signature only in
+	// whitespace, and a signature must not hinge on that, so the signature wins. Write a
+	// method of either name with a string key, `"fn"(x: number) -> T`. A class body has
+	// no call or construct signature to compete with, so `fn` and `new` name methods
+	// there directly.
+	//
+	// Both signatures parse through the same tail the `fn` annotation uses, which gives
+	// them type parameters, an inexact marker, and a `throws` clause for free.
+	if (token.Type == New || token.Type == Fn) && startsASignature(p.lexer.peek2().Type) {
+		p.lexer.consume() // consume 'new' or 'fn'
+		if token.Type == New {
+			return &ast.ConstructorTypeAnn{Fn: p.funcTypeAnnTail(token)}
+		}
+		return &ast.CallableTypeAnn{Fn: p.funcTypeAnnTail(token)}
 	}
 
 	mod := ""
@@ -868,7 +882,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 
 	// Check if this might be a mapped type before consuming 'readonly'
 	// Mapped types start with 'readonly [' or '+readonly [' or '-readonly ['
-	if token.Type == Readonly {
+	if token.Type == Readonly && !followsAName(p.lexer.peek2().Type) {
 		savedState := p.saveState()
 		p.lexer.consume() // tentatively consume 'readonly'
 		nextToken := p.lexer.peek()
@@ -882,15 +896,21 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		token = p.lexer.peek()
 	}
 
-	// Then check for 'get' or 'set' modifiers
+	// Then check for 'get' or 'set' modifiers. Each is a modifier only when a name
+	// follows it, so `get x() -> T` reads as an accessor while `get() -> T` reads as a
+	// method named `get`.
 	// nolint: exhaustive
 	switch token.Type {
 	case Get:
-		p.lexer.consume() // consume 'get'
-		mod = "get"
+		if !followsAName(p.lexer.peek2().Type) {
+			p.lexer.consume() // consume 'get'
+			mod = "get"
+		}
 	case Set:
-		p.lexer.consume() // consume 'set'
-		mod = "set"
+		if !followsAName(p.lexer.peek2().Type) {
+			p.lexer.consume() // consume 'set'
+			mod = "set"
+		}
 	}
 
 	mappedElem := p.tryParseMappedType()

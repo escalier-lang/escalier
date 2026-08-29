@@ -11,22 +11,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestPartitionLib_LibES5_EndToEnd is the §6 PR A smoke gate: run the
-// full partitioning pipeline against the checked-in lib.es5.d.ts (kept
-// under playground/public/types/) and verify that every produced
-// `.esc` file parses with Escalier's own parser. Failures here are
-// usually partition-table gaps surfaced via the unmapped-symbol
-// fail-safe, or printer-side bugs that produce un-reparseable output.
+// TestPartitionLib_LibES5_EndToEnd runs the full partitioning pipeline over the
+// pinned TypeScript's lib.es5.d.ts and requires that every `.esc` file it emits
+// parses with Escalier's own parser. That is the §6 round-trip gate: the
+// printer must never emit a construct the parser rejects, because `check` and
+// `regenerate` both re-read every committed file before diffing it.
+//
+// The whole set of lib files the partition table routes produces 22 packages,
+// and lib.es5 alone covers 17 of them. The gate does not yet span the rest.
+// Two converter-side gaps block that: the partition table has no entry for
+// names such as `FlatArray` and `Disposable`, and flattening a singleton whose
+// key is computed, as in `Atomics[Symbol.toStringTag]`, is unsupported.
 func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	t.Parallel()
 
-	libPath := filepath.Join("..", "..", "playground", "public", "types", "lib.es5.d.ts")
+	libDir := filepath.Join("..", "..", "node_modules", "typescript", "lib")
+	libPath := filepath.Join(libDir, "lib.es5.d.ts")
 	if _, err := os.Stat(libPath); err != nil {
-		t.Skipf("lib.es5.d.ts not present at %s: %v", libPath, err)
+		t.Skipf("lib.es5.d.ts not present at %s; run `pnpm install`: %v", libPath, err)
 	}
-	libDir := filepath.Dir(libPath)
 
-	// Restrict discovery to just lib.es5.d.ts by parsing it directly —
+	// Restrict discovery to just lib.es5.d.ts by naming it directly —
 	// DiscoverLibFiles would pick up the full set under the same dir.
 	inputs, err := ParseLibFiles(libDir, []string{"lib.es5.d.ts"})
 	require.NoError(t, err)
@@ -40,7 +45,6 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, written)
 
-	parsed, unparsed := 0, 0
 	for _, uri := range written {
 		pkg, ok := PackageForURI(uri)
 		require.True(t, ok, "URI %q from result must be a known package", uri)
@@ -49,26 +53,12 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 		require.NoError(t, err, "%s should be on disk", path)
 		require.NotEmpty(t, contents, "%s should not be empty", path)
 
-		// Soft gate: report parse status without failing. The full
-		// "every output parses" gate belongs in §6 PR B (`--check`
-		// mode) once §7 hand-edits close the remaining
-		// printer/parser asymmetries on real `lib.*.d.ts` surface.
-		// PR A's job is the routing + write pipeline; per-symbol
-		// roundtrip work happens in §7 review.
 		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
 			Path:     path,
 			Contents: string(contents),
 		})
-		if len(parseErrs) == 0 {
-			parsed++
-		} else {
-			unparsed++
-			t.Logf("[soft] %s did not parse cleanly (%d errors); first: %v",
-				path, len(parseErrs), parseErrs[0])
-		}
+		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
-	t.Logf("lib.es5 partition: %d packages parsed, %d need §7 hand-edits",
-		parsed, unparsed)
 
 	// Gate: the unmapped fail-safe trips on a synthetic missing name —
 	// the same lib + one extra decl that no partition entry covers
