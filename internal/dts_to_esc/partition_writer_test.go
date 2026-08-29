@@ -22,6 +22,65 @@ func parseLib(t *testing.T, name, src string) LibInput {
 	return LibInput{SourceFile: name, Module: mod}
 }
 
+func TestPartitionLib_DroppedSourceContributesNothing(t *testing.T) {
+	t.Parallel()
+	// lib.scripthost.d.ts declares the Windows Script Host surface and
+	// also augments Date with a member typed by it. Dropping the file's
+	// own names alone would route that augmentation into std:date,
+	// leaving it referring to a VarDate nothing declares.
+	es5 := parseLib(t, "lib.es5.d.ts", `
+interface Date { getTime(): number; }
+interface DateConstructor { new (): Date; readonly prototype: Date; }
+declare var Date: DateConstructor;
+`)
+	scripthost := parseLib(t, "lib.scripthost.d.ts", `
+declare class VarDate { private constructor(); }
+interface Date { getVarDate: () => VarDate; }
+`)
+
+	res, err := PartitionLib([]LibInput{es5, scripthost})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets, 1)
+	require.Len(t, res.Buckets["std:date"], 3)
+	date, ok := res.Buckets["std:date"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, date.Members, 1)
+	require.Equal(t, "getTime", memberKey(date.Members[0]))
+
+	require.Equal(t, []DropNote{
+		{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
+		{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
+	}, res.Drops)
+}
+
+func TestPartitionLib_KeepsWorkerOnlyMembers(t *testing.T) {
+	t.Parallel()
+	// The worker copy of FileSystemFileHandle carries one method the
+	// DOM copy lacks. Skipping the whole declaration would lose it, so
+	// only the members the DOM copy already has are dropped.
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface FileSystemFileHandle { getFile(): Promise<File>; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface FileSystemFileHandle {
+    getFile(): Promise<File>;
+    createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>;
+}
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets["web:dom"], 1)
+	handle, ok := res.Buckets["web:dom"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, handle.Members, 2)
+	require.Equal(t, "getFile", memberKey(handle.Members[0]))
+	require.Equal(t, "createSyncAccessHandle", memberKey(handle.Members[1]))
+	require.Empty(t, res.Redeclarations)
+}
+
 func TestPartitionLib_SkipsWorkerHostRedeclarations(t *testing.T) {
 	t.Parallel()
 	// lib.dom.d.ts and lib.webworker.d.ts each declare the whole

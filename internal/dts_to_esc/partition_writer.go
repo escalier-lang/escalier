@@ -61,28 +61,56 @@ type DropNote struct {
 // into its target package per Route. Returns an error on the first
 // unmapped symbol (§6.1 fail-safe).
 //
-// Declarations from the Web Worker host lib are skipped when another
-// input already declares the same name — see WorkerHostSources for why
-// the two host libs overlap. The skipped names are recorded in
-// Redeclarations.
+// Two source-file rules run before Route sees a statement:
+//
+//   - A file in DroppedSources contributes nothing. Every declaration
+//     in it is recorded in Drops, including the ones that augment a
+//     type another lib file owns.
+//   - A declaration from the Web Worker host lib is kept only for the
+//     part the rest of the lib set does not already declare. See
+//     WorkerHostSources for why the two host libs overlap. What is
+//     dropped is recorded in Redeclarations.
 //
 // Inputs are processed in the order given so that interface-merge and
-// namespace-merge results are stable. Routing keys off the input's
-// SourceFile, not where a declaration physically lives in a nested
-// namespace — top-level `declare namespace Intl { ... }` routes as a
-// single unit to std:intl regardless of which lib file declared it.
+// namespace-merge results are stable, except that the worker host lib
+// is routed last whatever position it holds in inputs. Routing keys off
+// the input's SourceFile, not where a declaration physically lives in a
+// nested namespace — top-level `declare namespace Intl { ... }` routes
+// as a single unit to std:intl regardless of which lib file declared
+// it.
 func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	out := &PartitionResult{
 		Buckets: make(map[string][]dts_parser.Statement),
 	}
+
+	routable := make([]LibInput, 0, len(inputs))
 	for _, in := range inputs {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
+		if DroppedSources.Contains(in.SourceFile) {
+			for _, stmt := range in.Module.Statements {
+				if name := topLevelName(stmt); name != "" {
+					out.Drops = append(out.Drops,
+						DropNote{Name: name, SourceFile: in.SourceFile})
+				}
+			}
+			continue
+		}
+		routable = append(routable, in)
 	}
-	hostShared := namesOutsideWorkerHost(inputs)
-	for _, in := range inputs {
-		workerHost := WorkerHostSources.Contains(in.SourceFile)
+
+	// First pass: everything outside the worker host lib. `placed`
+	// records where each name landed and `shared` the member keys each
+	// interface already carries, which is what the second pass compares
+	// against. Doing this first is what makes the outcome independent
+	// of where the worker files sit in inputs.
+	placed := make(map[string]Package)
+	shared := make(map[string]set.Set[string])
+	for _, in := range routable {
+		if WorkerHostSources.Contains(in.SourceFile) {
+			continue
+		}
 		for _, stmt := range in.Module.Statements {
 			name := topLevelName(stmt)
 			if name == "" {
@@ -91,11 +119,6 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				// The standalone converter already drops these for
 				// MVP — keep parity here so PartitionLib doesn't push
 				// unroutable statements into a bucket.
-				continue
-			}
-			if workerHost && hostShared.Contains(name) {
-				out.Redeclarations = append(out.Redeclarations,
-					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
 			}
 			res := Route(name, in.SourceFile)
@@ -107,32 +130,103 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				return nil, UnmappedError(name, in.SourceFile)
 			}
 			out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
+			placed[name] = res.Pkg
+			if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok {
+				keys, ok := shared[name]
+				if !ok {
+					keys = set.NewSet[string]()
+					shared[name] = keys
+				}
+				for _, m := range iface.Members {
+					if key := memberKey(m); key != "" {
+						keys.Add(key)
+					}
+				}
+			}
 		}
 	}
+
+	// Second pass: the worker host lib. A name the first pass did not
+	// place is worker-only surface and routes like any other.
+	for _, in := range routable {
+		if !WorkerHostSources.Contains(in.SourceFile) {
+			continue
+		}
+		for _, stmt := range in.Module.Statements {
+			name := topLevelName(stmt)
+			if name == "" {
+				continue
+			}
+			pkg, restated := placed[name]
+			if !restated {
+				res := Route(name, in.SourceFile)
+				switch {
+				case res.Drop:
+					out.Drops = append(out.Drops, DropNote{Name: name, SourceFile: in.SourceFile})
+					continue
+				case res.Unmapped:
+					return nil, UnmappedError(name, in.SourceFile)
+				}
+				out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
+				continue
+			}
+			extra := workerOnlyMembers(stmt, shared[name])
+			if extra == nil {
+				out.Redeclarations = append(out.Redeclarations,
+					DropNote{Name: name, SourceFile: in.SourceFile})
+				continue
+			}
+			out.Buckets[pkg.URI] = append(out.Buckets[pkg.URI], extra)
+		}
+	}
+
 	for uri, stmts := range out.Buckets {
 		out.Buckets[uri] = mergeDecls(stmts)
 	}
 	return out, nil
 }
 
-// namesOutsideWorkerHost returns every top-level declaration name the
-// inputs declare from a file outside WorkerHostSources. PartitionLib
-// uses it to tell a worker-host declaration that restates a shared
-// global from one that introduces worker-only surface. Every input
-// must carry a parsed module; PartitionLib checks that first.
-func namesOutsideWorkerHost(inputs []LibInput) set.Set[string] {
-	names := set.NewSet[string]()
-	for _, in := range inputs {
-		if WorkerHostSources.Contains(in.SourceFile) {
+// workerOnlyMembers returns a copy of a worker-host interface carrying
+// only the members whose keys are absent from `shared`, the keys the
+// same interface already has elsewhere in the lib set. Returns nil when
+// the worker copy adds nothing, which is the common case — the worker
+// files restate whole interfaces verbatim.
+//
+// The one interface in the pinned lib set where the worker copy is not
+// a verbatim restatement is `FileSystemFileHandle`, whose
+// `createSyncAccessHandle` method only a worker has. Keeping that
+// member is what makes the pinned `FileSystemSyncAccessHandle` type
+// reachable.
+//
+// A statement that is not an interface returns nil. A var, function, or
+// type alias has no members to compare, so the copy the rest of the lib
+// set declares stands. Comparison is by member key, so a worker-only
+// *overload* of a name the shared copy also declares is dropped along
+// with the rest; no such overload exists in the pinned set.
+func workerOnlyMembers(stmt dts_parser.Statement, shared set.Set[string]) *dts_parser.InterfaceDecl {
+	iface, ok := stmt.(*dts_parser.InterfaceDecl)
+	if !ok {
+		return nil
+	}
+	var extra []dts_parser.InterfaceMember
+	for _, m := range iface.Members {
+		key := memberKey(m)
+		if key == "" || shared.Contains(key) {
 			continue
 		}
-		for _, stmt := range in.Module.Statements {
-			if name := topLevelName(stmt); name != "" {
-				names.Add(name)
-			}
-		}
+		extra = append(extra, m)
 	}
-	return names
+	if len(extra) == 0 {
+		return nil
+	}
+	// mergeDecls keeps the first occurrence's doc, span, and type
+	// params and concatenates what follows, so the shared copy routed
+	// in the first pass supplies those. Clearing Extends keeps its
+	// inheritance chain from being concatenated with itself.
+	trimmed := *iface
+	trimmed.Members = extra
+	trimmed.Extends = nil
+	return &trimmed
 }
 
 // topLevelName returns the addressable name of a top-level statement,
@@ -788,22 +882,41 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	if iterErr != nil {
 		return iterErr
 	}
-	if len(result.Drops) > 0 {
-		if _, err := fmt.Fprintf(w, "  drops: %d (", len(result.Drops)); err != nil {
+	// Split the drop list by cause. A name in ExplicitDrops is worth
+	// naming; a whole dropped source file is worth a count, and naming
+	// its declarations would misread — lib.scripthost.d.ts augments
+	// `Date`, so "Date" in a flat name list would suggest std:date lost
+	// its class.
+	var dropped []string
+	seen := set.NewSet[string]()
+	sourceCounts := btree.Map[string, int]{}
+	for _, d := range result.Drops {
+		if DroppedSources.Contains(d.SourceFile) {
+			n, _ := sourceCounts.Get(d.SourceFile)
+			sourceCounts.Set(d.SourceFile, n+1)
+			continue
+		}
+		if !seen.Contains(d.Name) {
+			seen.Add(d.Name)
+			dropped = append(dropped, d.Name)
+		}
+	}
+	if len(dropped) > 0 {
+		sort.Strings(dropped)
+		if _, err := fmt.Fprintf(w, "  drops: %d (%s)\n",
+			len(dropped), strings.Join(dropped, ", ")); err != nil {
 			return err
 		}
-		names := make([]string, 0, len(result.Drops))
-		seen := map[string]bool{}
-		for _, d := range result.Drops {
-			if !seen[d.Name] {
-				seen[d.Name] = true
-				names = append(names, d.Name)
-			}
+	}
+	sourceCounts.Scan(func(file string, n int) bool {
+		if _, err := fmt.Fprintf(w, "  dropped source %s: %d decls\n", file, n); err != nil {
+			iterErr = err
+			return false
 		}
-		sort.Strings(names)
-		if _, err := fmt.Fprintf(w, "%s)\n", strings.Join(names, ", ")); err != nil {
-			return err
-		}
+		return true
+	})
+	if iterErr != nil {
+		return iterErr
 	}
 	if len(result.Redeclarations) > 0 {
 		// A count rather than the names. The worker host lib restates

@@ -767,24 +767,27 @@ var ExplicitDrops = set.FromSlice([]string{
 	"MethodDecorator",
 	"ParameterDecorator",
 
-	// Windows Script Host, from lib.scripthost.d.ts. `cscript` and
-	// `wscript` are the host this surface belongs to, and Escalier
-	// targets browsers and Node. `SafeArray`, `VarDate`, and the
-	// TextStream types exist only to describe COM values the host
-	// hands back.
-	"ActiveXObject",
-	"Enumerator",
-	"EnumeratorConstructor",
-	"ITextWriter",
-	"SafeArray",
-	"TextStreamBase",
-	"TextStreamReader",
-	"TextStreamWriter",
-	"VBArray",
-	"VBArrayConstructor",
-	"VarDate",
-	"WSH",
-	"WScript",
+})
+
+// DroppedSources is the set of `.d.ts` source-file basenames the
+// converter emits nothing from. Every top-level declaration in such a
+// file is recorded as a drop, whatever its name, so PartitionLib
+// consults this before Route.
+//
+// The list is source-file-wide rather than per-name because
+// lib.scripthost.d.ts does not only declare its own types. It also
+// augments `Date` with `getVarDate(): VarDate` and `DateConstructor`
+// with `new (vd: VarDate): Date`. Those two names route to std:date by
+// name, so dropping `VarDate` alone would leave std/date.esc referring
+// to a type nothing declares.
+//
+// lib.scripthost.d.ts is the Windows Script Host surface —
+// `ActiveXObject`, `WScript`, `VBArray`, the `TextStream` types, and
+// the COM value wrappers `SafeArray` and `VarDate`. `cscript` and
+// `wscript` are the host it belongs to, and Escalier targets browsers
+// and Node.
+var DroppedSources = set.FromSlice([]string{
+	"lib.scripthost.d.ts",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose

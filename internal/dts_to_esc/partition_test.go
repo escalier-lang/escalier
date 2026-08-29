@@ -196,30 +196,17 @@ func TestRoute_WorkerOnlySymbols(t *testing.T) {
 	}
 }
 
-func TestRoute_HostMachineryDrops(t *testing.T) {
+func TestRoute_LegacyDecoratorDrops(t *testing.T) {
 	t.Parallel()
-	// Two families the converter emits nothing for: TypeScript's
-	// legacy `experimentalDecorators` signatures, and the Windows
-	// Script Host surface in lib.scripthost.d.ts.
-	cases := []struct {
-		name       string
-		sourceFile string
-	}{
-		{"ClassDecorator", "lib.decorators.legacy.d.ts"},
-		{"PropertyDecorator", "lib.decorators.legacy.d.ts"},
-		{"MethodDecorator", "lib.decorators.legacy.d.ts"},
-		{"ParameterDecorator", "lib.decorators.legacy.d.ts"},
-		{"ActiveXObject", "lib.scripthost.d.ts"},
-		{"Enumerator", "lib.scripthost.d.ts"},
-		{"VBArray", "lib.scripthost.d.ts"},
-		{"VarDate", "lib.scripthost.d.ts"},
-		{"WScript", "lib.scripthost.d.ts"},
-		{"WSH", "lib.scripthost.d.ts"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
+	// TypeScript's `experimentalDecorators` signatures type the
+	// decorator calling convention `tsc` emitted, not a runtime shape.
+	// The TC39 context types route to std:decorators instead.
+	for _, name := range []string{
+		"ClassDecorator", "PropertyDecorator", "MethodDecorator", "ParameterDecorator",
+	} {
+		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			got := Route(tc.name, tc.sourceFile)
+			got := Route(name, "lib.decorators.legacy.d.ts")
 			require.True(t, got.Drop)
 			require.False(t, got.Unmapped)
 		})
