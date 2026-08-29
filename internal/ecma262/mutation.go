@@ -130,10 +130,10 @@ var readOnlyInternalMethods = set.FromSlice([]string{
 // sorted 0-based positions of the declared parameters it may mutate. A method's
 // receiver is not a parameter, so Receiver reports it separately.
 //
-// The two warnings name different failures, and §4.3 turns either into
-// `classified: false` so FR5's name-based heuristics decide the method instead.
-// Unattributable means the analysis saw a mutation it could not tie to the
-// receiver or to a parameter. Incomplete means it could not read the whole
+// The two warnings name different failures, and §4.3 turns either into a
+// method the analysis publishes no receiver for, which §4.4 then answers by
+// review. Unattributable means the analysis saw a mutation it could not tie to
+// the receiver or to a parameter. Incomplete means it could not read the whole
 // algorithm, so a mutation may be hiding in the part it missed.
 type Mutations struct {
 	Args           []int
