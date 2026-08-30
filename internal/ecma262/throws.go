@@ -169,6 +169,54 @@ func (r Exception) String() string {
 	}
 }
 
+// Ref renders the exception the way facts.json spells it, per Appendix B of
+// planning/ecma-262/implementation_plan.md. A constructed error is its class
+// name, a propagated value is the origin it arrived at, and a value the
+// analysis could not place is the `unknown` sentinel. The three parametric
+// kinds prefix the origin with what they name by it, since each stands for
+// something different from the value at that position: an effect, the reject
+// type of a promise the iterable there yields, or an aggregate over those.
+//
+// An origin ref resolves to a type at the join, so `param:0` on
+// `Promise.reject` becomes that parameter's declared type.
+func (r Exception) Ref() string {
+	switch r.Kind {
+	case ExceptionClass:
+		return r.Class
+	case ExceptionOrigin:
+		return originRef(r.Origin)
+	case ExceptionCallback:
+		return "throwsOf:" + originRef(r.Origin)
+	case ExceptionElementErr:
+		return "elementErrOf:" + originRef(r.Origin)
+	case ExceptionAggregate:
+		return "aggregateErrorOf:" + originRef(r.Origin)
+	default:
+		return "unknown"
+	}
+}
+
+// originRef spells where a propagated value came from. Only the receiver and a
+// declared parameter reach here, because raisedOf leaves every other origin
+// untraced.
+func originRef(o Origin) string {
+	if o.Kind == OriginReceiver {
+		return "receiver"
+	}
+	return fmt.Sprintf("param:%d", o.Index)
+}
+
+// exceptionRefs renders a channel for the wire. An empty channel reads back as
+// an empty slice rather than nil, because a published fact spells a
+// proven-empty result and an uncomputed axis differently.
+func exceptionRefs(exceptions []Exception) []string {
+	refs := make([]string, 0, len(exceptions))
+	for _, exception := range exceptions {
+		refs = append(refs, exception.Ref())
+	}
+	return refs
+}
+
 // carriesOrigin reports whether the raised value names an origin. Every kind
 // but an error class and an untraced value does, and remap threads each of them
 // back through a call's arguments the same way.
@@ -281,8 +329,8 @@ func (s ThrowSite) String() string {
 //
 // Incomplete marks a function with a step whose throws the analysis could not
 // read. Four shapes leave it set: a prose step §3 could not lower, an object
-// internal method whose implementation is chosen at runtime, a call into a
-// function value the graph holds no body for, and an abrupt completion the
+// internal method whose implementation is chosen at runtime, a call whose
+// invoked function the origin map cannot name, and an abrupt completion the
 // algorithm captured as a value without the reject walk naming where it came
 // from. FR10 asks for such a method to be flagged rather than guessed at, and
 // §4.3 withholds the receiver determination from a method carrying it.
@@ -293,8 +341,14 @@ func (s ThrowSite) String() string {
 // flag on most of the builtins, since nearly every algorithm reaches an object
 // internal method through some callee.
 type Throws struct {
-	Raised     []Exception
-	Rejects    []Exception
+	Raised  []Exception
+	Rejects []Exception
+	// Modeled holds the subset of Rejects the combinator model supplied, sorted.
+	// Those rejections reach the returned promise through the promise-resolution
+	// machinery rather than through a step of the algorithm, so they have no
+	// site. The coercion filter works per site and reads this to carry the
+	// siteless rejections across.
+	Modeled    []Exception
 	Sites      []ThrowSite
 	Incomplete bool
 }
@@ -397,6 +451,7 @@ type throwFacts struct {
 	order      []*ThrowSite
 	raised     set.Set[Exception]
 	rejected   set.Set[Exception]
+	modeled    set.Set[Exception]
 	incomplete bool
 }
 
@@ -405,6 +460,10 @@ type throwFacts struct {
 // it raises itself and the ones its `?`-guarded calls hand on.
 type ThrowSummary struct {
 	facts map[*Func]*throwFacts
+	// origins holds the map each function's raised values were read through.
+	// The coercion filter threads a coercion's argument back through a
+	// provenance chain, which means reading the map of every function on it.
+	origins map[*Func]*OriginMap
 }
 
 // NewThrowSummary runs the throw fixpoint over cfg.
@@ -427,9 +486,13 @@ type ThrowSummary struct {
 // rejections are worked out.
 func NewThrowSummary(cfg *CFG) *ThrowSummary {
 	rejecting := rejecters(cfg)
+	origins := make(map[*Func]*OriginMap, len(cfg.Funcs))
 	a := &throwAnalysis{
-		summary: &ThrowSummary{facts: make(map[*Func]*throwFacts, len(cfg.Funcs))},
-		origins: make(map[*Func]*OriginMap, len(cfg.Funcs)),
+		summary: &ThrowSummary{
+			facts:   make(map[*Func]*throwFacts, len(cfg.Funcs)),
+			origins: origins,
+		},
+		origins: origins,
 		plans:   make(map[*Func]*rejectPlan, len(cfg.Funcs)),
 		callers: make(map[*Func][]*Func, len(cfg.Funcs)),
 	}
@@ -438,6 +501,7 @@ func NewThrowSummary(cfg *CFG) *ThrowSummary {
 			sites:    make(map[siteKey]*ThrowSite),
 			raised:   set.NewSet[Exception](),
 			rejected: set.NewSet[Exception](),
+			modeled:  set.NewSet[Exception](),
 		}
 		a.origins[fn] = NewOriginMap(fn)
 		a.plans[fn] = newRejectPlan(fn, rejecting)
@@ -483,7 +547,19 @@ func (s *ThrowSummary) Of(fn *Func) Throws {
 		})
 	}
 
-	return Throws{Raised: raised, Rejects: rejects, Sites: sites, Incomplete: f.incomplete}
+	return Throws{
+		Raised:     raised,
+		Rejects:    rejects,
+		Modeled:    sortedExceptions(f.modeled),
+		Sites:      sites,
+		Incomplete: f.incomplete,
+	}
+}
+
+// originsOf returns the origin map fn's raised values were read through. A
+// function the summary was not computed for has none.
+func (s *ThrowSummary) originsOf(fn *Func) *OriginMap {
+	return s.origins[fn]
 }
 
 // sortedExceptions reads a channel's set back in a fixed order, so a rendered set
@@ -666,9 +742,10 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 
 	target := resolveCallee(cfg, origin, node.Callee)
 	if target == nil {
-		// An object internal method that shares its name with no operation, or
-		// a function the caller supplied under a callee's name. Either runs code
-		// the graph does not hold.
+		// An object internal method that shares its name with no operation, so
+		// an exotic object or a Proxy chooses the implementation, or a function
+		// the caller supplied under a callee's name. Neither has an algorithm in
+		// the graph to read.
 		return f.markIncomplete() || changed
 	}
 	if target == fn && !invoking && objectInternalMethods.Contains(node.Callee) {
@@ -708,11 +785,11 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 // function is the argument at position. What the invoking operation raises on
 // its own account is propagate's business rather than this one's.
 //
-// A function that reached the algorithm as its receiver or one of its
-// parameters raises whatever the algorithm's own caller passed in, which is the
-// ExceptionCallback effect. Any other function value was read off a property or
-// out of a slot, so the graph holds no body for it and its throws cannot be
-// read.
+// A function the algorithm received as its receiver or a parameter raises
+// whatever the caller passed in, which is the ExceptionCallback effect. Any
+// other origin leaves the invoked function unnamed, so the step is incomplete.
+// What decides this is whether the function can be named against the method's
+// signature, not whether the graph holds a body for it.
 func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node *CallNode, position, index int, sink Sink) bool {
 	if position >= len(node.Args) {
 		return f.markIncomplete()
@@ -724,6 +801,9 @@ func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node 
 		}
 		return f.add(CallbackThrows(o), Root{}, node, index, sink)
 	default:
+		// Over-reports on a static that constructs its own `this`. The origin
+		// map gives a static no receiver, so `Array.of` lands here though the
+		// declaration fixes what a well-typed caller constructs.
 		return f.markIncomplete()
 	}
 }
@@ -779,6 +859,7 @@ func (f *throwFacts) model(raised Exception) bool {
 		return false
 	}
 	f.rejected.Add(raised)
+	f.modeled.Add(raised)
 	return true
 }
 

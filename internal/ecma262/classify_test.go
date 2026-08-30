@@ -189,6 +189,14 @@ func TestAliasJoin(t *testing.T) {
 	}
 }
 
+// classified renders the receiver and return determinations alone, leaving out
+// the throws and rejects channels §9.2 adds. A test written against the §4.3
+// classification then reads the same after §9.2 wires two more axes into the
+// fact, and the channels are asserted where §9.2's own cases do it.
+func classified(fact MethodFact) string {
+	return MethodFact{Receiver: fact.Receiver, Returns: fact.Returns}.String()
+}
+
 // What §4.3 concludes from the graph alone, one method per shape. These read
 // the analysis rather than the published facts, so a curated entry that later
 // fills one of these determinations cannot hide what the graph does and does
@@ -240,7 +248,7 @@ func TestFactsSampleMethods(t *testing.T) {
 		// Map, so the receiver claim is mutBorrow. The return is the boolean
 		// the algorithm built, which is fresh and not the receiver.
 		"MutationThroughARecordInABackingStore": {"Map.prototype.delete", "receiver:mutBorrow returns:fresh"},
-		// A caller of an algorithm the analysis could not read whole is
+		// A caller of an algorithm the analysis could not read every step of is
 		// classified all the same, since §4.1 charges `Unattributable` up the
 		// call graph and `Incomplete` not at all. next resumes the generator
 		// through `GeneratorResume`, which carries the warning.
@@ -280,7 +288,7 @@ func TestFactsSampleMethods(t *testing.T) {
 
 	for name, test := range tests {
 		t.Run(name, func(t *testing.T) {
-			require.Equal(t, test.want, analyzedFactOf(t, test.method).String())
+			require.Equal(t, test.want, classified(analyzedFactOf(t, test.method)))
 		})
 	}
 }
@@ -288,7 +296,7 @@ func TestFactsSampleMethods(t *testing.T) {
 // The §4.3 gate's last spot-check. Every String method coerces its receiver
 // with `ToString` before reading it, and §4.2 makes that coercion's result a
 // fresh primitive, so no write can reach the receiver. The seven left out are
-// the ones the analysis could not read whole, so they withhold the receiver
+// the ones with a step the analysis could not read, so they withhold the receiver
 // claim this checks.
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int
@@ -387,13 +395,14 @@ func TestFactsUnionOverTwoReturnedParameters(t *testing.T) {
 	require.NoError(t, err)
 	fact, ok := facts.Of("Demo.pick")
 	require.True(t, ok)
-	require.Equal(t, "receiver:none returns:union(param(0), param(1))", fact.String())
+	require.Equal(t, "receiver:none returns:union(param(0), param(1)) throws:none rejects:none", fact.String())
 
 	encoded, err := json.Marshal(fact)
 	require.NoError(t, err)
 	require.Equal(t,
 		`{"receiver":"none",`+
-			`"returns":{"kind":"union","members":[{"kind":"param","index":0},{"kind":"param","index":1}]}}`,
+			`"returns":{"kind":"union","members":[{"kind":"param","index":0},{"kind":"param","index":1}]},`+
+			`"throws":[],"rejects":[]}`,
 		string(encoded))
 }
 
@@ -414,27 +423,43 @@ func TestFactsJSON(t *testing.T) {
 		fact MethodFact
 		want string
 	}{
-		"Method": {factOf(t, "Array.prototype.fill"), `{"receiver":"mutBorrow","returns":{"kind":"receiver"}}`},
+		"Method": {
+			factOf(t, "Array.prototype.fill"),
+			`{"receiver":"mutBorrow","returns":{"kind":"receiver"},"throws":["TypeError"],"rejects":[]}`,
+		},
 		// The analysis withheld this receiver, which is the shape Incomplete
 		// refuses. Curation answers it before anything is written, so this
 		// rendering only ever comes off an analyze result.
-		"WithheldReceiver": {analyzedFactOf(t, "Array.prototype.toLocaleString"), `{"returns":{"kind":"fresh"}}`},
+		"WithheldReceiver": {
+			analyzedFactOf(t, "Array.prototype.toLocaleString"),
+			`{"returns":{"kind":"fresh"},"throws":["TypeError"],"rejects":[]}`,
+		},
 		// The first parameter is written out like any other position. Every
 		// parameter the committed graph returns sits at 0, so omitting it would
 		// leave the index absent from the whole file and spell the common case
 		// as missing data.
-		"ReturnedPositionZero": {factOf(t, "Object.freeze"), `{"receiver":"none","returns":{"kind":"param","index":0}}`},
+		"ReturnedPositionZero": {
+			factOf(t, "Object.freeze"),
+			`{"receiver":"none","returns":{"kind":"param","index":0},"throws":["TypeError"],"rejects":[]}`,
+		},
 		"ReturnedPositionPastZero": {
-			MethodFact{Receiver: RecvNone, Returns: returnsParam(2)},
-			`{"receiver":"none","returns":{"kind":"param","index":2}}`,
+			MethodFact{Receiver: RecvNone, Returns: returnsParam(2), Throws: []string{}, Rejects: []string{}},
+			`{"receiver":"none","returns":{"kind":"param","index":2},"throws":[],"rejects":[]}`,
 		},
 		// A fact that returns no parameter carries no position at all.
-		"NoReturnedPosition": {factOf(t, "Array.prototype.push"), `{"receiver":"mutBorrow","returns":{"kind":"fresh"}}`},
+		"NoReturnedPosition": {
+			factOf(t, "Array.prototype.push"),
+			`{"receiver":"mutBorrow","returns":{"kind":"fresh"},"throws":["TypeError"],"rejects":[]}`,
+		},
 		// The §4.3 union gate. The `Object` constructor hands back an
 		// `OrdinaryObjectCreate` result on one path and `ToObject(value)` on
 		// another, and the entry names both so §8.2 can spell the lifetime
 		// union they seed.
-		"Union": {factOf(t, "Object"), `{"receiver":"none","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param","index":0}]}}`},
+		"Union": {
+			factOf(t, "Object"),
+			`{"receiver":"none","returns":{"kind":"union","members":[{"kind":"fresh"},{"kind":"param","index":0}]},` +
+				`"throws":["TypeError"],"rejects":[]}`,
+		},
 		// The zero fact carries neither field, which is what Of returns for a
 		// name the graph does not hold.
 		"NoDetermination": {MethodFact{}, `{}`},
@@ -508,8 +533,13 @@ func TestDemoGraphClassification(t *testing.T) {
 	t.Parallel()
 
 	_, methods := demoFacts(t)
-	require.Equal(t, "receiver:borrow returns:receiver", methods["Demo.prototype.read"].String())
-	require.Equal(t, "returns:unknown", methods["Demo.prototype.opaque"].String())
+	require.Equal(t, "receiver:borrow returns:receiver throws:none rejects:none",
+		methods["Demo.prototype.read"].String())
+	// The opaque step is one the throw fixpoint could not read either, so both
+	// channels are published short. FR5 makes that the norm rather than a
+	// state the fact records.
+	require.Equal(t, "returns:unknown throws:none rejects:none",
+		methods["Demo.prototype.opaque"].String())
 }
 
 // Both axes report an open determination, each spelled the way that axis
@@ -542,7 +572,7 @@ func TestUnclassifiedReadsAnUnwiredAxisAsOpen(t *testing.T) {
 
 	require.Equal(t,
 		[]string{"Demo.prototype.opaque", "Demo.prototype.read"},
-		facts.Unclassified(Axis("throws")))
+		facts.Unclassified(Axis("params")))
 }
 
 // Every published fact carries a value on every axis, which is the invariant
@@ -582,7 +612,12 @@ func TestIncompleteNamesTheAxis(t *testing.T) {
 func TestCarriesCoversEveryPublishedAxis(t *testing.T) {
 	t.Parallel()
 
-	full := MethodFact{Receiver: RecvBorrow, Returns: ReturnFact{Kind: AliasFresh}}
+	full := MethodFact{
+		Receiver: RecvBorrow,
+		Returns:  ReturnFact{Kind: AliasFresh},
+		Throws:   []string{},
+		Rejects:  []string{},
+	}
 	for _, axis := range publishedAxes {
 		require.Truef(t, full.carries(axis),
 			"%s is a published axis that carries does not name", axis)

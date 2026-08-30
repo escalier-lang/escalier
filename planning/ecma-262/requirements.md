@@ -504,13 +504,23 @@ impractical:**
   unsoundness on the escape axis for uncertain parameters, accepted
   deliberately; the mutable-borrow default above still protects the more
   common mutation case.
-- **The throw and reject sets default toward under-reporting.** The
+- **The throw and reject sets are best effort, not conservative.** The
   conservative direction here would be to *over*-report — but that means
   every `this`-touching method carries `throws TypeError` from its
   receiver coercion, pervasive noise a parameter default does not produce.
   So the throw set (FR10) and reject set (FR13) under-report instead,
-  accepting that this is the unsound direction. Both are curation-grade,
-  and FR14 measures what reaches the `.esc` against observed behavior.
+  accepting that this is the unsound direction.
+
+  Neither claims to be complete, and neither is measured against a
+  completeness bar. Some exceptions are outside the model altogether: a
+  `RangeError` from a host allocation limit, a stack overflow, an
+  out-of-memory. A method with a step the analysis could not read therefore
+  publishes what it found rather than being singled out,
+  since under best effort every published set is short by something. What
+  the analysis reads improves in later passes — the parameter branch of
+  FR11's filter is one, richer conditions on a coercion another — and
+  FR14 measures what reaches the `.esc` against observed behavior. Both
+  sets stay curation-grade in the meantime.
 
 These defaults are applied by the **converter**, not serialized as facts,
 and the converter applies one only where no fact addresses the method at
@@ -777,10 +787,11 @@ The `?` / `!` / plain distinction is essential and must be carried from
 the spec into the control-flow graph. This is why throws extraction
 relies on ESMeta's completion-record modeling rather than the shallow
 `spec.html` fallback, which would have to recover the guards from markup
-itself. A method whose throw paths cannot be resolved is left out of the
-throw set and flagged, never guessed. The FR5 bias applied to throws is
-to under-report rather than over-report a throw the type system would
-force a caller to handle.
+itself. A throw path the analysis cannot resolve is left out of the throw
+set rather than guessed at. The FR5 bias applied to throws is to
+under-report rather than over-report a throw the type system would force a
+caller to handle, and the set is best effort: it is not flagged as short,
+because every published set is.
 
 ### FR11. Coercion filter
 
@@ -795,10 +806,32 @@ already-typed value:
 
 - `TypeError` raised inside `ToObject(this value)` or
   `RequireObjectCoercible(this value)`. The receiver type is statically
-  known, so the null/undefined-receiver path is unreachable.
-- `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`,
-  `ToPrimitive`, or `ToObject` applied to a parameter whose Escalier
-  type is already the coerced type.
+  known, so the null/undefined-receiver path is unreachable. The same
+  holds for the operations that unwrap a wrapper receiver —
+  `ThisNumberValue`, `ThisStringValue`, `ThisBooleanValue`,
+  `ThisBigIntValue`, `ThisSymbolValue` — which raise on a receiver of the
+  wrong type and nothing else. `Number.prototype.toFixed` opens with one.
+- Every `TypeError` under a coercion that returns the receiver at its
+  first step. `ToString(O)` returns `O` when `O` is already a String, so
+  on a `String.prototype` method the `ToPrimitive` call further down its
+  body is unreachable, and so is the `@@toPrimitive` lookup and call
+  under it. This does not extend to a receiver the coercion has real work
+  to do on: `ToString` of an `Array.prototype` receiver does reach that
+  machinery.
+
+Both readings are made against the receiver's language type, which the
+owner of the member key fixes — a `String.prototype` method takes a
+String, an `Array.prototype` method an Object. That is a fact about the
+declaration rather than a type the filter has to be told, which is why
+the receiver branch runs before the FR7 join while the parameter branch
+cannot.
+- `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`, or
+  `ToObject` applied to a parameter whose Escalier type is already the
+  coerced type. `ToPrimitive` is not among them. Its one `Throw` step is
+  the one reached after an object's `@@toPrimitive` method has handed back
+  another object, so it reports the caller's code failing rather than the
+  wrong dynamic type for the value it was given, and no declared type
+  rules it out.
 
 A throw survives the filter when it originates from an explicit domain
 check — an `If <condition>, throw a *RangeError*` over a value range, a

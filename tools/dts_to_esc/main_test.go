@@ -85,14 +85,14 @@ export declare class Array<T> {
 // --cfg flag reads.
 const committedCFG = "../spec-extract/cfg.json"
 
-// Both ECMA-262 reports reach stderr, and neither does without the flag. The
+// Every ECMA-262 report reaches stderr, and none does without the flag. The
 // rendering of each line is pinned in internal/ecma262 against a demo graph;
 // what the snapshot below adds is what a real run over the committed graph and
 // the seeded lib reports, the partition summary above them included.
 //
 // The counts move when curated.json or cfg.json changes, which is the point:
 // the diff shows what a data change did to the reports an operator reads.
-func TestRun_BootstrapWithCFGPrintsBothReports(t *testing.T) {
+func TestRun_BootstrapWithCFGPrintsEveryReport(t *testing.T) {
 	libDir := seedLib(t, arrayLib)
 
 	var stderr strings.Builder
@@ -100,6 +100,7 @@ func TestRun_BootstrapWithCFGPrintsBothReports(t *testing.T) {
 
 	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  std:array: 3 decls
   curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
+  coercion filter: 4882 TypeError sites adjudicated, 362 dropped
   join: 1 matched (1 with a receiver claim), 0 declarations without a fact, 436 facts without a declaration, 0 unkeyed declarations, 64 unjoinable facts
   returns: 1 settled as owned by the declared type, 0 left unknown`))
 }
