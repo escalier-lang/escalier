@@ -1684,47 +1684,40 @@ them. They type the calling convention `tsc` emitted before
 TC39 decorators, so they describe a compiler output shape
 rather than a runtime one.
 
-**Dropped source files.** `lib.scripthost.d.ts` is dropped
-whole rather than name by name. It declares the Windows Script
-Host surface — `ActiveXObject`, `WScript`, `VBArray`, the
-`TextStream` types, and the COM value wrappers `SafeArray` and
-`VarDate` — and Escalier targets browsers and Node. It also
-augments `Date` with `getVarDate(): VarDate` and
-`DateConstructor` with `new (vd: VarDate): Date`. Both of those
-names route to `std:date` by name, so dropping `VarDate` alone
-would leave `std/date.esc` referring to a type nothing
-declares. See `DroppedSources` in
-[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
+**Dropped source files.** Two source files contribute nothing,
+dropped whole rather than name by name.
 
-**The Web Worker host lib.** TypeScript ships `lib.dom` and
-`lib.webworker` as alternatives that a `tsconfig.json` picks
-between, so the worker files restate every shared global in
-full. `interface ReadableStream<R = any>` is byte-identical in
-`lib.dom.d.ts` and `lib.webworker.d.ts`. Routing both copies
-into one bucket would let the within-bucket declaration merging
-below concatenate the two member lists, leaving one interface
-with each member twice.
+`lib.scripthost.d.ts` declares the Windows Script Host surface
+— `ActiveXObject`, `WScript`, `VBArray`, the `TextStream`
+types, and the COM value wrappers `SafeArray` and `VarDate` —
+and Escalier targets browsers and Node. It also augments
+`Date` with `getVarDate(): VarDate` and `DateConstructor` with
+`new (vd: VarDate): Date`. Both of those names route to
+`std:date` by name, so dropping `VarDate` alone would leave
+`std/date.esc` referring to a type nothing declares. Dropping
+the file takes the augmentations with it.
 
-The converter emits one tree rather than one per host. It
-routes everything outside `lib.webworker.*.d.ts` first, then
-keeps from each worker declaration only what that pass did not
-already place. In the pinned lib set that is
-`FileSystemFileHandle.createSyncAccessHandle`, the one member a
-worker file adds to an interface the DOM set also declares,
-plus the declarations with no non-worker counterpart at all.
-Those route through the table like any other name:
+`lib.webworker.*.d.ts` is the Web Worker host lib. TypeScript
+ships it and `lib.dom` as alternatives that a `tsconfig.json`
+picks between, so the two restate every shared global and
+differ only in the surface each host has. `interface
+ReadableStream<R = any>` is byte-identical in both. The
+partition covers the browser, and neither half of the worker
+lib belongs in it. The restatement would let the within-bucket
+declaration merging below concatenate two member lists into
+one interface carrying each member twice. The remainder names
+what only a worker has — `ServiceWorkerGlobalScope`,
+`FetchEvent`, `importScripts` — which no browser program can
+reach.
 
-- the service-worker global scope and the events dispatched
-  into it — `ServiceWorkerGlobalScope`, `FetchEvent`,
-  `ExtendableEvent`, `Client`, `Clients`, `WindowClient` — to
-  `web:service_worker`
-- the push events to `web:push`
-- the encoded-frame transforms to `web:web_rtc`
-- `FileReaderSync` to `web:file`
-- the global scope event maps and `importScripts` to
-  `web:workers`
+Serving workers means a set of pseudo-packages scoped to that
+host, the same question Node raises, and both are deferred.
+Until then `web:workers` carries the document side alone: what
+a page constructs and the events it gets back. The scope a
+worker runs inside is declared only by the ignored lib, so no
+entry for it would match.
 
-See `WorkerHostSources` in
+See `DroppedSources` in
 [internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
 
 **Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level

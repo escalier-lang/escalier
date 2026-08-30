@@ -159,48 +159,6 @@ func TestRoute_LibSetGaps(t *testing.T) {
 	}
 }
 
-func TestRoute_WorkerOnlySymbols(t *testing.T) {
-	t.Parallel()
-	// Surface only lib.webworker.d.ts declares. It reaches Route
-	// because no file outside WorkerHostSources declares these names,
-	// so PartitionLib does not skip them as redeclarations.
-	//
-	// Each entry lands in a package chosen by the API the name belongs
-	// to, which is the axis the §6.1 table partitions on. A package can
-	// therefore hold both these worker-only names and names a worker
-	// does not have. Tracking that second axis is #1336.
-	cases := []struct {
-		name    string
-		wantURI string
-	}{
-		{"ServiceWorkerGlobalScope", "web:service_worker"},
-		{"FetchEvent", "web:service_worker"},
-		{"ExtendableMessageEvent", "web:service_worker"},
-		{"Clients", "web:service_worker"},
-		{"WindowClient", "web:service_worker"},
-		{"PushEvent", "web:push"},
-		{"PushMessageData", "web:push"},
-		{"RTCTransformEvent", "web:web_rtc"},
-		{"RTCRtpScriptTransformer", "web:web_rtc"},
-		{"WorkerGlobalScopeEventMap", "web:workers"},
-		{"importScripts", "web:workers"},
-		{"onrtctransform", "web:workers"},
-		{"FileReaderSync", "web:file"},
-		{"FileSystemSyncAccessHandle", "web:dom"},
-		{"MediaStreamTrackProcessor", "web:dom"},
-		{"NotificationEvent", "web:dom"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := Route(tc.name, "lib.webworker.d.ts")
-			require.False(t, got.Drop)
-			require.False(t, got.Unmapped)
-			require.Equal(t, tc.wantURI, got.Pkg.URI)
-		})
-	}
-}
-
 func TestRoute_LegacyDecoratorDrops(t *testing.T) {
 	t.Parallel()
 	// TypeScript's `experimentalDecorators` signatures type the

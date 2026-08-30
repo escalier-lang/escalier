@@ -23,18 +23,17 @@ is the `<lib-dir>` argument below. Files ending in `.full.d.ts` are
 skipped: they declare nothing themselves and only pull in the lib files
 beside them through `/// <reference lib="..." />`.
 
-`lib.scripthost.d.ts` is skipped too. It declares the Windows Script
-Host surface, which Escalier has no target for.
-
-The `lib.webworker.*.d.ts` files are read, but a declaration in them is
-trimmed to whatever no other lib file already declares. TypeScript ships
-`lib.dom` and `lib.webworker` as alternatives, so the worker files
-restate every shared global in full — `interface ReadableStream` is
-byte-identical in both. Taking both copies would leave one interface
-carrying each member twice. What survives from the worker files is the
-surface only a worker has: `ServiceWorkerGlobalScope`, `FetchEvent`,
-`importScripts`, and the rest. Each run reports how many declarations it
-skipped this way.
+Two more are skipped. `lib.scripthost.d.ts` declares the Windows Script
+Host surface, which Escalier has no target for. The `lib.webworker.*.d.ts`
+files are the Web Worker host lib: TypeScript ships it and `lib.dom` as
+alternatives, so the two restate every shared global — `interface
+ReadableStream` is byte-identical in both — and differ only in the
+surface each host has. The partition covers the browser, so reading both
+would double the members of every shared interface and add names such as
+`ServiceWorkerGlobalScope` that no browser program can reach. Serving
+workers means pseudo-packages scoped to that host, which is deferred
+along with Node. Each run reports how many declarations every skipped
+file held.
 
 The `<esc-dir>` argument is `internal/interop/data`, the root holding
 the `std/`, `web/`, and `node/` subtrees.

@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"sort"
 	"strings"
 
@@ -43,13 +42,6 @@ type PartitionResult struct {
 	// surface these as informational warnings — they are intentional,
 	// not errors.
 	Drops []DropNote
-
-	// Redeclarations records every worker-host declaration skipped
-	// because a file outside WorkerHostSources already declares that
-	// name. Like Drops, these are intentional rather than errors, but
-	// two of the reasons discard surface only a worker has — see
-	// RedeclarationReason.LosesMembers.
-	Redeclarations []Redeclaration
 }
 
 // DropNote is one (name, source-file basename) pair in
@@ -59,127 +51,28 @@ type DropNote struct {
 	SourceFile string
 }
 
-// Redeclaration is one entry in PartitionResult.Redeclarations: the
-// skipped declaration and why the copy from outside the Web Worker host
-// lib is the one that stands.
-type Redeclaration struct {
-	Name       string
-	SourceFile string
-	Reason     RedeclarationReason
-}
-
-// RedeclarationReason says why PartitionLib skipped a worker-host
-// declaration. See WorkerHostSources for why the two host libs overlap.
-type RedeclarationReason int
-
-const (
-	// RestatesShared is the ordinary case: the worker interface
-	// declares no member the shared copy lacks. Nothing is lost. The
-	// pinned lib set is 838 of these and nothing else.
-	RestatesShared RedeclarationReason = iota
-
-	// SharedFormKept marks a name the worker declares in a form with
-	// no members to compare, a var, function, or type alias. A
-	// worker's `declare var navigator: WorkerNavigator` and a
-	// document's `declare var navigator: Navigator` cannot both stand
-	// in one tree, so the copy outside the worker host is kept. The
-	// converter emits one tree rather than one per host, which is the
-	// policy this follows rather than a gap.
-	SharedFormKept
-
-	// NoSharedInterface marks a worker interface whose name nothing
-	// outside the worker host declares as an interface. A trimmed copy
-	// leaves its inheritance chain and its call, construct, and index
-	// signatures to a shared interface in the same bucket, and there
-	// is none, so the whole declaration is skipped and any member only
-	// the worker declares goes with it.
-	NoSharedInterface
-
-	// TypeParamsDiffer marks two copies that name their type
-	// parameters differently. Merging is by name and keeps the shared
-	// copy's parameters, so a kept member written against one name
-	// would land under the other. The whole declaration is skipped and
-	// any member only the worker declares goes with it.
-	TypeParamsDiffer
-)
-
-// LosesMembers reports whether the reason discarded surface only the
-// worker host declares. A run with any of these has dropped API surface
-// and wants a look, which is what ReportPartition names them for.
-func (r RedeclarationReason) LosesMembers() bool {
-	return r == NoSharedInterface || r == TypeParamsDiffer
-}
-
-// String renders the reason for the partition report.
-func (r RedeclarationReason) String() string {
-	switch r {
-	case RestatesShared:
-		return "restates the shared copy"
-	case SharedFormKept:
-		return "declared outside the worker host in another form"
-	case NoSharedInterface:
-		return "no shared interface to carry the rest of the declaration"
-	case TypeParamsDiffer:
-		return "type parameter names differ from the shared copy"
-	}
-	return "unknown"
-}
-
 // PartitionLib routes every top-level declaration across the inputs
 // into its target package per Route. Returns an error on the first
 // unmapped symbol (§6.1 fail-safe).
 //
-// Two source-file rules run before Route sees a statement:
-//
-//   - A file in DroppedSources contributes nothing. Every declaration
-//     in it is recorded in Drops, including the ones that augment a
-//     type another lib file owns.
-//   - A declaration from the Web Worker host lib is kept only for the
-//     part the rest of the lib set does not already declare. See
-//     WorkerHostSources for why the two host libs overlap. What is
-//     dropped is recorded in Redeclarations.
+// A file in DroppedSources contributes nothing. Every declaration in it
+// is recorded in Drops, including the ones that augment a type another
+// lib file owns.
 //
 // Inputs are processed in the order given so that interface-merge and
-// namespace-merge results are stable. The worker host lib is the
-// exception: it is routed last whatever position it holds in inputs.
-// Routing keys off the input's SourceFile, not where a declaration
-// physically lives in a nested namespace — top-level `declare namespace
-// Intl { ... }` routes as a single unit to std:intl regardless of which
-// lib file declared it.
+// namespace-merge results are stable. Routing keys off the input's
+// SourceFile, not where a declaration physically lives in a nested
+// namespace — top-level `declare namespace Intl { ... }` routes as a
+// single unit to std:intl regardless of which lib file declared it.
 func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	out := &PartitionResult{
 		Buckets: make(map[string][]dts_parser.Statement),
 	}
-
-	routable := make([]LibInput, 0, len(inputs))
 	for _, in := range inputs {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
-		if DroppedSources.Contains(in.SourceFile) {
-			for _, stmt := range in.Module.Statements {
-				if name := topLevelName(stmt); name != "" {
-					out.Drops = append(out.Drops,
-						DropNote{Name: name, SourceFile: in.SourceFile})
-				}
-			}
-			continue
-		}
-		routable = append(routable, in)
-	}
-
-	// First pass: everything outside the worker host lib. `placed`
-	// records the package each name landed in. `shared` records the
-	// type-parameter names and member keys of each interface. The
-	// second pass compares the worker copies against both. Running this
-	// pass first is what makes the outcome independent of where the
-	// worker files sit in inputs.
-	placed := make(map[string]Package)
-	shared := make(map[string]*sharedIface)
-	for _, in := range routable {
-		if WorkerHostSources.Contains(in.SourceFile) {
-			continue
-		}
+		dropped := DroppedSources.Contains(in.SourceFile)
 		for _, stmt := range in.Module.Statements {
 			name := topLevelName(stmt)
 			if name == "" {
@@ -188,6 +81,11 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				// The standalone converter already drops these for
 				// MVP — keep parity here so PartitionLib doesn't push
 				// unroutable statements into a bucket.
+				continue
+			}
+			if dropped {
+				out.Drops = append(out.Drops,
+					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
 			}
 			res := Route(name, in.SourceFile)
@@ -199,152 +97,12 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				return nil, UnmappedError(name, in.SourceFile)
 			}
 			out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
-			placed[name] = res.Pkg
-			if iface, ok := stmt.(*dts_parser.InterfaceDecl); ok {
-				si, ok := shared[name]
-				if !ok {
-					// mergeDecls keeps the first occurrence's type
-					// params, so the first copy routed is the one whose
-					// parameter names the merged interface will use.
-					si = &sharedIface{
-						typeParams: typeParamNames(iface.TypeParams),
-						members:    set.NewSet[string](),
-					}
-					shared[name] = si
-				}
-				for _, m := range iface.Members {
-					if key := memberKey(m); key != "" {
-						si.members.Add(key)
-					}
-				}
-			}
 		}
 	}
-
-	// Second pass: the worker host lib. A name the first pass did not
-	// place is surface only a worker has, and it routes like any other.
-	for _, in := range routable {
-		if !WorkerHostSources.Contains(in.SourceFile) {
-			continue
-		}
-		for _, stmt := range in.Module.Statements {
-			name := topLevelName(stmt)
-			if name == "" {
-				continue
-			}
-			pkg, restated := placed[name]
-			if !restated {
-				res := Route(name, in.SourceFile)
-				switch {
-				case res.Drop:
-					out.Drops = append(out.Drops, DropNote{Name: name, SourceFile: in.SourceFile})
-					continue
-				case res.Unmapped:
-					return nil, UnmappedError(name, in.SourceFile)
-				}
-				out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
-				continue
-			}
-			extra, why := workerOnlyMembers(stmt, shared[name])
-			if extra == nil {
-				out.Redeclarations = append(out.Redeclarations, Redeclaration{
-					Name:       name,
-					SourceFile: in.SourceFile,
-					Reason:     why,
-				})
-				continue
-			}
-			out.Buckets[pkg.URI] = append(out.Buckets[pkg.URI], extra)
-		}
-	}
-
 	for uri, stmts := range out.Buckets {
 		out.Buckets[uri] = mergeDecls(stmts)
 	}
 	return out, nil
-}
-
-// sharedIface is what the lib files outside the worker host declare for
-// one interface name. typeParams holds the parameter names on the copy
-// whose metadata survives declaration merging, and members every member
-// key across the copies that merge into it.
-type sharedIface struct {
-	typeParams []string
-	members    set.Set[string]
-}
-
-// workerOnlyMembers returns a copy of a worker-host interface carrying
-// only the members whose keys are absent from `shared`, the surface the
-// same interface already has elsewhere in the lib set. Returns nil when
-// the worker copy adds nothing, which is the common case — the worker
-// files restate whole interfaces verbatim.
-//
-// The one interface in the pinned lib set where the worker copy is not
-// a verbatim restatement is `FileSystemFileHandle`, whose
-// `createSyncAccessHandle` method only a worker has. Keeping that
-// member is what makes the pinned `FileSystemSyncAccessHandle` type
-// reachable.
-//
-// Three shapes return nil so that the copy the rest of the lib set
-// declares stands on its own:
-//
-//   - A statement that is not an interface. A var, function, or type
-//     alias has no members to compare.
-//   - A name nothing outside the worker host declares as an interface.
-//     The returned copy relies on a shared interface in the same bucket
-//     to supply the inheritance chain and the call, construct, and
-//     index signatures it leaves behind, and there is none.
-//   - An interface whose type-parameter names differ from the shared
-//     copy's. Merging is by name and keeps the shared copy's
-//     parameters, so a kept member written against `T` would land under
-//     a `R` it cannot see.
-//
-// Comparison is by member key, so a worker-only *overload* of a name
-// the shared copy also declares is dropped along with the rest. No such
-// overload exists in the pinned set.
-//
-// The second return names why the worker copy was skipped, for the
-// caller to record. It is meaningless when a trimmed copy is returned.
-func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) (*dts_parser.InterfaceDecl, RedeclarationReason) {
-	iface, ok := stmt.(*dts_parser.InterfaceDecl)
-	if !ok {
-		return nil, SharedFormKept
-	}
-	if shared == nil {
-		return nil, NoSharedInterface
-	}
-	if !slices.Equal(shared.typeParams, typeParamNames(iface.TypeParams)) {
-		return nil, TypeParamsDiffer
-	}
-	var extra []dts_parser.InterfaceMember
-	for _, m := range iface.Members {
-		key := memberKey(m)
-		if key == "" || shared.members.Contains(key) {
-			continue
-		}
-		extra = append(extra, m)
-	}
-	if len(extra) == 0 {
-		return nil, RestatesShared
-	}
-	// mergeDecls keeps the first occurrence's doc, span, and type
-	// params and concatenates what follows, so the shared copy routed
-	// in the first pass supplies those. Clearing Extends keeps its
-	// inheritance chain from being concatenated with itself.
-	trimmed := *iface
-	trimmed.Members = extra
-	trimmed.Extends = nil
-	return &trimmed, RestatesShared
-}
-
-// typeParamNames returns the declared names of a type-parameter list,
-// in order.
-func typeParamNames(params []*dts_parser.TypeParam) []string {
-	names := make([]string, len(params))
-	for i, p := range params {
-		names[i] = p.Name.Name
-	}
-	return names
 }
 
 // topLevelName returns the addressable name of a top-level statement,
@@ -980,8 +738,7 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 }
 
 // ReportPartition prints a short summary of a PartitionResult to w:
-// per-package decl count, drop count, and the number of worker-host
-// declarations skipped as redeclarations. Used by the CLI to give the
+// per-package decl count and drop count. Used by the CLI to give the
 // operator a sense of what landed where without dumping the full
 // output. The btree.Map keeps the package list sorted.
 func ReportPartition(result *PartitionResult, w io.Writer) error {
@@ -1026,23 +783,6 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 		fmt.Fprintf(&b, "  dropped source %s: %d decls\n", file, n)
 		return true
 	})
-
-	if len(result.Redeclarations) > 0 {
-		// A count rather than the names. The worker host lib restates
-		// hundreds of globals, and listing them would bury the
-		// per-package counts above.
-		fmt.Fprintf(&b, "  worker-host redeclarations skipped: %d\n",
-			len(result.Redeclarations))
-	}
-	// The two reasons that discard worker-only surface are named, since
-	// a count cannot tell them from the ordinary restatement above and
-	// each one is a member a worker has and the tree will not.
-	for _, r := range result.Redeclarations {
-		if r.Reason.LosesMembers() {
-			fmt.Fprintf(&b, "  worker-only members lost: %s from %s (%s)\n",
-				r.Name, r.SourceFile, r.Reason)
-		}
-	}
 
 	_, err := io.WriteString(w, b.String())
 	return err

@@ -54,189 +54,39 @@ interface Date { getVarDate: () => VarDate; }
 	}, res.Drops)
 }
 
-func TestPartitionLib_KeepsWorkerOnlyMembers(t *testing.T) {
+func TestPartitionLib_IgnoresTheWorkerHostLib(t *testing.T) {
 	t.Parallel()
-	// The worker copy of `FileSystemFileHandle` carries one method the
-	// DOM copy lacks. Skipping the whole declaration would lose it, so
-	// only the members the DOM copy already has are dropped.
-	dom := parseLib(t, "lib.dom.d.ts", `
-interface FileSystemFileHandle { getFile(): Promise<File>; }
-`)
-	worker := parseLib(t, "lib.webworker.d.ts", `
-interface FileSystemFileHandle {
-    getFile(): Promise<File>;
-    createSyncAccessHandle(): Promise<FileSystemSyncAccessHandle>;
-}
-`)
-
-	res, err := PartitionLib([]LibInput{dom, worker})
-	require.NoError(t, err)
-
-	require.Len(t, res.Buckets["web:dom"], 1)
-	handle, ok := res.Buckets["web:dom"][0].(*dts_parser.InterfaceDecl)
-	require.True(t, ok)
-	require.Len(t, handle.Members, 2)
-	require.Equal(t, "getFile", memberKey(handle.Members[0]))
-	require.Equal(t, "createSyncAccessHandle", memberKey(handle.Members[1]))
-	require.Empty(t, res.Redeclarations)
-}
-
-func TestPartitionLib_WorkerInterfaceNeedsASharedInterface(t *testing.T) {
-	t.Parallel()
-	// The trimmed copy leaves its inheritance chain and its unkeyed
-	// signatures to a shared interface in the same bucket. When the
-	// name is declared outside the worker host only as a class, there
-	// is no such interface, so the worker copy is skipped whole.
-	//
-	// The shapes are synthetic. TypeScript declares `Storage` as an
-	// interface in both host libs, and the guard exists for a lib the
-	// pinned set does not contain. `StorageBase` and the call signature
-	// stand in for what a trim would drop: `workerOnlyMembers` clears
-	// Extends and keeps no member whose key is empty.
-	dom := parseLib(t, "lib.dom.d.ts", `
-interface StorageBase { length: number; }
-declare class Storage { getItem(key: string): string | null; }
-`)
-	worker := parseLib(t, "lib.webworker.d.ts", `
-interface Storage extends StorageBase { (): void; extra(): void; }
-`)
-
-	res, err := PartitionLib([]LibInput{dom, worker})
-	require.NoError(t, err)
-
-	require.Len(t, res.Buckets["web:storage"], 1)
-	_, ok := res.Buckets["web:storage"][0].(*dts_parser.ClassDecl)
-	require.True(t, ok, "the class the DOM set declares is what survives")
-	require.Equal(t, []Redeclaration{{
-		Name:       "Storage",
-		SourceFile: "lib.webworker.d.ts",
-		Reason:     NoSharedInterface,
-	}}, res.Redeclarations)
-	require.True(t, res.Redeclarations[0].Reason.LosesMembers(),
-		"the worker copy's `extra` method goes with the skipped declaration")
-}
-
-func TestPartitionLib_WorkerInterfaceNeedsMatchingTypeParams(t *testing.T) {
-	t.Parallel()
-	// Merging is by name and keeps the shared copy's type parameters,
-	// so a member kept from a copy that names them differently would
-	// land under a parameter it cannot see. Skip the worker copy whole
-	// instead.
+	// The partition covers the browser. TypeScript ships lib.dom and
+	// lib.webworker as alternatives a `tsconfig.json` picks between, so
+	// the worker files restate the globals a document also has and add
+	// ones it does not. Neither half is wanted here. The restatement
+	// would double the members of every shared interface, and
+	// `ServiceWorkerGlobalScope` names nothing a document can reach.
 	dom := parseLib(t, "lib.dom.d.ts", `
 interface ReadableStream<R = any> { readonly locked: boolean; }
 `)
 	worker := parseLib(t, "lib.webworker.d.ts", `
-interface ReadableStream<T = any> { readonly locked: boolean; peek(): T; }
+interface ReadableStream<R = any> { readonly locked: boolean; }
+interface ServiceWorkerGlobalScope { readonly clients: Clients; }
 `)
 
 	res, err := PartitionLib([]LibInput{dom, worker})
 	require.NoError(t, err)
 
+	// One ReadableStream, carrying `locked` once rather than twice.
+	require.Len(t, res.Buckets, 1)
 	require.Len(t, res.Buckets["web:streams"], 1)
 	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
 	require.True(t, ok)
 	require.Len(t, stream.Members, 1)
 	require.Equal(t, "locked", memberKey(stream.Members[0]))
-	require.Equal(t, []Redeclaration{{
-		Name:       "ReadableStream",
-		SourceFile: "lib.webworker.d.ts",
-		Reason:     TypeParamsDiffer,
-	}}, res.Redeclarations)
-	require.True(t, res.Redeclarations[0].Reason.LosesMembers(),
-		"the worker copy's `peek` method goes with the skipped declaration")
-}
 
-func TestPartitionLib_WorkerFormWithNoMembersKeepsTheSharedCopy(t *testing.T) {
-	t.Parallel()
-	// Both host libs declare `navigator`, with a type naming the host.
-	// A var has no members to compare, and one tree cannot hold both,
-	// so the copy outside the worker host stands. That is the one-tree
-	// policy rather than a guard, so nothing counts as lost.
-	dom := parseLib(t, "lib.dom.d.ts", `
-interface Navigator { readonly userAgent: string; }
-declare var navigator: Navigator;
-`)
-	worker := parseLib(t, "lib.webworker.d.ts", `
-declare var navigator: WorkerNavigator;
-`)
-
-	res, err := PartitionLib([]LibInput{dom, worker})
-	require.NoError(t, err)
-
-	require.Len(t, res.Buckets["web:dom"], 2)
-	v, ok := res.Buckets["web:dom"][1].(*dts_parser.VarDecl)
-	require.True(t, ok)
-	ref, ok := v.TypeAnn.(*dts_parser.TypeReference)
-	require.True(t, ok)
-	require.Equal(t, "Navigator", typeRefName(ref),
-		"the document's binding is the one kept")
-
-	require.Equal(t, []Redeclaration{{
-		Name:       "navigator",
-		SourceFile: "lib.webworker.d.ts",
-		Reason:     SharedFormKept,
-	}}, res.Redeclarations)
-	require.False(t, res.Redeclarations[0].Reason.LosesMembers(),
-		"a var carries no members for the skip to discard")
-}
-
-func TestPartitionLib_SkipsWorkerHostRedeclarations(t *testing.T) {
-	t.Parallel()
-	// lib.dom.d.ts and lib.webworker.d.ts each declare the whole
-	// `ReadableStream` interface. Routing both copies into web:streams
-	// would let mergeDecls concatenate the two member lists, leaving
-	// one interface with `locked` twice. The worker copy adds nothing,
-	// so it is skipped whole.
-	dom := parseLib(t, "lib.dom.d.ts", `
-interface ReadableStream<R = any> { readonly locked: boolean; }
-`)
-	worker := parseLib(t, "lib.webworker.d.ts", `
-interface ReadableStream<R = any> { readonly locked: boolean; }
-interface FileReaderSync { readAsText(blob: Blob): string; }
-`)
-
-	res, err := PartitionLib([]LibInput{dom, worker})
-	require.NoError(t, err)
-
-	require.Len(t, res.Buckets["web:streams"], 1)
-	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
-	require.True(t, ok)
-	require.Len(t, stream.Members, 1)
-
-	// `FileReaderSync` has no counterpart outside the worker host lib,
-	// so it routes normally.
-	require.Len(t, res.Buckets["web:file"], 1)
-	require.Equal(t, "FileReaderSync", topLevelName(res.Buckets["web:file"][0]))
-
-	require.Equal(t, []Redeclaration{{
-		Name:       "ReadableStream",
-		SourceFile: "lib.webworker.d.ts",
-		Reason:     RestatesShared,
-	}}, res.Redeclarations)
-	require.False(t, res.Redeclarations[0].Reason.LosesMembers(),
-		"a verbatim restatement discards nothing")
-}
-
-func TestPartitionLib_WorkerHostInputOrderDoesNotMatter(t *testing.T) {
-	t.Parallel()
-	// The worker host lib is routed after everything else, so putting
-	// the worker file first does not make its copy the one that
-	// survives.
-	dom := parseLib(t, "lib.dom.d.ts", `
-interface ReadableStream<R = any> { readonly locked: boolean; }
-`)
-	worker := parseLib(t, "lib.webworker.d.ts", `
-interface ReadableStream<R = any> { readonly locked: boolean; }
-`)
-
-	res, err := PartitionLib([]LibInput{worker, dom})
-	require.NoError(t, err)
-
-	require.Len(t, res.Buckets["web:streams"], 1)
-	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
-	require.True(t, ok)
-	require.Len(t, stream.Members, 1)
-	require.Len(t, res.Redeclarations, 1)
+	// The worker-only name lands in no bucket, and the §6.1 fail-safe
+	// does not fire for it either.
+	require.Equal(t, []DropNote{
+		{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
+		{Name: "ServiceWorkerGlobalScope", SourceFile: "lib.webworker.d.ts"},
+	}, res.Drops)
 }
 
 func TestPartitionLib_RoutesByName(t *testing.T) {
@@ -788,12 +638,6 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
 			{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
 		},
-		Redeclarations: []Redeclaration{
-			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts", Reason: RestatesShared},
-			{Name: "Blob", SourceFile: "lib.webworker.d.ts", Reason: SharedFormKept},
-			{Name: "Storage", SourceFile: "lib.webworker.d.ts", Reason: NoSharedInterface},
-			{Name: "Cache", SourceFile: "lib.webworker.d.ts", Reason: TypeParamsDiffer},
-		},
 	}
 	var sb strings.Builder
 	require.NoError(t, ReportPartition(res, &sb))
@@ -801,55 +645,8 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	require.Contains(t, out, "std:date: 3 decls")
 	require.Contains(t, out, "drops: 1 (eval)")
 	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
-	require.Contains(t, out, "worker-host redeclarations skipped: 4")
-	require.NotContains(t, out, "VarDate")
-
-	// Only the reason that discards surface is named. A count cannot
-	// separate the three, and two of them discard nothing.
-	require.Contains(t, out,
-		"worker-only members lost: Storage from lib.webworker.d.ts "+
-			"(no shared interface to carry the rest of the declaration)")
-	require.Contains(t, out,
-		"worker-only members lost: Cache from lib.webworker.d.ts "+
-			"(type parameter names differ from the shared copy)")
-	require.NotContains(t, out, "members lost: ReadableStream")
-	require.NotContains(t, out, "members lost: Blob")
 }
 
-func TestPartitionLib_UnmappedWorkerOnlyNameTripsFailSafe(t *testing.T) {
-	t.Parallel()
-	// A worker-only name reaches Route like any other, so the §6.1
-	// fail-safe still covers the worker host lib. Only a name the rest
-	// of the lib set also declares is skipped ahead of Route.
-	worker := parseLib(t, "lib.webworker.d.ts",
-		`declare var __TotallyUnknown__: number;`)
-
-	_, err := PartitionLib([]LibInput{worker})
-	require.Error(t, err)
-	require.EqualError(t, err,
-		UnmappedError("__TotallyUnknown__", "lib.webworker.d.ts").Error())
-}
-
-func TestPartitionLib_WorkerHostSkipsUnnamedStatements(t *testing.T) {
-	t.Parallel()
-	// An import carries no addressable top-level name, so it lands in
-	// no bucket rather than reaching Route. The worker host pass has
-	// its own copy of that check.
-	worker := parseLib(t, "lib.webworker.d.ts", `
-import { Thing } from "./thing";
-interface FileReaderSync { readAsText(blob: Blob): string; }
-`)
-
-	res, err := PartitionLib([]LibInput{worker})
-	require.NoError(t, err)
-	require.Len(t, res.Buckets, 1)
-	require.Len(t, res.Buckets["web:file"], 1)
-	require.Equal(t, "FileReaderSync", topLevelName(res.Buckets["web:file"][0]))
-}
-
-// WritePartitionedTree is ConvertBuckets followed by WriteConvertedTree. A
-// caller that needs the converted modules for something other than writing
-// them runs the two halves itself, which must land the same files.
 func TestConvertBucketsAndWriteConvertedTree(t *testing.T) {
 	t.Parallel()
 	es5 := parseLib(t, "lib.es5.d.ts", `

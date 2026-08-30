@@ -108,10 +108,8 @@ func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 	require.NoError(t, err)
 
 	// Every package the routing pass knows about must be reachable
-	// from a bucket URI, and the worker host lib must contribute
-	// redeclarations rather than a second copy of the DOM.
+	// from a bucket URI.
 	require.NotEmpty(t, res.Buckets)
-	require.NotEmpty(t, res.Redeclarations)
 	for uri := range res.Buckets {
 		_, ok := PackageForURI(uri)
 		require.True(t, ok, "bucket URI %q must be a known package", uri)
@@ -119,10 +117,10 @@ func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 
 	// lib.dom.d.ts and lib.webworker.d.ts declare `interface
 	// ReadableStream` identically, and mergeDecls concatenates the
-	// members of every same-named interface in a bucket. Trimming the
-	// worker copy is what keeps the merged interface from carrying two
-	// of each. `readonly locked: boolean` is declared once per copy and
-	// is not overloaded, so its count tells a merge that took both
+	// members of every same-named interface in a bucket. Ignoring the
+	// worker host lib is what keeps the merged interface from carrying
+	// two of each. `readonly locked: boolean` is declared once per copy
+	// and is not overloaded, so its count tells a merge that took both
 	// copies from one that took a single copy. An overloaded name like
 	// `getReader` repeats for its own reasons and cannot serve here.
 	var stream *dts_parser.InterfaceDecl
