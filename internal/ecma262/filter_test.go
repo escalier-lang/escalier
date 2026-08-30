@@ -401,7 +401,11 @@ func TestReceiverTypeSettlesWhatACoercionDoes(t *testing.T) {
 		coercion               string
 		accepts, returnsAtOnce bool
 	}{
-		"StringReceiverToString":    {"String", "ToString", true, true},
+		"StringReceiverToString": {"String", "ToString", true, true},
+		// The symmetric entry, which the committed graph never exercises: no
+		// `Number.prototype` method coerces its receiver with `ToNumber`, they
+		// all unwrap it with `ThisNumberValue`.
+		"NumberReceiverToNumber":    {"Number", "ToNumber", true, true},
 		"NumberReceiverThisNumber":  {"Number", "ThisNumberValue", true, true},
 		"ArrayReceiverToObject":     {"Array", "ToObject", true, true},
 		"UnknownOwnerHoldsAnObject": {"Temporal.PlainDate", "ToObject", true, true},

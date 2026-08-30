@@ -1846,11 +1846,41 @@ would drop 31 sites a declared receiver type does not rule out. `ToPrimitive` st
 `ToObject` inside its `@@toPrimitive` lookup, and that base is weighed on
 its own account.
 
-A brand check such as `RequireInternalSlot` is left out for a weaker
-reason. A declared receiver type implies the slot as surely as it implies
-the Number value, but §9.4's validation harness is not built, so nothing
-would catch a wrong entry. The list grows by review, and every entry is
-read against the operation's own `Throw` steps in the graph.
+**`RequireInternalSlot` is the one candidate left on the table.** It is the
+object receiver's counterpart to `This*Value`: a declared `Date` receiver
+carries `[[DateValue]]` as surely as a declared `number` receiver is a
+Number. Over the committed graph 330 kept sites bottom out at a
+`RequireInternalSlot` applied to the receiver, across 19 owners — `Date`
+78, `TypedArray` 66, `DataView` 50, `Set` 30, `Map` 20, and the rest in
+single digits. It is the largest remaining group by a wide margin.
+
+What stops it is that the filter cannot check the entry the way it checks
+every other one. `This*Value` names the type it accepts, so the graph
+settles whether the operation matches the receiver. `RequireInternalSlot`
+takes the slot as its second argument, and Appendix A serializes a literal
+as a bare `lit` with no value, so the slot name is not in the graph. The
+drop would rest on the spec's placement — that a `X.prototype` method's
+`RequireInternalSlot(this value, …)` names X's own brand — which is true
+by inspection and unverifiable by the analysis. Two things unblock it:
+§9.4's validation harness, which would catch a wrong entry, or a §10
+serializer change carrying a literal's value, which would let the filter
+check the slot against the owner directly.
+
+**Everything else applied to a receiver stands, and should.** The same
+survey finds `LengthOfArrayLike` on 231 sites, where the coerced value is
+`Get(O, "length")` and a prototype-chain accessor decides it; `Set` and
+`DeletePropertyOrThrow`, which raise on a frozen or sealed receiver;
+`SpeciesConstructor` and `ArraySpeciesCreate`, which raise on a
+`@@species` that is not a constructor; `Invoke`, `Call`, and
+`OrdinaryToPrimitive`, which run the caller's own code; and the checks
+`ValidateTypedArray` and `GeneratorValidate` make beyond the brand, for a
+detached buffer and a generator already running. Each is reachable for a
+well-typed receiver.
+
+Keying on the chain's base is what keeps those apart without a special
+case. A `ValidateTypedArray` site splits by where it bottoms out: the
+`RequireInternalSlot` brand check is the group above, and the
+detached-buffer throw is its own site that no rule here touches.
 
 **Only the receiver branch is built.** A receiver coercion is filtered
 unconditionally, because the receiver's type is always statically known,
