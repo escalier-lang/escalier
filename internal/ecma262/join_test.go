@@ -239,6 +239,10 @@ func joinFixture() *Facts {
 // Without this, an entry edited to drive a test reads afterwards as a claim
 // about ECMA-262 that nothing checks. The Fixture owner is the one documented
 // exception, since no builtin exercises the case it stands in for.
+//
+// The receiver and return determinations are what the join reads, and what the
+// fixture states. Its entries leave the §9.2 channels out, so the comparison
+// leaves them out too.
 func TestJoinFixtureMatchesCommittedFacts(t *testing.T) {
 	committed := testFacts(t)
 	for name, fact := range joinFixture().Methods {
@@ -247,7 +251,7 @@ func TestJoinFixtureMatchesCommittedFacts(t *testing.T) {
 		}
 		real, ok := committed.Of(name)
 		require.Truef(t, ok, "%s is not a builtin the committed graph holds", name)
-		require.Equalf(t, real.String(), fact.String(),
+		require.Equalf(t, classified(real), classified(fact),
 			"the fixture's %s disagrees with the committed graph", name)
 	}
 }

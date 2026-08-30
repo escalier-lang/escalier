@@ -247,11 +247,15 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if join == nil {
 		return nil
 	}
-	// Both reports are informational. A curated entry the analysis caught up
-	// with is an entry to delete, and the spec and the TypeScript lib drift
-	// independently, so a name on one side only is a gap to close. Neither is a
-	// failed run.
+	// The three reports are informational. A curated entry the analysis caught
+	// up with is an entry to delete, and the spec and the TypeScript lib drift
+	// independently, so a name on one side only is a gap to close. FR11's
+	// coercion filter is a heuristic, so what it dropped is read rather than
+	// trusted. None of them is a failed run.
 	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
+		return err
+	}
+	if err := ecma262.WriteFilterReport(facts.Filter(), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)

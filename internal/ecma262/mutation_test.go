@@ -297,7 +297,7 @@ func TestMutationSummaryComputedSlotWriteOnAnUnplaceableValue(t *testing.T) {
 // first element is _O_ and whose subsequent elements are, in left to right
 // order, the arguments passed to this function", which lowers to a write into
 // `items` at a slot the algorithm computes. The prepend reaches nothing the
-// caller holds, so the method mutates nothing and reads whole.
+// caller holds, so the method mutates nothing and every step of it reads.
 func TestMutationSummaryDiscardsAComputedSlotWriteOnARestParameter(t *testing.T) {
 	require.Equal(t, "none", mutationsOf(t, "Array.prototype.concat").String())
 }

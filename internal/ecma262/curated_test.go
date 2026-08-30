@@ -125,7 +125,7 @@ func TestMergeCuration(t *testing.T) {
 			cfg, methods := demoFacts(t)
 			report := mergeCuration(cfg, &Curation{Entries: test.entries(cfg)}, methods)
 
-			require.Equal(t, test.want, methods[test.name].String())
+			require.Equal(t, test.want, classified(methods[test.name]))
 			require.Len(t, report.Notes, 1)
 			require.Equal(t, test.note, report.Notes[0].String())
 			require.Empty(t, report.Stale)
@@ -146,7 +146,7 @@ func TestMergeCurationRefusesAReceiverTheKindContradicts(t *testing.T) {
 		`{"kind":"return","value":{"kind":"lit"}}]}]}`))
 	require.NoError(t, err)
 	methods := analyze(cfg).Methods
-	require.Equal(t, "receiver:none returns:fresh", methods["Demo.make"].String())
+	require.Equal(t, "receiver:none returns:fresh", classified(methods["Demo.make"]))
 
 	report := mergeCuration(cfg, &Curation{Entries: map[string]CuratedEntry{
 		"Demo.make": entry(t, cfg, "Demo.make", RecvBorrow),
@@ -154,7 +154,7 @@ func TestMergeCurationRefusesAReceiverTheKindContradicts(t *testing.T) {
 
 	require.Equal(t, []string{"Demo.make receiver: curated borrow, but a builtin-static has no receiver"}, report.Refused)
 	require.Empty(t, report.Notes)
-	require.Equal(t, "receiver:none returns:fresh", methods["Demo.make"].String())
+	require.Equal(t, "receiver:none returns:fresh", classified(methods["Demo.make"]))
 }
 
 // The mirror case. A method has a receiver whatever the review says.
@@ -167,7 +167,7 @@ func TestMergeCurationRefusesNoneOnAMethod(t *testing.T) {
 	}}, methods)
 
 	require.Equal(t, []string{"Demo.prototype.opaque receiver: curated none, but a builtin-method has a receiver"}, report.Refused)
-	require.Equal(t, "returns:unknown", methods["Demo.prototype.opaque"].String())
+	require.Equal(t, "returns:unknown", classified(methods["Demo.prototype.opaque"]))
 }
 
 // A name the graph holds no builtin for is reported and applied to nothing, so
@@ -204,7 +204,7 @@ func TestMergeCurationAppliesAStaleEntry(t *testing.T) {
 	}}, methods)
 
 	require.Equal(t, []string{"Demo.prototype.opaque"}, report.Stale)
-	require.Equal(t, "receiver:mutBorrow returns:unknown", methods["Demo.prototype.opaque"].String())
+	require.Equal(t, "receiver:mutBorrow returns:unknown", classified(methods["Demo.prototype.opaque"]))
 }
 
 // An entry that cannot be reviewed or applied is a defect in committed data, so

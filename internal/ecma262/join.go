@@ -269,7 +269,7 @@ func (j *Join) Match(decls Declarations) JoinReport {
 // as a list of gaps rather than a failure.
 func WriteJoinReport(report JoinReport, w io.Writer) error {
 	// A matched fact does not always carry a receiver claim. The mutation
-	// fixpoint withholds one it could not read whole, which is the
+	// fixpoint withholds one where it could not read every step, which is the
 	// determination §7 auto-applies, so the count is worth reporting apart
 	// from the match count.
 	withReceiver := 0
