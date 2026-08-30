@@ -27,9 +27,10 @@ import (
 // where there is none fails loudly at a call site, while a missed one is silent
 // unsoundness.
 //
-// An operation whose body the walk does read belongs here when it cannot charge
-// the write to the parameter that received it. `__REMOVE_ELEM__` is the one
-// such entry.
+// `__REMOVE_ELEM__` is here for a different reason. The walk descends into its
+// body but cannot place the write it finds, so a seed is the only way that
+// mutation reaches a caller. The entry below says why the write cannot be
+// placed.
 //
 // The map is a reviewed constant. A mutating operation the spec adds without an
 // entry here produces a false non-mutating result.
