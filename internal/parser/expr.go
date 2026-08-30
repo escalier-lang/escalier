@@ -708,6 +708,7 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return nil
 	}
 
+	keyToken := p.lexer.peek()
 	objKey := p.objExprKey()
 	if objKey == nil {
 		return nil
@@ -756,6 +757,14 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		case *ast.IdentExpr:
 			switch token.Type {
 			case Comma, CloseBrace:
+				// A shorthand property is a key and a variable reference at once, so
+				// its name has to work in both roles. Keywords name a key freely, but
+				// only the ones a binding accepts can be read as a variable, which
+				// leaves out `catch` and the literals `true`, `null`, and `undefined`.
+				if isKeyword(keyToken.Type) && !bindsAsAName(keyToken.Type) {
+					p.reportError(keyToken.Span, "`"+keyToken.Value+
+						"` cannot be a shorthand property because it is not a variable name")
+				}
 				property := ast.NewProperty(
 					objKey,
 					false,

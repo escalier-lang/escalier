@@ -2403,6 +2403,37 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		require.Equal(t, "constructors cannot be static", errors[0].Message)
 	})
 
+	// A shorthand property is a key and a variable reference at once, so a keyword
+	// that cannot be read as a variable is rejected in that position while still
+	// naming a keyed property.
+	t.Run("keyword shorthand properties", func(t *testing.T) {
+		shorthandTests := []struct {
+			name  string
+			input string
+			want  string
+		}{
+			{"reserved word", "val a = {catch}", "`catch` cannot be a shorthand property because it is not a variable name"},
+			{"literal", "val a = {true}", "`true` cannot be a shorthand property because it is not a variable name"},
+		}
+		for _, tt := range shorthandTests {
+			t.Run(tt.name, func(t *testing.T) {
+				script := parser.NewParser(context.Background(), &ast.Source{
+					Path: "test.esc", Contents: tt.input,
+				})
+				_, errors := script.ParseScript()
+				require.NotEmpty(t, errors)
+				require.Equal(t, tt.want, errors[0].Message)
+			})
+		}
+	})
+
+	// The keyed form of those same names is valid JavaScript and stays accepted.
+	t.Run("keyword keys in an object literal", func(t *testing.T) {
+		result, err := Print(parseDecl(t, "val a = {catch: 1, true: 2}"), opts)
+		require.NoError(t, err)
+		require.Equal(t, "val a = {\n    catch: 1,\n    true: 2\n}", result)
+	})
+
 	// A binding name reaches JavaScript verbatim, so a keyword JavaScript itself
 	// reserves is still rejected there. `catch` names a member freely and a
 	// parameter never.
