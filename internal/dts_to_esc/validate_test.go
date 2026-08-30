@@ -79,15 +79,21 @@ func TestValidateReceivers(t *testing.T) {
 		},
 		// A static has no receiver to mutate, an accessor's polarity is fixed
 		// where the object type is built, and a symbol-keyed member is
-		// addressable by neither hand-written source. A withheld receiver
-		// claim leaves the fact with nothing to compare.
+		// addressable by neither hand-written source.
+		//
+		// `Demo.prototype.opaque` is the fourth shape, a receiver the analysis
+		// withheld. Its algorithm in internal/ecma262 is one prose step the
+		// serializer could not lower, so the mutation fixpoint reads it as
+		// incomplete and publishes no claim. The empty kind is that absence,
+		// which leaves nothing to compare. Generation refuses such a fact, so
+		// only an analyze result carries one.
 		"ShapesTheDiffLeavesOut": {
 			receivers: map[string]ecma262.ReceiverKind{
 				"Array.isArray":                  ecma262.RecvNone,
 				"Math.max":                       ecma262.RecvNone,
 				"get Map.prototype.size":         ecma262.RecvBorrow,
 				"Array.prototype [ @@iterator ]": ecma262.RecvBorrow,
-				"Array.prototype.sort":           "",
+				"Demo.prototype.opaque":          "",
 			},
 		},
 	}
