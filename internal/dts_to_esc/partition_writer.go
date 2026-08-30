@@ -44,7 +44,8 @@ type PartitionResult struct {
 	Drops []DropNote
 }
 
-// DropNote is one entry in PartitionResult.Drops.
+// DropNote is one (name, source-file basename) pair in
+// PartitionResult.Drops.
 type DropNote struct {
 	Name       string
 	SourceFile string
@@ -53,6 +54,10 @@ type DropNote struct {
 // PartitionLib routes every top-level declaration across the inputs
 // into its target package per Route. Returns an error on the first
 // unmapped symbol (§6.1 fail-safe).
+//
+// A file in DroppedSources contributes nothing. Every declaration in it
+// is recorded in Drops, including the ones that augment a type another
+// lib file owns.
 //
 // Inputs are processed in the order given so that interface-merge and
 // namespace-merge results are stable. Routing keys off the input's
@@ -67,6 +72,7 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
+		dropped := DroppedSources.Contains(in.SourceFile)
 		for _, stmt := range in.Module.Statements {
 			name := topLevelName(stmt)
 			if name == "" {
@@ -75,6 +81,11 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				// The standalone converter already drops these for
 				// MVP — keep parity here so PartitionLib doesn't push
 				// unroutable statements into a bucket.
+				continue
+			}
+			if dropped {
+				out.Drops = append(out.Drops,
+					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
 			}
 			res := Route(name, in.SourceFile)
@@ -727,41 +738,52 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 }
 
 // ReportPartition prints a short summary of a PartitionResult to w:
-// per-package decl count, drop count. Used by the CLI to give the
+// per-package decl count and drop count. Used by the CLI to give the
 // operator a sense of what landed where without dumping the full
 // output. The btree.Map keeps the package list sorted.
 func ReportPartition(result *PartitionResult, w io.Writer) error {
+	// The report is assembled in memory and written once. A
+	// strings.Builder write cannot fail, so the body stays free of
+	// error plumbing and the caller's writer is touched a single time.
+	var b strings.Builder
+
 	counts := btree.Map[string, int]{}
 	for uri, stmts := range result.Buckets {
 		counts.Set(uri, len(stmts))
 	}
-	var iterErr error
 	counts.Scan(func(uri string, n int) bool {
-		if _, err := fmt.Fprintf(w, "  %s: %d decls\n", uri, n); err != nil {
-			iterErr = err
-			return false
-		}
+		fmt.Fprintf(&b, "  %s: %d decls\n", uri, n)
 		return true
 	})
-	if iterErr != nil {
-		return iterErr
+
+	// Split the drop list by cause. A name in ExplicitDrops is worth
+	// naming; a whole dropped source file is worth a count, and naming
+	// its declarations would misread — lib.scripthost.d.ts augments
+	// `Date`, so "Date" in a flat name list would suggest std:date lost
+	// its class.
+	var dropped []string
+	seen := set.NewSet[string]()
+	sourceCounts := btree.Map[string, int]{}
+	for _, d := range result.Drops {
+		if DroppedSources.Contains(d.SourceFile) {
+			n, _ := sourceCounts.Get(d.SourceFile)
+			sourceCounts.Set(d.SourceFile, n+1)
+			continue
+		}
+		if !seen.Contains(d.Name) {
+			seen.Add(d.Name)
+			dropped = append(dropped, d.Name)
+		}
 	}
-	if len(result.Drops) > 0 {
-		if _, err := fmt.Fprintf(w, "  drops: %d (", len(result.Drops)); err != nil {
-			return err
-		}
-		names := make([]string, 0, len(result.Drops))
-		seen := map[string]bool{}
-		for _, d := range result.Drops {
-			if !seen[d.Name] {
-				seen[d.Name] = true
-				names = append(names, d.Name)
-			}
-		}
-		sort.Strings(names)
-		if _, err := fmt.Fprintf(w, "%s)\n", strings.Join(names, ", ")); err != nil {
-			return err
-		}
+	if len(dropped) > 0 {
+		sort.Strings(dropped)
+		fmt.Fprintf(&b, "  drops: %d (%s)\n", len(dropped), strings.Join(dropped, ", "))
 	}
-	return nil
+	sourceCounts.Scan(func(file string, n int) bool {
+		fmt.Fprintf(&b, "  dropped source %s: %d decls\n", file, n)
+		return true
+	})
+
+	_, err := io.WriteString(w, b.String())
+	return err
 }
