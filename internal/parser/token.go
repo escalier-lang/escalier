@@ -120,6 +120,35 @@ const (
 	Negation
 )
 
+// followsAName reports whether tokenType can come directly after a name in a
+// member or parameter position. A keyword that also marks a modifier is a
+// modifier only when a name follows it, so what comes next is what tells the
+// two apart. `set(v: any) -> unknown` names a method `set` because `(` opens
+// its parameter list, where `set value(v: any)` marks an accessor because a
+// name follows instead. The same rule reads `from` as a parameter name in
+// `substr(mut self, from: number)`.
+func followsAName(tokenType TokenType) bool {
+	// nolint: exhaustive
+	switch tokenType {
+	case OpenParen, CloseParen, LessThan, Colon, Question, Comma, CloseBrace, Equal:
+		return true
+	default:
+		return false
+	}
+}
+
+// startsASignature reports whether tokenType opens a function signature: the
+// type parameter list or the parameter list.
+func startsASignature(tokenType TokenType) bool {
+	// nolint: exhaustive
+	switch tokenType {
+	case OpenParen, LessThan:
+		return true
+	default:
+		return false
+	}
+}
+
 type Token struct {
 	Span  ast.Span
 	Type  TokenType
