@@ -72,6 +72,12 @@ type coercion struct {
 	// returnsAtOnce are the types the operation hands back before reaching any
 	// call, so nothing under it runs either. It is a subset of accepts, which
 	// TestCoercionsReturnOnlyWhatTheyAccept holds.
+	//
+	// What the under-rule needs is weaker: that nothing under the operation
+	// raises for this type. Reaching no call at all is the stricter test, and
+	// it is the one a reader can check against the operation's own steps, so an
+	// operation whose first step is a call returns nothing at once however
+	// harmless that call turns out to be. The two come apart at `ToNumeric`.
 	returnsAtOnce set.Set[langType]
 }
 
@@ -100,9 +106,14 @@ var coercions = map[string]coercion{
 	"ToObject":               {accepts: everyLangType, returnsAtOnce: everyLangType},
 	"ToString":               {accepts: everyLangTypeExcept(typeSymbol), returnsAtOnce: set.FromSlice([]langType{typeString})},
 	"ToNumber":               {accepts: everyLangTypeExcept(typeSymbol, typeBigInt), returnsAtOnce: set.FromSlice([]langType{typeNumber})},
-	// ToNumeric has no `Throw` step of its own, delegating to ToPrimitive and
-	// ToNumber, so it never bottoms out a chain. It is listed because FR11
-	// names it and a later spec revision could give it a check.
+	// ToNumeric has no `Throw` step of its own, so it never bottoms out a chain
+	// and accepts every type. It returns none at once because its first step is
+	// `? ToPrimitive(value, number)`. Nothing under it does raise for a Number
+	// or a BigInt, since ToPrimitive hands a primitive straight back and
+	// ToNumber returns a Number unchanged, so the empty set keeps throws the
+	// under-rule could drop. That is the safe direction, and the committed graph
+	// applies ToNumeric to a parameter rather than a receiver, so no drop turns
+	// on it today.
 	"ToNumeric": {accepts: everyLangType, returnsAtOnce: set.NewSet[langType]()},
 
 	"ThisBigIntValue":  thisValue(typeBigInt),
@@ -144,9 +155,12 @@ type FilterDecision struct {
 	Coercion string
 	Coerced  string
 	Dropped  bool
-	// Under marks a site the coercion did not raise but sits below, dropped
-	// because the receiver's type makes that coercion an identity and the steps
-	// it would reach past one unreachable. See underReceiverIdentity.
+	// Under marks a site the chain reaches past a coercion rather than at it,
+	// so Coercion names an operation further out than the one that raised.
+	// `String.prototype.charAt` has `#3 TypeError <- ToString#32 <-
+	// ToPrimitive#17`: the throw is ToPrimitive's, reached from ToString's
+	// body, and a String receiver leaves ToString at its first step without
+	// ever making that call. See underReceiverIdentity.
 	Under bool
 }
 
