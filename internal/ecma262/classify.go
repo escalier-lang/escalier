@@ -190,18 +190,6 @@ func receiverCovered(fn *Func, mutations Mutations) bool {
 	return !mutations.Unattributable && !mutations.Incomplete
 }
 
-// Coverage records which of MethodFact's determinations the analysis resolved.
-// A step it could not read withholds only the ones that read it (FR5).
-type Coverage struct {
-	// Receiver is set for a static or namespace function, which has no receiver
-	// to claim, and for a method the mutation fixpoint read whole.
-	Receiver bool `json:"receiver"`
-	// Returns is set for every builtin, since returnAlias is total. A return
-	// hidden in a step the analysis could not read drops out of the join, a
-	// loss FR4 accepts because §7 curates the alias rather than applying it.
-	Returns bool `json:"returns"`
-}
-
 // AliasRef names one value a return hands back, as Appendix B of
 // planning/ecma-262/implementation_plan.md serializes it. Index is the 0-based
 // position among the declared parameters, which do not include a method's
@@ -300,42 +288,65 @@ func newReturnFact(s aliasSet) ReturnFact {
 // as one entry of facts.json, described in Appendix B of
 // planning/ecma-262/implementation_plan.md.
 //
-// A determination Coverage leaves unset carries no claim, and its field is
-// absent from the JSON, so a consumer never reads "unanalyzed" as "proven
-// none". The converter applies requirements.md FR5's default instead, `&mut
-// self` for an absent receiver.
+// A published fact carries every determination. No field has a valid zero
+// value — "" is neither a ReceiverKind nor an AliasKind, and a nil channel is
+// not an empty one — so a field a fact does not carry is a hole rather than a
+// claim, and Facts.Incomplete names the methods that have one. Generation
+// refuses to write those, which is why the entries hold no coverage flags: an
+// axis is present or the run failed.
 //
-// Receiver is a plain kind with no empty member, so omitempty encodes its
-// absence. Returns is a struct, and omitzero encodes the same absence for it.
+// `unknown` is a value, not a hole. The alias lattice's top says the walk read
+// the returns and could tie none of them to a value the caller holds, which is
+// something §8.2 can act on. The methods still waiting on an answer there are
+// Facts.Unclassified(AxisReturns), a review report rather than a wire concern.
 //
-// Params, Throws, and Rejects join this shape in §8 and §9. Until §8.1 fills
-// Params, no fact makes a parameter claim, so an absent Params is not yet
-// Appendix B's proven-read-only one.
-//
-// Both throw fields land together, in §9.2. ThrowSummary already computes each
-// channel, but publishing the reject set on its own would spell a method whose
-// synchronous throws are simply not published yet as one that throws nothing.
+// Params joins this shape in §8.1 under the same rule: an axis a fact cannot
+// answer fails the run rather than encoding a hole a consumer might read as a
+// proven-empty result.
 type MethodFact struct {
-	Classified Coverage     `json:"classified"`
-	Receiver   ReceiverKind `json:"receiver,omitempty"`
-	Returns    ReturnFact   `json:"returns,omitzero"`
+	Receiver ReceiverKind `json:"receiver,omitempty"`
+	Returns  ReturnFact   `json:"returns,omitzero"`
+	// Throws holds the synchronous exceptions that survive the coercion filter,
+	// each one an Exception.Ref. A nil channel is the axis uncomputed, which
+	// reports as a hole and fails generation. `[]` is what the filter left
+	// standing, which is best effort rather than a proven-empty set.
+	Throws []string `json:"throws,omitzero"`
+	// Rejects holds what a promise-returning method rejects with, in the same
+	// form and read the same way.
+	Rejects []string `json:"rejects,omitzero"`
 }
 
-// String renders the covered determinations in one line, so a test can assert
-// a fact whole. An uncovered one is left out, and a fact covering nothing reads
+// String renders the determinations the fact carries in one line, so a test can
+// assert a fact whole. A hole is left out, and a fact with nothing in it reads
 // "unclassified".
 func (f MethodFact) String() string {
 	var parts []string
-	if f.Classified.Receiver {
+	if f.Receiver != "" {
 		parts = append(parts, "receiver:"+string(f.Receiver))
 	}
-	if f.Classified.Returns {
+	if f.Returns.Kind != "" {
 		parts = append(parts, "returns:"+f.Returns.String())
+	}
+	if f.Throws != nil {
+		parts = append(parts, "throws:"+channelString(f.Throws))
+	}
+	if f.Rejects != nil {
+		parts = append(parts, "rejects:"+channelString(f.Rejects))
 	}
 	if len(parts) == 0 {
 		return "unclassified"
 	}
 	return strings.Join(parts, " ")
+}
+
+// channelString renders a throws or rejects channel for MethodFact.String. A
+// proven-empty channel reads "none", so it stays distinct from the axis being
+// left out of the line altogether.
+func channelString(refs []string) string {
+	if len(refs) == 0 {
+		return "none"
+	}
+	return strings.Join(refs, "|")
 }
 
 // Facts is the classification of every builtin in one graph, keyed by the
@@ -345,18 +356,63 @@ func (f MethodFact) String() string {
 type Facts struct {
 	SpecTarget string                `json:"specTarget"`
 	Methods    map[string]MethodFact `json:"methods"`
+
+	// curationReport is what the curated layer did to the analyzed
+	// determinations. It is unexported because facts.json records the merged
+	// answer and not where each half of it came from. The name says report to
+	// keep it distinct from the Curation the merge reads. See CurationReport.
+	curationReport CurationReport
+
+	// filterReport is what the coercion filter dropped from the raw throw
+	// sets. It is unexported for the same reason: facts.json records the
+	// surviving exceptions, and which sites produced them is a reviewer's
+	// concern. See FilterReport.
+	filterReport FilterReport
 }
 
-// NewFacts classifies every builtin in cfg. It runs the mutation fixpoint
-// itself, which supplies the receiver axis and the two warnings that withhold
-// a method's mutability claim.
+// NewFacts is the published fact set for cfg, what the converter consumes. It
+// classifies every builtin from the graph and then merges the curated layer of
+// curated.go over the result, one determination at a time.
 //
-// A published receiver claim is only as strong as §4.1. A mutation the analysis
-// does not see leaves no warning, so the borrow is published rather than
-// withheld. §6's diff against the hand-written overrides is what authorizes §7
-// to trust this source.
-func NewFacts(cfg *CFG) *Facts {
+// A published receiver claim is only as strong as the mutation analysis or as
+// the review behind a curated entry. A mutation the analysis does not see
+// leaves no warning, so the borrow is published rather than withheld. What
+// authorizes the converter to trust this source is the validation diff against
+// the hand-written overrides, which reads Curation to tell a curated claim from
+// an analyzed one.
+func NewFacts(cfg *CFG) (*Facts, error) {
+	curation, err := parseCommitted(curatedJSON)
+	if err != nil {
+		return nil, err
+	}
+	facts := analyze(cfg)
+	facts.curationReport = mergeCuration(cfg, curation, facts.Methods)
+	return facts, nil
+}
+
+// Curation reports what the curated layer did to this run's analyzed
+// determinations.
+func (f *Facts) Curation() CurationReport {
+	return f.curationReport
+}
+
+// Filter reports every decision the coercion filter made over this run's raw
+// throw sets. The filter is a heuristic, so its decisions are reviewed rather
+// than trusted.
+func (f *Facts) Filter() FilterReport {
+	return f.filterReport
+}
+
+// analyze classifies every builtin in cfg from the graph alone. It runs the
+// mutation fixpoint itself, which supplies the receiver axis and the two
+// warnings that withhold a method's mutability claim.
+//
+// This is what §4 is measured by, and Facts.Unclassified over its result is the
+// objective made visible, per axis. NewFacts is what a consumer reads, since a
+// determination §4 cannot reach is answered by review rather than left open.
+func analyze(cfg *CFG) *Facts {
 	summary := NewMutationSummary(cfg)
+	filter := &coercionFilter{cfg: cfg, summary: NewThrowSummary(cfg)}
 
 	facts := &Facts{
 		SpecTarget: cfg.SpecTarget,
@@ -367,18 +423,19 @@ func NewFacts(cfg *CFG) *Facts {
 			continue
 		}
 		mutations := summary.Of(fn)
+		raised, rejects := filter.filterThrows(fn)
 		fact := MethodFact{
-			Classified: Coverage{
-				Receiver: receiverCovered(fn, mutations),
-				Returns:  true,
-			},
 			Returns: newReturnFact(returnAlias(summary.originsOf(fn))),
+			Throws:  exceptionRefs(raised),
+			Rejects: exceptionRefs(rejects),
 		}
-		if fact.Classified.Receiver {
+		if receiverCovered(fn, mutations) {
 			fact.Receiver = receiverKind(fn, mutations)
 		}
 		facts.Methods[fn.Name] = fact
 	}
+	sortDecisions(filter.report.Decisions)
+	facts.filterReport = filter.report
 	return facts
 }
 
@@ -390,17 +447,109 @@ func (f *Facts) Of(name string) (MethodFact, bool) {
 	return fact, ok
 }
 
-// Unclassified returns the names whose receiver claim FR5 hands to the
-// converter's name-based heuristics, sorted. Shrinking this list is what §4 is
-// measured by. Only a method appears, and it still publishes its return alias,
-// so the list marks a withheld determination rather than an empty fact.
-func (f *Facts) Unclassified() []string {
+// Axis names one determination a MethodFact carries. It is the unit the
+// classification is reported and reviewed in, because the analysis settles
+// each one independently and a method can be answered on one while still open
+// on another.
+type Axis string
+
+const (
+	AxisReceiver Axis = "receiver"
+	AxisReturns  Axis = "returns"
+	AxisThrows   Axis = "throws"
+	AxisRejects  Axis = "rejects"
+)
+
+// Unclassified returns the names carrying no answer on axis, sorted.
+//
+// Over an analyze result the list is what §4 is measured by. Over a NewFacts
+// result it is what neither the analysis nor the curated layer answers, which
+// is the surface still waiting on review.
+//
+// The two axes are worth reading apart rather than summed. §7 auto-applies the
+// receiver, so a name on that list is a method whose mutability falls to the
+// converter's name heuristics — a soundness gap. A name on the returns list
+// costs only the lifetime precision §8.2 would have seeded from it.
+func (f *Facts) Unclassified(axis Axis) []string {
 	names := make([]string, 0, len(f.Methods))
 	for name, fact := range f.Methods {
-		if !fact.Classified.Receiver {
+		if !fact.answers(axis) {
 			names = append(names, name)
 		}
 	}
 	sort.Strings(names)
 	return names
+}
+
+// answers reports whether the fact settles axis, which is a stronger question
+// than whether it carries a value there. A return of `unknown` is a value the
+// converter can act on and an open question for a reviewer, so it is carried
+// but not settled.
+//
+// An axis this does not name reads as unsettled, so an axis §8 or §9 adds shows
+// up as wholly open until it is wired in here.
+func (f MethodFact) answers(axis Axis) bool {
+	switch axis {
+	case AxisReceiver:
+		return f.Receiver != ""
+	case AxisReturns:
+		return f.Returns.Kind != "" && f.Returns.Kind != AliasUnknown
+	case AxisThrows, AxisRejects:
+		// Both channels are best effort, so a computed one is an answer.
+		// Nothing here separates a set that is short from one that is whole,
+		// because every published set is short by something.
+		return f.carries(axis)
+	default:
+		return false
+	}
+}
+
+// carries reports whether the fact holds a value on axis at all. This is what
+// generation requires, and Unclassified's `answers` is the reviewer's stricter
+// reading of the same fact.
+//
+// An axis this does not name reads as a hole. Incomplete asks only about
+// publishedAxes, so that answer is reachable exactly when an axis joins that
+// list without gaining a case here. Failing the run on every method is the safe
+// reading of that drift; the alternative passes the hole the gate exists to
+// catch. TestCarriesCoversEveryPublishedAxis catches it one step earlier.
+func (f MethodFact) carries(axis Axis) bool {
+	switch axis {
+	case AxisReceiver:
+		return f.Receiver != ""
+	case AxisReturns:
+		return f.Returns.Kind != ""
+	case AxisThrows:
+		return f.Throws != nil
+	case AxisRejects:
+		return f.Rejects != nil
+	default:
+		return false
+	}
+}
+
+// publishedAxes are the determinations every published fact must carry. §8 and
+// §9 add to it, and each axis added here needs a case in MethodFact.carries.
+var publishedAxes = []Axis{AxisReceiver, AxisReturns, AxisThrows, AxisRejects}
+
+// Incomplete returns the names whose fact holds a hole, one rendered line each,
+// sorted. A hole is a determination neither the analysis nor the curated layer
+// answered, and writing one to facts.json would leave a consumer to guess.
+//
+// The receiver axis is where this bites. §7 auto-applies it, so a hole there
+// would silently become the FR5 `&mut self` default, and a spec bump that
+// withholds a receiver nobody has curated is exactly the case that must be loud.
+// The list is empty for the committed graph, and TestFactsCarryEveryAxis holds
+// it that way.
+func (f *Facts) Incomplete() []string {
+	var holes []string
+	for name, fact := range f.Methods {
+		for _, axis := range publishedAxes {
+			if !fact.carries(axis) {
+				holes = append(holes, fmt.Sprintf("%s: no %s determination", name, axis))
+			}
+		}
+	}
+	sort.Strings(holes)
+	return holes
 }

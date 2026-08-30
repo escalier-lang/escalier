@@ -264,9 +264,8 @@ interface Fixture {
 		SpecTarget: "test",
 		Methods: map[string]ecma262.MethodFact{
 			"Fixture.prototype.withTail": {
-				Classified: ecma262.Coverage{Receiver: true, Returns: true},
-				Receiver:   ecma262.RecvBorrow,
-				Returns:    ecma262.ReturnFact{Kind: ecma262.AliasParam, Index: &tail},
+				Receiver: ecma262.RecvBorrow,
+				Returns:  ecma262.ReturnFact{Kind: ecma262.AliasParam, Index: &tail},
 			},
 		},
 	}
@@ -407,15 +406,14 @@ interface DataView {
 `).Module)
 	require.NoError(t, err)
 
-	covered := ecma262.Coverage{Receiver: true, Returns: true}
 	unnamed := ecma262.ReturnFact{Kind: ecma262.AliasUnknown}
 	facts := &ecma262.Facts{
 		SpecTarget: "test",
 		Methods: map[string]ecma262.MethodFact{
-			"String.prototype.localeCompare": {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
-			"DataView.prototype.getFloat64":  {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
-			"DataView.prototype.getUint8":    {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: unnamed},
-			"DataView.prototype.setFloat64":  {Classified: covered, Receiver: ecma262.RecvMutBorrow, Returns: unnamed},
+			"String.prototype.localeCompare": {Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.getFloat64":  {Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.getUint8":    {Receiver: ecma262.RecvBorrow, Returns: unnamed},
+			"DataView.prototype.setFloat64":  {Receiver: ecma262.RecvMutBorrow, Returns: unnamed},
 		},
 	}
 	report := ecma262.NewJoin(facts).Match(CollectDeclarations(mod))
@@ -463,18 +461,17 @@ declare function parseInt(string: string, radix?: number): number;
 	mods, err := ConvertBuckets(result)
 	require.NoError(t, err)
 
-	covered := ecma262.Coverage{Receiver: true, Returns: true}
 	facts := &ecma262.Facts{
 		SpecTarget: "test",
 		Methods: map[string]ecma262.MethodFact{
-			"Array.prototype.push":           {Classified: covered, Receiver: ecma262.RecvMutBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
-			"Array.prototype [ @@iterator ]": {Classified: covered, Receiver: ecma262.RecvBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
-			"Array.isArray":                  {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
-			"Math.max":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
-			"Math.min":                       {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Array.prototype.push":           {Receiver: ecma262.RecvMutBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Array.prototype [ @@iterator ]": {Receiver: ecma262.RecvBorrow, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Array.isArray":                  {Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Math.max":                       {Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"Math.min":                       {Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
 			// A function the global object holds names no owner, so neither
 			// side of the join can key it.
-			"parseInt": {Classified: covered, Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
+			"parseInt": {Receiver: ecma262.RecvNone, Returns: ecma262.ReturnFact{Kind: ecma262.AliasFresh}},
 		},
 	}
 	report := ecma262.NewJoin(facts).Match(StdDeclarations(mods))

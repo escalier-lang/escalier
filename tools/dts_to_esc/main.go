@@ -1,5 +1,7 @@
 // Command dts_to_esc converts TypeScript `.d.ts` files into Escalier
-// `.esc` source. Two modes:
+// `.esc` source. The three subcommands that operate on the pinned lib
+// set are the TS-version-bump workflow of §6.6. See
+// tools/dts_to_esc/README.md for a walkthrough of a bump.
 //
 //	dts_to_esc <path-to-d.ts>
 //	    Single-file MVP path: convert one .d.ts to a standalone .esc
@@ -8,11 +10,14 @@
 //	    recognition, namespace flattening, and `@js(...)` decorator
 //	    emission.
 //
-//	dts_to_esc partition [--cfg <cfg.json>] <lib-dir> <out-dir>
-//	    Full pinned-lib partitioning path per §6 PR A: discover every
+//	dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>
+//	    One-time seeding of a fresh `.esc` tree per §6.6: discover every
 //	    lib.*.d.ts under <lib-dir>, parse each, route every top-level
 //	    declaration through dts_to_esc.Route, and write the partitioned
-//	    tree (std/*.esc, web/*.esc) under <out-dir>. <out-dir>/node/
+//	    tree (std/*.esc, web/*.esc) under <out-dir>. Every package file
+//	    is written whole, so a committed tree under <out-dir> is
+//	    overwritten and its hand-edits lost. Use regenerate to fold
+//	    upstream changes into a tree that already exists. <out-dir>/node/
 //	    is scaffolded with a README explaining its reserved status per
 //	    §6.1/§6.3; no `.esc` files are emitted there. The unmapped-
 //	    symbol fail-safe aborts the run with the offending name +
@@ -20,13 +25,14 @@
 //
 //	    With --cfg, the run also joins every std:* member it emits
 //	    against the ECMA-262 effect facts derived from that control-flow
-//	    graph, and reports the names present on one side only. See
-//	    planning/ecma-262/implementation_plan.md §5.
+//	    graph, and reports the names present on one side only. It reports
+//	    what the curated layer did to those facts alongside it. See
+//	    planning/ecma-262/implementation_plan.md.
 //
 //	dts_to_esc check <lib-dir> <esc-dir>
 //	    Read-only verification per §6.4: convert the pinned lib set and
-//	    report every `.d.ts` declaration and member with no counterpart
-//	    in the committed `.esc` tree under <esc-dir>. Exits non-zero
+//	    print the unified diff a regenerate run would apply to the
+//	    committed `.esc` tree under <esc-dir>. Exits non-zero
 //	    when anything is missing. Signature and property-type drift are
 //	    not checked yet — see internal/dts_to_esc/rerun.go.
 //
@@ -42,6 +48,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -58,7 +65,7 @@ func main() {
 
 const usage = `usage:
   dts_to_esc <path-to-d.ts>
-  dts_to_esc partition [--cfg <cfg.json>] <lib-dir> <out-dir>
+  dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>
   dts_to_esc check <lib-dir> <esc-dir>
   dts_to_esc regenerate <lib-dir> <esc-dir>`
 
@@ -67,8 +74,8 @@ func run(args []string, stdout, stderr io.Writer) error {
 		return fmt.Errorf("%s", usage)
 	}
 	switch args[0] {
-	case "partition":
-		return runPartition(args[1:], stderr)
+	case "bootstrap":
+		return runBootstrap(args[1:], stderr)
 	case "check":
 		return runCheck(args[1:], stdout, stderr)
 	case "regenerate":
@@ -120,7 +127,7 @@ func runRegenerate(args []string, stdout, stderr io.Writer) error {
 }
 
 // partitionLibDir discovers, parses, and routes every lib.*.d.ts under
-// libDir. Shared by the partition, check, and regenerate subcommands.
+// libDir. Shared by the bootstrap, check, and regenerate subcommands.
 func partitionLibDir(libDir string, stderr io.Writer) (*dts_to_esc.PartitionResult, error) {
 	basenames, err := dts_to_esc.DiscoverLibFiles(libDir)
 	if err != nil {
@@ -160,39 +167,59 @@ func runSingleFile(args []string, out io.Writer) error {
 	return dts_to_esc.WriteStandaloneModule(standalone, out)
 }
 
-// partitionUsage is the one-line synopsis every partition-mode argument error
+// bootstrapUsage is the one-line synopsis every bootstrap-mode argument error
 // ends with.
-const partitionUsage = "usage: dts_to_esc partition [--cfg <cfg.json>] <lib-dir> <out-dir>"
+const bootstrapUsage = "usage: dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>"
 
-func runPartition(args []string, stderr io.Writer) error {
+func runBootstrap(args []string, stderr io.Writer) error {
 	// The flag package reports its own errors, which main would then print a
 	// second time. Discarding its output leaves one report per error.
-	flags := flag.NewFlagSet("partition", flag.ContinueOnError)
+	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the §5 effect-fact join report")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation and effect-fact join reports")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			fmt.Fprintln(stderr, partitionUsage)
+			fmt.Fprintln(stderr, bootstrapUsage)
 			flags.SetOutput(stderr)
 			flags.PrintDefaults()
 			return nil
 		}
-		return fmt.Errorf("%w\n%s", err, partitionUsage)
+		return fmt.Errorf("%w\n%s", err, bootstrapUsage)
 	}
 	if flags.NArg() != 2 {
-		return errors.New(partitionUsage)
+		return errors.New(bootstrapUsage)
 	}
 	libDir, outDir := flags.Arg(0), flags.Arg(1)
 
-	// Derive the facts before any output is written, so a bad --cfg path
-	// fails the run before it leaves a half-joined tree on disk.
+	// Derive the facts before any output is written, so neither a bad --cfg
+	// path nor a fact with a hole in it leaves a half-joined tree on disk. The
+	// tree does not read the facts, but a run that ends in an error should not
+	// leave output behind that looks like it succeeded.
+	var facts *ecma262.Facts
 	var join *ecma262.Join
 	if *cfgPath != "" {
 		cfg, err := ecma262.LoadCFG(*cfgPath)
 		if err != nil {
 			return fmt.Errorf("loading %s: %w", *cfgPath, err)
 		}
-		join = ecma262.NewJoin(ecma262.NewFacts(cfg))
+		facts, err = ecma262.NewFacts(cfg)
+		if err != nil {
+			return err
+		}
+		if holes := facts.Incomplete(); len(holes) > 0 {
+			// The curation report goes first, because a hole is often the
+			// downstream of a refused entry and that line names the cause. The
+			// error below names only the axis left unanswered.
+			if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
+				return err
+			}
+			// A hole would leave the converter to guess a determination nobody
+			// answered, and §7 auto-applies the receiver, so the guess would be
+			// silent. Refuse the run instead.
+			return fmt.Errorf("%s leaves determinations unanswered:\n  %s",
+				*cfgPath, strings.Join(holes, "\n  "))
+		}
+		join = ecma262.NewJoin(facts)
 	}
 
 	result, err := partitionLibDir(libDir, stderr)
@@ -220,8 +247,16 @@ func runPartition(args []string, stderr io.Writer) error {
 	if join == nil {
 		return nil
 	}
-	// The join is informational. The spec and the TypeScript lib drift
-	// independently, so a name on one side only is a gap to close rather than
-	// a failed run.
+	// The three reports are informational. A curated entry the analysis caught
+	// up with is an entry to delete, and the spec and the TypeScript lib drift
+	// independently, so a name on one side only is a gap to close. FR11's
+	// coercion filter is a heuristic, so what it dropped is read rather than
+	// trusted. None of them is a failed run.
+	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
+		return err
+	}
+	if err := ecma262.WriteFilterReport(facts.Filter(), stderr); err != nil {
+		return err
+	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
 }
