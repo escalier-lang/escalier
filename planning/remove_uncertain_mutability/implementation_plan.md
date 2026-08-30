@@ -30,7 +30,7 @@ The per-member cache key (`memberCacheKey`) was extended with a `receiverMut boo
 - **`mut?` receiver** — treated as immutable in `ReceiverIsDefinitelyMutable` (only `MutabilityMutable` returns true). The open-object hatch is `receiverMutForElems := receiverMut || objType.Open` in both the checker and LSP paths — open objects under inference only ever hold `PropertyElem`s and `RestSpreadElem`s by construction (per `newOpenObjectWithProperty`), so the filter is a no-op for them. This avoids the ordering hazard the plan flagged.
 - **Type-var receivers** — `ReceiverIsDefinitelyMutable` recurses into `tv.Constraint`. Unconstrained type vars return false. Tested.
 - **`ArrayConstraint` resolution** — `getArrayConstraintPropertyAccess` calls `getMemberTypeImpl` with `receiverMut=true` so `push`/`unshift`/etc. resolve during constraint-driven inference (the eventual parameter type ends up wrapped in `mut Array<…>` if any mutating method is recorded).
-- **`UpdateMethodMutability` in `prelude.go` flipped its default.** The old code defaulted `MutSelf=true` for every method on every `*Constructor` type, then overrode entries from `mutabilityOverrides`. The new code only sets `MutSelf` for methods that appear in the overrides table; everything else is left `nil`. This avoids hiding non-mutating methods on classes like `Function` whose `mutabilityOverrides` entry is empty/missing, but as a side effect, `Date.setHours(...)` and similar mutating methods on classes not in the overrides table are now visible on immutable receivers. Tracked in TODO(#500) at the top of `mutabilityOverrides` — needs entries for `Date`, `Promise`, `Error`, etc.
+- **`UpdateMethodMutability` in `prelude.go` flipped its default.** The old code defaulted `MutSelf=true` for every method on every `*Constructor` type, then overrode entries from the mutability override table. The new code only sets `MutSelf` for methods that appear in the overrides table; everything else is left `nil`. This avoids hiding non-mutating methods on classes like `Function` whose override entry is empty/missing, but as a side effect, `Date.setHours(...)` and similar mutating methods on classes not in the overrides table are now visible on immutable receivers. Tracked in TODO(#500) at the top of `nonMutatingOverrides` — needs entries for `Date`, `Promise`, `Error`, etc.
 
 ### LSP completion (as built)
 
@@ -55,7 +55,7 @@ Fixtures touched:
 
 ### Follow-ups
 
-- **TODO(#500)** — populate `mutabilityOverrides` for `Date`, `Promise`, `Error`, and other classes whose methods mutate the receiver. Without this, mut-self gating silently misses these classes.
+- **TODO(#500)** — populate `nonMutatingOverrides` for `Date`, `Promise`, `Error`, and other classes whose methods mutate the receiver. Without this, mut-self gating silently misses these classes.
 - The `objType.Open` short-circuit assumes open objects only hold `PropertyElem`/`RestSpreadElem`. Currently true; if methods ever get added to open objects, revisit.
 
 ## Phase 2 — Remove `mut?` ✅ Landed

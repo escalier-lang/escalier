@@ -957,7 +957,6 @@ third-party workstream's concern):
 - `populateSelfParams`
 - `UpdateMethodMutability`
 - `mergeReadonlyVariant`
-- the `mutabilityOverrides` Go map
 
 Escalier-specific extras currently injected via prelude code (e.g.
 `SymbolConstructor.customMatcher` at
@@ -1280,7 +1279,7 @@ omitted; they belong to the third-party workstream.
    builtin / override machinery in the same change:
    `BuildBuiltinStore`, `loadGlobalDefinitions`,
    `populateSelfParams`, `UpdateMethodMutability`,
-   `mergeReadonlyVariant`, the `mutabilityOverrides` map, and any
+   `mergeReadonlyVariant`, and any
    `internal/interop/data/builtins/` overrides subtree. No build
    flag, no parallel paths, no deprecation cycle — Escalier is
    pre-1.0.

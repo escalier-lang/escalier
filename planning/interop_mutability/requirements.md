@@ -213,7 +213,8 @@ with another signal that would otherwise mark something non-mutating:
 - `set*`, `add*`, `remove*`, `delete*`, `clear*`, `reset*`, `init*`,
   `push*`, `pop*`, `shift*`, `unshift*`, `insert*`, `replace*`, `update*`,
   `register*`, `unregister*`, `dispatch*`, `emit*`, `write*`, `flush*`,
-  `sort` and `reverse` (in-place on Array).
+  `sort` and `reverse` (in-place on Array), `copyWithin` (in-place on
+  Array and the typed arrays, despite the `copy*` prefix).
 
 If a name has both a mutating and non-mutating prefix, prefer mutating.
 This shows up often enough in collection APIs to matter; common examples:

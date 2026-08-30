@@ -68,7 +68,7 @@ func TestPopulateSelfParamsRecursesIntoNestedNamespaces(t *testing.T) {
 // accessor elements: getters default to non-mut self (reading state
 // doesn't mutate) and setters default to mut self (assignment
 // mutates). Defaulting getters to mut would hide every .d.ts getter
-// not in mutabilityOverrides on a non-mut receiver, because
+// not in the override table on a non-mut receiver, because
 // isMemberVisible gates GetterElem on receiver mutability the same
 // way it gates MethodElem.
 func TestPopulateSelfParamsGetterSetterDefaults(t *testing.T) {
@@ -165,7 +165,7 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 
 // TestUpdateMethodMutability_HeuristicFallthrough pins the fall-through
 // behaviour: a .d.ts-loaded method on a class with no entry in
-// mutabilityOverrides still gets the name-only interop heuristics
+// dts_to_esc.NonMutatingOverrides still gets the name-only interop heuristics
 // applied, so `getFoo` on an unlisted class is classified non-mutating
 // by tier 5 rather than being left at the default `mut self` and hidden
 // on non-mut receivers.
@@ -195,7 +195,7 @@ func TestUpdateMethodMutability_HeuristicFallthrough(t *testing.T) {
 			obj := type_system.NewObjectType(nil, []type_system.ObjTypeElem{method})
 
 			ns := type_system.NewNamespace()
-			// "Widget" is intentionally NOT a key in mutabilityOverrides — the
+			// "Widget" is intentionally NOT a key in the override table — the
 			// whole point is heuristics must run even with no override entry.
 			ns.Types["Widget"] = &type_system.TypeAlias{Type: obj}
 
