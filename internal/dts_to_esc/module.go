@@ -3,6 +3,7 @@ package dts_to_esc
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -29,6 +30,49 @@ type convertCtx struct {
 	// full chain to address a member declared inside nested
 	// namespaces.
 	namespacePath string
+
+	// keyDrops accumulates every singleton member flattenSingleton
+	// skipped because the member's key has no plain-name form. The
+	// slice is shared across the whole conversion, so a member dropped
+	// inside a nested namespace reaches the caller too. Which of these
+	// are expected is ReportSingletonKeyDrops's call, not the
+	// converter's.
+	keyDrops []SingletonMember
+}
+
+// noteSingletonKeyDrop records that flattenSingleton skipped a member
+// declared under key. The singleton is named by its dotted runtime
+// path, such as "Math", which carries the enclosing namespace when the
+// singleton is declared inside one. Two singletons that share a short
+// name therefore stay distinct.
+func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.PropertyKey) {
+	c.keyDrops = append(c.keyDrops, SingletonMember{
+		Singleton: singleton,
+		Key:       singletonKeyLabel(key),
+	})
+}
+
+// singletonKeyLabel renders a property key that has no plain-name form
+// so a drop report can name it. A computed key renders as its dotted
+// expression, such as "Symbol.toStringTag", and a numeric key as its
+// literal text.
+//
+// Every computed key in the pinned TS lib is a `Symbol.*` member
+// access. A shape that does not reduce to a dotted chain renders as
+// its expression type, "<computed *dts_parser.CallExpr>". That keeps
+// the member in the report, and it reads as a placeholder rather than
+// as a member name someone could allow-list.
+func singletonKeyLabel(pk dts_parser.PropertyKey) string {
+	switch k := pk.(type) {
+	case *dts_parser.ComputedKey:
+		if dotted := exprDottedName(k.Expr); dotted != "" {
+			return dotted
+		}
+		return fmt.Sprintf("<computed %T>", k.Expr)
+	case *dts_parser.NumberLiteral:
+		return strconv.FormatFloat(k.Value, 'g', -1, 64)
+	}
+	return fmt.Sprintf("<%T>", pk)
 }
 
 // classifyMember runs Classify for a member of the given enclosing class,

@@ -369,6 +369,80 @@ func TestStandalone_SingletonSkipsSymbolKeyedMember(t *testing.T) {
 	require.Equal(t, "Math.abs", printDecoratorArg(t, fn.Decorators[0]))
 	require.NotContains(t, printed, "toStringTag")
 	require.NotContains(t, printed, "Symbol.iterator")
+
+	// Both skips are recorded in source order. Whether either one is
+	// expected is ReportSingletonKeyDrops's call.
+	require.Equal(t, []SingletonMember{
+		{Singleton: "Math", Key: "Symbol.toStringTag"},
+		{Singleton: "Math", Key: "Symbol.iterator"},
+	}, astModule.KeyDrops)
+}
+
+// numberKeyedSingletonSlice covers a key that is neither a plain name
+// nor a symbol. A numeric key has no plain-name form either, so the
+// member is dropped and reported under its literal text.
+const numberKeyedSingletonSlice = `
+interface Widget {
+    resize(n: number): void;
+    readonly 0: string;
+}
+
+declare var Widget: Widget;
+`
+
+func TestStandalone_SingletonNumericKeyDropIsRecorded(t *testing.T) {
+	astModule, _ := convertSlice(t, numberKeyedSingletonSlice)
+	require.Equal(t, []SingletonMember{
+		{Singleton: "Widget", Key: "0"},
+	}, astModule.KeyDrops)
+}
+
+// nestedSingletonSlice puts a singleton inside a namespace, the shape
+// `declare namespace Intl { ... }` produces. A drop has to reach the
+// caller from the recursive conversion, not just from the module root.
+const nestedSingletonSlice = `
+declare namespace Intl {
+    interface Collators {
+        compare(a: string, b: string): number;
+        [Symbol.dispose](): void;
+    }
+
+    var Collators: Collators;
+}
+`
+
+func TestStandalone_NestedSingletonKeyDropIsRecorded(t *testing.T) {
+	astModule, _ := convertSlice(t, nestedSingletonSlice)
+	// The singleton is named by its dotted runtime path, so a nested
+	// `Collators` cannot be mistaken for a top-level one of the same
+	// name.
+	require.Equal(t, []SingletonMember{
+		{Singleton: "Intl.Collators", Key: "Symbol.dispose"},
+	}, astModule.KeyDrops)
+}
+
+// accessorKeyedSingletonSlice covers the accessor member kinds. A
+// getter and a setter have no top-level lowering whatever their key.
+// The named pair is dropped without a note, and only the symbol-keyed
+// pair is recorded.
+const accessorKeyedSingletonSlice = `
+interface Atomics {
+    add(x: number): number;
+    get size(): number;
+    set size(n: number);
+    get [Symbol.toStringTag](): string;
+    set [Symbol.dispose](fn: () => void);
+}
+
+declare var Atomics: Atomics;
+`
+
+func TestStandalone_SingletonAccessorKeyDropsAreRecorded(t *testing.T) {
+	astModule, _ := convertSlice(t, accessorKeyedSingletonSlice)
+	require.Equal(t, []SingletonMember{
+		{Singleton: "Atomics", Key: "Symbol.toStringTag"},
+		{Singleton: "Atomics", Key: "Symbol.dispose"},
+	}, astModule.KeyDrops)
 }
 
 // sharedInterfaceSlice pins the negative case for the singleton flattener:

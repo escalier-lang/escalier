@@ -787,3 +787,49 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	_, err := io.WriteString(w, b.String())
 	return err
 }
+
+// ReportSingletonKeyDrops prints one line per singleton member the
+// conversion skipped because the member's key has no plain-name form
+// and AllowedSingletonKeyDrops does not cover it. Nothing is written
+// when every skip was allow-listed, which is the state over the pinned
+// lib set.
+//
+// The bootstrap subcommand calls this after ReportPartition, so a
+// member a TypeScript bump adds under a computed key shows up next to
+// the top-level drop counts instead of vanishing into the flattener.
+func ReportSingletonKeyDrops(mods map[string]*StandaloneModule, w io.Writer) error {
+	type entry struct {
+		uri    string
+		member SingletonMember
+	}
+	var entries []entry
+	for uri, mod := range mods {
+		for _, m := range mod.KeyDrops {
+			if AllowedSingletonKeyDrops.Contains(m) {
+				continue
+			}
+			entries = append(entries, entry{uri: uri, member: m})
+		}
+	}
+	if len(entries) == 0 {
+		return nil
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		a, b := entries[i], entries[j]
+		if a.uri != b.uri {
+			return a.uri < b.uri
+		}
+		if a.member.Singleton != b.member.Singleton {
+			return a.member.Singleton < b.member.Singleton
+		}
+		return a.member.Key < b.member.Key
+	})
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "  singleton members skipped for a non-name key: %d\n", len(entries))
+	for _, e := range entries {
+		fmt.Fprintf(&b, "    %s %s[%s]\n", e.uri, e.member.Singleton, e.member.Key)
+	}
+	_, err := io.WriteString(w, b.String())
+	return err
+}
