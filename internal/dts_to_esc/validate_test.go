@@ -81,18 +81,10 @@ func TestValidateReceivers(t *testing.T) {
 		// where the object type is built, and a symbol-keyed member is
 		// addressable by neither hand-written source. A withheld receiver
 		// claim leaves the fact with nothing to compare.
-		//
-		// `Demo.prototype.set` is the case where the two signals for "no
-		// receiver" point different ways. Its name normalizes to an instance
-		// member, while its fact says the algorithm takes no receiver. Either
-		// signal alone drops the method, so it is left out and nothing is
-		// compared. Reading `none` as a borrow instead would compare it and
-		// score a disagreement against the mutating `set` prefix.
 		"ShapesTheDiffLeavesOut": {
 			receivers: map[string]ecma262.ReceiverKind{
 				"Array.isArray":                  ecma262.RecvNone,
 				"Math.max":                       ecma262.RecvNone,
-				"Demo.prototype.set":             ecma262.RecvNone,
 				"get Map.prototype.size":         ecma262.RecvBorrow,
 				"Array.prototype [ @@iterator ]": ecma262.RecvBorrow,
 				"Array.prototype.sort":           "",
@@ -114,6 +106,25 @@ func TestValidateReceivers(t *testing.T) {
 			require.Equal(t, test.factOnly, nonEmpty(report.FactOnly))
 		})
 	}
+}
+
+// A fact claiming no receiver is dropped even when its spec name normalizes to
+// an instance member. The two are usually consistent, so this pins the guard
+// that holds when they are not.
+//
+// `Demo.prototype.set` is that shape. comparableRef accepts the name, since it
+// normalizes to a string-keyed instance member with no accessor, so claimsBorrow
+// is the only guard that refuses it. Reading `none` as a borrow instead would
+// compare the method and score a disagreement against the mutating `set` prefix.
+func TestValidateReceiversDropsAReceiverlessInstanceName(t *testing.T) {
+	t.Parallel()
+
+	report := ValidateReceivers(factsOf(map[string]ecma262.ReceiverKind{
+		"Demo.prototype.set": ecma262.RecvNone,
+	}))
+
+	require.Empty(t, report.Compared)
+	require.Empty(t, report.FactOnly)
 }
 
 // nonEmpty maps an empty slice onto nil so a test case can leave the field out
