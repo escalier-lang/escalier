@@ -164,6 +164,11 @@ func TestRoute_WorkerOnlySymbols(t *testing.T) {
 	// Surface only lib.webworker.d.ts declares. It reaches Route
 	// because no file outside WorkerHostSources declares these names,
 	// so PartitionLib does not skip them as redeclarations.
+	//
+	// Each entry lands in a package chosen by the API the name belongs
+	// to, which is the axis the §6.1 table partitions on. A package can
+	// therefore hold both these worker-only names and names a worker
+	// does not have. Tracking that second axis is #1336.
 	cases := []struct {
 		name    string
 		wantURI string
