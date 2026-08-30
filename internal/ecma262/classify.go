@@ -306,12 +306,13 @@ func newReturnFact(s aliasSet) ReturnFact {
 type MethodFact struct {
 	Receiver ReceiverKind `json:"receiver,omitempty"`
 	Returns  ReturnFact   `json:"returns,omitzero"`
-	// Throws holds the synchronous exceptions that survive §9.2's coercion
-	// filter, Rejects the ones a promise-returning method rejects with. Each
-	// entry is an Exception.Ref. A nil channel is the axis uncomputed, which
-	// reports as a hole and fails generation; `[]` is what the filter left
-	// standing, which is best effort per FR5 rather than a proven-empty set.
-	Throws  []string `json:"throws,omitzero"`
+	// Throws holds the synchronous exceptions that survive the coercion filter,
+	// each one an Exception.Ref. A nil channel is the axis uncomputed, which
+	// reports as a hole and fails generation. `[]` is what the filter left
+	// standing, which is best effort rather than a proven-empty set.
+	Throws []string `json:"throws,omitzero"`
+	// Rejects holds what a promise-returning method rejects with, in the same
+	// form and read the same way.
 	Rejects []string `json:"rejects,omitzero"`
 }
 
@@ -362,7 +363,7 @@ type Facts struct {
 	// keep it distinct from the Curation the merge reads. See CurationReport.
 	curationReport CurationReport
 
-	// filterReport is what §9.2's coercion filter dropped from the raw throw
+	// filterReport is what the coercion filter dropped from the raw throw
 	// sets. It is unexported for the same reason: facts.json records the
 	// surviving exceptions, and which sites produced them is a reviewer's
 	// concern. See FilterReport.
@@ -396,8 +397,8 @@ func (f *Facts) Curation() CurationReport {
 }
 
 // Filter reports every decision the coercion filter made over this run's raw
-// throw sets. FR11 is a heuristic, so its decisions are reviewed rather than
-// trusted.
+// throw sets. The filter is a heuristic, so its decisions are reviewed rather
+// than trusted.
 func (f *Facts) Filter() FilterReport {
 	return f.filterReport
 }
@@ -494,9 +495,9 @@ func (f MethodFact) answers(axis Axis) bool {
 	case AxisReturns:
 		return f.Returns.Kind != "" && f.Returns.Kind != AliasUnknown
 	case AxisThrows, AxisRejects:
-		// Both channels are best effort per FR5, so a computed one is an
-		// answer. Nothing here separates a set that is short from one that is
-		// whole, because every published set is short by something.
+		// Both channels are best effort, so a computed one is an answer.
+		// Nothing here separates a set that is short from one that is whole,
+		// because every published set is short by something.
 		return f.carries(axis)
 	default:
 		return false
