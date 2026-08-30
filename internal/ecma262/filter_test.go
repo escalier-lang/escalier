@@ -134,15 +134,42 @@ func TestFilterKeepsAThrowBelowACoercionOfAParameter(t *testing.T) {
 	}, kept)
 }
 
-// Only a `TypeError` is adjudicated. Every other class says something about the
-// values a well-typed caller can pass rather than about their types, so the
-// filter never sees it: `RangeError` on an out-of-range index, `URIError` on a
-// malformed escape, `SyntaxError` on an unparseable string.
-func TestFilterAdjudicatesTypeErrorsAlone(t *testing.T) {
-	for _, decision := range testFilterReport(t).Decisions {
-		require.Truef(t, strings.Contains(decision.Site, " TypeError"),
-			"%s is not a TypeError site", decision)
+// The decisions are the `TypeError` sites of every builtin, on both channels,
+// and nothing else.
+//
+// Neither direction is spare. A class other than `TypeError` says something
+// about the values a well-typed caller can pass rather than about their types,
+// so the filter must not weigh one: a `RangeError` on an out-of-range index, a
+// `URIError` on a malformed escape, a `SyntaxError` on an unparseable string.
+// And a `TypeError` site the filter never reaches is one it silently keeps,
+// which is the shape a dropped channel would take — filterThrows walks the
+// synchronous sites and the rejection sites separately, so losing either leaves
+// the other passing.
+func TestFilterAdjudicatesEveryTypeErrorSite(t *testing.T) {
+	cfg := testCFG(t)
+	summary := testThrows(t)
+
+	var want []string
+	for _, fn := range cfg.Funcs {
+		if fn.Kind != BuiltinMethod && fn.Kind != BuiltinStatic {
+			continue
+		}
+		throws := summary.Of(fn)
+		for _, site := range append(throws.SyncSites(), throws.RejectSites()...) {
+			if site.Exception == Class("TypeError") {
+				want = append(want, fn.Name+": "+site.String())
+			}
+		}
 	}
+
+	var got []string
+	for _, decision := range testFilterReport(t).Decisions {
+		got = append(got, decision.Method+": "+decision.Site)
+	}
+
+	sort.Strings(want)
+	sort.Strings(got)
+	require.Equal(t, want, got)
 }
 
 // The whole run's tallies, and the operations whose guards it dropped. This is
