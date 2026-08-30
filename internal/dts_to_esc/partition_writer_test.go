@@ -89,7 +89,14 @@ func TestPartitionLib_WorkerInterfaceNeedsASharedInterface(t *testing.T) {
 	// signatures to a shared interface in the same bucket. When the
 	// name is declared outside the worker host only as a class, there
 	// is no such interface, so the worker copy is skipped whole.
+	//
+	// The shapes are synthetic. TypeScript declares `Storage` as an
+	// interface in both host libs, and the guard exists for a lib the
+	// pinned set does not contain. `StorageBase` and the call signature
+	// stand in for what a trim would drop: `workerOnlyMembers` clears
+	// Extends and keeps no member whose key is empty.
 	dom := parseLib(t, "lib.dom.d.ts", `
+interface StorageBase { length: number; }
 declare class Storage { getItem(key: string): string | null; }
 `)
 	worker := parseLib(t, "lib.webworker.d.ts", `
