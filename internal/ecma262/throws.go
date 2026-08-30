@@ -329,8 +329,8 @@ func (s ThrowSite) String() string {
 //
 // Incomplete marks a function with a step whose throws the analysis could not
 // read. Four shapes leave it set: a prose step §3 could not lower, an object
-// internal method whose implementation is chosen at runtime, a call into a
-// function value the graph holds no body for, and an abrupt completion the
+// internal method whose implementation is chosen at runtime, a call whose
+// invoked function the origin map cannot name, and an abrupt completion the
 // algorithm captured as a value without the reject walk naming where it came
 // from. FR10 asks for such a method to be flagged rather than guessed at, and
 // §4.3 withholds the receiver determination from a method carrying it.
@@ -742,9 +742,10 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 
 	target := resolveCallee(cfg, origin, node.Callee)
 	if target == nil {
-		// An object internal method that shares its name with no operation, or
-		// a function the caller supplied under a callee's name. Either runs code
-		// the graph does not hold.
+		// An object internal method that shares its name with no operation, so
+		// an exotic object or a Proxy chooses the implementation, or a function
+		// the caller supplied under a callee's name. Neither has an algorithm in
+		// the graph to read.
 		return f.markIncomplete() || changed
 	}
 	if target == fn && !invoking && objectInternalMethods.Contains(node.Callee) {
@@ -786,9 +787,19 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 //
 // A function that reached the algorithm as its receiver or one of its
 // parameters raises whatever the algorithm's own caller passed in, which is the
-// ExceptionCallback effect. Any other function value was read off a property or
-// out of a slot, so the graph holds no body for it and its throws cannot be
-// read.
+// ExceptionCallback effect. Any other origin leaves the invoked function
+// unnamed, so there is no summary to read and the step is incomplete.
+//
+// That is usually the right answer twice over, because the function is the
+// caller's own and no algorithm for it exists to find. `String.prototype.match`
+// invokes what `? GetMethod(regexp, @@match)` returned, the slice methods
+// construct what `SpeciesConstructor` returned, and `Set.prototype.difference`
+// calls the `[[Has]]` of a Set Record built by reading `has` off its argument.
+//
+// It over-reports where the value is the `this` of a static. `Array.of` binds
+// `Let C be the this value` and constructs it, and §4.2 gives a static no
+// receiver, so `C` resolves to `Unknown` though the declaration fixes what a
+// well-typed caller constructs.
 func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node *CallNode, position, index int, sink Sink) bool {
 	if position >= len(node.Args) {
 		return f.markIncomplete()
