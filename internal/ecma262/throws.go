@@ -177,7 +177,7 @@ func (r Exception) String() string {
 // something different from the value at that position: an effect, the reject
 // type of a promise the iterable there yields, or an aggregate over those.
 //
-// An origin ref resolves to a type at the FR7 join, so `param:0` on
+// An origin ref resolves to a type at the join, so `param:0` on
 // `Promise.reject` becomes that parameter's declared type.
 func (r Exception) Ref() string {
 	switch r.Kind {
@@ -346,7 +346,7 @@ type Throws struct {
 	// Modeled holds the subset of Rejects the combinator model supplied, sorted.
 	// Those rejections reach the returned promise through the promise-resolution
 	// machinery rather than through a step of the algorithm, so they have no
-	// site. §9.2 filters the reject channel per site and reads this to carry the
+	// site. The coercion filter works per site and reads this to carry the
 	// siteless rejections across.
 	Modeled    []Exception
 	Sites      []ThrowSite
@@ -461,8 +461,8 @@ type throwFacts struct {
 type ThrowSummary struct {
 	facts map[*Func]*throwFacts
 	// origins holds the map each function's raised values were read through.
-	// §9.2 threads a coercion's argument back through a provenance chain, which
-	// means reading the map of every function on that chain.
+	// The coercion filter threads a coercion's argument back through a
+	// provenance chain, which means reading the map of every function on it.
 	origins map[*Func]*OriginMap
 }
 
@@ -785,29 +785,11 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 // function is the argument at position. What the invoking operation raises on
 // its own account is propagate's business rather than this one's.
 //
-// A function that reached the algorithm as its receiver or one of its
-// parameters raises whatever the algorithm's own caller passed in, which is the
-// ExceptionCallback effect. Any other origin leaves the invoked function
-// unnamed, so there is no summary to read and the step is incomplete.
-//
-// What separates the two is whether the function can be named against the
-// method's own signature, not whether the graph holds a body for it.
-// `Array.prototype.forEach` invokes `callbackfn`, its parameter 0, and
-// publishes `throwsOf:param:0` without reading any body at all.
-//
-// `String.prototype.match` invokes what `? GetMethod(regexp, @@match)`
-// returned, which in certain situations is a method the caller put on their own
-// object. Whether that method throws is unknown, let alone what it throws. The
-// call to `GetMethod` is read in full, its own `TypeError` included; it is the
-// value it hands back that cannot be named. The slice methods construct what
-// `SpeciesConstructor` returned and `Set.prototype.difference` calls the
-// `[[Has]]` of a Set Record built by reading `has` off its argument, both the
-// same shape.
-//
-// It over-reports where the value is the `this` of a static. `Array.of` binds
-// `Let C be the this value` and constructs it, and §4.2 gives a static no
-// receiver, so `C` resolves to `Unknown` though the declaration fixes what a
-// well-typed caller constructs.
+// A function the algorithm received as its receiver or a parameter raises
+// whatever the caller passed in, which is the ExceptionCallback effect. Any
+// other origin leaves the invoked function unnamed, so the step is incomplete.
+// What decides this is whether the function can be named against the method's
+// signature, not whether the graph holds a body for it.
 func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node *CallNode, position, index int, sink Sink) bool {
 	if position >= len(node.Args) {
 		return f.markIncomplete()
@@ -819,6 +801,9 @@ func (a *throwAnalysis) propagateInvoked(f *throwFacts, origin *OriginMap, node 
 		}
 		return f.add(CallbackThrows(o), Root{}, node, index, sink)
 	default:
+		// Over-reports on a static that constructs its own `this`. The origin
+		// map gives a static no receiver, so `Array.of` lands here though the
+		// declaration fixes what a well-typed caller constructs.
 		return f.markIncomplete()
 	}
 }
