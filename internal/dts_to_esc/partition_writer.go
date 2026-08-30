@@ -44,18 +44,85 @@ type PartitionResult struct {
 	// not errors.
 	Drops []DropNote
 
-	// Redeclarations records (name, source-file basename) pairs for
-	// every worker-host declaration skipped because a file outside
-	// WorkerHostSources already declares that name. Like Drops, these
-	// are intentional rather than errors.
-	Redeclarations []DropNote
+	// Redeclarations records every worker-host declaration skipped
+	// because a file outside WorkerHostSources already declares that
+	// name. Like Drops, these are intentional rather than errors, but
+	// two of the reasons discard surface only a worker has — see
+	// RedeclarationReason.LosesMembers.
+	Redeclarations []Redeclaration
 }
 
 // DropNote is one (name, source-file basename) pair in
-// PartitionResult.Drops or PartitionResult.Redeclarations.
+// PartitionResult.Drops.
 type DropNote struct {
 	Name       string
 	SourceFile string
+}
+
+// Redeclaration is one entry in PartitionResult.Redeclarations: the
+// skipped declaration and why the copy from outside the Web Worker host
+// lib is the one that stands.
+type Redeclaration struct {
+	Name       string
+	SourceFile string
+	Reason     RedeclarationReason
+}
+
+// RedeclarationReason says why PartitionLib skipped a worker-host
+// declaration. See WorkerHostSources for why the two host libs overlap.
+type RedeclarationReason int
+
+const (
+	// RestatesShared is the ordinary case: the worker interface
+	// declares no member the shared copy lacks. Nothing is lost. The
+	// pinned lib set is 838 of these and nothing else.
+	RestatesShared RedeclarationReason = iota
+
+	// SharedFormKept marks a name the worker declares in a form with
+	// no members to compare, a var, function, or type alias. A
+	// worker's `declare var navigator: WorkerNavigator` and a
+	// document's `declare var navigator: Navigator` cannot both stand
+	// in one tree, so the copy outside the worker host is kept. The
+	// converter emits one tree rather than one per host, which is the
+	// policy this follows rather than a gap.
+	SharedFormKept
+
+	// NoSharedInterface marks a worker interface whose name nothing
+	// outside the worker host declares as an interface. A trimmed copy
+	// leaves its inheritance chain and its call, construct, and index
+	// signatures to a shared interface in the same bucket, and there
+	// is none, so the whole declaration is skipped and any member only
+	// the worker declares goes with it.
+	NoSharedInterface
+
+	// TypeParamsDiffer marks two copies that name their type
+	// parameters differently. Merging is by name and keeps the shared
+	// copy's parameters, so a kept member written against one name
+	// would land under the other. The whole declaration is skipped and
+	// any member only the worker declares goes with it.
+	TypeParamsDiffer
+)
+
+// LosesMembers reports whether the reason discarded surface only the
+// worker host declares. A run with any of these has dropped API surface
+// and wants a look, which is what ReportPartition names them for.
+func (r RedeclarationReason) LosesMembers() bool {
+	return r == NoSharedInterface || r == TypeParamsDiffer
+}
+
+// String renders the reason for the partition report.
+func (r RedeclarationReason) String() string {
+	switch r {
+	case RestatesShared:
+		return "restates the shared copy"
+	case SharedFormKept:
+		return "declared outside the worker host in another form"
+	case NoSharedInterface:
+		return "no shared interface to carry the rest of the declaration"
+	case TypeParamsDiffer:
+		return "type parameter names differ from the shared copy"
+	}
+	return "unknown"
 }
 
 // PartitionLib routes every top-level declaration across the inputs
@@ -178,10 +245,13 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
 				continue
 			}
-			extra := workerOnlyMembers(stmt, shared[name])
+			extra, why := workerOnlyMembers(stmt, shared[name])
 			if extra == nil {
-				out.Redeclarations = append(out.Redeclarations,
-					DropNote{Name: name, SourceFile: in.SourceFile})
+				out.Redeclarations = append(out.Redeclarations, Redeclaration{
+					Name:       name,
+					SourceFile: in.SourceFile,
+					Reason:     why,
+				})
 				continue
 			}
 			out.Buckets[pkg.URI] = append(out.Buckets[pkg.URI], extra)
@@ -232,13 +302,19 @@ type sharedIface struct {
 // Comparison is by member key, so a worker-only *overload* of a name
 // the shared copy also declares is dropped along with the rest. No such
 // overload exists in the pinned set.
-func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) *dts_parser.InterfaceDecl {
+//
+// The second return names why the worker copy was skipped, for the
+// caller to record. It is meaningless when a trimmed copy is returned.
+func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) (*dts_parser.InterfaceDecl, RedeclarationReason) {
 	iface, ok := stmt.(*dts_parser.InterfaceDecl)
-	if !ok || shared == nil {
-		return nil
+	if !ok {
+		return nil, SharedFormKept
+	}
+	if shared == nil {
+		return nil, NoSharedInterface
 	}
 	if !slices.Equal(shared.typeParams, typeParamNames(iface.TypeParams)) {
-		return nil
+		return nil, TypeParamsDiffer
 	}
 	var extra []dts_parser.InterfaceMember
 	for _, m := range iface.Members {
@@ -249,7 +325,7 @@ func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) *dts_pars
 		extra = append(extra, m)
 	}
 	if len(extra) == 0 {
-		return nil
+		return nil, RestatesShared
 	}
 	// mergeDecls keeps the first occurrence's doc, span, and type
 	// params and concatenates what follows, so the shared copy routed
@@ -258,7 +334,7 @@ func workerOnlyMembers(stmt dts_parser.Statement, shared *sharedIface) *dts_pars
 	trimmed := *iface
 	trimmed.Members = extra
 	trimmed.Extends = nil
-	return &trimmed
+	return &trimmed, RestatesShared
 }
 
 // typeParamNames returns the declared names of a type-parameter list,
@@ -909,21 +985,20 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 // operator a sense of what landed where without dumping the full
 // output. The btree.Map keeps the package list sorted.
 func ReportPartition(result *PartitionResult, w io.Writer) error {
+	// The report is assembled in memory and written once. A
+	// strings.Builder write cannot fail, so the body stays free of
+	// error plumbing and the caller's writer is touched a single time.
+	var b strings.Builder
+
 	counts := btree.Map[string, int]{}
 	for uri, stmts := range result.Buckets {
 		counts.Set(uri, len(stmts))
 	}
-	var iterErr error
 	counts.Scan(func(uri string, n int) bool {
-		if _, err := fmt.Fprintf(w, "  %s: %d decls\n", uri, n); err != nil {
-			iterErr = err
-			return false
-		}
+		fmt.Fprintf(&b, "  %s: %d decls\n", uri, n)
 		return true
 	})
-	if iterErr != nil {
-		return iterErr
-	}
+
 	// Split the drop list by cause. A name in ExplicitDrops is worth
 	// naming; a whole dropped source file is worth a count, and naming
 	// its declarations would misread — lib.scripthost.d.ts augments
@@ -945,29 +1020,30 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	}
 	if len(dropped) > 0 {
 		sort.Strings(dropped)
-		if _, err := fmt.Fprintf(w, "  drops: %d (%s)\n",
-			len(dropped), strings.Join(dropped, ", ")); err != nil {
-			return err
-		}
+		fmt.Fprintf(&b, "  drops: %d (%s)\n", len(dropped), strings.Join(dropped, ", "))
 	}
 	sourceCounts.Scan(func(file string, n int) bool {
-		if _, err := fmt.Fprintf(w, "  dropped source %s: %d decls\n", file, n); err != nil {
-			iterErr = err
-			return false
-		}
+		fmt.Fprintf(&b, "  dropped source %s: %d decls\n", file, n)
 		return true
 	})
-	if iterErr != nil {
-		return iterErr
-	}
+
 	if len(result.Redeclarations) > 0 {
 		// A count rather than the names. The worker host lib restates
 		// hundreds of globals, and listing them would bury the
 		// per-package counts above.
-		if _, err := fmt.Fprintf(w, "  worker-host redeclarations skipped: %d\n",
-			len(result.Redeclarations)); err != nil {
-			return err
+		fmt.Fprintf(&b, "  worker-host redeclarations skipped: %d\n",
+			len(result.Redeclarations))
+	}
+	// The two reasons that discard worker-only surface are named, since
+	// a count cannot tell them from the ordinary restatement above and
+	// each one is a member a worker has and the tree will not.
+	for _, r := range result.Redeclarations {
+		if r.Reason.LosesMembers() {
+			fmt.Fprintf(&b, "  worker-only members lost: %s from %s (%s)\n",
+				r.Name, r.SourceFile, r.Reason)
 		}
 	}
-	return nil
+
+	_, err := io.WriteString(w, b.String())
+	return err
 }

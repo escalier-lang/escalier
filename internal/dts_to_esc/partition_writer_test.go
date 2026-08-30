@@ -1,10 +1,8 @@
 package dts_to_esc
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -109,9 +107,13 @@ interface Storage extends StorageBase { (): void; extra(): void; }
 	require.Len(t, res.Buckets["web:storage"], 1)
 	_, ok := res.Buckets["web:storage"][0].(*dts_parser.ClassDecl)
 	require.True(t, ok, "the class the DOM set declares is what survives")
-	require.Equal(t,
-		[]DropNote{{Name: "Storage", SourceFile: "lib.webworker.d.ts"}},
-		res.Redeclarations)
+	require.Equal(t, []Redeclaration{{
+		Name:       "Storage",
+		SourceFile: "lib.webworker.d.ts",
+		Reason:     NoSharedInterface,
+	}}, res.Redeclarations)
+	require.True(t, res.Redeclarations[0].Reason.LosesMembers(),
+		"the worker copy's `extra` method goes with the skipped declaration")
 }
 
 func TestPartitionLib_WorkerInterfaceNeedsMatchingTypeParams(t *testing.T) {
@@ -135,7 +137,13 @@ interface ReadableStream<T = any> { readonly locked: boolean; peek(): T; }
 	require.True(t, ok)
 	require.Len(t, stream.Members, 1)
 	require.Equal(t, "locked", memberKey(stream.Members[0]))
-	require.Len(t, res.Redeclarations, 1)
+	require.Equal(t, []Redeclaration{{
+		Name:       "ReadableStream",
+		SourceFile: "lib.webworker.d.ts",
+		Reason:     TypeParamsDiffer,
+	}}, res.Redeclarations)
+	require.True(t, res.Redeclarations[0].Reason.LosesMembers(),
+		"the worker copy's `peek` method goes with the skipped declaration")
 }
 
 func TestPartitionLib_SkipsWorkerHostRedeclarations(t *testing.T) {
@@ -166,9 +174,13 @@ interface FileReaderSync { readAsText(blob: Blob): string; }
 	require.Len(t, res.Buckets["web:file"], 1)
 	require.Equal(t, "FileReaderSync", topLevelName(res.Buckets["web:file"][0]))
 
-	require.Equal(t,
-		[]DropNote{{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"}},
-		res.Redeclarations)
+	require.Equal(t, []Redeclaration{{
+		Name:       "ReadableStream",
+		SourceFile: "lib.webworker.d.ts",
+		Reason:     RestatesShared,
+	}}, res.Redeclarations)
+	require.False(t, res.Redeclarations[0].Reason.LosesMembers(),
+		"a verbatim restatement discards nothing")
 }
 
 func TestPartitionLib_WorkerHostInputOrderDoesNotMatter(t *testing.T) {
@@ -742,9 +754,10 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
 			{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
 		},
-		Redeclarations: []DropNote{
-			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
-			{Name: "Blob", SourceFile: "lib.webworker.d.ts"},
+		Redeclarations: []Redeclaration{
+			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts", Reason: RestatesShared},
+			{Name: "Blob", SourceFile: "lib.webworker.d.ts", Reason: SharedFormKept},
+			{Name: "Storage", SourceFile: "lib.webworker.d.ts", Reason: NoSharedInterface},
 		},
 	}
 	var sb strings.Builder
@@ -753,50 +766,16 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	require.Contains(t, out, "std:date: 3 decls")
 	require.Contains(t, out, "drops: 1 (eval)")
 	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
-	require.Contains(t, out, "worker-host redeclarations skipped: 2")
+	require.Contains(t, out, "worker-host redeclarations skipped: 3")
 	require.NotContains(t, out, "VarDate")
-}
 
-// shortWriter fails every write after the first n. ReportPartition
-// writes one line per section, so n selects which section's write error
-// the test observes.
-type shortWriter struct {
-	remaining int
-}
-
-var errShortWrite = errors.New("short writer is full")
-
-func (w *shortWriter) Write(p []byte) (int, error) {
-	if w.remaining <= 0 {
-		return 0, errShortWrite
-	}
-	w.remaining--
-	return len(p), nil
-}
-
-func TestReportPartition_PropagatesWriteErrors(t *testing.T) {
-	t.Parallel()
-	res := &PartitionResult{
-		Buckets: map[string][]dts_parser.Statement{
-			"std:date": make([]dts_parser.Statement, 1),
-		},
-		Drops: []DropNote{
-			{Name: "eval", SourceFile: "lib.es5.d.ts"},
-			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
-		},
-		Redeclarations: []DropNote{
-			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
-		},
-	}
-	// One line per section, in the order ReportPartition writes them.
-	for _, section := range []string{"packages", "drops", "dropped sources", "redeclarations"} {
-		t.Run(section, func(t *testing.T) {
-			t.Parallel()
-			w := &shortWriter{remaining: slices.Index(
-				[]string{"packages", "drops", "dropped sources", "redeclarations"}, section)}
-			require.ErrorIs(t, ReportPartition(res, w), errShortWrite)
-		})
-	}
+	// Only the reason that discards surface is named. A count cannot
+	// separate the three, and two of them discard nothing.
+	require.Contains(t, out,
+		"worker-only members lost: Storage from lib.webworker.d.ts "+
+			"(no shared interface to carry the rest of the declaration)")
+	require.NotContains(t, out, "members lost: ReadableStream")
+	require.NotContains(t, out, "members lost: Blob")
 }
 
 func TestPartitionLib_UnmappedWorkerOnlyNameTripsFailSafe(t *testing.T) {
