@@ -703,7 +703,9 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 
-	if token.Type == Get || token.Type == Set {
+	// `get` and `set` mark an accessor only when a name follows. `{get: 1}` and `{get}`
+	// name a property, the same way every other keyword does here.
+	if (token.Type == Get || token.Type == Set) && !followsAName(p.lexer.peek2().Type) {
 		p.reportError(token.Span, "Method shorthand is not allowed in object literals; use a class instead")
 		return nil
 	}
