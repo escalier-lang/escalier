@@ -79,10 +79,10 @@ func TestFilterDropsEveryCoercionOfTheReceiver(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, decisionsFor(t, "String.prototype.charAt"), snaps.Inline(`String.prototype.charAt: dropped #1 TypeError <- RequireObjectCoercible#5 [RequireObjectCoercible of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3 [ToObject of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6 [ToObject of receiver]
-String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#8 [under ToString of receiver]
-String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#17 [under ToString of receiver]
-String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#20 <- OrdinaryToPrimitive#20 [under ToString of receiver]
-String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#9 <- Call#5 [under ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#1 <- GetMethod#8 [past ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#17 [past ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#20 <- OrdinaryToPrimitive#20 [past ToString of receiver]
+String.prototype.charAt: dropped #3 TypeError <- ToString#32 <- ToPrimitive#9 <- Call#5 [past ToString of receiver]
 String.prototype.charAt: dropped #3 TypeError <- ToString#7 [ToString of receiver]
 String.prototype.charAt: kept #5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#3 [ToObject of param:0]
 String.prototype.charAt: kept #5 TypeError <- ToIntegerOrInfinity#0 <- ToNumber#23 <- ToPrimitive#1 <- GetMethod#0 <- GetV#0 <- ToObject#6 [ToObject of param:0]
@@ -200,7 +200,7 @@ func TestFilterReportTallies(t *testing.T) {
 	// them a `String.prototype` method whose receiver `ToString` hands back.
 	under := map[string]int{}
 	for _, decision := range report.Dropped() {
-		if decision.Under {
+		if decision.PastCoercion {
 			under[decision.Coercion]++
 		}
 	}
@@ -333,7 +333,7 @@ func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
 
 	// No site is dropped on its account. One that bottoms out there survives
 	// unless a coercion further out is an identity for the receiver, which is
-	// underReceiverIdentity's rule and not this one.
+	// pastReceiverIdentity's rule and not this one.
 	var reached int
 	for _, decision := range testFilterReport(t).Decisions {
 		if !strings.HasSuffix(decision.Site, "<- ToPrimitive#17") {
@@ -342,7 +342,7 @@ func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
 		reached++
 		require.NotEqualf(t, "ToPrimitive", decision.Coercion, "%s", decision)
 		if decision.Dropped {
-			require.Truef(t, decision.Under, "%s", decision)
+			require.Truef(t, decision.PastCoercion, "%s", decision)
 		}
 	}
 	require.NotZero(t, reached)
@@ -398,7 +398,7 @@ func TestFilterReportsWhichChannelIsShort(t *testing.T) {
 func TestFilterIdentityRuleChecksTheOwnerAndTheValue(t *testing.T) {
 	var under int
 	for _, decision := range testFilterReport(t).Dropped() {
-		if !decision.Under {
+		if !decision.PastCoercion {
 			continue
 		}
 		under++

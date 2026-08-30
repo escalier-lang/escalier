@@ -155,13 +155,13 @@ type FilterDecision struct {
 	Coercion string
 	Coerced  string
 	Dropped  bool
-	// Under marks a site the chain reaches past a coercion rather than at it,
-	// so Coercion names an operation further out than the one that raised.
+	// PastCoercion marks a site the chain reaches past a coercion rather than at
+	// it, so Coercion names an operation further out than the one that raised.
 	// `String.prototype.charAt` has `#3 TypeError <- ToString#32 <-
 	// ToPrimitive#17`: the throw is ToPrimitive's, reached from ToString's
 	// body, and a String receiver leaves ToString at its first step without
-	// ever making that call. See underReceiverIdentity.
-	Under bool
+	// ever making that call. See pastReceiverIdentity.
+	PastCoercion bool
 }
 
 func (d FilterDecision) String() string {
@@ -174,8 +174,8 @@ func (d FilterDecision) String() string {
 		return fmt.Sprintf("%s: %s %s", d.Method, verdict, d.Site)
 	case d.Coerced == "":
 		return fmt.Sprintf("%s: %s %s [%s, value untraced]", d.Method, verdict, d.Site, d.Coercion)
-	case d.Under:
-		return fmt.Sprintf("%s: %s %s [under %s of %s]", d.Method, verdict, d.Site, d.Coercion, d.Coerced)
+	case d.PastCoercion:
+		return fmt.Sprintf("%s: %s %s [past %s of %s]", d.Method, verdict, d.Site, d.Coercion, d.Coerced)
 	default:
 		return fmt.Sprintf("%s: %s %s [%s of %s]", d.Method, verdict, d.Site, d.Coercion, d.Coerced)
 	}
@@ -300,9 +300,9 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 	// A site the base rule keeps can still sit under a coercion this receiver
 	// leaves at its first step, which never reaches the steps below it.
 	if !decision.Dropped {
-		if ao := f.underReceiverIdentity(fn, &site, received); ao != "" {
+		if ao := f.pastReceiverIdentity(fn, &site, received); ao != "" {
 			decision.Coercion, decision.Coerced = ao, originRef(Receiver)
-			decision.Dropped, decision.Under = true, true
+			decision.Dropped, decision.PastCoercion = true, true
 		}
 	}
 	f.report.Decisions = append(f.report.Decisions, decision)
@@ -320,7 +320,7 @@ func (f *coercionFilter) receiverType(fn *Func) langType {
 	return receiverType(ref.Owner)
 }
 
-// underReceiverIdentity returns the coercion the site's chain passes through
+// pastReceiverIdentity returns the coercion the site's chain passes through
 // that hands this receiver straight back, or the empty string when it passes
 // through no such call. Every step that coercion would reach past the value it
 // returns is unreachable, and so is the site under them.
@@ -334,7 +334,7 @@ func (f *coercionFilter) receiverType(fn *Func) langType {
 // once, and the value it was handed has to be that receiver rather than a
 // parameter reaching the same operation. `charAt` coerces `pos` through
 // `ToNumber` on the same algorithm, and every throw under that stands.
-func (f *coercionFilter) underReceiverIdentity(fn *Func, site *ThrowSite, received langType) string {
+func (f *coercionFilter) pastReceiverIdentity(fn *Func, site *ThrowSite, received langType) string {
 	hops := f.chain(fn, site)
 	for depth, hop := range hops {
 		callee := hop.site.Root.Callee
