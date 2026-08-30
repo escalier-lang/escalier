@@ -46,7 +46,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
-| §9.2 | Coercion filter                            | FR11       | ✅      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is dropped in favour of curated throws — met, see [internal/ecma262/filter.go](../../internal/ecma262/filter.go) |
+| §9.2 | Coercion filter                            | FR11       | ✅      | §9.1, §5   | the receiver branch alone — toFixed keeps RangeError, drops the receiver-coercion TypeError. The parameter branch is #1301, and curated throws cover the methods worth annotating meanwhile — met, see [internal/ecma262/filter.go](../../internal/ecma262/filter.go) |
 | §9.3 | Throw/reject split, parametric origins, combinators | FR10, FR13 | ✅ | §9.1  | `rejects` distinct from `throws`; Promise.reject `param:0`, forEach `throwsOf:param:k`; combinators hand-modeled — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §9.4 | Throws validation                          | FR14       | ⬜      | §9.1–§9.3, §4.4, §7 | spec-independent, dynamically-observed ground truth, run as a spot-check over the curated throws. The false-negative auto-apply gate is dropped — see §9.4 |
 | §10  | Maintenance workflow                       | NFR        | ⬜      | §7         | spec-bump runbook; `--check`-style drift report in CI |
@@ -1934,13 +1934,18 @@ only where the joined declaration proves the parameter's type already is
 the coercion's target — `ToNumber(p)` on a `p: number` cannot throw, but
 `ToNumber(p)` on a `p: unknown` can. The shape-free facts carry no types
 per FR7, so that branch would have to run after the join or be fed the
-parameter types from it, which is the plumbing #1301 describes. §4.4
-answers it instead: the methods whose surviving throws are worth
-annotating are a short list, and a curated `throws` states the filtered
-set directly with the reasoning attached. The parameter branch and its
-typed-signature plumbing are dropped. A site whose coercion threads back
-to a parameter is still recorded, with the position, so §11 curates from
-the report rather than from the spec.
+parameter types from it, which is the plumbing #1301 describes. This
+section builds the receiver branch alone and leaves that to #1301, so a
+site whose coercion threads back to a parameter is kept and recorded with
+its position.
+
+Until it lands, §4.4 is what answers those methods: the ones whose
+surviving throws are worth annotating are a short list, and a curated
+`throws` states the filtered set directly with the reasoning attached.
+§11 curates them from the filter's report rather than from the spec. The
+two are not alternatives — #1301 measures the parameter branch as
+removing `TypeError` from nine published facts and about a sixth of the
+sites a curator reads, which shrinks that list without emptying it.
 
 Channel assignment is **per throw site, not per error type**:
 `filterThrows` sees only the synchronous sites, `rejectSet` (§9.3) only

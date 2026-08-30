@@ -207,9 +207,11 @@ func TestFilterReportTallies(t *testing.T) {
 	require.Equal(t, map[string]int{"ToString": 120}, under)
 }
 
-// Every dropped site names the receiver as the value it checked, which is the
-// one branch §9.2 builds. A drop that named a parameter would be the branch
-// #1301 closed, reintroduced by accident.
+// Every dropped site names the receiver as the value it checked, because the
+// receiver branch is the only one built. A drop naming a parameter would be the
+// parameter branch firing without the declared types it needs, and the facts
+// carry none, so it would discard a `TypeError` a caller can raise. #1301
+// tracks building that branch on types read from the joined declaration.
 func TestFilterDropsOnlyReceiverCoercions(t *testing.T) {
 	for _, decision := range testFilterReport(t).Dropped() {
 		require.Equalf(t, "receiver", decision.Coerced, "%s drops a value that is not the receiver", decision)
