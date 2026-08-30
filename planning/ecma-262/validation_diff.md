@@ -115,6 +115,39 @@ about 50 builtins, each of which would then need a curated entry. The general
 rule is the more honest answer to what the analysis does not know, and paying
 for it is §4 work rather than §6 work.
 
+## The curated layer, vetted against the analysis
+
+§4.4 added a second channel this gate has to read. A curated entry outranks the
+analysis on the axis it names, so an entry that contradicts a published claim is
+either a spec subtlety the graph cannot express or an analyzer bug, and the
+report cannot tell the two apart. `Facts.Curation()` is the only place that
+split is readable, because facts.json records the merged determination and not
+which source produced it.
+
+Over the committed graph the layer holds 27 entries and every one is a fill-in:
+
+| Category | Count | Meaning |
+| -------- | ----- | ------- |
+| Fill-in | 27 | The entry answers an axis the analysis left open. No conflict. |
+| Correction | 0 | The entry contradicts a claim the analysis published. |
+| Redundant | 0 | The analysis caught up, so the entry is deletable. |
+| Stale | 0 | The algorithm changed since the entry was reviewed. |
+| Unmatched | 0 | The graph holds no builtin for the curated name. |
+| Refused | 0 | The graph contradicts the entry outright. |
+
+So this channel yields no disagreement to triage. The 24 curated receivers
+answer an axis the mutation fixpoint withheld, and the three curated returns
+answer one it resolved to `unknown`. Neither displaces a claim the analysis
+actually made.
+
+Four tests hold that. `TestCurationLeavesNoCorrection` fails on the first
+entry that contradicts the analysis, which is the category to triage first.
+`TestCurationHasNoRedundantEntries` fails on one the analysis has caught up
+with, which is how the layer shrinks rather than accumulating.
+`TestCurationMatchesTheGraph` covers stale, unmatched, and refused.
+`TestCurationReportOverTheCommittedGraph` pins all 27 notes so any movement is
+visible in review.
+
 ## The 24 redundant override entries
 
 Each is an entry in `nonMutatingOverrides` whose owner and member a published

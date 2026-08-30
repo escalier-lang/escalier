@@ -454,6 +454,21 @@ func TestCurationMatchesTheGraph(t *testing.T) {
 	require.Empty(t, report.Refused, "curated axes the graph contradicts")
 }
 
+// A curated axis that contradicts a claim the analysis published is either a
+// spec subtlety the graph cannot express or an analyzer bug, and the report
+// cannot tell the two apart. §6's gate reads this category first, so the first
+// one to appear fails here rather than reaching facts.json unreviewed. Record
+// its disposition in planning/ecma-262/validation_diff.md.
+func TestCurationLeavesNoCorrection(t *testing.T) {
+	var corrections []string
+	for _, note := range testFacts(t).Curation().Notes {
+		if note.Kind == CurationCorrection {
+			corrections = append(corrections, note.String())
+		}
+	}
+	require.Empty(t, corrections)
+}
+
 // An entry the analysis has caught up with is deletable, and leaving it in
 // place would grow a second source of truth for a determination that no longer
 // needs one.
