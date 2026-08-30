@@ -240,37 +240,91 @@ func TestKeywordsInBindingPositions(t *testing.T) {
 	})
 }
 
+// objectExprKeyName returns the name of the sole property key in
+// `val a = { … }`, or "" when the source did not parse to that shape. Asserting
+// the name rather than the absence of errors catches a key that parses but
+// carries the wrong text.
+func objectExprKeyName(t *testing.T, src string) string {
+	t.Helper()
+	script, errors := parseScriptSrc(t, src)
+	if len(errors) > 0 {
+		return ""
+	}
+	decl, ok := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.VarDecl)
+	if !ok || decl.Init == nil {
+		return ""
+	}
+	obj, ok := decl.Init.(*ast.ObjectExpr)
+	if !ok || len(obj.Elems) != 1 {
+		return ""
+	}
+	prop, ok := obj.Elems[0].(*ast.PropertyExpr)
+	if !ok {
+		return ""
+	}
+	ident, ok := prop.Name.(*ast.IdentExpr)
+	if !ok {
+		return ""
+	}
+	return ident.Name
+}
+
+// Every keyword names a property of an object literal, because `{ catch: 1 }`
+// and `obj.catch` are both valid JavaScript. This is the expression counterpart
+// of TestKeywordsNameObjectTypeMembers.
+func TestKeywordsNameObjectExpressionProperties(t *testing.T) {
+	t.Parallel()
+	forms := []struct{ name, tmpl string }{
+		{"property", "val a = {%[1]s: 1}"},
+		{"optional property", "val a = {%[1]s?: 1}"},
+		{"property whose value is another such object", "val a = {%[1]s: {%[1]s: 1}}"},
+	}
+	for _, form := range forms {
+		t.Run(form.name, func(t *testing.T) {
+			t.Parallel()
+			for _, keyword := range keywordTexts() {
+				src := fmt.Sprintf(form.tmpl, keyword)
+				require.Equal(t, keyword, objectExprKeyName(t, src),
+					"%s should name a property %q", src, keyword)
+			}
+		})
+	}
+}
+
+// An object literal has no method shorthand, and that holds for every keyword
+// rather than only the accessor pair. `{ catch() {} }` reports the same way
+// `{ get x() {} }` does.
+func TestObjectExpressionsRejectMethodShorthand(t *testing.T) {
+	t.Parallel()
+	for _, keyword := range keywordTexts() {
+		src := fmt.Sprintf("val a = {%s() {}}", keyword)
+		_, errors := parseScriptSrc(t, src)
+		require.NotEmpty(t, errors, "%s should report", src)
+		require.Equal(t,
+			"Method shorthand is not allowed in object literals; use a class instead",
+			errors[0].Message, "for %s", src)
+	}
+}
+
 // A shorthand property is a key and a variable reference at once, so it accepts
-// exactly the keywords a binding does. The keyed form accepts every keyword,
-// since `{ catch: 1 }` is valid JavaScript.
+// exactly the keywords a binding does.
 func TestKeywordShorthandProperties(t *testing.T) {
 	t.Parallel()
 	reserved := cannotBind()
 
-	t.Run("shorthand takes only binding names", func(t *testing.T) {
-		t.Parallel()
-		for _, keyword := range keywordTexts() {
-			src := fmt.Sprintf("val a = {%s}", keyword)
-			_, errors := parseScriptSrc(t, src)
-			if !reserved[keyword] {
-				require.Empty(t, errors, "%s should parse", src)
-				continue
-			}
-			require.NotEmpty(t, errors, "%s should report", src)
-			require.Equal(t, "`"+keyword+
-				"` cannot be a shorthand property because it is not a variable name",
-				errors[0].Message)
-		}
-	})
-
-	t.Run("a keyed property takes every keyword", func(t *testing.T) {
-		t.Parallel()
-		for _, keyword := range keywordTexts() {
-			src := fmt.Sprintf("val a = {%s: 1}", keyword)
-			_, errors := parseScriptSrc(t, src)
+	for _, keyword := range keywordTexts() {
+		src := fmt.Sprintf("val a = {%s}", keyword)
+		_, errors := parseScriptSrc(t, src)
+		if !reserved[keyword] {
 			require.Empty(t, errors, "%s should parse", src)
+			require.Equal(t, keyword, objectExprKeyName(t, src))
+			continue
 		}
-	})
+		require.NotEmpty(t, errors, "%s should report", src)
+		require.Equal(t, "`"+keyword+
+			"` cannot be a shorthand property because it is not a variable name",
+			errors[0].Message)
+	}
 }
 
 // `get` and `set` mark an accessor only when a name follows them, so the method

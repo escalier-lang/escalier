@@ -2428,10 +2428,36 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 	})
 
 	// The keyed form of those same names is valid JavaScript and stays accepted.
+	// One case per class of keyword: a reserved word, a literal, an accessor
+	// modifier, a type name, and the two an object type reads as signatures. The
+	// printer emits each bare, so the output has to parse back as the same key.
 	t.Run("keyword keys in an object literal", func(t *testing.T) {
-		result, err := Print(parseDecl(t, "val a = {catch: 1, true: 2}"), opts)
-		require.NoError(t, err)
-		require.Equal(t, "val a = {\n    catch: 1,\n    true: 2\n}", result)
+		literalTests := []struct {
+			name  string
+			input string
+			want  string
+		}{
+			{"reserved word", "val a = {catch: 1}", "val a = {\n    catch: 1\n}"},
+			{"literal", "val a = {true: 1}", "val a = {\n    true: 1\n}"},
+			{"accessor modifier", "val a = {get: 1, set: 2}", "val a = {\n    get: 1,\n    set: 2\n}"},
+			{"type name", "val a = {symbol: 1}", "val a = {\n    symbol: 1\n}"},
+			{"signature keyword", "val a = {fn: 1, new: 2}", "val a = {\n    fn: 1,\n    new: 2\n}"},
+			{"shorthand", "val a = {type, from}", "val a = {\n    type,\n    from\n}"},
+			{"several at once", "val a = {catch: 1, true: 2}", "val a = {\n    catch: 1,\n    true: 2\n}"},
+		}
+		for _, tt := range literalTests {
+			t.Run(tt.name, func(t *testing.T) {
+				result, err := Print(parseDecl(t, tt.input), opts)
+				require.NoError(t, err)
+				require.Equal(t, tt.want, result)
+
+				// Round-trip: what the printer emitted has to parse again.
+				_, errors := parser.ParseDecls(context.Background(), &ast.Source{
+					Path: "test.esc", Contents: result,
+				})
+				require.Empty(t, errors, "printed output should parse back")
+			})
+		}
 	})
 
 	// A binding name reaches JavaScript verbatim, so a keyword JavaScript itself
