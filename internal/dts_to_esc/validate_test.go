@@ -84,10 +84,12 @@ func TestValidateReceivers(t *testing.T) {
 		// addressable by neither hand-written source. A withheld receiver
 		// claim leaves the fact with nothing to compare.
 		//
-		// `Demo.prototype.set` is the case the two spellings of "no receiver"
-		// disagree on. Its name normalizes to an instance member and its fact
-		// says the algorithm takes no receiver. Reading `none` as a borrow
-		// would score it a disagreement against the mutating `set` prefix.
+		// `Demo.prototype.set` is the case where the two signals for "no
+		// receiver" point different ways. Its name normalizes to an instance
+		// member, while its fact says the algorithm takes no receiver. Either
+		// signal alone drops the method, so it is left out and nothing is
+		// compared. Reading `none` as a borrow instead would compare it and
+		// score a disagreement against the mutating `set` prefix.
 		"ShapesTheDiffLeavesOut": {
 			receivers: map[string]ecma262.ReceiverKind{
 				"Array.isArray":                  ecma262.RecvNone,
