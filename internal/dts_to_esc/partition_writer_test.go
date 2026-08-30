@@ -656,15 +656,19 @@ func TestReportSingletonKeyDrops(t *testing.T) {
 		"std:intl": {KeyDrops: []SingletonMember{
 			{Singleton: "Intl", Key: "Symbol.toStringTag"},
 			{Singleton: "Intl", Key: "Symbol.dispose"},
+			{Singleton: "Intl.DisplayNames", Key: "Symbol.dispose"},
 		}},
 		"std:json": {},
 	}
 	var sb strings.Builder
 	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
+	// Sorted by package, then singleton, then key, so two singletons in
+	// one package stay grouped.
 	require.Equal(t,
-		"  singleton members skipped for a non-name key: 3\n"+
+		"  singleton members skipped for a non-name key: 4\n"+
 			"    std:intl Intl[Symbol.dispose]\n"+
 			"    std:intl Intl[Symbol.toStringTag]\n"+
+			"    std:intl Intl.DisplayNames[Symbol.dispose]\n"+
 			"    std:math Math[Symbol.dispose]\n",
 		sb.String())
 }

@@ -397,6 +397,31 @@ func TestStandalone_SingletonNumericKeyDropIsRecorded(t *testing.T) {
 	}, astModule.KeyDrops)
 }
 
+// literalKeyedSingletonSlice covers the computed-key shapes the dts
+// parser accepts that are not a `Symbol.*` member access. A literal in
+// the brackets names the same member a bare key would, so the report
+// renders it the same way rather than as a node type. The empty string
+// key is the one plain key with no name to borrow.
+const literalKeyedSingletonSlice = `
+interface Widget {
+    resize(n: number): void;
+    readonly ["ready"]: boolean;
+    readonly [0]: string;
+    readonly "": string;
+}
+
+declare var Widget: Widget;
+`
+
+func TestStandalone_SingletonLiteralKeyDropsAreRecorded(t *testing.T) {
+	astModule, _ := convertSlice(t, literalKeyedSingletonSlice)
+	require.Equal(t, []SingletonMember{
+		{Singleton: "Widget", Key: `"ready"`},
+		{Singleton: "Widget", Key: "0"},
+		{Singleton: "Widget", Key: `""`},
+	}, astModule.KeyDrops)
+}
+
 // nestedSingletonSlice puts a singleton inside a namespace, the shape
 // `declare namespace Intl { ... }` produces. A drop has to reach the
 // caller from the recursive conversion, not just from the module root.
@@ -443,6 +468,78 @@ func TestStandalone_SingletonAccessorKeyDropsAreRecorded(t *testing.T) {
 		{Singleton: "Atomics", Key: "Symbol.toStringTag"},
 		{Singleton: "Atomics", Key: "Symbol.dispose"},
 	}, astModule.KeyDrops)
+}
+
+// TestSingletonKeyLabel covers every shape the label can take. The
+// contract the drop report rests on is that no key renders as the
+// empty string, so a member is never named by a blank key.
+func TestSingletonKeyLabel(t *testing.T) {
+	t.Parallel()
+	symbolIterator := &dts_parser.MemberExpr{
+		Object: &dts_parser.IdentExpr{Name: "Symbol"},
+		Prop:   dts_parser.NewIdent("iterator", ast.Span{}),
+	}
+	tests := []struct {
+		name string
+		key  dts_parser.PropertyKey
+		want string
+	}{
+		{
+			name: "well-known symbol",
+			key:  &dts_parser.ComputedKey{Expr: symbolIterator},
+			want: "Symbol.iterator",
+		},
+		{
+			name: "computed string literal",
+			key: &dts_parser.ComputedKey{Expr: &dts_parser.LitExpr{
+				Lit: &dts_parser.StringLiteral{Value: "ready"},
+			}},
+			want: `"ready"`,
+		},
+		{
+			name: "computed number literal",
+			key: &dts_parser.ComputedKey{Expr: &dts_parser.LitExpr{
+				Lit: &dts_parser.NumberLiteral{Value: 2},
+			}},
+			want: "2",
+		},
+		{
+			// A member access rooted at a literal reduces to no dotted
+			// chain. The dts parser cannot produce one today, so this
+			// is the placeholder a future expression shape would take.
+			name: "computed expression with no dotted form",
+			key: &dts_parser.ComputedKey{Expr: &dts_parser.MemberExpr{
+				Object: &dts_parser.LitExpr{
+					Lit: &dts_parser.StringLiteral{Value: "x"},
+				},
+				Prop: dts_parser.NewIdent("y", ast.Span{}),
+			}},
+			want: "<computed *dts_parser.MemberExpr>",
+		},
+		{
+			name: "empty string key",
+			key:  &dts_parser.StringLiteral{Value: ""},
+			want: `""`,
+		},
+		{
+			name: "numeric key",
+			key:  &dts_parser.NumberLiteral{Value: 0},
+			want: "0",
+		},
+		{
+			// An identifier only reaches the label when its name is
+			// empty, since propertyKeyName returns any other name.
+			name: "identifier with no name",
+			key:  dts_parser.NewIdent("", ast.Span{}),
+			want: "<*dts_parser.Ident>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, singletonKeyLabel(tt.key))
+		})
+	}
 }
 
 // sharedInterfaceSlice pins the negative case for the singleton flattener:

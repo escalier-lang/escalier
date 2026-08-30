@@ -54,21 +54,29 @@ func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.Prope
 
 // singletonKeyLabel renders a property key that has no plain-name form
 // so a drop report can name it. A computed key renders as its dotted
-// expression, such as "Symbol.toStringTag", and a numeric key as its
-// literal text.
+// expression, such as "Symbol.toStringTag". A string key renders
+// quoted and a numeric key as its literal text.
 //
 // Every computed key in the pinned TS lib is a `Symbol.*` member
-// access. A shape that does not reduce to a dotted chain renders as
-// its expression type, "<computed *dts_parser.CallExpr>". That keeps
-// the member in the report, and it reads as a placeholder rather than
-// as a member name someone could allow-list.
+// access. The parser also accepts a literal inside the brackets, so
+// `["ready"]` renders the same as a bare `"ready"` key. Anything else
+// renders as its expression type, "<computed *dts_parser.CallExpr>".
+// That keeps the member in the report, and it reads as a placeholder
+// rather than as a member name someone could allow-list.
 func singletonKeyLabel(pk dts_parser.PropertyKey) string {
 	switch k := pk.(type) {
 	case *dts_parser.ComputedKey:
 		if dotted := exprDottedName(k.Expr); dotted != "" {
 			return dotted
 		}
+		if lit, ok := k.Expr.(*dts_parser.LitExpr); ok {
+			if inner, ok := lit.Lit.(dts_parser.PropertyKey); ok {
+				return singletonKeyLabel(inner)
+			}
+		}
 		return fmt.Sprintf("<computed %T>", k.Expr)
+	case *dts_parser.StringLiteral:
+		return strconv.Quote(k.Value)
 	case *dts_parser.NumberLiteral:
 		return strconv.FormatFloat(k.Value, 'g', -1, 64)
 	}
