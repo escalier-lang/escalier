@@ -790,11 +790,19 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 // ExceptionCallback effect. Any other origin leaves the invoked function
 // unnamed, so there is no summary to read and the step is incomplete.
 //
-// That is usually the right answer twice over, because the function is the
-// caller's own and no algorithm for it exists to find. `String.prototype.match`
-// invokes what `? GetMethod(regexp, @@match)` returned, the slice methods
-// construct what `SpeciesConstructor` returned, and `Set.prototype.difference`
-// calls the `[[Has]]` of a Set Record built by reading `has` off its argument.
+// What separates the two is whether the function can be named against the
+// method's own signature, not whether the graph holds a body for it.
+// `Array.prototype.forEach` invokes `callbackfn`, its parameter 0, and
+// publishes `throwsOf:param:0` without reading any body at all.
+//
+// `String.prototype.match` invokes what `? GetMethod(regexp, @@match)`
+// returned, which in certain situations is a method the caller put on their own
+// object. Whether that method throws is unknown, let alone what it throws. The
+// call to `GetMethod` is read whole, its own `TypeError` included; it is the
+// value it hands back that cannot be named. The slice methods construct what
+// `SpeciesConstructor` returned and `Set.prototype.difference` calls the
+// `[[Has]]` of a Set Record built by reading `has` off its argument, both the
+// same shape.
 //
 // It over-reports where the value is the `this` of a static. `Array.of` binds
 // `Let C be the this value` and constructs it, and §4.2 gives a static no
