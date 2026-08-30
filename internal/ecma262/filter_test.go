@@ -69,7 +69,7 @@ Number.prototype.toFixed: kept #3 TypeError <- ToIntegerOrInfinity#0 <- ToNumber
 // Every step of a receiver coercion goes, not only the step that checks the
 // type. charAt opens with `? RequireObjectCoercible(this value)` and then `?
 // ToString(O)`, and its whole step 3 falls: `ToString`'s own Symbol check by the
-// base rule, and the `@@toPrimitive` machinery below it because a String
+// base rule, and the `@@toPrimitive` machinery past it because a String
 // receiver leaves `ToString` at its first step and never reaches that call.
 //
 // The same operations applied to `pos` are all kept, so one method shows the
@@ -106,17 +106,17 @@ func TestFilterDropsNothingWithoutAReceiver(t *testing.T) {
 	require.Equal(t, []string{"TypeError", "URIError"}, analyzedFactOf(t, "decodeURIComponent").Throws)
 }
 
-// A throw the chain reaches below a coercion of a parameter is kept. `charAt`
+// A throw the chain reaches past a coercion of a parameter is kept. `charAt`
 // coerces `pos` with `ToIntegerOrInfinity`, which reaches `ToNumber` and then
 // the `@@toPrimitive` machinery, and the receiver branch settles none of it: a
 // `pos` the declaration types loosely can be an object with a `@@toPrimitive`
 // that raises.
 //
-// The same steps under the receiver's own `ToString` are dropped, which is what
+// The same steps past the receiver's own `ToString` are dropped, which is what
 // TestFilterDropsEveryCoercionOfTheReceiver holds. The two chains run through
 // the same operations, so the value each coercion was handed is the whole
 // difference.
-func TestFilterKeepsAThrowBelowACoercionOfAParameter(t *testing.T) {
+func TestFilterKeepsAThrowPastACoercionOfAParameter(t *testing.T) {
 	var kept []string
 	for _, decision := range testFilterReport(t).Decisions {
 		if decision.Method == "String.prototype.charAt" && !decision.Dropped {
@@ -294,7 +294,7 @@ ToString(argument) raises at #7 TypeError`))
 
 // A coercion returns at once only for a type it accepts. Returning a value is
 // how it avoids its own `Throw` step, so an entry claiming otherwise would drop
-// the steps under a coercion that raises before reaching them.
+// the steps past a coercion that raises before reaching them.
 func TestCoercionsReturnOnlyWhatTheyAccept(t *testing.T) {
 	t.Parallel()
 

@@ -24,8 +24,8 @@ const (
 )
 
 // everyLangType is the set an operation that raises on no receiver at all
-// accepts. The entries below share it rather than each holding a copy, so it is
-// read-only: a coercion that needs a smaller set builds one with
+// accepts. The coercions map shares it rather than each entry holding a copy,
+// so it is read-only: a coercion that needs a smaller set builds one with
 // everyLangTypeExcept.
 var everyLangType = set.FromSlice([]langType{
 	typeBigInt, typeBoolean, typeNumber, typeObject, typeString, typeSymbol,
@@ -70,11 +70,12 @@ type coercion struct {
 	// receiver of one of them never reaches that step.
 	accepts set.Set[langType]
 	// returnsAtOnce are the types the operation hands back before reaching any
-	// call, so nothing under it runs either. It is a subset of accepts, which
+	// call, so nothing past it runs either. It is a subset of accepts, which
 	// TestCoercionsReturnOnlyWhatTheyAccept holds.
 	//
-	// What the under-rule needs is weaker: that nothing under the operation
-	// raises for this type. Reaching no call at all is the stricter test, and
+	// What pastReceiverIdentity needs is weaker: that nothing past the
+	// operation raises for this type. Reaching no call at all is the stricter
+	// test, and
 	// it is the one a reader can check against the operation's own steps, so an
 	// operation whose first step is a call returns nothing at once however
 	// harmless that call turns out to be. The two come apart at `ToNumeric`.
@@ -108,10 +109,10 @@ var coercions = map[string]coercion{
 	"ToNumber":               {accepts: everyLangTypeExcept(typeSymbol, typeBigInt), returnsAtOnce: set.FromSlice([]langType{typeNumber})},
 	// ToNumeric has no `Throw` step of its own, so it never bottoms out a chain
 	// and accepts every type. It returns none at once because its first step is
-	// `? ToPrimitive(value, number)`. Nothing under it does raise for a Number
+	// `? ToPrimitive(value, number)`. Nothing past it does raise for a Number
 	// or a BigInt, since ToPrimitive hands a primitive straight back and
-	// ToNumber returns a Number unchanged, so the empty set keeps throws the
-	// under-rule could drop. That is the safe direction, and the committed graph
+	// ToNumber returns a Number unchanged, so the empty set keeps throws
+	// pastReceiverIdentity could drop. That is the safe direction, and the graph
 	// applies ToNumeric to a parameter rather than a receiver, so no drop turns
 	// on it today.
 	"ToNumeric": {accepts: everyLangType, returnsAtOnce: set.NewSet[langType]()},
@@ -259,8 +260,8 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 	if guard.threaded {
 		decision.Coerced = originRef(guard.value)
 	}
-	// A site the base rule keeps can still sit under a coercion this receiver
-	// leaves at its first step, which never reaches the steps below it.
+	// A site the base rule keeps can still lie past a coercion this receiver
+	// leaves at its first step, so the steps that would raise it never run.
 	if !decision.Dropped {
 		if ao := f.pastReceiverIdentity(fn, &site, received); ao != "" {
 			decision.Coercion, decision.Coerced = ao, originRef(Receiver)
