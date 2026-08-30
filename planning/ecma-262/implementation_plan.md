@@ -1789,10 +1789,19 @@ Prune throws whose provenance is a coercion of an already-typed receiver,
 because Escalier's static types make that path unreachable.
 
 ```
-CoercionAOs = { ToObject, RequireObjectCoercible,
-                ToString, ToNumber, ToNumeric,
-                ThisBigIntValue, ThisBooleanValue, ThisNumberValue,
-                ThisStringValue, ThisSymbolValue }
+// Coercions: per operation, the receiver types its own Throw step cannot
+// report, and the ones it hands back before reaching any call.
+//                          accepts                    returnsAtOnce
+ToObject                    every type                 every type
+RequireObjectCoercible      every type                 every type
+ToString                    every type but Symbol      String
+ToNumber                    every type but Symbol,BigInt   Number
+ToNumeric                   every type                 —
+This<T>Value                T                          T
+
+// ReceiverTypes: the language type a prototype's methods take as `this`.
+// An owner absent from the table holds objects.
+BigInt, Boolean, Number, String, Symbol → their own primitive
 
 func filterThrows(M) []Exception:
     kept = {}
@@ -1802,21 +1811,32 @@ func filterThrows(M) []Exception:
         kept.add(site.Exception)                         // a class name, an Origin, or Unknown
     return sorted(kept)
 
-// precludedCoercion: the throw's Root bottoms out at a coercion AO whose
-// checked value threads back to M's receiver.
+// precludedCoercion: the throw's Root bottoms out at a coercion whose checked
+// value threads back to M's receiver, and whose own Throw step that
+// receiver's type cannot reach.
 func precludedCoercion(M, site) bool:
     (ao, coerced) = rootCoercion(site.Root)          // unwrap Propagated(..) to the base Direct
-    if ao not in CoercionAOs: return false
+    if ao not in Coercions: return false
     place = threadBack(M, site.Root, coerced)        // map coerced value back to M's receiver/param
-    return place is Receiver                         // receiver type is always statically known
+    return place is Receiver
+       and receiverTypeOf(M) in Coercions[ao].accepts
 ```
 
-Each entry in `CoercionAOs` checks the value at position 0 and raises a
-`TypeError` when its dynamic type is wrong. The first group is the
-coercions ECMA-262 applies to a value before working with it. The
-`This*Value` operations are the receiver's counterpart:
-`Number.prototype.toFixed` opens with `? ThisNumberValue(this value)`,
-which raises when the receiver is neither a Number nor a Number wrapper.
+Each entry checks the value at position 0 and raises a `TypeError` when
+its dynamic type is wrong. The first group is the coercions ECMA-262
+applies to a value before working with it. The `This*Value` operations are
+the receiver's counterpart: `Number.prototype.toFixed` opens with `?
+ThisNumberValue(this value)`, which raises when the receiver is neither a
+Number nor a Number wrapper.
+
+Both columns are read against the **receiver's language type**, which the
+owner of the member key fixes. This is not a type channel and needs no
+join: `Normalize` reads `String` off `String.prototype.charAt`, and a
+`String.prototype` method takes a String. Reading it is what keeps the
+filter from dropping a throw a receiver really can raise —
+`ThisNumberValue` on a String receiver raises for real, and every
+`This*Value` drop in the committed graph sits on its own prototype only
+because the spec puts it there.
 
 `ToPrimitive` is the coercion the list leaves out. Its only `Throw` step
 is the one reached after an `@@toPrimitive` method has handed back an
@@ -1839,38 +1859,33 @@ and that check reads nothing the facts do not already carry. A
 domain check survives it. Each filter decision is recorded for review,
 since FR11 is a heuristic.
 
-The branch drops two things, under separate rules. The first is the
-coercion's own type check, which the pseudocode above states and which a
-declared receiver type excludes whatever that type is. The second is
-every step the coercion would reach *past* the identity path:
+The branch drops two things, and the two columns are what separate them.
+`accepts` settles the coercion's own type check, which the pseudocode
+above states. `returnsAtOnce` settles every step the coercion would reach
+*past* the value it hands back:
 
 ```
-ReceiverIdentityCoercions = { ToNumber: Number, ToString: String }
-
-// underReceiverIdentity: the chain passes through a coercion this owner's
-// receiver leaves at its first step, so nothing below that call runs.
+// underReceiverIdentity: the chain passes through a coercion that returns
+// this receiver's type at once, so nothing below that call runs.
 func underReceiverIdentity(M, site) bool:
     for hop in chain(site):                       // propagating steps, outermost first
-        if ReceiverIdentityCoercions[hop.Callee] != ownerOf(M): continue
+        if receiverTypeOf(M) not in Coercions[hop.Callee].returnsAtOnce: continue
         if threadBack(M, hop, 0) is Receiver: return true
     return false
 ```
 
 `String.prototype.charAt` is the shape. It runs `? ToString(O)` on a
-receiver the declaration types as a String, `ToString` hands a String back
-at its first step, and the `? ToPrimitive(argument, string)` further down
-its body never runs — nor the `@@toPrimitive` lookup and call under that.
-Without this rule `charAt` drops `ToString`'s Symbol check and keeps four
-throws from machinery a string receiver cannot reach.
+receiver typed String, `ToString` returns a String at its first step, and
+the `? ToPrimitive(argument, string)` further down its body never runs —
+nor the `@@toPrimitive` lookup and call under that. Without this rule
+`charAt` drops `ToString`'s Symbol check and keeps four throws from
+machinery a string receiver cannot reach.
 
 Both guards are load-bearing. `ToString` reaches that machinery whenever
-its argument is an Object, so the same drop on a `Date.prototype` method,
-or on a parameter of any method, would discard a `TypeError` a caller can
-raise. The owner is not a type channel: it is fixed by the member the
-declaration hangs off, so `Normalize` reads it off the spec key and no
-join is involved. The table holds the coercions with a body to reach past;
-`ToObject`, `RequireObjectCoercible`, and the `This*Value` operations
-return or raise without calling anything.
+its argument is an Object, so the same drop on an `Array.prototype`
+method, or on a parameter of any method, would discard a `TypeError` a
+caller can raise. `returnsAtOnce` is a subset of `accepts` for every
+operation, since returning a value is how one avoids its own throw.
 
 `threadBack` walks the chain outward one hop at a time. A hop reads the
 call the site propagated through, evaluates the argument at the callee's
@@ -1912,8 +1927,8 @@ rule of Appendix B.
 
 **Gate.** Over the committed graph the filter adjudicates 4882 `TypeError`
 sites and drops 362, every one of them a coercion of the receiver — 242 by
-the type check itself and 120 below a `ToString` a `String.prototype`
-receiver leaves at its first step.
+the type check the receiver's type cannot reach, and 120 below a
+`ToString` that returns a String receiver at once.
 `Number.prototype.toFixed` keeps the `RangeError` it raises on a
 `fractionDigits` outside 0..100 and drops the `TypeError` from
 `ThisNumberValue(this value)`. `String.prototype.charAt` shows both

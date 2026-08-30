@@ -8,50 +8,116 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// coercionAOs are the abstract operations whose `TypeError` reports the wrong
-// dynamic type for the value at coercionGuardArg, which a declared receiver
-// type rules out. `ToPrimitive` is absent: its throw reports an `@@toPrimitive`
-// method handing back an object, which no declared type rules out. See §9.2 of
-// planning/ecma-262/implementation_plan.md for the reasoning behind each entry.
-var coercionAOs = set.FromSlice([]string{
-	"RequireObjectCoercible",
-	"ToNumber",
-	"ToNumeric",
-	"ToObject",
-	"ToString",
+// langType is an ECMAScript language type of §6.1, as far as the filter needs
+// to tell them apart. `Undefined` and `Null` are absent: no declaration hands a
+// method a receiver of either, which is what makes `ToObject` and
+// `RequireObjectCoercible` accept every receiver there is.
+type langType string
 
-	"ThisBigIntValue",
-	"ThisBooleanValue",
-	"ThisNumberValue",
-	"ThisStringValue",
-	"ThisSymbolValue",
+const (
+	typeBigInt  langType = "BigInt"
+	typeBoolean langType = "Boolean"
+	typeNumber  langType = "Number"
+	typeObject  langType = "Object"
+	typeString  langType = "String"
+	typeSymbol  langType = "Symbol"
+)
+
+var everyLangType = set.FromSlice([]langType{
+	typeBigInt, typeBoolean, typeNumber, typeObject, typeString, typeSymbol,
 })
 
-// receiverIdentityCoercions maps a coercion to the owner whose receiver it
-// hands straight back. `ToString(O)` returns `O` at its first step when `O` is
-// already a String, so on a `String.prototype` method the `ToPrimitive` call
-// further down its body never runs and nothing under that call can raise.
+// except returns the language types outside the ones named, so a coercion that
+// accepts all but one spells the one.
+func except(types ...langType) set.Set[langType] {
+	return everyLangType.Difference(set.FromSlice(types))
+}
+
+// receiverTypes gives the language type a declaration hands the methods of one
+// prototype as their receiver, keyed by the owner of the member key. An owner
+// the table does not name holds objects, which every prototype but these five
+// does. `String.prototype.charAt` takes a String, `Array.prototype.push` an
+// Object.
 //
-// This is what separates the two rules the filter applies. The base rule drops
-// the coercion's own type check, which a declared receiver type excludes
-// whatever that type is. This one drops everything the coercion would reach
-// below it, which is sound only where the receiver's type is already the
-// coercion's target, so it reads the owner of the member key to check that.
+// This is not a type channel and needs no join. The receiver's type is fixed by
+// the member the declaration hangs off, so Normalize reads the owner off the
+// spec key and the table answers from that alone.
+var receiverTypes = map[string]langType{
+	"BigInt":  typeBigInt,
+	"Boolean": typeBoolean,
+	"Number":  typeNumber,
+	"String":  typeString,
+	"Symbol":  typeSymbol,
+}
+
+// receiverType is the language type of the receiver a method of owner takes.
+func receiverType(owner string) langType {
+	if t, ok := receiverTypes[owner]; ok {
+		return t
+	}
+	return typeObject
+}
+
+// coercion is what one abstract operation does to the value at
+// coercionGuardArg, which is what FR11 needs to know to call a throw
+// unreachable. See planning/ecma-262/implementation_plan.md §9.2.
+type coercion struct {
+	// accepts are the types the operation's own `Throw` step cannot report. A
+	// receiver of one of them never reaches that step.
+	accepts set.Set[langType]
+	// returnsAtOnce are the types the operation hands back before reaching any
+	// call, so nothing under it runs either. It is a subset of accepts, which
+	// TestCoercionsReturnOnlyWhatTheyAccept holds.
+	returnsAtOnce set.Set[langType]
+}
+
+// coercions are the operations whose `TypeError` reports the wrong dynamic type
+// for the value they were handed, with what each does per receiver type.
 //
-// The owner is not a type channel. It is fixed by the member the declaration
-// hangs off, so it comes out of the spec key by Normalize and needs no join.
+// The first group are the coercions ECMA-262 applies to a value before working
+// with it. `ToObject` and `RequireObjectCoercible` raise on `undefined` and
+// `null` alone and call nothing, so they settle every receiver. `ToString` and
+// `ToNumber` hand their own type straight back at their first step and reach
+// `ToPrimitive` for an Object, which is why they accept more types than they
+// return at once.
 //
-// The entries are the coercions with a body to reach past. `ToObject`,
-// `RequireObjectCoercible`, and the `This*Value` operations return or raise
-// without calling anything, so there is nothing under them to drop.
-var receiverIdentityCoercions = map[string]string{
-	"ToNumber": "Number",
-	"ToString": "String",
+// The `This*Value` operations unwrap a wrapper receiver. Each returns its own
+// primitive at its first step and raises on everything else, apart from an
+// Object carrying the matching slot, which the graph gives no way to tell from
+// any other Object. Reading them as raising on every Object keeps a throw the
+// filter cannot prove unreachable.
+//
+// `ToPrimitive` is the coercion absent from the map. Its one `Throw` step is
+// the one reached after an `@@toPrimitive` method has handed back an object, so
+// it reports the caller's code failing rather than a wrong dynamic type, and no
+// receiver type rules it out.
+var coercions = map[string]coercion{
+	"RequireObjectCoercible": {accepts: except(), returnsAtOnce: except()},
+	"ToObject":               {accepts: except(), returnsAtOnce: except()},
+	"ToString":               {accepts: except(typeSymbol), returnsAtOnce: set.FromSlice([]langType{typeString})},
+	"ToNumber":               {accepts: except(typeSymbol, typeBigInt), returnsAtOnce: set.FromSlice([]langType{typeNumber})},
+	// ToNumeric has no `Throw` step of its own, delegating to ToPrimitive and
+	// ToNumber, so it never bottoms out a chain. It is listed because FR11
+	// names it and a later spec revision could give it a check.
+	"ToNumeric": {accepts: except(), returnsAtOnce: set.NewSet[langType]()},
+
+	"ThisBigIntValue":  thisValue(typeBigInt),
+	"ThisBooleanValue": thisValue(typeBoolean),
+	"ThisNumberValue":  thisValue(typeNumber),
+	"ThisStringValue":  thisValue(typeString),
+	"ThisSymbolValue":  thisValue(typeSymbol),
+}
+
+// thisValue is the entry for an operation that unwraps a receiver of one
+// primitive type and raises on every other.
+func thisValue(t langType) coercion {
+	own := set.FromSlice([]langType{t})
+	return coercion{accepts: own, returnsAtOnce: own}
 }
 
 // coercionGuardArg is the position of the value a coercion operation checks.
-// Every entry in coercionAOs declares that one parameter and nothing else, and
-// TestCoercionAOsRaiseOnTheirFirstArgument names it per operation.
+// Every entry in coercions declares that one parameter and nothing else, and
+// TestCoercionsRaiseOnTheirFirstArgument names it per operation.
 const coercionGuardArg = 0
 
 // coercionFilter drops the throw sites FR11 discounts and records what it did.
@@ -201,20 +267,22 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 	if site.Exception != Class("TypeError") {
 		return false
 	}
+	received := f.receiverType(fn)
 	guard := f.coerced(fn, &site)
 	decision := FilterDecision{
 		Method:   fn.Name,
 		Site:     site.String(),
 		Coercion: guard.ao,
-		Dropped:  guard.threaded && guard.value.Kind == OriginReceiver,
+		Dropped: guard.threaded && guard.value.Kind == OriginReceiver &&
+			coercions[guard.ao].accepts.Contains(received),
 	}
 	if guard.threaded {
 		decision.Coerced = originRef(guard.value)
 	}
-	// A site the base rule keeps can still sit under a coercion the receiver's
-	// type makes an identity, which never reaches the steps below it.
+	// A site the base rule keeps can still sit under a coercion this receiver
+	// leaves at its first step, which never reaches the steps below it.
 	if !decision.Dropped {
-		if ao := f.underReceiverIdentity(fn, &site); ao != "" {
+		if ao := f.underReceiverIdentity(fn, &site, received); ao != "" {
 			decision.Coercion, decision.Coerced = ao, originRef(Receiver)
 			decision.Dropped, decision.Under = true, true
 		}
@@ -223,29 +291,36 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 	return decision.Dropped
 }
 
-// underReceiverIdentity returns the coercion the site's chain passes through
-// whose receiver argument makes it an identity, or the empty string when it
-// passes through no such call. Every step that coercion would reach past the
-// identity is unreachable, and so is the site under them.
-//
-// `String.prototype.charAt` runs `? ToString(O)` on a receiver the declaration
-// types as a String. `ToString` hands a String straight back at its first step,
-// so the `? ToPrimitive(argument, string)` further down its body never runs,
-// nor does the `@@toPrimitive` lookup and call under that.
-//
-// Both guards have to hold. The coercion has to be an identity for this
-// owner's receiver, and the value it was handed has to be that receiver rather
-// than a parameter that happens to reach the same operation. `charAt` coerces
-// `pos` through `ToNumber` on the same algorithm, and that stands.
-func (f *coercionFilter) underReceiverIdentity(fn *Func, site *ThrowSite) string {
+// receiverType is the language type fn's declaration hands it as a receiver. A
+// name Normalize cannot address is read as an Object, the type that settles the
+// least, so an unaddressable name drops the fewest throws rather than the most.
+func (f *coercionFilter) receiverType(fn *Func) langType {
 	ref, ok := Normalize(fn.Name)
 	if !ok {
-		return ""
+		return typeObject
 	}
+	return receiverType(ref.Owner)
+}
+
+// underReceiverIdentity returns the coercion the site's chain passes through
+// that hands this receiver straight back, or the empty string when it passes
+// through no such call. Every step that coercion would reach past the value it
+// returns is unreachable, and so is the site under them.
+//
+// `String.prototype.charAt` runs `? ToString(O)` on a receiver typed String,
+// and `ToString` returns a String at its first step. The `? ToPrimitive(argument,
+// string)` further down its body never runs, nor the `@@toPrimitive` lookup and
+// call under that.
+//
+// Both guards have to hold. The coercion has to return this receiver's type at
+// once, and the value it was handed has to be that receiver rather than a
+// parameter reaching the same operation. `charAt` coerces `pos` through
+// `ToNumber` on the same algorithm, and every throw under that stands.
+func (f *coercionFilter) underReceiverIdentity(fn *Func, site *ThrowSite, received langType) string {
 	hops := f.chain(fn, site)
 	for depth, hop := range hops {
 		callee := hop.site.Root.Callee
-		if receiverIdentityCoercions[callee] == ref.Owner && f.threadsToReceiver(hops, depth) {
+		if coercions[callee].returnsAtOnce.Contains(received) && f.threadsToReceiver(hops, depth) {
 			return callee
 		}
 	}
@@ -317,7 +392,7 @@ type coercionGuard struct {
 // neither the receiver nor a parameter, such as `Get(O, "length")`.
 func (f *coercionFilter) coerced(fn *Func, site *ThrowSite) coercionGuard {
 	if site.Root.Inner == nil {
-		if !coercionAOs.Contains(fn.Name) {
+		if _, known := coercions[fn.Name]; !known {
 			return coercionGuard{}
 		}
 		return coercionGuard{ao: fn.Name, value: Param(coercionGuardArg), threaded: true}

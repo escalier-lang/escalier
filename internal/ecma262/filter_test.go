@@ -146,7 +146,7 @@ func TestFilterAdjudicatesTypeErrorsAlone(t *testing.T) {
 }
 
 // The whole run's tallies, and the operations whose guards it dropped. This is
-// the §9.2 review report in summary form: a change to coercionAOs or to the
+// the §9.2 review report in summary form: a change to coercions or to the
 // threading moves these numbers, and the reviewer sees which operation moved.
 func TestFilterReportTallies(t *testing.T) {
 	report := testFilterReport(t)
@@ -229,24 +229,20 @@ func TestFilterCarriesModeledRejections(t *testing.T) {
 	require.Equal(t, []string{"TypeError", "elementErrOf:param:0", "unknown"}, fact.Rejects)
 }
 
-// The throw steps behind coercionAOs, one line per operation. Each entry was
-// added by reading the operation in ECMA-262 and confirming that every
-// `TypeError` it raises of its own reports the wrong dynamic type for the value
-// at coercionGuardArg, which is what makes a receiver coercion unreachable for
-// a well-typed caller. The graph carries the step but not the reason, so the
-// snapshot pins what was read rather than proving it.
+// The throw steps behind each entry of coercions, one line per operation. Every
+// entry was added by reading the operation in ECMA-262 and confirming that its
+// `TypeError` reports the wrong dynamic type for the value at coercionGuardArg,
+// and that `accepts` and `returnsAtOnce` say what it does per receiver type. The
+// graph carries the step but not the reason, so the snapshot pins what was read
+// rather than proving it.
 //
 // A spec bump that adds or moves a throw step in one of these operations shows
 // up here. That is the prompt to re-read the operation against FR11, not to
 // update the snapshot.
-//
-// `ToNumeric` raises nothing of its own. It delegates to `ToPrimitive` and
-// `ToNumber`, so it never bottoms out a chain, and it is listed because FR11
-// names it and a later spec revision could give it a check of its own.
-func TestCoercionAOsRaiseOnTheirFirstArgument(t *testing.T) {
+func TestCoercionsRaiseOnTheirFirstArgument(t *testing.T) {
 	cfg := testCFG(t)
 	var lines []string
-	for _, name := range sortedStrings(coercionAOs.ToSlice()) {
+	for _, name := range sortedStrings(coercionNames()) {
 		fn := cfg.AbstractOp(name)
 		require.NotNilf(t, fn, "%s is not an abstract operation the graph holds", name)
 		require.Greaterf(t, len(fn.Params), coercionGuardArg,
@@ -267,6 +263,29 @@ ToObject(argument) raises at #3 TypeError, #6 TypeError
 ToString(argument) raises at #7 TypeError`))
 }
 
+// A coercion returns at once only for a type it accepts. Returning a value is
+// how it avoids its own `Throw` step, so an entry claiming otherwise would drop
+// the steps under a coercion that raises before reaching them.
+func TestCoercionsReturnOnlyWhatTheyAccept(t *testing.T) {
+	t.Parallel()
+
+	for name, c := range coercions {
+		for _, returned := range c.returnsAtOnce.ToSlice() {
+			require.Containsf(t, c.accepts.ToSlice(), returned,
+				"%s returns a %s it does not accept", name, returned)
+		}
+	}
+}
+
+// coercionNames returns the operations the filter weighs.
+func coercionNames() []string {
+	names := make([]string, 0, len(coercions))
+	for name := range coercions {
+		names = append(names, name)
+	}
+	return names
+}
+
 // `ToPrimitive` is the coercion the list leaves out. Its one `Throw` step is
 // the one ECMA-262 reaches after an `@@toPrimitive` method has handed back an
 // object rather than a primitive, so it reports the caller's own code failing
@@ -277,7 +296,7 @@ ToString(argument) raises at #7 TypeError`))
 // appears mid-chain, where the base is the `ToObject` inside its
 // `@@toPrimitive` lookup, and that base is weighed on its own account.
 func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
-	require.NotContains(t, coercionAOs.ToSlice(), "ToPrimitive")
+	require.NotContains(t, coercionNames(), "ToPrimitive")
 
 	fn := testCFG(t).AbstractOp("ToPrimitive")
 	require.NotNil(t, fn)
@@ -356,11 +375,47 @@ func TestFilterIdentityRuleChecksTheOwnerAndTheValue(t *testing.T) {
 		under++
 		ref, ok := Normalize(decision.Method)
 		require.Truef(t, ok, "%s", decision)
-		require.Equalf(t, ref.Owner, receiverIdentityCoercions[decision.Coercion],
-			"%s drops under a coercion that is no identity for a %s receiver", decision, ref.Owner)
+		received := receiverType(ref.Owner)
+		require.Containsf(t, coercions[decision.Coercion].returnsAtOnce.ToSlice(), received,
+			"%s drops under a coercion that does not return a %s at once", decision, received)
 		require.Equalf(t, "receiver", decision.Coerced, "%s drops a value that is not the receiver", decision)
 	}
 	require.NotZero(t, under)
+}
+
+// The receiver type each owner hands its methods, and what that settles. The
+// five wrapper prototypes hold their own primitive and every other owner holds
+// objects, which is the whole of what the filter needs to know about a
+// receiver.
+//
+// The last two rows are what the guard is for. `ThisNumberValue` unwraps a
+// Number and raises on anything else, so a `String.prototype` method calling it
+// would raise for real; and `ToString` reaches its `@@toPrimitive` machinery
+// for an Object, so the steps under it stand on an `Array.prototype` method
+// even though they go on a `String.prototype` one.
+func TestReceiverTypeSettlesWhatACoercionDoes(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		owner                  string
+		coercion               string
+		accepts, returnsAtOnce bool
+	}{
+		"StringReceiverToString":    {"String", "ToString", true, true},
+		"NumberReceiverThisNumber":  {"Number", "ThisNumberValue", true, true},
+		"ArrayReceiverToObject":     {"Array", "ToObject", true, true},
+		"UnknownOwnerHoldsAnObject": {"Temporal.PlainDate", "ToObject", true, true},
+		"StringReceiverThisNumber":  {"String", "ThisNumberValue", false, false},
+		"ArrayReceiverToString":     {"Array", "ToString", true, false},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			received := receiverType(test.owner)
+			require.Equal(t, test.accepts, coercions[test.coercion].accepts.Contains(received))
+			require.Equal(t, test.returnsAtOnce, coercions[test.coercion].returnsAtOnce.Contains(received))
+		})
+	}
 }
 
 // throwSteps renders every step of fn that raises an error class it names, as

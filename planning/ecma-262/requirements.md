@@ -800,14 +800,20 @@ already-typed value:
   `ThisNumberValue`, `ThisStringValue`, `ThisBooleanValue`,
   `ThisBigIntValue`, `ThisSymbolValue` — which raise on a receiver of the
   wrong type and nothing else. `Number.prototype.toFixed` opens with one.
-- Every `TypeError` under a coercion the receiver's declared type makes an
-  identity. `ToString(O)` returns `O` at its first step when `O` is
-  already a String, so on a `String.prototype` method the `ToPrimitive`
-  call further down its body is unreachable, and so is the
-  `@@toPrimitive` lookup and call under it. This needs the receiver's
-  type, which the member key's owner fixes, and it does not extend to a
-  receiver the coercion has real work to do on: `ToString` of a
-  `Date.prototype` receiver does reach that machinery.
+- Every `TypeError` under a coercion that returns the receiver at its
+  first step. `ToString(O)` returns `O` when `O` is already a String, so
+  on a `String.prototype` method the `ToPrimitive` call further down its
+  body is unreachable, and so is the `@@toPrimitive` lookup and call
+  under it. This does not extend to a receiver the coercion has real work
+  to do on: `ToString` of an `Array.prototype` receiver does reach that
+  machinery.
+
+Both readings are made against the receiver's language type, which the
+owner of the member key fixes — a `String.prototype` method takes a
+String, an `Array.prototype` method an Object. That is a fact about the
+declaration rather than a type the filter has to be told, which is why
+the receiver branch runs before the FR7 join while the parameter branch
+cannot.
 - `TypeError` raised inside `ToString`, `ToNumber`, `ToNumeric`, or
   `ToObject` applied to a parameter whose Escalier type is already the
   coerced type. `ToPrimitive` is not among them. Its one `Throw` step is
