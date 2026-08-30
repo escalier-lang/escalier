@@ -146,6 +146,40 @@ interface ReadableStream<T = any> { readonly locked: boolean; peek(): T; }
 		"the worker copy's `peek` method goes with the skipped declaration")
 }
 
+func TestPartitionLib_WorkerFormWithNoMembersKeepsTheSharedCopy(t *testing.T) {
+	t.Parallel()
+	// Both host libs declare `navigator`, with a type naming the host.
+	// A var has no members to compare, and one tree cannot hold both,
+	// so the copy outside the worker host stands. That is the one-tree
+	// policy rather than a guard, so nothing counts as lost.
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface Navigator { readonly userAgent: string; }
+declare var navigator: Navigator;
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+declare var navigator: WorkerNavigator;
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets["web:dom"], 2)
+	v, ok := res.Buckets["web:dom"][1].(*dts_parser.VarDecl)
+	require.True(t, ok)
+	ref, ok := v.TypeAnn.(*dts_parser.TypeReference)
+	require.True(t, ok)
+	require.Equal(t, "Navigator", typeRefName(ref),
+		"the document's binding is the one kept")
+
+	require.Equal(t, []Redeclaration{{
+		Name:       "navigator",
+		SourceFile: "lib.webworker.d.ts",
+		Reason:     SharedFormKept,
+	}}, res.Redeclarations)
+	require.False(t, res.Redeclarations[0].Reason.LosesMembers(),
+		"a var carries no members for the skip to discard")
+}
+
 func TestPartitionLib_SkipsWorkerHostRedeclarations(t *testing.T) {
 	t.Parallel()
 	// lib.dom.d.ts and lib.webworker.d.ts each declare the whole
@@ -758,6 +792,7 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 			{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts", Reason: RestatesShared},
 			{Name: "Blob", SourceFile: "lib.webworker.d.ts", Reason: SharedFormKept},
 			{Name: "Storage", SourceFile: "lib.webworker.d.ts", Reason: NoSharedInterface},
+			{Name: "Cache", SourceFile: "lib.webworker.d.ts", Reason: TypeParamsDiffer},
 		},
 	}
 	var sb strings.Builder
@@ -766,7 +801,7 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	require.Contains(t, out, "std:date: 3 decls")
 	require.Contains(t, out, "drops: 1 (eval)")
 	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
-	require.Contains(t, out, "worker-host redeclarations skipped: 3")
+	require.Contains(t, out, "worker-host redeclarations skipped: 4")
 	require.NotContains(t, out, "VarDate")
 
 	// Only the reason that discards surface is named. A count cannot
@@ -774,6 +809,9 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	require.Contains(t, out,
 		"worker-only members lost: Storage from lib.webworker.d.ts "+
 			"(no shared interface to carry the rest of the declaration)")
+	require.Contains(t, out,
+		"worker-only members lost: Cache from lib.webworker.d.ts "+
+			"(type parameter names differ from the shared copy)")
 	require.NotContains(t, out, "members lost: ReadableStream")
 	require.NotContains(t, out, "members lost: Blob")
 }
