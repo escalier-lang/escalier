@@ -220,20 +220,20 @@ func (r FilterReport) Counts() (adjudicated, dropped int) {
 // machinery rather than through a step of fn's, so they have no site to
 // adjudicate.
 func (f *coercionFilter) filterThrows(fn *Func) (raised, rejects []Exception) {
-	throws := f.summary.Of(fn)
-	kept := set.NewSet[Exception]()
-	for _, site := range throws.SyncSites() {
+	raw := f.summary.Of(fn)
+	thrown := set.NewSet[Exception]()
+	for _, site := range raw.SyncSites() {
 		if !f.discount(fn, site) {
-			kept.Add(site.Exception)
+			thrown.Add(site.Exception)
 		}
 	}
-	rejected := set.FromSlice(throws.Modeled)
-	for _, site := range throws.RejectSites() {
+	rejected := set.FromSlice(raw.Modeled)
+	for _, site := range raw.RejectSites() {
 		if !f.discount(fn, site) {
 			rejected.Add(site.Exception)
 		}
 	}
-	return sortedExceptions(kept), sortedExceptions(rejected)
+	return sortedExceptions(thrown), sortedExceptions(rejected)
 }
 
 // discount reports whether site is unreachable for a well-typed caller, and
