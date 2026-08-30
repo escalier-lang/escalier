@@ -514,8 +514,8 @@ impractical:**
   Neither claims to be complete, and neither is measured against a
   completeness bar. Some exceptions are outside the model altogether: a
   `RangeError` from a host allocation limit, a stack overflow, an
-  out-of-memory. A method whose throw paths the analysis could not read
-  whole therefore publishes what it found rather than being singled out,
+  out-of-memory. A method with a step the analysis could not read therefore
+  publishes what it found rather than being singled out,
   since under best effort every published set is short by something. What
   the analysis reads improves in later passes — the parameter branch of
   FR11's filter is one, richer conditions on a coercion another — and

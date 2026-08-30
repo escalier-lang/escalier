@@ -303,7 +303,7 @@ func TestThrowSummaryIncomplete(t *testing.T) {
 		"CapturedCompletion": {"Iterator.prototype.forEach", true},
 		// Every step of push resolves.
 		"WhollyReadable": {"Array.prototype.push", false},
-		// A step §3 reads out of prose is read whole, so it reports no
+		// A step §3 reads out of prose is read in full, so it reports no
 		// incompleteness to the throw sets any more than to the mutation
 		// summaries. `Atomics.store` states the same work in steps ESMeta
 		// formalizes and is complete for the same reason.

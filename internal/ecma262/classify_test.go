@@ -248,7 +248,7 @@ func TestFactsSampleMethods(t *testing.T) {
 		// Map, so the receiver claim is mutBorrow. The return is the boolean
 		// the algorithm built, which is fresh and not the receiver.
 		"MutationThroughARecordInABackingStore": {"Map.prototype.delete", "receiver:mutBorrow returns:fresh"},
-		// A caller of an algorithm the analysis could not read whole is
+		// A caller of an algorithm the analysis could not read every step of is
 		// classified all the same, since §4.1 charges `Unattributable` up the
 		// call graph and `Incomplete` not at all. next resumes the generator
 		// through `GeneratorResume`, which carries the warning.
@@ -296,7 +296,7 @@ func TestFactsSampleMethods(t *testing.T) {
 // The §4.3 gate's last spot-check. Every String method coerces its receiver
 // with `ToString` before reading it, and §4.2 makes that coercion's result a
 // fresh primitive, so no write can reach the receiver. The seven left out are
-// the ones the analysis could not read whole, so they withhold the receiver
+// the ones with a step the analysis could not read, so they withhold the receiver
 // claim this checks.
 func TestFactsEveryStringMethodBorrowsItsReceiver(t *testing.T) {
 	var borrowed int

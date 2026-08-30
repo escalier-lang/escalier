@@ -510,7 +510,7 @@ maintainer runbook. Six findings shape the sections downstream.
 
   `Lowering.scala` carries a reviewed table of the four and emits the ordinary
   `slotwrite` or `let` each states, so nothing downstream learns a new
-  vocabulary. A recognized step is read whole, the way every node the lowering
+  vocabulary. A recognized step is read in full, the way every node the lowering
   emits is, so it stops reporting incompleteness to §9.1's throw sets as well as
   to §4.1's mutation summaries. An entry therefore qualifies only when the prose
   states everything the step does. All four state an allocation or a write over

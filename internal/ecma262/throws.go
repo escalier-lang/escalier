@@ -798,7 +798,7 @@ func (a *throwAnalysis) propagate(cfg *CFG, fn *Func, f *throwFacts, origin *Ori
 // `String.prototype.match` invokes what `? GetMethod(regexp, @@match)`
 // returned, which in certain situations is a method the caller put on their own
 // object. Whether that method throws is unknown, let alone what it throws. The
-// call to `GetMethod` is read whole, its own `TypeError` included; it is the
+// call to `GetMethod` is read in full, its own `TypeError` included; it is the
 // value it hands back that cannot be named. The slice methods construct what
 // `SpeciesConstructor` returned and `Set.prototype.difference` calls the
 // `[[Has]]` of a Set Record built by reading `has` off its argument, both the
