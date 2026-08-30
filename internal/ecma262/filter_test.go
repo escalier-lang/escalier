@@ -108,7 +108,7 @@ func TestFilterDropsNothingWithoutAReceiver(t *testing.T) {
 
 // A throw the chain reaches past a coercion of a parameter is kept. `charAt`
 // coerces `pos` with `ToIntegerOrInfinity`, which reaches `ToNumber` and then
-// the `@@toPrimitive` machinery, and the receiver branch settles none of it: a
+// the `@@toPrimitive` machinery, and the receiver branch decides none of it: a
 // `pos` the declaration types loosely can be an object with a `@@toPrimitive`
 // that raises.
 //

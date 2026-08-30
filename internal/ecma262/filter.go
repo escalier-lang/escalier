@@ -87,7 +87,8 @@ type coercion struct {
 //
 // The first group are the coercions ECMA-262 applies to a value before working
 // with it. `ToObject` and `RequireObjectCoercible` raise on `undefined` and
-// `null` alone and call nothing, so they settle every receiver. `ToString` and
+// `null` alone and call nothing, so both their columns hold every receiver
+// type. `ToString` and
 // `ToNumber` hand their own type straight back at their first step and reach
 // `ToPrimitive` for an Object, which is why they accept more types than they
 // return at once.
@@ -212,7 +213,7 @@ func (r FilterReport) Counts() (adjudicated, dropped int) {
 
 // filterThrows returns fn's two channels with the receiver-coercion
 // `TypeError`s discounted. Both are filtered the same way, because a site's
-// channel is settled by the exit it reaches and both carry coercion guards.
+// channel is decided by the exit it reaches and both carry coercion guards.
 //
 // The reject channel also carries what the combinator model supplies. Those
 // rejections reach the returned promise through the promise-resolution
@@ -235,10 +236,12 @@ func (f *coercionFilter) filterThrows(fn *Func) (raised, rejects []Exception) {
 	return sortedExceptions(kept), sortedExceptions(rejected)
 }
 
-// discount reports whether site checks a value fn's declared types already
-// settle, and records the decision when the site is one the filter adjudicates.
+// discount reports whether site is unreachable for a well-typed caller, and
+// records the decision where the filter has one to make. Only a `TypeError`
+// does: every other class reports the values a caller passed rather than their
+// types, so the filter leaves it alone.
 //
-// Only the receiver is settled. A coercion of a parameter is unreachable
+// Only the receiver is decided. A coercion of a parameter is unreachable
 // exactly when the declared parameter type already is the coercion's target,
 // which the shape-free facts cannot say, so the site is kept and the decision
 // records the position for review. A method whose surviving throws are worth
@@ -273,7 +276,7 @@ func (f *coercionFilter) discount(fn *Func, site ThrowSite) bool {
 }
 
 // receiverType is the language type fn's declaration hands it as a receiver. A
-// name Normalize cannot address is read as an Object, the type that settles the
+// name Normalize cannot address is read as an Object, the type that decides the
 // least, so an unaddressable name drops the fewest throws rather than the most.
 func (f *coercionFilter) receiverType(fn *Func) langType {
 	ref, ok := Normalize(fn.Name)
@@ -429,7 +432,7 @@ func WriteFilterReport(report FilterReport, w io.Writer) error {
 // sortDecisions orders the report by method, leaving each method's decisions in
 // the order the filter reached them: the synchronous sites by position, then
 // the rejection sites by position. The graph fixes the order the methods
-// themselves are walked in, so this only settles how the report reads.
+// themselves are walked in, so this only decides how the report reads.
 func sortDecisions(decisions []FilterDecision) {
 	sort.SliceStable(decisions, func(i, j int) bool {
 		return decisions[i].Method < decisions[j].Method
