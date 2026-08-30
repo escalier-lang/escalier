@@ -155,12 +155,8 @@ type FilterDecision struct {
 	Coercion string
 	Coerced  string
 	Dropped  bool
-	// PastCoercion marks a site the chain reaches past a coercion rather than at
-	// it, so Coercion names an operation further out than the one that raised.
-	// `String.prototype.charAt` has `#3 TypeError <- ToString#32 <-
-	// ToPrimitive#17`: the throw is ToPrimitive's, reached from ToString's
-	// body, and a String receiver leaves ToString at its first step without
-	// ever making that call. See pastReceiverIdentity.
+	// PastCoercion says Coercion names an operation further out than the one
+	// that raised. See pastReceiverIdentity.
 	PastCoercion bool
 }
 
@@ -323,17 +319,17 @@ func (f *coercionFilter) receiverType(fn *Func) langType {
 // pastReceiverIdentity returns the coercion the site's chain passes through
 // that hands this receiver straight back, or the empty string when it passes
 // through no such call. Every step that coercion would reach past the value it
-// returns is unreachable, and so is the site under them.
+// returns is unreachable, and so is the site past them.
 //
 // `String.prototype.charAt` runs `? ToString(O)` on a receiver typed String,
 // and `ToString` returns a String at its first step. The `? ToPrimitive(argument,
 // string)` further down its body never runs, nor the `@@toPrimitive` lookup and
-// call under that.
+// call past that.
 //
 // Both guards have to hold. The coercion has to return this receiver's type at
 // once, and the value it was handed has to be that receiver rather than a
 // parameter reaching the same operation. `charAt` coerces `pos` through
-// `ToNumber` on the same algorithm, and every throw under that stands.
+// `ToNumber` on the same algorithm, and every throw past that stands.
 func (f *coercionFilter) pastReceiverIdentity(fn *Func, site *ThrowSite, received langType) string {
 	hops := f.chain(fn, site)
 	for depth, hop := range hops {
