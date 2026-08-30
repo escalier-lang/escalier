@@ -157,6 +157,25 @@ removing an entry. The same condition governs §6.B and §6.C of
 [../interop_mutability/implementation_plan.md](../interop_mutability/implementation_plan.md),
 which drop entries as the `data/builtins/` overrides land.
 
+### The gate's meaning changes when the entries go
+
+Deleting the 24 entries makes `TestCommittedGraphLeavesNoReceiverDisagreement`
+fail on `String.prototype.replace` and `String.prototype.replaceAll`. Both drop
+from an override answer to the mutating `replace` prefix, which contradicts the
+`borrow` the facts publish.
+
+That is the gate reading a condition it was not written for, not a reason to
+keep the entries. Today a method with no entry is decided by the heuristic, so a
+disagreement is a soundness risk. Once §7 ranks the facts above the name tiers,
+the fact decides and a heuristic that would have answered otherwise costs
+nothing. `replace` is the heuristic the deleted entry existed to correct, so the
+contradiction is expected rather than new information.
+
+Unlike `copyWithin`, this one does not want a heuristic fix. A `replace*` prefix
+really is mutating on most APIs, `replaceChild` and `replaceState` among them;
+`String.prototype.replace` is the exception. §7 decides how the gate should read
+a fact-wins disagreement, and until then the assertion stands as written.
+
 ## The 37 entries §7 keeps
 
 `Body`, `Console`, `Request`, and `Response` are `web:*` owners with no
