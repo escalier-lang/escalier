@@ -23,13 +23,17 @@ const (
 	typeSymbol  langType = "Symbol"
 )
 
+// everyLangType is the set an operation that raises on no receiver at all
+// accepts. The entries below share it rather than each holding a copy, so it is
+// read-only: a coercion that needs a smaller set builds one with
+// everyLangTypeExcept.
 var everyLangType = set.FromSlice([]langType{
 	typeBigInt, typeBoolean, typeNumber, typeObject, typeString, typeSymbol,
 })
 
-// except returns the language types outside the ones named, so a coercion that
-// accepts all but one spells the one.
-func except(types ...langType) set.Set[langType] {
+// everyLangTypeExcept returns the language types outside the ones named, so a
+// coercion that accepts all but one spells the one.
+func everyLangTypeExcept(types ...langType) set.Set[langType] {
 	return everyLangType.Difference(set.FromSlice(types))
 }
 
@@ -92,14 +96,14 @@ type coercion struct {
 // it reports the caller's code failing rather than a wrong dynamic type, and no
 // receiver type rules it out.
 var coercions = map[string]coercion{
-	"RequireObjectCoercible": {accepts: except(), returnsAtOnce: except()},
-	"ToObject":               {accepts: except(), returnsAtOnce: except()},
-	"ToString":               {accepts: except(typeSymbol), returnsAtOnce: set.FromSlice([]langType{typeString})},
-	"ToNumber":               {accepts: except(typeSymbol, typeBigInt), returnsAtOnce: set.FromSlice([]langType{typeNumber})},
+	"RequireObjectCoercible": {accepts: everyLangType, returnsAtOnce: everyLangType},
+	"ToObject":               {accepts: everyLangType, returnsAtOnce: everyLangType},
+	"ToString":               {accepts: everyLangTypeExcept(typeSymbol), returnsAtOnce: set.FromSlice([]langType{typeString})},
+	"ToNumber":               {accepts: everyLangTypeExcept(typeSymbol, typeBigInt), returnsAtOnce: set.FromSlice([]langType{typeNumber})},
 	// ToNumeric has no `Throw` step of its own, delegating to ToPrimitive and
 	// ToNumber, so it never bottoms out a chain. It is listed because FR11
 	// names it and a later spec revision could give it a check.
-	"ToNumeric": {accepts: except(), returnsAtOnce: set.NewSet[langType]()},
+	"ToNumeric": {accepts: everyLangType, returnsAtOnce: set.NewSet[langType]()},
 
 	"ThisBigIntValue":  thisValue(typeBigInt),
 	"ThisBooleanValue": thisValue(typeBoolean),
