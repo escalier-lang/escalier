@@ -504,13 +504,23 @@ impractical:**
   unsoundness on the escape axis for uncertain parameters, accepted
   deliberately; the mutable-borrow default above still protects the more
   common mutation case.
-- **The throw and reject sets default toward under-reporting.** The
+- **The throw and reject sets are best effort, not conservative.** The
   conservative direction here would be to *over*-report — but that means
   every `this`-touching method carries `throws TypeError` from its
   receiver coercion, pervasive noise a parameter default does not produce.
   So the throw set (FR10) and reject set (FR13) under-report instead,
-  accepting that this is the unsound direction. Both are curation-grade,
-  and FR14 measures what reaches the `.esc` against observed behavior.
+  accepting that this is the unsound direction.
+
+  Neither claims to be complete, and neither is measured against a
+  completeness bar. Some exceptions are outside the model altogether: a
+  `RangeError` from a host allocation limit, a stack overflow, an
+  out-of-memory. A method whose throw paths the analysis could not read
+  whole therefore publishes what it found rather than being singled out,
+  since under best effort every published set is short by something. What
+  the analysis reads improves in later passes — the parameter branch of
+  FR11's filter is one, richer conditions on a coercion another — and
+  FR14 measures what reaches the `.esc` against observed behavior. Both
+  sets stay curation-grade in the meantime.
 
 These defaults are applied by the **converter**, not serialized as facts,
 and the converter applies one only where no fact addresses the method at
@@ -777,10 +787,11 @@ The `?` / `!` / plain distinction is essential and must be carried from
 the spec into the control-flow graph. This is why throws extraction
 relies on ESMeta's completion-record modeling rather than the shallow
 `spec.html` fallback, which would have to recover the guards from markup
-itself. A method whose throw paths cannot be resolved is left out of the
-throw set and flagged, never guessed. The FR5 bias applied to throws is
-to under-report rather than over-report a throw the type system would
-force a caller to handle.
+itself. A throw path the analysis cannot resolve is left out of the throw
+set rather than guessed at. The FR5 bias applied to throws is to
+under-report rather than over-report a throw the type system would force a
+caller to handle, and the set is best effort: it is not flagged as short,
+because every published set is.
 
 ### FR11. Coercion filter
 

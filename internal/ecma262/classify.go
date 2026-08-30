@@ -310,14 +310,9 @@ type MethodFact struct {
 	// filter, Rejects the ones a promise-returning method rejects with. Each
 	// entry is an Exception.Ref. A nil channel is the axis uncomputed, which
 	// reports as a hole and fails generation; `[]` is what the filter left
-	// standing, proven empty only where throwsSettled holds.
+	// standing, which is best effort per FR5 rather than a proven-empty set.
 	Throws  []string `json:"throws,omitzero"`
 	Rejects []string `json:"rejects,omitzero"`
-
-	// throwsSettled and rejectsSettled say whether the fixpoint read every step
-	// feeding each. FR10 asks to flag one it could not; Unclassified names them.
-	throwsSettled  bool
-	rejectsSettled bool
 }
 
 // String renders the determinations the fact carries in one line, so a test can
@@ -336,11 +331,6 @@ func (f MethodFact) String() string {
 	}
 	if f.Rejects != nil {
 		parts = append(parts, "rejects:"+channelString(f.Rejects))
-	}
-	// The flag belongs to the throw fixpoint that computed both channels, so it
-	// reads once, after them, and off the channel computed with it.
-	if f.Throws != nil && !f.throwsSettled {
-		parts = append(parts, "incomplete")
 	}
 	if len(parts) == 0 {
 		return "unclassified"
@@ -432,32 +422,18 @@ func analyze(cfg *CFG) *Facts {
 			continue
 		}
 		mutations := summary.Of(fn)
-		filtered := filter.filterThrows(fn)
+		raised, rejects := filter.filterThrows(fn)
 		fact := MethodFact{
-			Returns:       newReturnFact(returnAlias(summary.originsOf(fn))),
-			Throws:        exceptionRefs(filtered.raised),
-			Rejects:       exceptionRefs(filtered.rejects),
-			throwsSettled: filtered.settled,
-			// An algorithm that builds no promise has no reject sink for a
-			// missed step to feed, so its empty reject channel is settled
-			// whatever the fixpoint could not read.
-			rejectsSettled: filtered.settled || !fn.Promise,
+			Returns: newReturnFact(returnAlias(summary.originsOf(fn))),
+			Throws:  exceptionRefs(raised),
+			Rejects: exceptionRefs(rejects),
 		}
 		if receiverCovered(fn, mutations) {
 			fact.Receiver = receiverKind(fn, mutations)
 		}
-		if !fact.throwsSettled {
-			filter.report.UnderReported = append(filter.report.UnderReported, UnderReport{
-				Method:  fn.Name,
-				Rejects: !fact.rejectsSettled,
-			})
-		}
 		facts.Methods[fn.Name] = fact
 	}
 	sortDecisions(filter.report.Decisions)
-	sort.Slice(filter.report.UnderReported, func(i, j int) bool {
-		return filter.report.UnderReported[i].Method < filter.report.UnderReported[j].Method
-	})
 	facts.filterReport = filter.report
 	return facts
 }
@@ -517,10 +493,11 @@ func (f MethodFact) answers(axis Axis) bool {
 		return f.Receiver != ""
 	case AxisReturns:
 		return f.Returns.Kind != "" && f.Returns.Kind != AliasUnknown
-	case AxisThrows:
-		return f.carries(axis) && f.throwsSettled
-	case AxisRejects:
-		return f.carries(axis) && f.rejectsSettled
+	case AxisThrows, AxisRejects:
+		// Both channels are best effort per FR5, so a computed one is an
+		// answer. Nothing here separates a set that is short from one that is
+		// whole, because every published set is short by something.
+		return f.carries(axis)
 	default:
 		return false
 	}

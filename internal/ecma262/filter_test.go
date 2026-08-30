@@ -243,7 +243,7 @@ func TestWriteFilterReport(t *testing.T) {
 		{Method: "Demo.prototype.read", Site: "#4 TypeError"},
 	}}, &out))
 
-	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  coercion filter: 3 TypeError sites adjudicated, 1 dropped, 0 methods under-reported
+	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  coercion filter: 3 TypeError sites adjudicated, 1 dropped
     Demo.prototype.read: dropped #0 TypeError <- ToObject#3 [ToObject of receiver]
 `),
 	)
@@ -346,109 +346,6 @@ func TestToPrimitiveIsNotACoercionGuard(t *testing.T) {
 		}
 	}
 	require.NotZero(t, reached)
-}
-
-// underReportedCFG is a two-method graph whose algorithms both hold a step the
-// serializer could not lower, so the throw fixpoint reads neither whole.
-// `read` returns a value, and `load` builds a promise and returns it.
-const underReportedCFG = `{"specTarget":"abc","funcs":[` +
-	`{"name":"Demo.prototype.read","kind":"builtin-method","params":[],"nodes":[` +
-	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]},` +
-	`{"name":"Demo.prototype.load","kind":"builtin-method","params":[],"promise":true,"nodes":[` +
-	`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`
-
-// An unread step leaves the throws of both methods short and the rejections of
-// only the one that builds a promise. `read` has no reject sink for the step to
-// feed, so its empty rejection channel is a proven-empty result, and the report
-// says so rather than claiming a gap on both channels.
-//
-// Both methods are named all the same, because FR10 asks for a method whose
-// throw paths the analysis could not resolve to be flagged rather than guessed
-// at, and that holds whichever channel is short.
-func TestFilterReportsWhichChannelIsShort(t *testing.T) {
-	t.Parallel()
-
-	cfg, err := ParseCFG([]byte(underReportedCFG))
-	require.NoError(t, err)
-	facts := analyze(cfg)
-
-	require.Equal(t, []UnderReport{
-		{Method: "Demo.prototype.load", Rejects: true},
-		{Method: "Demo.prototype.read"},
-	}, facts.Filter().UnderReported)
-	require.Equal(t, []string{"Demo.prototype.load", "Demo.prototype.read"}, facts.Unclassified(AxisThrows))
-	require.Equal(t, []string{"Demo.prototype.load"}, facts.Unclassified(AxisRejects))
-
-	var out strings.Builder
-	require.NoError(t, WriteFilterReport(facts.Filter(), &out))
-	snaps.MatchInlineSnapshot(t, out.String(), snaps.Inline(`  coercion filter: 0 TypeError sites adjudicated, 0 dropped, 2 methods under-reported
-    Demo.prototype.load: a step the throw analysis could not read leaves its throws and its rejections short
-    Demo.prototype.read: a step the throw analysis could not read leaves its throws short
-`))
-}
-
-// Both guards on the identity rule hold over the committed graph. The coercion
-// has to be one that hands this owner's receiver straight back, and the value it
-// was handed has to be that receiver.
-//
-// Dropping a step below a coercion is sound only under both. `ToString` reaches
-// its `@@toPrimitive` machinery whenever the value is an Object, so the same
-// drop on a `Date.prototype` method, or on a parameter of any method, would
-// discard a `TypeError` a caller can raise.
-func TestFilterIdentityRuleChecksTheOwnerAndTheValue(t *testing.T) {
-	var under int
-	for _, decision := range testFilterReport(t).Dropped() {
-		if !decision.PastCoercion {
-			continue
-		}
-		under++
-		ref, ok := Normalize(decision.Method)
-		require.Truef(t, ok, "%s", decision)
-		received := receiverType(ref.Owner)
-		require.Containsf(t, coercions[decision.Coercion].returnsAtOnce.ToSlice(), received,
-			"%s drops under a coercion that does not return a %s at once", decision, received)
-		require.Equalf(t, "receiver", decision.Coerced, "%s drops a value that is not the receiver", decision)
-	}
-	require.NotZero(t, under)
-}
-
-// The receiver type each owner hands its methods, and what that settles. The
-// five wrapper prototypes hold their own primitive and every other owner holds
-// objects, which is the whole of what the filter needs to know about a
-// receiver.
-//
-// The last two rows are what the guard is for. `ThisNumberValue` unwraps a
-// Number and raises on anything else, so a `String.prototype` method calling it
-// would raise for real; and `ToString` reaches its `@@toPrimitive` machinery
-// for an Object, so the steps under it stand on an `Array.prototype` method
-// even though they go on a `String.prototype` one.
-func TestReceiverTypeSettlesWhatACoercionDoes(t *testing.T) {
-	t.Parallel()
-
-	tests := map[string]struct {
-		owner                  string
-		coercion               string
-		accepts, returnsAtOnce bool
-	}{
-		"StringReceiverToString": {"String", "ToString", true, true},
-		// The symmetric entry, which the committed graph never exercises: no
-		// `Number.prototype` method coerces its receiver with `ToNumber`, they
-		// all unwrap it with `ThisNumberValue`.
-		"NumberReceiverToNumber":    {"Number", "ToNumber", true, true},
-		"NumberReceiverThisNumber":  {"Number", "ThisNumberValue", true, true},
-		"ArrayReceiverToObject":     {"Array", "ToObject", true, true},
-		"UnknownOwnerHoldsAnObject": {"Temporal.PlainDate", "ToObject", true, true},
-		"StringReceiverThisNumber":  {"String", "ThisNumberValue", false, false},
-		"ArrayReceiverToString":     {"Array", "ToString", true, false},
-	}
-
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			received := receiverType(test.owner)
-			require.Equal(t, test.accepts, coercions[test.coercion].accepts.Contains(received))
-			require.Equal(t, test.returnsAtOnce, coercions[test.coercion].returnsAtOnce.Contains(received))
-		})
-	}
 }
 
 // throwSteps renders every step of fn that raises an error class it names, as

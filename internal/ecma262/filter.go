@@ -185,25 +185,6 @@ type FilterReport struct {
 	// Decisions holds one entry per `TypeError` site the filter adjudicated,
 	// grouped by method. See sortDecisions for the order within a method.
 	Decisions []FilterDecision
-	// UnderReported holds the methods the throw fixpoint could not read whole,
-	// sorted by name. Facts.Unclassified(AxisThrows) names the same ones.
-	UnderReported []UnderReport
-}
-
-// UnderReport is one method whose channels are published short because the
-// throw fixpoint could not read every step. Rejects is set only for an
-// algorithm that builds a promise; any other has no reject sink to miss.
-type UnderReport struct {
-	Method  string
-	Rejects bool
-}
-
-func (u UnderReport) String() string {
-	channels := "its throws"
-	if u.Rejects {
-		channels = "its throws and its rejections"
-	}
-	return fmt.Sprintf("%s: a step the throw analysis could not read leaves %s short", u.Method, channels)
 }
 
 // Dropped returns the decisions that discounted a site, which is the list the
@@ -228,17 +209,6 @@ func (r FilterReport) Counts() (adjudicated, dropped int) {
 	return len(r.Decisions), dropped
 }
 
-// channels is what the filter concluded about one method: the exceptions that
-// survive on each of the two exits, and whether the throw fixpoint read every
-// step feeding them. A step it could not read leaves both channels
-// under-reported, which FR5 prefers to over-reporting a throw and FR10 asks to
-// have flagged.
-type channels struct {
-	raised  []Exception
-	rejects []Exception
-	settled bool
-}
-
 // filterThrows returns fn's two channels with the receiver-coercion
 // `TypeError`s discounted. Both are filtered the same way, because a site's
 // channel is settled by the exit it reaches and both carry coercion guards.
@@ -247,7 +217,7 @@ type channels struct {
 // rejections reach the returned promise through the promise-resolution
 // machinery rather than through a step of fn's, so they have no site to
 // adjudicate.
-func (f *coercionFilter) filterThrows(fn *Func) channels {
+func (f *coercionFilter) filterThrows(fn *Func) (raised, rejects []Exception) {
 	throws := f.summary.Of(fn)
 	kept := set.NewSet[Exception]()
 	for _, site := range throws.SyncSites() {
@@ -261,11 +231,7 @@ func (f *coercionFilter) filterThrows(fn *Func) channels {
 			rejected.Add(site.Exception)
 		}
 	}
-	return channels{
-		raised:  sortedExceptions(kept),
-		rejects: sortedExceptions(rejected),
-		settled: !throws.Incomplete,
-	}
+	return sortedExceptions(kept), sortedExceptions(rejected)
 }
 
 // discount reports whether site checks a value fn's declared types already
@@ -437,28 +403,22 @@ func (f *coercionFilter) coerced(fn *Func, site *ThrowSite) coercionGuard {
 	}
 }
 
-// WriteFilterReport prints the run's tallies, every discounted site, and every
-// method whose channels are published short. A reviewer reads what FR11's
-// heuristic removed and what the analysis never saw, without reading what it
-// left alone: a kept site is a throw the published fact already names.
+// WriteFilterReport prints the run's tallies and every discounted site, so a
+// reviewer reads what FR11's heuristic removed without reading what it left
+// alone: a kept site is a throw the published fact already names.
 //
 // The tally is indented two spaces and each site four, which is the layout
 // WriteCurationReport and WriteJoinReport use, so a caller printing all three
 // gets one report per summary line.
 func WriteFilterReport(report FilterReport, w io.Writer) error {
 	adjudicated, dropped := report.Counts()
-	_, err := fmt.Fprintf(w, "  coercion filter: %d TypeError sites adjudicated, %d dropped, %d methods under-reported\n",
-		adjudicated, dropped, len(report.UnderReported))
+	_, err := fmt.Fprintf(w, "  coercion filter: %d TypeError sites adjudicated, %d dropped\n",
+		adjudicated, dropped)
 	if err != nil {
 		return err
 	}
 	for _, decision := range report.Dropped() {
 		if _, err := fmt.Fprintf(w, "    %s\n", decision); err != nil {
-			return err
-		}
-	}
-	for _, under := range report.UnderReported {
-		if _, err := fmt.Fprintf(w, "    %s\n", under); err != nil {
 			return err
 		}
 	}

@@ -536,8 +536,9 @@ func TestDemoGraphClassification(t *testing.T) {
 	require.Equal(t, "receiver:borrow returns:receiver throws:none rejects:none",
 		methods["Demo.prototype.read"].String())
 	// The opaque step is one the throw fixpoint could not read either, so both
-	// channels are published under-reported and flagged.
-	require.Equal(t, "returns:unknown throws:none rejects:none incomplete",
+	// channels are published short. FR5 makes that the norm rather than a
+	// state the fact records.
+	require.Equal(t, "returns:unknown throws:none rejects:none",
 		methods["Demo.prototype.opaque"].String())
 }
 

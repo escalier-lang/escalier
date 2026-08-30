@@ -1970,10 +1970,7 @@ the type check the receiver's type cannot reach, and 120 below a
 branches in one method: its whole receiver coercion goes, `RequireObjectCoercible`
 and every step of `ToString` alike, and the same operations applied to
 `pos` are all kept. The dropped type-guard throws are listed in the review report, which
-`dts_to_esc bootstrap` prints beside the curation and join reports. The
-report also names the 103 methods whose channels are published short
-because §9.1's fixpoint could not read every step, which is FR10's "left
-out of the throw set and flagged, never guessed" made visible.
+`dts_to_esc bootstrap` prints beside the curation and join reports.
 
 ### §9.3. Synchronous throws versus asynchronous rejections (FR13)
 
@@ -2510,15 +2507,13 @@ a nil slice is the axis's zero value and is left out, an empty slice is
 written as `[]`. `Params` is still uncomputed, so it is absent from every
 entry until §8.1 lands.
 
-FR5's deliberate under-reporting for `throws` and `rejects` sits inside
-that rule rather than beside it. §9.1's fixpoint flags a method with a
-step whose throws it could not read, and both channels are published for
-such a method all the same, under-reported rather than withheld. The flag
-is what `Facts.Unclassified(AxisThrows)` reports, so the method reaches a
-reviewer without the run failing. 103 of the 501 builtins carry it. On the
-reject channel an algorithm that builds no promise has no sink for a
-missed step to feed, so its empty channel is settled whatever the fixpoint
-missed, and only 3 methods are left open there.
+`throws` and `rejects` sit inside that rule rather than beside it. Both
+are best effort per FR5: a step §9.1's fixpoint could not read leaves the
+channel short, and the channel is published anyway. Nothing marks which
+methods those are, because every published set is short by something —
+a host allocation limit, a stack overflow. `Facts.Unclassified` reports
+neither axis for that reason, and the accuracy of what the analysis does
+read is a later pass rather than a hole to account for.
 
 Each entry in `Throws` / `Rejects` is one of (requirements FR13): a
 standard error-class name the spec constructs (`TypeError`, `RangeError`,
