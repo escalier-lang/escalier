@@ -26,8 +26,9 @@
 //	    With --cfg, the run also joins every std:* member it emits
 //	    against the ECMA-262 effect facts derived from that control-flow
 //	    graph, and reports the names present on one side only. It reports
-//	    what the curated layer did to those facts alongside it. See
-//	    planning/ecma-262/implementation_plan.md.
+//	    what the curated layer did to those facts alongside it, and diffs
+//	    every receiver claim against the hand-written mutability sources.
+//	    See planning/ecma-262/implementation_plan.md.
 //
 //	dts_to_esc check <lib-dir> <esc-dir>
 //	    Read-only verification per §6.4: convert the pinned lib set and
@@ -176,7 +177,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation and effect-fact join reports")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, bootstrapUsage)
@@ -247,15 +248,19 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if join == nil {
 		return nil
 	}
-	// The three reports are informational. A curated entry the analysis caught
-	// up with is an entry to delete, and the spec and the TypeScript lib drift
+	// The four reports are informational. A curated entry the analysis caught
+	// up with is an entry to delete. The spec and the TypeScript lib drift
 	// independently, so a name on one side only is a gap to close. FR11's
 	// coercion filter is a heuristic, so what it dropped is read rather than
-	// trusted. None of them is a failed run.
+	// trusted. A receiver the two sources answer differently is a triage item.
+	// None of them is a failed run.
 	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
 		return err
 	}
 	if err := ecma262.WriteFilterReport(facts.Filter(), stderr); err != nil {
+		return err
+	}
+	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)

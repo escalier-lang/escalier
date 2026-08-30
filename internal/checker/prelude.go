@@ -213,124 +213,6 @@ func mergeModules(target, source *ast.Module) {
 	}
 }
 
-// MethodNames names the methods of a single class whose receiver should
-// be stripped of its default `mut self` polarity. Membership = "strip
-// mut". The set form is intentional: there is no use for a "set mut on
-// this method" rung because `mut self` is already the post-#612 default
-// from populateSelfParams.
-type MethodNames = set.Set[string]
-
-// TODO(#500): extend mutabilityOverrides for Promise, Error, and other
-// classes whose non-mutating methods should be callable on non-mut
-// receivers. Entries here are exceptions the name-only heuristics in
-// dts_to_esc.ClassifyMethodByName (issue #614) either miss (e.g.
-// String.charAt — no prefix match) or actively mis-classify (e.g.
-// String.replace — `replace` is a mutating-prefix). Method names
-// already covered by the heuristics — `get*`, `to*`, `is*`, `has*`,
-// well-known `toString`/`valueOf`, and so on — are redundant and must
-// not be re-listed here; the prelude pass applies the heuristics as a
-// fall-through whenever a method has no override entry.
-//
-// the key is the interface name
-var mutabilityOverrides = map[string]MethodNames{
-	"String": set.FromSlice([]string{
-		// Heuristic misses (no prefix/exact match) and active
-		// mis-classifications (`replace`/`replaceAll` look mutating).
-		"charAt",
-		"charCodeAt",
-		"codePointAt",
-		"endsWith",
-		"localeCompare",
-		"match",
-		"matchAll",
-		"normalize",
-		"padEnd",
-		"padStart",
-		"repeat",
-		"replace",
-		"replaceAll",
-		"search",
-		"split",
-		"startsWith",
-		"substr",
-		"substring",
-		"trim",
-		"trimEnd",
-		"trimStart",
-	}),
-	// RegExp.toString is covered by the well-known allow-list in
-	// ClassifyMethodByName. `compile`, `exec` (with global/sticky), and
-	// `test` (with global/sticky) are mutating and inherit the default
-	// `mut self`. `Symbol.search` / `Symbol.split` are non-mutating per
-	// spec but can't be expressed in this string-keyed map — see #620.
-	"Object": set.FromSlice([]string{
-		// Heuristic miss: `propertyIsEnumerable` doesn't start with any
-		// known non-mutating prefix. The rest of Object.prototype
-		// (hasOwnProperty, isPrototypeOf, toLocaleString, toString,
-		// valueOf) is covered by the heuristics.
-		"propertyIsEnumerable",
-	}),
-	"Function": set.FromSlice([]string{
-		// Heuristic misses; `toString` is covered by the well-known list.
-		"apply",
-		"bind",
-		"call",
-	}),
-	// `Number`, `Boolean`, and `Date` had every entry covered by the
-	// name-only heuristics (`get*`, `to*`, well-known `toString`/`valueOf`)
-	// — issue #614 removed the redundant bootstrap blocks.
-	"Console": set.FromSlice([]string{
-		// Heuristic misses (most Console methods are bare nouns) plus
-		// `clear` (mis-classified as mutating by the `clear` prefix —
-		// Console.clear is non-mutating on the Console object itself).
-		"assert",
-		"clear",
-		"debug",
-		"dir",
-		"dirxml",
-		"error",
-		"group",
-		"groupCollapsed",
-		"groupEnd",
-		"info",
-		"log",
-		"table",
-		"time",
-		"timeEnd",
-		"timeLog",
-		"timeStamp",
-		"trace",
-		"warn",
-	}),
-	"Body": set.FromSlice([]string{
-		// Heuristic misses — every Body method is a bare noun.
-		"arrayBuffer",
-		"blob",
-		"bytes",
-		"formData",
-		"json",
-		"text",
-	}),
-	"Response": set.FromSlice([]string{
-		// Heuristic misses; `clone` is covered by the `clone` prefix.
-		"arrayBuffer",
-		"blob",
-		"bytes",
-		"formData",
-		"json",
-		"text",
-	}),
-	"Request": set.FromSlice([]string{
-		// Heuristic misses; `clone` is covered by the `clone` prefix.
-		"arrayBuffer",
-		"blob",
-		"bytes",
-		"formData",
-		"json",
-		"text",
-	}),
-}
-
 // applyMethodMutability classifies each MethodElem on objType using the
 // per-class override set first and the name-only interop heuristics as
 // the fall-through (issue #614). When neither source positively
@@ -343,7 +225,7 @@ var mutabilityOverrides = map[string]MethodNames{
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing
 // an accessor name in `names` would silently miss here. If an accessor
 // ever needs its polarity overridden, extend the type switch below.
-func applyMethodMutability(objType *type_system.ObjectType, names MethodNames) {
+func applyMethodMutability(objType *type_system.ObjectType, names dts_to_esc.MethodNames) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
 		if !ok {
@@ -408,7 +290,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 			if ident, ok := instIdent.(*type_system.Ident); ok {
 				instName := ident.Name
 				// TODO(#254): Support qualified identifiers in mutability overrides
-				overrides := mutabilityOverrides[instName]
+				overrides := dts_to_esc.NonMutatingOverrides(instName)
 
 				if it, ok := type_system.Prune(instTypeAlias.Type).(*type_system.ObjectType); ok {
 					// TypeScript .d.ts has no mut-self annotation, so
@@ -452,7 +334,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 		if !ok {
 			continue
 		}
-		applyMethodMutability(objType, mutabilityOverrides[name])
+		applyMethodMutability(objType, dts_to_esc.NonMutatingOverrides(name))
 	}
 }
 

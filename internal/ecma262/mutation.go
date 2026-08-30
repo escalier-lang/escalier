@@ -19,13 +19,18 @@ import (
 // so push mutates its receiver. `Array.prototype.slice` calls `Set(A, ...)` on
 // the array `ArraySpeciesCreate` handed it, and a fresh origin is discarded.
 //
-// These are seeded because their bodies cannot be descended into. `Set`
+// Most are seeded because their bodies cannot be descended into. `Set`
 // dispatches to the object's `[[Set]]` internal method, chosen at runtime by the
 // receiver's type, and the writes below it land on property-descriptor records
 // rather than on the argument. Claiming that `Set(O, ...)` mutates `O` therefore
 // over-approximates, which is the FR5-conservative direction. A mutation claimed
 // where there is none fails loudly at a call site, while a missed one is silent
 // unsoundness.
+//
+// `__REMOVE_ELEM__` is here for a different reason. The walk descends into its
+// body but cannot place the write it finds, so a seed is the only way that
+// mutation reaches a caller. The entry below says why the write cannot be
+// placed.
 //
 // The map is a reviewed constant. A mutating operation the spec adds without an
 // entry here produces a false non-mutating result.
@@ -45,6 +50,13 @@ var directMutators = map[string]int{
 	// DataView setter, `Atomics.store`, or `TypedArray.prototype.set` performs
 	// goes through it.
 	"SetValueInBuffer": 0,
+	// List removal. ESMeta lowers "Remove _cell_ from
+	// _finalizationRegistry_.[[Cells]]" into a call to this intrinsic. Its
+	// body writes the list at an index it computes, and a computed slot on a
+	// declared parameter leaves the operation incomplete rather than charging
+	// that parameter, so without the entry the removal never reaches the
+	// caller.
+	"__REMOVE_ELEM__": 1,
 }
 
 // backingStoreSlots are the internal slots that hold an object's mutable

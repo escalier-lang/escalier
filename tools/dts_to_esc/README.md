@@ -45,7 +45,10 @@ committed tree discards those hand-edits.
 
 `bootstrap --cfg <cfg.json>` additionally joins every `std:*` member it
 emits against the ECMA-262 effect facts derived from that control-flow
-graph and reports the names present on one side only. See §5 of
+graph and reports the names present on one side only. It also reports what
+the curated layer and the coercion filter did to those facts, and diffs the
+receiver claim of every instance method against the hand-written mutability
+sources. See §5, §6, and §9.2 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
 
 ## Bumping the pinned TypeScript version

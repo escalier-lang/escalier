@@ -108,9 +108,14 @@ Three consequences shape the remaining phases.
 2. **The legacy builtin machinery is deleted by the M12 flip, not
    by this workstream.** `loadGlobalDefinitions`,
    `populateSelfParams`, `UpdateMethodMutability`,
-   `mergeReadonlyVariant`, the `mutabilityOverrides` map,
-   `BuildBuiltinStore`, and `js_globals.go` all live in
-   `internal/checker/` and go out with that tree. §9.3 keeps the
+   `mergeReadonlyVariant`, `BuildBuiltinStore`, and `js_globals.go`
+   all live in `internal/checker/` and go out with that tree. The
+   `nonMutatingOverrides` table sits in `internal/dts_to_esc/`, and
+   `UpdateMethodMutability` is the only thing that applies it, so
+   nothing applies it after the flip. The ecma-262 §6 validation diff
+   reads it to report on, which is what keeps it compiling until that
+   diff retires. `Classify` reads the override store and the name
+   heuristics, never that table. §9.3 keeps the
    list as an audit that nothing in it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so
@@ -2346,9 +2351,13 @@ replacement:
   — replaced by import ingestion (M7.5) plus §9.1's trigger map
 - `populateSelfParams` — replaced by the `self` receivers the
   converter emits into the `.esc` files (§6.1)
-- `UpdateMethodMutability` and the `mutabilityOverrides` Go map —
-  replaced by the converter's receiver classification plus the
-  hand-edited mutability refinements committed in §7
+- `UpdateMethodMutability` — replaced by the converter's receiver
+  classification plus the hand-edited mutability refinements
+  committed in §7. It is the only caller that applies
+  `nonMutatingOverrides`, so the table retires with it. Until then an
+  entry cannot be dropped on the strength of a converter-side answer:
+  a receiver `Classify` marks non-mutating does not reach the
+  `.d.ts`-loaded lib types, so the entry is what carries the claim
 - `mergeReadonlyVariant` — replaced by the converter's
   readonly-twin fusion (§6.1)
 - `BuildBuiltinStore`
