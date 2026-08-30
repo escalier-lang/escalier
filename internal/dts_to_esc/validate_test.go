@@ -84,16 +84,17 @@ func TestValidateReceivers(t *testing.T) {
 		// `Demo.prototype.opaque` is the fourth shape, a receiver the analysis
 		// withheld. Its algorithm in internal/ecma262 is one prose step the
 		// serializer could not lower, so the mutation fixpoint reads it as
-		// incomplete and publishes no claim. The empty kind is that absence,
-		// which leaves nothing to compare. Generation refuses such a fact, so
-		// only an analyze result carries one.
+		// incomplete and publishes no claim at all. Generation refuses such a
+		// fact, so only an analyze result carries one.
 		"ShapesTheDiffLeavesOut": {
 			receivers: map[string]ecma262.ReceiverKind{
 				"Array.isArray":                  ecma262.RecvNone,
 				"Math.max":                       ecma262.RecvNone,
 				"get Map.prototype.size":         ecma262.RecvBorrow,
 				"Array.prototype [ @@iterator ]": ecma262.RecvBorrow,
-				"Demo.prototype.opaque":          "",
+				// "" is ReceiverKind's zero value, which is the absence of a
+				// claim rather than one of its three kinds.
+				"Demo.prototype.opaque": "",
 			},
 		},
 	}
