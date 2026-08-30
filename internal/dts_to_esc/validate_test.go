@@ -12,16 +12,14 @@ import (
 // committedCFG is the control-flow graph tools/spec-extract commits.
 const committedCFG = "../../tools/spec-extract/cfg.json"
 
-// factsOf builds a published fact set holding one receiver claim per name.
-// Every fact also carries a return alias, since generation refuses a fact with
-// a hole in it, and the diff reads neither that nor the spec target.
+// factsOf builds a fact set holding one receiver claim per name. The receiver
+// is the only axis ValidateReceivers reads, so the facts are left short of the
+// return alias, throws, and rejects that generation requires. Nothing here
+// consults Facts.Incomplete, which is what would refuse them.
 func factsOf(receivers map[string]ecma262.ReceiverKind) *ecma262.Facts {
 	methods := make(map[string]ecma262.MethodFact, len(receivers))
 	for name, kind := range receivers {
-		methods[name] = ecma262.MethodFact{
-			Receiver: kind,
-			Returns:  ecma262.ReturnFact{Kind: ecma262.AliasFresh},
-		}
+		methods[name] = ecma262.MethodFact{Receiver: kind}
 	}
 	return &ecma262.Facts{SpecTarget: "test", Methods: methods}
 }
