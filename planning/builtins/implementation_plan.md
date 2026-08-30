@@ -110,10 +110,12 @@ Three consequences shape the remaining phases.
    `populateSelfParams`, `UpdateMethodMutability`,
    `mergeReadonlyVariant`, `BuildBuiltinStore`, and `js_globals.go`
    all live in `internal/checker/` and go out with that tree. The
-   `nonMutatingOverrides` table sits in `internal/dts_to_esc/`, but
-   `UpdateMethodMutability` is the only thing that applies it, so it
-   goes out with the flip as well. `Classify` reads the override
-   store and the name heuristics, never that table. §9.3 keeps the
+   `nonMutatingOverrides` table sits in `internal/dts_to_esc/`, and
+   `UpdateMethodMutability` is the only thing that applies it, so
+   nothing applies it after the flip. The ecma-262 §6 validation diff
+   reads it to report on, which is what keeps it compiling until that
+   diff retires. `Classify` reads the override store and the name
+   heuristics, never that table. §9.3 keeps the
    list as an audit that nothing in it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so

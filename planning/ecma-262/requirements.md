@@ -10,9 +10,11 @@ into Escalier declarations and seeds receiver mutability by running
 `dts_to_esc.Classify` — the name-based tiers in
 [../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go).
 Those tiers are heuristics over method *names*: a `get*` prefix is
-non-mutating and a `set*`/`push`/`delete` prefix is mutating. Names are
-the whole of what the converter consults today, since the override store
-`Classify` reads at tier 4 carries no builtin entries yet.
+non-mutating and a `set*`/`push`/`delete` prefix is mutating. Beside them
+sit two structural signals that read the declaration rather than its name,
+the accessor shape and a `this: Readonly<T>` parameter. Nothing else
+reaches a builtin today, because the override store `Classify` consults at
+tier 4 carries no builtin entries yet.
 
 The checker prelude patches that baseline afterwards. Its
 `UpdateMethodMutability` pass applies the hand-maintained
