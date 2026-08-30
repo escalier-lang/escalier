@@ -286,20 +286,15 @@ func (f *coercionFilter) receiverType(fn *Func) langType {
 	return receiverType(ref.Owner)
 }
 
-// pastReceiverIdentity returns the coercion the site's chain passes through
-// that hands this receiver straight back, or the empty string when it passes
-// through no such call. Every step that coercion would reach past the value it
-// returns is unreachable, and so is the site past them.
+// pastReceiverIdentity returns the name of a coercion on site's chain that was
+// handed the receiver and returns that type unchanged, or "" if there is none.
+// Such a coercion returns before calling anything. The site was raised inside
+// one of those calls, so it cannot be reached.
 //
-// `String.prototype.charAt` runs `? ToString(O)` on a receiver typed String,
-// and `ToString` returns a String at its first step. The `? ToPrimitive(argument,
-// string)` further down its body never runs, nor the `@@toPrimitive` lookup and
-// call past that.
-//
-// Both guards have to hold. The coercion has to return this receiver's type at
-// once, and the value it was handed has to be that receiver rather than a
-// parameter reaching the same operation. `charAt` coerces `pos` through
-// `ToNumber` on the same algorithm, and every throw past that stands.
+// `String.prototype.charAt` calls `? ToString(O)` on a String receiver, so the
+// `? ToPrimitive(argument, string)` inside `ToString` never runs. Its `pos`
+// argument goes through `ToNumber` instead, which is not the receiver, so every
+// throw inside that one stands.
 func (f *coercionFilter) pastReceiverIdentity(fn *Func, site *ThrowSite, received langType) string {
 	hops := f.chain(fn, site)
 	for depth, hop := range hops {
