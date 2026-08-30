@@ -232,8 +232,9 @@ loop:
 			}
 			prop := p.lexer.peek()
 			// nolint: exhaustive
-			switch prop.Type {
-			case Identifier, Underscore, String, Number, Boolean, Bigint:
+			switch {
+			case prop.Type == Identifier || prop.Type == Underscore ||
+				p.keywordNamesAProperty(token, prop):
 				p.lexer.consume()
 				obj := expr
 				prop := ast.NewIdentifier(prop.Value, prop.Span)
@@ -276,6 +277,25 @@ loop:
 	}
 
 	return expr
+}
+
+// keywordNamesAProperty reports whether the keyword at propToken names the
+// property read after dotToken. Everything after a `.` is a name position, so a
+// keyword belongs there. `Symbol.match` reads the well-known symbol `RegExp`
+// declares its matcher under, and `obj.catch` reads an ordinary property.
+//
+// The keyword has to sit on the same line as the dot. Someone mid-edit leaves
+// `obj.` dangling at the end of a line. Reading the next line's leading keyword
+// as the property name would swallow whatever that line starts, a declaration
+// or a `return` alike. Requiring the same line keeps that recovery whole.
+// RECOVERY.md states the same rule for the initializer of a `val`.
+//
+// A member chain broken before the dot is unaffected, since the break leaves the
+// dot and the name together on the line that reads `.match(x)`. An identifier
+// after the dot is accepted on any line, so this narrows only keywords.
+func (p *Parser) keywordNamesAProperty(dotToken, propToken *Token) bool {
+	return isKeyword(propToken.Type) &&
+		propToken.Span.Start.Line == dotToken.Span.Start.Line
 }
 
 // objExprKey parses the name of an object member: a property in an object
