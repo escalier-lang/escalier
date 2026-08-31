@@ -26,11 +26,8 @@ type TypeAnnOp struct {
 }
 
 // noPrimaryTypeAnn is what primaryTypeAnn returns when the token it is looking
-// at starts no type annotation. A nil return tells the caller nothing was
-// consumed, so it is only correct while the parse really did consume nothing.
-// A lifetime prefix already read cannot be given back, so that case reports and
-// recovers to an ErrorTypeAnn spanning the lifetime instead. The nil path stays
-// silent because each caller writes its own message.
+// at starts no type annotation. Nil tells the caller nothing was consumed, so a
+// lifetime prefix already read recovers to an ErrorTypeAnn instead.
 func (p *Parser) noPrimaryTypeAnn(lifetime ast.LifetimeAnnNode) ast.TypeAnn {
 	if lifetime != nil {
 		p.reportError(lifetime.Span(), "expected a type annotation after lifetime")
