@@ -745,33 +745,19 @@ var ExplicitDrops = set.FromSlice([]string{
 	"ParameterDecorator",
 })
 
-// SingletonMember identifies one member of a flattened singleton.
-// Singleton is the dotted runtime path of the singleton itself, such
-// as "Math", which carries the enclosing namespace when the singleton
-// is declared inside one. Key is the dotted form of a computed key,
-// such as "Symbol.toStringTag".
+// SingletonMember identifies one member of a flattened singleton by
+// the singleton's dotted runtime path, such as "Math", and the key it
+// is declared under, such as "Symbol.toStringTag".
 type SingletonMember struct {
 	Singleton string
 	Key       string
 }
 
 // AllowedSingletonKeyDrops names the singleton members flattenSingleton
-// skips without reporting. Flattening emits one top-level declaration
-// per member, and each needs a plain identifier twice over, once for
-// the Escalier binding and once for the `@js("Math.abs")` path. A
-// computed key has neither, so the member is dropped.
-//
-// The three entries below are the whole set over the pinned lib set.
-// Each declares `readonly [Symbol.toStringTag]: string`, which tags the
-// object for `Object.prototype.toString`. No Escalier program names
-// that member, so dropping it loses nothing a caller could reach.
-//
-// A skip outside this list is reported by ReportSingletonKeyDrops, so
-// a TypeScript bump that adds a callable symbol-keyed member to a
-// singleton surfaces instead of being absorbed. What such a member
-// lowers to is decided once one appears. §3.2 already makes
-// `@js("Math[Symbol.dispose]")` expressible, and the open question is
-// what to call the Escalier-side binding.
+// skips without reporting: the three `[Symbol.toStringTag]` tags the
+// pinned lib set declares, which no Escalier program can name.
+// ReportSingletonKeyDrops surfaces any skip outside this list, so a
+// TypeScript bump that adds one cannot be absorbed silently.
 var AllowedSingletonKeyDrops = set.FromSlice([]SingletonMember{
 	{Singleton: "Math", Key: "Symbol.toStringTag"},
 	{Singleton: "JSON", Key: "Symbol.toStringTag"},

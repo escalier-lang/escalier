@@ -32,19 +32,14 @@ type convertCtx struct {
 	namespacePath string
 
 	// keyDrops accumulates every singleton member flattenSingleton
-	// skipped because the member's key has no plain-name form. The
-	// slice is shared across the whole conversion, so a member dropped
-	// inside a nested namespace reaches the caller too. Which of these
-	// are expected is ReportSingletonKeyDrops's call, not the
-	// converter's.
+	// skipped because the member's key has no plain-name form.
+	// ReportSingletonKeyDrops decides which of these are expected.
 	keyDrops []SingletonMember
 }
 
 // noteSingletonKeyDrop records that flattenSingleton skipped a member
 // declared under key. The singleton is named by its dotted runtime
-// path, such as "Math", which carries the enclosing namespace when the
-// singleton is declared inside one. Two singletons that share a short
-// name therefore stay distinct.
+// path, so nested singletons stay distinct from top-level ones.
 func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.PropertyKey) {
 	c.keyDrops = append(c.keyDrops, SingletonMember{
 		Singleton: singleton,
@@ -53,16 +48,10 @@ func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.Prope
 }
 
 // singletonKeyLabel renders a property key that has no plain-name form
-// so a drop report can name it. A computed key renders as its dotted
-// expression, such as "Symbol.toStringTag". A string key renders
-// quoted and a numeric key as its literal text.
-//
-// Every computed key in the pinned TS lib is a `Symbol.*` member
-// access. The parser also accepts a literal inside the brackets, so
-// `["ready"]` renders the same as a bare `"ready"` key. Anything else
-// renders as its expression type, "<computed *dts_parser.CallExpr>".
-// That keeps the member in the report, and it reads as a placeholder
-// rather than as a member name someone could allow-list.
+// so a drop report can name it: a computed key as its dotted expression
+// ("Symbol.toStringTag") or its literal, a string key quoted, a numeric
+// key as its literal text, and any other shape as a placeholder naming
+// the node type so it cannot be mistaken for a real member key.
 func singletonKeyLabel(pk dts_parser.PropertyKey) string {
 	switch k := pk.(type) {
 	case *dts_parser.ComputedKey:
