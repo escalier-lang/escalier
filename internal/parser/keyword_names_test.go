@@ -357,3 +357,96 @@ func TestGetAndSetInObjectLiterals(t *testing.T) {
 		})
 	}
 }
+
+// memberPropertyName returns the property name in `val a = <src>`, or "" when
+// the source did not parse to a member access. A `.d.ts` reaches this position
+// through a computed key such as `[Symbol.match]`, which the converter emits for
+// every well-known symbol a class declares a member under.
+func memberPropertyName(t *testing.T, src string) string {
+	t.Helper()
+	script, errors := parseScriptSrc(t, "val a = "+src)
+	if len(errors) > 0 {
+		return ""
+	}
+	decl, ok := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.VarDecl)
+	if !ok || decl.Init == nil {
+		return ""
+	}
+	member, ok := decl.Init.(*ast.MemberExpr)
+	if !ok {
+		return ""
+	}
+	return member.Prop.Name
+}
+
+// Everything after a `.` is a name position, so every keyword reads as the
+// property being accessed. `Symbol.match` is the case the converter needs, since
+// `RegExp` declares its matcher under that well-known symbol.
+func TestKeywordsNamePropertiesAfterADot(t *testing.T) {
+	t.Parallel()
+	for _, keyword := range keywordTexts() {
+		require.Equal(t, keyword, memberPropertyName(t, "Symbol."+keyword),
+			"Symbol.%s should read %q as the property", keyword, keyword)
+		require.Equal(t, keyword, memberPropertyName(t, "Symbol?."+keyword),
+			"Symbol?.%s should read %q as the property", keyword, keyword)
+	}
+}
+
+// The well-known symbols the converter emits as computed keys. Only `match` is a
+// keyword today, so the rest guard against a later keyword addition silently
+// breaking one of them.
+func TestWellKnownSymbolComputedKeys(t *testing.T) {
+	t.Parallel()
+	symbols := []string{
+		"asyncDispose", "asyncIterator", "dispose", "hasInstance", "iterator",
+		"match", "matchAll", "metadata", "replace", "search", "species", "split",
+		"toPrimitive", "toStringTag", "unscopables",
+	}
+	for _, symbol := range symbols {
+		t.Run(symbol, func(t *testing.T) {
+			t.Parallel()
+			src := fmt.Sprintf("{\n    [Symbol.%s](self) -> string\n}", symbol)
+			typeAnn, errors := parseTypeAnnSrc(t, src)
+			require.Empty(t, errors, "%s should parse", src)
+			require.NotNil(t, typeAnn)
+		})
+	}
+}
+
+// A dangling `.` left mid-edit must not take the next line's leading keyword as
+// its property name. Whatever that line starts survives as its own statement,
+// whether a declaration or a statement keyword such as `return`.
+func TestADanglingDotDoesNotSwallowTheNextLine(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"val", "val a = obj.\nval c = 1"},
+		{"declare fn", "val a = obj.\ndeclare fn f() -> undefined"},
+		{"fn", "val a = obj.\nfn g() {}"},
+		{"type", "val a = obj.\ntype T = number"},
+		{"return", "val a = obj.\nreturn 1"},
+		{"throw", "val a = obj.\nthrow 1"},
+		{"import", "val a = obj.\nimport \"foo\""},
+		{"try", "val a = obj.\ntry {} catch {}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			script, errors := parseScriptSrc(t, tt.input)
+			require.NotEmpty(t, errors)
+			require.Equal(t, "expected an identifier after .", errors[0].Message)
+			require.Len(t, script.Stmts, 2, "the line after the dot should survive")
+		})
+	}
+}
+
+// A chain broken before the dot keeps the dot and the name together, so a
+// keyword member still reads across lines the way it is normally written.
+func TestAChainBrokenBeforeTheDotNamesAProperty(t *testing.T) {
+	t.Parallel()
+	script, errors := parseScriptSrc(t, "val a = obj\n    .match(x)")
+	require.Empty(t, errors)
+	require.Len(t, script.Stmts, 1)
+}

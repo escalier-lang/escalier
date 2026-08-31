@@ -6,9 +6,11 @@ import (
 	"time"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseTypeAnnNoErrors(t *testing.T) {
@@ -384,6 +386,103 @@ func TestParseTypeAnnErrorHandling(t *testing.T) {
 			snaps.MatchSnapshot(t, snapshot.String(typeAnn))
 			assert.Greater(t, len(parser.errors), 0, "Expected parsing errors but got none")
 			snaps.MatchSnapshot(t, snapshot.String(parser.errors))
+		})
+	}
+}
+
+// A negative number literal type. The sign belongs to the literal rather than to
+// an operator, so `-1` is one annotation. The `.d.ts` surface reaches it two
+// ways, and each fails through its own code path when the rule is missing. A
+// bare annotation reports through typeAnnRequired. A tuple element reports the
+// bracket mismatch instead.
+func TestParseNegativeNumberLiteralTypes(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"bare annotation", "-1", "-1"},
+		{"fractional", "-1.5", "-1.5"},
+		{"negative zero", "-0", "-0"},
+		// `readonly TIMEOUT_IGNORED: -1` on WebGL2RenderingContext.
+		{"object property", "{readonly TIMEOUT_IGNORED: -1}",
+			"{\n    readonly TIMEOUT_IGNORED: -1\n}"},
+		// The depth counter `FlatArray` indexes, `[-1, 0, 1, … 20][Depth]`.
+		{"tuple element", "[-1, 0, 1]", "[-1, 0, 1]"},
+		{"indexed tuple element", "[-1, 0, 1][Depth]", "[-1, 0, 1][Depth]"},
+		{"union member", "-1 | 0 | 1", "-1 | 0 | 1"},
+		{"positive is unchanged", "[1, 2]", "[1, 2]"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			typeAnn, errors := parseTypeAnnSrc(t, tt.input)
+			require.Empty(t, errors, "%s should parse", tt.input)
+			require.NotNil(t, typeAnn)
+
+			// The printer emits these, so the printed form has to parse back to
+			// the same thing. A parse-only test would pass while leaving the
+			// round-trip the converter depends on broken.
+			printed, err := printer.Print(typeAnn, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, printed)
+
+			reparsed, reparseErrors := parseTypeAnnSrc(t, printed)
+			require.Empty(t, reparseErrors, "%q should parse back", printed)
+			reprinted, err := printer.Print(reparsed, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, printed, reprinted, "printing should be stable")
+		})
+	}
+}
+
+// A `-` that no number follows is not a type. Neither mapped-type modifier that
+// opens with `-` claims it either, so the annotation is still missing.
+func TestAMinusWithoutANumberIsNotAType(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{"minus then a name", "-Foo"},
+		{"minus alone", "-"},
+		{"minus then a string", `-"a"`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, errors := parseTypeAnnSrc(t, "{x: "+tt.input+"}")
+			require.NotEmpty(t, errors, "%s should report", tt.input)
+			require.Equal(t, "expected a type annotation", errors[0].Message)
+		})
+	}
+
+	// A lifetime read before the `-` cannot be given back, so declining the
+	// token reports against the lifetime rather than returning nil, which the
+	// caller would read as "nothing was consumed".
+	t.Run("after a lifetime", func(t *testing.T) {
+		t.Parallel()
+		_, errors := parseTypeAnnSrc(t, "{x: 'a -Foo}")
+		require.NotEmpty(t, errors)
+		require.Equal(t, "expected a type annotation after lifetime", errors[0].Message)
+	})
+}
+
+// The mapped-type modifiers that open with `-` keep working, since each requires
+// its own following token rather than a number.
+func TestMappedTypeMinusModifiers(t *testing.T) {
+	t.Parallel()
+	tests := []struct{ name, input string }{
+		{"remove readonly", "{-readonly [K]: T[K] for K in keyof T}"},
+		{"remove optional", "{[K]-?: T[K] for K in keyof T}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			typeAnn, errors := parseTypeAnnSrc(t, tt.input)
+			require.Empty(t, errors, "%s should parse", tt.input)
+			require.NotNil(t, typeAnn)
 		})
 	}
 }
