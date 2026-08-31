@@ -226,8 +226,8 @@ that would introduce new PRs:
   lists as deferred and out of scope. It is blocked on the stdlib `Array`
   type and method surface, delivered by
   [M7.5 PR5](../simple_sub/m7.5-implementation-plan.md#pr5--a-real-arrayt-and-the-well-known-handle-mechanism),
-  a lifetime parameter on the container type, the receiver's own type at
-  the call site, and named lifetimes on a method signature.
+  a lifetime parameter on the container type, and the receiver's own type
+  at the call site.
   That is **not this workstream's work** — until it lands, curation
   applies only the `move` spelling, and the `escape` facts for
   borrow-holding containers wait on it. Tracked here as an external
