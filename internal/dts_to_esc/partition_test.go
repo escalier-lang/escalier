@@ -126,6 +126,56 @@ func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {
 	}
 }
 
+func TestRoute_LibSetGaps(t *testing.T) {
+	t.Parallel()
+	// Names the pinned lib set declares outside lib.es5.d.ts and
+	// lib.dom.d.ts. Each one aborted the bootstrap run before it had a
+	// partition entry.
+	cases := []struct {
+		name       string
+		sourceFile string
+		wantURI    string
+	}{
+		{"FlatArray", "lib.es2019.array.d.ts", "std:array"},
+		{"BigIntToLocaleStringOptions", "lib.es2020.bigint.d.ts", "std:bigint"},
+		{"RegExpIndicesArray", "lib.es2022.regexp.d.ts", "std:regexp"},
+		{"PromiseWithResolvers", "lib.es2024.promise.d.ts", "std:async"},
+		{"ReadonlySetLike", "lib.esnext.collection.d.ts", "std:set"},
+		{"Disposable", "lib.esnext.disposable.d.ts", "std:disposable"},
+		{"AsyncDisposableStack", "lib.esnext.disposable.d.ts", "std:disposable"},
+		{"SuppressedError", "lib.esnext.disposable.d.ts", "std:error"},
+		{"DecoratorContext", "lib.decorators.d.ts", "std:decorators"},
+		{"ClassMemberDecoratorContext", "lib.decorators.d.ts", "std:decorators"},
+		{"DecoratorMetadataObject", "lib.decorators.d.ts", "std:decorators"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(tc.name, tc.sourceFile)
+			require.False(t, got.Drop)
+			require.False(t, got.Unmapped)
+			require.Equal(t, tc.wantURI, got.Pkg.URI)
+		})
+	}
+}
+
+func TestRoute_LegacyDecoratorDrops(t *testing.T) {
+	t.Parallel()
+	// TypeScript's `experimentalDecorators` signatures type the
+	// decorator calling convention `tsc` emitted, not a runtime shape.
+	// The TC39 context types route to std:decorators instead.
+	for _, name := range []string{
+		"ClassDecorator", "PropertyDecorator", "MethodDecorator", "ParameterDecorator",
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			got := Route(name, "lib.decorators.legacy.d.ts")
+			require.True(t, got.Drop)
+			require.False(t, got.Unmapped)
+		})
+	}
+}
+
 func TestPackageList_IncludesDOMAndIsSorted(t *testing.T) {
 	t.Parallel()
 	list := PackageList()

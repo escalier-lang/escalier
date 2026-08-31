@@ -173,6 +173,139 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 	return false, false
 }
 
+// MethodNames names the methods of one owner whose receiver an override marks
+// non-mutating. Membership means "strip `mut self`". There is no counterpart
+// set for marking a method mutating, because a `.d.ts` method carries
+// `mut self` by default and needs no entry to keep it.
+type MethodNames = set.Set[string]
+
+// nonMutatingOverrides names, per owner, the methods whose receiver the
+// name-only tiers get wrong.
+//
+// An entry is warranted when ClassifyMethodByName misses the name outright,
+// as it does for `String.charAt`, which matches no prefix, or answers it the
+// wrong way, as it does for `String.replace`, whose `replace` prefix reads as
+// mutating. A name the heuristics already answer correctly is redundant and
+// does not belong here. The reader applies the heuristics as a fall-through
+// for any method with no entry.
+//
+// The one production reader is `checker.UpdateMethodMutability`, which strips
+// `mut self` from the `.d.ts`-loaded lib types. Classify does not consult this
+// table. Its tier 4 reads the override store of `internal/interop`, whose
+// built-in subtree is still empty, so the converter reaches a `.d.ts` method
+// through the name-only tiers alone.
+//
+// The key is the name of the interface the `.d.ts` declares the member on.
+//
+// TODO(#500): extend this for Promise, Error, and other classes whose
+// non-mutating methods should be callable on a non-mut receiver.
+var nonMutatingOverrides = map[string]MethodNames{
+	"String": set.FromSlice([]string{
+		// Names the heuristics miss because they match no prefix, plus
+		// `replace` and `replaceAll`, which the mutating `replace` prefix
+		// claims.
+		"charAt",
+		"charCodeAt",
+		"codePointAt",
+		"endsWith",
+		"localeCompare",
+		"match",
+		"matchAll",
+		"normalize",
+		"padEnd",
+		"padStart",
+		"repeat",
+		"replace",
+		"replaceAll",
+		"search",
+		"split",
+		"startsWith",
+		"substr",
+		"substring",
+		"trim",
+		"trimEnd",
+		"trimStart",
+	}),
+	// `RegExp` needs no entry. `toString` sits on the well-known allow-list
+	// ClassifyMethodByName consults. `compile` mutates, and `exec` and `test`
+	// write `lastIndex` when the pattern is global or sticky, so all three
+	// keep the default `mut self`. `Symbol.search` and `Symbol.split` are
+	// non-mutating per spec, and this string-keyed map cannot address a
+	// symbol-keyed member. See #620.
+	"Object": set.FromSlice([]string{
+		// A heuristic miss. `propertyIsEnumerable` starts with no
+		// non-mutating prefix. The heuristics answer the rest of
+		// `Object.prototype`.
+		"propertyIsEnumerable",
+	}),
+	"Function": set.FromSlice([]string{
+		// Heuristic misses. `toString` sits on the well-known list.
+		"apply",
+		"bind",
+		"call",
+	}),
+	// `Number`, `Boolean`, and `Date` need no entry. The name-only tiers
+	// answer every non-mutating method they declare, through the `get*` and
+	// `to*` prefixes and the well-known `toString` and `valueOf` names.
+	"Console": set.FromSlice([]string{
+		// Heuristic misses, since most Console methods are bare nouns. The
+		// `clear` prefix claims `clear` as mutating, but `Console.clear`
+		// writes nothing on the Console object itself.
+		"assert",
+		"clear",
+		"debug",
+		"dir",
+		"dirxml",
+		"error",
+		"group",
+		"groupCollapsed",
+		"groupEnd",
+		"info",
+		"log",
+		"table",
+		"time",
+		"timeEnd",
+		"timeLog",
+		"timeStamp",
+		"trace",
+		"warn",
+	}),
+	"Body": set.FromSlice([]string{
+		// Heuristic misses. Every Body method is a bare noun.
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"formData",
+		"json",
+		"text",
+	}),
+	"Response": set.FromSlice([]string{
+		// Heuristic misses. The `clone` prefix answers `clone`.
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"formData",
+		"json",
+		"text",
+	}),
+	"Request": set.FromSlice([]string{
+		// Heuristic misses. The `clone` prefix answers `clone`.
+		"arrayBuffer",
+		"blob",
+		"bytes",
+		"formData",
+		"json",
+		"text",
+	}),
+}
+
+// NonMutatingOverrides returns the methods of owner an override marks
+// non-mutating. An owner with no entry reads back empty, which leaves every
+// one of its methods to the name-only heuristics.
+func NonMutatingOverrides(owner string) MethodNames {
+	return nonMutatingOverrides[owner]
+}
+
 // classifyGetPrefixByName is the name-only counterpart to
 // classifyGetPrefix. Returns true iff `name` should be classified
 // non-mutating under the tier-5 rule (bare `get` or `get` + uppercase
@@ -307,6 +440,11 @@ var mutatingPrefixes = append([]string{
 
 var mutatingExact = set.FromSlice([]string{
 	"sort", "reverse",
+	// `Array.prototype.copyWithin` and `TypedArray.prototype.copyWithin` write
+	// their receiver in place, and the `copy` prefix would otherwise read them
+	// as projections. The exact match wins under the prefer-mutating rule. See
+	// planning/ecma-262/validation_diff.md for the spec evidence.
+	"copyWithin",
 })
 
 // hasPrefixWithUpperContinuation reports whether name == prefix + UpperRune + rest.
@@ -467,4 +605,3 @@ func isReadonlyWrapperType(t dts_parser.TypeAnn) bool {
 	}
 	return false
 }
-

@@ -809,6 +809,13 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 			// continue
 		}
 
+		// A modifier keyword standing where the member's own name belongs is the name.
+		// `set(v: any) -> unknown` declares a method called `set`, so stop the loop and
+		// let objExprKey read the keyword as an identifier.
+		if followsAName(p.lexer.peek2().Type) {
+			goto modifiers_done
+		}
+
 		// nolint: exhaustive
 		switch token.Type {
 		case Static:
@@ -838,10 +845,26 @@ func (p *Parser) parseClassElemInner() ast.ClassElem {
 		token = p.lexer.peek()
 	}
 modifiers_done:
-	// `constructor` is a contextual keyword at the start of a class element.
-	// Anywhere else it is a regular identifier.
+	// `constructor` is a contextual keyword at the start of a class element. It names an
+	// instance field instead when a field's punctuation follows it, which is how a
+	// `.d.ts` spells the `constructor` property every prototype carries:
+	// `constructor: Function`. Anything else stays the constructor, so `constructor {}`
+	// keeps reporting its missing parameter list rather than a stray brace.
+	//
+	// A `static` member is never that field. JavaScript has no static member named
+	// `constructor` at all, and the `.d.ts` surface only declares the instance one.
 	if token.Type == Identifier && token.Value == "constructor" {
-		return p.parseConstructorElem(start, token, isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet)
+		isField := false
+		if !isStatic {
+			// nolint: exhaustive
+			switch p.lexer.peek2().Type {
+			case Colon, Question, Comma, CloseBrace, Equal:
+				isField = true
+			}
+		}
+		if !isField {
+			return p.parseConstructorElem(start, token, isStatic, isAsync, isGen, isPrivate, isReadonly, isGet, isSet)
+		}
 	}
 
 	name := p.objExprKey()
@@ -1168,7 +1191,9 @@ func (p *Parser) varDecl(
 func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async bool, gen bool) ast.Decl {
 	token := p.lexer.peek()
 	var ident *ast.Ident
-	if token.Type == Identifier {
+	// A keyword names the function when its signature follows. `Reflect.get`
+	// converts to `declare fn get<T, P>(…)`, where `get` is the name.
+	if token.Type == Identifier || (bindsAsAName(token.Type) && startsASignature(p.lexer.peek2().Type)) {
 		p.lexer.consume()
 		ident = ast.NewIdentifier(token.Value, token.Span)
 	} else {

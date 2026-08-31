@@ -22,6 +22,73 @@ func parseLib(t *testing.T, name, src string) LibInput {
 	return LibInput{SourceFile: name, Module: mod}
 }
 
+func TestPartitionLib_DroppedSourceContributesNothing(t *testing.T) {
+	t.Parallel()
+	// lib.scripthost.d.ts declares the Windows Script Host surface and
+	// also augments `Date` with a member typed by it. Dropping the
+	// file's own names alone would route that augmentation into
+	// std:date, leaving it referring to a `VarDate` nothing declares.
+	es5 := parseLib(t, "lib.es5.d.ts", `
+interface Date { getTime(): number; }
+interface DateConstructor { new (): Date; readonly prototype: Date; }
+declare var Date: DateConstructor;
+`)
+	scripthost := parseLib(t, "lib.scripthost.d.ts", `
+declare class VarDate { private constructor(); }
+interface Date { getVarDate: () => VarDate; }
+`)
+
+	res, err := PartitionLib([]LibInput{es5, scripthost})
+	require.NoError(t, err)
+
+	require.Len(t, res.Buckets, 1)
+	require.Len(t, res.Buckets["std:date"], 3)
+	date, ok := res.Buckets["std:date"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, date.Members, 1)
+	require.Equal(t, "getTime", memberKey(date.Members[0]))
+
+	require.Equal(t, []DropNote{
+		{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
+		{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
+	}, res.Drops)
+}
+
+func TestPartitionLib_IgnoresTheWorkerHostLib(t *testing.T) {
+	t.Parallel()
+	// The partition covers the browser. TypeScript ships lib.dom and
+	// lib.webworker as alternatives a `tsconfig.json` picks between, so
+	// the worker files restate the globals a document also has and add
+	// ones it does not. Neither half is wanted here. The restatement
+	// would double the members of every shared interface, and
+	// `ServiceWorkerGlobalScope` names nothing a document can reach.
+	dom := parseLib(t, "lib.dom.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+`)
+	worker := parseLib(t, "lib.webworker.d.ts", `
+interface ReadableStream<R = any> { readonly locked: boolean; }
+interface ServiceWorkerGlobalScope { readonly clients: Clients; }
+`)
+
+	res, err := PartitionLib([]LibInput{dom, worker})
+	require.NoError(t, err)
+
+	// One ReadableStream, carrying `locked` once rather than twice.
+	require.Len(t, res.Buckets, 1)
+	require.Len(t, res.Buckets["web:streams"], 1)
+	stream, ok := res.Buckets["web:streams"][0].(*dts_parser.InterfaceDecl)
+	require.True(t, ok)
+	require.Len(t, stream.Members, 1)
+	require.Equal(t, "locked", memberKey(stream.Members[0]))
+
+	// The worker-only name lands in no bucket, and the §6.1 fail-safe
+	// does not fire for it either.
+	require.Equal(t, []DropNote{
+		{Name: "ReadableStream", SourceFile: "lib.webworker.d.ts"},
+		{Name: "ServiceWorkerGlobalScope", SourceFile: "lib.webworker.d.ts"},
+	}, res.Drops)
+}
+
 func TestPartitionLib_RoutesByName(t *testing.T) {
 	t.Parallel()
 	// Array → std:array (explicit map). HTMLCanvasElement → web:dom
@@ -556,9 +623,30 @@ func TestReportPartition_FormatsSortedSummary(t *testing.T) {
 	require.Less(t, strings.Index(out, "std:array"), strings.Index(out, "web:dom"))
 }
 
-// WritePartitionedTree is ConvertBuckets followed by WriteConvertedTree. A
-// caller that needs the converted modules for something other than writing
-// them runs the two halves itself, which must land the same files.
+func TestReportPartition_SeparatesDropCauses(t *testing.T) {
+	t.Parallel()
+	// A name in ExplicitDrops is named; a source file dropped whole
+	// gets a count. Listing the file's declarations would name `Date`,
+	// which lib.scripthost.d.ts only augments, and read as though
+	// std:date had lost its class.
+	res := &PartitionResult{
+		Buckets: map[string][]dts_parser.Statement{
+			"std:date": make([]dts_parser.Statement, 3),
+		},
+		Drops: []DropNote{
+			{Name: "eval", SourceFile: "lib.es5.d.ts"},
+			{Name: "VarDate", SourceFile: "lib.scripthost.d.ts"},
+			{Name: "Date", SourceFile: "lib.scripthost.d.ts"},
+		},
+	}
+	var sb strings.Builder
+	require.NoError(t, ReportPartition(res, &sb))
+	out := sb.String()
+	require.Contains(t, out, "std:date: 3 decls")
+	require.Contains(t, out, "drops: 1 (eval)")
+	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
+}
+
 func TestConvertBucketsAndWriteConvertedTree(t *testing.T) {
 	t.Parallel()
 	es5 := parseLib(t, "lib.es5.d.ts", `

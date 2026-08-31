@@ -23,19 +23,22 @@ type Package struct {
 // Partition routes a TS-lib top-level declaration name to its target
 // pseudo-package. Source of truth: the §6.1 partition table.
 //
+// PartitionLib filters the input before Route sees it: a file in
+// DroppedSources contributes nothing. See DroppedSources.
+//
 // Lookup order at the routing site (see Route below):
 //
 //  1. ExplicitDrops — symbols intentionally dropped (`globalThis`,
 //     `eval`). The routing site logs and skips emission.
 //  2. Partition (this map) — the hand-maintained, full enumeration of
 //     std:* and web:* siblings.
-//  3. DOMResidual — a `.d.ts` source-file allowlist (lib.dom.d.ts and
-//     its DOM-coupled siblings). Any unmapped name that originates in
-//     one of these files routes to `web:dom`. This is the catch-all
-//     for the DOM mass, kept as a file allowlist rather than a per-
-//     symbol map because lib.dom.d.ts contains thousands of element
-//     classes, interfaces, and event types that all share one target
-//     package per §4.2 (single-`web:dom` package).
+//  3. DOMResidual — a `.d.ts` source-file allowlist. lib.dom.d.ts and
+//     its DOM-coupled siblings are on it. Any unmapped name that
+//     originates in one of these files routes to `web:dom`. This is
+//     the catch-all for the DOM mass. It is a file allowlist rather
+//     than a per-symbol map because lib.dom.d.ts contains thousands of
+//     element classes, interfaces, and event types that all share one
+//     target package, the single `web:dom` package of §4.2.
 //  4. Otherwise — the unmapped-symbol fail-safe trips (see §6.1).
 //
 // Keys are the bare TS declaration name as it appears at the top level
@@ -53,6 +56,7 @@ var stdPackages = []struct {
 		"Array", "ArrayConstructor",
 		"ReadonlyArray", "ConcatArray", "ArrayLike",
 		"ArrayIterator",
+		"FlatArray",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -69,10 +73,15 @@ var stdPackages = []struct {
 	}},
 	{"std:bigint", "std/bigint.esc", []string{
 		"BigInt", "BigIntConstructor",
+		// The options bag for BigInt.prototype.toLocaleString. TS
+		// declares it standalone in lib.es2020.bigint.d.ts rather than
+		// under Intl, so it follows BigInt rather than std:intl.
+		"BigIntToLocaleStringOptions",
 	}},
 	{"std:regexp", "std/regexp.esc", []string{
 		"RegExp", "RegExpConstructor",
 		"RegExpMatchArray", "RegExpExecArray",
+		"RegExpIndicesArray",
 		"RegExpStringIterator",
 	}},
 	{"std:symbol", "std/symbol.esc", []string{
@@ -102,7 +111,7 @@ var stdPackages = []struct {
 		"MapIterator",
 	}},
 	{"std:set", "std/set.esc", []string{
-		"Set", "SetConstructor", "ReadonlySet",
+		"Set", "SetConstructor", "ReadonlySet", "ReadonlySetLike",
 		"WeakSet", "WeakSetConstructor",
 		"SetIterator",
 	}},
@@ -122,6 +131,7 @@ var stdPackages = []struct {
 		"Promise", "PromiseConstructor", "PromiseLike",
 		"PromiseFulfilledResult", "PromiseRejectedResult", "PromiseSettledResult",
 		"Awaited",
+		"PromiseWithResolvers",
 		"AsyncIterator", "AsyncIterable", "AsyncIterableIterator",
 		"AsyncIteratorObject",
 		"AsyncGenerator", "AsyncGeneratorFunction", "AsyncGeneratorFunctionConstructor",
@@ -134,6 +144,7 @@ var stdPackages = []struct {
 		"RangeError", "RangeErrorConstructor",
 		"SyntaxError", "SyntaxErrorConstructor",
 		"ReferenceError", "ReferenceErrorConstructor",
+		"SuppressedError", "SuppressedErrorConstructor",
 		"ErrorOptions", "ErrorCause",
 	}},
 	{"std:url", "std/url.esc", []string{
@@ -185,6 +196,32 @@ var stdPackages = []struct {
 	{"std:wasm", "std/wasm.esc", []string{
 		"WebAssembly",
 	}},
+	{"std:disposable", "std/disposable.esc", []string{
+		// Explicit resource management: the `using` / `await using`
+		// protocol. `SuppressedError` is the one member of
+		// lib.esnext.disposable.d.ts that routes elsewhere — it is an
+		// `Error` subclass, so it joins std:error.
+		"Disposable", "AsyncDisposable",
+		"DisposableStack", "DisposableStackConstructor",
+		"AsyncDisposableStack", "AsyncDisposableStackConstructor",
+	}},
+	{"std:decorators", "std/decorators.esc", []string{
+		// The context objects a TC39 decorator receives as its second
+		// argument, plus the metadata types keyed off `Symbol.metadata`.
+		// These describe an ECMAScript runtime shape, so they get a
+		// package rather than joining ExplicitDrops. Escalier has no
+		// decorator syntax for user code today. Its `@js(...)`
+		// decorator is a declaration annotation the converter emits,
+		// unrelated to these types. TypeScript's own legacy
+		// `experimentalDecorators` aliases are dropped instead — see
+		// ExplicitDrops.
+		"DecoratorContext", "DecoratorMetadata", "DecoratorMetadataObject",
+		"ClassDecoratorContext", "ClassMemberDecoratorContext",
+		"ClassFieldDecoratorContext", "ClassMethodDecoratorContext",
+		"ClassGetterDecoratorContext", "ClassSetterDecoratorContext",
+		"ClassAccessorDecoratorContext",
+		"ClassAccessorDecoratorTarget", "ClassAccessorDecoratorResult",
+	}},
 }
 
 // Standalone web sibling packages, per the §6.1 table. The DOM mass
@@ -212,6 +249,7 @@ var stdPackages = []struct {
 //     - CSS Object Model (CSSOM)
 //     - CSSOM view API
 //     - Device orientation events
+//     - File System API
 //     - Fullscreen API
 //     - Gamepad API
 //     - Geolocation API
@@ -268,7 +306,6 @@ var stdPackages = []struct {
 //     - Device Memory API
 //     - Document Picture-in-Picture API
 //     - Encrypted Media Extensions API
-//     - File System API
 //     - File and Directory Entries API
 //     - HTML Sanitizer API
 //     - Houdini APIs
@@ -365,11 +402,14 @@ var webPackages = []struct {
 		// lib.dom.d.ts) rather than being pinned to any one API.
 	}},
 	{"web:workers", "web/workers.esc", []string{
+		// The document side of workers: what a page constructs and the
+		// events it gets back. The scope a worker runs inside —
+		// `WorkerGlobalScope`, `DedicatedWorkerGlobalScope`,
+		// `SharedWorkerGlobalScope`, `WorkerLocation`,
+		// `WorkerNavigator` — is declared only by the worker host lib,
+		// which DroppedSources ignores, so no entry here would match.
 		"Worker", "WorkerOptions", "WorkerType",
 		"SharedWorker",
-		"WorkerGlobalScope", "DedicatedWorkerGlobalScope",
-		"SharedWorkerGlobalScope",
-		"WorkerLocation", "WorkerNavigator",
 		"AbstractWorker", "WorkerEventMap",
 	}},
 	{"web:webgl", "web/webgl.esc", []string{
@@ -548,8 +588,8 @@ var webPackages = []struct {
 		// that aren't present in the pinned lib.dom.d.ts (so they need
 		// no partition entry here): Client, Clients, WindowClient,
 		// ExtendableEvent, ExtendableMessageEvent, FetchEvent,
-		// InstallEvent, ServiceWorkerGlobalScope. If a TS version bump
-		// adds them, add the corresponding entries here.
+		// InstallEvent, ServiceWorkerGlobalScope. The worker host lib
+		// declares them and DroppedSources ignores it.
 		"ServiceWorker", "ServiceWorkerEventMap", "ServiceWorkerState",
 		"ServiceWorkerContainer", "ServiceWorkerContainerEventMap",
 		"ServiceWorkerRegistration", "ServiceWorkerRegistrationEventMap",
@@ -694,6 +734,49 @@ var ExplicitDrops = set.FromSlice([]string{
 	"ImportAssertions",
 	"ImportAttributes",
 	"ImportCallOptions",
+
+	// TypeScript's legacy `experimentalDecorators` signatures. They
+	// type the decorator calling convention `tsc` emitted before TC39
+	// decorators, so they describe a compiler output shape rather than
+	// a runtime one. The TC39 context types route to std:decorators.
+	"ClassDecorator",
+	"PropertyDecorator",
+	"MethodDecorator",
+	"ParameterDecorator",
+})
+
+// DroppedSources is the set of `.d.ts` source-file basenames the
+// converter emits nothing from. Every top-level declaration in such a
+// file is recorded as a drop, whatever its name, so PartitionLib
+// consults this before Route.
+//
+// The list is source-file-wide rather than per-name because
+// lib.scripthost.d.ts does not only declare its own types. It also
+// augments `Date` with `getVarDate(): VarDate` and `DateConstructor`
+// with `new (vd: VarDate): Date`. Those two names route to std:date by
+// name, so dropping `VarDate` alone would leave std/date.esc referring
+// to a type nothing declares.
+//
+// lib.scripthost.d.ts declares the Windows Script Host surface:
+// `ActiveXObject`, `WScript`, `VBArray`, the `TextStream` types, and
+// the COM value wrappers `SafeArray` and `VarDate`. `cscript` and
+// `wscript` are the host it belongs to, and Escalier targets browsers
+// and Node.
+//
+// The lib.webworker.*.d.ts files are the Web Worker host lib.
+// TypeScript ships it and lib.dom as alternatives that a
+// `tsconfig.json` picks between, so the two restate every shared global
+// and differ only in the surface each host has. The partition covers
+// the browser, so a name only a worker declares belongs to no package
+// it emits — `ServiceWorkerGlobalScope` and `importScripts` name
+// nothing a document can reach. Serving a worker means its own set of
+// pseudo-packages, the same question Node raises, and §6.1 defers both.
+var DroppedSources = set.FromSlice([]string{
+	"lib.scripthost.d.ts",
+	"lib.webworker.d.ts",
+	"lib.webworker.iterable.d.ts",
+	"lib.webworker.asynciterable.d.ts",
+	"lib.webworker.importscripts.d.ts",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose

@@ -330,26 +330,41 @@ func detectSingletons(stmts []dts_parser.Statement, trios *trioTable) *singleton
 // kinds (CallSignature, IndexSignature, GetterSignature, SetterSignature,
 // ConstructSignature) have no clean top-level lowering for a singleton
 // and are skipped silently for the MVP.
+//
+// A symbol-keyed member is skipped for the same reason. Flattening
+// needs a plain name to build both the Escalier binding and the
+// `@js(...)` path, and a computed key has neither. The corpus shape is
+// `interface Math { readonly [Symbol.toStringTag]: string }`, which
+// tags the object for `Object.prototype.toString` rather than
+// declaring anything a caller names.
 func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
 	var out []docDecl
 	for _, m := range info.iface.Members {
 		switch sig := m.(type) {
 		case *dts_parser.MethodSignature:
+			member := propertyKeyName(sig.Name)
+			if member == "" {
+				continue
+			}
 			decl, err := singletonMethodToFuncDecl(sig)
 			if err != nil {
 				return nil, fmt.Errorf("flattening singleton method %s.%s: %w",
-					info.iface.Name.Name, propertyKeyName(sig.Name), err)
+					info.iface.Name.Name, member, err)
 			}
-			path := jsBase + "." + propertyKeyName(sig.Name)
+			path := jsBase + "." + member
 			attachJSDecorator(decl, path)
 			out = append(out, docDecl{doc: sig.Doc(), path: path, decl: decl})
 		case *dts_parser.PropertySignature:
+			member := propertyKeyName(sig.Name)
+			if member == "" {
+				continue
+			}
 			decl, err := singletonPropertyToVarDecl(sig)
 			if err != nil {
 				return nil, fmt.Errorf("flattening singleton property %s.%s: %w",
-					info.iface.Name.Name, propertyKeyName(sig.Name), err)
+					info.iface.Name.Name, member, err)
 			}
-			path := jsBase + "." + propertyKeyName(sig.Name)
+			path := jsBase + "." + member
 			attachJSDecorator(decl, path)
 			out = append(out, docDecl{doc: sig.Doc(), path: path, decl: decl})
 		}

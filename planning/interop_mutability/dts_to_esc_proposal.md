@@ -590,8 +590,10 @@ that needs a prior global scope to type-check against.
 **The prelude does not pre-load any pseudo-package files** — those
 are loaded on demand when a program imports them.
 `loadGlobalDefinitions`, `populateSelfParams`,
-`UpdateMethodMutability`, `mergeReadonlyVariant`, and the
-`mutabilityOverrides` Go map all become dead code.
+`UpdateMethodMutability`, and `mergeReadonlyVariant` all become dead
+code. The `nonMutatingOverrides` table lives in `internal/dts_to_esc`,
+but `UpdateMethodMutability` is the only thing that applies it, so it
+becomes dead code with them.
 
 ### Override pipeline scope after the shift
 

@@ -108,9 +108,14 @@ Three consequences shape the remaining phases.
 2. **The legacy builtin machinery is deleted by the M12 flip, not
    by this workstream.** `loadGlobalDefinitions`,
    `populateSelfParams`, `UpdateMethodMutability`,
-   `mergeReadonlyVariant`, the `mutabilityOverrides` map,
-   `BuildBuiltinStore`, and `js_globals.go` all live in
-   `internal/checker/` and go out with that tree. §9.3 keeps the
+   `mergeReadonlyVariant`, `BuildBuiltinStore`, and `js_globals.go`
+   all live in `internal/checker/` and go out with that tree. The
+   `nonMutatingOverrides` table sits in `internal/dts_to_esc/`, and
+   `UpdateMethodMutability` is the only thing that applies it, so
+   nothing applies it after the flip. The ecma-262 §6 validation diff
+   reads it to report on, which is what keeps it compiling until that
+   diff retires. `Classify` reads the override store and the name
+   heuristics, never that table. §9.3 keeps the
    list as an audit that nothing in it grew a solver-side twin.
 3. **`type_system.Type` is not a target representation.** The
    converter emits `*ast.Module`, which both checkers consume, so
@@ -1614,6 +1619,8 @@ output and the LSP name-index (§10.3). Driven by the
 | `std:intl`        | bundled             | unchanged; needs `import "std:date"`                                                                                             |
 | `std:temporal`    | bundled             | unchanged                                                                                                                        |
 | `std:wasm`        | bundled             | unchanged                                                                                                                        |
+| `std:disposable`  | bundled             | `Disposable`, `AsyncDisposable`, `DisposableStack`, `AsyncDisposableStack` — the `using` / `await using` protocol. `SuppressedError` is an `Error` subclass and goes to `std:error` |
+| `std:decorators`  | bundled             | The TC39 decorator context types (`DecoratorContext`, `ClassMethodDecoratorContext`, …) and the `Symbol.metadata` types. TypeScript's legacy `experimentalDecorators` aliases are dropped instead — see Drops |
 
 **`web/` partition.** Per §4.2, the DOM partition is **one big
 package + standalone web siblings**:
@@ -1670,6 +1677,48 @@ previously-ambient name and has nothing to take its union over
 in the new model. The converter recognizes both and skips
 emission with a logged note. `intrinsic`-typed declarations
 (FR13) skip the same way.
+
+`ClassDecorator`, `PropertyDecorator`, `MethodDecorator`, and
+`ParameterDecorator` from `lib.decorators.legacy.d.ts` join
+them. They type the calling convention `tsc` emitted before
+TC39 decorators, so they describe a compiler output shape
+rather than a runtime one.
+
+**Dropped source files.** Two source files contribute nothing,
+dropped whole rather than name by name.
+
+`lib.scripthost.d.ts` declares the Windows Script Host surface
+— `ActiveXObject`, `WScript`, `VBArray`, the `TextStream`
+types, and the COM value wrappers `SafeArray` and `VarDate` —
+and Escalier targets browsers and Node. It also augments
+`Date` with `getVarDate(): VarDate` and `DateConstructor` with
+`new (vd: VarDate): Date`. Both of those names route to
+`std:date` by name, so dropping `VarDate` alone would leave
+`std/date.esc` referring to a type nothing declares. Dropping
+the file takes the augmentations with it.
+
+`lib.webworker.*.d.ts` is the Web Worker host lib. TypeScript
+ships it and `lib.dom` as alternatives that a `tsconfig.json`
+picks between, so the two restate every shared global and
+differ only in the surface each host has. `interface
+ReadableStream<R = any>` is byte-identical in both. The
+partition covers the browser, and neither half of the worker
+lib belongs in it. The restatement would let the within-bucket
+declaration merging below concatenate two member lists into
+one interface carrying each member twice. The remainder names
+what only a worker has — `ServiceWorkerGlobalScope`,
+`FetchEvent`, `importScripts` — which no browser program can
+reach.
+
+Serving workers means a set of pseudo-packages scoped to that
+host, the same question Node raises, and both are deferred.
+Until then `web:workers` carries the document side alone: what
+a page constructs and the events it gets back. The scope a
+worker runs inside is declared only by the ignored lib, so no
+entry for it would match.
+
+See `DroppedSources` in
+[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
 
 **Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level
 TS-lib declaration name absent from both this partition table
@@ -2346,9 +2395,13 @@ replacement:
   — replaced by import ingestion (M7.5) plus §9.1's trigger map
 - `populateSelfParams` — replaced by the `self` receivers the
   converter emits into the `.esc` files (§6.1)
-- `UpdateMethodMutability` and the `mutabilityOverrides` Go map —
-  replaced by the converter's receiver classification plus the
-  hand-edited mutability refinements committed in §7
+- `UpdateMethodMutability` — replaced by the converter's receiver
+  classification plus the hand-edited mutability refinements
+  committed in §7. It is the only caller that applies
+  `nonMutatingOverrides`, so the table retires with it. Until then an
+  entry cannot be dropped on the strength of a converter-side answer:
+  a receiver `Classify` marks non-mutating does not reach the
+  `.d.ts`-loaded lib types, so the entry is what carries the claim
 - `mergeReadonlyVariant` — replaced by the converter's
   readonly-twin fusion (§6.1)
 - `BuildBuiltinStore`

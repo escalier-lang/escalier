@@ -278,12 +278,20 @@ loop:
 	return expr
 }
 
+// objExprKey parses the name of an object member: a property in an object
+// literal or type, a method or accessor in a class body. A keyword names a
+// member the way an identifier does when member punctuation follows it, so
+// `catch`, `match`, and `symbol` are all accepted here and carried through as
+// plain identifiers. The one exception is a keyword the enclosing form peels
+// off first. An object type reads `fn` and `new` as its call and construct
+// signatures, and a class body reads `get` and `set` as accessor modifiers, so
+// those callers look ahead before delegating here.
 func (p *Parser) objExprKey() ast.ObjKey {
 	token := p.lexer.peek()
 
 	// nolint: exhaustive
 	switch token.Type {
-	case Identifier, Underscore, String, Number, Boolean, Bigint:
+	case Identifier, Underscore:
 		p.lexer.consume()
 		return ast.NewIdent(token.Value, token.Span)
 	case StrLit:
@@ -305,6 +313,14 @@ func (p *Parser) objExprKey() ast.ObjKey {
 		}
 		return nil
 	default:
+		// A keyword names a member only when member punctuation follows it. That
+		// stops a body someone left unclosed from swallowing what comes after it. A
+		// `declare` or `fn` opening the next declaration is not read as a member
+		// name, so that declaration still parses.
+		if isKeyword(token.Type) && followsAName(p.lexer.peek2().Type) {
+			p.lexer.consume()
+			return ast.NewIdent(token.Value, token.Span)
+		}
 		p.reportError(token.Span, "Expected a property name")
 		return nil
 	}
@@ -687,11 +703,14 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		return ast.NewRestSpread(arg, ast.MergeSpans(token.Span, arg.Span()))
 	}
 
-	if token.Type == Get || token.Type == Set {
+	// `get` and `set` mark an accessor only when a name follows. `{get: 1}` and `{get}`
+	// name a property, the same way every other keyword does here.
+	if (token.Type == Get || token.Type == Set) && !followsAName(p.lexer.peek2().Type) {
 		p.reportError(token.Span, "Method shorthand is not allowed in object literals; use a class instead")
 		return nil
 	}
 
+	keyToken := p.lexer.peek()
 	objKey := p.objExprKey()
 	if objKey == nil {
 		return nil
@@ -740,6 +759,14 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 		case *ast.IdentExpr:
 			switch token.Type {
 			case Comma, CloseBrace:
+				// A shorthand property is a key and a variable reference at once, so
+				// its name has to work in both roles. Keywords name a key freely, but
+				// only the ones a binding accepts can be read as a variable, which
+				// leaves out `catch` and the literals `true`, `null`, and `undefined`.
+				if isKeyword(keyToken.Type) && !bindsAsAName(keyToken.Type) {
+					p.reportError(keyToken.Span, "`"+keyToken.Value+
+						"` cannot be a shorthand property because it is not a variable name")
+				}
 				property := ast.NewProperty(
 					objKey,
 					false,
@@ -794,10 +821,36 @@ func (p *Parser) param() *ast.Param {
 		}
 	}
 
+	// A keyword standing where the parameter's name belongs is the name. TypeScript
+	// declarations lean on this: `substr(from: number, length?: number)` names its first
+	// parameter `from`, which Escalier otherwise lexes as the import keyword. A pattern
+	// still rejects keywords, so a `match` arm reads `null` and `true` as the literals
+	// they are.
+	if tok := p.lexer.peek(); bindsAsAName(tok.Type) && followsAName(p.lexer.peek2().Type) {
+		p.lexer.consume()
+		return p.paramTail(ast.NewIdentPat(tok.Value, false, nil, nil, tok.Span), open)
+	}
+
+	// A rest parameter's name is a binding too, as in `f(...from: Array<number>)`. The
+	// `...` already fixes the position, so the keyword needs no lookahead past it.
+	if p.lexer.peek().Type == DotDotDot && bindsAsAName(p.lexer.peek2().Type) {
+		dots := p.lexer.next()
+		name := p.lexer.next()
+		inner := ast.NewIdentPat(name.Value, false, nil, nil, name.Span)
+		return p.paramTail(ast.NewRestPat(inner, ast.MergeSpans(dots.Span, name.Span)), open)
+	}
+
 	pat := p.pattern(true, false)
 	if pat == nil {
 		return nil
 	}
+
+	return p.paramTail(pat, open)
+}
+
+// paramTail parses what follows a parameter's pattern: the optional marker, the type
+// annotation, and the default value.
+func (p *Parser) paramTail(pat ast.Pat, open bool) *ast.Param {
 	token := p.lexer.peek()
 
 	opt := false

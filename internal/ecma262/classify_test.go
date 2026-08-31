@@ -677,8 +677,8 @@ func TestFactsTallies(t *testing.T) {
 		lines = append(lines, fmt.Sprintf("%s: %d", key, count))
 	}
 	sort.Strings(lines)
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 246
-receiver mutBorrow: 67
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`receiver borrow: 245
+receiver mutBorrow: 68
 receiver none: 188
 returns fresh: 232
 returns param: 6

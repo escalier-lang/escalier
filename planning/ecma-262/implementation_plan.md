@@ -41,7 +41,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §4.3 | Method classification                      | FR4, FR5   | ✅      | §4.1, §4.2 | facts.json core — receiver and returns resolved per determination for the representative methods — met, see [internal/ecma262/](../../internal/ecma262/) |
 | §4.4 | Curated fact layer                         | FR5, FR7   | ✅      | §4.3       | `curated.json` merges per determination; published `receiver unclassified` is zero; each of the three guards tested — met, see [internal/ecma262/curated.go](../../internal/ecma262/curated.go) |
 | §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
-| §6   | Validation diff                            | FR9        | ⬜      | §5         | receiver facts diffed against `mutabilityOverrides` + heuristics; every disagreement triaged |
+| §6   | Validation diff                            | FR9        | ✅      | §5         | receiver facts diffed against the override entries and the name heuristics; every disagreement triaged — met, see [validation_diff.md](validation_diff.md) |
 | §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
@@ -1483,16 +1483,45 @@ show, and the join's report carries the settled and unsettled counts.
 **Work.**
 
 - Diff the receiver-mutability facts against the union of
-  `mutabilityOverrides`
-  ([../../internal/checker/prelude.go](../../internal/checker/prelude.go))
-  and `dts_to_esc.ClassifyMethodByName`
-  ([../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go))
+  `nonMutatingOverrides` and `dts_to_esc.ClassifyMethodByName`, both in
+  [../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go),
   for the same methods.
 - Triage every disagreement: facts correct and override redundant, or
   facts buggy and the §4 analysis fixed.
 
 **Gate.** A reviewed disagreement report with a disposition for each
 entry. This is the gate that authorizes removing override entries in §7.
+
+**Outcome.** The gate is met —
+[validation_diff.md](validation_diff.md) records the per-entry
+dispositions and the counts behind them. The diff is
+`dts_to_esc.ValidateReceivers`, and `dts_to_esc bootstrap --cfg` prints its
+report beside the curation and join ones. Of the 218 methods both sources
+answer, they agreed on 215 and the three disagreements are all resolved, so
+§7 may rank the facts above the name tiers and delete the 24 redundant
+override entries the report lists. Two findings shape the phases after this
+one.
+
+- **§7 (removal list).** `TestCommittedGraphRedundantOverrides` pins the 24
+  entries a fact answers the same way, and
+  `TestCommittedGraphOverridesWithNoFact` pins the 37 no fact addresses. §7
+  works from the two checked lists rather than recomputing them. The 37 are
+  the `web:*` owners plus `String.substr`, an Annex B method the graph does
+  not carry.
+- **§4.1 (the mutation seed).** The one analyzer bug the diff found is a
+  computed-slot write on a declared parameter, which leaves an abstract
+  operation `Incomplete` rather than charging the parameter. `Incomplete`
+  does not reach callers, so `FinalizationRegistry.prototype.unregister`
+  published a clean receiver over ESMeta's `__REMOVE_ELEM__`. That intrinsic
+  is now a seeded direct mutator. The general rule that would charge every
+  such write raises `Unattributable` across the graph and costs about 50
+  builtins their receiver claim, so it stays §4 work rather than a §6 fix.
+
+The override table moved from `internal/checker/prelude.go` to
+[../../internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go),
+which is where the name heuristics it complements already live and where §7
+edits it. The checker prelude reads it through
+`dts_to_esc.NonMutatingOverrides`.
 
 ## §7. Integration as classification source
 
@@ -1518,9 +1547,14 @@ entry. This is the gate that authorizes removing override entries in §7.
   analysis found a store (never defaulted), and `throws`/`rejects` default
   to empty (under-report). Only receiver mutability is auto-applied; the
   rest are curation input, per "Applying the non-receiver facts" above.
-- Remove the `mutabilityOverrides` entries that §6 proved redundant for
-  `std:*`. Keep entries the facts source does not cover, such as `web:*`
-  classes, untouched.
+- Remove the `nonMutatingOverrides` entries that §6 proved redundant for
+  `std:*`, which
+  [validation_diff.md](validation_diff.md) lists. Keep entries the facts
+  source does not cover, such as `web:*` classes, untouched. The table's one
+  production reader is the checker prelude, not `Classify`, so removing an
+  entry is safe only once the facts reach the path that applies mutability to
+  the `.d.ts`-loaded lib types, or that path is gone. See the sequencing note
+  in [validation_diff.md](validation_diff.md).
 
 **How a method's `.esc` is assembled.** Each generated method declaration
 is a **merge** of its type shape with its effects, combined per method —

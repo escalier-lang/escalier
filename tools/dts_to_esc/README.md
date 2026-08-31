@@ -23,6 +23,18 @@ is the `<lib-dir>` argument below. Files ending in `.full.d.ts` are
 skipped: they declare nothing themselves and only pull in the lib files
 beside them through `/// <reference lib="..." />`.
 
+Two more are skipped. `lib.scripthost.d.ts` declares the Windows Script
+Host surface, which Escalier has no target for. The `lib.webworker.*.d.ts`
+files are the Web Worker host lib: TypeScript ships it and `lib.dom` as
+alternatives, so the two restate every shared global — `interface
+ReadableStream` is byte-identical in both — and differ only in the
+surface each host has. The partition covers the browser, so reading both
+would double the members of every shared interface and add names such as
+`ServiceWorkerGlobalScope` that no browser program can reach. Serving
+workers means pseudo-packages scoped to that host, which is deferred
+along with Node. Each run reports how many declarations every skipped
+file held.
+
 The `<esc-dir>` argument is `internal/interop/data`, the root holding
 the `std/`, `web/`, and `node/` subtrees.
 
@@ -45,7 +57,10 @@ committed tree discards those hand-edits.
 
 `bootstrap --cfg <cfg.json>` additionally joins every `std:*` member it
 emits against the ECMA-262 effect facts derived from that control-flow
-graph and reports the names present on one side only. See §5 of
+graph and reports the names present on one side only. It also reports what
+the curated layer and the coercion filter did to those facts, and diffs the
+receiver claim of every instance method against the hand-written mutability
+sources. See §5, §6, and §9.2 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
 
 ## Bumping the pinned TypeScript version

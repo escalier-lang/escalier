@@ -685,7 +685,7 @@ func TestMutationSummaryTallies(t *testing.T) {
 			kind, byKind["total"], byKind["receiver"], byKind["args"], byKind["unattributable"], byKind["incomplete"], byKind["classifiable"]))
 	}
 	sort.Strings(kinds)
-	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 49, unattributable 37, incomplete 226, classifiable 449
-builtin-method: total 313, receiver 64, args 0, unattributable 3, incomplete 22, classifiable 289
+	snaps.MatchInlineSnapshot(t, strings.Join(kinds, "\n"), snaps.Inline(`abstract-op: total 701, receiver 0, args 50, unattributable 39, incomplete 226, classifiable 449
+builtin-method: total 313, receiver 65, args 0, unattributable 3, incomplete 22, classifiable 289
 builtin-static: total 188, receiver 0, args 20, unattributable 21, incomplete 38, classifiable 145`))
 }
