@@ -1,9 +1,0 @@
-export const arr1 = makeArray(5);
-export const arr2 = makeArray(5, 3);
-export const genResult = identity("world");
-export const r1 = process(123);
-export const r2 = process("test");
-export const r3 = process(true);
-export const result1 = format(42);
-export const result2 = format("hello");
-//# sourceMappingURL=./index.js.map

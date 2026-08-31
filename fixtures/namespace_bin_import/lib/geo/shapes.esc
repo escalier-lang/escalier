@@ -1,6 +1,8 @@
-// A bin script consumes both of these, so they carry the `export` keyword and
-// reach the emitted `geo` object as properties.
-export class Point {
+// Neither declaration carries the `export` keyword, so both are package-private.
+// A bin script is part of the package, so it imports the internal bundle and
+// reaches them anyway. The public wrapper leaves the `geo` object out entirely,
+// because the namespace has no exported members.
+class Point {
     x: number,
     y: number,
     constructor(mut self, x: number, y: number) {
@@ -9,6 +11,6 @@ export class Point {
     },
 }
 
-export fn makeOrigin() -> Point {
+fn makeOrigin() -> Point {
     return Point(0, 0)
 }
