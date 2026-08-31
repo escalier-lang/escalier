@@ -810,7 +810,7 @@ func TestPrintSchemeParamsLeakAnchor(t *testing.T) {
 		Params: []*FuncParam{identP("x", param)},
 		Ret:    &TupleType{Elems: []Type{param, leaked}},
 	}
-	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil, nil)
+	got := PrintAsSchemeWith(ty, func(v *TypeVarType) bool { return v.Level > 1 }, nil, nil, nil)
 	require.Equal(t, "fn <T0>(x: T0) -> [T0, t99]", got)
 }
 
@@ -832,7 +832,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 			Params: []*FuncParam{identP("value", tv), identP("tail", node)},
 			Ret:    node,
 		})
-		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: tv}})
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: tv}}, nil)
 		require.Equal(t, "<T> {new (value: T, tail: Node<T>) -> Node<T>}", got)
 	})
 
@@ -847,7 +847,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 			Ret:    pair,
 		})
 		got := PrintAsSchemeWith(obj, quantified, nil,
-			[]*TypeParam{{Name: "K", Var: k}, {Name: "V", Var: v}})
+			[]*TypeParam{{Name: "K", Var: k}, {Name: "V", Var: v}}, nil)
 		require.Equal(t, "<K, V> {new (v: V, k: K) -> Pair<K, V>}", got)
 	})
 
@@ -860,7 +860,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 			Params: []*FuncParam{identP("a", declared), identP("b", extra)},
 			Ret:    &ClassType{Name: "C", TypeArgs: []Type{declared}},
 		})
-		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T0", Var: declared}})
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T0", Var: declared}}, nil)
 		require.Equal(t, "<T0, T1> {new (a: T0, b: T1) -> C<T0>}", got)
 	})
 
@@ -874,7 +874,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 			Ret:    &ClassType{Name: "C", TypeArgs: []Type{tv}},
 		})
 		got := PrintAsSchemeWith(obj, quantified, nil,
-			[]*TypeParam{{Name: "T", Var: tv}, {Name: "E", Var: leaked}})
+			[]*TypeParam{{Name: "T", Var: tv}, {Name: "E", Var: leaked}}, nil)
 		require.Equal(t, "<T> {new (a: T, b: t99) -> C<T>}", got)
 	})
 
@@ -891,7 +891,7 @@ func TestPrintSchemeDeclaredNames(t *testing.T) {
 				Ret:        outer,
 			}}},
 		}}
-		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: outer}})
+		got := PrintAsSchemeWith(obj, quantified, nil, []*TypeParam{{Name: "T", Var: outer}}, nil)
 		require.Equal(t, "<T> {v: T, m<T_2>(x: T_2) -> T}", got)
 	})
 }

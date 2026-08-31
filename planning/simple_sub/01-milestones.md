@@ -1369,10 +1369,9 @@ a desugaring rule — rather than opaque placeholders.
   requirements' canonical cyclic `build()`, which wires the graph with `.push`, is not yet
   expressible. This milestone is the prerequisite: it resolves `Array<T>` and its method
   surface (`push`, …), which `internal/solver` has no representation for today — there is no
-  `Array` type and no array/tuple method call. What remains after it — a lifetime parameter on
-  the container type to tie the element borrow to the receiver, and the receiver's own type at
-  the call site, which `memberValue` strips — is affine work tracked under "Deferred and out
-  of scope" in
+  `Array` type and no array/tuple method call. What remains after it — the receiver's own type
+  at the call site, which `memberValue` strips — is affine work tracked under "Deferred and
+  out of scope" in
   [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md).
   Recorded here so the dependency is visible from the milestone that unblocks it.
 

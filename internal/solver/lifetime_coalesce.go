@@ -61,8 +61,10 @@ import (
 // coalesced type was built from. Every caller coalesces a display type from the
 // Positive root today, so this is Positive in practice. Threading it keeps the
 // lifetime analysis consistent with the coalescing polarity rather than assuming it.
-func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
-	a := newLtAnalysis(walkLtOcc(t, pol))
+func coalesceLifetimes(t soltype.Type, pol soltype.Polarity, keepLts set.Set[*soltype.LifetimeVar]) soltype.Type {
+	occ, noElide := walkLtOcc(t, pol)
+	a := newLtAnalysis(occ, noElide)
+	a.keepLts = keepLts
 	return t.Accept(&ltRewriter{a: a}, pol)
 }
 
@@ -206,11 +208,17 @@ func walkLtOcc(t soltype.Type, pol soltype.Polarity) (
 // connected-component leader of each representative, and the set of component leaders
 // that hold a positive output lifetime.
 type ltAnalysis struct {
-	occ      map[*soltype.LifetimeVar]occPolarity
-	noElide  set.Set[*soltype.LifetimeVar] // lifetimes that must keep their name; never elided
-	bs       *ltBoundSet                   // condensed outlives graph; rep IDs collapse mutual-outlives cycles
-	comp     map[int]int                   // representative ID -> connected-component leader ID in bs
-	posComps set.Set[int]                  // component leaders reaching a positive occurrence
+	occ     map[*soltype.LifetimeVar]occPolarity
+	noElide set.Set[*soltype.LifetimeVar] // lifetimes that must keep their name; never elided
+	// keepLts holds the lifetimes a caller pins by identity, whatever their occurrences say.
+	// freezeClassBody passes a class's own lifetime parameters: a field such as
+	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
+	// drop it and leave the frozen body with nothing for an instance's argument to replace.
+	// Nil for every caller that pins nothing.
+	keepLts  set.Set[*soltype.LifetimeVar]
+	bs       *ltBoundSet  // condensed outlives graph; rep IDs collapse mutual-outlives cycles
+	comp     map[int]int  // representative ID -> connected-component leader ID in bs
+	posComps set.Set[int] // component leaders reaching a positive occurrence
 }
 
 // newLtAnalysis builds the grouping from the structurally-occurring lifetime
@@ -314,6 +322,12 @@ func (a *ltAnalysis) componentParams(v *soltype.LifetimeVar) []*soltype.Lifetime
 func (a *ltAnalysis) resolveLt(v *soltype.LifetimeVar) (lt soltype.Lifetime, elide bool) {
 	if forcedToStatic(v) {
 		return soltype.Static, false
+	}
+	// A pinned lifetime renders under its own name wherever it occurs. A class parameter is
+	// the pinned case: it is named by the declaration, not by the member the walk is
+	// coalescing, so the member's own occurrences do not decide whether it survives.
+	if a.keepLts.Contains(v) {
+		return v, false
 	}
 	if a.isParam(v) {
 		if a.kept(v) || a.noElide.Contains(v) {
@@ -480,6 +494,24 @@ func (r *ltRewriter) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 }
 
 func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
+	switch t := t.(type) {
+	case *soltype.ClassType:
+		args, changed := r.resolveArgs(t.LifetimeArgs)
+		if !changed {
+			return t
+		}
+		cp := *t
+		cp.LifetimeArgs = args
+		return &cp
+	case *soltype.AliasType:
+		args, changed := r.resolveArgs(t.LifetimeArgs)
+		if !changed {
+			return t
+		}
+		cp := *t
+		cp.LifetimeArgs = args
+		return &cp
+	}
 	rt, ok := t.(*soltype.RefType)
 	if !ok || rt.Lt == nil {
 		return t
@@ -498,6 +530,36 @@ func (r *ltRewriter) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type {
 		return &soltype.RefType{Mut: rt.Mut, Lt: soltype.Anon, Inner: rt.Inner}
 	}
 	return &soltype.RefType{Mut: rt.Mut, Lt: resolved, Inner: rt.Inner}
+}
+
+// resolveArgs rewrites a class or alias reference's lifetime arguments to their display
+// form, so `Holder<'x>` constrained to outlive 'static renders `Holder<'static>` the way the
+// borrow `&'x B` under the same constraint renders `&'static B`. changed is false when every
+// argument came back unchanged, which lets the caller keep the node it was handed.
+//
+// An argument the analysis would elide keeps its variable. Eliding drops the `'a` from a
+// borrow and leaves the `&`, but an argument position has no such reduced form to fall back
+// on, so dropping it would leave the reference short an argument.
+func (r *ltRewriter) resolveArgs(args []soltype.Lifetime) ([]soltype.Lifetime, bool) {
+	if len(args) == 0 {
+		return args, false
+	}
+	out := make([]soltype.Lifetime, len(args))
+	changed := false
+	for i, arg := range args {
+		out[i] = arg
+		lv, isVar := arg.(*soltype.LifetimeVar)
+		if !isVar {
+			continue
+		}
+		resolved, elide := r.a.resolveLt(lv)
+		if elide || resolved == arg {
+			continue
+		}
+		out[i] = resolved
+		changed = true
+	}
+	return out, changed
 }
 
 // forcedToStatic reports whether a lifetime variable has 'static among its bounds,

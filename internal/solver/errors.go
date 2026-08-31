@@ -2028,7 +2028,20 @@ type UndeclaredLifetimeError struct {
 	Name        string
 	Suggestions []string // nearest declared siblings by edit distance; empty when none is close
 	hasClause   bool     // whether the signature carries any `<…>` binder at all
-	span        ast.Span
+	// binder names what the missing `<…>` clause belongs to, so the hint points at the
+	// declaration the reader has to edit. Empty reads as "function signature", the case a
+	// signature's own scan reports; a class field's scan names the class instead.
+	binder string
+	span   ast.Span
+}
+
+// binderOrDefault resolves the binder label the hint names, defaulting to the function
+// signature a use inside one belongs to.
+func (e *UndeclaredLifetimeError) binderOrDefault() string {
+	if e.binder == "" {
+		return "function signature"
+	}
+	return e.binder
 }
 
 func (*UndeclaredLifetimeError) isSolverError()        {}
@@ -2039,7 +2052,7 @@ func (e *UndeclaredLifetimeError) Message() string {
 	msg := "lifetime '" + e.Name + " is used but not declared"
 	switch {
 	case !e.hasClause:
-		msg += "; add `<'" + e.Name + ">` to the enclosing function signature"
+		msg += "; add `<'" + e.Name + ">` to the enclosing " + e.binderOrDefault()
 	case len(e.Suggestions) > 0:
 		msg += "; did you mean '" + strings.Join(e.Suggestions, " or '") + "?"
 	default:

@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"maps"
 	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -51,7 +52,26 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// The class's type parameters and the scope its body resolves in, taken from the module
 	// SCC pre-pass when there was one and resolved here when there was not.
 	paramsClean := c.classParamsClean(decl)
-	declScope, typeParams := c.classDeclScope(scope, lvl, decl)
+	declScope, shell := c.classDeclScope(scope, lvl, decl)
+	typeParams := shell.typeParams
+
+	// A member signature may write the class's `'a` without binding it itself. inferFunc and
+	// resolveFuncTypeAnn seed each nested signature's own scope from this map, so the `&'a`
+	// they resolve reaches the variable the class parameter carries rather than minting one
+	// of its own. It holds the declared parameters and nothing else: the shell's map is
+	// written only by resolveClassLifetimeParams, and every reader below copies before
+	// minting, so an undeclared name a field writes cannot intern itself as a class binder.
+	savedClassLts := c.declLifetimes
+	c.declLifetimes = shell.namedLts
+	defer func() { c.declLifetimes = savedClassLts }()
+
+	// Resolve the body under a copy of that scope, so a `&'a` written in a field reaches the
+	// class parameter while a name the body mints stays out of the shell's map. A class is
+	// only ever inferred at top level, so saving and restoring is enough to keep the scope
+	// from leaking into a sibling declaration.
+	savedNamedLts := c.namedLifetimes
+	c.namedLifetimes = maps.Clone(shell.namedLts)
+	defer func() { c.namedLifetimes = savedNamedLts }()
 
 	// The instance's nominal identity and its heavy ClassDef. getOrCreateClass returns
 	// the pair the SCC pre-pass registered for this class — an empty shell it minted
@@ -68,8 +88,10 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// resolves — fills in the resolved type params. The handle carries the class's own
 	// type-parameter vars as its arguments.
 	self.TypeArgs = typeParamVars(typeParams)
+	self.LifetimeArgs = lifetimeParamVars(shell.lifetimeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams
+	def.LifetimeParams = shell.lifetimeParams
 	def.Variance = make([]Variance, len(typeParams))
 	def.MutVariance = make([]Variance, len(typeParams))
 	body := def.Body
@@ -91,6 +113,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// resolves through the pre-declared sibling signature — self-recursive, mutually
 	// recursive, or a forward call to a member declared later.
 	ctors := c.collectConstructors(decl)
+	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(declScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(declScope, lvl, decl, self, body, static)
 	// A mutually recursive method group with no annotated return cannot ground its own
@@ -111,14 +134,18 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// lookup can substitute an instance's argument for them (B8): a plain freeze would
 	// collapse a member typed through `T`, such as `read(self) { self.v }`, to `never`
 	// because the intermediate inference var's only bound is the still-unconstrained `T`.
+	// The class's own lifetime parameters are pinned through the freeze. A field such as
+	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
+	// drop it and leave an instance's lifetime argument with nothing to replace.
+	keepLts := classKeepLifetimes(shell.lifetimeParams)
 	if len(typeParams) == 0 {
-		c.freezeClassBody(body, nil, nil)
-		c.freezeClassBody(static, nil, nil)
+		c.freezeClassBody(body, nil, nil, keepLts)
+		c.freezeClassBody(static, nil, nil, keepLts)
 	} else {
 		keep := classKeepVars(typeParams, body, static)
 		flow := keptFlowMap(keep)
-		c.freezeClassBody(body, keep, flow)
-		c.freezeClassBody(static, keep, flow)
+		c.freezeClassBody(body, keep, flow, keepLts)
+		c.freezeClassBody(static, keep, flow, keepLts)
 	}
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
@@ -283,15 +310,79 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 // parameters, reusing what preBindClassTypeParams produced for this declaration. A generic
 // class gets a child scope holding its parameters, so the body reads each `T` as the one
 // shared var the ClassDef stores. A non-generic class reuses the enclosing scope.
-func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*Scope, []*soltype.TypeParam) {
+func (c *checker) classDeclScope(scope *Scope, lvl int, decl *ast.ClassDecl) (*Scope, *classShell) {
 	if sh, ok := c.classShells[decl]; ok {
-		return sh.declScope, sh.typeParams
+		return sh.declScope, sh
 	}
-	if len(decl.TypeParams) == 0 {
-		return scope, nil
+	sh := &classShell{declScope: scope, paramsClean: true}
+	c.resolveClassParams(scope, lvl, decl, sh)
+	return sh.declScope, sh
+}
+
+// resolveClassParams fills sh with the class's parameters of both sorts, resolved under one
+// named-lifetime scope of the class's own. Isolating the scope keeps one class's `'a`
+// independent of a sibling's, and the scope is kept so inferClassDecl can install it around
+// the body and have every `&'a` there share one variable.
+//
+// The type parameters resolve first, inside that scope, so a bound written `<'a, T: &'a X>`
+// reaches the same variable the `'a` parameter carries rather than minting one of its own.
+// preBindAlias orders the two the same way.
+func (c *checker) resolveClassParams(scope *Scope, lvl int, decl *ast.ClassDecl, sh *classShell) {
+	saved := c.namedLifetimes
+	c.namedLifetimes = nil
+	defer func() { c.namedLifetimes = saved }()
+
+	sh.declScope = scope
+	if len(decl.TypeParams) > 0 {
+		sh.declScope = scope.Child()
+		sh.typeParams = c.resolveTypeParams(sh.declScope, lvl, decl.TypeParams)
 	}
-	declScope := scope.Child()
-	return declScope, c.resolveTypeParams(declScope, lvl, decl.TypeParams)
+	sh.lifetimeParams = c.resolveLifetimeParams(lvl, decl.LifetimeParams)
+	sh.namedLts = c.classLifetimeScope(decl, sh.lifetimeParams)
+}
+
+// classLifetimeScope maps each name the class's `<…>` clause binds to the variable its
+// parameter carries. It is built from the declared parameters rather than from the map
+// resolveLifetimeParams minted into, since a bound clause such as `<'a: 'b>` interns 'b there
+// too and 'b binds nothing a reference can supply.
+//
+// A name bound twice binds nothing new, so the repeat is reported and the first binder's
+// variable is kept, matching what checkLifetimeDeclarations does for a signature.
+func (c *checker) classLifetimeScope(
+	decl *ast.ClassDecl, params []*soltype.LifetimeParam,
+) map[string]*soltype.LifetimeVar {
+	first := map[string]*ast.LifetimeParam{}
+	for _, p := range decl.LifetimeParams {
+		if kept, seen := first[p.Name]; seen {
+			c.report(&DuplicateLifetimeParamError{Name: p.Name, Param: p, First: kept})
+			continue
+		}
+		first[p.Name] = p
+	}
+	return declaredLifetimeScope(decl.LifetimeParams, params)
+}
+
+// declaredLifetimeScope maps each name a declaration's `<…>` clause binds to the variable its
+// parameter carries, keeping the first binder when a name is bound twice. A class and a type
+// alias both build their nested-signature scope from it.
+//
+// It reads the declared parameters rather than the map resolveLifetimeParams minted into,
+// since a bound clause such as `<'a: 'b>` interns 'b there too and 'b binds nothing a
+// reference can supply.
+func declaredLifetimeScope(
+	written []*ast.LifetimeParam, resolved []*soltype.LifetimeParam,
+) map[string]*soltype.LifetimeVar {
+	out := make(map[string]*soltype.LifetimeVar, len(resolved))
+	for i, p := range written {
+		if i >= len(resolved) {
+			break
+		}
+		if _, seen := out[p.Name]; seen {
+			continue
+		}
+		out[p.Name] = resolved[i].Var
+	}
+	return out
 }
 
 // classParamsClean reports whether the module pre-pass resolved this class's type parameters
@@ -319,19 +410,17 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	defer func() { c.classNamespace = prevNS }()
 
 	quiet := c.errorWindow()
-	declScope := scope
-	var typeParams []*soltype.TypeParam
-	if len(decl.TypeParams) > 0 {
-		declScope = scope.Child()
-		typeParams = c.resolveTypeParams(declScope, lvl, decl.TypeParams)
-	}
+	sh := &classShell{}
+	c.resolveClassParams(scope, lvl, decl, sh)
+	sh.paramsClean = quiet()
 	if c.classShells == nil {
 		c.classShells = map[*ast.ClassDecl]*classShell{}
 	}
-	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams, paramsClean: quiet()}
+	c.classShells[decl] = sh
 
 	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
-		def.TypeParams = typeParams
+		def.TypeParams = sh.typeParams
+		def.LifetimeParams = sh.lifetimeParams
 	}
 }
 
@@ -344,6 +433,53 @@ func qualifyClassName(ns string, decl *ast.ClassDecl) string {
 		return decl.Name.Name
 	}
 	return ns + "." + decl.Name.Name
+}
+
+// nestedLifetimeScope returns the named-lifetime scope a signature nested in a class body
+// starts from: the class's own parameters, minus every name the signature rebinds. A rebound
+// name shadows the class's, so the `'a` of `pick<'a>` inside `class Holder<'a>` is a lifetime
+// of its own rather than the class's. own is the signature's `<…>` clause.
+//
+// The result is a fresh map, so a name the signature mints stays out of the class's scope and
+// out of a sibling signature's. It is nil outside a class body, where a signature starts from
+// nothing.
+func (c *checker) nestedLifetimeScope(own []*ast.LifetimeParam) map[string]*soltype.LifetimeVar {
+	if len(c.declLifetimes) == 0 {
+		return nil
+	}
+	out := maps.Clone(c.declLifetimes)
+	for _, p := range own {
+		delete(out, p.Name)
+	}
+	return out
+}
+
+// classKeepLifetimes returns the lifetime variables a class's own parameters carry, the set
+// freezeClassBody pins so a member holding one keeps it under the parameter's name. It is nil
+// for a class that quantifies no lifetime, where the freeze has nothing to pin.
+func classKeepLifetimes(params []*soltype.LifetimeParam) set.Set[*soltype.LifetimeVar] {
+	if len(params) == 0 {
+		return nil
+	}
+	out := set.NewSet[*soltype.LifetimeVar]()
+	for _, p := range params {
+		out.Add(p.Var)
+	}
+	return out
+}
+
+// lifetimeParamVars returns each lifetime parameter's var, the lifetime arguments a class's
+// own instance carries. The Self reference `Holder<'a>` fills its LifetimeArgs with them, so
+// a member reading `self` sees the class at its own parameters rather than at fresh ones.
+func lifetimeParamVars(params []*soltype.LifetimeParam) []soltype.Lifetime {
+	if len(params) == 0 {
+		return nil
+	}
+	out := make([]soltype.Lifetime, len(params))
+	for i, p := range params {
+		out[i] = p.Var
+	}
+	return out
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own
@@ -423,24 +559,32 @@ func (c *checker) resolveClassRef(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int
 // TypeParams. Arity still counts it, and an omitted argument recovers to a fresh var.
 func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *ast.TypeRefTypeAnn, lvl int) *soltype.ClassType {
 	var params []*soltype.TypeParam
+	var ltParams []*soltype.LifetimeParam
 	// An unregistered name has no declared count to check against, so take the reference's own
 	// as the expected one and let it through unreported.
 	arity := typeParamArity{Required: len(ref.TypeArgs), Total: len(ref.TypeArgs)}
 	if def, ok := c.ctx.classDef(ct.Name); ok {
 		params = def.TypeParams
+		ltParams = def.LifetimeParams
 		arity = def.Arity
 	}
+	ltArgs := c.resolveLifetimeArgs(ref, ClassDeclKind, ltParams, lvl)
 	args := c.resolveTypeArgs(scope, ref, ClassDeclKind, params, arity, lvl)
-	if len(args) == 0 {
-		// The class declares no type parameters and the reference wrote no arguments, or it
-		// wrote some against a non-generic class and resolveTypeArgs already reported them.
-		// Either way the handle carries no arguments, so return the declaration's own.
+	if len(args) == 0 && len(ltArgs) == 0 {
+		// The class declares neither sort of parameter and the reference wrote no arguments,
+		// or it wrote some against a non-generic class and the two resolvers above already
+		// reported them. Either way the handle carries no arguments, so return the
+		// declaration's own.
 		return ct
 	}
-	// A class reference carries no lifetime arguments today, so the bound check substitutes
-	// the type sort only.
-	c.checkTypeArgBounds(params, args, nil, nil, ref)
-	return &soltype.ClassType{Name: ct.Name, TypeArgs: args, Final: ct.Final, Variant: ct.Variant}
+	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref)
+	return &soltype.ClassType{
+		Name:         ct.Name,
+		TypeArgs:     args,
+		LifetimeArgs: ltArgs,
+		Final:        ct.Final,
+		Variant:      ct.Variant,
+	}
 }
 
 // lookupClassBinding resolves a written type name to its scope TypeBinding, honoring
@@ -516,6 +660,54 @@ func (c *checker) collectConstructors(decl *ast.ClassDecl) []*ast.ConstructorEle
 		}
 	}
 	return ctors
+}
+
+// checkClassBodyLifetimes reports a named lifetime the class writes outside a member
+// signature that its `<…>` clause does not bind. Three places carry one: a field's
+// annotation, and the `extends` and `implements` references. A member signature is checked by
+// checkLifetimeDeclarations, which scans a signature's parameters and return and so reaches
+// none of the three.
+//
+// Without this a field's `&'z` interns 'z through namedLifetime, and two fields writing it
+// would share a lifetime the class quantifies but no reference can supply — the class value
+// would render a binder over an argument its instances do not carry.
+//
+// A lifetime argument on a type reference counts here, unlike in a signature's scan. There a
+// reference recovers an undeclared argument on its own and reporting it would double up; a
+// class body has no other check to double up with.
+func (c *checker) checkClassBodyLifetimes(decl *ast.ClassDecl) {
+	var col lifetimeUseCollector
+	for _, elem := range decl.Body {
+		field, isField := elem.(*ast.FieldElem)
+		if !isField || field.Type == nil {
+			continue
+		}
+		field.Type.Accept(&col)
+	}
+	if decl.Extends != nil {
+		decl.Extends.Accept(&col)
+	}
+	for _, impl := range decl.Implements {
+		impl.Accept(&col)
+	}
+
+	hasClause := len(decl.LifetimeParams) > 0
+	declaredOrder := make([]string, 0, len(decl.LifetimeParams))
+	for _, p := range decl.LifetimeParams {
+		declaredOrder = append(declaredOrder, p.Name)
+	}
+	for _, u := range append(col.uses, col.refArgs...) {
+		if _, ok := c.declLifetimes[u.Name]; ok {
+			continue
+		}
+		c.report(&UndeclaredLifetimeError{
+			Name:        u.Name,
+			Suggestions: nearestLifetimes(u.Name, declaredOrder),
+			hasClause:   hasClause,
+			binder:      "class declaration",
+			span:        u.Span(),
+		})
+	}
 }
 
 // buildFieldSigs adds one PropertyElem per field to the instance or static body,
@@ -1058,11 +1250,16 @@ func keptFlowMap(keep set.Set[*soltype.TypeVarType]) map[*soltype.TypeVarType][]
 // coalesceThrows coalesces an accessor's throws position, keeping the nil shorthand that
 // stands for `never` rather than materializing a `never` the accessor was never written
 // with. The position is covariant, so it always coalesces positively.
-func coalesceThrows(t soltype.Type, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) soltype.Type {
+func coalesceThrows(
+	t soltype.Type,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+	keepLts set.Set[*soltype.LifetimeVar],
+) soltype.Type {
 	if t == nil {
 		return nil
 	}
-	return coalesceKeeping(t, soltype.Positive, keep, flow)
+	return coalesceKeeping(t, soltype.Positive, keep, flow, keepLts)
 }
 
 // freezeClassBody coalesces each member's type in place so member lookup and the
@@ -1076,31 +1273,36 @@ func coalesceThrows(t soltype.Type, keep set.Set[*soltype.TypeVarType], flow map
 // inlined to their bounds — and the kept-flow map so a member typed through a class parameter,
 // such as `read(self) { self.v }` on `class Box<T>`, reads `T` rather than collapsing to
 // `never`, leaving `T` in place for projectClassMember to substitute at an instance's argument.
-func (c *checker) freezeClassBody(obj *soltype.ObjectType, keep set.Set[*soltype.TypeVarType], flow map[*soltype.TypeVarType][]*soltype.TypeVarType) {
+func (c *checker) freezeClassBody(
+	obj *soltype.ObjectType,
+	keep set.Set[*soltype.TypeVarType],
+	flow map[*soltype.TypeVarType][]*soltype.TypeVarType,
+	keepLts set.Set[*soltype.LifetimeVar],
+) {
 	for i, e := range obj.Elems {
 		switch e := e.(type) {
 		case *soltype.PropertyElem:
-			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow), Optional: e.Optional, Readonly: e.Readonly}
+			obj.Elems[i] = &soltype.PropertyElem{Name: e.Name, Type: coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts), Optional: e.Optional, Readonly: e.Readonly}
 		case *soltype.GetterElem:
 			obj.Elems[i] = &soltype.GetterElem{
 				Name:      e.Name,
 				SelfParam: e.SelfParam,
-				Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow),
-				Throws:    coalesceThrows(e.Throws, keep, flow),
+				Type:      coalesceKeeping(e.Type, soltype.Positive, keep, flow, keepLts),
+				Throws:    coalesceThrows(e.Throws, keep, flow, keepLts),
 			}
 		case *soltype.SetterElem:
 			obj.Elems[i] = &soltype.SetterElem{
 				Name:      e.Name,
 				SelfParam: e.SelfParam,
-				Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow),
+				Param:     coalesceKeeping(e.Param, soltype.Negative, keep, flow, keepLts),
 				// A setter's written value coalesces negatively, but what the write raises
 				// flows out to the writer, so its throws position still coalesces positively.
-				Throws: coalesceThrows(e.Throws, keep, flow),
+				Throws: coalesceThrows(e.Throws, keep, flow, keepLts),
 			}
 		case *soltype.MethodElem:
 			sigs := make([]*soltype.FuncType, len(e.Signatures))
 			for j, sig := range e.Signatures {
-				if cs, ok := coalesceKeeping(sig, soltype.Positive, keep, flow).(*soltype.FuncType); ok {
+				if cs, ok := coalesceKeeping(sig, soltype.Positive, keep, flow, keepLts).(*soltype.FuncType); ok {
 					sigs[j] = cs
 				} else {
 					sigs[j] = sig

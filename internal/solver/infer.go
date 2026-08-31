@@ -78,6 +78,15 @@ type checker struct {
 	// same reason. The map is allocated lazily by namedLifetime on first use.
 	namedLifetimes map[string]*soltype.LifetimeVar
 
+	// declLifetimes maps each lifetime name the enclosing declaration binds to the variable
+	// its parameter carries. A class and a type alias both quantify lifetimes, and a
+	// signature nested in either may write `&'a` with no clause of its own, so inferFunc and
+	// resolveFuncTypeAnn seed the nested scope from this and checkLifetimeDeclarations reads
+	// the names as declared. It is nil outside such a body, and a nested signature never
+	// writes into it: both readers copy before minting, so a name one mints stays out of the
+	// declaration's scope and out of a sibling signature's.
+	declLifetimes map[string]*soltype.LifetimeVar
+
 	// classNamespace is the dep_graph namespace of the class declaration currently
 	// being inferred, empty at the root namespace and outside any class body.
 	// inferClassDecl sets it on entry and restores it on exit. A class-body type
@@ -145,6 +154,12 @@ type checker struct {
 type classShell struct {
 	declScope  *Scope
 	typeParams []*soltype.TypeParam
+	// lifetimeParams are the class's quantified `<'a, ...>` parameters, and namedLts is the
+	// named-lifetime scope they were minted in. inferClassDecl installs namedLts around the
+	// body walk, so a `&'a` written in a field or a member signature resolves to the same
+	// variable the parameter carries rather than minting one of its own.
+	lifetimeParams []*soltype.LifetimeParam
+	namedLts       map[string]*soltype.LifetimeVar
 	// paramsClean records that the parameters resolved with no diagnostic. The module SCC
 	// pre-pass resolves them, so a bad bound or default is reported before inferClassDecl
 	// opens its own window and only this carries that news forward. A parameter whose
