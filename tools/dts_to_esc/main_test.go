@@ -102,7 +102,7 @@ func TestRun_BootstrapWithCFGPrintsEveryReport(t *testing.T) {
   curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
   coercion filter: 4882 TypeError sites adjudicated, 362 dropped
   receivers: 194 confirmed by a heuristic, 24 redundant overrides, 0 disagreements, 48 answered by the facts alone, 37 overrides no fact answers
-  return seeds: 22 to annotate, 232 owned, 247 open
+  return aliases: 22 borrowing, 232 owned, 247 open
   join: 1 matched (1 with a receiver claim), 0 declarations without a fact, 436 facts without a declaration, 0 unkeyed declarations, 64 unjoinable facts
   returns: 1 settled as owned by the declared type, 0 left unknown`))
 }

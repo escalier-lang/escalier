@@ -688,45 +688,45 @@ returns unknown: 247
 total: 501`))
 }
 
-// The seed surface §8.2 reads. Every name here is an annotation a curator
-// writes, so the snapshot is the work list, and a spec bump that adds or
-// retires a borrowing return moves it rather than staling a hand-kept list in
-// the planning docs.
-func TestFactsReturnSeedsAreListed(t *testing.T) {
-	report := testFacts(t).ReturnSeeds()
+// The returns §8.2 reads. Every name here is an annotation a curator writes,
+// so the snapshot is the work list, and a spec bump that adds or retires a
+// borrowing return moves it rather than staling a hand-kept list in the
+// planning docs.
+func TestFactsBorrowingReturnsAreListed(t *testing.T) {
+	report := testFacts(t).BorrowingReturns()
 
 	var sb strings.Builder
-	require.NoError(t, WriteReturnsReport(report, &sb))
+	require.NoError(t, WriteReturnAliasReport(report, &sb))
 	snaps.MatchSnapshot(t, sb.String())
 
 	// The three tallies partition the published builtins, so nothing falls
 	// between the returns that need an annotation and the two kinds that
 	// need none.
-	require.Equal(t, len(testFacts(t).Methods), len(report.Seeds)+report.Owned+report.Open)
+	require.Equal(t, len(testFacts(t).Methods), len(report.Borrowing)+report.Owned+report.Open)
 	// The open count is the same set Unclassified names on the returns axis.
 	require.Equal(t, len(testFacts(t).Unclassified(AxisReturns)), report.Open)
 }
 
 // A `fresh` return is owned and an `unknown` one names no value, so neither
-// reaches the seed list. `Demo.prototype.read` returns its receiver and
-// `Demo.prototype.opaque` resolves to the lattice top.
-func TestReturnSeedsExcludeTheKindsThatSeedNothing(t *testing.T) {
+// borrows and neither is listed. `Demo.prototype.read` returns its receiver
+// and `Demo.prototype.opaque` resolves to the lattice top.
+func TestBorrowingReturnsExcludeOwnedAndOpen(t *testing.T) {
 	_, methods := demoFacts(t)
 	facts := &Facts{Methods: methods}
 
-	report := facts.ReturnSeeds()
+	report := facts.BorrowingReturns()
 
-	require.Equal(t, []ReturnSeed{
+	require.Equal(t, []BorrowingReturn{
 		{Name: "Demo.prototype.read", Fact: ReturnFact{Kind: AliasReceiver}},
-	}, report.Seeds)
+	}, report.Borrowing)
 	require.Equal(t, 0, report.Owned)
 	require.Equal(t, 1, report.Open)
 }
 
-// Seeds sort by alias kind, then by the returned position, then by name, so a
-// curator reads the parameter returns in position order rather than in the
-// order `param(10)` would take lexically.
-func TestReturnSeedsSortByKindThenPositionThenName(t *testing.T) {
+// Borrowing returns sort by alias kind, then by the returned position, then by
+// name, so a curator reads the parameter returns in position order rather than
+// in the order `param(10)` would take lexically.
+func TestBorrowingReturnsSortByKindThenPositionThenName(t *testing.T) {
 	facts := &Facts{Methods: map[string]MethodFact{
 		"C.two":   {Returns: returnsParam(10)},
 		"C.one":   {Returns: returnsParam(2)},
@@ -736,8 +736,8 @@ func TestReturnSeedsSortByKindThenPositionThenName(t *testing.T) {
 	}}
 
 	var names []string
-	for _, seed := range facts.ReturnSeeds().Seeds {
-		names = append(names, seed.Fact.String()+" "+seed.Name)
+	for _, ret := range facts.BorrowingReturns().Borrowing {
+		names = append(names, ret.Fact.String()+" "+ret.Name)
 	}
 
 	require.Equal(t, []string{

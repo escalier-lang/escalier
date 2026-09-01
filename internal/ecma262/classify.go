@@ -555,45 +555,47 @@ func (f *Facts) Incomplete() []string {
 	return holes
 }
 
-// ReturnSeed is one builtin whose return borrows a value the caller holds, so
-// its declaration needs a lifetime annotation someone writes.
-type ReturnSeed struct {
+// BorrowingReturn is one builtin whose return borrows a value the caller
+// holds, so its declaration needs a lifetime annotation someone writes.
+type BorrowingReturn struct {
 	Name string
 	Fact ReturnFact
 }
 
-// ReturnsReport is FR4's seed surface for one run. Seeds names every builtin a
-// curator has to annotate. Owned and Open count the two kinds nobody annotates.
+// ReturnAliasReport sorts one run's published returns into what each one hands
+// back. A borrowing return names a value the caller holds. An owned return
+// hands back a value the algorithm made. An open return names nothing the
+// walk could resolve.
 //
-// That split is what makes this the counterpart of
+// The split is what makes this the counterpart of
 // Facts.Unclassified(AxisReturns) rather than a rephrasing of it. Unclassified
 // names the returns the analysis could not resolve, which is how §4 is
-// measured. Seeds names the returns it resolved to a borrow, which is the
+// measured. Borrowing names the returns it resolved to a borrow, which is the
 // curation those returns create.
-type ReturnsReport struct {
-	// Seeds holds the receiver, parameter, and union returns, sorted by alias
-	// kind, then by returned position, then by name.
-	Seeds []ReturnSeed
+type ReturnAliasReport struct {
+	// Borrowing holds the receiver, parameter, and union returns, sorted by
+	// alias kind, then by returned position, then by name.
+	Borrowing []BorrowingReturn
 	// Owned counts the `fresh` returns. An owned value has no lifetime to
 	// bound, so its declaration needs nothing.
 	Owned int
 	// Open counts the `unknown` returns. The lattice top names no value to
-	// borrow, so there is nothing to seed an annotation from. A fact carrying
-	// no return kind at all is counted here too. Facts.Incomplete refuses that
-	// hole before a run reaches this report, and reading it as open keeps a
-	// hand-built fact set out of the work list rather than in it.
+	// borrow, so no annotation follows from one. A fact carrying no return
+	// kind at all is counted here too. Facts.Incomplete refuses that hole
+	// before a run reaches this report, and reading it as open keeps a
+	// hand-built fact set out of the borrowing list rather than in it.
 	Open int
 }
 
-// ReturnSeeds groups the published returns by whether they seed an annotation.
+// BorrowingReturns groups the published returns by what each one hands back.
 //
 // §7 auto-applies the receiver determination and leaves this one to review, so
 // a curator needs the returns the analysis resolved rather than the ones it did
 // not. The alternative is a list of method names someone keeps current, which a
 // spec bump stales without saying so. See
 // planning/ecma-262/return_annotations.md.
-func (f *Facts) ReturnSeeds() ReturnsReport {
-	var report ReturnsReport
+func (f *Facts) BorrowingReturns() ReturnAliasReport {
+	var report ReturnAliasReport
 	for name, fact := range f.Methods {
 		switch fact.Returns.Kind {
 		case AliasFresh:
@@ -601,18 +603,18 @@ func (f *Facts) ReturnSeeds() ReturnsReport {
 		case AliasUnknown, "":
 			report.Open++
 		default:
-			report.Seeds = append(report.Seeds, ReturnSeed{Name: name, Fact: fact.Returns})
+			report.Borrowing = append(report.Borrowing, BorrowingReturn{Name: name, Fact: fact.Returns})
 		}
 	}
-	sort.Slice(report.Seeds, func(i, j int) bool {
-		a, b := report.Seeds[i], report.Seeds[j]
+	sort.Slice(report.Borrowing, func(i, j int) bool {
+		a, b := report.Borrowing[i], report.Borrowing[j]
 		if a.Fact.Kind != b.Fact.Kind {
 			return a.Fact.Kind < b.Fact.Kind
 		}
 		// A union carries no position, and two parameter returns at different
 		// positions are different annotations, so the position orders them
 		// ahead of the name.
-		if ai, bi := seedPosition(a.Fact), seedPosition(b.Fact); ai != bi {
+		if ai, bi := aliasPosition(a.Fact), aliasPosition(b.Fact); ai != bi {
 			return ai < bi
 		}
 		return a.Name < b.Name
@@ -620,29 +622,29 @@ func (f *Facts) ReturnSeeds() ReturnsReport {
 	return report
 }
 
-// seedPosition is the returned parameter's position, and -1 for a return that
+// aliasPosition is the returned parameter's position, and -1 for a return that
 // names none. It exists so the sort reads one comparable value for every kind.
-func seedPosition(r ReturnFact) int {
+func aliasPosition(r ReturnFact) int {
 	if r.Kind != AliasParam || r.Index == nil {
 		return -1
 	}
 	return *r.Index
 }
 
-// WriteReturnsReport prints the annotations FR4 seeds, one line per builtin
-// that needs one. The counts come first so the two kinds needing nothing are
-// accounted for without a line each.
-func WriteReturnsReport(report ReturnsReport, w io.Writer) error {
-	// The label is "return seeds" rather than "returns" because the join
+// WriteReturnAliasReport prints one line per borrowing return, which is one
+// line per annotation a curator writes. The counts come first so the two kinds
+// needing none are accounted for without a line each.
+func WriteReturnAliasReport(report ReturnAliasReport, w io.Writer) error {
+	// The label is "return aliases" rather than "returns" because the join
 	// report prints a "returns" line of its own, counting the returns the
 	// declared type settled as owned. The two answer different questions.
-	_, err := fmt.Fprintf(w, "  return seeds: %d to annotate, %d owned, %d open\n",
-		len(report.Seeds), report.Owned, report.Open)
+	_, err := fmt.Fprintf(w, "  return aliases: %d borrowing, %d owned, %d open\n",
+		len(report.Borrowing), report.Owned, report.Open)
 	if err != nil {
 		return err
 	}
-	for _, seed := range report.Seeds {
-		if _, err := fmt.Fprintf(w, "    %s: %s\n", seed.Fact, seed.Name); err != nil {
+	for _, ret := range report.Borrowing {
+		if _, err := fmt.Fprintf(w, "    %s: %s\n", ret.Fact, ret.Name); err != nil {
 			return err
 		}
 	}

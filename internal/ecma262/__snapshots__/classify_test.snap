@@ -26,8 +26,8 @@ TypedArray.prototype.toLocaleString
 get RegExp.prototype.flags
 ---
 
-[TestFactsReturnSeedsAreListed - 1]
-  return seeds: 22 to annotate, 232 owned, 247 open
+[TestFactsBorrowingReturnsAreListed - 1]
+  return aliases: 22 borrowing, 232 owned, 247 open
     param(0): Object.assign
     param(0): Object.defineProperty
     param(0): Object.freeze

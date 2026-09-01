@@ -179,7 +179,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, return-seed, and effect-fact join reports")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, return-alias, and effect-fact join reports")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, bootstrapUsage)
@@ -269,11 +269,11 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
 		return err
 	}
-	// §8.2's seed surface, printed with the other per-axis reports. Receiver
-	// mutability is auto-applied and needs no such list, while every return
-	// here is an annotation someone writes into the override layer. See
+	// The returns axis, printed with the other per-axis reports. Receiver
+	// mutability is auto-applied and needs no such list, while every borrowing
+	// return here is an annotation someone writes into the override layer. See
 	// planning/ecma-262/return_annotations.md.
-	if err := ecma262.WriteReturnsReport(facts.ReturnSeeds(), stderr); err != nil {
+	if err := ecma262.WriteReturnAliasReport(facts.BorrowingReturns(), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
