@@ -1262,12 +1262,22 @@
 ---
 
 [TestConvertTypeAnn/type_predicate - 1]
-&ast.TypeRefTypeAnn{
-    Name: &ast.Ident{
-        Name: "x",
-        span: 1:1-1:2,
+&ast.FuncTypeAnn{
+    Params: []*ast.Param{
+        &ast.Param{
+            Pattern: &ast.IdentPat{
+                Name: "x",
+                span: 1:2-1:8,
+            },
+            TypeAnn: &ast.AnyTypeAnn{
+                span: 1:5-1:8,
+            },
+        },
     },
-    span: 1:1-1:2,
+    Return: &ast.BooleanTypeAnn{
+        span: 1:13-1:24,
+    },
+    span: 1:1-1:24,
 }
 ---
 
