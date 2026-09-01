@@ -245,6 +245,9 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.ReportPartition(result, stderr); err != nil {
 		return err
 	}
+	if err := dts_to_esc.ReportSingletonKeyDrops(mods, stderr); err != nil {
+		return err
+	}
 	if join == nil {
 		return nil
 	}

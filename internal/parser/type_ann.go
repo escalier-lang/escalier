@@ -25,6 +25,17 @@ type TypeAnnOp struct {
 	Arity int
 }
 
+// noPrimaryTypeAnn is what primaryTypeAnn returns when the token it is looking
+// at starts no type annotation. Nil tells the caller nothing was consumed, so a
+// lifetime prefix already read recovers to an ErrorTypeAnn instead.
+func (p *Parser) noPrimaryTypeAnn(lifetime ast.LifetimeAnnNode) ast.TypeAnn {
+	if lifetime != nil {
+		p.reportError(lifetime.Span(), "expected a type annotation after lifetime")
+		return ast.NewErrorTypeAnn(lifetime.Span())
+	}
+	return nil
+}
+
 // typeAnnRequired wraps typeAnn() and guarantees a non-nil return.
 // If typeAnn() returns nil, it reports an error and returns ErrorTypeAnn.
 // Use this in places where a type annotation is syntactically required
@@ -352,6 +363,30 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		case Undefined:
 			p.lexer.consume()
 			typeAnn = ast.NewLitTypeAnn(ast.NewUndefined(token.Span), token.Span)
+		case Minus:
+			// A negative number literal type such as `-1`. The sign is part of the
+			// literal rather than an operator applied to a type, matching how
+			// TypeScript reads it, and the `.d.ts` surface depends on that:
+			// `readonly TIMEOUT_IGNORED: -1` on WebGL2, and the depth counter
+			// `[-1, 0, 1, … 20][Depth]` in `FlatArray`.
+			//
+			// The two mapped-type modifiers that also open with `-`, `-readonly [`
+			// and `-?`, each require their own following token and restore the lexer
+			// otherwise, so neither competes for a `-` that a number follows.
+			numToken := p.lexer.peek2()
+			if numToken.Type != NumLit {
+				return p.noPrimaryTypeAnn(lifetime)
+			}
+			p.lexer.consume() // consume '-'
+			p.lexer.consume() // consume the number
+			span := ast.NewSpan(token.Span.Start, numToken.Span.End, p.lexer.source.ID)
+			value, err := strconv.ParseFloat(numToken.Value, 64)
+			if err != nil {
+				p.reportError(span, "Expected a number")
+				typeAnn = ast.NewErrorTypeAnn(span)
+				break
+			}
+			typeAnn = ast.NewLitTypeAnn(ast.NewNumber(-value, span), span)
 		case NumLit:
 			p.lexer.consume()
 			value, err := strconv.ParseFloat(token.Value, 64)
@@ -507,18 +542,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 			span := ast.MergeSpans(token.Span, value.Span())
 			typeAnn = ast.NewRestSpreadTypeAnn(value, span)
 		default:
-			// If we already consumed a lifetime prefix, we can't return nil —
-			// that would violate the "nil means no consumption" contract.
-			// Report the missing type and return an ErrorTypeAnn whose span
-			// covers the lifetime we consumed.
-			if lifetime != nil {
-				p.reportError(lifetime.Span(),
-					"expected a type annotation after lifetime")
-				return ast.NewErrorTypeAnn(lifetime.Span())
-			}
-			// Return nil without consuming — signals "no type annotation found."
-			// Callers provide their own contextual error messages.
-			return nil
+			return p.noPrimaryTypeAnn(lifetime)
 		}
 	}
 
