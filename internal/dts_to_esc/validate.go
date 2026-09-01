@@ -10,15 +10,15 @@ import (
 
 // validate.go is the receiver-mutability validation diff of
 // planning/ecma-262/implementation_plan.md §6. It measures the spec-derived
-// receiver claim of every ECMA-262 builtin against the hand-written answer in
-// force today, so §7 can rank the facts above the name tiers with evidence
-// rather than on faith.
+// receiver claim of every ECMA-262 builtin against the hand-written answer for
+// the same method, which is the evidence §7 ranked the facts above the name
+// tiers on and which keeps a spec bump from changing an answer unnoticed.
 //
 // The hand-written answer is the union of two sources. nonMutatingOverrides
 // names, per owner, the methods an override marks non-mutating.
 // ClassifyMethodByName answers from the method's name alone. An entry outranks
-// the heuristics, matching the order `checker.UpdateMethodMutability` reads the
-// two in.
+// both the facts and the heuristics, matching the order
+// `checker.UpdateMethodMutability` reads them in.
 //
 // The diff is over methods, not statics. A fact for a static carries the
 // receiver kind `none`, which claims nothing about mutability, and the
@@ -31,9 +31,9 @@ const (
 	// SourceOverride is an entry in nonMutatingOverrides. It outranks the
 	// heuristics, so a method with an entry is never answered by one.
 	SourceOverride ReceiverSource = "override"
-	// SourceHeuristic is a name-only tier of ClassifyMethodByName, which
-	// covers the well-known allow-list, the `get*` prefix rule, and the
-	// name-based prefixes.
+	// SourceHeuristic is a name-only tier below the facts, which covers the
+	// well-known allow-list, the `get*` prefix rule, and the name-based
+	// prefixes.
 	SourceHeuristic ReceiverSource = "heuristic"
 )
 
@@ -41,17 +41,27 @@ const (
 type ReceiverVerdict string
 
 const (
-	// VerdictRedundant is an override entry the fact agrees with. §7 deletes
-	// these, since the fact answers the method on its own.
+	// VerdictRedundant is an override entry the fact agrees with. The entry
+	// repeats what the fact already says, so it is one to delete.
 	VerdictRedundant ReceiverVerdict = "redundant"
 	// VerdictConfirmed is a heuristic the fact agrees with. There is nothing to
 	// delete, because a heuristic classifies by name rather than per method.
 	// These agreements are the bulk of the evidence the §6 gate rests on.
 	VerdictConfirmed ReceiverVerdict = "confirmed"
-	// VerdictDisagreement is a method the two sources answer differently. Each
-	// one is either a hand-written answer the fact corrects or an analyzer bug
-	// §4 has to fix, and the report cannot tell the two apart. Triaging them
-	// is the §6 gate.
+	// VerdictCorrected is a heuristic the fact overrules. The fact tier sits
+	// above the name tiers, so the fact is what the converter and the prelude
+	// write and the heuristic's answer never reaches a receiver.
+	// `String.prototype.replace` is one: the mutating `replace` prefix reads
+	// it as a writer, and the spec algorithm returns a new string.
+	//
+	// Each one is still worth reading. A heuristic wrong on a spec method is
+	// wrong on every other type that spells a method the same way, which is
+	// how the `copyWithin` exact-name entry was found.
+	VerdictCorrected ReceiverVerdict = "corrected"
+	// VerdictDisagreement is a fact an override entry contradicts. The entry
+	// outranks the fact, so the hand-written answer is what gets written and
+	// the fact is inert. Either the entry is stale or the analysis has a bug,
+	// and the report cannot tell the two apart. Triaging them is the §6 gate.
 	VerdictDisagreement ReceiverVerdict = "disagreement"
 )
 
@@ -104,13 +114,26 @@ type ValidationReport struct {
 	OverrideOnly []string
 }
 
-// Disagreements returns the compared methods the two sources answer
-// differently, in the order Compared holds them. This is the list the §6 gate
-// is about.
+// Disagreements returns the compared methods whose override entry contradicts
+// the fact, in the order Compared holds them. This is the list the §6 gate is
+// about.
 func (r ValidationReport) Disagreements() []ReceiverDiff {
+	return r.withVerdict(VerdictDisagreement)
+}
+
+// Corrected returns the compared methods whose heuristic the fact overrules, in
+// the order Compared holds them. Each is a name the heuristics answer wrongly
+// on every type that spells a method that way, so the list is a review item
+// rather than a failure.
+func (r ValidationReport) Corrected() []ReceiverDiff {
+	return r.withVerdict(VerdictCorrected)
+}
+
+// withVerdict returns the compared methods the diff reached one verdict on.
+func (r ValidationReport) withVerdict(verdict ReceiverVerdict) []ReceiverDiff {
 	var found []ReceiverDiff
 	for _, diff := range r.Compared {
-		if diff.Verdict == VerdictDisagreement {
+		if diff.Verdict == verdict {
 			found = append(found, diff)
 		}
 	}
@@ -118,8 +141,8 @@ func (r ValidationReport) Disagreements() []ReceiverDiff {
 }
 
 // Redundant returns the override entries the facts agree with, one rendered
-// `Owner.member` line each, in the order Compared holds them. §7 removes these
-// from nonMutatingOverrides.
+// `Owner.member` line each, in the order Compared holds them. Each is an entry
+// nonMutatingOverrides can drop.
 func (r ValidationReport) Redundant() []string {
 	var found []string
 	for _, diff := range r.Compared {
@@ -225,16 +248,21 @@ func handAnswer(owner, member string) (mut bool, source ReceiverSource, answered
 	return false, "", false
 }
 
-// verdictOf reads one comparison. The two sources either answer alike, which
-// the source decides what to do about, or they contradict each other.
+// verdictOf reads one comparison. The two sources either answer alike or
+// contradict each other, and which hand-written source answered decides what
+// each of those means: an override entry outranks the fact and a heuristic
+// falls below it.
 func verdictOf(diff ReceiverDiff) ReceiverVerdict {
+	agree := diff.FactMut == diff.HandMut
 	switch {
-	case diff.FactMut != diff.HandMut:
-		return VerdictDisagreement
-	case diff.Source == SourceOverride:
+	case agree && diff.Source == SourceOverride:
 		return VerdictRedundant
-	default:
+	case agree:
 		return VerdictConfirmed
+	case diff.Source == SourceOverride:
+		return VerdictDisagreement
+	default:
+		return VerdictCorrected
 	}
 }
 
@@ -264,9 +292,9 @@ func overrideEntries() []string {
 
 // WriteValidationReport prints the diff's tallies and every line a reviewer
 // acts on. A confirmed method is the ordinary case and is summarized rather
-// than listed. A disagreement needs triage, a redundant entry is one §7
-// deletes, and an override entry no fact answers is one §7 keeps, so each of
-// those is printed in full.
+// than listed. A disagreement needs triage, a corrected heuristic is a name to
+// re-read, a redundant entry is one to delete, and an override entry no fact
+// answers is one to keep, so each of those is printed in full.
 //
 // The fact-only names are counted and not listed. There are dozens of them,
 // and each one says only that the facts answer a method the name tiers leave to
@@ -274,14 +302,19 @@ func overrideEntries() []string {
 // review.
 func WriteValidationReport(report ValidationReport, w io.Writer) error {
 	counts := report.Counts()
-	_, err := fmt.Fprintf(w, "  receivers: %d confirmed by a heuristic, %d redundant overrides, %d disagreements, %d answered by the facts alone, %d overrides no fact answers\n",
-		counts[VerdictConfirmed], counts[VerdictRedundant], counts[VerdictDisagreement],
-		len(report.FactOnly), len(report.OverrideOnly))
+	_, err := fmt.Fprintf(w, "  receivers: %d confirmed by a heuristic, %d heuristics corrected, %d redundant overrides, %d disagreements, %d answered by the facts alone, %d overrides no fact answers\n",
+		counts[VerdictConfirmed], counts[VerdictCorrected], counts[VerdictRedundant],
+		counts[VerdictDisagreement], len(report.FactOnly), len(report.OverrideOnly))
 	if err != nil {
 		return err
 	}
 	for _, diff := range report.Disagreements() {
 		if _, err := fmt.Fprintf(w, "    disagreement: %s\n", diff); err != nil {
+			return err
+		}
+	}
+	for _, diff := range report.Corrected() {
+		if _, err := fmt.Fprintf(w, "    corrected heuristic: %s\n", diff); err != nil {
 			return err
 		}
 	}

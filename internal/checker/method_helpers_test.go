@@ -152,7 +152,7 @@ func TestStripMutSelfFromMethods(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			obj, fns := build(tc.methods...)
-			applyMethodMutability(obj, set.FromSlice(tc.overrides))
+			applyMethodMutability(obj, "", set.FromSlice(tc.overrides), nil)
 			for name, wantMut := range tc.expectedMut {
 				fn := fns[name]
 				_, isMut := fn.SelfParam.Type.(*type_system.MutType)

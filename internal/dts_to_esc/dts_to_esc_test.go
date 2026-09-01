@@ -56,7 +56,7 @@ func convertSlice(t *testing.T, input string) (*StandaloneModule, string) {
 	dtsModule, errs := dts_parser.NewDtsParser(source).ParseModule()
 	require.Empty(t, errs, "dts parse errors")
 
-	standalone, err := ConvertToStandaloneModule(dtsModule)
+	standalone, err := ConvertToStandaloneModule(dtsModule, nil)
 	require.NoError(t, err)
 
 	out, err := RenderStandaloneModule(standalone)
@@ -702,7 +702,7 @@ declare namespace Intl {
 }
 interface ConcatArray<T> { join(separator?: string): string; }
 declare function parseInt(s: string): number;
-`).Module)
+`).Module, nil)
 	require.NoError(t, err)
 
 	paths := map[string]string{}

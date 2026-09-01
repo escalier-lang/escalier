@@ -55,13 +55,18 @@ declaration byte-for-byte alone, so hand-edits survive a re-run.
 `bootstrap` writes each package file whole, so pointing it at the
 committed tree discards those hand-edits.
 
-`bootstrap --cfg <cfg.json>` additionally joins every `std:*` member it
-emits against the ECMA-262 effect facts derived from that control-flow
-graph and reports the names present on one side only. It also reports what
-the curated layer and the coercion filter did to those facts, and diffs the
-receiver claim of every instance method against the hand-written mutability
-sources. See §5, §6, and §9.2 of
+Every subcommand classifies each emitted method's receiver from the ECMA-262
+effect facts, which are derived from the committed control-flow graph. The
+facts rank above the converter's name heuristics and below the explicit
+signals in the `.d.ts`. See §7 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
+
+`bootstrap --cfg <cfg.json>` classifies from the graph at that path instead,
+and prints four reports about it. It joins every `std:*` member the run emits
+against those facts and lists the names present on one side only. It reports
+what the curated layer and the coercion filter did to them, and diffs the
+receiver claim of every instance method against the hand-written mutability
+sources. See §5, §6, and §9.2 of the same plan.
 
 ## Bumping the pinned TypeScript version
 

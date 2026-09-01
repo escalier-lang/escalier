@@ -687,3 +687,20 @@ returns union: 1
 returns unknown: 247
 total: 501`))
 }
+
+// The committed graph analyzes cleanly and is analyzed once. Every consumer
+// reads the fact set through this, so a graph that failed to parse or left a
+// determination unanswered would reach them as a panic in the checker prelude
+// rather than as a test failure here.
+func TestCommittedFacts(t *testing.T) {
+	t.Parallel()
+
+	facts, err := CommittedFacts()
+	require.NoError(t, err)
+	require.NotEmpty(t, facts.Methods)
+	require.Empty(t, facts.Incomplete())
+
+	again, err := CommittedFacts()
+	require.NoError(t, err)
+	require.Same(t, facts, again)
+}

@@ -23,12 +23,14 @@
 //	    symbol fail-safe aborts the run with the offending name +
 //	    source file.
 //
-//	    With --cfg, the run also joins every std:* member it emits
-//	    against the ECMA-262 effect facts derived from that control-flow
-//	    graph, and reports the names present on one side only. It reports
-//	    what the curated layer did to those facts alongside it, and diffs
-//	    every receiver claim against the hand-written mutability sources.
-//	    See planning/ecma-262/implementation_plan.md.
+//	    Receivers are classified from the ECMA-262 effect facts derived
+//	    from the committed control-flow graph, or from the one --cfg
+//	    names. Naming a graph also prints four reports: it joins every
+//	    std:* member the run emits against those facts and lists the
+//	    names present on one side only, what the curated layer did to
+//	    them, what the coercion filter dropped, and how every receiver
+//	    claim compares with the hand-written mutability sources. See
+//	    planning/ecma-262/implementation_plan.md.
 //
 //	dts_to_esc check <lib-dir> <esc-dir>
 //	    Read-only verification per §6.4: convert the pinned lib set and
@@ -95,11 +97,15 @@ func runCheck(args []string, stdout, stderr io.Writer) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: dts_to_esc check <lib-dir> <esc-dir>")
 	}
+	facts, err := committedReceiverFacts()
+	if err != nil {
+		return err
+	}
 	result, err := partitionLibDir(args[0], stderr)
 	if err != nil {
 		return err
 	}
-	report, err := dts_to_esc.CheckPartition(result, args[1])
+	report, err := dts_to_esc.CheckPartition(result, args[1], facts)
 	if err != nil {
 		return err
 	}
@@ -116,15 +122,31 @@ func runRegenerate(args []string, stdout, stderr io.Writer) error {
 	if len(args) != 2 {
 		return fmt.Errorf("usage: dts_to_esc regenerate <lib-dir> <esc-dir>")
 	}
+	facts, err := committedReceiverFacts()
+	if err != nil {
+		return err
+	}
 	result, err := partitionLibDir(args[0], stderr)
 	if err != nil {
 		return err
 	}
-	report, err := dts_to_esc.RegeneratePartition(result, args[1])
+	report, err := dts_to_esc.RegeneratePartition(result, args[1], facts)
 	if err != nil {
 		return err
 	}
 	return report.Write(stdout)
+}
+
+// committedReceiverFacts indexes the ECMA-262 fact set for the committed graph
+// for the converter's fact tier. Every subcommand classifies receivers with it
+// whenever the caller names no graph of its own, so a conversion carries the
+// same spec-derived answers wherever it is run.
+func committedReceiverFacts() (*dts_to_esc.ReceiverFacts, error) {
+	facts, err := ecma262.CommittedFacts()
+	if err != nil {
+		return nil, err
+	}
+	return dts_to_esc.NewReceiverFacts(facts), nil
 }
 
 // partitionLibDir discovers, parses, and routes every lib.*.d.ts under
@@ -161,7 +183,11 @@ func runSingleFile(args []string, out io.Writer) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("parse errors in %s: %v", path, errs)
 	}
-	standalone, err := dts_to_esc.ConvertToStandaloneModule(dtsModule)
+	facts, err := committedReceiverFacts()
+	if err != nil {
+		return err
+	}
+	standalone, err := dts_to_esc.ConvertToStandaloneModule(dtsModule, facts)
 	if err != nil {
 		return fmt.Errorf("converting %s: %w", path, err)
 	}
@@ -177,7 +203,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json to classify receivers from, and to print the four fact reports for; defaults to the committed graph")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, bootstrapUsage)
@@ -194,11 +220,15 @@ func runBootstrap(args []string, stderr io.Writer) error {
 
 	// Derive the facts before any output is written, so neither a bad --cfg
 	// path nor a fact with a hole in it leaves a half-joined tree on disk. The
-	// tree does not read the facts, but a run that ends in an error should not
-	// leave output behind that looks like it succeeded.
+	// conversion classifies receivers from them, and a run that ends in an
+	// error should not leave output behind that looks like it succeeded.
 	var facts *ecma262.Facts
-	var join *ecma262.Join
-	if *cfgPath != "" {
+	if *cfgPath == "" {
+		var err error
+		if facts, err = ecma262.CommittedFacts(); err != nil {
+			return err
+		}
+	} else {
 		cfg, err := ecma262.LoadCFG(*cfgPath)
 		if err != nil {
 			return fmt.Errorf("loading %s: %w", *cfgPath, err)
@@ -220,7 +250,6 @@ func runBootstrap(args []string, stderr io.Writer) error {
 			return fmt.Errorf("%s leaves determinations unanswered:\n  %s",
 				*cfgPath, strings.Join(holes, "\n  "))
 		}
-		join = ecma262.NewJoin(facts)
 	}
 
 	result, err := partitionLibDir(libDir, stderr)
@@ -228,7 +257,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 		return err
 	}
 
-	mods, err := dts_to_esc.ConvertBuckets(result)
+	mods, err := dts_to_esc.ConvertBuckets(result, dts_to_esc.NewReceiverFacts(facts))
 	if err != nil {
 		return err
 	}
@@ -248,7 +277,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.ReportSingletonKeyDrops(mods, stderr); err != nil {
 		return err
 	}
-	if join == nil {
+	if *cfgPath == "" {
 		return nil
 	}
 	// The four reports are informational. A curated entry the analysis caught
@@ -266,5 +295,6 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
 		return err
 	}
+	join := ecma262.NewJoin(facts)
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
 }

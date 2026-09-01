@@ -42,7 +42,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §4.4 | Curated fact layer                         | FR5, FR7   | ✅      | §4.3       | `curated.json` merges per determination; published `receiver unclassified` is zero; each of the three guards tested — met, see [internal/ecma262/curated.go](../../internal/ecma262/curated.go) |
 | §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
 | §6   | Validation diff                            | FR9        | ✅      | §5         | receiver facts diffed against the override entries and the name heuristics; every disagreement triaged — met, see [validation_diff.md](validation_diff.md) |
-| §7   | Integration as classification source       | FR8        | ⬜      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed |
+| §7   | Integration as classification source       | FR8        | ✅      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed — met, see [internal/dts_to_esc/facts.go](../../internal/dts_to_esc/facts.go) |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
@@ -400,7 +400,7 @@ spelling. This is the only Scala we write, and it contains no analysis.
   for the throw-set fixpoint in §9); every internal-slot write with its
   object expression and slot name; every explicit `Throw` step with its
   exception type; every return with its value expression.
-- Write the result to `tools/spec-extract/cfg.json` and commit it. The
+- Write the result to `internal/ecma262/cfg.json` and commit it. The
   file is large; it is an intermediate regenerated only on a spec bump,
   and committing it is what keeps the JVM out of the normal build.
 
@@ -448,7 +448,7 @@ reads.
 names the vendored ESMeta checkout as a source dependency, and a Scala main
 that runs `extract → compile → build-cfg` in process and lowers the result.
 One run takes about 20 seconds and writes a 1.6 MB
-[cfg.json](../../tools/spec-extract/cfg.json), committed. It holds 1202
+[cfg.json](../../internal/ecma262/cfg.json), committed. It holds 1202
 functions: all 501 builtin algorithms and the 701 abstract operations,
 closures, internal methods, and numeric methods reachable from them. The
 1746 syntax-directed operations are the runtime semantics of the language
@@ -1556,6 +1556,32 @@ edits it. The checker prelude reads it through
   the `.d.ts`-loaded lib types, or that path is gone. See the sequencing note
   in [validation_diff.md](validation_diff.md).
 
+**What landed.** The three places a receiver is written now read the facts
+first, and each answers a different shape of input:
+
+1. `dts_to_esc.Classify`, the cascade over a parsed `.d.ts` class member.
+   The facts sit at `TierECMA262Fact`, above the `get*` prefix and the name
+   heuristics and below the builtin overrides, which keeps a hand-written
+   entry authoritative.
+2. `dts_to_esc.ClassifyMemberByName`, which answers from an owner and a
+   member key. The trio fusion reads it, since a class fused from interface
+   signatures has no `ClassMember` to feed the cascade.
+3. `checker.applyMethodMutability`, the prelude pass over the
+   `.d.ts`-loaded lib types. This is the reader the deletion was sequenced
+   behind — it is the first of the two conditions in
+   [validation_diff.md](validation_diff.md), not the M12 flip.
+
+A method's owner is its dotted runtime path, which is what a canonical spec
+key normalizes to, so `Array.prototype.push` is the member `push` of the
+owner `Array`. A method under a module path reaches no fact: an imported
+package's `String` is its own class rather than the builtin.
+
+The claims are derived rather than read from a file, per Appendix B.
+`ecma262.CommittedFacts` runs the analysis over the graph the package
+embeds, once per process. It is embedded because the compiler classifies
+receivers wherever it runs, which is a user's project directory rather than
+this repository.
+
 **How a method's `.esc` is assembled.** Each generated method declaration
 is a **merge** of its type shape with its effects, combined per method —
 not three routes to pick among. The `.d.ts` types are *always* part of the
@@ -1620,6 +1646,9 @@ same types-plus-curation route until the WebIDL extractor lands.)
 **Gate.** Converter output for `std:*` matches the facts for every
 published determination; the removed override entries cause no regression
 in the converter and checker test suites.
+`TestStdReceiversMatchTheFacts` holds the first half over the pinned lib
+set, comparing the receiver of every emitted `std:*` method a fact
+addresses.
 
 ## §8. Parameter disposition and return-borrow outputs (FR12, FR4)
 
@@ -2202,7 +2231,7 @@ a corrected sample.
 **Work.**
 
 - Document the bump: update the pinned `-extract:target`, rebuild
-  `cfg.json` under `tools/spec-extract/`, re-run the Go analysis, review
+  `cfg.json` from `tools/spec-extract/`, re-run the Go analysis, review
   the `facts.json` diff, re-run the §6 validation.
 - Add a CI check that re-runs the Go analysis over the committed
   `cfg.json` and fails if `facts.json` is stale, so the committed facts

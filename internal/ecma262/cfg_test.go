@@ -8,8 +8,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// cfgPath is the control-flow graph tools/spec-extract commits.
-const cfgPath = "../../tools/spec-extract/cfg.json"
+// cfgPath is the committed control-flow graph, read from disk rather than from
+// the copy this package embeds so a test can load a second, independent CFG.
+const cfgPath = "cfg.json"
 
 var (
 	loadOnce sync.Once

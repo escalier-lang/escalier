@@ -141,8 +141,8 @@ type CheckReport struct {
 // Each package's diff carries the patch a regenerate run would apply,
 // so a contributor reads the same change here that the write mode
 // would make.
-func CheckPartition(result *PartitionResult, escDir string) (*CheckReport, error) {
-	plans, err := planPartition(result, escDir)
+func CheckPartition(result *PartitionResult, escDir string, facts *ReceiverFacts) (*CheckReport, error) {
+	plans, err := planPartition(result, escDir, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -262,8 +262,8 @@ type RegenResult struct {
 //
 // A package whose file is absent is written in full — everything in it
 // is missing.
-func RegeneratePartition(result *PartitionResult, escDir string) (*RegenReport, error) {
-	plans, err := planPartition(result, escDir)
+func RegeneratePartition(result *PartitionResult, escDir string, facts *ReceiverFacts) (*RegenReport, error) {
+	plans, err := planPartition(result, escDir, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +349,7 @@ type memberInsert struct {
 // committed tree, returning one plan per package. Buckets are visited
 // in package-URI order so both modes report in the same sequence
 // regardless of map iteration.
-func planPartition(result *PartitionResult, escDir string) ([]packagePlan, error) {
+func planPartition(result *PartitionResult, escDir string, facts *ReceiverFacts) ([]packagePlan, error) {
 	uris := make([]string, 0, len(result.Buckets))
 	for uri := range result.Buckets {
 		uris = append(uris, uri)
@@ -364,7 +364,7 @@ func planPartition(result *PartitionResult, escDir string) ([]packagePlan, error
 				"(every bucket should come from Route, which only returns "+
 				"URIs in PackageList)", uri)
 		}
-		mod, err := ConvertBucket(result.Buckets[uri])
+		mod, err := ConvertBucket(result.Buckets[uri], facts)
 		if err != nil {
 			return nil, fmt.Errorf("converting bucket %s: %w", uri, err)
 		}

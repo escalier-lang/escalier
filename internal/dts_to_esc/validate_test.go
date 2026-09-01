@@ -9,9 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// committedCFG is the control-flow graph tools/spec-extract commits.
-const committedCFG = "../../tools/spec-extract/cfg.json"
-
 // factsOf builds a fact set holding one receiver claim per name. The receiver
 // is the only axis ValidateReceivers reads, so the facts are left short of the
 // return alias, throws, and rejects that generation requires. Nothing here
@@ -35,15 +32,16 @@ func TestValidateReceivers(t *testing.T) {
 		compared []string
 		factOnly []string
 	}{
-		// `String.prototype.charAt` has an override entry and the analysis
+		// `String.prototype.substr` has an override entry and the fact below
 		// reads its receiver as `borrow`, so the entry repeats what the fact
-		// already says.
+		// already says. The committed graph carries no `substr` algorithm,
+		// which is why the real entry survives.
 		"OverrideTheFactAgreesWith": {
 			receivers: map[string]ecma262.ReceiverKind{
-				"String.prototype.charAt": ecma262.RecvBorrow,
+				"String.prototype.substr": ecma262.RecvBorrow,
 			},
 			compared: []string{
-				"String.prototype.charAt: fact borrow, override borrow [redundant]",
+				"String.prototype.substr: fact borrow, override borrow [redundant]",
 			},
 		},
 		// `Array.prototype.push` matches the mutating `push` prefix, and the
@@ -56,17 +54,26 @@ func TestValidateReceivers(t *testing.T) {
 				"Array.prototype.push: fact mutBorrow, heuristic mutBorrow [confirmed]",
 			},
 		},
-		// The two directions a disagreement runs in. A fact that mutates
-		// against a source that does not is the soundness-relevant one, since
-		// the hand-written answer would put the method on a non-mut receiver.
-		"Disagreements": {
+		// A heuristic the fact contradicts. The fact tier outranks the name
+		// tiers, so `push` is written non-mutating and the mutating `push`
+		// prefix never reaches it.
+		"HeuristicTheFactOverrules": {
 			receivers: map[string]ecma262.ReceiverKind{
-				"String.prototype.charAt": ecma262.RecvMutBorrow,
-				"Array.prototype.push":    ecma262.RecvBorrow,
+				"Array.prototype.push": ecma262.RecvBorrow,
 			},
 			compared: []string{
-				"Array.prototype.push: fact borrow, heuristic mutBorrow [disagreement]",
-				"String.prototype.charAt: fact mutBorrow, override borrow [disagreement]",
+				"Array.prototype.push: fact borrow, heuristic mutBorrow [corrected]",
+			},
+		},
+		// An override entry the fact contradicts. The entry outranks the fact,
+		// so this is the one shape the §6 gate fails on: the hand-written
+		// answer is what gets written, and one of the two sources is wrong.
+		"OverrideTheFactContradicts": {
+			receivers: map[string]ecma262.ReceiverKind{
+				"String.prototype.substr": ecma262.RecvMutBorrow,
+			},
+			compared: []string{
+				"String.prototype.substr: fact mutBorrow, override borrow [disagreement]",
 			},
 		},
 		// `flat` matches no prefix and sits in no override entry, so the
@@ -143,26 +150,26 @@ func nonEmpty(lines []string) []string {
 	return lines
 }
 
-// Every override entry no fact answers, which §7 keeps. An owner outside
-// ECMA-262 has no fact by construction, so the whole entry survives.
+// Every override entry no fact answers. An owner outside ECMA-262 has no fact
+// by construction, so the whole entry survives.
 func TestValidateReceiversReportsOverridesWithNoFact(t *testing.T) {
 	t.Parallel()
 
 	report := ValidateReceivers(factsOf(map[string]ecma262.ReceiverKind{
-		"String.prototype.charAt": ecma262.RecvBorrow,
+		"String.prototype.substr": ecma262.RecvBorrow,
 	}))
 
-	require.NotContains(t, report.OverrideOnly, "String.charAt")
-	require.Contains(t, report.OverrideOnly, "String.trim")
+	require.NotContains(t, report.OverrideOnly, "String.substr")
 	require.Contains(t, report.OverrideOnly, "Console.log")
 }
 
-// The §6 gate. The committed graph must leave no receiver the two sources
-// answer differently, because §7 ranks the facts above the name tiers and a
-// standing disagreement would silently change what the converter emits.
+// The §6 gate. No override entry may contradict the fact for the same method
+// over the committed graph. An entry outranks the fact, so a standing
+// contradiction means the converter and the prelude write an answer the spec
+// analysis disputes, and one of the two sources is wrong.
 //
-// A spec bump or a heuristic edit that reintroduces one fails here. Resolving
-// it means fixing whichever side is wrong, or curating the method in
+// A spec bump or an added entry that introduces one fails here. Resolving it
+// means fixing whichever side is wrong, or curating the method in
 // internal/ecma262/curated.json, and recording the disposition in
 // planning/ecma-262/validation_diff.md.
 func TestCommittedGraphLeavesNoReceiverDisagreement(t *testing.T) {
@@ -177,42 +184,37 @@ func TestCommittedGraphLeavesNoReceiverDisagreement(t *testing.T) {
 	require.Empty(t, lines)
 }
 
-// The override entries the facts agree with. §7 deletes exactly this list from
-// nonMutatingOverrides, so it is pinned here rather than recomputed there.
+// The heuristics the facts overrule over the committed graph. Each is a name
+// the name tiers answer wrongly wherever else it is spelled, so the list is
+// pinned rather than left to grow unread. A new line here is a heuristic to
+// re-read, as `copyWithin` was — see planning/ecma-262/validation_diff.md.
+func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
+	t.Parallel()
+
+	report := ValidateReceivers(committedFacts(t))
+
+	lines := make([]string, 0, len(report.Corrected()))
+	for _, diff := range report.Corrected() {
+		lines = append(lines, diff.String())
+	}
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`String.prototype.replace: fact borrow, heuristic mutBorrow
+String.prototype.replaceAll: fact borrow, heuristic mutBorrow`))
+}
+
+// The override entries the facts agree with. §7 deleted exactly the list this
+// pinned as it stood then, so the list reads empty. An entry that lands back
+// here is one the facts have caught up with, which makes it one to delete.
 func TestCommittedGraphRedundantOverrides(t *testing.T) {
 	t.Parallel()
 
 	report := ValidateReceivers(committedFacts(t))
 
-	snaps.MatchInlineSnapshot(t, strings.Join(report.Redundant(), "\n"), snaps.Inline(`Function.apply
-Function.bind
-Function.call
-Object.propertyIsEnumerable
-String.charAt
-String.charCodeAt
-String.codePointAt
-String.endsWith
-String.localeCompare
-String.match
-String.matchAll
-String.normalize
-String.padEnd
-String.padStart
-String.repeat
-String.replace
-String.replaceAll
-String.search
-String.split
-String.startsWith
-String.substring
-String.trim
-String.trimEnd
-String.trimStart`))
+	snaps.MatchInlineSnapshot(t, strings.Join(report.Redundant(), "\n"), snaps.Inline(""))
 }
 
-// The override entries no fact answers, which §7 keeps. Every `web:*` owner is
-// out of ECMA-262 scope by construction, and `String.substr` is an Annex B
-// method the graph does not carry.
+// The override entries no fact answers, which are the ones nonMutatingOverrides
+// still holds. Every `web:*` owner is out of ECMA-262 scope by construction,
+// and `String.substr` is an Annex B method the graph does not carry.
 func TestCommittedGraphOverridesWithNoFact(t *testing.T) {
 	t.Parallel()
 
@@ -257,39 +259,37 @@ Response.text
 String.substr`))
 }
 
-// The summary line and the three lists a reviewer acts on. A confirmed method
-// is summarized rather than listed.
+// The summary line and the four lists a reviewer acts on. A confirmed method is
+// summarized rather than listed.
 func TestWriteValidationReport(t *testing.T) {
 	t.Parallel()
 
 	report := ValidateReceivers(factsOf(map[string]ecma262.ReceiverKind{
 		"Array.prototype.push":    ecma262.RecvMutBorrow,
 		"Array.prototype.flat":    ecma262.RecvBorrow,
-		"String.prototype.charAt": ecma262.RecvBorrow,
-		"String.prototype.trim":   ecma262.RecvMutBorrow,
+		"Array.prototype.sort":    ecma262.RecvBorrow,
+		"String.prototype.substr": ecma262.RecvMutBorrow,
 	}))
 
 	var out strings.Builder
 	require.NoError(t, WriteValidationReport(report, &out))
 
 	// Only the entries the four facts address are compared, so every other
-	// override entry lands in the third list. The lines below are the head of
+	// override entry lands in the last list. The lines below are the head of
 	// it, and the assertion after them covers the rest.
 	require.True(t, strings.HasPrefix(out.String(),
-		`  receivers: 1 confirmed by a heuristic, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 59 overrides no fact answers
-    disagreement: String.prototype.trim: fact mutBorrow, override borrow
-    redundant override: String.charAt
+		`  receivers: 1 confirmed by a heuristic, 1 heuristics corrected, 0 redundant overrides, 1 disagreements, 1 answered by the facts alone, 36 overrides no fact answers
+    disagreement: String.prototype.substr: fact mutBorrow, override borrow
+    corrected heuristic: Array.prototype.sort: fact borrow, heuristic mutBorrow
     override with no fact: Body.arrayBuffer
 `), out.String())
-	require.Contains(t, out.String(), "    override with no fact: String.trimEnd\n")
+	require.Contains(t, out.String(), "    override with no fact: Console.warn\n")
 }
 
 // committedFacts is the published fact set for the committed graph.
 func committedFacts(t *testing.T) *ecma262.Facts {
 	t.Helper()
-	cfg, err := ecma262.LoadCFG(committedCFG)
-	require.NoError(t, err)
-	facts, err := ecma262.NewFacts(cfg)
+	facts, err := ecma262.CommittedFacts()
 	require.NoError(t, err)
 	return facts
 }

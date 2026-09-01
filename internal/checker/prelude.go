@@ -13,6 +13,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_to_esc"
+	"github.com/escalier-lang/escalier/internal/ecma262"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -214,18 +215,23 @@ func mergeModules(target, source *ast.Module) {
 }
 
 // applyMethodMutability classifies each MethodElem on objType using the
-// per-class override set first and the name-only interop heuristics as
-// the fall-through (issue #614). When neither source positively
-// classifies the method as non-mutating it keeps the default `mut self`
-// set by populateSelfParams. The override entries always win — they
-// encode known exceptions that the heuristics either miss or
-// mis-classify (e.g. String.replace, Console.clear).
+// per-class override set first, then the ECMA-262 fact for the member, and
+// the name-only interop heuristics as the fall-through (issue #614). When no
+// source positively classifies the method as non-mutating it keeps the default
+// `mut self` set by populateSelfParams. The override entries always win — they
+// encode known exceptions that neither the facts nor the heuristics answer
+// (e.g. Console.clear).
+//
+// `owner` is the dotted runtime path the members hang off, which is what
+// addresses them in `facts`: the members of `String` are looked up under the
+// owner `String`. A type the spec keys no algorithm for reaches only the
+// override set and the heuristics, and so does every type when `facts` is nil.
 //
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing
 // an accessor name in `names` would silently miss here. If an accessor
 // ever needs its polarity overridden, extend the type switch below.
-func applyMethodMutability(objType *type_system.ObjectType, names dts_to_esc.MethodNames) {
+func applyMethodMutability(objType *type_system.ObjectType, owner string, names dts_to_esc.MethodNames, facts *dts_to_esc.ReceiverFacts) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
 		if !ok {
@@ -235,21 +241,22 @@ func applyMethodMutability(objType *type_system.ObjectType, names dts_to_esc.Met
 			continue
 		}
 		name := me.Name.Str
-		if names.Contains(name) {
-			for _, sig := range me.Signatures {
-				setReceiverMut(sig, false)
-			}
+		mut, classified := false, names.Contains(name)
+		if !classified {
+			mut, classified = dts_to_esc.ClassifyMemberByName(facts, owner, ecma262.StrMember(name))
+		}
+		if !classified || mut {
 			continue
 		}
-		if mut, classified := dts_to_esc.ClassifyMethodByName(name); classified && !mut {
-			for _, sig := range me.Signatures {
-				setReceiverMut(sig, false)
-			}
+		for _, sig := range me.Signatures {
+			setReceiverMut(sig, false)
 		}
 	}
 }
 
 func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
+	facts := receiverFacts()
+
 	// First pass: trio-shaped classes (interface X + interface XConstructor +
 	// declare var X: XConstructor) — look up the instance type via the
 	// constructor's return type. Iterate in sorted order so the
@@ -298,7 +305,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 					// populateSelfParams). Apply per-interface overrides
 					// and, as a fall-through for any unlisted method,
 					// the name-only interop heuristics (#614).
-					applyMethodMutability(it, overrides)
+					applyMethodMutability(it, instName, overrides, facts)
 				} else {
 					panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
 				}
@@ -334,7 +341,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 		if !ok {
 			continue
 		}
-		applyMethodMutability(objType, dts_to_esc.NonMutatingOverrides(name))
+		applyMethodMutability(objType, name, dts_to_esc.NonMutatingOverrides(name), facts)
 	}
 }
 

@@ -74,7 +74,7 @@ interface Array<T> { length: number; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
 declare var Array: ArrayConstructor;
 `)
-	report, err := CheckPartition(res, t.TempDir())
+	report, err := CheckPartition(res, t.TempDir(), nil)
 	require.NoError(t, err)
 	require.True(t, report.Failed())
 
@@ -97,10 +97,10 @@ declare var Array: ArrayConstructor;
 
 	// Seed the tree from the converter itself, then re-run the check
 	// against it: a freshly written tree has nothing missing.
-	_, err := WritePartitionedTree(res, root)
+	_, err := WritePartitionedTree(res, root, nil)
 	require.NoError(t, err)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.False(t, report.Failed())
 
@@ -128,7 +128,7 @@ declare var Math: Math;
 export declare val PI: number
 `)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.False(t, report.Failed(), "dropped declarations must not fail the check")
 
@@ -161,7 +161,7 @@ export declare class Array<T> {
 export type MyArrayHelper<T> = Array<T>
 `)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 
 	// Nothing is missing on either side; the one finding is the `.esc`
@@ -193,7 +193,7 @@ export declare class Array<T> {
 }
 `)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.True(t, report.Failed())
 
@@ -239,7 +239,7 @@ export declare class Array<T> {
 }
 `)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.False(t, report.Failed())
 }
@@ -256,7 +256,7 @@ interface WeakRef<T extends object> { deref(): T | undefined; }
 interface WeakRefConstructor { readonly prototype: WeakRef<object>; }
 declare var WeakRef: WeakRefConstructor;
 `)
-	mod, err := ConvertBucket(res.Buckets["std:weak_ref"])
+	mod, err := ConvertBucket(res.Buckets["std:weak_ref"], nil)
 	require.NoError(t, err)
 	rendered, err := RenderStandaloneModule(mod)
 	require.NoError(t, err)
@@ -288,7 +288,7 @@ export declare interface WeakRefConstructor {
 }
 `)
 
-	report, err := CheckPartition(res, root)
+	report, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	diff := findDiff(t, report, "std:weak_ref")
 	require.Empty(t, diff.NewDecls, "the fused class covers both converted halves")
@@ -305,7 +305,7 @@ declare var Array: ArrayConstructor;
 `)
 	root := t.TempDir()
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Len(t, report.Packages, 1)
 	require.True(t, report.Packages[0].Created)
@@ -323,7 +323,7 @@ export declare class Array<T> {
 `))
 
 	// A second run has nothing left to add.
-	after, err := CheckPartition(res, root)
+	after, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.False(t, after.Failed())
 }
@@ -345,7 +345,7 @@ export declare fn parse(text: string) -> unknown throws SyntaxError
 `
 	path := writeEsc(t, root, "std/json.esc", committed)
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Len(t, report.Packages, 1)
 	require.False(t, report.Packages[0].Created)
@@ -378,7 +378,7 @@ declare var Array: ArrayConstructor;
 export declare class Array<T> {}
 `)
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, report.Packages[0].AddedDecls)
 	require.Equal(t, 4, report.Packages[0].AddedMembers)
@@ -394,7 +394,7 @@ export declare class Array<T> {
 }
 `))
 
-	after, err := CheckPartition(res, root)
+	after, err := CheckPartition(res, root, nil)
 	require.NoError(t, err)
 	require.False(t, after.Failed())
 }
@@ -414,7 +414,7 @@ export declare class Number {
 }
 `)
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Equal(t, 1, report.Packages[0].AddedDecls)
 
@@ -440,7 +440,7 @@ interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>
 declare var Array: ArrayConstructor;
 `)
 	root := t.TempDir()
-	_, err := WritePartitionedTree(res, root)
+	_, err := WritePartitionedTree(res, root, nil)
 	require.NoError(t, err)
 
 	path := filepath.Join(root, "std", "array.esc")
@@ -448,7 +448,7 @@ declare var Array: ArrayConstructor;
 	require.NoError(t, err)
 	original := readEsc(t, path)
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Equal(t, 0, report.Packages[0].AddedDecls)
 	require.Equal(t, 0, report.Packages[0].AddedMembers)
@@ -477,7 +477,7 @@ export declare class Array<T> {
 export type RemovedUpstream = number
 `)
 
-	report, err := RegeneratePartition(res, root)
+	report, err := RegeneratePartition(res, root, nil)
 	require.NoError(t, err)
 	require.Equal(t, []string{"RemovedUpstream"}, report.Packages[0].Removed)
 
@@ -561,7 +561,7 @@ export declare class Array<T> {
 		root := t.TempDir()
 		path := writeEsc(t, root, "std/array.esc", tc.committed)
 
-		report, err := RegeneratePartition(res, root)
+		report, err := RegeneratePartition(res, root, nil)
 		require.NoError(t, err)
 		require.Equal(t, 1, report.Packages[0].AddedMembers, tc.name)
 		require.Empty(t, report.Packages[0].Skipped, tc.name)
@@ -698,7 +698,7 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 	require.NoError(t, err)
 
 	root := t.TempDir()
-	written, err := WritePartitionedTree(res, root)
+	written, err := WritePartitionedTree(res, root, nil)
 	require.NoError(t, err)
 
 	reparsed := &PartitionResult{Buckets: map[string][]dts_parser.Statement{}}
@@ -714,7 +714,7 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 	}
 	require.NotEmpty(t, reparsed.Buckets, "at least one package must reparse")
 
-	report, err := CheckPartition(reparsed, root)
+	report, err := CheckPartition(reparsed, root, nil)
 	require.NoError(t, err)
 
 	var sb strings.Builder
@@ -723,7 +723,7 @@ func TestCheckPartition_LibES5RoundTrips(t *testing.T) {
 		"a freshly written tree must have nothing missing:\n%s", sb.String())
 
 	// The write mode agrees: a re-run over the same tree adds nothing.
-	regen, err := RegeneratePartition(reparsed, root)
+	regen, err := RegeneratePartition(reparsed, root, nil)
 	require.NoError(t, err)
 	for _, p := range regen.Packages {
 		require.Equal(t, 0, p.AddedDecls, "%s should need no new declarations", p.Pkg)
