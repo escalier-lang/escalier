@@ -57,11 +57,11 @@ The counts are over the 501 builtins of the pinned graph, read from the merged
 facts of §4.4.
 
 **The roster is the converter's output, not this file.** Running
-`tools/dts_to_esc` with `--cfg` prints every builtin whose return seeds an
-annotation, one line per method, grouped by kind:
+`tools/dts_to_esc` with `--cfg` prints every builtin whose return borrows a
+value the caller holds, one line per method, grouped by kind:
 
 ```
-  return seeds: 22 to annotate, 232 owned, 247 open
+  return aliases: 22 borrowing, 232 owned, 247 open
     param(0): Object.assign
     ...
     receiver: Array.prototype.fill
@@ -69,10 +69,13 @@ annotation, one line per method, grouped by kind:
     union(fresh, param(0)): Object
 ```
 
-`Facts.ReturnSeeds` produces it and `TestFactsReturnSeedsAreListed` snapshots
-it, so a spec bump that adds or retires a borrowing return moves the list
-rather than staling this file. The methods named below are the ones the
-reasoning needs, not the list to work from.
+A borrowing return is one needing an annotation. The other two counts are the
+kinds needing none: an owned return has no lifetime to bound, and an open one
+names no value to borrow. `Facts.BorrowingReturns` produces the report and
+`TestFactsBorrowingReturnsAreListed` snapshots it, so a spec bump that adds or
+retires a borrowing return moves the list rather than staling this file. The
+methods named below are the ones the reasoning needs, not the list to work
+from.
 
 Three things a `returns` value leaves open, which is why no row is applied
 without review:

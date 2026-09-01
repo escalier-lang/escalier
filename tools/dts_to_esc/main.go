@@ -247,10 +247,11 @@ func writeFactReports(
 	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
 		return err
 	}
-	// §8.2's seed surface. Receiver mutability is auto-applied, so it needs no
-	// such list, while every return here is an annotation someone writes into
-	// the override layer. See planning/ecma-262/return_annotations.md.
-	if err := ecma262.WriteReturnsReport(facts.ReturnSeeds(), stderr); err != nil {
+	// The returns axis, printed with the other per-axis reports. Receiver
+	// mutability is auto-applied and needs no such list, while every borrowing
+	// return here is an annotation someone writes into the override layer. See
+	// planning/ecma-262/return_annotations.md.
+	if err := ecma262.WriteReturnAliasReport(facts.BorrowingReturns(), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
