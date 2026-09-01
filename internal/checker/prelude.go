@@ -214,13 +214,15 @@ func mergeModules(target, source *ast.Module) {
 	}
 }
 
-// applyMethodMutability classifies each MethodElem on objType using the
-// per-class override set first, then the ECMA-262 fact for the member, and
-// the name-only interop heuristics as the fall-through (issue #614). When no
-// source positively classifies the method as non-mutating it keeps the default
-// `mut self` set by populateSelfParams. The override entries always win — they
-// encode known exceptions that neither the facts nor the heuristics answer
-// (e.g. Console.clear).
+// applyMethodMutability classifies each MethodElem on objType. The per-class
+// override set is consulted first, and ClassifyMemberByName answers the rest by
+// walking the same tiers the converter does: the well-known non-mutating names,
+// then the ECMA-262 fact for the member, then the name-only interop heuristics
+// as the fall-through (issue #614). When no tier positively classifies the
+// method as non-mutating it keeps the default `mut self` set by
+// populateSelfParams. The override entries always win, because they encode the
+// exceptions neither the facts nor the heuristics answer, `Console.clear` among
+// them.
 //
 // `owner` is the dotted runtime path the members hang off, which is how
 // `facts` addresses them. The members of `String` are looked up under the owner

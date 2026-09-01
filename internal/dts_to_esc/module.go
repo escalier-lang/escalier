@@ -234,16 +234,17 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 	return ConvertModuleWithOverrides(dtsModule, nil, "", nil)
 }
 
-// ConvertModuleWithOverrides converts dts_parser.Module to ast.Module,
-// consulting `store` for tier-1 (user) and tier-4 (builtin) overrides and
-// `facts` for the tier-5 ECMA-262 receiver claims during member mutability
-// classification. Either may be nil, which leaves that tier with nothing to
-// answer from. `modulePath` is the path the
-// store was keyed under for these declarations — "" for globals and
-// prelude lib files; the package import specifier for an imported
-// package's package decls (e.g. "lodash/fp"); the module name for
-// `declare module "X" { ... }` blocks (passed by the caller, since the
-// classifier strips that wrapper before getting here).
+// ConvertModuleWithOverrides converts dts_parser.Module to ast.Module.
+// Member mutability classification reads two sources it takes here. `store`
+// answers the user overrides of tier 1 and the builtin overrides of tier 4,
+// and `facts` answers the ECMA-262 receiver claims of tier 5. Either may be
+// nil, which leaves that tier with nothing to answer from.
+//
+// `modulePath` is the path the store was keyed under for these declarations.
+// It is "" for globals and prelude lib files. For an imported package's
+// package decls it is the import specifier, such as "lodash/fp". For a
+// `declare module "X" { ... }` block it is the module name, which the caller
+// passes because the classifier strips that wrapper before getting here.
 func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string, facts *ReceiverFacts) (*ast.Module, error) {
 	cctx := &convertCtx{store: store, facts: facts, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]

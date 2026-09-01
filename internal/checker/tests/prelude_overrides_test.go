@@ -12,10 +12,10 @@ import (
 // for the members no fact addresses. Both are keyed by owner and member
 // name, and both keys have to match what the lib types declare — a fact
 // keyed `String.prototype.charAt` reaches the method only if the prelude
-// looks it up under the owner `String`. Without this coverage a mismatch
-// silently dead-codes the claim and the method becomes invisible on a
-// non-mut receiver post-#612 polarity flip; "Callee is not callable" is the
-// loud failure that this test catches.
+// looks it up under the owner `String`. A `.d.ts` method carries `mut self`
+// until one of the two strips it, so a mismatch silently dead-codes the claim
+// and leaves the method invisible on a non-mut receiver. Each case below calls
+// one on a non-mut value, where that shows up as "Callee is not callable".
 func TestPreludeNonMutSourcesCallableOnNonMutReceiver(t *testing.T) {
 	tests := map[string]string{
 		"String.charAt on non-mut": `

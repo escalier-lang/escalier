@@ -2230,9 +2230,12 @@ a corrected sample.
 
 **Work.**
 
-- Document the bump: update the pinned `-extract:target`, rebuild
-  `cfg.json` from `tools/spec-extract/`, re-run the Go analysis, review
-  the `facts.json` diff, re-run the §6 validation.
+- Document the bump: update the pinned `-extract:target`, then run the
+  serializer in `tools/spec-extract/` to regenerate the committed
+  `internal/ecma262/cfg.json`. Re-run the Go analysis over it, review the
+  `facts.json` diff, and re-run the §6 validation. `tools/spec-extract/` is
+  where the graph is produced; `internal/ecma262/` is where it is committed
+  and embedded.
 - Add a CI check that re-runs the Go analysis over the committed
   `cfg.json` and fails if `facts.json` is stale, so the committed facts
   cannot drift from the committed CFG without the JVM.

@@ -75,22 +75,38 @@ func TestStdReceiversMatchTheFacts(t *testing.T) {
 // module emits, with the class's dotted runtime path. A static has no receiver
 // to compare, and an accessor's polarity is fixed where the class is built.
 func eachEmittedMethod(mod *StandaloneModule, visit func(owner string, elem *ast.MethodElem)) {
-	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
-		for _, decl := range ns.Decls {
-			class, ok := decl.(*ast.ClassDecl)
-			if !ok || mod.Paths[decl] == "" {
-				continue
-			}
-			for _, elem := range class.Body {
-				method, ok := elem.(*ast.MethodElem)
-				if !ok || method.Static || method.Receiver == nil {
-					continue
-				}
-				visit(mod.Paths[decl], method)
-			}
-		}
-		return true
-	})
+	mod.Module.Accept(&methodWalk{mod: mod, visit: visit})
+}
+
+// methodWalk carries the enclosing class's runtime path from the declaration
+// down to the members declared under it, which is what addresses them in the
+// fact source. owner is set while the walk is inside a class the module
+// records a path for, and empty everywhere else.
+type methodWalk struct {
+	ast.DefaultVisitor
+	mod   *StandaloneModule
+	visit func(owner string, elem *ast.MethodElem)
+	owner string
+}
+
+func (w *methodWalk) EnterDecl(decl ast.Decl) bool {
+	if _, ok := decl.(*ast.ClassDecl); !ok {
+		return false
+	}
+	w.owner = w.mod.Paths[decl]
+	return w.owner != ""
+}
+
+func (w *methodWalk) ExitDecl(ast.Decl) { w.owner = "" }
+
+// EnterClassElem returns false throughout: a method's name and body hold no
+// further member to compare, so there is nothing under one worth walking into.
+func (w *methodWalk) EnterClassElem(elem ast.ClassElem) bool {
+	method, ok := elem.(*ast.MethodElem)
+	if ok && !method.Static && method.Receiver != nil {
+		w.visit(w.owner, method)
+	}
+	return false
 }
 
 // Where the fact tier sits in the cascade, one case per neighbouring rung. The

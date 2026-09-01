@@ -1055,7 +1055,13 @@ func interfaceMemberToClassElem(
 		var receiver *ast.MethodReceiver
 		if !static {
 			mut := true
-			if key, keyed := memberKeyOf(m.Name); keyed {
+			switch key, keyed := memberKeyOf(m.Name); {
+			// Tier 3: a `this: Readonly<T>` parameter is the author saying
+			// the method does not mutate, which outranks every tier below.
+			// ClassifyMemberByName reads a name and cannot see it.
+			case hasReadonlyThisParam(m.Params):
+				mut = false
+			case keyed:
 				if classified, ok := ClassifyMemberByName(facts, owner, key); ok {
 					mut = classified
 				}

@@ -218,6 +218,45 @@ func TestStandalone_UnclassifiedMethodDefaultsToMut(t *testing.T) {
 		"name-classifier miss defaults to mut self (tier-7 parity)")
 }
 
+// readonlyThisTrio declares a method whose name the mutating `push` prefix
+// claims, under an explicit `this: Readonly<T>`. The two answers disagree, so
+// the emitted receiver says which tier decided.
+const readonlyThisTrio = `
+interface Frob {
+    push(this: Readonly<Frob>, item: number): number;
+}
+
+interface FrobConstructor {
+    new (): Frob;
+}
+
+declare var Frob: FrobConstructor;
+`
+
+// A `this: Readonly<T>` parameter is a tier-3 author signal, so it outranks
+// the name tiers on a class fused from interface signatures the same way it
+// does on a `declare class` member.
+func TestStandalone_ReadonlyThisParamOutranksTheNameTiers(t *testing.T) {
+	astModule, _ := convertSlice(t, readonlyThisTrio)
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok)
+	require.Len(t, rootNS.Decls, 1)
+	cls, ok := rootNS.Decls[0].(*ast.ClassDecl)
+	require.True(t, ok, "trio fused to a class")
+
+	var method *ast.MethodElem
+	for _, elem := range cls.Body {
+		if m, isMethod := elem.(*ast.MethodElem); isMethod {
+			method = m
+			break
+		}
+	}
+	require.NotNil(t, method, "push method present")
+	require.NotNil(t, method.Receiver, "instance method has a receiver")
+	require.False(t, method.Receiver.Mut,
+		"`this: Readonly<T>` outranks the mutating `push` prefix")
+}
+
 // qualifiedTrioBinding pins that a `declare var` whose type annotation
 // uses a *qualified* name (e.g. `SomeNs.FrobConstructor`) does not
 // participate in trio detection — even when a local `FrobConstructor`
