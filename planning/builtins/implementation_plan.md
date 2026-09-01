@@ -1874,8 +1874,9 @@ inputs:
    `curated.json` answers, per determination, what the control-flow
    graph does not settle.
 3. **Overlay** — hand-written `.esc` fragments under
-   `internal/interop/overlay/{std,web}/`, supplying declarations no
-   upstream source has and standing in for ones it expresses wrongly.
+   `internal/interop/overlay/`, supplying declarations no upstream
+   source has, standing in for ones it expresses wrongly, and removing
+   ones Escalier has no home for.
 
 **The operation is in the filename, not the file.** An overlay file is
 ordinary `.esc`, and every declaration in it takes that file's
@@ -1969,10 +1970,57 @@ declaration-granular replacement swallows.
 both the granularity and the check that fails a run when a replaced
 member's upstream counterpart has moved.
 
-**`drop` is not an overlay operation.** It stays as `ExplicitDrops` in
-[partition.go](../../internal/dts_to_esc/partition.go), because which
-symbols never reach a package is a routing decision rather than a
-declaration.
+**`drop` names what the generator must not emit.** A drop file's
+declarations are read for their **names alone** — every type
+annotation, signature, and body in one is ignored, so a drop is written
+in the smallest form that parses:
+
+```
+// overlay/drop.esc — whole symbols, package-less
+export declare val eval
+export declare val globalThis
+
+// overlay/std/date.drop.esc — members of a package's declarations
+export declare interface Date {
+    getYear: unknown,
+}
+```
+
+`export declare val <name>` needs no type annotation and `<name>:
+unknown` is the shortest member form, so neither invites inventing a
+signature that would then be ignored. Generation rejects a drop entry
+carrying more than that, which is what keeps "the rest is ignored" from
+becoming a trap for whoever writes a real signature and expects it to
+matter. A member drop removes every member under that name, overload
+set included, matching the rule `replace` follows.
+
+Drops were a Go set, `ExplicitDrops` in
+[partition.go](../../internal/dts_to_esc/partition.go). Moving them to
+the overlay is what lets a user drop something: §6.3 ships the tree
+alongside the binary so builtins can be tweaked post-install, and a set
+compiled into the binary can never be extended that way. The tiered
+override precedence the runtime store already implements — user project
+over user dependency over builtin — is the shape a user-supplied
+overlay would slot into later.
+
+Two consequences to carry into the implementation. A whole-symbol drop
+resolves in `Route`, before a package is assigned, which is why
+`overlay/drop.esc` sits at the overlay root rather than under a package
+— `eval` and `globalThis` belong to no package. And the generator must
+therefore parse the overlay *before* routing, where today `ExplicitDrops`
+is a compile-time constant available to `Route` for free.
+
+The unmapped fail-safe still enforces totality over the lib set: every
+top-level name must be routed, dropped, or caught by the DOM residual,
+or the run fails. That check is dynamic either way, so it survives the
+invariant now spanning a Go map and a data file. `UnmappedError`'s text
+has to stop naming `ExplicitDrops` and point at the overlay instead.
+[#1357](https://github.com/escalier-lang/escalier/issues/1357) migrates
+the 19 entries and makes both changes.
+
+`DroppedSources` is separate and stays in Go. It names whole `.d.ts`
+files the partition skips, which is input selection rather than a
+statement about any declaration.
 
 **Why the tree is not hand-edited.** An earlier design made a re-run
 additive so hand-edits to the committed tree would survive it. Every
@@ -1994,11 +2042,10 @@ path. One check still wants `constrain`: comparing an overlay
 `replace` against the upstream declaration it stands in for. Until
 M7.5 lands, an overlay `replace` is reviewed by hand.
 
-**Declarations the generator drops on purpose** are listed as
-`ExplicitDrops` in [partition.go](../../internal/dts_to_esc/partition.go)
-— `globalThis`, `eval`, and the `intrinsic`-typed declarations per
-the Drops subsection in §6.1. The drop list is an input like any
-other, so the regenerate-and-diff check pins it: changing what is
+**Declarations the generator drops on purpose** are the overlay's
+`drop` files above — `globalThis`, `eval`, and the `intrinsic`-typed
+declarations per the Drops subsection in §6.1. They are an input like
+any other, so the regenerate-and-diff check pins them: changing what is
 dropped changes the tree.
 
 ### 6.5 `throws` annotations
