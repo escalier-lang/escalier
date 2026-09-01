@@ -74,8 +74,11 @@ type StandaloneModule struct {
 //     StandaloneModule.Paths).
 //   - Records every singleton member it skipped because the member's
 //     key has no plain-name form (see StandaloneModule.KeyDrops).
-func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
-	cctx := &convertCtx{}
+//
+// `facts` is the ECMA-262 receiver source the fact tier of the classification
+// order reads. nil leaves every receiver to the tiers below it.
+func ConvertToStandaloneModule(dtsModule *dts_parser.Module, facts *ReceiverFacts) (*StandaloneModule, error) {
+	cctx := &convertCtx{facts: facts, keyDrops: &[]SingletonMember{}}
 	trios := detectTrios(dtsModule.Statements)
 	singletons := detectSingletons(dtsModule.Statements, trios)
 	docs := make(map[ast.Decl]string)
@@ -104,7 +107,7 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 		Module:   ast.NewModule(namespaces),
 		Docs:     docs,
 		Paths:    paths,
-		KeyDrops: cctx.keyDrops,
+		KeyDrops: *cctx.keyDrops,
 	}, nil
 }
 
@@ -769,8 +772,19 @@ func convertStandaloneStmt(
 		var out []docDecl
 		innerTrios := detectTrios(s.Statements)
 		innerSingletons := detectSingletons(s.Statements, innerTrios)
+		// The members of a flattened namespace keep the namespace in their
+		// runtime path, so the classification tiers keyed by that path — the
+		// override store and the ECMA-262 facts — address `Intl.DateTimeFormat`
+		// rather than a bare `DateTimeFormat`.
+		innerCctx := &convertCtx{
+			store:         cctx.store,
+			facts:         cctx.facts,
+			modulePath:    cctx.modulePath,
+			namespacePath: qual,
+			keyDrops:      cctx.keyDrops,
+		}
 		for _, child := range s.Statements {
-			children, err := convertStandaloneStmt(cctx, child, innerTrios, innerSingletons, qual)
+			children, err := convertStandaloneStmt(innerCctx, child, innerTrios, innerSingletons, qual)
 			if err != nil {
 				return nil, fmt.Errorf("flattening namespace %s: %w", qual, err)
 			}
@@ -783,7 +797,7 @@ func convertStandaloneStmt(
 			return nil, nil
 		}
 		if info, ok := trios.byName[s.Name.Name]; ok {
-			classDecl, err := fuseTrio(info)
+			classDecl, err := fuseTrio(info, jsName(nsPath, s.Name.Name), cctx.facts)
 			if err != nil {
 				return nil, fmt.Errorf("fusing trio for %s: %w", s.Name.Name, err)
 			}
@@ -920,9 +934,13 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 // come from `info.instance` (always non-static); static members and the
 // constructor come from `info.constructor`.
 //
+// `owner` is the class's dotted runtime path, which is what addresses its
+// members in the ECMA-262 fact source; `facts` is that source, and nil leaves
+// every receiver to the name tiers.
+//
 // Mapping from interface members to class elems:
 //   - MethodSignature   → MethodElem (Static set per side; receiver from
-//     ClassifyMethodByName on the instance
+//     ClassifyMemberByName on the instance
 //     side, nil on the static side)
 //   - PropertySignature → FieldElem
 //   - GetterSignature   → GetterElem
@@ -932,7 +950,7 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //     IndexSignature are skipped for the MVP — they have no direct class-
 //     elem mapping. §6 may revisit (e.g. lower the bare-call form into a
 //     static factory).
-func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
+func fuseTrio(info *trioInfo, owner string, facts *ReceiverFacts) (*ast.ClassDecl, error) {
 	className := info.instance.Name.Name
 	typeParams, err := convertTypeParams(info.instance.TypeParams)
 	if err != nil {
@@ -942,7 +960,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 	var body []ast.ClassElem
 
 	for _, m := range info.instance.Members {
-		elem, err := interfaceMemberToClassElem(m, false /*static*/)
+		elem, err := interfaceMemberToClassElem(m, false /*static*/, owner, facts)
 		if err != nil {
 			return nil, err
 		}
@@ -960,7 +978,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 			body = append(body, ctor)
 			continue
 		}
-		elem, err := interfaceMemberToClassElem(m, true /*static*/)
+		elem, err := interfaceMemberToClassElem(m, true /*static*/, owner, facts)
 		if err != nil {
 			return nil, err
 		}
@@ -1007,6 +1025,8 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 func interfaceMemberToClassElem(
 	member dts_parser.InterfaceMember,
 	static bool,
+	owner string,
+	facts *ReceiverFacts,
 ) (ast.ClassElem, error) {
 	doc := member.Doc()
 	switch m := member.(type) {
@@ -1034,14 +1054,21 @@ func interfaceMemberToClassElem(
 		}
 		var receiver *ast.MethodReceiver
 		if !static {
-			mut, ok := ClassifyMethodByName(propertyKeyName(m.Name))
-			if !ok {
-				// Tier 7 default in Classify is mutating; mirror that
-				// so the synthesised receiver matches what classifyMember
-				// would have produced for a real MethodDecl that hit no
-				// name-based tier.
-				mut = true
+			mut := true
+			switch key, keyed := memberKeyOf(m.Name); {
+			// Tier 3: a `this: Readonly<T>` parameter is the author saying
+			// the method does not mutate, which outranks every tier below.
+			// ClassifyMemberByName reads a name and cannot see it.
+			case hasReadonlyThisParam(m.Params):
+				mut = false
+			case keyed:
+				if classified, ok := ClassifyMemberByName(facts, owner, key); ok {
+					mut = classified
+				}
 			}
+			// A member no tier classifies keeps the mutating default, which
+			// is what classifyMember would have produced for a real
+			// MethodDecl that reached the bottom of the cascade.
 			receiver = &ast.MethodReceiver{Mut: mut, Span_: span}
 		}
 		elem := &ast.MethodElem{

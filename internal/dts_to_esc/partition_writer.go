@@ -239,9 +239,9 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // view). `T[]` is already desugared to `Array<T>` by convertTypeAnn so
 // it flows through the same rewrite; `readonly T[]` is desugared to
 // `ReadonlyArray<T>` for the same reason.
-func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
+func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
-	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts})
+	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts}, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -591,8 +591,8 @@ func appendReadonlyAliases(mod *StandaloneModule, twins []readonlyTwin) {
 // to overwrite hand-edits).
 //
 // Returns a sorted list of the URIs written, for caller-side reporting.
-func WritePartitionedTree(result *PartitionResult, outDir string) ([]string, error) {
-	mods, err := ConvertBuckets(result)
+func WritePartitionedTree(result *PartitionResult, outDir string, facts *ReceiverFacts) ([]string, error) {
+	mods, err := ConvertBuckets(result, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -603,10 +603,10 @@ func WritePartitionedTree(result *PartitionResult, outDir string) ([]string, err
 // Callers that need the converted modules for something other than writing
 // them — the ECMA-262 join reads them for the members each package declares —
 // go through this instead of converting a second time.
-func ConvertBuckets(result *PartitionResult) (map[string]*StandaloneModule, error) {
+func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*StandaloneModule, error) {
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for uri, stmts := range result.Buckets {
-		mod, err := ConvertBucket(stmts)
+		mod, err := ConvertBucket(stmts, facts)
 		if err != nil {
 			return nil, fmt.Errorf("converting bucket %s: %w", uri, err)
 		}

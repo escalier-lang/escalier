@@ -14,13 +14,14 @@ import java.nio.charset.StandardCharsets.UTF_8
   * points at, so there is nothing to pass here. What was extracted is recorded
   * in the output as `specTarget`.
   *
-  * The one argument is the output path, defaulting to `cfg.json` beside this
-  * build.
+  * The one argument is the output path, defaulting to
+  * `internal/ecma262/cfg.json`, where the Go analysis embeds it. The default is
+  * relative to this build's directory, which is where sbt runs.
   */
 object Main:
 
   def main(args: Array[String]): Unit =
-    val out = args.headOption.getOrElse("cfg.json")
+    val out = args.headOption.getOrElse("../../internal/ecma262/cfg.json")
 
     println("extracting the specification from spec.html ...")
     val spec = Extractor()

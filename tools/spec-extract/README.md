@@ -3,13 +3,15 @@
 The maintainer-only toolchain for the ECMA-262 builtin annotation pipeline. It
 builds [ESMeta](https://github.com/es-meta/esmeta), runs its
 `extract → compile → build-cfg` pipeline over a pinned ECMA-262 revision, and
-serializes the resulting control-flow graph to [cfg.json](cfg.json).
+serializes the resulting control-flow graph to
+[internal/ecma262/cfg.json](../../internal/ecma262/cfg.json).
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md)
 plans the pipeline; §2 covers the toolchain and §3 the serializer.
 
 `cfg.json` is committed, and regenerating it is the only reason to run anything
-here. The Go analysis reads the committed file, so a contributor building the
-compiler never needs a JVM.
+here. It lives beside the Go analysis that reads it, which embeds it so the
+compiler carries the receiver claims wherever it runs. A contributor building
+the compiler never needs a JVM.
 
 Nothing here is part of the Go build or CI. The compiler builds from the repo
 root with the tools in the root `mise.toml`, which lists neither Java nor sbt.

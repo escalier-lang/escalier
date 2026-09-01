@@ -139,7 +139,7 @@ func NewMemberSet() *MemberSet {
 }
 
 // OverrideTier identifies where an override came from. It is distinct
-// from dts_to_esc.ResolutionTier, the 7-tier classification ladder.
+// from dts_to_esc.ResolutionTier, the eight-tier classification ladder.
 // OverrideTier is used only inside the override system, to drive the
 // internal three-tier collapse (§5.5).
 //

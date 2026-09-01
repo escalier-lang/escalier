@@ -6,21 +6,24 @@ import (
 	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/ecma262"
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// ResolutionTier identifies which tier in the seven-tier resolution order
+// ResolutionTier identifies which tier in the eight-tier resolution order
 // produced a mutability classification for a class member's receiver.
 //
-// The tiers match the requirements document:
+// The tiers match the requirements document, with the ECMA-262 facts added by
+// planning/ecma-262/requirements.md FR8:
 //  0. User-authored .esc source (sentinel; not produced by Classify — see §11.2)
 //  1. User override files
 //  2. @esctype tag (round-trip from Escalier source)
 //  3. Explicit author signals (this: Readonly<T>, getters/setters, Readonly<T>, readonly props)
 //  4. Builtin overrides (stdlib, FP libraries)
-//  5. get* prefix rule (with documented exceptions)
-//  6. Name-based heuristics
-//  7. Default: mutating
+//  5. ECMA-262 facts derived from the spec algorithm
+//  6. get* prefix rule (with documented exceptions)
+//  7. Name-based heuristics
+//  8. Default: mutating
 type ResolutionTier int
 
 const (
@@ -29,9 +32,10 @@ const (
 	TierEsctype                               // 2
 	TierExplicitSignal                        // 3
 	TierBuiltinOverride                       // 4
-	TierGetPrefix                             // 5
-	TierNameHeuristic                         // 6
-	TierDefault                               // 7
+	TierECMA262Fact                           // 5
+	TierGetPrefix                             // 6
+	TierNameHeuristic                         // 7
+	TierDefault                               // 8
 )
 
 // ClassifyResult is the outcome of Classify.
@@ -58,8 +62,13 @@ type ClassifyContext struct {
 	// receiver mutability. nil means no overrides are registered.
 	Store OverrideLookup
 
+	// Facts, if non-nil, is the ECMA-262 receiver source consulted by tier
+	// 5. nil means the converter was given no spec graph, which leaves every
+	// method to the name tiers below.
+	Facts *ReceiverFacts
+
 	// Base, if non-nil, is the inheritance fallthrough context: if all
-	// per-class tiers (1–6) miss on `Member`, `Classify` recurses on
+	// per-class tiers (1–7) miss on `Member`, `Classify` recurses on
 	// *Base. The caller is responsible for resolving the same-named
 	// member on the base class and constructing the new context. See §7.3.
 	Base *ClassifyContext
@@ -78,8 +87,9 @@ type OverrideLookup interface {
 }
 
 // Classify determines the mutability of a class member's receiver using the
-// seven-tier resolution order defined in
-// planning/interop_mutability/requirements.md.
+// resolution order defined in planning/interop_mutability/requirements.md,
+// with the ECMA-262 fact tier that planning/ecma-262/requirements.md FR8 adds
+// above the name tiers.
 func Classify(ctx ClassifyContext) ClassifyResult {
 	// Consult the override store once. The hit's `Source` says whether
 	// it is a tier-1 user override or a tier-4 built-in one, so it is
@@ -108,17 +118,22 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return *override
 	}
 
-	// Tier 5: get* prefix rule.
+	// Tier 5: ECMA-262 facts — planning/ecma-262/requirements.md FR8.
+	if result, ok := classifyFact(ctx); ok {
+		return result
+	}
+
+	// Tier 6: get* prefix rule.
 	if result, ok := classifyGetPrefix(ctx); ok {
 		return result
 	}
 
-	// Tier 6: name-based heuristics.
+	// Tier 7: name-based heuristics.
 	if result, ok := classifyNameHeuristic(ctx); ok {
 		return result
 	}
 
-	// IMPORTANT: when adding new per-class tiers (1, 2, 4), insert them
+	// IMPORTANT: when adding new per-class tiers (1, 2, 4, 5), insert them
 	// ABOVE this block. Inheritance fallthrough must only fire after
 	// every per-class tier has missed on the subclass; placing a new
 	// tier below this point would let the base override a stronger
@@ -132,36 +147,112 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return Classify(*ctx.Base)
 	}
 
-	// Tier 7: default to mutating.
+	// Tier 8: default to mutating.
 	return ClassifyResult{Mut: true, Source: TierDefault}
+}
+
+// classifyFact implements tier 5: the receiver mutability the ECMA-262
+// analysis published for this member.
+//
+// The lookup is by the member's dotted runtime path, so it fires only for a
+// class the global scope declares. A module path names an imported package,
+// whose `String` is its own class rather than the builtin the spec keys, so
+// nothing there resolves.
+//
+// Only a method resolves. A getter and a setter are settled by tier 3 above,
+// and a data property has no spec algorithm to carry a fact.
+func classifyFact(ctx ClassifyContext) (ClassifyResult, bool) {
+	if ctx.Facts == nil || ctx.ModulePath != "" {
+		return ClassifyResult{}, false
+	}
+	method, ok := ctx.Member.(*dts_parser.MethodDecl)
+	if !ok || method.Modifiers.Static {
+		return ClassifyResult{}, false
+	}
+	key, ok := memberKeyOf(method.Name)
+	if !ok {
+		return ClassifyResult{}, false
+	}
+	mut, ok := ctx.Facts.Instance(qualifiedName(ctx.NamespacePath, ctx.ClassName), key)
+	if !ok {
+		return ClassifyResult{}, false
+	}
+	return ClassifyResult{Mut: mut, Source: TierECMA262Fact}, true
+}
+
+// memberKeyOf reads the member address a `.d.ts` property key spells. A plain
+// identifier and a string literal are string keys. A computed `[Symbol.x]` is
+// the well-known symbol `x`, which the spec keys as `@@x`. Every other computed
+// key names no member a fact can address.
+func memberKeyOf(key dts_parser.PropertyKey) (ecma262.MemberKey, bool) {
+	switch k := key.(type) {
+	case *dts_parser.Ident:
+		return ecma262.StrMember(k.Name), true
+	case *dts_parser.StringLiteral:
+		return ecma262.StrMember(k.Value), true
+	case *dts_parser.ComputedKey:
+		member, ok := k.Expr.(*dts_parser.MemberExpr)
+		if !ok {
+			return ecma262.MemberKey{}, false
+		}
+		obj, ok := member.Object.(*dts_parser.IdentExpr)
+		if !ok || obj.Name != "Symbol" {
+			return ecma262.MemberKey{}, false
+		}
+		return ecma262.SymMember(member.Prop.Name), true
+	}
+	return ecma262.MemberKey{}, false
 }
 
 // ClassifyMethodByName runs the name-only tiers of Classify against a bare
 // method name and returns the resulting receiver-mutability classification.
-// It covers the well-known non-mutating method allow-list (from tier 3),
-// the tier-5 `get*` prefix rule, and the tier-6 name-based heuristics —
-// i.e. every tier whose decision depends only on the method's name.
-//
-// Used by the checker prelude pass on .d.ts-loaded lib types, where the
-// caller has a type_system.MethodElem and a string name but no
-// dts_parser.ClassMember to feed the full Classify entry point.
-//
-// Returns (mut, true) when a tier classifies the name; (false, false)
-// when no tier matches and the caller should keep its own default.
+// It is ClassifyMemberByName with no fact source, for a caller that holds a
+// name and nothing that says which builtin the name belongs to.
 func ClassifyMethodByName(name string) (mut bool, ok bool) {
-	if name == "" {
-		return false, false
-	}
-	// Tier 3 (name-only subset): well-known non-mutating method names
-	// that apply regardless of the containing type.
-	if wellKnownNonMutatingMethods.Contains(name) {
+	return ClassifyMemberByName(nil, "", ecma262.StrMember(name))
+}
+
+// ClassifyMemberByName runs the tiers of Classify that need no declaration
+// against one member of one owner, and returns the resulting
+// receiver-mutability classification. In cascade order those are the
+// well-known non-mutating method names of tier 3, the ECMA-262 fact for the
+// member at tier 5, the `get*` prefix rule of tier 6, and the name-based
+// heuristics of tier 7.
+//
+// The trio fusion in this package is the caller that has no
+// dts_parser.ClassMember to feed the full Classify entry point. It builds a
+// class out of interface signatures, and knows that class's owner, which is
+// its dotted runtime path — see ReceiverFacts.
+//
+// owner is "" for a caller that has no owner to name, which leaves the fact
+// tier with nothing to look up. ClassifyMethodByName is that caller.
+//
+// A symbol-keyed member reaches only the two tiers that address a member
+// rather than read a name, which are the well-known symbols of tier 3 and the
+// fact of tier 5.
+//
+// Returns (mut, true) when a tier classifies the member; (false, false) when
+// none does and the caller should keep its own default.
+func ClassifyMemberByName(facts *ReceiverFacts, owner string, member ecma262.MemberKey) (mut bool, ok bool) {
+	name := member.Name
+	// Tier 3 (name-only subset): the members that are non-mutating by
+	// convention regardless of the containing type, which are the well-known
+	// method names and the well-known symbols.
+	if wellKnownMember(member) {
 		return false, true
 	}
-	// Tier 5: `get*` prefix with documented mutate-on-miss fall-throughs.
+	// Tier 5: the receiver the spec analysis published for this member.
+	if mut, ok := facts.Instance(owner, member); ok {
+		return mut, true
+	}
+	if member.Kind != ecma262.StrKey || name == "" {
+		return false, false
+	}
+	// Tier 6: `get*` prefix with documented mutate-on-miss fall-throughs.
 	if classifyGetPrefixByName(name) {
 		return false, true
 	}
-	// Tier 6: name-based heuristics. Mutating wins when both match.
+	// Tier 7: name-based heuristics. Mutating wins when both match.
 	isMut := matchesAnyPrefix(name, mutatingPrefixes) || mutatingExact.Contains(name)
 	isNonMut := matchesAnyPrefix(name, nonMutatingPrefixes) || nonMutatingExact.Contains(name)
 	switch {
@@ -190,10 +281,15 @@ type MethodNames = set.Set[string]
 // for any method with no entry.
 //
 // The one production reader is `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types. Classify does not consult this
-// table. Its tier 4 reads the override store of `internal/interop`, whose
-// built-in subtree is still empty, so the converter reaches a `.d.ts` method
-// through the name-only tiers alone.
+// `mut self` from the `.d.ts`-loaded lib types. It reads no fact, so an entry
+// is what carries the claim there even where a published fact says the same
+// thing. planning/ecma-262/validation_diff.md lists the 24 entries the facts
+// answer, which come out when the M12 flip deletes that reader along with the
+// rest of `internal/checker`.
+//
+// Classify does not consult this table. Its tier 4 reads the override store of
+// `internal/interop`, whose built-in subtree is still empty, and its tier 5
+// reads the ECMA-262 facts, which answer most of what is listed here.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //
@@ -229,9 +325,12 @@ var nonMutatingOverrides = map[string]MethodNames{
 	// `RegExp` needs no entry. `toString` sits on the well-known allow-list
 	// ClassifyMethodByName consults. `compile` mutates, and `exec` and `test`
 	// write `lastIndex` when the pattern is global or sticky, so all three
-	// keep the default `mut self`. `Symbol.search` and `Symbol.split` are
-	// non-mutating per spec, and this string-keyed map cannot address a
-	// symbol-keyed member. See #620.
+	// keep the default `mut self`. This string-keyed map cannot address a
+	// symbol-keyed member in any case, and the converter answers those from
+	// their facts: `[Symbol.match]` and `[Symbol.replace]` write `lastIndex`
+	// the way `exec` does, while `[Symbol.matchAll]` and `[Symbol.split]`
+	// build a fresh RegExp to iterate with and leave the receiver alone.
+	// See #620.
 	"Object": set.FromSlice([]string{
 		// A heuristic miss. `propertyIsEnumerable` starts with no
 		// non-mutating prefix. The heuristics answer the rest of
@@ -308,7 +407,7 @@ func NonMutatingOverrides(owner string) MethodNames {
 
 // classifyGetPrefixByName is the name-only counterpart to
 // classifyGetPrefix. Returns true iff `name` should be classified
-// non-mutating under the tier-5 rule (bare `get` or `get` + uppercase
+// non-mutating under the tier-6 rule (bare `get` or `get` + uppercase
 // continuation, excluding the `getOr*` mutate-on-miss prefixes).
 func classifyGetPrefixByName(name string) bool {
 	if name != "get" && !hasPrefixWithUpperContinuation(name, "get") {
@@ -329,9 +428,9 @@ func classifyGetPrefixByName(name string) bool {
 	return true
 }
 
-// classifyGetPrefix implements tier 5: `get*` methods are non-mutating,
+// classifyGetPrefix implements tier 6: `get*` methods are non-mutating,
 // except for the documented mutate-on-miss prefixes (`getOrInsert`,
-// `getOrUpdate`, `getOrCreate`), which fall through to tier 6 and get
+// `getOrUpdate`, `getOrCreate`), which fall through to tier 7 and get
 // classified mutating there.
 func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 	m, ok := ctx.Member.(*dts_parser.MethodDecl)
@@ -349,13 +448,13 @@ func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 	// Mutating exceptions: getOrInsert*, getOrUpdate*, getOrCreate*.
 	//
 	// Returning `(_, false)` here is the fall-through signal — it means
-	// tier 5 declines to classify, so `Classify` proceeds to tier 6 where
+	// tier 6 declines to classify, so `Classify` proceeds to tier 7 where
 	// `mutatingPrefixes` (which includes `getOrMutatingPrefixes`) picks
 	// the name up as mutating. This is *not* a non-mutating return.
 	//
 	// Exact-name matches (e.g. bare `getOrInsert`) and any uppercase or
 	// non-ASCII continuation fall through; only an ASCII-lowercase
-	// continuation like `getOrInserter` stays at tier 5.
+	// continuation like `getOrInserter` stays at tier 6.
 	for _, p := range getOrMutatingPrefixes {
 		if !strings.HasPrefix(name, p) {
 			continue
@@ -372,13 +471,13 @@ func classifyGetPrefix(ctx ClassifyContext) (ClassifyResult, bool) {
 }
 
 // getOrMutatingPrefixes are `get`-led names whose leading `get` is
-// followed by a write-on-miss action. Tier 5 must not classify these as
-// non-mutating; tier 6's mutating-prefix list picks them up.
+// followed by a write-on-miss action. Tier 6 must not classify these as
+// non-mutating; tier 7's mutating-prefix list picks them up.
 var getOrMutatingPrefixes = []string{
 	"getOrInsert", "getOrUpdate", "getOrCreate",
 }
 
-// classifyNameHeuristic implements tier 6: name-based heuristics drawn
+// classifyNameHeuristic implements tier 7: name-based heuristics drawn
 // from requirements.md §"Heuristics". When a name matches both a
 // mutating and non-mutating signal, mutating wins (requirements: "if
 // both, prefer mutating"). The slices below are the source of truth and
@@ -430,8 +529,8 @@ var nonMutatingExact = set.FromSlice([]string{
 })
 
 // Source of truth: requirements.md §"Heuristics" → "Mutating-name signals".
-// The `getOr*` entries are appended from getOrMutatingPrefixes so tier 5's
-// fall-throughs and tier 6's mutating list stay in sync.
+// The `getOr*` entries are appended from getOrMutatingPrefixes so tier 6's
+// fall-throughs and tier 7's mutating list stay in sync.
 var mutatingPrefixes = append([]string{
 	"set", "add", "remove", "delete", "clear", "reset", "init",
 	"push", "pop", "shift", "unshift", "insert", "replace", "update",
@@ -448,7 +547,7 @@ var mutatingExact = set.FromSlice([]string{
 })
 
 // hasPrefixWithUpperContinuation reports whether name == prefix + UpperRune + rest.
-// Used by tier 5 where bare prefix or lowercase continuation must NOT match.
+// Used by tier 6 where bare prefix or lowercase continuation must NOT match.
 func hasPrefixWithUpperContinuation(name, prefix string) bool {
 	if !strings.HasPrefix(name, prefix) || len(name) <= len(prefix) {
 		return false
@@ -530,6 +629,18 @@ func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	}
 
 	return ClassifyResult{}, false
+}
+
+// wellKnownMember reports whether a member address is one of the tier-3
+// conventions, which are the well-known non-mutating method names and the
+// well-known symbols. It is the MemberKey counterpart of isWellKnownMethod, so
+// a class fused from interface signatures reaches the same answer as one
+// converted from a `.d.ts` class declaration.
+func wellKnownMember(member ecma262.MemberKey) bool {
+	if member.Kind == ecma262.SymKey {
+		return wellKnownSymbols.Contains(member.Name)
+	}
+	return wellKnownNonMutatingMethods.Contains(member.Name)
 }
 
 // wellKnownNonMutatingMethods lists method names that are non-mutating by

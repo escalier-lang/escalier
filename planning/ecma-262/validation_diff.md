@@ -10,8 +10,10 @@ document gives a disposition for each entry the diff turned up.
 218 methods. Before the fixes recorded below, the two sources agreed on 215 of
 them. All three disagreements are resolved, so they now agree on every one. Two
 of the three were a heuristic mis-classification the facts caught, and one was
-an analyzer gap the facts missed. §7 is authorized to rank the facts above the
-name tiers and to delete the 24 override entries listed below.
+an analyzer gap the facts missed. §7 was authorized on this evidence to rank
+the facts above the name tiers. The 24 override entries listed below are
+redundant for the converter, and the sequencing note explains why they are
+still in the table.
 
 ## What the diff compares
 
@@ -23,17 +25,18 @@ The hand-written answer is the union of two sources, read in the order
    An entry names one method of one owner as non-mutating.
 2. `dts_to_esc.ClassifyMethodByName` in the same file, which answers from the
    method's name alone. It covers the well-known allow-list of tier 3, the
-   `get*` prefix rule of tier 5, and the name-based prefixes of tier 6.
+   `get*` prefix rule of tier 6, and the name-based prefixes of tier 7. The
+   diff reads it without a fact source, so the tier the facts sit at is the
+   one thing it leaves out — that is the answer the diff measures against.
 
-A method neither source answers falls through to the tier-7 `&mut self`
+A method neither source answers falls through to the tier-8 `&mut self`
 default. That default is an absence of a claim rather than a claim, so the diff
 counts those methods apart instead of scoring them as disagreements.
 
 The override table is not a rung of `dts_to_esc.Classify`. Classify's tier 4
 reads the override store of `internal/interop`, whose built-in subtree holds
-only a README, so the converter reaches a `.d.ts` method through the name-only
-tiers alone. The prelude is the table's one production reader today, which is
-what §7 has to sequence around — see below.
+only a README. The prelude is the table's one production reader, which is what
+§7 had to sequence around — see below.
 
 The comparison is `internal/dts_to_esc.ValidateReceivers`. A fact takes part
 only when it addresses an instance method by a string key and claims a receiver
@@ -53,10 +56,11 @@ cannot answer them:
 | Bucket | Count | Meaning |
 | ------ | ----- | ------- |
 | Confirmed | 194 | A heuristic the fact agrees with. |
-| Redundant | 24 | An override entry the fact agrees with. §7 deletes it. |
-| Disagreement | 0 | The two sources answer differently. |
-| Answered by the facts alone | 48 | Neither hand-written source answers. Each of these falls through to the `&mut self` default today. |
-| Override with no fact | 37 | An override entry no fact answers. §7 keeps it. |
+| Corrected | 0 | A heuristic the fact overrules. Empty while the entries stand. |
+| Redundant | 24 | An override entry the fact agrees with. |
+| Disagreement | 0 | An override entry the fact contradicts. |
+| Answered by the facts alone | 48 | Neither hand-written source answers. Each of these reaches the `&mut self` default in the prelude, and its fact in the converter. |
+| Override with no fact | 37 | An override entry no fact answers. |
 
 The run prints these counts. `dts_to_esc bootstrap --cfg <cfg.json> <lib-dir>
 <out-dir>` writes them to stderr beside the curation and join reports.
@@ -118,9 +122,9 @@ for it is §4 work rather than §6 work.
 ## The 24 redundant override entries
 
 Each is an entry in `nonMutatingOverrides` whose owner and member a published
-fact answers the same way. §7 deletes exactly this list.
-`TestCommittedGraphRedundantOverrides` pins it so §7 works from a checked list
-rather than recomputing one.
+fact answers the same way. They come out with the prelude pass that reads them,
+per the sequencing note below. `TestCommittedGraphRedundantOverrides` pins the
+list so that deletion works from a checked set rather than a recomputed one.
 
 ```
 Function.apply               String.localeCompare  String.replaceAll
@@ -133,55 +137,74 @@ String.codePointAt           String.repeat         String.trimEnd
 String.endsWith              String.replace        String.trimStart
 ```
 
-### Sequencing: the deletion is not safe on its own
+### Sequencing: the deletion waits for M12
 
-§7 inserts the facts into `dts_to_esc.Classify`, and the prelude's
-`UpdateMethodMutability` is the only code that applies the override table. A
-`Classify` answer does not stand in for an entry: the receiver it writes does
-not reach the `.d.ts`-loaded lib types the prelude builds. Removing `charAt`
-from the `String` entry while making `Classify` answer `borrow` for it through
-a tier `ClassifyMethodByName` cannot reach leaves
+The prelude's `UpdateMethodMutability` is the only code that applies the
+override table. A `Classify` answer does not stand in for an entry: the
+receiver it writes does not reach the `.d.ts`-loaded lib types the prelude
+builds. Removing `charAt` from the `String` entry while making `Classify`
+answer `borrow` for it through a tier the prelude cannot reach leaves
 `TestPreludeOverridesCallableOnNonMutReceiver` failing with "Callee is not
 callable" on `s.charAt(0)`. The entry is what carries the claim.
 
-So deleting the 24 entries in the same change that wires the facts into
-`Classify` would leave the prelude reaching those methods through the name
-heuristics alone, and the heuristics are what the entries exist to correct.
-`String.prototype.replace` would go back to a mutating receiver.
+So deleting the 24 entries while wiring the facts into `Classify` alone would
+leave the prelude reaching those methods through the name heuristics, and the
+heuristics are what the entries exist to correct. `String.prototype.replace`
+would go back to a mutating receiver.
 
-The deletion is safe once either holds. The facts reach the pass that applies
-receiver mutability to the `.d.ts`-loaded lib types, or that pass is gone,
-which is what the M12 flip of the builtins workstream does to
-`UpdateMethodMutability`. §7 states which of the two it is relying on before
-removing an entry. The same condition governs §6.B and §6.C of
+Either of two things makes the deletion safe. The facts reach the pass that
+applies receiver mutability to the `.d.ts`-loaded lib types, or that pass is
+gone, which is what the M12 flip of the builtins workstream does to
+`UpdateMethodMutability`. **§7 relies on the second, and so kept all 24
+entries.** The first would mean `internal/checker` reading `internal/ecma262`,
+and the legacy checker is not this workstream's target: the facts belong to the
+converter that generates the `std:*` `.esc` files, and the solver reads those
+files rather than the spec. The solver also has nothing for a fact to apply to.
+Its `NewPrelude` seeds operator bindings and opaque stdlib placeholders and
+reads no `.d.ts`, so there is no ambient global surface to write a receiver
+onto — a `std:*` method arrives with the receiver the converter already wrote.
+Paying a dependency into a tree that M12 deletes buys nothing, so the entries
+stay until they go out with their one reader. The
+same condition governs §6.B and §6.C of
 [../interop_mutability/implementation_plan.md](../interop_mutability/implementation_plan.md),
 which drop entries as the `data/builtins/` overrides land.
 
-### The gate's meaning changes when the entries go
+### What the gate reads once the facts outrank the heuristics
 
-Deleting the 24 entries makes `TestCommittedGraphLeavesNoReceiverDisagreement`
-fail on `String.prototype.replace` and `String.prototype.replaceAll`. Both drop
-from an override answer to the mutating `replace` prefix, which contradicts the
-`borrow` the facts publish.
+The gate was written when a method with no entry was decided by the heuristic,
+which made every contradiction a soundness risk. In the converter the fact now
+decides, and a heuristic that would have answered otherwise never reaches a
+receiver. Deleting an entry would therefore move its method onto a contradiction
+that costs nothing: drop the `String` entries and `replace` and `replaceAll`
+fall to the mutating `replace` prefix, which the published `borrow` disputes.
 
-That is the gate reading a condition it was not written for, not a reason to
-keep the entries. Today a method with no entry is decided by the heuristic, so a
-disagreement is a soundness risk. Once §7 ranks the facts above the name tiers,
-the fact decides and a heuristic that would have answered otherwise costs
-nothing. `replace` is the heuristic the deleted entry existed to correct, so the
-contradiction is expected rather than new information.
+So the diff splits a contradiction by which hand-written source produced it, and
+only the one the facts lose to fails the build:
 
-Unlike `copyWithin`, this one does not want a heuristic fix. A `replace*` prefix
-really is mutating on most APIs, `replaceChild` and `replaceState` among them;
-`String.prototype.replace` is the exception. §7 decides how the gate should read
-a fact-wins disagreement, and until then the assertion stands as written.
+- **`disagreement`** — an override entry contradicts the fact. The entry
+  outranks the fact in every reader, so the hand-written answer is what gets
+  written and one of the two sources is wrong.
+  `TestCommittedGraphLeavesNoReceiverDisagreement` holds this at zero.
+- **`corrected`** — a heuristic contradicts the fact. The fact is what the
+  converter writes. `TestCommittedGraphCorrectedHeuristics` pins the list,
+  which is empty while the entries stand, since an entry answers every method
+  whose heuristic a fact contradicts.
 
-## The 37 entries §7 keeps
+A corrected heuristic is worth reading when one appears. The heuristic is what
+classifies that name on every other type, which is how the `copyWithin`
+exact-name entry above was found. The two that would appear first do not want a
+heuristic fix, though: a `replace*` prefix really is mutating on most APIs,
+`replaceChild` and `replaceState` among them, and `String.prototype.replace` is
+the exception.
+
+## The 37 entries no fact answers
 
 `Body`, `Console`, `Request`, and `Response` are `web:*` owners with no
 ECMA-262 algorithm, so no fact can ever address them. They wait on the WebIDL
 extractor. `String.substr` is an Annex B method the committed graph does not
-carry. `TestCommittedGraphOverridesWithNoFact` pins this list too.
+carry. `TestCommittedGraphOverridesWithNoFact` pins this list too. These are
+the entries that survive M12: nothing in ECMA-262 addresses them, so they wait
+on the WebIDL extractor rather than on a spec fact.
 
 ## The gate holds itself
 

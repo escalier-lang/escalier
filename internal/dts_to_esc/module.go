@@ -18,6 +18,10 @@ type convertCtx struct {
 	// means no overrides are registered.
 	store OverrideLookup
 
+	// facts is the ECMA-262 receiver source consulted by Classify's fact
+	// tier; nil means the caller supplied no spec graph.
+	facts *ReceiverFacts
+
 	// modulePath is the store key for the module being converted: ""
 	// for globals/prelude lib files, the import specifier for an
 	// imported package (e.g. "lodash/fp"), or the module name from a
@@ -34,14 +38,23 @@ type convertCtx struct {
 	// keyDrops accumulates every singleton member flattenSingleton
 	// skipped because the member's key has no plain-name form.
 	// ReportSingletonKeyDrops decides which of these are expected.
-	keyDrops []SingletonMember
+	//
+	// The drops belong to the module rather than to one namespace, so the
+	// accumulator is shared: a context built for a nested namespace walk
+	// carries the same pointer, and a drop recorded there reaches the module
+	// the walk started from. It is nil for a caller that builds a context
+	// itself and reads no drops back.
+	keyDrops *[]SingletonMember
 }
 
 // noteSingletonKeyDrop records that flattenSingleton skipped a member
 // declared under key. The singleton is named by its dotted runtime
 // path, so nested singletons stay distinct from top-level ones.
 func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.PropertyKey) {
-	c.keyDrops = append(c.keyDrops, SingletonMember{
+	if c.keyDrops == nil {
+		return
+	}
+	*c.keyDrops = append(*c.keyDrops, SingletonMember{
 		Singleton: singleton,
 		Key:       singletonKeyLabel(key),
 	})
@@ -81,6 +94,7 @@ func (c *convertCtx) classifyMember(member dts_parser.ClassMember, className str
 		ModulePath:    c.modulePath,
 		NamespacePath: c.namespacePath,
 		Store:         c.store,
+		Facts:         c.facts,
 	})
 }
 
@@ -121,8 +135,10 @@ func processNamespace(
 			nestedExported := s.Export()
 			nestedCctx := &convertCtx{
 				store:         cctx.store,
+				facts:         cctx.facts,
 				modulePath:    cctx.modulePath,
 				namespacePath: nestedName,
+				keyDrops:      cctx.keyDrops,
 			}
 			if err := processNamespace(nestedCctx, nestedName, s.Statements, namespaces, nestedAmbient, nestedExported); err != nil {
 				return fmt.Errorf("processing namespace %s: %w", s.Name.Name, err)
@@ -219,13 +235,20 @@ func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
 }
 
 // ConvertModuleWithOverrides converts dts_parser.Module to ast.Module,
-// consulting `store` for tier-1 (user) and tier-4 (builtin) overrides
-// during member mutability classification. `modulePath` is the path the
-// store was keyed under for these declarations — "" for globals and
-// prelude lib files; the package import specifier for an imported
-// package's package decls (e.g. "lodash/fp"); the module name for
-// `declare module "X" { ... }` blocks (passed by the caller, since the
-// classifier strips that wrapper before getting here).
+// consulting `store` during member mutability classification. It answers the
+// user overrides of tier 1 and the builtin overrides of tier 4, and may be nil,
+// which leaves both tiers with nothing to answer from.
+//
+// No ECMA-262 fact reaches this entry point. The facts classify the receivers
+// of the `std:*` packages the standalone converter generates, which is
+// ConvertToStandaloneModule; this one feeds the legacy checker's prelude and
+// its imported-package path.
+//
+// `modulePath` is the path the store was keyed under for these declarations.
+// It is "" for globals and prelude lib files. For an imported package's
+// package decls it is the import specifier, such as "lodash/fp". For a
+// `declare module "X" { ... }` block it is the module name, which the caller
+// passes because the classifier strips that wrapper before getting here.
 func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (*ast.Module, error) {
 	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
