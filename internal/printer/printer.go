@@ -273,6 +273,9 @@ func (p *Printer) printImportStmt(s *ast.ImportStmt) {
 // Declaration printing
 
 func (p *Printer) printDecl(decl ast.Decl) {
+	if doc := decl.Doc(); doc != "" {
+		p.writeDoc(doc)
+	}
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		p.printVarDecl(d)

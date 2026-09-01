@@ -14,6 +14,7 @@ type ClassDecl struct {
 	declare        bool
 	override       bool
 	final          bool
+	doc            string
 	span           Span
 	provenance     provenance.Provenance
 }

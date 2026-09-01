@@ -24,18 +24,11 @@ import (
 )
 
 // StandaloneModule is the result of ConvertToStandaloneModule: an
-// ast.Module plus a side map from each top-level decl to its source
-// JSDoc string (verbatim including the `/** ... */` delimiters, per the
-// retention contract in §5.0). Decls with no leading JSDoc are absent
-// from Docs.
-//
-// The side map exists because the Escalier AST has no Doc field on
-// declarations — adding one would touch the printer and every existing
-// snapshot. The standalone renderer reads Docs directly and prints each
-// comment ahead of its decl.
+// ast.Module whose top-level decls carry the source JSDoc on their Doc
+// field, verbatim including the `/** ... */` delimiters, per the
+// retention contract in §5.0.
 type StandaloneModule struct {
 	Module *ast.Module
-	Docs   map[ast.Decl]string
 	// Paths maps each emitted declaration to its dotted runtime path — the
 	// same string the `@js("...")` decorator carries, kept as a side map so
 	// the declarations that erase at codegen have one too. `InterfaceDecl`
@@ -61,16 +54,15 @@ type StandaloneModule struct {
 //   - Forces `export` on every emitted decl.
 //   - Emits everything into the root namespace (key ""); no nested
 //     ast.Namespace entries are produced.
-//   - Preserves the source's leading JSDoc on each top-level decl (see
-//     StandaloneModule.Docs); trio fusion takes the doc from the
-//     instance interface (the constructor interface's doc is dropped).
+//   - Preserves the source's leading JSDoc on each top-level decl; trio
+//     fusion takes the doc from the instance interface and drops the
+//     constructor interface's.
 //   - Records each emitted decl's dotted runtime path (see
 //     StandaloneModule.Paths).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
 	trios := detectTrios(dtsModule.Statements)
 	singletons := detectSingletons(dtsModule.Statements, trios)
-	docs := make(map[ast.Decl]string)
 	paths := make(map[ast.Decl]string)
 
 	var decls []ast.Decl
@@ -82,7 +74,14 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 		for _, dd := range emitted {
 			decls = append(decls, dd.decl)
 			if dd.doc != "" {
-				docs[dd.decl] = dd.doc
+				// dts_parser hands the comment over verbatim with its
+				// `/** ... */` delimiters and the source's original column
+				// offset on continuation lines. Normalize so continuation
+				// `*` lines align with the decl's own indent rather than
+				// the one the dts source used, which differs whenever
+				// singleton flattening hoists a member to the top level.
+				dd.decl.SetDoc(strings.Join(
+					printer.NormalizeDocLines(dd.doc), "\n"))
 			}
 			if dd.path != "" {
 				paths[dd.decl] = dd.path
@@ -94,7 +93,6 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 	namespaces.Set("", &ast.Namespace{Decls: decls})
 	return &StandaloneModule{
 		Module: ast.NewModule(namespaces),
-		Docs:   docs,
 		Paths:  paths,
 	}, nil
 }
@@ -109,12 +107,11 @@ type docDecl struct {
 }
 
 // RenderStandaloneModule prints a standalone-converter module with a
-// blank line between top-level declarations, and the source JSDoc
-// comment (when present) ahead of each decl. The plain
-// printer.PrintModule separates decls by a single newline and does not
-// emit doc comments at all, which would make the converter's flattened
-// output hard to read for humans. This helper is the human-facing form
-// used by tools/dts_to_esc/ and the converter's snapshot tests.
+// blank line between top-level declarations. The plain
+// printer.PrintModule separates decls by a single newline, which packs
+// the converter's flattened output too tightly to read. This helper is
+// the human-facing form used by tools/dts_to_esc/ and the converter's
+// snapshot tests.
 func RenderStandaloneModule(m *StandaloneModule) (string, error) {
 	var sb strings.Builder
 	if err := writeStandaloneModule(m, &sb); err != nil {
@@ -142,24 +139,6 @@ func writeStandaloneModule(m *StandaloneModule, w io.Writer) error {
 				}
 			}
 			first = false
-			if doc, ok := m.Docs[decl]; ok {
-				// dts_parser hands us the comment verbatim with its
-				// `/** ... */` delimiters and the source's original
-				// column offset on continuation lines. Normalize so
-				// continuation `*` lines align at column 1 of the
-				// (top-level) destination instead of leaking the
-				// source's indent.
-				for _, line := range printer.NormalizeDocLines(doc) {
-					if _, err := io.WriteString(w, line); err != nil {
-						iterErr = err
-						return false
-					}
-					if _, err := io.WriteString(w, "\n"); err != nil {
-						iterErr = err
-						return false
-					}
-				}
-			}
 			s, err := printer.Print(decl, opts)
 			if err != nil {
 				iterErr = err

@@ -415,7 +415,7 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 		}
 		convertedNames.Add(name)
 		if !spaceCovered(byName[name], decl) {
-			text, err := renderStandaloneDecl(mod, decl)
+			text, err := renderStandaloneDecl(decl)
 			if err != nil {
 				return nil, fmt.Errorf("rendering %s in %s: %w", name, pkg.URI, err)
 			}
@@ -505,12 +505,11 @@ func standaloneDecls(mod *StandaloneModule) []ast.Decl {
 // renderStandaloneDecl prints one converted declaration in the same
 // form WriteStandaloneModule would emit it, JSDoc included. The result
 // ends with a newline.
-func renderStandaloneDecl(mod *StandaloneModule, decl ast.Decl) (string, error) {
+func renderStandaloneDecl(decl ast.Decl) (string, error) {
 	var namespaces btree.Map[string, *ast.Namespace]
 	namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{decl}})
 	return RenderStandaloneModule(&StandaloneModule{
 		Module: ast.NewModule(namespaces),
-		Docs:   mod.Docs,
 	})
 }
 

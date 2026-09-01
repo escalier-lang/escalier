@@ -125,7 +125,6 @@ func ParseDecls(ctx context.Context, source *ast.Source) ([]ast.Decl, []*Error) 
 func (p *Parser) decls() []ast.Decl {
 	decls := []ast.Decl{}
 
-	token := p.lexer.peek()
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
 		select {
@@ -136,30 +135,26 @@ func (p *Parser) decls() []ast.Decl {
 			// continue
 		}
 
-		//nolint: exhaustive
-		switch token.Type {
-		case EndOfFile:
+		doc := p.consumeLeadingDoc()
+		token := p.lexer.peek()
+		if token.Type == EndOfFile {
 			p.lexer.consume()
 			return decls
-		case LineComment, BlockComment:
-			p.lexer.consume()
-			token = p.lexer.peek()
-		default:
-			decl := p.Decl()
-			if decl != nil {
-				decls = append(decls, decl)
-			} else {
-				nextToken := p.lexer.peek()
-				// If no tokens have been consumed then we've encountered
-				// something we don't know how to parse.  We consume the token
-				// and then try to parse the another statement.
-				if token.Span.End.Line == nextToken.Span.End.Line &&
-					token.Span.End.Column == nextToken.Span.End.Column {
-					p.reportError(token.Span, "Unexpected token")
-					p.lexer.consume()
-				}
+		}
+		decl := p.Decl()
+		if decl != nil {
+			attachDoc(decl, doc)
+			decls = append(decls, decl)
+		} else {
+			nextToken := p.lexer.peek()
+			// If no tokens have been consumed then we've encountered
+			// something we don't know how to parse.  We consume the token
+			// and then try to parse the another statement.
+			if token.Span.End.Line == nextToken.Span.End.Line &&
+				token.Span.End.Column == nextToken.Span.End.Column {
+				p.reportError(token.Span, "Unexpected token")
+				p.lexer.consume()
 			}
-			token = p.lexer.peek()
 		}
 	}
 }
@@ -193,7 +188,16 @@ importLoop:
 		//nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:
-			p.lexer.consume()
+			// A comment run here either precedes another import or is the
+			// leading doc of the first declaration. Look past it to decide:
+			// on an import the comments are dropped, otherwise the run is
+			// rewound so decls() can attach the doc it ends with.
+			saved := p.saveState()
+			p.consumeLeadingDoc()
+			if p.lexer.peek().Type != Import {
+				p.restoreState(saved)
+				break importLoop
+			}
 			token = p.lexer.peek()
 		case Import:
 			stmt := p.importStmt()

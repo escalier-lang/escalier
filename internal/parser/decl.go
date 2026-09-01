@@ -476,14 +476,12 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 			return decls
 		default:
 		}
+		doc := p.consumeLeadingDoc()
 		token := p.lexer.peek()
 		// nolint: exhaustive
 		switch token.Type {
 		case CloseBrace, EndOfFile:
 			return decls
-		case LineComment, BlockComment:
-			p.lexer.consume()
-			continue
 		}
 		inner := p.Decl()
 		if inner == nil {
@@ -491,6 +489,7 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 			// nil, so the loop is guaranteed to make progress.
 			continue
 		}
+		attachDoc(inner, doc)
 		if override {
 			setOverrideRecursive(inner)
 		}

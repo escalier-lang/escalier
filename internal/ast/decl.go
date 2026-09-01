@@ -17,6 +17,7 @@ type DeclGetters interface {
 type Decl interface {
 	isDecl()
 	DeclGetters
+	Documented
 	Node
 }
 
@@ -49,6 +50,7 @@ type VarDecl struct {
 	export       bool
 	declare      bool
 	override     bool
+	doc          string
 	span         Span
 	InferredType Type // optional, used to store the inferred pattern type
 	provenance   provenance.Provenance
@@ -128,6 +130,7 @@ type FuncDecl struct {
 	export     bool
 	declare    bool
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
@@ -199,6 +202,7 @@ type TypeDecl struct {
 	export         bool
 	declare        bool
 	override       bool
+	doc            string
 	span           Span
 	provenance     provenance.Provenance
 }
@@ -245,6 +249,7 @@ type InterfaceDecl struct {
 	export         bool
 	declare        bool
 	override       bool
+	doc            string
 	span           Span
 	provenance     provenance.Provenance
 }
@@ -348,6 +353,7 @@ type EnumDecl struct {
 	export     bool
 	declare    bool
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
@@ -400,6 +406,7 @@ type ExportAssignmentStmt struct {
 	Name       *Ident
 	declare    bool
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
@@ -440,6 +447,7 @@ type DeclareModuleDecl struct {
 	Name       *StrLit // module name as a string literal
 	Decls      []Decl
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
@@ -476,6 +484,7 @@ func (d *DeclareModuleDecl) SetProvenance(p provenance.Provenance) { d.provenanc
 type DeclareGlobalDecl struct {
 	Decls      []Decl
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
@@ -515,6 +524,7 @@ type NamespaceDecl struct {
 	Decls      []Decl
 	export     bool
 	override   bool
+	doc        string
 	span       Span
 	provenance provenance.Provenance
 }
