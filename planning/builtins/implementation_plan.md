@@ -1874,12 +1874,72 @@ inputs:
    `curated.json` answers, per determination, what the control-flow
    graph does not settle.
 3. **Overlay** — hand-written `.esc` fragments under
-   `internal/interop/overlay/{std,web}/`, carrying `add`, `replace`,
-   and `drop` keyed by declaration name.
+   `internal/interop/overlay/{std,web}/`, supplying declarations no
+   upstream source has and standing in for ones it expresses wrongly.
 
-`replace` is declaration-granular, so a shape the converter cannot
-express is hand-written in full and committed as an input rather
-than edited into the output afterwards.
+**The operation is in the filename, not the file.** An overlay file is
+ordinary `.esc`, and every declaration in it takes that file's
+operation:
+
+```
+internal/interop/overlay/std/symbol.add.esc
+internal/interop/overlay/std/array.replace.esc
+```
+
+The alternative was a per-declaration marker, and the natural one does
+not exist. Decorators are the only annotation the parser has, and
+[decl.go](../../internal/parser/decl.go) rejects them on `interface`,
+`type`, `enum`, and `namespace` declarations because those have no
+runtime form. Over the pinned lib set that is 1352 interfaces and 339
+type aliases out of 2787 generated top-level declarations, so a
+decorator could not mark 61% of the tree. The class-member parser does
+not read decorators at all, so a member could not be marked either.
+Overlay files are the ones the generator parses, so marking them means
+changing the parser first. Filenames avoid that.
+
+**`add` reuses the merge that already exists.** `mergeDecls` in
+[partition_writer.go](../../internal/dts_to_esc/partition_writer.go)
+collapses same-named interfaces across input files by concatenating
+their members — it is how the seven `interface Array<T>` declarations
+spread across lib years become one. An `.add.esc` file enters as one
+more input to that merge:
+
+```
+// overlay/std/symbol.add.esc
+export declare interface SymbolConstructor {
+    readonly customMatcher: unique symbol,
+}
+```
+
+No decorator is needed on the member, because
+`export declare var Symbol: SymbolConstructor` already carries
+`@js("Symbol")` and members lower through it. The
+[FR8](requirements.md) symbol re-exports are the flat form of the same
+file and do carry their own, being top-level:
+
+```
+@js("Symbol.iterator")
+export declare val iteratorKey: unique symbol
+```
+
+**`replace` states a whole declaration** that stands in for the
+converted one, keyed by name. It is the escape hatch for a shape the
+converter cannot express, committed as an input rather than edited
+into the output afterwards.
+
+Declaration granularity has a staleness hazard. Adding one symbol to a
+20-member `SymbolConstructor` through `replace` means restating the
+whole interface, and the overlay then keeps winning after TypeScript
+adds a well-known symbol, with no diff to notice. Prefer `add` for a
+member, and see
+[#1356](https://github.com/escalier-lang/escalier/issues/1356) for
+making `replace` fail when the declaration it stands in for changed
+underneath it.
+
+**`drop` is not an overlay operation.** It stays as `ExplicitDrops` in
+[partition.go](../../internal/dts_to_esc/partition.go), because which
+symbols never reach a package is a routing decision rather than a
+declaration.
 
 **Why the tree is not hand-edited.** An earlier design made a re-run
 additive so hand-edits to the committed tree would survive it. Every
