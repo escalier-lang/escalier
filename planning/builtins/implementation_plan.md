@@ -18,8 +18,8 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 3   | Codegen lowering and `@js` decorators                | FR3         | ✅      | §1         | Decorator parser, `@js` codegen lowering, and loader rules §3.4(1-4) all landed. The §3.5 fixtures that need `std:number` / `std:iterator` stubs (`parseInt`, Symbol re-export, package-private invisibility) moved to §7 where the stubs live.                            |
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `dts_to_esc.ConvertToStandaloneModule` ([internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/dts_to_esc/dts_to_esc_test.go](../../internal/dts_to_esc/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
-| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; the seeding subcommand `dts_to_esc bootstrap <lib-dir> <out-dir>`. lib.es5.d.ts smoke gate runs end-to-end (8/17 packages parse roundtrip; the rest surface printer/parser gaps that §7 hand-edits and PR B's check mode will close). PR D landed: the AST-producing conversion moved to [internal/dts_to_esc/](../../internal/dts_to_esc/), leaving `internal/interop` with the runtime override store alone. The converter reads recorded receiver mutability through the `dts_to_esc.OverrideLookup` interface, which the store implements, so no converter file imports `type_system`. One transitive link survives through `internal/ast`, which names `type_system.Type` and `type_system.BindingOwner`; M12 re-homes those two references whether or not the converter moves. PR B landed check 1 (missing declarations and members) plus additive write mode ([internal/dts_to_esc/rerun.go](../../internal/dts_to_esc/rerun.go), `dts_to_esc check` / `dts_to_esc regenerate`); its §6.4 checks 2 and 3 run the solver's `constrain` over `soltype` and wait on SimpleSub M7.5. PR C landed the three pinned-lib subcommands `bootstrap` / `regenerate` / `check`, the unified-diff `check` report ([internal/dts_to_esc/patch.go](../../internal/dts_to_esc/patch.go) over `go-udiff`), and the bump walkthrough in [tools/dts_to_esc/README.md](../../tools/dts_to_esc/README.md); the CI job that runs `check` waits on §7 seeding the committed tree. |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run the converter once; review; hand-edit high-value `throws`, lifetimes, mutability; commit. The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
+| 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; the seeding subcommand `dts_to_esc bootstrap <lib-dir> <out-dir>`. The whole pinned lib set now routes and converts: 49 packages under `std/` and `web/`, every emitted file reparses, and two runs produce identical trees. #1333 and #1340 closed the last printer and parser gaps. PR D landed: the AST-producing conversion moved to [internal/dts_to_esc/](../../internal/dts_to_esc/), leaving `internal/interop` with the runtime override store alone. The converter reads recorded receiver mutability through the `dts_to_esc.OverrideLookup` interface, which the store implements, so no converter file imports `type_system`. One transitive link survives through `internal/ast`, which names `type_system.Type` and `type_system.BindingOwner`; M12 re-homes those two references whether or not the converter moves. PR B landed check 1 (missing declarations and members) plus additive write mode ([internal/dts_to_esc/rerun.go](../../internal/dts_to_esc/rerun.go), `dts_to_esc check` / `dts_to_esc regenerate`); its §6.4 checks 2 and 3 run the solver's `constrain` over `soltype` and wait on SimpleSub M7.5. PR C landed the three pinned-lib subcommands `bootstrap` / `regenerate` / `check`, the unified-diff `check` report ([internal/dts_to_esc/patch.go](../../internal/dts_to_esc/patch.go) over `go-udiff`), and the bump walkthrough in [tools/dts_to_esc/README.md](../../tools/dts_to_esc/README.md). PR E ([#1341](https://github.com/escalier-lang/escalier/issues/1341)) supersedes B and C: a generated `.esc` becomes a build output written by one `generate` subcommand from the three inputs of §6.4, so the additive write mode and the `check` / `regenerate` split retire, and regenerating and diffing subsumes B's outstanding checks 2 and 3 without waiting on SimpleSub M7.5. §6.8 sequences the four derived determinations onto the generated declarations and records the three trio shapes that do not fuse yet — 625 inline-constructor pairs deferred with `web:*` fusion, `Array`, and `Symbol` / `BigInt`. |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run `generate` once; review; commit the tree together with the overlay and `curated.json` entries that produce it. Review never edits the output — a wrong determination costs a `curated.json` entry, an inexpressible shape costs an overlay `replace`, a systematic error is a converter fix (§7 step 2). The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (before M12)  | ⬜ | §4, §7, M7.5 | Migrate Escalier's own fixtures to `import "std:*"`. The solver has no ambient surface, so this is what lets SimpleSub M8's second fixture harness run the `fixtures/` tree at all. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The old checker keeps resolving previously-ambient names while it exists, so the added imports are additive and both harnesses stay green. |
 | 9   | Per-file shape loading in `internal/solver`          | FR11, FR12  | ⬜      | §2, §4, §7, §8, M7.5 | Add the FR11 trigger map on top of M7.5's import ingestion, so a file gets a literal's or language feature's method surface without naming the owning package. There is no switchover: the solver never had an ambient lib, and the legacy `internal/checker/` machinery goes out with the M12 flip, so §9.3 is an audit rather than a deletion PR. Re-home the §3.4 loader rules: rules 1–3 are AST-only and move to the pseudo-package load path; rule 4 (`@js` arg validation) needs a parsed TS lib, which only the old checker has via `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go), so it becomes a CI-only test that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Same test adds **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` or `get`, never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable. Today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime. Rule 5 shares the lib parse with rule 4, so doing them separately would duplicate it. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | M7.5, M9, M11, M11.5 | Implement adaptive diagnostic rendering (FR15) over the `soltype` printer and the auto-import quick-fix (FR16) on the solver-backed LSP (SimpleSub M11); verify the `Awaited<T>` source-level definition with documented-fallback policy; confirm the intrinsic handlers stay solver-resident (FR13). |
@@ -125,8 +125,9 @@ Three consequences shape the remaining phases.
    `internal/ast` names `type_system.Type` and
    `type_system.BindingOwner`, and M12 re-homes those two
    references. Everything downstream of the AST is written against
-   `soltype` and the solver's `constrain`: `--check` assignability
-   (§6.4), shape loading (§9), and type rendering (§10.2).
+   `soltype` and the solver's `constrain`: the overlay `replace`
+   drift check (§6.4), shape loading (§9), and type rendering
+   (§10.2).
 
 **SimpleSub milestone dependencies.** The remaining builtins phases
 sequence against the milestones in
@@ -1851,118 +1852,130 @@ Release packaging (`make`, install scripts, distro packages)
 copies the tree alongside the binary; CI verifies the
 post-install layout discovers correctly.
 
-### 6.4 Re-run semantics and `--check` mode
+### 6.4 Generation model and its inputs
 
-Re-running the converter against committed files is **additive
-and signature-checked**, not a wholesale overwrite. The hand-edits
-under [§7](#7-stdlib-bootstrap) (`throws`, lifetimes, mutability
-refinements) must survive a re-run.
+A generated `.esc` file is a **build output**. A run writes each
+generated package from scratch and reads no generated file back, so
+`git diff` is the review surface for a TS-version bump and the tool
+carries no differ of its own. Tracked as PR E in [#1341](https://github.com/escalier-lang/escalier/issues/1341).
 
-**Default re-run (write mode):**
+Every fact in a generated file comes from one of three committed
+inputs:
 
-- **Add** declarations present in the `.d.ts` but missing from the
-  committed `.esc` (new TS-lib symbols since last bump).
-- **Add** members on existing classes / interfaces that the `.d.ts`
-  has but the `.esc` is missing.
-- **Never overwrite** an existing declaration's body, signature, or
-  hand-added annotations. Hand-edits are sticky.
-- **Report** declarations present in the `.esc` but absent from the
-  `.d.ts` (likely TS-side removal) — informational, no automatic
-  deletion.
+1. **Upstream shape** — the pinned `lib.*.d.ts` set today, WebIDL
+   for `web:*` later.
+2. **Derived facts** — [internal/ecma262/](../../internal/ecma262/),
+   which resolves receiver mutability, parameter disposition, return
+   borrow, `throws`, and `rejects` from the committed `cfg.json`.
+   `curated.json` answers, per determination, what the control-flow
+   graph does not settle.
+3. **Overlay** — hand-written `.esc` fragments under
+   `internal/interop/overlay/{std,web}/`, carrying `add`, `replace`,
+   and `drop` keyed by declaration name.
 
-**`--check` mode (CI):** read-only verification that fails CI on
-any of:
+`replace` is declaration-granular, so a shape the converter cannot
+express is hand-written in full and committed as an input rather
+than edited into the output afterwards.
 
-1. **Missing declarations.** A `.d.ts` declaration with no
-   corresponding `.esc` declaration in the partition's target
-   file. Declarations the converter drops on purpose are exempt:
-   `globalThis`, `eval`, and every `intrinsic`-typed declaration
-   per the Drops subsection in §6.1. `--check` consults the same
-   drop list the routing pass uses rather than a second copy, so
-   the two cannot disagree, and a regression test runs `--check`
-   over converter output containing those declarations and
-   asserts it passes.
-2. **Incompatible signature drift.** An `.esc` function / method
-   signature whose param or return types are not assignable to /
-   from the `.d.ts` original, applied to the converted-from-TS
-   form. Catches accidental hand-edits that change the meaning of
-   a signature rather than refining it.
-3. **Incompatible property-type drift.** Same check for properties
-   on classes / interfaces.
+**Why the tree is not hand-edited.** An earlier design made a re-run
+additive so hand-edits to the committed tree would survive it. Every
+read of a committed `.esc` followed from that promise: parsing each
+package file, diffing it by name against converter output, merging,
+the `check` / `regenerate` split, and an error taxonomy for a tree
+the tool cannot re-read. Dropping the promise removes all of it.
+[#1345](https://github.com/escalier-lang/escalier/issues/1345)
+retires the machinery.
 
-**Assignability runs through the solver.** Checks 2 and 3 infer
-both sides — the committed `.esc` declaration and the freshly
-converted `.d.ts` one — into `soltype` and ask
-[internal/solver](../../internal/solver/)'s `constrain` whether one
-is a subtype of the other. That needs the solver to ingest a
-declaration module, which is SimpleSub M7.5, so PR B lands after
-that milestone. Check 1 is structural name matching over the parsed
-modules and depends on no checker, so PR B may ship check 1 first
-and add checks 2 and 3 when M7.5 arrives — say so in the PR rather
-than letting a name-only `--check` read as full drift coverage.
+**Drift detection no longer waits on the solver.** The additive
+model needed three checks: missing declarations, incompatible
+signature drift, and incompatible property-type drift. Checks 2 and
+3 compared both sides through [internal/solver](../../internal/solver/)'s
+`constrain`, which needs the solver to ingest a declaration module —
+SimpleSub M7.5. Regenerating and diffing catches all three at once
+and needs no checker, so drift detection comes off M7.5's critical
+path. One check still wants `constrain`: comparing an overlay
+`replace` against the upstream declaration it stands in for. Until
+M7.5 lands, an overlay `replace` is reviewed by hand.
 
-Adding `throws`, lifetimes, mutability, or narrowing a parameter /
-return type within the `.d.ts` shape is **not** incompatible and
-does not trip `--check`. The compatibility check is one-directional
-in the obvious sense (Escalier-side may be stricter than TS-side,
-not looser).
+**Declarations the generator drops on purpose** are listed as
+`ExplicitDrops` in [partition.go](../../internal/dts_to_esc/partition.go)
+— `globalThis`, `eval`, and the `intrinsic`-typed declarations per
+the Drops subsection in §6.1. The drop list is an input like any
+other, so the regenerate-and-diff check pins it: changing what is
+dropped changes the tree.
 
-This is the TS-version-bump review tool — **never auto-applies**
-deletions or signature changes.
+### 6.5 `throws` annotations
 
-### 6.5 `throws` annotations (bootstrap policy)
+Per [FR10](requirements.md#fr10-bootstrap-converter-tools-dts_to_esc),
+`throws` was originally a hand-curation job: the high-value ~50
+entries such as `JSON.parse`, `decodeURI*`, `BigInt`, `fetch`, and
+`Response.json`. Scraping MDN was rejected as prose-not-data,
+brittle, and copyleft.
 
-Per [FR10](requirements.md#fr10-bootstrap-converter-tools-dts_to_esc):
-hand-curate the high-value ~50 entries (`JSON.parse`,
-`decodeURI*`, `BigInt`, `fetch`, `Response.json`, etc.). Scraping
-MDN is rejected (prose-not-data, brittle, copyleft).
-WebIDL `[Throws]` extraction (`@webref/idl`) is a plausible
-future automation lever for `web:*` but is **out of scope for
-the bootstrap**. ECMARKUP extraction for `std:*` is similarly
-deferred.
+For `std:*` that curation is now a fallback rather than the plan.
+ECMA-262 §9.1 derives throw sets from the control-flow graph, §9.2
+filters the coercion sites a declared type rules out, and §9.3
+splits synchronous throws from asynchronous rejections. A curated
+entry answers what the graph does not settle, per §6.8.
+
+For `web:*` there is no derived source yet. WebIDL `[Throws]`
+extraction through `@webref/idl` is the plausible lever and arrives
+with the web-specs work described in §6.8; until then a `web:*`
+`throws` annotation is an overlay `replace`.
 
 ### 6.6 TS-version-bump workflow
 
-**CLI shape.** `tools/dts_to_esc/` is a single Go binary with
-subcommands:
+**CLI shape.** `tools/dts_to_esc/` is a single Go binary with one
+generating subcommand:
 
-- `dts_to_esc check` — read-only verification (§6.4); CI uses this.
-- `dts_to_esc regenerate` — additive write mode (§6.4); adds new
-  declarations / members from upstream TS without overwriting
-  existing bodies, signatures, or hand-edits.
-- `dts_to_esc bootstrap` — one-time initial seeding from a fresh
-  TS-lib input set (no committed `.esc` tree assumed); used by §7.
+- `dts_to_esc generate <lib-dir> <esc-dir>` — writes the whole tree
+  from the three inputs of §6.4 and reads no generated file back.
 
-Document the bump workflow in `tools/dts_to_esc/README.md`:
+It replaces `bootstrap`, `regenerate`, and `check`. Seeding an empty
+tree and re-running against a populated one are the same operation
+once the run reads no committed output.
+[#1342](https://github.com/escalier-lang/escalier/issues/1342) lands
+it alongside the overlay.
 
-1. Bump the pinned TS dependency.
-2. Run `dts_to_esc check`. Output is a unified diff against
-   current committed files showing TS-side adds / removes /
-   changes plus any compatibility errors.
-3. Optionally run `dts_to_esc regenerate` to apply additive
-   changes; review the diff and commit.
-4. Contributor ports any signature / removal changes by hand and
-   commits the result.
+The bump workflow in `tools/dts_to_esc/README.md`:
 
-**Optional CI nudge.** An action that annotates a PR with "TS
-lib changed since last bump" when the diff exceeds some
-threshold. Out of scope for the initial workstream, but the
-hook point is identified in this doc so it can be added later
-without re-architecture. The hook point is the CI job that runs
-`check`, which waits on §7 seeding the committed tree.
+1. Bump the pinned TypeScript version in `package.json` and run
+   `pnpm install`.
+2. Run `dts_to_esc generate`.
+3. Review `git diff` and commit. A removal upstream shows up as a
+   deletion in the diff rather than as a report, because the run
+   does not carry the old tree forward.
+4. An overlay `replace` or `drop` naming a declaration the upstream
+   source no longer has fails the run and names it. That is the
+   TS-side-removal signal, keyed on the overlay rather than on the
+   output tree.
+
+**CI.** A job runs `generate` and then `git diff --exit-code` over
+`internal/interop/data/`. A dirty tree means the committed output
+does not match its inputs, and the failure prints the diff. It
+catches an upstream change nobody regenerated and an in-place edit
+of a generated file with the same test.
+[#1344](https://github.com/escalier-lang/escalier/issues/1344).
+
+**Review ergonomics.** `web/dom.esc` is roughly 22.5k lines, so a
+generator change rewrites it wholesale and the diff dominates
+review. Mark the generated tree `linguist-generated` in
+`.gitattributes` so those files collapse by default.
+[#1353](https://github.com/escalier-lang/escalier/issues/1353).
 
 **Gate.** Every output `.esc` file under
-`internal/interop/data/{std,web}/` parses; the converter is
-idempotent (byte-identical on re-run); the partition matches
-[FR1](requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings)
-member-for-member.
+`internal/interop/data/{std,web}/` parses; generation is idempotent,
+so a second run leaves the tree byte-identical; the partition
+matches [FR1](requirements.md#fr1-no-ambient-set-shape-loaded-vs-named-bindings)
+member-for-member; CI fails when the committed tree does not match
+its inputs.
 
 ### 6.7 PR sequencing
 
-§6 lands as four PRs after §5 is in. The split keeps each review
+§6 lands as five PRs after §5 is in. The split keeps each review
 surface focused; bundling is possible but loses the isolation
-between partition-routing churn and the `--check` assignability
-logic that consumes the solver.
+between partition-routing churn and the generation-model change
+that PR E makes.
 
 A. **Partition table + routing + output layout** (6.1, 6.2, 6.3) ✅.
    Takes the §5 converter from "stdout, one file" to "full
@@ -1978,21 +1991,14 @@ A. **Partition table + routing + output layout** (6.1, 6.2, 6.3) ✅.
    inside each bucket before trio fusion, so members spread across
    lib years collapse onto one synthesized class.
 
-B. **`--check` mode + re-run semantics** (6.4) 🚧. Adds additive
-   write mode (sticky hand-edits, add-only for new TS-side
-   declarations / members) and the CI-facing read-only check
-   (missing declarations, signature / property-type drift via
-   the solver's `constrain`). Reviewable on its own once A has
-   produced a committed tree to check against; the drift checks
-   consume solver internals that are unrelated to partition
-   routing, and they gate on SimpleSub M7.5 per §6.4. Landed:
-   the shared diff in
-   [internal/dts_to_esc/rerun.go](../../internal/dts_to_esc/rerun.go)
-   behind `CheckPartition` / `RegeneratePartition`, wired as the
-   `check` and `regenerate` subcommands. Outstanding: checks 2
-   and 3, which wait on M7.5. The `check` report names them as
-   unimplemented so a passing run is not read as full drift
-   coverage.
+B. **`--check` mode + re-run semantics** (6.4) — superseded by
+   PR E. Landed additive write mode and the declaration-level
+   check in [rerun.go](../../internal/dts_to_esc/rerun.go) behind
+   `CheckPartition` / `RegeneratePartition`, wired as the `check`
+   and `regenerate` subcommands. Its outstanding checks 2 and 3
+   waited on SimpleSub M7.5 and are subsumed by E's byte diff;
+   [#1345](https://github.com/escalier-lang/escalier/issues/1345)
+   retires the machinery.
 
 C. **TS-version-bump workflow** (6.6) ✅. The three pinned-lib
    subcommands are `bootstrap`, `regenerate`, and `check` on
@@ -2037,101 +2043,178 @@ D. **Free the converter of `internal/type_system`.** ✅ The
    Removing the runtime override store itself is the third-party
    workstream's call.
 
-6.5 (`throws` bootstrap policy) is scope/policy rather than
-code — fold into whichever PR is convenient, or defer to §7
-where the hand-curation actually happens.
+E. **Generate the tree instead of merging into it** (6.4, 6.6) ⬜.
+   [#1341](https://github.com/escalier-lang/escalier/issues/1341).
+   Makes a generated `.esc` a build output: one `generate`
+   subcommand writes the tree from the three inputs of §6.4 and
+   reads nothing back. Lands the overlay layer and `generate`
+   ([#1342](https://github.com/escalier-lang/escalier/issues/1342)),
+   the regenerate-and-diff CI job
+   ([#1344](https://github.com/escalier-lang/escalier/issues/1344)),
+   and the removal of the additive re-run machinery
+   ([#1345](https://github.com/escalier-lang/escalier/issues/1345)).
+   It supersedes PR B: the additive write mode and the `check` /
+   `regenerate` split it added are what E retires, and the byte
+   diff subsumes B's outstanding checks 2 and 3 without waiting on
+   SimpleSub M7.5.
+
+   Now is the cheapest moment for it. §7 has not started, so
+   `internal/interop/data/` holds two hand-written stubs and
+   nothing else — there are no hand-edits to preserve, and the
+   additive machinery has never done the job it was built for.
+
+6.5 (`throws`) is scope and policy rather than code — fold into
+whichever PR is convenient. §6.8 sequences the fact application,
+which lands after E.
+
+### 6.8 Applying the derived facts
+
+Four determinations reach a generated declaration from
+[internal/ecma262/](../../internal/ecma262/). Escalier can spell all
+four today — `throws T`, `mut T` on a parameter, `mut self`, and
+`&'a mut T` with lifetime parameters all parse and print — so what
+each needs is generator wiring, not language work.
+
+| Determination | Derived by | Applied by |
+| --- | --- | --- |
+| Receiver mutability | ecma-262 §4.1, §4.3 | ecma-262 §7 ([#1200](https://github.com/escalier-lang/escalier/issues/1200)) |
+| Parameter mutability | ecma-262 §8.1 ([#1201](https://github.com/escalier-lang/escalier/issues/1201)) | [#1352](https://github.com/escalier-lang/escalier/issues/1352) |
+| Ownership and borrowing | ecma-262 §8.1 `escape`, §8.2 ([#1202](https://github.com/escalier-lang/escalier/issues/1202)) | [#1352](https://github.com/escalier-lang/escalier/issues/1352) |
+| `throws` and `rejects` | ecma-262 §9.1–§9.3 | [#1352](https://github.com/escalier-lang/escalier/issues/1352) |
+
+ECMA-262 §7 auto-applies receiver mutability alone and routes the
+other three through curation. [#1352](https://github.com/escalier-lang/escalier/issues/1352)
+changes that: each of the four is emitted from its fact, with
+`curated.json` supplying the determinations the graph does not
+settle. Curation stays the correction channel rather than the
+delivery channel.
+
+As of the pinned lib set the generated tree carries 394 `mut self`
+receivers, all of them from the name-tier classifier in
+[mutability.go](../../internal/dts_to_esc/mutability.go), and zero
+`throws` clauses, zero parameter `mut`, and zero `&` borrows.
+
+**Known fusion gaps.** A determination can only land on a fused
+class, since an `interface` member has no receiver to annotate.
+Three shapes do not fuse today, measured over the pinned lib set
+with the Web Worker and Windows Script Host libs excluded:
+
+- **625 `interface Foo` + `declare var Foo: { prototype: Foo, new (…): Foo }`
+  pairs**, of which 472 land in `web:dom`. `detectTrios` requires a
+  named `FooConstructor` interface, and the DOM writes the
+  constructor as an inline object literal on the `var`. Deferred:
+  `web:*` fusion is folded into the web-specs workstream that
+  replaces `lib.dom.d.ts` with WebIDL as the upstream source, so
+  `web:*` is generated now as a check on the converter's ability to
+  read `lib.dom.d.ts` and not yet as an annotated surface.
+  [#1351](https://github.com/escalier-lang/escalier/issues/1351).
+- **`Array`**, whose `ArrayConstructor` declares
+  `new <T>(arrayLength: number): T[]`. `hasCtorReturning` looks for
+  a construct signature returning a type reference named `Array`
+  and an array type is not one, so the single most consequential
+  `std:*` type stays an interface.
+  [#1350](https://github.com/escalier-lang/escalier/issues/1350).
+- **`Symbol` and `BigInt`**, whose constructor interfaces carry no
+  construct signature at all, because the specification forbids
+  `new` on them. [#1309](https://github.com/escalier-lang/escalier/issues/1309).
+
+**Other conversion gaps.** A type predicate return, `arg is T`,
+converts to `T` rather than to `boolean`, so `Array.isArray` emits
+as `isArray(arg: any) -> mut Array<any>` and claims to return the
+thing it tests. Escalier has no narrowing surface, so `boolean` is
+the honest conversion. Four predicate returns exist across the
+pinned lib set. [#1349](https://github.com/escalier-lang/escalier/issues/1349).
 
 ---
 
 ## §7. Stdlib bootstrap
 
-**Goal.** Commit the initial generated-then-hand-edited `.esc`
-files as the source of truth.
+**Goal.** Generate the `.esc` tree, review it, and commit it
+together with the inputs that produce it. The tree is the source of
+truth for every consumer that reads a `std:*` or `web:*` package;
+the §6.4 inputs are the source of truth for the tree. Tracked as
+[#1232](https://github.com/escalier-lang/escalier/issues/1232).
+
+Depends on §6 PR E. Before that lands this phase reads as
+"hand-edit the generated files", which it no longer is.
 
 **Work items.**
 
-1. Run the converter (§6) once, producing the full tree under
-   `internal/interop/data/{std,web}/`.
-2. Human review of every file. Hand-edit:
-   - Obvious mis-classifications.
-   - High-value `throws` annotations (the ~50 from §6.5).
-   - Lifetimes where applicable (the existing
-     [planning/lifetimes/](../lifetimes/) work feeds in here).
-   - Mutability refinements not captured by the
-     `dts_to_esc.Classify` seeding.
-   - `Symbol.customMatcher` (Escalier-specific, not in
-     `lib.*.d.ts`) hand-authored in `std:symbol`, written as
-     `@js("Symbol.customMatcher") export declare …` per §3.
-   - **Symbol re-exports** per FR8 (`iterator.iteratorKey`, `async.asyncIteratorKey`,
-     `regexp.matchKey`, …) hand-authored in their owning
-     packages, written as
-     `@js("Symbol.<name>") export declare val <name>Key: unique symbol`.
-     The converter does not emit these because they are not part
-     of any `lib.*.d.ts`.
-   - **`export` + `@js` decorator review.** Verify every
-     exported top-level declaration has an `@js` decorator with
-     a real JS-runtime expression as argument. Spot-check that
-     declarations meant to be package-private (helper types,
-     internal aliases) are correctly unexported and carry no
-     `@js`. Missing-decorator, missing-`export`, or
-     typo'd-target bugs ship to users otherwise; the §3 loader
-     check catches them at compile time but humans should catch
-     obvious cases here.
-3. **`Awaited<T>` source-level definition.** Write `Awaited<T>`
-   in `std:async` as the recursive conditional type, the same
-   shape as TypeScript's definition. Exercise against a
-   representative fixture: nested promises, thenables, mixed
-   `T | Promise<T>`, generic propagation. The solver already
-   reduces recursive conditionals and has a productivity check
-   that stops non-terminating ones
+1. Run `dts_to_esc generate` over the full pinned lib set,
+   producing `internal/interop/data/{std,web}/`.
+2. **Human review of every file.** Review reads the generated
+   output, but a fix lands in the layer that owns what is wrong,
+   never in the output:
+   - A determination the facts got wrong — receiver mutability, a
+     parameter's, a return's borrow, a `throws` set — costs an
+     entry in `internal/ecma262/curated.json` stating the
+     reviewer's reason and evidence.
+   - A shape the converter cannot express, or expresses wrongly,
+     costs an overlay `replace`.
+   - A declaration no upstream source has costs an overlay `add`.
+     `Symbol.customMatcher` in `std:symbol` and the
+     [FR8](requirements.md) symbol re-export aliases in their
+     owning packages land here, since neither is part of any
+     `lib.*.d.ts`. Each is written as
+     `@js("Symbol.<name>") export declare val <name>Key: unique symbol`
+     per §3, which an importer reaches as a member of the package
+     binding.
+   - A bug in a rewrite pass or the printer is fixed in the
+     converter and re-run. A systematic wrong answer across many
+     declarations is this case, not a pile of overlay entries.
+   - Verify every exported value declaration carries an `@js`
+     decorator naming a real runtime target, and that
+     package-private helpers are unexported and carry none. A miss
+     is a generator bug, since the decorator is derived from the
+     partition. Over the pinned lib set all 1096 exported value
+     declarations carry one today.
+3. **`Awaited<T>` source-level definition** in `std:async`, an
+   overlay `add` written as the recursive conditional type matching
+   TypeScript's. The solver already reduces recursive conditionals
+   and has a productivity check that stops non-terminating ones
    ([productivity.go](../../internal/solver/productivity.go),
-   [typeops.go](../../internal/solver/typeops.go)), so the
-   remaining risk is the definition itself rather than missing
-   machinery. Verification waits on SimpleSub M9, which turns on
-   type-level operators. If a concrete blocker surfaces, fall
-   back to a solver-resident intrinsic and document the specific
-   failure.
+   [typeops.go](../../internal/solver/typeops.go)), so the remaining
+   risk is the definition itself. Verification waits on SimpleSub
+   M9. On a concrete blocker, fall back to a solver-resident
+   intrinsic and document the specific failure.
 4. **FR5 finalization — non-class package exports as namespace
-   members.** §2's single-class shortcut binds the class itself
-   when activated; the FR5 spec also calls for other package
-   exports to remain accessible *as namespace members on the
-   same binding*, with static methods winning on name collision.
-   The §2 implementation left this as a TODO in
+   members.** §2's single-class shortcut binds the class itself when
+   activated; FR5 also calls for other package exports to stay
+   reachable as namespace members on the same binding, with static
+   methods winning a name collision. §2 left this a TODO in
    [bindStdlibLocal](../../internal/checker/infer_stdlib_import.go)
-   because the §2-era stubs (`std:math`, `std:array`) have only
-   a single export. That binding code is old-checker code and is
-   not the thing to finish. The §7 bootstrap is what produces the
-   first package pairing a class with non-class exports — say
-   `std:array` gaining helper functions or constants alongside
-   `Array` — so record the requirement here and implement the
-   merge once in the solver's stdlib binding path when M7.5 ports
-   it: copy the package namespace's values and types onto the
-   class binding's static surface, with a unit test pinning the
+   because the §2-era stubs have a single export each. This phase
+   produces the first package pairing a class with non-class
+   exports, so implement the merge once in the solver's stdlib
+   binding path when M7.5 ports it, with a unit test pinning the
    static-method-wins tiebreaker. Do not port the old checker's
    TODO forward.
-5. Commit. After this point, the converter persists only as
-   `--check` review tool; ongoing edits are direct to the
-   committed `.esc` files.
-6. **§3.5 codegen fixtures deferred from §3.** Once `std:number`
-   and `std:iterator` exist as committed packages, add the
-   fixtures §3 couldn't author without them:
-   - Hoisted global: `parseInt(s)` → `parseInt(s)`.
-   - Symbol re-export: `iterator.iteratorKey` → `Symbol.iterator`.
-   - Package-private declaration (unexported, no `@js`) is
-     invisible to importers — referencing it from outside the
-     pseudo-package errors as unbound.
+5. Commit the generated tree and the overlay in one change. After
+   this point an ongoing edit goes to the upstream pin, to
+   `curated.json`, or to the overlay, and never to a generated
+   file. The §6.6 CI job is what keeps that true.
+6. **§3.5 codegen fixtures deferred from §3**, now that
+   `std:number` and `std:iterator` exist as committed packages:
+   hoisted global `parseInt`, the `Symbol.iterator` re-export, and
+   package-private invisibility.
+
+**Decision owed here.** The readonly-twin gap from §6 PR A: either
+emit `ReadonlyFoo` as its own declaration carrying only the twin's
+members, or keep the alias and restrict it at the type level.
+Record the choice and add the `ReadonlyArray` / `ReadonlyMap`
+fixtures.
 
 **Gate.** Humans review the committed files; every emitted file
-parses and round-trips through the printer per §1; `go test ./...`
-passes. This phase changes no checker behavior in either checker —
-it lands the source-of-truth `.esc` files and nothing more. The
-solver does not type-check them until SimpleSub M7.5 ingests
-`std:*` / `web:*`, so §7 can land well ahead of its consumer. Two
-items wait on later milestones: the `Awaited<T>` verification in
-step 3 needs M9, and step 6's package-private-invisibility fixture
-asserts a resolution rule, so it holds on the solver only once §9.3
-re-homes the loader rules. The other step 6 fixtures assert emitted
-JS and run on whichever checker the fixture harness is wired to.
+parses and round-trips through the printer per §1; regenerating
+leaves the tree byte-identical, which is what proves no generated
+file was edited in place; `go test ./...` passes. This phase changes
+no checker behavior in either checker — it lands the files and the
+inputs that produce them and nothing more. The solver does not
+type-check them until SimpleSub M7.5 ingests `std:*` / `web:*`, so
+§7 can land well ahead of its consumer. Two items wait on later
+milestones: `Awaited<T>` verification in step 3 needs M9, and step
+6's package-private-invisibility fixture asserts a resolution rule,
+so it holds on the solver only once §9.3 re-homes the loader rules.
 
 ---
 
@@ -2708,9 +2791,9 @@ Per requirements §"Testing strategy":
   differential harness is where old-vs-new divergence is triaged.
 - Adaptive diagnostic rendering (§10.2), auto-import quick-fix
   (§10.3), named-import rejection (§2 parser/resolver).
-- Snapshot tests on converter output via `go-snaps`;
-  `tools/dts_to_esc/ --check` runs in CI to catch upstream TS
-  changes (§6.4).
+- Snapshot tests on converter output via `go-snaps`; CI
+  regenerates the tree and fails on a dirty diff, which is what
+  catches an upstream TS change nobody regenerated (§6.6).
 
 ### Non-functional requirements
 
@@ -2741,8 +2824,9 @@ phasing above:
   quick-fix (§10.3, hard requirement), suggestion-bearing
   diagnostics (FR15/§10.2), and the single-class shortcut
   (FR5/§2.4).
-- **Initial bootstrap quality** — mitigated by human review
-  pass at §7 and by `--check` mode at §6.4. Note the sequencing
+- **Initial bootstrap quality** — mitigated by the human review
+  pass at §7 and by the regenerate-and-diff job at §6.6. Note the
+  sequencing
   risk this creates: §7's files are committed before SimpleSub
   M7.5 type-checks them, so review and the §1 round-trip gate are
   the only signal until then. Expect a correction pass when M7.5
@@ -2800,7 +2884,7 @@ or more phases above.
 | FR7   | DOM packaging; cross-package type references; open augmentation deferred | §4.2 (single `web:dom` package + standalone web siblings; closed registries; `createElementNS` stays one overloaded method on `Document`), §4.2b (qualified cross-package type references), §4.5 (deferred augmentation work scoped for the future custom-elements workstream), §4.6 (method-elem overload resolution on class/interface declarations — open prerequisite for §7 so converted DOM methods dispatch correctly). Spike (§4.1) showed achieving the old per-file-activation design needs two new checker subsystems; MVP sidesteps by collapsing the DOM tree into one package. |
 | FR8   | Well-known symbol re-exports               | §7 step 2 (hand-authored re-export aliases with `@js("Symbol.<name>")`), §3 (decorator semantics carry the alias) |
 | FR9   | Augmentation activation semantics          | N/A for MVP — single-`web:dom` partition (§4.2) requires no activation semantics. Original spec preserved in [requirements.md appendix](requirements.md#appendix-deferred-fr9-spec) for the deferred custom-elements work. |
-| FR10  | Bootstrap converter                        | §5 (MVP, trio idiom, namespace flattening), §5.0 (JSDoc precursor), §6.1 (partition), §6.2 (routing), §6.4 (`--check`), §6.5 (`throws`), §6.6 (TS-bump workflow) |
+| FR10  | Bootstrap converter                        | §5 (MVP, trio idiom, namespace flattening), §5.0 (JSDoc precursor), §6.1 (partition), §6.2 (routing), §6.4 (generation model), §6.5 (`throws`), §6.6 (TS-bump workflow), §6.8 (fact application) |
 | FR11  | Prelude changes; lazy shape loading        | §9.1 (trigger map), §9.2 (shared parsed copies), §9.2a (cross-package verification), §9.3 (legacy-path audit + loader-rule re-homing) |
 | FR12  | Always-current API; polyfills at lowering  | Acknowledged as out-of-scope dependency in cross-cutting; type checker sees modern surface unconditionally       |
 | FR13  | Intrinsic types solver-resident            | §10.1 (handlers stay in `internal/solver`, `Awaited<T>` source-first with documented-fallback requirement, parser rejects `intrinsic`) |
