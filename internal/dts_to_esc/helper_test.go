@@ -5,8 +5,10 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
+	"github.com/stretchr/testify/require"
 )
 
 func TestConvertIdent(t *testing.T) {
@@ -408,8 +410,8 @@ func TestConvertTypeAnn(t *testing.T) {
 		{"import type with member", `import("module").Foo`},
 		{"import type with type args", `import("module").Foo<T>`},
 
-		// Type predicates
-		{"type predicate", "x is string"},
+		// Type predicates. A predicate only parses in return position.
+		{"type predicate", "(x: any) => x is string"},
 
 		// This type
 		{"this type", "this"},
@@ -465,6 +467,37 @@ func TestConvertTypeAnn(t *testing.T) {
 			}
 
 			snaps.MatchSnapshot(t, snapshot.String(escalierTypeAnn))
+		})
+	}
+}
+
+// A TypeScript type predicate return converts to what the function returns at
+// runtime, never to the type it narrows to. A guard, `arg is T`, returns
+// `boolean`. An assertion, `asserts arg is T`, returns `undefined`.
+func TestConvertTypePredicateReturn(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{"guard over a named type", "(arg: any) => arg is ArrayBufferView", "fn (arg: any) -> boolean"},
+		{"guard over an array type", "(arg: any) => arg is any[]", "fn (arg: any) -> boolean"},
+		{"assertion with a type", "(arg: any) => asserts arg is string", "fn (arg: any) -> undefined"},
+		{"assertion without a type", "(arg: any) => asserts arg", "fn (arg: any) -> undefined"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			source := &ast.Source{Path: "test.d.ts", Contents: tt.input, ID: 0}
+			dtsTypeAnn := dts_parser.NewDtsParser(source).ParseTypeAnn()
+			require.NotNil(t, dtsTypeAnn)
+
+			escTypeAnn, err := convertTypeAnn(dtsTypeAnn)
+			require.NoError(t, err)
+
+			printed, err := printer.Print(escTypeAnn, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.expected, printed)
 		})
 	}
 }

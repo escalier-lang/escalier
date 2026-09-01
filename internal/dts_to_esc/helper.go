@@ -622,11 +622,16 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		}
 		return ast.NewImportType(t.Module, qualifier, typeArgs, t.Span()), nil
 	case *dts_parser.TypePredicate:
-		// Type predicates don't have a direct equivalent in Escalier
-		// Convert to the type being asserted
+		// A type predicate only ever appears as a return type, and Escalier has
+		// no surface for the narrowing it declares. The honest conversion is what
+		// the function returns at runtime, and the two predicate forms differ
+		// there. A guard, `arg is T`, returns a boolean. An assertion,
+		// `asserts arg is T`, either throws or returns no value, so it lowers to
+		// `undefined`. Converting the right-hand type instead would claim that
+		// `isArray(arg: any): arg is any[]` returns an array.
 		// TODO(#229): add support for type predicates to Escalier
-		if t.Type != nil {
-			return convertTypeAnn(t.Type)
+		if t.Asserts {
+			return ast.NewLitTypeAnn(ast.NewUndefined(t.Span()), t.Span()), nil
 		}
 		return ast.NewBooleanTypeAnn(t.Span()), nil
 	case *dts_parser.ThisType:
