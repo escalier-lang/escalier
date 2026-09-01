@@ -1857,7 +1857,11 @@ post-install layout discovers correctly.
 A generated `.esc` file is a **build output**. A run writes each
 generated package from scratch and reads no generated file back, so
 `git diff` is the review surface for a TS-version bump and the tool
-carries no differ of its own. Tracked as PR E in [#1341](https://github.com/escalier-lang/escalier/issues/1341).
+carries no differ of its own. A run also deletes the generated
+packages it no longer emits, so a package that stops being routed
+leaves the tree instead of lingering as a stale file no input
+accounts for. Hand-authored packages are exempt, per the explicit
+list §6.6 describes. Tracked as PR E in [#1341](https://github.com/escalier-lang/escalier/issues/1341).
 
 Every fact in a generated file comes from one of three committed
 inputs:
@@ -1941,7 +1945,7 @@ The bump workflow in `tools/dts_to_esc/README.md`:
 
 1. Bump the pinned TypeScript version in `package.json` and run
    `pnpm install`.
-2. Run `dts_to_esc generate`.
+2. Run `dts_to_esc generate node_modules/typescript/lib internal/interop/data`.
 3. Review `git diff` and commit. A removal upstream shows up as a
    deletion in the diff rather than as a report, because the run
    does not carry the old tree forward.
@@ -1950,11 +1954,26 @@ The bump workflow in `tools/dts_to_esc/README.md`:
    TS-side-removal signal, keyed on the overlay rather than on the
    output tree.
 
-**CI.** A job runs `generate` and then `git diff --exit-code` over
-`internal/interop/data/`. A dirty tree means the committed output
-does not match its inputs, and the failure prints the diff. It
-catches an upstream change nobody regenerated and an in-place edit
-of a generated file with the same test.
+**CI.** A job runs `generate` and then fails if the tree changed. A
+dirty tree means the committed output does not match its inputs,
+and the failure prints the diff. It catches an upstream change
+nobody regenerated and an in-place edit of a generated file with
+the same test.
+
+`git diff --exit-code` is the wrong check here: it compares tracked
+files only, so a run that emits a **new** package leaves it
+untracked and the check passes. Stage first, then diff the index:
+
+```
+dts_to_esc generate node_modules/typescript/lib internal/interop/data
+git add -A internal/interop/data
+git diff --cached --exit-code internal/interop/data
+```
+
+That reports all three cases — a modified package, a package the
+run no longer emits, and a package the run newly emits. The job
+needs coverage for each, since only the modified case is the one a
+naive check gets right.
 [#1344](https://github.com/escalier-lang/escalier/issues/1344).
 
 **Review ergonomics.** `web/dom.esc` is roughly 22.5k lines, so a
@@ -2000,9 +2019,9 @@ B. **`--check` mode + re-run semantics** (6.4) — superseded by
    [#1345](https://github.com/escalier-lang/escalier/issues/1345)
    retires the machinery.
 
-C. **TS-version-bump workflow** (6.6) ✅. The three pinned-lib
-   subcommands are `bootstrap`, `regenerate`, and `check` on
-   `tools/dts_to_esc/`, and
+C. **TS-version-bump workflow** (6.6) — superseded by PR E. Landed
+   the three pinned-lib subcommands `bootstrap`, `regenerate`, and
+   `check` on `tools/dts_to_esc/`, and
    [tools/dts_to_esc/README.md](../../tools/dts_to_esc/README.md)
    documents the bump steps. `check` prints the unified diff a
    `regenerate` run would apply, rendered from that run's own
@@ -2011,9 +2030,12 @@ C. **TS-version-bump workflow** (6.6) ✅. The three pinned-lib
    [internal/dts_to_esc/patch.go](../../internal/dts_to_esc/patch.go)
    converts those insertions into the edits `go-udiff` takes, a
    re-export of the diff package gopls uses.
-   Outstanding: the CI job that runs `check` on every PR, which
-   waits on §7 seeding the committed tree, and the optional PR
-   annotation below.
+   PR E replaces all three subcommands with `generate`, so the
+   bump steps C documented are the ones §6.6 now states and
+   [#1345](https://github.com/escalier-lang/escalier/issues/1345)
+   retires the code and the README section behind them. C's
+   outstanding CI job is superseded too: the job runs `generate`
+   and diffs, not `check`.
 
 D. **Free the converter of `internal/type_system`.** ✅ The
    AST-producing conversion lives in `internal/dts_to_esc`:
@@ -2140,8 +2162,9 @@ Depends on §6 PR E. Before that lands this phase reads as
 
 **Work items.**
 
-1. Run `dts_to_esc generate` over the full pinned lib set,
-   producing `internal/interop/data/{std,web}/`.
+1. Run `dts_to_esc generate node_modules/typescript/lib internal/interop/data`
+   over the full pinned lib set, producing
+   `internal/interop/data/{std,web}/`.
 2. **Human review of every file.** Review reads the generated
    output, but a fix lands in the layer that owns what is wrong,
    never in the output:
@@ -2189,10 +2212,15 @@ Depends on §6 PR E. Before that lands this phase reads as
    binding path when M7.5 ports it, with a unit test pinning the
    static-method-wins tiebreaker. Do not port the old checker's
    TODO forward.
-5. Commit the generated tree and the overlay in one change. After
-   this point an ongoing edit goes to the upstream pin, to
-   `curated.json`, or to the overlay, and never to a generated
-   file. The §6.6 CI job is what keeps that true.
+5. Commit the generated tree together with **every input changed
+   to produce it** in one change: the overlay, the
+   `internal/ecma262/curated.json` entries step 2 added, the
+   pinned TypeScript version, and any converter fix. A checkout of
+   that commit has to regenerate the committed tree byte for byte,
+   which it cannot do if an input stayed behind. After this point
+   an ongoing edit goes to one of those inputs and never to a
+   generated file. The §6.6 CI job is what keeps that true, and it
+   is also what catches an input left uncommitted.
 6. **§3.5 codegen fixtures deferred from §3**, now that
    `std:number` and `std:iterator` exist as committed packages:
    hoisted global `parseInt`, the `Symbol.iterator` re-export, and
