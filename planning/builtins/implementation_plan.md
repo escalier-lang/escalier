@@ -1922,19 +1922,52 @@ file and do carry their own, being top-level:
 export declare val iteratorKey: unique symbol
 ```
 
-**`replace` states a whole declaration** that stands in for the
-converted one, keyed by name. It is the escape hatch for a shape the
-converter cannot express, committed as an input rather than edited
-into the output afterwards.
+**`replace` is member-granular**, and takes the same file shape as
+`add`. The overlay declares the members it is standing in for, and each
+one substitutes the converted member sharing its key rather than being
+appended beside it:
 
-Declaration granularity has a staleness hazard. Adding one symbol to a
-20-member `SymbolConstructor` through `replace` means restating the
-whole interface, and the overlay then keeps winning after TypeScript
-adds a well-known symbol, with no diff to notice. Prefer `add` for a
-member, and see
-[#1356](https://github.com/escalier-lang/escalier/issues/1356) for
-making `replace` fail when the declaration it stands in for changed
-underneath it.
+```
+// overlay/std/array.replace.esc
+export declare interface Array<T> {
+    sort(compareFn?: fn (a: T, b: T) -> number) -> Self,
+}
+```
+
+`add` and `replace` therefore differ only in what happens on a key
+collision, not in syntax. The pieces exist:
+[memberKey](../../internal/dts_to_esc/partition_writer.go) already
+gives a member its addressable key, covering idents, string literals,
+and `[Symbol.*]` computed keys, and the readonly-twin fold in the same
+file already walks one interface's members by that key and folds them
+into another. Member `replace` is that fold with substitution in place
+of append-if-absent.
+
+The substitution runs in `mergeDecls`, before trio fusion. At that
+point `Array`, `Map`, and `Promise` are all still interfaces, so
+overriding a member of an eventual class needs no post-fusion surgery.
+The pinned lib set holds two genuine `declare class` declarations, so
+the post-fusion path is a corner rather than the norm. Substituting in
+place rather than appending is what keeps regeneration byte-identical.
+
+Whole-declaration replacement stays available for a shape the converter
+gets structurally wrong, where restating members one at a time does not
+express the fix.
+
+Two rules the granularity needs. An overlay replaces a name's **entire
+overload set** and restates every signature in it, since `memberKey`
+returns `find` for both of `Array.find`'s signatures and a per-signature
+key would have to tiebreak the twelve overload sets that differ only in
+parameter types. And the key is name plus member kind, so a
+`readonly x: T` and a `get x()` do not collide silently.
+
+Granularity shrinks the staleness hazard rather than removing it. A
+replaced member is still forked from upstream, but a change to any
+other member of the same declaration still flows through, which
+declaration-granular replacement swallows.
+[#1356](https://github.com/escalier-lang/escalier/issues/1356) carries
+both the granularity and the check that fails a run when a replaced
+member's upstream counterpart has moved.
 
 **`drop` is not an overlay operation.** It stays as `ExplicitDrops` in
 [partition.go](../../internal/dts_to_esc/partition.go), because which
