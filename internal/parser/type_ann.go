@@ -923,6 +923,11 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	mod := ""
 	readonly := false
 
+	// tryParseMappedType consumes a leading `readonly`, `+readonly`, or `-readonly` on
+	// its way to the brackets and rewinds only to them, so once it has run this is the
+	// only record of what the member opened with.
+	firstToken := token
+
 	// `readonly [` opens two different members. A mapped type spells its modifier that
 	// way, and so does a property whose key is computed, as in
 	// `readonly [Symbol.toStringTag]: string`. Only what follows the brackets tells the
@@ -965,11 +970,24 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		return mappedElem
 	}
 
-	// The member is not a mapped type. tryParseMappedType rewound to the brackets and
-	// consumed the `readonly` on its way there. Those brackets hold a computed key, and
-	// the modifier belongs to the property they name.
+	// The member is not a mapped type, so tryParseMappedType rewound to the brackets it
+	// reached, and those brackets hold a computed key.
 	if pendingReadonly {
+		// `readonly` modifies the property the brackets name.
 		readonly = true
+	} else if firstToken.Type == Plus || firstToken.Type == Minus {
+		// `+readonly` and `-readonly` add and remove the modifier on the members a
+		// mapped type generates, and neither means anything on a property. Sitting on
+		// the bracket is what says the prefix was consumed rather than left in place,
+		// so a `+` or `-` that opened something else is not reported here. Name the
+		// prefix and read the member without it, which keeps the members after it.
+		if p.lexer.peek().Type == OpenBracket {
+			modifier := "+readonly"
+			if firstToken.Type == Minus {
+				modifier = "-readonly"
+			}
+			p.reportError(firstToken.Span, "'"+modifier+"' is only valid on a mapped type")
+		}
 	}
 
 	objKey := p.objExprKey()

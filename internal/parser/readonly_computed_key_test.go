@@ -122,6 +122,51 @@ func TestReadonlyOnComputedKeyClassField(t *testing.T) {
 	}
 }
 
+// `+readonly` and `-readonly` add and remove the modifier on the members a mapped type
+// generates. Neither means anything on the property a computed key names, so a member
+// carrying one without the `for` clause that makes it a mapped type is reported rather
+// than read as an unmodified property. The members after it still parse.
+func TestAddAndRemoveModifiersNeedAMappedType(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		src     string
+		wantErr string
+	}{
+		{"add", "{+readonly [Symbol.toStringTag]: string}", "'+readonly' is only valid on a mapped type"},
+		{"remove", "{-readonly [Symbol.toStringTag]: string}", "'-readonly' is only valid on a mapped type"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			typeAnn, errors := parseTypeAnnSrc(t, tt.src)
+			require.Len(t, errors, 1)
+			require.Equal(t, tt.wantErr, errors[0].Message)
+			obj, ok := typeAnn.(*ast.ObjectTypeAnn)
+			require.True(t, ok, "%s should be an object type", tt.src)
+			require.Len(t, obj.Elems, 1)
+			prop, ok := obj.Elems[0].(*ast.PropertyTypeAnn)
+			require.True(t, ok, "%s should be a property", tt.src)
+			require.IsType(t, &ast.ComputedKey{}, prop.Name)
+			require.False(t, prop.Readonly)
+		})
+	}
+}
+
+// Reporting the modifier leaves the member readable, so the rest of the object type
+// still parses instead of being discarded with it.
+func TestAddModifierKeepsTheMembersAfterIt(t *testing.T) {
+	t.Parallel()
+	src := "{+readonly [Symbol.toStringTag]: string, baz: string}"
+	typeAnn, errors := parseTypeAnnSrc(t, src)
+	require.Len(t, errors, 1)
+	require.Equal(t, "'+readonly' is only valid on a mapped type", errors[0].Message)
+	obj, ok := typeAnn.(*ast.ObjectTypeAnn)
+	require.True(t, ok)
+	require.Len(t, obj.Elems, 2)
+	require.IsType(t, &ast.PropertyTypeAnn{}, obj.Elems[1])
+}
+
 // The mapped-type reading of `readonly [` still wins where a mapped type follows.
 func TestReadonlyBracketStillOpensMappedTypes(t *testing.T) {
 	t.Parallel()
