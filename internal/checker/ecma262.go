@@ -24,11 +24,11 @@ var (
 // later one returns the same source.
 //
 // A graph the analysis cannot read panics, matching how this package treats an
-// absent TypeScript lib directory. Both are inputs the prelude cannot classify
-// without: the fact source decides the receiver of `String.prototype.replace`
-// and of every other builtin the name heuristics answer wrongly, so falling
-// back to those heuristics would put a mutating receiver on methods that do not
-// mutate, with nothing on stderr to say why.
+// absent TypeScript lib directory. Neither is an input the prelude can
+// classify without. The fact source is what decides the receiver of
+// `String.prototype.replace` and of every other builtin the name heuristics
+// answer wrongly. Falling back to those heuristics would put a mutating
+// receiver on methods that do not mutate, with nothing on stderr to say why.
 func receiverFacts() *dts_to_esc.ReceiverFacts {
 	receiverFactsMu.Lock()
 	defer receiverFactsMu.Unlock()

@@ -93,17 +93,17 @@ func eachEmittedMethod(mod *StandaloneModule, visit func(owner string, elem *ast
 	})
 }
 
-// The fact tier's place in the cascade, one case per rung it has to sit
-// between. The facts below are hand-built rather than derived, so each case
-// names the receiver it needs and nothing else.
+// Where the fact tier sits in the cascade, one case per neighbouring rung. The
+// facts below are hand-built rather than derived, so each case names the
+// receiver it needs and nothing else.
 func TestClassifyFactTier(t *testing.T) {
 	t.Parallel()
 
 	facts := NewReceiverFacts(factsOf(map[string]ecma262.ReceiverKind{
 		// A borrow against the mutating `push` prefix, and a mutating
 		// receiver against the non-mutating `get*` rule. Neither is what the
-		// spec says about these two, which is the point: the tier under test
-		// is which answer wins, not which answer is right.
+		// spec says about these two. What is under test is which answer wins,
+		// not which answer is right.
 		"Array.prototype.push":            ecma262.RecvBorrow,
 		"Array.prototype.getItem":         ecma262.RecvMutBorrow,
 		"Array.prototype.toString":        ecma262.RecvMutBorrow,
@@ -159,8 +159,8 @@ func TestClassifyFactTier(t *testing.T) {
 			mut:    false,
 			source: TierECMA262Fact,
 		},
-		// A converter given no graph reaches the name tiers, which is what
-		// every caller did before the fact tier existed.
+		// A converter given no graph reaches the name tiers, the same as a
+		// method no fact addresses.
 		"FallsThroughWithNoFactSource": {
 			ctx:    ClassifyContext{Member: makeMethodDecl("push", nil), ClassName: "Array"},
 			mut:    true,

@@ -226,16 +226,18 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 // owner, which is its dotted runtime path — see ReceiverFacts.
 //
 // owner is "" for a caller with no owner to name, which leaves the fact tier
-// with nothing to look up. A symbol-keyed member is answered by a fact alone,
-// since every tier below reads a string name.
+// with nothing to look up. A symbol-keyed member reaches only the two tiers
+// that address a member rather than read a name, which are the well-known
+// symbols of tier 3 and the fact of tier 5.
 //
 // Returns (mut, true) when a tier classifies the member; (false, false) when
 // none does and the caller should keep its own default.
 func ClassifyMemberByName(facts *ReceiverFacts, owner string, member ecma262.MemberKey) (mut bool, ok bool) {
 	name := member.Name
-	// Tier 3 (name-only subset): well-known non-mutating method names
-	// that apply regardless of the containing type.
-	if member.Kind == ecma262.StrKey && wellKnownNonMutatingMethods.Contains(name) {
+	// Tier 3 (name-only subset): the members that are non-mutating by
+	// convention regardless of the containing type, which are the well-known
+	// method names and the well-known symbols.
+	if wellKnownMember(member) {
 		return false, true
 	}
 	// Tier 5: the receiver the spec analysis published for this member.
@@ -267,16 +269,16 @@ func ClassifyMemberByName(facts *ReceiverFacts, owner string, member ecma262.Mem
 // `mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
 
-// nonMutatingOverrides names, per owner, the methods whose receiver every tier
-// below it answers wrongly or leaves unanswered.
+// nonMutatingOverrides names, per owner, the methods whose receiver the tiers
+// under it answer wrongly or leave unanswered.
 //
-// An entry is warranted only where the ECMA-262 facts have no claim to make.
-// Every `web:*` owner is one, since the spec keys no algorithm for a member of
-// `Console` or `Response`. `String.substr` is another: it is an Annex B method
-// the committed graph does not carry, and the heuristics match no prefix in it.
-// A method a published fact answers needs no entry, and
-// planning/ecma-262/validation_diff.md records the 24 that were removed once
-// the facts reached both readers.
+// An entry is warranted only where the ECMA-262 facts have no claim to make,
+// since a fact outranks every tier an entry corrects. Every `web:*` owner is
+// one, because the spec keys no algorithm for a member of `Console` or
+// `Response`. `String.substr` is another. It is an Annex B method the committed
+// graph does not carry, and the heuristics match no prefix in it.
+// planning/ecma-262/validation_diff.md is the diff that decides which entries
+// those are.
 //
 // The two readers are `checker.UpdateMethodMutability`, which strips
 // `mut self` from the `.d.ts`-loaded lib types, and `ValidateReceivers`, which
@@ -298,9 +300,11 @@ var nonMutatingOverrides = map[string]MethodNames{
 	// `RegExp` needs no entry. `toString` sits on the well-known allow-list
 	// ClassifyMemberByName consults. `compile` mutates, and `exec` and `test`
 	// write `lastIndex` when the pattern is global or sticky, so all three
-	// keep the default `mut self`. `Symbol.search` and `Symbol.split` are
-	// non-mutating per spec, and this string-keyed map cannot address a
-	// symbol-keyed member. See #620.
+	// keep the default `mut self`. Its symbol-keyed members are answered by
+	// their facts, which this string-keyed map could not address in any case.
+	// `[Symbol.match]` and `[Symbol.replace]` write `lastIndex` the way `exec`
+	// does. `[Symbol.matchAll]` and `[Symbol.split]` build a fresh RegExp to
+	// iterate with and leave the receiver alone. See #620.
 	//
 	// `Object`, `Function`, `Number`, `Boolean`, and `Date` need no entry
 	// either. A published fact answers every non-mutating method they
@@ -589,6 +593,18 @@ func classifyExplicitSignal(ctx ClassifyContext) (ClassifyResult, bool) {
 	}
 
 	return ClassifyResult{}, false
+}
+
+// wellKnownMember reports whether a member address is one of the tier-3
+// conventions, which are the well-known non-mutating method names and the
+// well-known symbols. It is the MemberKey counterpart of isWellKnownMethod, so
+// a class fused from interface signatures reaches the same answer as one
+// converted from a `.d.ts` class declaration.
+func wellKnownMember(member ecma262.MemberKey) bool {
+	if member.Kind == ecma262.SymKey {
+		return wellKnownSymbols.Contains(member.Name)
+	}
+	return wellKnownNonMutatingMethods.Contains(member.Name)
 }
 
 // wellKnownNonMutatingMethods lists method names that are non-mutating by

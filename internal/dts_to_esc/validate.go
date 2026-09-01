@@ -29,13 +29,25 @@ type ReceiverSource string
 
 const (
 	// SourceOverride is an entry in nonMutatingOverrides. It outranks the
-	// heuristics, so a method with an entry is never answered by one.
+	// facts, so a method with an entry is answered by nothing below it.
 	SourceOverride ReceiverSource = "override"
+	// SourceWellKnown is the tier-3 allow-list of names that are
+	// non-mutating by convention whatever type declares them, `toString` and
+	// `valueOf` among them. It outranks the facts for the same reason an
+	// override entry does: it is an answer a person wrote down.
+	SourceWellKnown ReceiverSource = "well-known"
 	// SourceHeuristic is a name-only tier below the facts, which covers the
-	// well-known allow-list, the `get*` prefix rule, and the name-based
-	// prefixes.
+	// `get*` prefix rule and the name-based prefixes.
 	SourceHeuristic ReceiverSource = "heuristic"
 )
+
+// outranksFact reports whether a hand-written answer from this source wins
+// where it contradicts the fact. Both readers walk the same order: the
+// override table and the tier-3 conventions are consulted above the facts, and
+// the name tiers below them.
+func (s ReceiverSource) outranksFact() bool {
+	return s == SourceOverride || s == SourceWellKnown
+}
 
 // ReceiverVerdict is what the diff concluded about one method.
 type ReceiverVerdict string
@@ -44,9 +56,10 @@ const (
 	// VerdictRedundant is an override entry the fact agrees with. The entry
 	// repeats what the fact already says, so it is one to delete.
 	VerdictRedundant ReceiverVerdict = "redundant"
-	// VerdictConfirmed is a heuristic the fact agrees with. There is nothing to
-	// delete, because a heuristic classifies by name rather than per method.
-	// These agreements are the bulk of the evidence the §6 gate rests on.
+	// VerdictConfirmed is a heuristic or a tier-3 convention the fact agrees
+	// with. There is nothing to delete, because neither is written per
+	// method. These agreements are the bulk of the evidence the §6 gate rests
+	// on.
 	VerdictConfirmed ReceiverVerdict = "confirmed"
 	// VerdictCorrected is a heuristic the fact overrules. The fact tier sits
 	// above the name tiers, so the fact is what the converter and the prelude
@@ -58,10 +71,12 @@ const (
 	// wrong on every other type that spells a method the same way, which is
 	// how the `copyWithin` exact-name entry was found.
 	VerdictCorrected ReceiverVerdict = "corrected"
-	// VerdictDisagreement is a fact an override entry contradicts. The entry
-	// outranks the fact, so the hand-written answer is what gets written and
-	// the fact is inert. Either the entry is stale or the analysis has a bug,
-	// and the report cannot tell the two apart. Triaging them is the §6 gate.
+	// VerdictDisagreement is a fact that a source above it contradicts, which
+	// is an override entry or a tier-3 convention. That source outranks the
+	// fact, so the hand-written answer is what gets written and the fact is
+	// inert. Either the hand-written answer is stale or the analysis has a
+	// bug, and the report cannot tell the two apart. Triaging them is the §6
+	// gate.
 	VerdictDisagreement ReceiverVerdict = "disagreement"
 )
 
@@ -242,6 +257,9 @@ func handAnswer(owner, member string) (mut bool, source ReceiverSource, answered
 	if NonMutatingOverrides(owner).Contains(member) {
 		return false, SourceOverride, true
 	}
+	if wellKnownMember(ecma262.StrMember(member)) {
+		return false, SourceWellKnown, true
+	}
 	if mut, ok := ClassifyMethodByName(member); ok {
 		return mut, SourceHeuristic, true
 	}
@@ -249,9 +267,8 @@ func handAnswer(owner, member string) (mut bool, source ReceiverSource, answered
 }
 
 // verdictOf reads one comparison. The two sources either answer alike or
-// contradict each other, and which hand-written source answered decides what
-// each of those means: an override entry outranks the fact and a heuristic
-// falls below it.
+// contradict each other, and what each of those means depends on where the
+// hand-written source sits relative to the fact tier.
 func verdictOf(diff ReceiverDiff) ReceiverVerdict {
 	agree := diff.FactMut == diff.HandMut
 	switch {
@@ -259,7 +276,7 @@ func verdictOf(diff ReceiverDiff) ReceiverVerdict {
 		return VerdictRedundant
 	case agree:
 		return VerdictConfirmed
-	case diff.Source == SourceOverride:
+	case diff.Source.outranksFact():
 		return VerdictDisagreement
 	default:
 		return VerdictCorrected
@@ -302,7 +319,7 @@ func overrideEntries() []string {
 // review.
 func WriteValidationReport(report ValidationReport, w io.Writer) error {
 	counts := report.Counts()
-	_, err := fmt.Fprintf(w, "  receivers: %d confirmed by a heuristic, %d heuristics corrected, %d redundant overrides, %d disagreements, %d answered by the facts alone, %d overrides no fact answers\n",
+	_, err := fmt.Fprintf(w, "  receivers: %d confirmed by a name tier, %d heuristics corrected, %d redundant overrides, %d disagreements, %d answered by the facts alone, %d overrides no fact answers\n",
 		counts[VerdictConfirmed], counts[VerdictCorrected], counts[VerdictRedundant],
 		counts[VerdictDisagreement], len(report.FactOnly), len(report.OverrideOnly))
 	if err != nil {

@@ -26,9 +26,8 @@ type ReceiverFacts struct {
 	join *ecma262.Join
 }
 
-// NewReceiverFacts indexes facts by the member each one addresses. Passing a
-// nil fact set returns a nil source, so a caller that loaded no graph hands its
-// result straight on.
+// NewReceiverFacts indexes facts by the member each one addresses. A nil fact
+// set returns a nil source, which answers no member.
 func NewReceiverFacts(facts *ecma262.Facts) *ReceiverFacts {
 	if facts == nil {
 		return nil
@@ -41,9 +40,9 @@ func NewReceiverFacts(facts *ecma262.Facts) *ReceiverFacts {
 // and when the one that does carries `none`, which is a builtin taking no
 // receiver at all rather than one it leaves unwritten.
 //
-// Only instance members resolve here. A static and a namespace function have no
-// receiver for the converter to annotate, and an accessor's polarity is fixed
-// by the tier above this one.
+// Only instance members resolve here. A static and a namespace function have
+// no receiver for the converter to annotate. An accessor's polarity is fixed by
+// tier 3, which is consulted before this lookup.
 func (f *ReceiverFacts) Instance(owner string, member ecma262.MemberKey) (mut bool, ok bool) {
 	if f == nil || owner == "" {
 		return false, false

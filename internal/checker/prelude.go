@@ -222,10 +222,10 @@ func mergeModules(target, source *ast.Module) {
 // encode known exceptions that neither the facts nor the heuristics answer
 // (e.g. Console.clear).
 //
-// `owner` is the dotted runtime path the members hang off, which is what
-// addresses them in `facts`: the members of `String` are looked up under the
-// owner `String`. A type the spec keys no algorithm for reaches only the
-// override set and the heuristics, and so does every type when `facts` is nil.
+// `owner` is the dotted runtime path the members hang off, which is how
+// `facts` addresses them. The members of `String` are looked up under the owner
+// `String`. A type the spec keys no algorithm for reaches only the override set
+// and the heuristics, and so does every type when `facts` is nil.
 //
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing

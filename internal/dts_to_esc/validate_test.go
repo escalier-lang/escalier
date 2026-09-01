@@ -65,6 +65,17 @@ func TestValidateReceivers(t *testing.T) {
 				"Array.prototype.push: fact borrow, heuristic mutBorrow [corrected]",
 			},
 		},
+		// A tier-3 convention the fact contradicts. The convention outranks
+		// the fact for the same reason an override entry does, so the two
+		// score alike.
+		"ConventionTheFactContradicts": {
+			receivers: map[string]ecma262.ReceiverKind{
+				"Array.prototype.toString": ecma262.RecvMutBorrow,
+			},
+			compared: []string{
+				"Array.prototype.toString: fact mutBorrow, well-known borrow [disagreement]",
+			},
+		},
 		// An override entry the fact contradicts. The entry outranks the fact,
 		// so this is the one shape the §6 gate fails on: the hand-written
 		// answer is what gets written, and one of the two sources is wrong.
@@ -201,9 +212,9 @@ func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
 String.prototype.replaceAll: fact borrow, heuristic mutBorrow`))
 }
 
-// The override entries the facts agree with. §7 deleted exactly the list this
-// pinned as it stood then, so the list reads empty. An entry that lands back
-// here is one the facts have caught up with, which makes it one to delete.
+// The override entries the facts agree with, which is none of the ones the
+// table still holds. An entry that lands on this list is one the facts have
+// caught up with, which makes it one to delete.
 func TestCommittedGraphRedundantOverrides(t *testing.T) {
 	t.Parallel()
 
@@ -278,7 +289,7 @@ func TestWriteValidationReport(t *testing.T) {
 	// override entry lands in the last list. The lines below are the head of
 	// it, and the assertion after them covers the rest.
 	require.True(t, strings.HasPrefix(out.String(),
-		`  receivers: 1 confirmed by a heuristic, 1 heuristics corrected, 0 redundant overrides, 1 disagreements, 1 answered by the facts alone, 36 overrides no fact answers
+		`  receivers: 1 confirmed by a name tier, 1 heuristics corrected, 0 redundant overrides, 1 disagreements, 1 answered by the facts alone, 36 overrides no fact answers
     disagreement: String.prototype.substr: fact mutBorrow, override borrow
     corrected heuristic: Array.prototype.sort: fact borrow, heuristic mutBorrow
     override with no fact: Body.arrayBuffer
