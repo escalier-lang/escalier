@@ -647,6 +647,50 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
 }
 
+func TestReportSingletonKeyDrops(t *testing.T) {
+	t.Parallel()
+	mods := map[string]*StandaloneModule{
+		"std:math": {KeyDrops: []SingletonMember{
+			{Singleton: "Math", Key: "Symbol.dispose"},
+		}},
+		"std:intl": {KeyDrops: []SingletonMember{
+			{Singleton: "Intl", Key: "Symbol.toStringTag"},
+			{Singleton: "Intl", Key: "Symbol.dispose"},
+			{Singleton: "Intl.DisplayNames", Key: "Symbol.dispose"},
+		}},
+		"std:json": {},
+	}
+	var sb strings.Builder
+	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
+	// Sorted by package, then singleton, then key, so two singletons in
+	// one package stay grouped.
+	require.Equal(t,
+		"  singleton members skipped for a non-name key: 4\n"+
+			"    std:intl Intl[Symbol.dispose]\n"+
+			"    std:intl Intl[Symbol.toStringTag]\n"+
+			"    std:intl Intl.DisplayNames[Symbol.dispose]\n"+
+			"    std:math Math[Symbol.dispose]\n",
+		sb.String())
+}
+
+func TestReportSingletonKeyDrops_SilentWhenAllAllowListed(t *testing.T) {
+	t.Parallel()
+	// Every skip over the pinned lib set is in AllowedSingletonKeyDrops,
+	// so a run that reaches this state prints nothing at all rather than
+	// a "0 drops" line the operator has to read past.
+	mods := map[string]*StandaloneModule{
+		"std:math": {KeyDrops: []SingletonMember{
+			{Singleton: "Math", Key: "Symbol.toStringTag"},
+		}},
+		"std:json": {KeyDrops: []SingletonMember{
+			{Singleton: "JSON", Key: "Symbol.toStringTag"},
+		}},
+	}
+	var sb strings.Builder
+	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
+	require.Empty(t, sb.String())
+}
+
 func TestConvertBucketsAndWriteConvertedTree(t *testing.T) {
 	t.Parallel()
 	es5 := parseLib(t, "lib.es5.d.ts", `

@@ -4,11 +4,13 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
 
@@ -152,4 +154,56 @@ func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 		})
 		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
+}
+
+// TestPartitionLib_SingletonKeyDropsMatchAllowList is the gate for the
+// symbol-keyed-singleton policy. Flattening emits one top-level
+// declaration per member and needs a plain identifier for both the
+// Escalier binding and the `@js(...)` path, so a member under a
+// computed key is dropped. AllowedSingletonKeyDrops names the drops
+// that are expected, and this test pins both directions over the whole
+// pinned lib set: no member outside the list is dropped, and every
+// entry in the list is a drop that actually happens.
+//
+// A TypeScript bump that adds, say, `[Symbol.dispose]` to `Atomics`
+// fails here, and `bootstrap` names it in the same run via
+// ReportSingletonKeyDrops.
+func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
+	t.Parallel()
+
+	libDir := filepath.Join("..", "..", "node_modules", "typescript", "lib")
+	if _, err := os.Stat(filepath.Join(libDir, "lib.es5.d.ts")); err != nil {
+		t.Skipf("TypeScript lib not present at %s; run `pnpm install`: %v", libDir, err)
+	}
+
+	basenames, err := DiscoverLibFiles(libDir)
+	require.NoError(t, err)
+	require.NotEmpty(t, basenames)
+
+	inputs, err := ParseLibFiles(libDir, basenames)
+	require.NoError(t, err)
+
+	res, err := PartitionLib(inputs)
+	require.NoError(t, err)
+
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+
+	dropped := set.NewSet[SingletonMember]()
+	for _, mod := range mods {
+		for _, m := range mod.KeyDrops {
+			dropped.Add(m)
+		}
+	}
+	require.ElementsMatch(t,
+		AllowedSingletonKeyDrops.ToSlice(), dropped.ToSlice(),
+		"AllowedSingletonKeyDrops must name exactly the singleton members "+
+			"the pinned lib set drops")
+
+	// The report is the operator-facing half of the gate: with the
+	// allow-list matching, a bootstrap run prints nothing about
+	// singleton keys.
+	var sb strings.Builder
+	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
+	require.Empty(t, sb.String())
 }

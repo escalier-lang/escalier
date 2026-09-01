@@ -745,6 +745,25 @@ var ExplicitDrops = set.FromSlice([]string{
 	"ParameterDecorator",
 })
 
+// SingletonMember identifies one member of a flattened singleton by
+// the singleton's dotted runtime path, such as "Math", and the key it
+// is declared under, such as "Symbol.toStringTag".
+type SingletonMember struct {
+	Singleton string
+	Key       string
+}
+
+// AllowedSingletonKeyDrops names the singleton members flattenSingleton
+// skips without reporting: the three `[Symbol.toStringTag]` tags the
+// pinned lib set declares, which no Escalier program can name.
+// ReportSingletonKeyDrops surfaces any skip outside this list, so a
+// TypeScript bump that adds one cannot be absorbed silently.
+var AllowedSingletonKeyDrops = set.FromSlice([]SingletonMember{
+	{Singleton: "Math", Key: "Symbol.toStringTag"},
+	{Singleton: "JSON", Key: "Symbol.toStringTag"},
+	{Singleton: "Atomics", Key: "Symbol.toStringTag"},
+})
+
 // DroppedSources is the set of `.d.ts` source-file basenames the
 // converter emits nothing from. Every top-level declaration in such a
 // file is recorded as a drop, whatever its name, so PartitionLib

@@ -42,6 +42,12 @@ type StandaloneModule struct {
 	// and `TypeDecl` carry no Decorators field by design (§3.3), yet the
 	// ECMA-262 join still has to address the members an interface declares.
 	Paths map[ast.Decl]string
+
+	// KeyDrops lists every singleton member flattening skipped because
+	// the member's key has no plain-name form.
+	// ReportSingletonKeyDrops filters this against
+	// AllowedSingletonKeyDrops and names what is left.
+	KeyDrops []SingletonMember
 }
 
 // ConvertToStandaloneModule converts a dts_parser.Module to a form
@@ -66,6 +72,8 @@ type StandaloneModule struct {
 //     instance interface (the constructor interface's doc is dropped).
 //   - Records each emitted decl's dotted runtime path (see
 //     StandaloneModule.Paths).
+//   - Records every singleton member it skipped because the member's
+//     key has no plain-name form (see StandaloneModule.KeyDrops).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
 	trios := detectTrios(dtsModule.Statements)
@@ -93,9 +101,10 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule,
 	var namespaces btree.Map[string, *ast.Namespace]
 	namespaces.Set("", &ast.Namespace{Decls: decls})
 	return &StandaloneModule{
-		Module: ast.NewModule(namespaces),
-		Docs:   docs,
-		Paths:  paths,
+		Module:   ast.NewModule(namespaces),
+		Docs:     docs,
+		Paths:    paths,
+		KeyDrops: cctx.keyDrops,
 	}, nil
 }
 
@@ -354,24 +363,37 @@ func detectSingletons(stmts []dts_parser.Statement, trios *trioTable) *singleton
 
 // flattenSingleton emits a top-level decl for each member of the
 // singleton interface, each decorated with `@js("<jsBase>.<member>")`.
-// MethodSignature → FuncDecl; PropertySignature → VarDecl. Other member
-// kinds (CallSignature, IndexSignature, GetterSignature, SetterSignature,
-// ConstructSignature) have no clean top-level lowering for a singleton
-// and are skipped silently for the MVP.
+// MethodSignature → FuncDecl; PropertySignature → VarDecl. The
+// remaining member kinds have no clean top-level lowering for a
+// singleton and are skipped for the MVP: CallSignature,
+// IndexSignature, GetterSignature, SetterSignature, ConstructSignature.
 //
-// A symbol-keyed member is skipped for the same reason. Flattening
-// needs a plain name to build both the Escalier binding and the
-// `@js(...)` path, and a computed key has neither. The corpus shape is
-// `interface Math { readonly [Symbol.toStringTag]: string }`, which
-// tags the object for `Object.prototype.toString` rather than
-// declaring anything a caller names.
-func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
+// A member whose key has no plain-name form is skipped too, because
+// flattening needs a name for both the Escalier binding and the
+// `@js(...)` path. The corpus shape is
+// `interface Math { readonly [Symbol.toStringTag]: string }`. Every
+// such skip is recorded on cctx under jsBase, whatever the member
+// kind, which is what keeps a new one from passing unnoticed.
+func flattenSingleton(cctx *convertCtx, info *singletonInfo, jsBase string) ([]docDecl, error) {
 	var out []docDecl
 	for _, m := range info.iface.Members {
 		switch sig := m.(type) {
+		case *dts_parser.GetterSignature:
+			// An accessor has no top-level lowering whatever its key,
+			// so it is skipped either way. Only the ones under a key
+			// with no plain-name form belong in the report. A named
+			// accessor is the separate gap listed above.
+			if propertyKeyName(sig.Name) == "" {
+				cctx.noteSingletonKeyDrop(jsBase, sig.Name)
+			}
+		case *dts_parser.SetterSignature:
+			if propertyKeyName(sig.Name) == "" {
+				cctx.noteSingletonKeyDrop(jsBase, sig.Name)
+			}
 		case *dts_parser.MethodSignature:
 			member := propertyKeyName(sig.Name)
 			if member == "" {
+				cctx.noteSingletonKeyDrop(jsBase, sig.Name)
 				continue
 			}
 			decl, err := singletonMethodToFuncDecl(sig)
@@ -385,6 +407,7 @@ func flattenSingleton(info *singletonInfo, jsBase string) ([]docDecl, error) {
 		case *dts_parser.PropertySignature:
 			member := propertyKeyName(sig.Name)
 			if member == "" {
+				cctx.noteSingletonKeyDrop(jsBase, sig.Name)
 				continue
 			}
 			decl, err := singletonPropertyToVarDecl(sig)
@@ -773,7 +796,7 @@ func convertStandaloneStmt(
 		}
 		if singletons != nil {
 			if info, ok := singletons.byName[s.Name.Name]; ok {
-				return flattenSingleton(info, jsName(nsPath, s.Name.Name))
+				return flattenSingleton(cctx, info, jsName(nsPath, s.Name.Name))
 			}
 		}
 		decl, err := convertInterfaceDecl(s)

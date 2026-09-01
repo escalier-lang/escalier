@@ -3,6 +3,7 @@ package dts_to_esc
 import (
 	"fmt"
 	"os"
+	"strconv"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
@@ -29,6 +30,46 @@ type convertCtx struct {
 	// full chain to address a member declared inside nested
 	// namespaces.
 	namespacePath string
+
+	// keyDrops accumulates every singleton member flattenSingleton
+	// skipped because the member's key has no plain-name form.
+	// ReportSingletonKeyDrops decides which of these are expected.
+	keyDrops []SingletonMember
+}
+
+// noteSingletonKeyDrop records that flattenSingleton skipped a member
+// declared under key. The singleton is named by its dotted runtime
+// path, so nested singletons stay distinct from top-level ones.
+func (c *convertCtx) noteSingletonKeyDrop(singleton string, key dts_parser.PropertyKey) {
+	c.keyDrops = append(c.keyDrops, SingletonMember{
+		Singleton: singleton,
+		Key:       singletonKeyLabel(key),
+	})
+}
+
+// singletonKeyLabel renders a property key that has no plain-name form
+// so a drop report can name it: a computed key as its dotted expression
+// ("Symbol.toStringTag") or its literal, a string key quoted, a numeric
+// key as its literal text, and any other shape as a placeholder naming
+// the node type so it cannot be mistaken for a real member key.
+func singletonKeyLabel(pk dts_parser.PropertyKey) string {
+	switch k := pk.(type) {
+	case *dts_parser.ComputedKey:
+		if dotted := exprDottedName(k.Expr); dotted != "" {
+			return dotted
+		}
+		if lit, ok := k.Expr.(*dts_parser.LitExpr); ok {
+			if inner, ok := lit.Lit.(dts_parser.PropertyKey); ok {
+				return singletonKeyLabel(inner)
+			}
+		}
+		return fmt.Sprintf("<computed %T>", k.Expr)
+	case *dts_parser.StringLiteral:
+		return strconv.Quote(k.Value)
+	case *dts_parser.NumberLiteral:
+		return strconv.FormatFloat(k.Value, 'g', -1, 64)
+	}
+	return fmt.Sprintf("<%T>", pk)
 }
 
 // classifyMember runs Classify for a member of the given enclosing class,
