@@ -653,6 +653,16 @@ func simpleTypeRefName(t ast.TypeAnn) (string, bool) {
 	return ident.Name, true
 }
 
+// tryParseMappedType parses a mapped type and reports nil when the member ahead is not
+// one. How far a decline rewinds depends on how far the attempt got. Where a bracket
+// follows the leading `readonly`, `+readonly`, or `-readonly`, the rewind stops at that
+// bracket and leaves the modifier consumed, so the caller can read the same brackets as
+// a computed key. Where no bracket follows, nothing was consumed and the modifier stays
+// in place. Either way the diagnostics the attempt produced are dropped.
+//
+// A decline leaves no trace of the modifier, so a caller that needs it has to hold onto
+// it across the call. objTypeAnnElemInner does that for `readonly`, the one spelling a
+// computed-key property can carry.
 func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 	// Parse readonly modifiers: readonly, +readonly, or -readonly
 	var readonly *ast.MappedModifier
@@ -780,7 +790,16 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 
 		key, constraint := shorthandKey, shorthandConstraint
 		if !shorthand {
-			p.expect(For, AlwaysConsume)
+			// A mapped type names its key variable in a trailing `for K in Keys`.
+			// Without that clause the brackets hold a computed key instead, so
+			// decline and leave the member to the property path. Consuming through
+			// the missing `for` would read the next member's name as the key
+			// variable and swallow that member.
+			if p.lexer.peek().Type != For {
+				p.restoreState(savedState)
+				return nil
+			}
+			p.lexer.consume() // consume 'for'
 			token = p.lexer.peek()
 			if token.Type == Identifier {
 				p.lexer.consume() // consume identifier
@@ -904,17 +923,21 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	mod := ""
 	readonly := false
 
-	// Check if this might be a mapped type before consuming 'readonly'
-	// Mapped types start with 'readonly [' or '+readonly [' or '-readonly ['
+	// `readonly [` opens two different members. A mapped type spells its modifier that
+	// way, and so does a property whose key is computed, as in
+	// `readonly [Symbol.toStringTag]: string`. Only what follows the brackets tells the
+	// two apart. So leave the modifier in place for tryParseMappedType to read, and
+	// note that it is still pending. A `readonly` followed by anything else modifies a
+	// property and is consumed here.
+	pendingReadonly := false
 	if token.Type == Readonly && !followsAName(p.lexer.peek2().Type) {
 		savedState := p.saveState()
 		p.lexer.consume() // tentatively consume 'readonly'
 		nextToken := p.lexer.peek()
 		if nextToken.Type == OpenBracket {
-			// This is a mapped type, restore state and let tryParseMappedType handle it
 			p.restoreState(savedState)
+			pendingReadonly = true
 		} else {
-			// This is a regular readonly property, keep the token consumed
 			readonly = true
 		}
 		token = p.lexer.peek()
@@ -940,6 +963,13 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	mappedElem := p.tryParseMappedType()
 	if mappedElem != nil {
 		return mappedElem
+	}
+
+	// The member is not a mapped type. tryParseMappedType rewound to the brackets and
+	// consumed the `readonly` on its way there. Those brackets hold a computed key, and
+	// the modifier belongs to the property they name.
+	if pendingReadonly {
+		readonly = true
 	}
 
 	objKey := p.objExprKey()
