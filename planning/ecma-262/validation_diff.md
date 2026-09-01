@@ -159,8 +159,12 @@ gone, which is what the M12 flip of the builtins workstream does to
 entries.** The first would mean `internal/checker` reading `internal/ecma262`,
 and the legacy checker is not this workstream's target: the facts belong to the
 converter that generates the `std:*` `.esc` files, and the solver reads those
-files rather than the spec. Paying a dependency into a tree that M12 deletes
-buys nothing, so the entries stay until they go out with their one reader. The
+files rather than the spec. The solver also has nothing for a fact to apply to.
+Its `NewPrelude` seeds operator bindings and opaque stdlib placeholders and
+reads no `.d.ts`, so there is no ambient global surface to write a receiver
+onto — a `std:*` method arrives with the receiver the converter already wrote.
+Paying a dependency into a tree that M12 deletes buys nothing, so the entries
+stay until they go out with their one reader. The
 same condition governs §6.B and §6.C of
 [../interop_mutability/implementation_plan.md](../interop_mutability/implementation_plan.md),
 which drop entries as the `data/builtins/` overrides land.

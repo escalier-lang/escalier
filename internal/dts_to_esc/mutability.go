@@ -219,16 +219,17 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 // member at tier 5, the `get*` prefix rule of tier 6, and the name-based
 // heuristics of tier 7.
 //
-// Two callers hold a member without the dts_parser.ClassMember the full
-// Classify entry point takes. The trio fusion in this package builds a class
-// from interface signatures, and the checker prelude pass walks the
-// type_system.MethodElem of a `.d.ts`-loaded lib type. Both know the member's
-// owner, which is its dotted runtime path — see ReceiverFacts.
+// The trio fusion in this package is the caller that has no
+// dts_parser.ClassMember to feed the full Classify entry point. It builds a
+// class out of interface signatures, and knows that class's owner, which is
+// its dotted runtime path — see ReceiverFacts.
 //
-// owner is "" for a caller with no owner to name, which leaves the fact tier
-// with nothing to look up. A symbol-keyed member reaches only the two tiers
-// that address a member rather than read a name, which are the well-known
-// symbols of tier 3 and the fact of tier 5.
+// owner is "" for a caller that has no owner to name, which leaves the fact
+// tier with nothing to look up. ClassifyMethodByName is that caller.
+//
+// A symbol-keyed member reaches only the two tiers that address a member
+// rather than read a name, which are the well-known symbols of tier 3 and the
+// fact of tier 5.
 //
 // Returns (mut, true) when a tier classifies the member; (false, false) when
 // none does and the caller should keep its own default.

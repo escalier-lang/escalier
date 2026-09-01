@@ -221,13 +221,6 @@ func mergeModules(target, source *ast.Module) {
 // encode known exceptions that the heuristics either miss or
 // mis-classify (e.g. String.replace, Console.clear).
 //
-// This pass reads no ECMA-262 fact. The facts rank above the name tiers
-// inside `dts_to_esc.Classify`, which is what the converter runs to produce
-// the `std:*` `.esc` files; this is the legacy path over `.d.ts`-loaded lib
-// types, which the SimpleSub M12 flip deletes. See
-// planning/ecma-262/validation_diff.md for why the override entries the facts
-// answer stay in place until then.
-//
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing
 // an accessor name in `names` would silently miss here. If an accessor
@@ -242,15 +235,16 @@ func applyMethodMutability(objType *type_system.ObjectType, names dts_to_esc.Met
 			continue
 		}
 		name := me.Name.Str
-		mut, classified := false, names.Contains(name)
-		if !classified {
-			mut, classified = dts_to_esc.ClassifyMethodByName(name)
-		}
-		if !classified || mut {
+		if names.Contains(name) {
+			for _, sig := range me.Signatures {
+				setReceiverMut(sig, false)
+			}
 			continue
 		}
-		for _, sig := range me.Signatures {
-			setReceiverMut(sig, false)
+		if mut, classified := dts_to_esc.ClassifyMethodByName(name); classified && !mut {
+			for _, sig := range me.Signatures {
+				setReceiverMut(sig, false)
+			}
 		}
 	}
 }

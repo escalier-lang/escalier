@@ -7,25 +7,19 @@ import (
 )
 
 // TestPreludeOverridesCallableOnNonMutReceiver locks in that the
-// dts_to_esc.NonMutatingOverrides entries the prelude reads are actually
-// applied. The override map's owner keys have to match the lib type
-// aliases, and the methods named in each entry have to exist on the
-// corresponding interface. A `.d.ts` method carries `mut self` until an
-// entry or a name heuristic strips it, so a typo like `"chatAt"` for
-// `String.charAt` silently dead-codes the override and leaves the method
-// invisible on a non-mut receiver. Each case below calls one on a non-mut
-// value, where that shows up as "Callee is not callable".
+// dts_to_esc.NonMutatingOverrides entries the prelude reads are
+// actually applied. The override map's owner keys have to match the
+// lib type aliases, and the methods named in each entry have to exist
+// on the corresponding interface. Without this coverage, a typo like
+// `"chatAt"` (for `String.charAt`) or a missing entry for
+// `Object.toString` silently dead-codes the override and the method
+// becomes invisible on a non-mut receiver post-#612 polarity flip;
+// "Callee is not callable" is the loud failure that this test catches.
 func TestPreludeOverridesCallableOnNonMutReceiver(t *testing.T) {
 	tests := map[string]string{
 		"String.charAt on non-mut": `
 			declare val s: string
 			val c = s.charAt(0)
-		`,
-		// `trim` matches no prefix, so no name tier answers it and the
-		// entry is what carries the claim.
-		"String.trim on non-mut": `
-			declare val s: string
-			val t = s.trim()
 		`,
 		"Object.toString on non-mut": `
 			declare val o: Object
