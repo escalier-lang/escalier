@@ -26,9 +26,11 @@
 //	    With --cfg, the run also joins every std:* member it emits
 //	    against the ECMA-262 effect facts derived from that control-flow
 //	    graph, and reports the names present on one side only. It reports
-//	    what the curated layer did to those facts alongside it, and diffs
-//	    every receiver claim against the hand-written mutability sources.
-//	    See planning/ecma-262/implementation_plan.md.
+//	    what the curated layer did to those facts alongside it, diffs
+//	    every receiver claim against the hand-written mutability sources,
+//	    and lists the returns that borrow a value the caller holds and so
+//	    need a lifetime annotation written. See
+//	    planning/ecma-262/implementation_plan.md.
 //
 //	dts_to_esc check <lib-dir> <esc-dir>
 //	    Read-only verification per §6.4: convert the pinned lib set and
@@ -177,7 +179,7 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("bootstrap", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
+	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, return-alias, and effect-fact join reports")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, bootstrapUsage)
@@ -251,12 +253,13 @@ func runBootstrap(args []string, stderr io.Writer) error {
 	if join == nil {
 		return nil
 	}
-	// The four reports are informational. A curated entry the analysis caught
+	// The five reports are informational. A curated entry the analysis caught
 	// up with is an entry to delete. The spec and the TypeScript lib drift
 	// independently, so a name on one side only is a gap to close. FR11's
 	// coercion filter is a heuristic, so what it dropped is read rather than
 	// trusted. A receiver the two sources answer differently is a triage item.
-	// None of them is a failed run.
+	// A return needing an annotation is review input. None of them is a failed
+	// run.
 	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
 		return err
 	}
@@ -264,6 +267,13 @@ func runBootstrap(args []string, stderr io.Writer) error {
 		return err
 	}
 	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
+		return err
+	}
+	// The returns axis, printed with the other per-axis reports. Receiver
+	// mutability is auto-applied and needs no such list, while every borrowing
+	// return here is an annotation someone writes into the override layer. See
+	// planning/ecma-262/return_annotations.md.
+	if err := ecma262.WriteReturnAliasReport(facts.BorrowingReturns(), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
