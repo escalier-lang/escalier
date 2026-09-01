@@ -1,30 +1,31 @@
 # Return annotations from the `returns` fact
 
-§8.2 of [implementation_plan.md](implementation_plan.md) seeds the `&` and
-lifetime annotations of the override layer from FR4's `returns` fact. This file
-is that seed written out. It gives each member of the alias lattice the
-annotation it stands for, names the builtins that carry it, and separates the
-rows a curator has to act on from the rows the compiler already reaches on its
+§8.2 of [implementation_plan.md](implementation_plan.md) maps FR4's `returns`
+fact onto the `&` and lifetime annotation each alias kind stands for. This file
+is that mapping. It names the builtins carrying each kind and separates the
+rows needing an annotation from the rows the compiler already reaches on its
 own.
 
-The fact is review input rather than an annotator. Annotations are re-applied
-when the `.esc` is generated, so a curator edits committed data and never the
-generated file.
+**A generated `.esc` is a build output, so no annotation here is hand-written
+into one.** §6.8 of
+[../builtins/implementation_plan.md](../builtins/implementation_plan.md) routes
+the return borrow with the other three derived determinations:
+[#1352](https://github.com/escalier-lang/escalier/issues/1352) emits each one
+from its fact, and
+[../../internal/ecma262/curated.json](../../internal/ecma262/curated.json)
+answers what the control-flow graph does not settle. Curation is the correction
+channel, not the delivery channel.
 
-**Two committed layers hold that data, and an annotation belongs in one of
-them.** FR7 keys them differently because they answer different questions:
+That makes this file the specification the generator is written against, and
+the reference a reviewer reads a generated annotation against. A return the
+generator gets wrong costs a `curated.json` entry keyed by canonical spec name,
+which is also where the three curated `fresh` returns below already sit. A
+shape the generator cannot express costs an overlay `replace` under
+`internal/interop/overlay/`.
 
-- The **fact layer**,
-  [../../internal/ecma262/curated.json](../../internal/ecma262/curated.json),
-  is keyed by canonical spec name and merged into the facts before the §5 join.
-  It answers a determination the graph could not settle, so it is where a
-  `returns` value is corrected rather than where an annotation is written. §4.4
-  already uses it, and the three curated `fresh` returns below are its entries.
-- The **override layer** is keyed by declaration and applied after the join. It
-  holds the annotations this file maps to, because they are what FR5 makes the
-  extractor omit rather than something the facts get wrong. It does not exist
-  yet. §7 wires it into generation and §11 populates it, so every annotation
-  below is a decision recorded now and applied when those land.
+§7 and §11 of the ecma-262 plan still describe the older routing, where a
+hand-curated override layer keyed by declaration carried these annotations.
+Reconciling those sections with §6.8 is outside this file.
 
 The checker's lifetime inference and elision rules,
 [../lifetimes/requirements.md](../lifetimes/requirements.md), and the borrow
@@ -33,8 +34,8 @@ stay the mechanism.
 
 **Notation.** `&self`, `&mut self`, and `-> &mut Self` are the shorthand these
 planning docs use for a borrowed receiver and for a return that borrows it. The
-declaration a curator writes spells the same relationship with an explicit
-lifetime parameter:
+generated declaration spells the same relationship with an explicit lifetime
+parameter:
 
 ```esc
 declare fn Array.fill<'a, T>(self: mut 'a Array<T>, value: T) -> mut 'a Array<T>
@@ -168,17 +169,18 @@ narrow the 247:
   `get TypedArray.prototype [ @@toStringTag ]` are curated `fresh`, because a
   primitive read out of a slot is a copy.
 
-What is left after both is a return with no seed, and the curator writes the
-annotation from the declaration and the spec text.
+What is left after both seeds nothing, and a `curated.json` entry is what
+answers it, from the declaration and the spec text.
 
-## Which rows a curator has to write
+## Which rows need an explicit annotation
 
-Per §7, the generated `.esc` omits a lifetime annotation unless the override
-layer supplies one, and the result is then checked as ordinary Escalier source.
-So what a missing annotation costs is decided by lifetime elision, the rules
-that fill the lifetimes of a body-less declaration.
+A generated declaration that carries no lifetime is not thereby unconstrained.
+It is checked as ordinary Escalier source, so lifetime elision fills what the
+declaration leaves out. That is what decides which rows the generator has to
+write explicitly: a row elision would get right needs nothing, and a row it
+would get wrong needs the fact.
 [../../internal/checker/elision.go](../../internal/checker/elision.go) is all of
-it, and it does two things a curator has to know.
+elision, and it does two things worth knowing here.
 
 **It reaches only body-less `declare fn` declarations.** Interface and class
 methods are deferred to Phase 12, because `inferInterface` is the same path
@@ -201,14 +203,14 @@ does not implement it. What is implemented is four cases:
 
 That decides the table:
 
-| `returns` | What an unannotated declaration gets | The curator |
+| `returns` | What an unannotated declaration gets | Emit an annotation |
 | --- | --- | --- |
-| `receiver` | never a borrow of the receiver. Where elision runs at all, a signature with no reference parameter reads as fresh, and one with exactly one takes that parameter's lifetime, naming the wrong source | writes all fifteen |
-| a receiver-lifetime borrow that is not `Self` | the same, and both `buffer` getters declare no parameter, so the return reads as fresh | writes both, once the lattice can spell the kind |
-| `param:<n>` | case 2 is right where the fact's position is the signature's only reference parameter | writes the rest, and the fact names which position |
-| `fresh`, value-typed | case 1, no lifetime | writes nothing |
-| `fresh`, reference-typed | case 3 is right where there is no reference parameter. Case 2 binds the return to a reference parameter that is not its source | writes the over-constrained ones |
-| `union` | no case joins two sources | writes it |
+| `receiver` | never a borrow of the receiver. Where elision runs at all, a signature with no reference parameter reads as fresh, and one with exactly one takes that parameter's lifetime, naming the wrong source | for all fifteen |
+| a receiver-lifetime borrow that is not `Self` | the same, and both `buffer` getters declare no parameter, so the return reads as fresh | for both, once the lattice can spell the kind |
+| `param:<n>` | case 2 is right where the fact's position is the signature's only reference parameter | for the rest, at the position the fact names |
+| `fresh`, value-typed | case 1, no lifetime | never |
+| `fresh`, reference-typed | case 3 is right where there is no reference parameter. Case 2 binds the return to a reference parameter that is not its source | for the over-constrained ones |
+| `union` | no case joins two sources | always |
 
 A value-typed `fresh` return is the only row that needs nothing. Elision gets
 some of the others right, but by counting parameters rather than by knowing
