@@ -63,7 +63,7 @@ declare class Foo {
 		},
 	}
 
-	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "", nil)
+	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "")
 	require.NoError(t, err)
 	require.True(t, methodReceiverMut(t, withOverride, "", "Foo", "findItem"),
 		"tier-4 override should flip findItem's receiver to mut self")
@@ -126,7 +126,7 @@ declare namespace Outer {
 		},
 	}
 
-	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "", nil)
+	withOverride, err := dts_to_esc.ConvertModuleWithOverrides(dtsModule, store, "")
 	require.NoError(t, err)
 	require.True(t, methodReceiverMut(t, withOverride, "Outer", "Inner", "findItem"),
 		"tier-4 override on Outer.Inner.findItem should flip the receiver to mut self")

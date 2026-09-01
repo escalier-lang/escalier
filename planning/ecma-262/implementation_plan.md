@@ -42,7 +42,7 @@ sub-sections is one PR per sub-section. Status legend: ✅ done, 🚧 partial,
 | §4.4 | Curated fact layer                         | FR5, FR7   | ✅      | §4.3       | `curated.json` merges per determination; published `receiver unclassified` is zero; each of the three guards tested — met, see [internal/ecma262/curated.go](../../internal/ecma262/curated.go) |
 | §5   | Keying and join                            | FR7, FR15  | ✅      | §4.3       | normalizer joins facts to `.d.ts` declarations; overloads share algorithm-level facts, type-dependent parts per signature; a primitive return type settles a return the analysis cannot name as owned; unmatched reported — met, see [internal/ecma262/key.go](../../internal/ecma262/key.go) and [internal/ecma262/join.go](../../internal/ecma262/join.go) |
 | §6   | Validation diff                            | FR9        | ✅      | §5         | receiver facts diffed against the override entries and the name heuristics; every disagreement triaged — met, see [validation_diff.md](validation_diff.md) |
-| §7   | Integration as classification source       | FR8        | ✅      | §6         | converter ranks facts above name tiers; the two application paths wired; redundant overrides removed — met, see [internal/dts_to_esc/facts.go](../../internal/dts_to_esc/facts.go) |
+| §7   | Integration as classification source       | FR8        | ✅      | §6         | converter ranks facts above name tiers; the two application paths wired — met, see [internal/dts_to_esc/facts.go](../../internal/dts_to_esc/facts.go). The redundant override entries wait on the M12 flip that deletes their one reader, per [validation_diff.md](validation_diff.md) |
 | §8.1 | Parameter disposition                      | FR12       | ⬜      | §4.1, §4.4, §7 | `MutArgs` supplies `mutBorrow`; `escape` is curated for the container methods that have one. The transitive `StoreEdges` fixpoint is dropped — see §8.1 |
 | §8.2 | Return-borrow seed                         | FR4        | ⬜      | §4.3       | documented `returns` → `&`/lifetime annotation mapping (small) |
 | §9.1 | Throw-set fixpoint                          | FR10       | ✅      | §4.2       | raw throw sets, `Exception` = class / origin / callback-effect / unknown — met, see [internal/ecma262/](../../internal/ecma262/) |
@@ -1555,21 +1555,28 @@ edits it. The checker prelude reads it through
   entry is safe only once the facts reach the path that applies mutability to
   the `.d.ts`-loaded lib types, or that path is gone. See the sequencing note
   in [validation_diff.md](validation_diff.md).
+  **Deferred to the M12 flip.** The second condition is the one to wait on.
+  Satisfying the first would mean `internal/checker` reading
+  `internal/ecma262`, and the legacy checker is not what these facts are for —
+  the converter applies them when it generates the `std:*` `.esc` files, and
+  the solver reads those files rather than the spec. The entries go out with
+  their one reader.
 
-**What landed.** The three places a receiver is written now read the facts
-first, and each answers a different shape of input:
+**What landed.** Two entry points classify a receiver from the facts, both in
+`internal/dts_to_esc`, which is the converter that generates the `.esc` files:
 
-1. `dts_to_esc.Classify`, the cascade over a parsed `.d.ts` class member.
-   The facts sit at `TierECMA262Fact`, above the `get*` prefix and the name
-   heuristics and below the builtin overrides, which keeps a hand-written
-   entry authoritative.
-2. `dts_to_esc.ClassifyMemberByName`, which answers from an owner and a
-   member key. The trio fusion reads it, since a class fused from interface
-   signatures has no `ClassMember` to feed the cascade.
-3. `checker.applyMethodMutability`, the prelude pass over the
-   `.d.ts`-loaded lib types. This is the reader the deletion was sequenced
-   behind — it is the first of the two conditions in
-   [validation_diff.md](validation_diff.md), not the M12 flip.
+1. `Classify`, the cascade over a parsed `.d.ts` class member. The facts sit
+   at `TierECMA262Fact`, above the `get*` prefix and the name heuristics and
+   below the builtin overrides, which keeps a hand-written entry
+   authoritative.
+2. `ClassifyMemberByName`, which answers from an owner and a member key. The
+   trio fusion reads it, since a class fused from interface signatures has no
+   `ClassMember` to feed the cascade.
+
+Nothing in `internal/checker` or `internal/solver` reads a fact. The solver's
+builtin surface is the committed `.esc` tree, so the spec analysis is an input
+to generation rather than to type-checking, and the legacy checker keeps the
+override table it already had.
 
 A method's owner is its dotted runtime path, which is what a canonical spec
 key normalizes to, so `Array.prototype.push` is the member `push` of the
@@ -1644,11 +1651,11 @@ gaps to close, not a silent route. (`web:*` / `node:*` methods have no
 same types-plus-curation route until the WebIDL extractor lands.)
 
 **Gate.** Converter output for `std:*` matches the facts for every
-published determination; the removed override entries cause no regression
-in the converter and checker test suites.
-`TestStdReceiversMatchTheFacts` holds the first half over the pinned lib
-set, comparing the receiver of every emitted `std:*` method a fact
-addresses.
+published determination. `TestStdReceiversMatchTheFacts` holds it over the
+pinned lib set, comparing the receiver of every emitted `std:*` method a fact
+addresses. The override entries are untouched, so the second half of the
+original gate — that removing them regresses neither suite — moves to the M12
+flip with the deletion.
 
 ## §8. Parameter disposition and return-borrow outputs (FR12, FR4)
 

@@ -231,22 +231,26 @@ func mergeNamespace(
 // ConvertModule converts dts_parser.Module to ast.Module with no
 // override store; tier-1 and tier-4 will miss for every member.
 func ConvertModule(dtsModule *dts_parser.Module) (*ast.Module, error) {
-	return ConvertModuleWithOverrides(dtsModule, nil, "", nil)
+	return ConvertModuleWithOverrides(dtsModule, nil, "")
 }
 
-// ConvertModuleWithOverrides converts dts_parser.Module to ast.Module.
-// Member mutability classification reads two sources it takes here. `store`
-// answers the user overrides of tier 1 and the builtin overrides of tier 4,
-// and `facts` answers the ECMA-262 receiver claims of tier 5. Either may be
-// nil, which leaves that tier with nothing to answer from.
+// ConvertModuleWithOverrides converts dts_parser.Module to ast.Module,
+// consulting `store` during member mutability classification. It answers the
+// user overrides of tier 1 and the builtin overrides of tier 4, and may be nil,
+// which leaves both tiers with nothing to answer from.
+//
+// No ECMA-262 fact reaches this entry point. The facts classify the receivers
+// of the `std:*` packages the standalone converter generates, which is
+// ConvertToStandaloneModule; this one feeds the legacy checker's prelude and
+// its imported-package path.
 //
 // `modulePath` is the path the store was keyed under for these declarations.
 // It is "" for globals and prelude lib files. For an imported package's
 // package decls it is the import specifier, such as "lodash/fp". For a
 // `declare module "X" { ... }` block it is the module name, which the caller
 // passes because the classifier strips that wrapper before getting here.
-func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string, facts *ReceiverFacts) (*ast.Module, error) {
-	cctx := &convertCtx{store: store, facts: facts, modulePath: modulePath}
+func ConvertModuleWithOverrides(dtsModule *dts_parser.Module, store OverrideLookup, modulePath string) (*ast.Module, error) {
+	cctx := &convertCtx{store: store, modulePath: modulePath}
 	var namespaces btree.Map[string, *ast.Namespace]
 
 	// Process all statements, organizing them into namespaces

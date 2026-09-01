@@ -269,22 +269,26 @@ func ClassifyMemberByName(facts *ReceiverFacts, owner string, member ecma262.Mem
 // `mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
 
-// nonMutatingOverrides names, per owner, the methods whose receiver the tiers
-// under it answer wrongly or leave unanswered.
+// nonMutatingOverrides names, per owner, the methods whose receiver the
+// name-only tiers get wrong.
 //
-// An entry is warranted only where the ECMA-262 facts have no claim to make,
-// since a fact outranks every tier an entry corrects. Every `web:*` owner is
-// one, because the spec keys no algorithm for a member of `Console` or
-// `Response`. `String.substr` is another. It is an Annex B method the committed
-// graph does not carry, and the heuristics match no prefix in it.
-// planning/ecma-262/validation_diff.md is the diff that decides which entries
-// those are.
+// An entry is warranted when ClassifyMethodByName misses the name outright,
+// as it does for `String.charAt`, which matches no prefix, or answers it the
+// wrong way, as it does for `String.replace`, whose `replace` prefix reads as
+// mutating. A name the heuristics already answer correctly is redundant and
+// does not belong here. The reader applies the heuristics as a fall-through
+// for any method with no entry.
 //
-// The two readers are `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types, and `ValidateReceivers`, which
-// measures the facts against the hand-written answers. Classify does not
-// consult this table. Its tier 4 reads the override store of
-// `internal/interop`, whose built-in subtree is still empty.
+// The one production reader is `checker.UpdateMethodMutability`, which strips
+// `mut self` from the `.d.ts`-loaded lib types. It reads no fact, so an entry
+// is what carries the claim there even where a published fact says the same
+// thing. planning/ecma-262/validation_diff.md lists the 24 entries the facts
+// answer, which come out when the M12 flip deletes that reader along with the
+// rest of `internal/checker`.
+//
+// Classify does not consult this table. Its tier 4 reads the override store of
+// `internal/interop`, whose built-in subtree is still empty, and its tier 5
+// reads the ECMA-262 facts, which answer most of what is listed here.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //
@@ -292,23 +296,54 @@ type MethodNames = set.Set[string]
 // non-mutating methods should be callable on a non-mut receiver.
 var nonMutatingOverrides = map[string]MethodNames{
 	"String": set.FromSlice([]string{
-		// An Annex B method, absent from the committed graph and matching
-		// no prefix. The facts answer every other non-mutating `String`
-		// method.
+		// Names the heuristics miss because they match no prefix, plus
+		// `replace` and `replaceAll`, which the mutating `replace` prefix
+		// claims.
+		"charAt",
+		"charCodeAt",
+		"codePointAt",
+		"endsWith",
+		"localeCompare",
+		"match",
+		"matchAll",
+		"normalize",
+		"padEnd",
+		"padStart",
+		"repeat",
+		"replace",
+		"replaceAll",
+		"search",
+		"split",
+		"startsWith",
 		"substr",
+		"substring",
+		"trim",
+		"trimEnd",
+		"trimStart",
 	}),
 	// `RegExp` needs no entry. `toString` sits on the well-known allow-list
-	// ClassifyMemberByName consults. `compile` mutates, and `exec` and `test`
+	// ClassifyMethodByName consults. `compile` mutates, and `exec` and `test`
 	// write `lastIndex` when the pattern is global or sticky, so all three
-	// keep the default `mut self`. Its symbol-keyed members are answered by
-	// their facts, which this string-keyed map could not address in any case.
-	// `[Symbol.match]` and `[Symbol.replace]` write `lastIndex` the way `exec`
-	// does. `[Symbol.matchAll]` and `[Symbol.split]` build a fresh RegExp to
-	// iterate with and leave the receiver alone. See #620.
-	//
-	// `Object`, `Function`, `Number`, `Boolean`, and `Date` need no entry
-	// either. A published fact answers every non-mutating method they
-	// declare, and the name-only tiers cover the rest through the `get*` and
+	// keep the default `mut self`. This string-keyed map cannot address a
+	// symbol-keyed member in any case, and the converter answers those from
+	// their facts: `[Symbol.match]` and `[Symbol.replace]` write `lastIndex`
+	// the way `exec` does, while `[Symbol.matchAll]` and `[Symbol.split]`
+	// build a fresh RegExp to iterate with and leave the receiver alone.
+	// See #620.
+	"Object": set.FromSlice([]string{
+		// A heuristic miss. `propertyIsEnumerable` starts with no
+		// non-mutating prefix. The heuristics answer the rest of
+		// `Object.prototype`.
+		"propertyIsEnumerable",
+	}),
+	"Function": set.FromSlice([]string{
+		// Heuristic misses. `toString` sits on the well-known list.
+		"apply",
+		"bind",
+		"call",
+	}),
+	// `Number`, `Boolean`, and `Date` need no entry. The name-only tiers
+	// answer every non-mutating method they declare, through the `get*` and
 	// `to*` prefixes and the well-known `toString` and `valueOf` names.
 	"Console": set.FromSlice([]string{
 		// Heuristic misses, since most Console methods are bare nouns. The

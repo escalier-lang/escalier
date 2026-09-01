@@ -6,13 +6,14 @@ That is requirements.md FR9. The diff measures the receiver-mutability claim of
 every published fact against the hand-written answer in force today. This
 document gives a disposition for each entry the diff turned up.
 
-**Verdict: the fact source holds.** Over the committed graph the diff compared
-218 methods when it was run. Before the fixes recorded below, the two sources
-agreed on 215 of them. All three disagreements are resolved, so they now agree
-on every one. Two of the three were a heuristic mis-classification the facts
-caught, and one was an analyzer gap the facts missed. §7 was authorized on this
-evidence to rank the facts above the name tiers and to delete the 24 override
-entries listed below.
+**Verdict: the fact source holds.** Over the committed graph the diff compares
+218 methods. Before the fixes recorded below, the two sources agreed on 215 of
+them. All three disagreements are resolved, so they now agree on every one. Two
+of the three were a heuristic mis-classification the facts caught, and one was
+an analyzer gap the facts missed. §7 was authorized on this evidence to rank
+the facts above the name tiers. The 24 override entries listed below are
+redundant for the converter, and the sequencing note explains why they are
+still in the table.
 
 ## What the diff compares
 
@@ -55,16 +56,11 @@ cannot answer them:
 | Bucket | Count | Meaning |
 | ------ | ----- | ------- |
 | Confirmed | 194 | A heuristic the fact agrees with. |
-| Redundant | 24 | An override entry the fact agrees with. §7 deleted it. |
-| Disagreement | 0 | The two sources answer differently. |
-| Answered by the facts alone | 48 | Neither hand-written source answers. Each of these reached the `&mut self` default before §7. |
-| Override with no fact | 37 | An override entry no fact answers. §7 kept it. |
-
-The counts above are the run that authorized §7, taken with all 24 entries
-still in place. Re-running the diff today reads differently, because a deleted
-entry moves its method onto whichever verdict the heuristics reach: 194
-confirmed, 2 corrected, 0 redundant, 0 disagreements, 70 answered by the facts
-alone, 37 overrides no fact answers.
+| Corrected | 0 | A heuristic the fact overrules. Empty while the entries stand. |
+| Redundant | 24 | An override entry the fact agrees with. |
+| Disagreement | 0 | An override entry the fact contradicts. |
+| Answered by the facts alone | 48 | Neither hand-written source answers. Each of these reaches the `&mut self` default in the prelude, and its fact in the converter. |
+| Override with no fact | 37 | An override entry no fact answers. |
 
 The run prints these counts. `dts_to_esc bootstrap --cfg <cfg.json> <lib-dir>
 <out-dir>` writes them to stderr beside the curation and join reports.
@@ -125,10 +121,10 @@ for it is §4 work rather than §6 work.
 
 ## The 24 redundant override entries
 
-Each was an entry in `nonMutatingOverrides` whose owner and member a published
-fact answers the same way. §7 deleted exactly this list.
-`TestCommittedGraphRedundantOverrides` now reads empty, and an entry that lands
-back on it is one the facts have caught up with.
+Each is an entry in `nonMutatingOverrides` whose owner and member a published
+fact answers the same way. They come out with the prelude pass that reads them,
+per the sequencing note below. `TestCommittedGraphRedundantOverrides` pins the
+list so that deletion works from a checked set rather than a recomputed one.
 
 ```
 Function.apply               String.localeCompare  String.replaceAll
@@ -141,14 +137,14 @@ String.codePointAt           String.repeat         String.trimEnd
 String.endsWith              String.replace        String.trimStart
 ```
 
-### Sequencing: the deletion was not safe on its own
+### Sequencing: the deletion waits for M12
 
 The prelude's `UpdateMethodMutability` is the only code that applies the
 override table. A `Classify` answer does not stand in for an entry: the
 receiver it writes does not reach the `.d.ts`-loaded lib types the prelude
 builds. Removing `charAt` from the `String` entry while making `Classify`
 answer `borrow` for it through a tier the prelude cannot reach leaves
-`TestPreludeNonMutSourcesCallableOnNonMutReceiver` failing with "Callee is not
+`TestPreludeOverridesCallableOnNonMutReceiver` failing with "Callee is not
 callable" on `s.charAt(0)`. The entry is what carries the claim.
 
 So deleting the 24 entries while wiring the facts into `Classify` alone would
@@ -156,49 +152,55 @@ leave the prelude reaching those methods through the name heuristics, and the
 heuristics are what the entries exist to correct. `String.prototype.replace`
 would go back to a mutating receiver.
 
-Two things made the deletion safe. Either the facts reach the pass that applies
-receiver mutability to the `.d.ts`-loaded lib types, or that pass is gone,
-which is what the M12 flip of the builtins workstream does to
-`UpdateMethodMutability`. **§7 relied on the first.** `applyMethodMutability`
-consults the facts by owner and member name, above the heuristics and below the
-override entries, so `s.charAt(0)` and `s.trim()` are answered by a fact rather
-than by an entry. The same condition governs §6.B and §6.C of
+Either of two things makes the deletion safe. The facts reach the pass that
+applies receiver mutability to the `.d.ts`-loaded lib types, or that pass is
+gone, which is what the M12 flip of the builtins workstream does to
+`UpdateMethodMutability`. **§7 relies on the second, and so kept all 24
+entries.** The first would mean `internal/checker` reading `internal/ecma262`,
+and the legacy checker is not this workstream's target: the facts belong to the
+converter that generates the `std:*` `.esc` files, and the solver reads those
+files rather than the spec. Paying a dependency into a tree that M12 deletes
+buys nothing, so the entries stay until they go out with their one reader. The
+same condition governs §6.B and §6.C of
 [../interop_mutability/implementation_plan.md](../interop_mutability/implementation_plan.md),
 which drop entries as the `data/builtins/` overrides land.
 
-### The gate's meaning changed when the entries went
+### What the gate reads once the facts outrank the heuristics
 
-Deleting the 24 entries left `String.prototype.replace` and
-`String.prototype.replaceAll` answered by the mutating `replace` prefix, which
-contradicts the `borrow` the facts publish. That is not a disagreement in the
-sense the gate was written for. Once the facts rank above the name tiers the
-fact decides, and a heuristic that would have answered otherwise never reaches
-a receiver.
+The gate was written when a method with no entry was decided by the heuristic,
+which made every contradiction a soundness risk. In the converter the fact now
+decides, and a heuristic that would have answered otherwise never reaches a
+receiver. Deleting an entry would therefore move its method onto a contradiction
+that costs nothing: drop the `String` entries and `replace` and `replaceAll`
+fall to the mutating `replace` prefix, which the published `borrow` disputes.
 
-So the diff now splits a contradiction by which hand-written source produced
-it, and only the one the facts lose to fails the build:
+So the diff splits a contradiction by which hand-written source produced it, and
+only the one the facts lose to fails the build:
 
 - **`disagreement`** — an override entry contradicts the fact. The entry
   outranks the fact in every reader, so the hand-written answer is what gets
   written and one of the two sources is wrong.
   `TestCommittedGraphLeavesNoReceiverDisagreement` holds this at zero.
-- **`corrected`** — a heuristic contradicts the fact. The fact is what gets
-  written. `TestCommittedGraphCorrectedHeuristics` pins the list, which is
-  `String.prototype.replace` and `String.prototype.replaceAll`.
+- **`corrected`** — a heuristic contradicts the fact. The fact is what the
+  converter writes. `TestCommittedGraphCorrectedHeuristics` pins the list,
+  which is empty while the entries stand, since an entry answers every method
+  whose heuristic a fact contradicts.
 
-A corrected heuristic is still worth reading. The heuristic is what classifies
-that name on every other type, which is how the `copyWithin` exact-name entry
-above was found. This pair does not want a heuristic fix, though: a `replace*`
-prefix really is mutating on most APIs, `replaceChild` and `replaceState` among
-them, and `String.prototype.replace` is the exception.
+A corrected heuristic is worth reading when one appears. The heuristic is what
+classifies that name on every other type, which is how the `copyWithin`
+exact-name entry above was found. The two that would appear first do not want a
+heuristic fix, though: a `replace*` prefix really is mutating on most APIs,
+`replaceChild` and `replaceState` among them, and `String.prototype.replace` is
+the exception.
 
-## The 37 entries §7 kept
+## The 37 entries no fact answers
 
 `Body`, `Console`, `Request`, and `Response` are `web:*` owners with no
 ECMA-262 algorithm, so no fact can ever address them. They wait on the WebIDL
 extractor. `String.substr` is an Annex B method the committed graph does not
-carry. `TestCommittedGraphOverridesWithNoFact` pins this list, which is now the
-whole table.
+carry. `TestCommittedGraphOverridesWithNoFact` pins this list too. These are
+the entries that survive M12: nothing in ECMA-262 addresses them, so they wait
+on the WebIDL extractor rather than on a spec fact.
 
 ## The gate holds itself
 

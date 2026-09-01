@@ -13,7 +13,6 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_to_esc"
-	"github.com/escalier-lang/escalier/internal/ecma262"
 	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/type_system"
@@ -214,26 +213,26 @@ func mergeModules(target, source *ast.Module) {
 	}
 }
 
-// applyMethodMutability classifies each MethodElem on objType. The per-class
-// override set is consulted first, and ClassifyMemberByName answers the rest by
-// walking the same tiers the converter does: the well-known non-mutating names,
-// then the ECMA-262 fact for the member, then the name-only interop heuristics
-// as the fall-through (issue #614). When no tier positively classifies the
-// method as non-mutating it keeps the default `mut self` set by
-// populateSelfParams. The override entries always win, because they encode the
-// exceptions neither the facts nor the heuristics answer, `Console.clear` among
-// them.
+// applyMethodMutability classifies each MethodElem on objType using the
+// per-class override set first and the name-only interop heuristics as
+// the fall-through (issue #614). When neither source positively
+// classifies the method as non-mutating it keeps the default `mut self`
+// set by populateSelfParams. The override entries always win — they
+// encode known exceptions that the heuristics either miss or
+// mis-classify (e.g. String.replace, Console.clear).
 //
-// `owner` is the dotted runtime path the members hang off, which is how
-// `facts` addresses them. The members of `String` are looked up under the owner
-// `String`. A type the spec keys no algorithm for reaches only the override set
-// and the heuristics, and so does every type when `facts` is nil.
+// This pass reads no ECMA-262 fact. The facts rank above the name tiers
+// inside `dts_to_esc.Classify`, which is what the converter runs to produce
+// the `std:*` `.esc` files; this is the legacy path over `.d.ts`-loaded lib
+// types, which the SimpleSub M12 flip deletes. See
+// planning/ecma-262/validation_diff.md for why the override entries the facts
+// answer stay in place until then.
 //
 // Only MethodElem is consulted. GetterElem / SetterElem polarity is
 // fixed by populateSelfParams (getters non-mut, setters mut) — passing
 // an accessor name in `names` would silently miss here. If an accessor
 // ever needs its polarity overridden, extend the type switch below.
-func applyMethodMutability(objType *type_system.ObjectType, owner string, names dts_to_esc.MethodNames, facts *dts_to_esc.ReceiverFacts) {
+func applyMethodMutability(objType *type_system.ObjectType, names dts_to_esc.MethodNames) {
 	for _, elem := range objType.Elems {
 		me, ok := elem.(*type_system.MethodElem)
 		if !ok {
@@ -245,7 +244,7 @@ func applyMethodMutability(objType *type_system.ObjectType, owner string, names 
 		name := me.Name.Str
 		mut, classified := false, names.Contains(name)
 		if !classified {
-			mut, classified = dts_to_esc.ClassifyMemberByName(facts, owner, ecma262.StrMember(name))
+			mut, classified = dts_to_esc.ClassifyMethodByName(name)
 		}
 		if !classified || mut {
 			continue
@@ -257,8 +256,6 @@ func applyMethodMutability(objType *type_system.ObjectType, owner string, names 
 }
 
 func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
-	facts := receiverFacts()
-
 	// First pass: trio-shaped classes (interface X + interface XConstructor +
 	// declare var X: XConstructor) — look up the instance type via the
 	// constructor's return type. Iterate in sorted order so the
@@ -307,7 +304,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 					// populateSelfParams). Apply per-interface overrides
 					// and, as a fall-through for any unlisted method,
 					// the name-only interop heuristics (#614).
-					applyMethodMutability(it, instName, overrides, facts)
+					applyMethodMutability(it, overrides)
 				} else {
 					panic("Instance type is not an ObjectType: " + instTypeAlias.Type.String())
 				}
@@ -343,7 +340,7 @@ func UpdateMethodMutability(ctx Context, namespace *type_system.Namespace) {
 		if !ok {
 			continue
 		}
-		applyMethodMutability(objType, name, dts_to_esc.NonMutatingOverrides(name), facts)
+		applyMethodMutability(objType, dts_to_esc.NonMutatingOverrides(name))
 	}
 }
 

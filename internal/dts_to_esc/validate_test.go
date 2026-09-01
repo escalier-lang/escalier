@@ -195,10 +195,11 @@ func TestCommittedGraphLeavesNoReceiverDisagreement(t *testing.T) {
 	require.Empty(t, lines)
 }
 
-// The heuristics the facts overrule over the committed graph. Each is a name
-// the name tiers answer wrongly wherever else it is spelled, so the list is
-// pinned rather than left to grow unread. A new line here is a heuristic to
-// re-read, as `copyWithin` was — see planning/ecma-262/validation_diff.md.
+// The heuristics the facts overrule over the committed graph. It reads empty
+// while the override entries stand, because an entry answers every method whose
+// heuristic a fact contradicts. A line appears here when an entry comes out, and
+// names a heuristic to re-read — that is how `copyWithin` was found. See
+// planning/ecma-262/validation_diff.md.
 func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
 	t.Parallel()
 
@@ -208,19 +209,42 @@ func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
 	for _, diff := range report.Corrected() {
 		lines = append(lines, diff.String())
 	}
-	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(`String.prototype.replace: fact borrow, heuristic mutBorrow
-String.prototype.replaceAll: fact borrow, heuristic mutBorrow`))
+	snaps.MatchInlineSnapshot(t, strings.Join(lines, "\n"), snaps.Inline(""))
 }
 
-// The override entries the facts agree with, which is none of the ones the
-// table still holds. An entry that lands on this list is one the facts have
-// caught up with, which makes it one to delete.
+// The override entries the facts agree with. Each repeats what a published
+// fact already says, so each comes out when the M12 flip deletes the prelude
+// pass that is the table's one reader. The list is pinned so that deletion
+// works from a checked set rather than a recomputed one.
 func TestCommittedGraphRedundantOverrides(t *testing.T) {
 	t.Parallel()
 
 	report := ValidateReceivers(committedFacts(t))
 
-	snaps.MatchInlineSnapshot(t, strings.Join(report.Redundant(), "\n"), snaps.Inline(""))
+	snaps.MatchInlineSnapshot(t, strings.Join(report.Redundant(), "\n"), snaps.Inline(`Function.apply
+Function.bind
+Function.call
+Object.propertyIsEnumerable
+String.charAt
+String.charCodeAt
+String.codePointAt
+String.endsWith
+String.localeCompare
+String.match
+String.matchAll
+String.normalize
+String.padEnd
+String.padStart
+String.repeat
+String.replace
+String.replaceAll
+String.search
+String.split
+String.startsWith
+String.substring
+String.trim
+String.trimEnd
+String.trimStart`))
 }
 
 // The override entries no fact answers, which are the ones nonMutatingOverrides
@@ -279,7 +303,8 @@ func TestWriteValidationReport(t *testing.T) {
 		"Array.prototype.push":    ecma262.RecvMutBorrow,
 		"Array.prototype.flat":    ecma262.RecvBorrow,
 		"Array.prototype.sort":    ecma262.RecvBorrow,
-		"String.prototype.substr": ecma262.RecvMutBorrow,
+		"String.prototype.charAt": ecma262.RecvBorrow,
+		"String.prototype.trim":   ecma262.RecvMutBorrow,
 	}))
 
 	var out strings.Builder
@@ -289,12 +314,13 @@ func TestWriteValidationReport(t *testing.T) {
 	// override entry lands in the last list. The lines below are the head of
 	// it, and the assertion after them covers the rest.
 	require.True(t, strings.HasPrefix(out.String(),
-		`  receivers: 1 confirmed by a name tier, 1 heuristics corrected, 0 redundant overrides, 1 disagreements, 1 answered by the facts alone, 36 overrides no fact answers
-    disagreement: String.prototype.substr: fact mutBorrow, override borrow
+		`  receivers: 1 confirmed by a name tier, 1 heuristics corrected, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 59 overrides no fact answers
+    disagreement: String.prototype.trim: fact mutBorrow, override borrow
     corrected heuristic: Array.prototype.sort: fact borrow, heuristic mutBorrow
+    redundant override: String.charAt
     override with no fact: Body.arrayBuffer
 `), out.String())
-	require.Contains(t, out.String(), "    override with no fact: Console.warn\n")
+	require.Contains(t, out.String(), "    override with no fact: String.trimEnd\n")
 }
 
 // committedFacts is the published fact set for the committed graph.
