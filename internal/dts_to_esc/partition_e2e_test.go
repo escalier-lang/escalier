@@ -207,3 +207,62 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
 	require.Empty(t, sb.String())
 }
+
+// TestGenerate_PinnedLibSet is the §6.6 gate over the real inputs:
+// `generate` writes the whole pinned lib set through the committed
+// overlay, every file it emits parses with Escalier's own parser, and a
+// second run leaves the tree byte-identical.
+//
+// Byte-identical is what proves the run reads no file it wrote. A run
+// that consulted the tree would fold its own previous output back in and
+// drift on the second pass.
+func TestGenerate_PinnedLibSet(t *testing.T) {
+	t.Parallel()
+
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err)
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+	if _, err := os.Stat(libDir); err != nil {
+		t.Skipf("pinned TypeScript lib set not present at %s: %v", libDir, err)
+	}
+
+	outDir := t.TempDir()
+	opts := GenerateOptions{
+		LibDir:       libDir,
+		OverlayDir:   filepath.Join(repoRoot, "internal", "interop", "overlay"),
+		OutDir:       outDir,
+		HandAuthored: HandAuthoredPackages,
+	}
+
+	res, err := Generate(opts)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Written)
+
+	first := map[string]string{}
+	for _, uri := range res.Written {
+		pkg, ok := PackageForURI(uri)
+		require.True(t, ok, "URI %q from the run must be a known package", uri)
+		path := filepath.Join(outDir, filepath.FromSlash(pkg.File))
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err, "%s should be on disk", pkg.File)
+		require.True(t, strings.HasPrefix(string(contents), GeneratedHeader),
+			"%s should open with the generated-file header", pkg.File)
+		first[pkg.File] = string(contents)
+
+		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
+			Path:     path,
+			Contents: string(contents),
+		})
+		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
+	}
+
+	second, err := Generate(opts)
+	require.NoError(t, err)
+	require.Equal(t, res.Written, second.Written)
+	require.Empty(t, second.Removed)
+	for file, contents := range first {
+		again, err := os.ReadFile(filepath.Join(outDir, filepath.FromSlash(file)))
+		require.NoError(t, err)
+		require.Equal(t, contents, string(again), "%s must regenerate byte-identically", file)
+	}
+}

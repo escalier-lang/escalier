@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // convertStatement attempts to convert a dts_parser.Statement to an ast.Decl.
@@ -121,6 +122,10 @@ func convertTypeDecl(dt *dts_parser.TypeDecl) (ast.Decl, error) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("converting type annotation for type alias %s: %w", dt.Name.Name, err)
+	}
+
+	if RaiseParamDecls.Contains(dt.Name.Name) {
+		typeParams = addRaiseParam(typeParams, typeAnn, dt.Span())
 	}
 
 	return ast.NewTypeDecl(
@@ -294,16 +299,8 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 		extends = append(extends, typeRefType)
 	}
 
-	if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
-		// The rejection parameter is synthesized rather than read from the `.d.ts`, so it
-		// borrows the declaration's own span.
-		synthSpan := ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)
-		errorTypeParam := ast.NewTypeParam("E", nil, ast.NewAnyTypeAnn(synthSpan), di.Span())
-		typeParams = append(typeParams, &errorTypeParam)
-		visitor := &PromiseVisitor{
-			ast.DefaultVisitor{},
-		}
-		objType.Accept(visitor)
+	if RaiseParamDecls.Contains(di.Name.Name) {
+		typeParams = addRaiseParam(typeParams, objType, di.Span())
 	}
 
 	return ast.NewInterfaceDecl(
@@ -318,21 +315,67 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	), nil
 }
 
-type PromiseVisitor struct {
+// raiseParamName is the trailing type parameter the declarations in
+// RaiseParamDecls carry. It names what the declaration may raise: what a
+// promise rejects with, and what advancing a generator throws.
+const raiseParamName = "E"
+
+// RaiseParamDecls are the declarations the converter gives a trailing
+// raise parameter to, so `interface Promise<T>` is emitted as
+// `Promise<T, E>`. Escalier's own form of each takes that parameter —
+// the solver reads `Promise<T, E>` and `Generator<Y, R, N, E>` — where
+// the TypeScript declaration has no slot for it.
+//
+// The parameter defaults to `any` and no fact is consulted for it.
+// Deriving it from the ECMA-262 rejects set is #1352.
+var RaiseParamDecls = set.FromSlice([]string{
+	"Promise", "PromiseLike",
+	"Generator", "AsyncGenerator",
+})
+
+// addRaiseParam appends the raise parameter to a declaration's type
+// parameters and threads it through every reference body makes to a
+// declaration that carries one. Both the parameter and its uses are
+// synthesized rather than read from the `.d.ts`, so they borrow a zero
+// span.
+//
+// Inside `interface Generator<T, TReturn, TNext>` the self-reference
+// `[Symbol.iterator]() -> Generator<T, TReturn, TNext>` becomes
+// `Generator<T, TReturn, TNext, E>`, so the raise the declaration takes
+// reaches the type it evaluates to.
+func addRaiseParam(typeParams []*ast.TypeParam, body ast.Node, declSpan ast.Span) []*ast.TypeParam {
+	body.Accept(&raiseParamVisitor{})
+	param := ast.NewTypeParam(raiseParamName, nil, ast.NewAnyTypeAnn(synthSpan()), declSpan)
+	return append(typeParams, &param)
+}
+
+// synthSpan is the span a node the converter invents carries. Nothing in
+// the `.d.ts` source corresponds to it, so there is no position to point
+// a diagnostic at.
+func synthSpan() ast.Span {
+	return ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)
+}
+
+// raiseParamVisitor appends the raise argument to every reference to a
+// declaration in RaiseParamDecls. It runs over the body of one such
+// declaration, so the `E` it names is that declaration's own parameter.
+type raiseParamVisitor struct {
 	ast.DefaultVisitor
 }
 
-func (v *PromiseVisitor) ExitTypeAnn(ta ast.TypeAnn) {
-	if typeRef, ok := ta.(*ast.TypeRefTypeAnn); ok {
-		if ident, ok := typeRef.Name.(*ast.Ident); ok && (ident.Name == "Promise" || ident.Name == "PromiseLike") {
-			// Add the error type parameter "E" with "any" as the default
-			eIdent := ast.NewIdentifier("E", ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0))
-			errorTypeParam := ast.NewRefTypeAnn(
-				eIdent,
-				nil,
-				ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0),
-			)
-			typeRef.TypeArgs = append(typeRef.TypeArgs, errorTypeParam)
-		}
+func (v *raiseParamVisitor) ExitTypeAnn(ta ast.TypeAnn) {
+	typeRef, ok := ta.(*ast.TypeRefTypeAnn)
+	if !ok {
+		return
 	}
+	ident, ok := typeRef.Name.(*ast.Ident)
+	if !ok || !RaiseParamDecls.Contains(ident.Name) {
+		return
+	}
+	raiseArg := ast.NewRefTypeAnn(
+		ast.NewIdentifier(raiseParamName, synthSpan()),
+		nil,
+		synthSpan(),
+	)
+	typeRef.TypeArgs = append(typeRef.TypeArgs, raiseArg)
 }
