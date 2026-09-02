@@ -25,8 +25,8 @@ type Commented interface {
 }
 
 // commentSlots is embedded in every node struct to satisfy Commented. The
-// three fields start nil, so a node nothing attached to costs one nil slice
-// header per slot and prints as a zero struct in a snapshot.
+// three fields start nil, so a node that owns no comment costs three nil slice
+// headers and prints as a zero struct in a snapshot.
 type commentSlots struct {
 	leading  []*Comment
 	trailing []*Comment

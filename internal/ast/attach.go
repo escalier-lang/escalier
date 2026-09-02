@@ -10,7 +10,9 @@ import "sort"
 // a saved lexer state, so it reaches the same region more than once, and a pass
 // that attached while parsing would attach a comment once per attempt.
 //
-// Each comment goes to the first of these that applies:
+// Each comment goes to the first of these that applies. The first three
+// consider only a node inside the innermost node the comment sits in, so a
+// comment written inside a block stays in that block:
 //
 //  1. A node starting on the line the comment ends on takes it as leading.
 //     This is the `/* n */ 3` case, where the comment introduces what follows
@@ -187,8 +189,8 @@ func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment)
 	span := comment.span
 
 	// inner is the innermost node the comment sits inside. A neighbour outside
-	// it cannot own the comment, or the last comment in a block would lead
-	// whatever follows the block instead of staying in it.
+	// it cannot own the comment. Were it allowed to, the last comment in a
+	// block would lead whatever follows the closing brace.
 	inner := x.enclosing(span)
 	next := x.after(span.End.Offset, span.SourceID)
 	prev := x.before(span.Start.Offset, span.SourceID)
@@ -229,10 +231,10 @@ func (x *nodeIndex) after(offset, sourceID int) Node {
 // before returns the last node of sourceID ending at or before offset,
 // preferring the widest of the nodes that end there.
 //
-// The scan walks back over every node ending at or before offset, not only the
-// run sharing the largest such offset. A module holds the nodes of all its
-// files in one index, so the nearest node by offset is often from another file
-// and the one this is looking for lies further back.
+// A module holds the nodes of all its files in one index. The node nearest a
+// comment by offset therefore often belongs to another file, and the one this
+// looks for lies further back. The scan walks back over every node ending at
+// or before offset until it reaches one of sourceID.
 func (x *nodeIndex) before(offset, sourceID int) Node {
 	i := sort.Search(len(x.byEnd), func(i int) bool {
 		return x.byEnd[i].Span().End.Offset > offset
