@@ -58,7 +58,6 @@ func emptyModuleFor(uri string, files []OverlayFile) (*StandaloneModule, error) 
 	namespaces.Set("", &ast.Namespace{})
 	return &StandaloneModule{
 		Module: ast.NewModule(namespaces),
-		Docs:   map[ast.Decl]string{},
 		Paths:  map[ast.Decl]string{},
 	}, nil
 }
@@ -232,10 +231,12 @@ func applyOverlayDecl(mod *StandaloneModule, ns *ast.Namespace, f OverlayFile, o
 // runtime path onto the overlay declaration that stands in for it. The
 // prose is upstream documentation of the same name, and the path is what
 // the ECMA-262 join addresses the declaration's members by.
+//
+// An overlay declaration carrying its own doc comment keeps it. The
+// upstream prose fills in only where the overlay wrote none.
 func carryDeclMetadata(mod *StandaloneModule, host, replacement ast.Decl) {
-	if doc, ok := mod.Docs[host]; ok {
-		mod.Docs[replacement] = doc
-		delete(mod.Docs, host)
+	if replacement.Doc() == "" {
+		replacement.SetDoc(host.Doc())
 	}
 	if path, ok := mod.Paths[host]; ok {
 		mod.Paths[replacement] = path

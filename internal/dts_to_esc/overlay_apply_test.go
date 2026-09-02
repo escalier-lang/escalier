@@ -1,0 +1,327 @@
+package dts_to_esc
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// overlayLib is the synthetic `.d.ts` input the overlay tests route. It
+// holds one trio, which converts to `class Array`, one plain interface,
+// which stays an interface, and one free function, so the overlay's
+// member operations are exercised against each shape and the routing
+// produces two packages rather than one.
+const overlayLib = `
+interface Array<T> { length: number; at(index: number): T | undefined; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+declare var Array: ArrayConstructor;
+interface ArrayLike<T> { readonly length: number; }
+declare function parseInt(string: string, radix?: number): number;
+`
+
+// convertWithOverlay routes overlayLib, converts every bucket, and folds
+// the given overlay files in. It runs the three steps a generation runs
+// before it writes anything to disk.
+func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	overlay, err := LoadOverlay(seedOverlay(t, files))
+	if err != nil {
+		return nil, err
+	}
+	res, err := PartitionLibWithOverlay(
+		[]LibInput{parseLib(t, "lib.es5.d.ts", overlayLib)}, overlay)
+	if err != nil {
+		return nil, err
+	}
+	mods, err := ConvertBuckets(res)
+	if err != nil {
+		return nil, err
+	}
+	return mods, ApplyOverlay(mods, overlay)
+}
+
+// overlayModules is convertWithOverlay for a case expected to succeed.
+func overlayModules(t *testing.T, files map[string]string) map[string]*StandaloneModule {
+	t.Helper()
+	mods, err := convertWithOverlay(t, files)
+	require.NoError(t, err)
+	return mods
+}
+
+// overlayError is convertWithOverlay for a case expected to fail, and
+// returns the message.
+func overlayError(t *testing.T, files map[string]string) string {
+	t.Helper()
+	_, err := convertWithOverlay(t, files)
+	require.Error(t, err)
+	return err.Error()
+}
+
+// renderPackage prints one converted package the way a generation writes
+// it, minus the header.
+func renderPackage(t *testing.T, mods map[string]*StandaloneModule, uri string) string {
+	t.Helper()
+	mod, ok := mods[uri]
+	require.True(t, ok, "no converted module for %s", uri)
+	text, err := RenderStandaloneModule(mod)
+	require.NoError(t, err)
+	return text
+}
+
+// TestApplyOverlay_Operations covers what each operation does to the
+// converted package. The `replace` cases also pin substitution in place
+// rather than append, which is what keeps a second run byte-identical.
+func TestApplyOverlay_Operations(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "add reaches a converted class",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare class Array<T> {\n" +
+					"    static of<T>(...items: Array<T>) -> Array<T>,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean,
+    static of<T>(...items: Array<T>) -> Array<T>
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`,
+		},
+		{
+			name: "add reaches a converted interface",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike<T> {\n" +
+					"    readonly first: T,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number,
+    readonly first: T
+}
+`,
+		},
+		{
+			name: "add contributes a declaration no upstream source has",
+			overlay: map[string]string{
+				"std/array.add.esc": "@js(\"Symbol.iterator\")\n" +
+					"export declare val iteratorKey: unique symbol\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+
+@js("Symbol.iterator")
+export declare val iteratorKey: unique symbol
+`,
+		},
+		{
+			name: "replace substitutes a member at its own position",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`,
+		},
+		{
+			name: "replace stands in for a whole declaration of another kind",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare type ArrayLike<T> = { length: number }\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare type ArrayLike<T> = {
+    length: number
+}
+`,
+		},
+		{
+			name: "drop keeps a member out of the output",
+			overlay: map[string]string{
+				"std/array.drop.esc": "export declare interface Array {\n" +
+					"    at: unknown,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`,
+		},
+		{
+			name: "drop keeps a whole declaration out of the output",
+			overlay: map[string]string{
+				"std/array.drop.esc": "export declare val ArrayLike\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want,
+				renderPackage(t, overlayModules(t, tt.overlay), "std:array"))
+		})
+	}
+}
+
+// TestApplyOverlay_RootDropKeepsASymbolOutOfEveryPackage covers the one
+// operation that resolves during routing rather than against a
+// converted module.
+func TestApplyOverlay_RootDropKeepsASymbolOutOfEveryPackage(t *testing.T) {
+	t.Parallel()
+	mods := overlayModules(t, map[string]string{
+		"drop.esc": "export declare val parseInt\n",
+	})
+	require.Contains(t, mods, "std:array")
+	require.NotContains(t, mods, "std:number",
+		"parseInt is the only declaration routing to std:number")
+}
+
+// TestApplyOverlay_RejectsAnOverlayTheUpstreamSourceNoLongerBacks is the
+// TypeScript-side-removal signal. A generation overwrites the tree
+// without reading it, so a stale overlay entry is the only place a
+// removal can be caught.
+func TestApplyOverlay_RejectsAnOverlayTheUpstreamSourceNoLongerBacks(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name:    "root drop naming a symbol no lib file declares",
+			overlay: map[string]string{"drop.esc": "export declare val eval\n"},
+			want:    "overlay: drop.esc drops eval, which no lib.*.d.ts file declares",
+		},
+		{
+			name: "drop naming an absent declaration",
+			overlay: map[string]string{
+				"std/array.drop.esc": "export declare val ReadonlyArray\n",
+			},
+			want: "overlay: std/array.drop.esc drops ReadonlyArray, which std:array does not declare",
+		},
+		{
+			name: "drop naming an absent member",
+			overlay: map[string]string{
+				"std/array.drop.esc": "export declare interface Array {\n    sort: unknown,\n}\n",
+			},
+			want: "overlay: std/array.drop.esc drops Array.sort, which the converted " +
+				"declaration does not have",
+		},
+		{
+			name: "replace naming an absent declaration",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare val ReadonlyArray\n",
+			},
+			want: "overlay: std/array.replace.esc replaces ReadonlyArray, which std:array does not declare",
+		},
+		{
+			name: "replace naming an absent member",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    sort(mut self) -> Self,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc replaces Array.sort, which the converted " +
+				"declaration does not have",
+		},
+		{
+			name: "add colliding with a converted member",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare class Array<T> {\n" +
+					"    at(mut self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.add.esc adds Array.at, which the converted declaration " +
+				"already has; correct it with a replace overlay instead",
+		},
+		{
+			name: "add colliding with a converted declaration",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare val ArrayLike\n",
+			},
+			want: "overlay: std/array.add.esc adds the interface ArrayLike, which std:array " +
+				"already declares; correct an existing declaration with a replace overlay",
+		},
+		{
+			name: "replace on a package nothing routes to",
+			overlay: map[string]string{
+				"std/date.replace.esc": "export declare val Date\n",
+			},
+			want: "overlay: std/date.replace.esc replaces in std:date, which no upstream " +
+				"declaration routes to",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_AddCreatesAPackageNothingRoutesTo keeps an addition from
+// being silently lost when no upstream declaration lands in the package
+// it names.
+func TestApplyOverlay_AddCreatesAPackageNothingRoutesTo(t *testing.T) {
+	t.Parallel()
+	mods := overlayModules(t, map[string]string{
+		"std/date.add.esc": "@js(\"Date.now\")\nexport declare fn now() -> number\n",
+	})
+	require.Equal(t, `@js("Date.now")
+export declare fn now() -> number
+`, renderPackage(t, mods, "std:date"))
+}
