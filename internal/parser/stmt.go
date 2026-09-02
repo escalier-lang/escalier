@@ -64,6 +64,9 @@ func (p *Parser) block() ast.Block {
 func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 	stmts := []ast.Stmt{}
 
+	// doc holds the JSDoc block among the comments consumed since the last
+	// statement, waiting for a declaration to attach it to.
+	doc := ""
 	token := p.lexer.peek()
 	for {
 		// Check if context has been cancelled (timeout or cancellation)
@@ -84,11 +87,14 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 			// If we hit EOF before finding stopOn, return what we have
 			return &stmts, token.Span.End
 		case LineComment, BlockComment:
-			p.lexer.consume()
+			doc = p.consumeLeadingDoc()
 			token = p.lexer.peek()
 		default:
 			stmt := p.stmt()
 			if stmt != nil {
+				if declStmt, ok := stmt.(*ast.DeclStmt); ok {
+					attachDoc(declStmt.Decl, doc)
+				}
 				stmts = append(stmts, stmt)
 			} else {
 				nextToken := p.lexer.peek()
@@ -111,6 +117,7 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 					ast.Span{Start: token.Span.Start, End: nextToken.Span.Start, SourceID: p.lexer.source.ID},
 				))
 			}
+			doc = ""
 			token = p.lexer.peek()
 		}
 	}

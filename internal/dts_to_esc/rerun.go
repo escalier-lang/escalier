@@ -324,6 +324,11 @@ type packagePlan struct {
 	// Every offset the write pass computes indexes into this string.
 	contents string
 
+	// comments holds the comments the committed file contains, sorted by
+	// start offset. The write pass consults them to splice a member before
+	// a comment that trails the last member rather than after it.
+	comments []*ast.Comment
+
 	// inserts pairs each missing member with the committed declaration
 	// it belongs on, in the order the members appear in the converted
 	// declaration.
@@ -394,7 +399,7 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 
 	var committed []ast.Decl
 	if exists {
-		committed, err = parseCommitted(dest, contents)
+		committed, plan.comments, err = parseCommitted(dest, contents)
 		if err != nil {
 			return nil, err
 		}
@@ -415,7 +420,7 @@ func planPackage(pkg Package, mod *StandaloneModule, escDir string) (*packagePla
 		}
 		convertedNames.Add(name)
 		if !spaceCovered(byName[name], decl) {
-			text, err := renderStandaloneDecl(mod, decl)
+			text, err := renderStandaloneDecl(decl)
 			if err != nil {
 				return nil, fmt.Errorf("rendering %s in %s: %w", name, pkg.URI, err)
 			}
@@ -473,21 +478,21 @@ func readCommitted(path string) (string, bool, error) {
 }
 
 // parseCommitted parses a committed `.esc` file into its top-level
-// declarations. ParseLibFiles is used rather than ParseDecls because a
-// package file may open with `import "std:date"` and only ParseLibFiles
-// admits import statements.
-func parseCommitted(path, contents string) ([]ast.Decl, error) {
+// declarations and the comments it contains. ParseLibFiles is used rather
+// than ParseDecls because a package file may open with `import "std:date"`
+// and only ParseLibFiles admits import statements.
+func parseCommitted(path, contents string) ([]ast.Decl, []*ast.Comment, error) {
 	src := &ast.Source{Path: path, Contents: contents}
 	mod, errs := parser.ParseLibFiles(context.Background(), []*ast.Source{src})
 	if len(errs) > 0 {
-		return nil, fmt.Errorf("parsing %s: %s", path, errs[0].String())
+		return nil, nil, fmt.Errorf("parsing %s: %s", path, errs[0].String())
 	}
 	var decls []ast.Decl
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		decls = append(decls, ns.Decls...)
 		return true
 	})
-	return decls, nil
+	return decls, mod.Comments[src.ID], nil
 }
 
 // standaloneDecls returns the converted module's declarations. The
@@ -505,12 +510,11 @@ func standaloneDecls(mod *StandaloneModule) []ast.Decl {
 // renderStandaloneDecl prints one converted declaration in the same
 // form WriteStandaloneModule would emit it, JSDoc included. The result
 // ends with a newline.
-func renderStandaloneDecl(mod *StandaloneModule, decl ast.Decl) (string, error) {
+func renderStandaloneDecl(decl ast.Decl) (string, error) {
 	var namespaces btree.Map[string, *ast.Namespace]
 	namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{decl}})
 	return RenderStandaloneModule(&StandaloneModule{
 		Module: ast.NewModule(namespaces),
-		Docs:   mod.Docs,
 	})
 }
 
@@ -860,7 +864,7 @@ func (p *packagePlan) splice() spliceResult {
 	}
 
 	for _, owner := range order {
-		at, brace, ok := bodyInsertPoint(p.contents, owner)
+		at, brace, ok := bodyInsertPoint(p.contents, p.comments, owner)
 		if !ok {
 			res.skipped = append(res.skipped, names[owner])
 			continue
@@ -925,40 +929,44 @@ func (p *packagePlan) appendedDecls() string {
 // `// TODO: revisit` would otherwise take the separating comma inside
 // that comment, rewriting a hand-written line and, when the last member
 // carries no trailing comma of its own, leaving the body unparseable.
-func bodyInsertPoint(contents string, decl ast.Decl) (at, brace int, ok bool) {
-	start := offsetOf(contents, decl.Span().Start)
-	end := offsetOf(contents, decl.Span().End)
+func bodyInsertPoint(contents string, comments []*ast.Comment, decl ast.Decl) (at, brace int, ok bool) {
+	start := decl.Span().Start.Offset
+	end := decl.Span().End.Offset
 	if end <= 0 || end > len(contents) || contents[end-1] != '}' {
 		return 0, 0, false
 	}
 	brace = end - 1
-	return lastCodeOffset(contents, start, brace), brace, true
+	return lastCodeOffset(contents, comments, start, brace), brace, true
 }
 
-// lastCodeOffset returns the offset just past the last token in
-// contents[from:to] that is not a comment, or `from` when the range
-// holds no such token.
+// lastCodeOffset returns the offset just past the last byte of code in
+// contents[from:to], meaning the position ahead of the comments and
+// whitespace that trail it. It returns `from` when the range holds
+// nothing but comments and whitespace.
 //
-// What counts as a comment is the Escalier lexer's decision, not this
-// function's. That is what keeps a `//` inside a string literal from
-// opening one, a comma inside one from reading as a member separator,
-// and a single quote from opening a string when it opens a lifetime.
-//
-// The fragment is lexed on its own, so token locations start at its
-// first byte and `from` is added back.
-func lastCodeOffset(contents string, from, to int) int {
-	fragment := contents[from:to]
-	last := 0
-	for _, token := range parser.NewLexer(&ast.Source{Contents: fragment}).Lex() {
-		switch token.Type {
-		case parser.LineComment, parser.BlockComment, parser.EndOfFile:
-			continue
+// comments are the file's comments as the lexer read them, so a `//` inside a
+// string literal never opens one here. The write pass supplies the comments
+// parseCommitted collected. Those came from the parser's own lexer, so a `//`
+// inside a template literal is excluded too.
+func lastCodeOffset(contents string, comments []*ast.Comment, from, to int) int {
+	inRange := ast.CommentsInRange(comments, from, to)
+	at := to
+	for {
+		at = from + len(strings.TrimRight(contents[from:at], " \t\r\n"))
+		// A line comment's token runs to the newline, so it holds whatever
+		// spaces were written after its text. Trimming whitespace therefore
+		// lands inside that comment rather than at its end. The step back
+		// tests for a comment containing `at`, not for one ending there.
+		last := len(inRange) - 1
+		for last >= 0 && inRange[last].Span().Start.Offset >= at {
+			last--
 		}
-		if end := offsetOf(fragment, token.Span.End); end > last {
-			last = end
+		if last < 0 || inRange[last].Span().End.Offset < at {
+			return at
 		}
+		at = inRange[last].Span().Start.Offset
+		inRange = inRange[:last]
 	}
-	return from + last
 }
 
 // memberInsertText builds the text spliced in at `at`, where `brace` is
@@ -997,21 +1005,3 @@ func indentLines(text, indent string) string {
 	return strings.Join(lines, "\n")
 }
 
-// offsetOf converts a parser location into a byte offset into contents.
-// Lines and columns are both 1-based and columns count runes, matching
-// the lexer. A location past the end of contents returns len(contents).
-func offsetOf(contents string, loc ast.Location) int {
-	line, column := 1, 1
-	for i, r := range contents {
-		if line == loc.Line && column == loc.Column {
-			return i
-		}
-		if r == '\n' {
-			line++
-			column = 1
-		} else {
-			column++
-		}
-	}
-	return len(contents)
-}

@@ -107,7 +107,9 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 		}
 	}
 
-	return ast.NewScript(*stmts, span), p.errors
+	script := ast.NewScript(*stmts, span)
+	script.Comments = p.Comments()
+	return script, p.errors
 }
 
 // ParseDecls parses `source` as a stream of top-level declarations and
@@ -142,8 +144,15 @@ func (p *Parser) decls() []ast.Decl {
 			p.lexer.consume()
 			return decls
 		case LineComment, BlockComment:
-			p.lexer.consume()
-			token = p.lexer.peek()
+			// Comments with no declaration after them end the file and have
+			// nothing to attach to. Otherwise leave them for Decl, which
+			// takes a JSDoc block among them as the declaration's doc.
+			if p.atCommentsBefore(EndOfFile) {
+				p.consumeLeadingDoc()
+				p.lexer.consume()
+				return decls
+			}
+			fallthrough
 		default:
 			decl := p.Decl()
 			if decl != nil {
@@ -193,7 +202,12 @@ importLoop:
 		//nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:
-			p.lexer.consume()
+			// A comment ahead of the first declaration is that
+			// declaration's, not the import section's.
+			if !p.atCommentsBefore(Import) {
+				break importLoop
+			}
+			p.consumeLeadingDoc()
 			token = p.lexer.peek()
 		case Import:
 			stmt := p.importStmt()
@@ -218,6 +232,7 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 	allErrors := []*Error{}
 	files := []*ast.File{}
 	sourcesMap := make(map[int]*ast.Source)
+	comments := make(map[int][]*ast.Comment)
 
 	for _, source := range sources {
 		if source == nil {
@@ -252,9 +267,12 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 		ns, _ := namespaces.Get(nsName)
 		ns.Decls = append(ns.Decls, parsed.Decls...)
 		allErrors = append(allErrors, parser.errors...)
+		comments[source.ID] = parser.Comments()
 	}
 
-	return ast.NewModuleWithFiles(namespaces, files, sourcesMap), allErrors
+	module := ast.NewModuleWithFiles(namespaces, files, sourcesMap)
+	module.Comments = comments
+	return module, allErrors
 }
 
 // ParseTypeAnn parses a type annotation string and returns the resulting ast.TypeAnn.

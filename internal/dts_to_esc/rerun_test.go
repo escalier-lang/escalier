@@ -500,16 +500,6 @@ regenerate: +0 declarations, +1 members
 `))
 }
 
-func TestOffsetOf_CountsRunesNotBytes(t *testing.T) {
-	t.Parallel()
-	// Columns count code points, matching the lexer, so a multi-byte
-	// character earlier on the line must not shift the offset.
-	contents := "val π = 1\nval x = 2\n"
-	require.Equal(t, 0, offsetOf(contents, ast.Location{Line: 1, Column: 1}))
-	require.Equal(t, len("val π = 1\n"), offsetOf(contents, ast.Location{Line: 2, Column: 1}))
-	require.Equal(t, len(contents), offsetOf(contents, ast.Location{Line: 9, Column: 1}))
-}
-
 func TestRegeneratePartition_KeepsATrailingComment(t *testing.T) {
 	t.Parallel()
 	// A §7 contributor may close a body with a note. The splice goes
@@ -605,9 +595,11 @@ export declare class Array<T> {
 func TestLastCodeOffset_StepsOverCommentsAndStrings(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name     string
-		contents string
-		// want is the source up to the returned offset.
+		name string
+		// body is the interface's member body, spliced between the braces of
+		// the declaration below so each case is a whole Escalier file.
+		body string
+		// want is the body up to the returned offset.
 		want string
 	}{
 		{"plain body", "a: number,\n", "a: number,"},
@@ -617,15 +609,31 @@ func TestLastCodeOffset_StepsOverCommentsAndStrings(t *testing.T) {
 		{"slashes inside a string", "kind: \"http://x\",\n", "kind: \"http://x\","},
 		{"comment marker inside a string", "kind: \"// not a comment\"\n", "kind: \"// not a comment\""},
 		{"lifetime is not a string", "get x('a self) -> T,\n// note\n", "get x('a self) -> T,"},
-		{"unterminated line comment", "a: number,\n// note", "a: number,"},
-		{"unterminated block comment", "a: number,\n/* note", "a: number,"},
 		{"only a comment", "// nothing yet\n", ""},
+		{"line comment with trailing spaces", "a: number,\n// note   \n", "a: number,"},
+		{"line comment with a trailing tab", "a: number,\n// note\t\n", "a: number,"},
+		{"line comment ending in CRLF", "a: number,\r\n// note\r\n", "a: number,"},
+		{"block comment with trailing spaces", "a: number,\n/* note */   \n", "a: number,"},
+		{"two comments in a row", "a: number,\n// one\n// two\n", "a: number,"},
+		{"comment then blank lines", "a: number,\n// note\n\n\n", "a: number,"},
 	}
+	// bodyInsertPoint only ever asks about a range ending at a body's closing
+	// brace, so the cases below are bodies rather than whole files. Wrapping
+	// them in a declaration is what makes each one Escalier source, and it is
+	// also why no case ends mid-comment: a closing brace always follows.
+	// LexComments covers an unterminated comment on its own.
+	const open = "declare interface Foo {\n"
+	const close = "}\n"
+
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			got := lastCodeOffset(tc.contents, 0, len(tc.contents))
-			require.Equal(t, tc.want, tc.contents[:got])
+			contents := open + tc.body + close
+			from, to := len(open), len(open)+len(tc.body)
+
+			comments := parser.LexComments(&ast.Source{Contents: contents})
+			got := lastCodeOffset(contents, comments, from, to)
+			require.Equal(t, tc.want, contents[from:got])
 		})
 	}
 }

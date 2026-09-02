@@ -58,6 +58,23 @@ func attachDoc(node ast.Documented, doc string) {
 	node.SetDoc(doc)
 }
 
+// atCommentsBefore reports whether the comments at the current position are
+// followed by one of stop rather than by a declaration. The lexer is left
+// where it was, so a caller that gets false can leave the comments for Decl
+// to consume as the declaration's leading doc.
+func (p *Parser) atCommentsBefore(stop ...TokenType) bool {
+	saved := p.saveState()
+	defer p.restoreState(saved)
+	p.consumeLeadingDoc()
+	next := p.lexer.peek().Type
+	for _, t := range stop {
+		if next == t {
+			return true
+		}
+	}
+	return false
+}
+
 // maybeTypeParams parses optional type parameters where no variance modifier is allowed —
 // a type alias, enum, or method. A class or interface, which does allow variance, calls
 // maybeLifetimeAndTypeParams directly with allowVariance=true.
@@ -189,7 +206,17 @@ func (p *Parser) lifetimeParam(nameTok *Token) *ast.LifetimeParam {
 // Decorators (`@name(args...)`) sit above any modifier keywords; an
 // `@js` between `export` and `declare` is a parse error. See
 // planning/builtins/implementation_plan.md §3.3.
+// Decl parses a single declaration and attaches any leading JSDoc block
+// comment to it. Non-JSDoc comments ahead of the declaration are consumed
+// but leave Doc empty.
 func (p *Parser) Decl() ast.Decl {
+	doc := p.consumeLeadingDoc()
+	decl := p.declInner()
+	attachDoc(decl, doc)
+	return decl
+}
+
+func (p *Parser) declInner() ast.Decl {
 	export := false
 	override := false
 	declare := false
@@ -482,8 +509,10 @@ func (p *Parser) declareBlockBody(override bool) []ast.Decl {
 		case CloseBrace, EndOfFile:
 			return decls
 		case LineComment, BlockComment:
-			p.lexer.consume()
-			continue
+			if p.atCommentsBefore(CloseBrace, EndOfFile) {
+				p.consumeLeadingDoc()
+				continue
+			}
 		}
 		inner := p.Decl()
 		if inner == nil {

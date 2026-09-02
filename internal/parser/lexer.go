@@ -14,6 +14,10 @@ type Lexer struct {
 	currentOffset   int
 	currentLocation ast.Location
 	lastToken       *Token // Track last token for regex context
+	// comments records every comment token this lexer produces. Save points
+	// share one log so backtracking neither loses a comment nor records it
+	// twice; see commentLog.
+	comments *commentLog
 }
 
 func NewLexer(source *ast.Source) *Lexer {
@@ -22,6 +26,7 @@ func NewLexer(source *ast.Source) *Lexer {
 		currentOffset:   0,
 		currentLocation: ast.Location{Line: 1, Column: 1},
 		lastToken:       nil,
+		comments:        newCommentLog(),
 	}
 }
 
@@ -501,9 +506,15 @@ func (lexer *Lexer) next() *Token {
 		}
 	}
 
+	// Byte offsets are tracked alongside line and column so a consumer that
+	// slices the source does not have to re-derive them by counting columns.
+	end.Offset = endOffset
+	token.Span.Start.Offset = startOffset
+	token.Span.End.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
 	lexer.lastToken = token // Track the last token for regex context
+	lexer.comments.record(token)
 
 	return token
 }
@@ -514,6 +525,7 @@ func (lexer *Lexer) saveState() *Lexer {
 		currentOffset:   lexer.currentOffset,
 		currentLocation: lexer.currentLocation,
 		lastToken:       lexer.lastToken,
+		comments:        lexer.comments,
 	}
 }
 
@@ -590,8 +602,11 @@ func (lexer *Lexer) lexQuasi() *Token {
 	}
 	endOffset := i
 
+	start.Offset = startOffset
+	end.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
+	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
 	if i >= n {
@@ -628,8 +643,11 @@ func (lexer *Lexer) lexJSXText() *Token {
 	}
 	endOffset := i
 
+	start.Offset = startOffset
+	end.Offset = endOffset
 	lexer.currentOffset = endOffset
 	lexer.currentLocation = end
+	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
 	if i >= n {

@@ -17,8 +17,19 @@ type DeclGetters interface {
 type Decl interface {
 	isDecl()
 	DeclGetters
+	Documented
 	Node
 }
+
+// declDoc carries the leading JSDoc retained on a declaration. Every Decl
+// embeds it so the parser and the .d.ts converter can attach a doc without
+// each declaration kind repeating the field and its two accessors.
+type declDoc struct {
+	doc string
+}
+
+func (d *declDoc) Doc() string       { return d.doc }
+func (d *declDoc) SetDoc(doc string) { d.doc = doc }
 
 func (*VarDecl) isDecl()              {}
 func (*FuncDecl) isDecl()             {}
@@ -38,6 +49,7 @@ const (
 )
 
 type VarDecl struct {
+	declDoc
 	Kind    VariableKind
 	Pattern Pat
 	TypeAnn TypeAnn // optional
@@ -120,6 +132,7 @@ func (p *Param) Span() Span {
 }
 
 type FuncDecl struct {
+	declDoc
 	Name  *Ident
 	VarID int // Set by the rename pass (liveness Phase 2)
 	FuncSig
@@ -192,6 +205,7 @@ func (d *FuncDecl) SetProvenance(p provenance.Provenance) {
 }
 
 type TypeDecl struct {
+	declDoc
 	Name           *Ident
 	LifetimeParams []*LifetimeParam
 	TypeParams     []*TypeParam
@@ -237,6 +251,7 @@ func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
 }
 
 type InterfaceDecl struct {
+	declDoc
 	Name           *Ident
 	LifetimeParams []*LifetimeParam
 	TypeParams     []*TypeParam
@@ -342,6 +357,7 @@ func (s *EnumSpread) Accept(v Visitor) {
 // EnumDecl represents an enum declaration
 // e.g., enum Maybe<T> { Some(T), None }
 type EnumDecl struct {
+	declDoc
 	Name       *Ident
 	TypeParams []*TypeParam
 	Elems      []EnumElem // variants and spreads
@@ -397,6 +413,7 @@ func (d *EnumDecl) SetProvenance(p provenance.Provenance) {
 // This is used when converting TypeScript .d.ts files that use the CommonJS-style
 // export assignment pattern. Escalier's parser does not produce this node.
 type ExportAssignmentStmt struct {
+	declDoc
 	Name       *Ident
 	declare    bool
 	override   bool
@@ -437,6 +454,7 @@ func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.proven
 // reach this package. DeclareModuleDecl and DeclareGlobalDecl below
 // exist solely for the Escalier override-file format.
 type DeclareModuleDecl struct {
+	declDoc
 	Name       *StrLit // module name as a string literal
 	Decls      []Decl
 	override   bool
@@ -474,6 +492,7 @@ func (d *DeclareModuleDecl) SetProvenance(p provenance.Provenance) { d.provenanc
 // Escalier source (.esc files), optionally prefixed by `override`. See the
 // note on DeclareModuleDecl for how this differs from dts_parser.GlobalDecl.
 type DeclareGlobalDecl struct {
+	declDoc
 	Decls      []Decl
 	override   bool
 	span       Span
@@ -511,6 +530,7 @@ func (d *DeclareGlobalDecl) SetProvenance(p provenance.Provenance) { d.provenanc
 // the dts_parser has its own dts_parser.NamespaceDecl for .d.ts files.
 // Declare() always returns true because namespaces are inherently ambient.
 type NamespaceDecl struct {
+	declDoc
 	Name       *Ident
 	Decls      []Decl
 	export     bool

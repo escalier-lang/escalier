@@ -3,6 +3,7 @@ package ast
 import "github.com/escalier-lang/escalier/internal/provenance"
 
 type ClassDecl struct {
+	declDoc
 	Name           *Ident
 	LifetimeParams []*LifetimeParam  // generic lifetime parameters (e.g. <'a>)
 	TypeParams     []*TypeParam      // generic type parameters

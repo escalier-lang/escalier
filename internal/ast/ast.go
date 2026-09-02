@@ -104,6 +104,10 @@ type Module struct {
 	Files []*File
 	// Sources maps SourceID to Source for looking up file paths from declaration spans.
 	Sources map[int]*Source
+	// Comments holds every comment each source file contains, keyed by
+	// SourceID and sorted by start offset. Comments are not children of any
+	// node; NewCommentMap associates them with nodes on demand.
+	Comments map[int][]*Comment
 }
 
 func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
@@ -111,6 +115,7 @@ func NewModule(namespaces btree.Map[string, *Namespace]) *Module {
 		Namespaces: namespaces,
 		Files:      []*File{},
 		Sources:    make(map[int]*Source),
+		Comments:   make(map[int][]*Comment),
 	}
 }
 
@@ -120,6 +125,7 @@ func NewModuleWithFiles(namespaces btree.Map[string, *Namespace], files []*File,
 		Namespaces: namespaces,
 		Files:      files,
 		Sources:    sources,
+		Comments:   make(map[int][]*Comment),
 	}
 }
 
@@ -143,7 +149,10 @@ func (m *Module) Accept(v Visitor) {
 
 type Script struct {
 	Stmts []Stmt
-	span  Span
+	// Comments holds every comment the script's source contains, sorted by
+	// start offset. See Module.Comments.
+	Comments []*Comment
+	span     Span
 }
 
 func NewScript(stmts []Stmt, span Span) *Script {

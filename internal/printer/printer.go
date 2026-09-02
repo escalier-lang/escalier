@@ -273,6 +273,11 @@ func (p *Printer) printImportStmt(s *ast.ImportStmt) {
 // Declaration printing
 
 func (p *Printer) printDecl(decl ast.Decl) {
+	// Compact mode renders the declaration on one line, where a doc comment
+	// would either swallow the rest of the line or need escaping to avoid it.
+	if doc := decl.Doc(); doc != "" && !p.opts.Compact {
+		p.writeDoc(doc)
+	}
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		p.printVarDecl(d)
