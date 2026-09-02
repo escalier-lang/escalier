@@ -60,7 +60,11 @@ func TestStdLibIteratorTypesLoaded(t *testing.T) {
 	t.Run("Generator", func(t *testing.T) {
 		generatorType := scope.GetTypeAlias("Generator")
 		require.NotNil(t, generatorType, "Generator type should be loaded")
-		assert.Equal(t, 3, len(generatorType.TypeParams), "Generator<T, TReturn, TNext>")
+		// The converter appends the raise parameter TypeScript has no slot
+		// for, so the loaded declaration carries one more parameter than
+		// `lib.es2015.generator.d.ts` writes. See RaiseParamDecls in
+		// internal/dts_to_esc/decl.go.
+		assert.Equal(t, 4, len(generatorType.TypeParams), "Generator<T, TReturn, TNext, E>")
 	})
 
 	// NOTE: AsyncGenerator requires ES2018+ lib files which are not currently loaded.

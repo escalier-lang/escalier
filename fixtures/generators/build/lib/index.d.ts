@@ -1,10 +1,10 @@
 export declare function count(): Generator<1 | 2 | 3, void, unknown>;
 export declare function countArray(): Array<1 | 2 | 3>;
 export declare function countWithDone(): Generator<1 | 2, "done", unknown>;
-export declare function drive(): IteratorResult<1 | 2 | 3, void>;
+export declare function drive(): IteratorResult<1 | 2 | 3, undefined>;
 export declare function resumable(): Generator<number, string, string>;
 export declare function driveResumable(): IteratorResult<number, string>;
-export declare function driveWithValue(): IteratorResult<1 | 2 | 3, void>;
+export declare function driveWithValue(): IteratorResult<1 | 2 | 3, undefined>;
 export declare function fetchItems(): AsyncGenerator<1 | 2 | 3, void, unknown>;
 export declare function genCount(): Generator<10 | 20, void, unknown>;
 export declare const genExpr: () => Generator<"a", void, unknown>;
