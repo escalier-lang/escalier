@@ -72,10 +72,18 @@ func attachComments(root Walkable, comments []*Comment, lineMapFor func(int) *Li
 		return nil
 	}
 
+	// A module's comments arrive from a map, and two comments in different
+	// files share an offset often. SourceID breaks that tie, so the order the
+	// pass works in, and the order of the comments it hands back, is the same
+	// on every run.
 	sorted := make([]*Comment, len(comments))
 	copy(sorted, comments)
 	sort.Slice(sorted, func(i, j int) bool {
-		return sorted[i].span.Start.Offset < sorted[j].span.Start.Offset
+		a, b := sorted[i].span, sorted[j].span
+		if a.Start.Offset != b.Start.Offset {
+			return a.Start.Offset < b.Start.Offset
+		}
+		return a.SourceID < b.SourceID
 	})
 
 	nodes := collectNodes(root)

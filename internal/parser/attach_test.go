@@ -10,10 +10,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// attachments parses src as a script, attaches its comments, and renders each
-// attachment as "<slot> <node type> <comment text>" in walk order. Rendering
-// the whole result lets a test assert every placement at once instead of
-// drilling into one node at a time.
+// attachments parses src as a script and renders each attachment as the slot,
+// the node type, and the comment text, in walk order. Rendering the whole
+// result lets a test assert every placement at once instead of drilling into
+// one node at a time.
+//
+// It reads what ParseScript left on the tree rather than attaching again, so a
+// parser that stopped running the pass fails these tests.
 func attachments(t *testing.T, src string) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
@@ -22,13 +25,9 @@ func attachments(t *testing.T, src string) []string {
 	script, errors := NewParser(ctx, source).ParseScript()
 	require.Empty(t, errors)
 
-	unattached := ast.AttachComments(script, script.Comments, source.LineMap())
 	c := &attachmentLister{DefaultVisitor: ast.DefaultVisitor{}}
 	script.Accept(c)
 	c.record(script)
-	for _, comment := range unattached {
-		c.lines = append(c.lines, "unattached "+comment.Text)
-	}
 	return c.lines
 }
 
