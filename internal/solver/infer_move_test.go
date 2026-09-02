@@ -373,7 +373,7 @@ func TestMoveSemantics(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -393,7 +393,7 @@ func TestThawMove(t *testing.T) {
 			p.x
 		}
 	`)
-	require.Equal(t, []string{"6:4-6:7: use of moved value 'p'"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"6:4-6:7: use of moved value 'p'"}, messagesWithSpan(t, errs))
 }
 
 // TestFreezeMove covers the mutable→immutable freeze. A plain `val q = p` for an
@@ -414,7 +414,7 @@ func TestFreezeMove(t *testing.T) {
 	require.Equal(t, []string{
 		"6:4-6:11: cannot constrain immutable object <: mutable object",
 		"7:4-7:7: use of moved value 'p'",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestFreezeMoveAllowed shows the freeze move itself is allowed. Binding an

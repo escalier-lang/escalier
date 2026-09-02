@@ -20,7 +20,7 @@ func probeKnot(t *testing.T, src string, wantDiags []string) string {
 	if len(wantDiags) == 0 {
 		require.Empty(t, Messages(errs))
 	} else {
-		require.Equal(t, wantDiags, messagesWithSpan(errs))
+		require.Equal(t, wantDiags, messagesWithSpan(t, errs))
 	}
 	ref, ok := nodes["Probe"].(*soltype.AliasType)
 	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
@@ -236,7 +236,7 @@ func TestMuKnotForDeclinesUnproductiveAlias(t *testing.T) {
 		type Grow<T> = Grow<{a: T}>
 		type Probe = Grow<number>
 	`)
-	require.Equal(t, []string{notProductiveMsg("2:8-2:12", "Grow")}, messagesWithSpan(errs))
+	require.Equal(t, []string{notProductiveMsg("2:8-2:12", "Grow")}, messagesWithSpan(t, errs))
 	ref, ok := nodes["Probe"].(*soltype.AliasType)
 	require.True(t, ok, "Probe must bind an alias reference, got %T", nodes["Probe"])
 	require.Nil(t, ctx.muKnotFor(ref))
@@ -263,7 +263,7 @@ func TestConstrainRegularAliasClosesOnItsKnot(t *testing.T) {
 	`)
 	require.Equal(t,
 		[]string{nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`)},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 	require.Equal(t, `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`, values["node"])
 	require.Equal(t, "fn () -> H<{c: number}>", values["use"])
 }
@@ -280,7 +280,7 @@ func TestConstrainRegularAliasChecksTheLapAboveTheKnot(t *testing.T) {
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", b: μX0.{a: "c", b: X0}}`),
 		`4:3-4:42: cannot constrain "c" <: never`,
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // Normalizing does not make the comparison blind: a value that disagrees with the knot's body is
@@ -299,7 +299,7 @@ func TestConstrainRegularAliasStillReportsAMismatch(t *testing.T) {
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "wrong", b: μX0.{a: "wrong", b: X0}}`),
 		`4:3-4:47: cannot constrain "wrong" <: "c"`,
 		`4:3-4:47: cannot constrain "wrong" <: "c"`,
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // Two instantiations of a regular alias whose argument stops reaching its emitted body denote one
@@ -331,7 +331,7 @@ func TestConstrainNonRegularAliasStillReachesTheBudget(t *testing.T) {
 		"4:3-4:45: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // A malformed member inside an alias body reports once and does not stop the alias being normalized.
@@ -358,7 +358,7 @@ func TestConstrainRegularAliasKeepsAReductionDiagnostic(t *testing.T) {
 	require.Equal(t, []string{
 		nonReturningMsg("3:6-3:10", "node", `fn () -> {a: "c", e: 1, b: μX0.{a: "c", e: 1, b: X0}}`),
 		`4:3-4:47: object {x: number} has no property "z"`,
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // A member read off a regular alias keeps the alias name on the type it yields. evalTypeOperator

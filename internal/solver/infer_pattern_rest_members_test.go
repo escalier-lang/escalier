@@ -195,7 +195,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "2:12-2:46: object is missing property: y", msgWithSpan(errs[0]))
+		require.Equal(t, "2:12-2:46: object is missing property: y", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("member access on the same shape succeeds", func(t *testing.T) {
@@ -222,7 +222,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "7:10-7:17: object is missing property: doubled", msgWithSpan(errs[0]))
+		require.Equal(t, "7:10-7:17: object is missing property: doubled", msgWithSpan(t, errs[0]))
 		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
 	})
 
@@ -238,7 +238,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "7:10-7:15: object is missing property: value", msgWithSpan(errs[0]))
+		require.Equal(t, "7:10-7:15: object is missing property: value", msgWithSpan(t, errs[0]))
 		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
 	})
 
@@ -257,7 +257,7 @@ func TestInferObjectPatternAccessorFieldGap(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "8:10-8:15: object is missing property: value", msgWithSpan(errs[0]))
+		require.Equal(t, "8:10-8:15: object is missing property: value", msgWithSpan(t, errs[0]))
 		require.Equal(t, "fn (b: Box) -> {v: number, ...}", values["f"])
 	})
 }

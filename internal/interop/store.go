@@ -219,6 +219,20 @@ type Origin struct {
 	//     and should be avoided outside tests.
 	FilePath string
 	Span     ast.Span
+	// Source is the file Span indexes into, kept so a diagnostic can turn the
+	// span's byte offset into a line number. It is nil on an origin built
+	// without one, and Line then reports 0.
+	Source *ast.Source
+}
+
+// Line returns the 1-based line Span starts on. It returns 0 when the origin
+// carries no source to resolve the offset against.
+func (o Origin) Line() int {
+	if o.Source == nil {
+		return 0
+	}
+	line, _ := o.Source.LineMap().Position(o.Span.Start.Offset, ast.CodePointColumns)
+	return line
 }
 
 // MemberKind discriminates the slot a Path addresses.

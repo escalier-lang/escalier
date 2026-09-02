@@ -52,7 +52,7 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
 		})
 	}
@@ -63,7 +63,7 @@ func TestInferMemberTypeAnnRoundTrip(t *testing.T) {
 // the enclosing annotation does not bind.
 func TestInferMethodTypeAnnGeneric(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = {f<T>(x: T) -> T}`)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "{f<T>(x: T) -> T}", soltype.Print(nodes["Result"]))
 }
 
@@ -71,7 +71,7 @@ func TestInferMethodTypeAnnGeneric(t *testing.T) {
 // them, so they merge into one MethodElem rather than leaving two elements under one name.
 func TestInferMethodTypeAnnOverload(t *testing.T) {
 	nodes, _, errs := inferTypeNodes(t, `type Result = {f(x: number) -> number, f(x: string) -> string}`)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "{f(x: number) -> number; f(x: string) -> string}", soltype.Print(nodes["Result"]))
 
 	obj, isObj := nodes["Result"].(*soltype.ObjectType)
@@ -98,7 +98,7 @@ func TestInferMethodTypeAnnAcceptsAClassInstance(t *testing.T) {
 		declare fn make() -> Counter
 		val c: {bump(mut self, by: number) -> number, ...} = make()
 	`)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 }
 
 // A method's parameters stay contravariant and its return covariant, the same as a bare function
@@ -129,7 +129,7 @@ func TestInferMethodTypeAnnChecksSignatures(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -169,7 +169,7 @@ func TestInferAccessorTypeAnnThrowsRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, soltype.Print(nodes["Result"]))
 		})
 	}
@@ -230,7 +230,7 @@ func TestInferAccessorTypeAnnThrowsIsCovariant(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -340,7 +340,7 @@ func TestInferAnnMemberRead(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -391,7 +391,7 @@ func TestInferAnnAccessorReadRaises(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -441,7 +441,7 @@ func TestInferAnnSetterWrite(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -537,7 +537,7 @@ func TestInferMemberTypeAnnDeduplicates(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 			require.Equal(t, tt.obj, soltype.Print(nodes["Result"]))
 		})
 	}
@@ -570,7 +570,7 @@ func TestInferSetterTypeAnnArity(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			nodes, _, errs := inferTypeNodes(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 			require.Equal(t, tt.obj, soltype.Print(nodes["Result"]))
 		})
 	}

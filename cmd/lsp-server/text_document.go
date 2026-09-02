@@ -21,25 +21,76 @@ import (
 	protocol "github.com/tliron/glsp/protocol_3_16"
 )
 
-// LSP uses 0-based line and column indices, while Escalier uses 1-based.
-func spanToRange(span ast.Span) protocol.Range {
+// spanToRange converts a span into the range an LSP client expects. A span
+// holds byte offsets, so lineMap must be a map over the file the span indexes
+// into. LSP numbers lines and characters from 0 and counts a character as a
+// UTF-16 code unit, where Escalier numbers lines from 1.
+func spanToRange(lineMap *ast.LineMap, span ast.Span) protocol.Range {
+	startLine, startColumn := lineMap.Position(span.Start.Offset, ast.UTF16Columns)
+	endLine, endColumn := lineMap.Position(span.End.Offset, ast.UTF16Columns)
 	return protocol.Range{
 		Start: protocol.Position{
-			Line:      protocol.UInteger(span.Start.Line - 1),
-			Character: protocol.UInteger(span.Start.Column - 1),
+			Line:      protocol.UInteger(startLine - 1),
+			Character: protocol.UInteger(startColumn - 1),
 		},
 		End: protocol.Position{
-			Line:      protocol.UInteger(span.End.Line - 1),
-			Character: protocol.UInteger(span.End.Column - 1),
+			Line:      protocol.UInteger(endLine - 1),
+			Character: protocol.UInteger(endColumn - 1),
 		},
 	}
 }
 
-func posToLoc(pos protocol.Position) ast.Location {
-	return ast.Location{
-		Line:   int(pos.Line) + 1,      // Convert to 1-based index
-		Column: int(pos.Character) + 1, // Convert to 1-based index
+// posToLoc converts a position an LSP client sent into a byte offset in the
+// file it refers to, which is the file lineMap covers.
+func posToLoc(lineMap *ast.LineMap, pos protocol.Position) ast.Location {
+	// LSP numbers from 0 and Escalier from 1.
+	line := int(pos.Line) + 1
+	column := int(pos.Character) + 1
+	return ast.Location{Offset: lineMap.Offset(line, column, ast.UTF16Columns)}
+}
+
+// lineMapForURI returns a map over the text of a document. An open document's
+// text changes with every edit, so its map is built per request rather than
+// kept. A request can also name a file the editor has not opened, and the text
+// the last check parsed stands in for it.
+func (s *Server) lineMapForURI(uri protocol.DocumentUri) *ast.LineMap {
+	s.mu.RLock()
+	doc, opened := s.documents[uri]
+	s.mu.RUnlock()
+	if opened {
+		return ast.NewLineMap(doc.Text)
 	}
+	return s.checkedLineMap(s.sourceIDForURI(uri))
+}
+
+// checkedLineMap returns a map over the file a SourceID names in the last
+// check's output. The lookup runs under the read lock, because validateBinScript
+// replaces an entry in that map while requests are being served. Building the
+// map happens after the lock is released, which is safe because Source.LineMap
+// builds it once however many goroutines ask at the same time.
+func (s *Server) checkedLineMap(sourceID int) *ast.LineMap {
+	s.mu.RLock()
+	src := checkedSource(s.checkOutput, sourceID)
+	s.mu.RUnlock()
+	return lineMapFor(src)
+}
+
+// checkedSource returns the file a SourceID names in a check output, or nil
+// when the output holds none for that id.
+func checkedSource(co *compiler.CheckOutput, sourceID int) *ast.Source {
+	if co == nil {
+		return nil
+	}
+	return co.SourceByID(sourceID)
+}
+
+// lineMapFor returns a map over a source, or over the empty string when the
+// source is unknown.
+func lineMapFor(src *ast.Source) *ast.LineMap {
+	if src == nil {
+		return ast.NewLineMap("")
+	}
+	return src.LineMap()
 }
 
 func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.DeclarationParams) (any, error) {
@@ -49,7 +100,7 @@ func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.D
 }
 
 func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.DefinitionParams) (any, error) {
-	loc := posToLoc(params.Position)
+	loc := posToLoc(s.lineMapForURI(params.TextDocument.URI), params.Position)
 	sourceID := s.sourceIDForURI(params.TextDocument.URI)
 	s.mu.RLock()
 	var node ast.Node
@@ -85,7 +136,7 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 		}
 		loc := protocol.Location{
 			URI:   declURI,
-			Range: spanToRange(span),
+			Range: spanToRange(s.checkedLineMap(span.SourceID), span),
 		}
 
 		return loc, nil
@@ -154,11 +205,14 @@ func (s *Server) textDocumentDidChange(context *glsp.Context, params *protocol.D
 func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.HoverParams) (*protocol.Hover, error) {
 	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
 
-	loc := posToLoc(params.Position)
+	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
+	// The client's position is already a line and column, so report it directly
+	// rather than converting the offset back. It is 0-based, where a person
+	// counts from 1.
 	value := fmt.Sprintf(
 		"textDocumentHover - loc = line:%d, column:%d\n",
-		loc.Line,
-		loc.Column,
+		params.Position.Line+1,
+		params.Position.Character+1,
 	)
 
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
@@ -403,6 +457,13 @@ func (server *Server) validateBinScript(
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
 	co.ScriptScopes[triggerSourceID] = result.Scope
+	// The new AST's spans index the text just parsed, so the source has to move
+	// with them. Keeping the one the last full check stored would convert the
+	// new offsets against stale text.
+	if co.Sources == nil {
+		co.Sources = map[int]*ast.Source{}
+	}
+	co.Sources[triggerSourceID] = src
 	// Rebuild errors: keep non-script errors, replace this script's errors.
 	co.ParseErrors = filterOutSourceID(co.ParseErrors, triggerSourceID)
 	co.ParseErrors = append(co.ParseErrors, result.ParseErrors...)
@@ -414,7 +475,7 @@ func (server *Server) validateBinScript(
 	server.validated.Broadcast()
 
 	// Publish diagnostics for just this file.
-	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, result.ParseErrors, result.TypeErrors)
+	server.publishDiagnosticsForScript(lspContext, uri, version, triggerSourceID, src.LineMap(), result.ParseErrors, result.TypeErrors)
 }
 
 // validateFull performs a full package check (lib/ + bin/).
@@ -482,7 +543,7 @@ func (server *Server) validateFull(
 	diagsBySourceID := make(map[int][]protocol.Diagnostic)
 	for _, err := range output.ParseErrors {
 		diagsBySourceID[err.Span.SourceID] = append(diagsBySourceID[err.Span.SourceID], protocol.Diagnostic{
-			Range:    spanToRange(err.Span),
+			Range:    spanToRange(lineMapFor(checkedSource(&output, err.Span.SourceID)), err.Span),
 			Severity: &severity,
 			Source:   &source,
 			Message:  err.Message,
@@ -491,7 +552,7 @@ func (server *Server) validateFull(
 	for _, err := range output.TypeErrors {
 		span := err.Span()
 		diagsBySourceID[span.SourceID] = append(diagsBySourceID[span.SourceID], protocol.Diagnostic{
-			Range:    spanToRange(span),
+			Range:    spanToRange(lineMapFor(checkedSource(&output, span.SourceID)), span),
 			Severity: &severity,
 			Source:   &source,
 			Message:  err.Message(),
@@ -550,6 +611,7 @@ func (server *Server) publishDiagnosticsForScript(
 	uri protocol.DocumentUri,
 	version protocol.Integer,
 	sourceID int,
+	lineMap *ast.LineMap,
 	parseErrors []*parser.Error,
 	typeErrors []checker.Error,
 ) {
@@ -562,7 +624,7 @@ func (server *Server) publishDiagnosticsForScript(
 	for _, err := range parseErrors {
 		if err.Span.SourceID == sourceID {
 			diags = append(diags, protocol.Diagnostic{
-				Range:    spanToRange(err.Span),
+				Range:    spanToRange(lineMap, err.Span),
 				Severity: &severity,
 				Source:   &source,
 				Message:  err.Message,
@@ -573,7 +635,7 @@ func (server *Server) publishDiagnosticsForScript(
 		span := err.Span()
 		if span.SourceID == sourceID {
 			diags = append(diags, protocol.Diagnostic{
-				Range:    spanToRange(span),
+				Range:    spanToRange(lineMap, span),
 				Severity: &severity,
 				Source:   &source,
 				Message:  err.Message(),

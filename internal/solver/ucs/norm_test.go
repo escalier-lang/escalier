@@ -8,7 +8,7 @@ import (
 )
 
 func TestNormNodesCarryProvenance(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(2, 5, 18)))
+	origin := At(OriginMatchArm, arm(span(45, 58)))
 	scrutinee := NewRoot(ident("p"), origin)
 
 	terms := map[string]Term{
@@ -30,7 +30,7 @@ func TestNormNodesCarryProvenance(t *testing.T) {
 // normalized branch tests the `Line` tag alone and hands the nested shape to an inner
 // split over a projected sub-scrutinee.
 func TestNormBranchTestsOneTagLevel(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	line := NewRoot(ident("l"), origin)
 	start := line.Project(FieldStep{Name: "start"}, origin)
 
@@ -64,7 +64,7 @@ func TestNormBranchTestsOneTagLevel(t *testing.T) {
 // CoreGuard has no Default and relies on the enclosing split's branch order; a
 // NormGuard states where a failed test goes.
 func TestNormGuardNamesItsFailureContinuation(t *testing.T) {
-	origin := At(OriginGuard, arm(span(1, 1, 8)))
+	origin := At(OriginGuard, arm(span(1, 8)))
 	fallthru := &BodyLeaf{Body: exprBody(num(2)), Origin: origin}
 	guard := &NormGuard{
 		Cond:    ident("g"),

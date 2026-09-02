@@ -128,7 +128,7 @@ func TestInferRefUnion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
 			if tc.wantErrs != nil {
-				require.Equal(t, tc.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tc.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)
@@ -328,7 +328,7 @@ func TestInferDestructureBorrowUnion(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
 			if tc.wantErrs != nil {
-				require.Equal(t, tc.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tc.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)
@@ -423,7 +423,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 			module := parseModule(t, tc.src)
 			c := newChecker()
 			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
-			require.Empty(t, messagesWithSpan(c.errs))
+			require.Empty(t, messagesWithSpan(t, c.errs))
 			leaf := findIdentPat(module, "v")
 			require.NotNil(t, leaf)
 			require.Equal(t, tc.want, soltype.Print(coalesce(c.info.TypeOf(leaf), soltype.Positive)))

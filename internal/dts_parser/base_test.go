@@ -442,8 +442,8 @@ func TestHelperMethods(t *testing.T) {
 		parser := NewDtsParser(source)
 
 		span := ast.Span{
-			Start:    ast.Location{Line: 1, Column: 0},
-			End:      ast.Location{Line: 1, Column: 1},
+			Start:    ast.Location{Offset: 0},
+			End:      ast.Location{Offset: 1},
 			SourceID: 0,
 		}
 		parser.reportError(span, "test error")

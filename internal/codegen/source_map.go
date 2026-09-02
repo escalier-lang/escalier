@@ -99,6 +99,15 @@ func EncodeSegments(groups [][]*Segment) string {
 
 type SourceMapGenerator struct {
 	groups [][]*Segment
+	// sources holds the file each SourceID names. A generated node's source
+	// span carries a byte offset, and the source map format wants a line and a
+	// column, so the file it indexes into has to be on hand to convert.
+	sources map[int]*ast.Source
+	// sourceIndex gives each SourceID its position in the source map's
+	// `sources` array, which is what a Segment records. A SourceID is assigned
+	// across the whole package, so a map generated for one script names a
+	// single file under an id that is not 0.
+	sourceIndex map[int]int
 }
 
 func (s *SourceMapGenerator) TraverseModule(module *Module) {
@@ -171,17 +180,25 @@ func (s *SourceMapGenerator) AddSegmentForNode(generated Node) {
 	}
 
 	sourceSpan := source.Span()
-	if sourceSpan.Start.Line == 0 && sourceSpan.Start.Column == 0 {
-		// this is a special case where the source is nil
-		// so we don't need to add a segment
+	// A span the checker or a converter synthesized carries no offsets, so it
+	// covers no source text and there is nothing to map back to.
+	if sourceSpan.End.Offset <= sourceSpan.Start.Offset {
+		return
+	}
+	sourceFile, ok := s.sources[sourceSpan.SourceID]
+	if !ok {
 		return
 	}
 
+	// The source map format numbers lines and columns from 0, and counts a
+	// column in UTF-16 code units the way a JavaScript engine does.
+	sourceLine, sourceColumn := sourceFile.LineMap().Position(sourceSpan.Start.Offset, ast.UTF16Columns)
+
 	segment := &Segment{
 		GeneratedStartColumn: generated.Span().Start.Column - 1,
-		SourceIndex:          sourceSpan.SourceID,
-		SourceStartLine:      sourceSpan.Start.Line - 1,
-		SourceStartColumn:    sourceSpan.Start.Column - 1,
+		SourceIndex:          s.sourceIndex[sourceSpan.SourceID],
+		SourceStartLine:      sourceLine - 1,
+		SourceStartColumn:    sourceColumn - 1,
 		NameIndex:            -1, // not used for now
 	}
 
@@ -359,8 +376,17 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 }
 
 func GenerateSourceMap(srcs []*ast.Source, jsMod *Module, outName string) string {
+	sourcesByID := make(map[int]*ast.Source, len(srcs))
+	sourceIndex := make(map[int]int, len(srcs))
+	for i, src := range srcs {
+		sourcesByID[src.ID] = src
+		sourceIndex[src.ID] = i
+	}
+
 	s := &SourceMapGenerator{
-		groups: [][]*Segment{},
+		groups:      [][]*Segment{},
+		sources:     sourcesByID,
+		sourceIndex: sourceIndex,
 	}
 
 	s.TraverseModule(jsMod)

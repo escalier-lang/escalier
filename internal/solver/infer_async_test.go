@@ -100,7 +100,7 @@ func TestInferAsyncBareReturnAnnotationRejected(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:19-2:25: async function return type must be a Promise; write Promise<...> or Promise<_>", msgWithSpan(errs[0]))
+	require.Equal(t, "2:19-2:25: async function return type must be a Promise; write Promise<...> or Promise<_>", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> Promise<5>", values["f"])
 }
 
@@ -138,7 +138,7 @@ func TestInferAwaitOutsideAsyncRejected(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:4-3:11: await can only be used inside an async function", msgWithSpan(errs[0]))
+	require.Equal(t, "3:4-3:11: await can only be used inside an async function", msgWithSpan(t, errs[0]))
 }
 
 // The await-outside-async error points Related() at the enclosing (non-async)
@@ -180,7 +180,7 @@ func TestInferAwaitOfNonPromiseFails(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t1>", msgWithSpan(errs[0]))
+	require.Equal(t, "3:4-3:11: cannot constrain number <: Promise<t1>", msgWithSpan(t, errs[0]))
 }
 
 // `await` inside an async fn nested under a non-async outer must still resolve
@@ -210,7 +210,7 @@ func TestInferAwaitInOuterAfterInnerAsync(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:4-4:11: await can only be used inside an async function", msgWithSpan(errs[0]))
+	require.Equal(t, "4:4-4:11: await can only be used inside an async function", msgWithSpan(t, errs[0]))
 }
 
 // --- Block return-point join ---
@@ -260,8 +260,8 @@ func TestInferBlockNonTailReturnCheckedAgainstAnnotation(t *testing.T) {
 	// join var has "oops" as a lower bound, propagated through constrain to the
 	// return annotation. The string literal's primitive does not satisfy number.
 	require.Len(t, errs, 1)
-	require.Contains(t, msgWithSpan(errs[0]), `"oops"`)
-	require.Contains(t, msgWithSpan(errs[0]), "number")
+	require.Contains(t, msgWithSpan(t, errs[0]), `"oops"`)
+	require.Contains(t, msgWithSpan(t, errs[0]), "number")
 }
 
 // An `async fn` joined with multiple returns wraps the join in Promise. The
@@ -315,7 +315,7 @@ func TestInferIfElseConditionMustBeBool(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:7-3:8: cannot constrain string <: boolean", msgWithSpan(errs[0]))
+	require.Equal(t, "3:7-3:8: cannot constrain string <: boolean", msgWithSpan(t, errs[0]))
 }
 
 // --- Unit-level (against hand-built AST) ---
@@ -384,7 +384,7 @@ func TestInferIfElseUnknownConditionNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:14-3:24: Unknown identifier: undeclared", msgWithSpan(errs[0]))
+	require.Equal(t, "3:14-3:24: Unknown identifier: undeclared", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> 1 | 2", values["pick"])
 }
 
@@ -399,7 +399,7 @@ func TestInferAwaitUnknownArgNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:17-3:27: Unknown identifier: undeclared", msgWithSpan(errs[0]))
+	require.Equal(t, "3:17-3:27: Unknown identifier: undeclared", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> Promise<never>", values["f"])
 }
 
@@ -415,7 +415,7 @@ func TestInferPromiseUnsupportedInnerKeepsWrapper(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(errs[0]))
+	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn (p: Promise<unknown>) -> 0", values["f"])
 }
 
@@ -430,7 +430,7 @@ func TestInferPromiseUnsupportedInnerGeneralizes(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(errs[0]))
+	require.Equal(t, "2:19-2:25: Unsupported: BigintTypeAnn", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn <T0>(p: Promise<T0>) -> Promise<T0>", values["f"])
 }
 
@@ -452,7 +452,7 @@ func TestInferPromiseLifetimeRejected(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tc.want, msgWithSpan(errs[0]))
+			require.Equal(t, tc.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -467,7 +467,7 @@ func TestInferReturnOutsideFunctionRejected(t *testing.T) {
 		val x = if true { return 5 } else { 6 }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:21-2:29: return can only be used inside a function", msgWithSpan(errs[0]))
+	require.Equal(t, "2:21-2:29: return can only be used inside a function", msgWithSpan(t, errs[0]))
 	require.Equal(t, "6", values["x"])
 }
 
@@ -525,8 +525,8 @@ func TestInferIfElseBothBranchesDivergeYieldsNever(t *testing.T) {
 		val x = if true { return 1 } else { return 2 }
 	`)
 	require.Len(t, errs, 2)
-	require.Equal(t, "2:21-2:29: return can only be used inside a function", msgWithSpan(errs[0]))
-	require.Equal(t, "2:39-2:47: return can only be used inside a function", msgWithSpan(errs[1]))
+	require.Equal(t, "2:21-2:29: return can only be used inside a function", msgWithSpan(t, errs[0]))
+	require.Equal(t, "2:39-2:47: return can only be used inside a function", msgWithSpan(t, errs[1]))
 	require.Equal(t, "never", values["x"])
 }
 

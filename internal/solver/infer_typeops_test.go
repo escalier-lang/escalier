@@ -599,7 +599,7 @@ func TestInferKeyofResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: keyof T) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:12-1:19: cannot constrain keyof t1 <: number", msgWithSpan(errs[0]))
+	require.Equal(t, "1:12-1:19: cannot constrain keyof t1 <: number", msgWithSpan(t, errs[0]))
 }
 
 // Checking a value against `keyof` of a non-productive recursive alias terminates instead of
@@ -617,7 +617,7 @@ func TestInferKeyofNotProductiveAliasTerminates(t *testing.T) {
 	require.Equal(t, []string{
 		notProductiveMsg("2:8-2:9", "A"),
 		`3:28-3:31: cannot constrain "x" <: keyof A<number>`,
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // Checking a value against a mapped type whose value expression grows its own argument terminates
@@ -665,7 +665,7 @@ func TestInferMappedGrowingAliasTerminates(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -712,7 +712,7 @@ func TestInferDoublingAliasArgumentTerminates(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -772,7 +772,7 @@ func TestInferSpreadChainBudgetsTerminate(t *testing.T) {
 				src = strings.ReplaceAll(src, "A", "B")
 			}
 			_, _, errs := inferSource(t, src)
-			require.Equal(t, []string{test.want}, messagesWithSpan(errs))
+			require.Equal(t, []string{test.want}, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -832,7 +832,7 @@ func TestInferKeyofNotProductiveAliasStaysSymbolic(t *testing.T) {
 	require.Equal(t, []string{
 		notProductiveMsg("2:8-2:12", "Grow"),
 		`3:47-3:50: cannot constrain "x" <: keyof Grow<{a: number, b: number}>`,
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // A `typeof v` query is stored as a residual behind the value reference, so an annotation prints
@@ -1319,7 +1319,7 @@ func TestInferIndexResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: T["a"]) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(errs[0]))
+	require.Equal(t, `1:12-1:18: cannot constrain t1["a"] <: number`, msgWithSpan(t, errs[0]))
 }
 
 // A tuple-spread annotation `[...P, x]` is stored as a residual and reduced by splicing each
@@ -1587,7 +1587,7 @@ func TestInferTupleSpreadNotProductiveAliasTerminates(t *testing.T) {
 	require.Equal(t, []string{
 		notProductiveMsg("2:8-2:9", "A"),
 		"3:36-3:42: cannot constrain tuple <: [...A<number>, boolean]",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // `keyof` and indexed access over a tuple carrying an unreduced `...P` spread stay symbolic: the
@@ -1817,7 +1817,7 @@ func TestInferCondResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(k: if T : number { string } else { boolean }) -> number { return k }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(errs[0]))
+	require.Equal(t, "1:12-1:51: cannot constrain if t1 : number { string } else { boolean } <: number", msgWithSpan(t, errs[0]))
 }
 
 // An `infer U` clause outside a conditional's Extends operand names no matched position, so it
@@ -1853,7 +1853,7 @@ func TestInferCondSelfReferentialAliasRejected(t *testing.T) {
 		type Bad = if Bad : number { number } else { string }
 		val x: Bad = 5
 	`)
-	require.Equal(t, []string{notProductiveMsg("2:8-2:11", "Bad")}, messagesWithSpan(errs))
+	require.Equal(t, []string{notProductiveMsg("2:8-2:11", "Bad")}, messagesWithSpan(t, errs))
 }
 
 // `keyof` and indexed access compose over a ground conditional: the conditional selects its branch

@@ -15,7 +15,7 @@ import "github.com/escalier-lang/escalier/internal/ast"
 
 // builderSpan is the fixed placeholder span stamped on every builder-made node.
 func builderSpan() ast.Span {
-	return ast.NewSpan(ast.Location{Line: 1, Column: 1}, ast.Location{Line: 1, Column: 2}, 0)
+	return ast.NewSpan(ast.Location{Offset: 0}, ast.Location{Offset: 1}, 0)
 }
 
 func numExpr(v float64) *ast.LiteralExpr { return ast.NewLitExpr(ast.NewNumber(v, builderSpan())) }

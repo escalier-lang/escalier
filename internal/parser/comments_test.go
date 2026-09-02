@@ -71,8 +71,9 @@ func nilIfEmpty(s []string) []string {
 
 func TestLexComments_SpansCoverTheCommentText(t *testing.T) {
 	t.Parallel()
-	// A multi-byte character ahead of a comment shifts its byte offset past
-	// its column, so slicing by offset is the only way to recover the text.
+	// A multi-byte character ahead of a comment pushes its byte offset past
+	// the column a reader would count, so one has to be derived from the other
+	// rather than the two being tracked side by side.
 	contents := "val π = 1 // a comment\nval x = 2\n"
 	comments := LexComments(&ast.Source{Contents: contents})
 	require.Len(t, comments, 1)
@@ -80,11 +81,13 @@ func TestLexComments_SpansCoverTheCommentText(t *testing.T) {
 	span := comments[0].Span()
 	require.Equal(t, "// a comment", contents[span.Start.Offset:span.End.Offset])
 	require.Equal(t, comments[0].Text, contents[span.Start.Offset:span.End.Offset])
-	require.Equal(t, 1, span.Start.Line)
-	// The column counts code points, so it trails the byte offset by the one
-	// extra byte `π` occupies.
-	require.Equal(t, 11, span.Start.Column)
 	require.Equal(t, 11, span.Start.Offset)
+
+	// `π` takes two bytes, so the code-point column trails the offset by one.
+	lineMap := ast.NewLineMap(contents)
+	line, column := lineMap.Position(span.Start.Offset, ast.CodePointColumns)
+	require.Equal(t, 1, line)
+	require.Equal(t, 11, column)
 }
 
 func TestLexComments_IsDoc(t *testing.T) {
@@ -257,62 +260,36 @@ func TestParserComments_NestedTemplateLiterals(t *testing.T) {
 	require.Empty(t, module.Comments[source.ID])
 }
 
-func TestSpanOffsets_AgreeWithLineAndColumn(t *testing.T) {
+func TestDeclSpans_SliceTheDeclarationText(t *testing.T) {
 	t.Parallel()
-	// A declaration's span must be sliceable by offset. A token kind lexed
-	// outside next(), such as a template literal's text, is the case that can
-	// leave the offset behind while line and column advance.
-	//
-	// The check covers declaration spans rather than every token, because a
-	// block comment's end Column skips its delimiters and so does not line up
-	// with its Offset.
+	// A declaration's span has to slice back to the text it came from. A token
+	// kind lexed outside next(), such as a template literal's run of text, is
+	// the case that can leave the lexer's offset behind.
 	tests := []struct {
 		name string
 		src  string
+		want string
 	}{
-		{"plain decl", "val x = 42\n"},
-		{"template literal", "val x = `hi`\n"},
-		{"template literal with interpolation", "val x = `a ${ 1 } b`\n"},
-		{"multi-byte character", "val π = 1\n"},
-		{"string literal", "val x = \"hi\"\n"},
+		{"plain decl", "val x = 42\n", "val x = 42"},
+		{"template literal", "val x = `hi`\n", "val x = `hi`"},
+		{
+			"template literal with interpolation",
+			"val x = `a ${ 1 } b`\n",
+			"val x = `a ${ 1 } b`",
+		},
+		{"multi-byte character", "val π = 1\n", "val π = 1"},
+		{"string literal", "val x = \"hi\"\n", "val x = \"hi\""},
+		{"decl on a later line", "val a = 1\nval b = 2\n", "val b = 2"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			module, _ := parseSource(t, tc.src)
 			decls := namespacesOf(module)[0].Decls
-			require.Len(t, decls, 1)
-
-			span := decls[0].Span()
-			require.Equal(t,
-				lineColumnOffset(tc.src, span.End),
-				span.End.Offset,
-				"end offset disagrees with line %d column %d", span.End.Line, span.End.Column)
-			require.Equal(t,
-				lineColumnOffset(tc.src, span.Start),
-				span.Start.Offset,
-				"start offset disagrees with line %d column %d", span.Start.Line, span.Start.Column)
+			span := decls[len(decls)-1].Span()
+			require.Equal(t, tc.want, tc.src[span.Start.Offset:span.End.Offset])
 		})
 	}
-}
-
-// lineColumnOffset converts a location's line and column into a byte offset by
-// counting code points, the independent derivation the lexer's own offset
-// bookkeeping is checked against.
-func lineColumnOffset(contents string, loc ast.Location) int {
-	line, column := 1, 1
-	for i, r := range contents {
-		if line == loc.Line && column == loc.Column {
-			return i
-		}
-		if r == '\n' {
-			line++
-			column = 1
-		} else {
-			column++
-		}
-	}
-	return len(contents)
 }
 
 func TestParserComments_SkipsJSXText(t *testing.T) {

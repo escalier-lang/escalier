@@ -114,7 +114,7 @@ compiler.CompilerOutput{
     TypeErrors: []checker.Error{
         &checker.UnimplementedError{
             message: "Type 'Iterator<number>' is not iterable",
-            span: 2:10-2:15,
+            span: 45-50,
         },
     },
     CompUnits: map[string]compiler.CompUnitOutput{
@@ -142,14 +142,14 @@ compiler.CompilerOutput{
                     Node: &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "AsyncIterator",
-                            span: 2:22-2:35,
+                            span: 47-60,
                         },
                         TypeArgs: []ast.TypeAnn{
                             &ast.NumberTypeAnn{
-                                span: 2:36-2:42,
+                                span: 61-67,
                             },
                         },
-                        span: 2:22-2:43,
+                        span: 47-68,
                         inferredType: &type_system.NeverType{
                             provenance: <cycle *ast.NodeProvenance>,
                         },
@@ -159,7 +159,7 @@ compiler.CompilerOutput{
         },
         &checker.UnimplementedError{
             message: "Type 'never' is not iterable",
-            span: 3:18-3:23,
+            span: 86-91,
         },
     },
     CompUnits: map[string]compiler.CompUnitOutput{

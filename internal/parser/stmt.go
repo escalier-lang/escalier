@@ -37,7 +37,7 @@ func (p *Parser) skipToNextStatement(stopOn TokenType) {
 			p.lexer.consume()
 			// Stop if the next token is on a different line (statement boundary).
 			next := p.lexer.peek()
-			if next.Span.Start.Line != token.Span.Start.Line {
+			if !p.lexer.sameLine(next.Span.Start, token.Span.Start) {
 				return
 			}
 		}
@@ -98,15 +98,13 @@ func (p *Parser) stmts(stopOn TokenType) (*[]ast.Stmt, ast.Location) {
 				stmts = append(stmts, stmt)
 			} else {
 				nextToken := p.lexer.peek()
-				if token.Span.End.Line == nextToken.Span.End.Line &&
-					token.Span.End.Column == nextToken.Span.End.Column {
+				if token.Span.End == nextToken.Span.End {
 					// No tokens were consumed -- skip to the next statement
 					// boundary to avoid an infinite loop.
 					p.reportError(token.Span, "Unexpected token")
 					p.skipToNextStatement(stopOn)
 					nextToken = p.lexer.peek()
-					if nextToken.Span.End.Line == token.Span.End.Line &&
-						nextToken.Span.End.Column == token.Span.End.Column {
+					if nextToken.Span.End == token.Span.End {
 						// skipToNextStatement didn't advance -- force progress.
 						p.lexer.consume()
 						nextToken = p.lexer.peek()

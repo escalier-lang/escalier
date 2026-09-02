@@ -20,10 +20,10 @@ import (
 // In a literal match the catch-all arm is still an ordinary branch of the core.
 // Only normalization moves it into the default tail.
 func TestPrintCoreLiteralMatch(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
-	other := matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
+	other := matchCase(wildcardPat(), nil, str("other"), span(85, 100))
 	target := ident("n")
-	expr := ast.NewMatch(target, []*ast.MatchCase{one, other}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{one, other}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 
 	core := &CoreSplit{
@@ -60,9 +60,9 @@ func TestPrintCoreNestedPattern(t *testing.T) {
 		ast.Span{},
 	)
 	body := ast.NewArray([]ast.Expr{ident("x"), ident("y")}, ast.Span{})
-	line := matchCase(pattern, nil, body, span(2, 5, 40))
+	line := matchCase(pattern, nil, body, span(45, 80))
 	target := ident("l")
-	expr := ast.NewMatch(target, []*ast.MatchCase{line}, span(1, 1, 50))
+	expr := ast.NewMatch(target, []*ast.MatchCase{line}, span(1, 50))
 	origin := At(OriginMatchArm, expr)
 
 	core := &CoreSplit{
@@ -86,10 +86,10 @@ func TestPrintCoreNestedPattern(t *testing.T) {
 // continuation. The branches after it already express where a failed guard goes.
 func TestPrintCoreGuardedArm(t *testing.T) {
 	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, ast.Span{})
-	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
-	fallthroughArm := matchCase(wildcardPat(), nil, num(0), span(3, 5, 16))
+	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(45, 70))
+	fallthroughArm := matchCase(wildcardPat(), nil, num(0), span(85, 96))
 	target := ident("p")
-	expr := ast.NewMatch(target, []*ast.MatchCase{guarded, fallthroughArm}, span(1, 1, 50))
+	expr := ast.NewMatch(target, []*ast.MatchCase{guarded, fallthroughArm}, span(1, 50))
 	origin := At(OriginMatchArm, expr)
 
 	core := &CoreSplit{
@@ -127,7 +127,7 @@ func TestPrintCoreIfVal(t *testing.T) {
 	target := ident("p")
 	cons := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(ident("cons"), ast.Span{})}}
 	alt := blockBody(ident("alt"))
-	expr := ast.NewIfVal(objPat("x", "y"), target, cons, &alt, span(1, 1, 45))
+	expr := ast.NewIfVal(objPat("x", "y"), target, cons, &alt, span(1, 45))
 	origin := At(OriginIfVal, expr)
 
 	core := &CoreSplit{
@@ -152,7 +152,7 @@ func TestPrintCoreIfVal(t *testing.T) {
 // diverges rather than covering the scrutinee.
 func TestPrintCoreValElse(t *testing.T) {
 	target := ident("p")
-	decl := ast.NewVarDecl(ast.ValKind, objPat("x", "y"), nil, target, false, false, span(1, 1, 35))
+	decl := ast.NewVarDecl(ast.ValKind, objPat("x", "y"), nil, target, false, false, span(1, 35))
 	decl.Else = &ast.Block{Stmts: []ast.Stmt{ast.NewReturnStmt(nil, ast.Span{})}}
 	origin := At(OriginValElse, decl)
 
@@ -179,10 +179,10 @@ func TestPrintCoreValElse(t *testing.T) {
 
 // In the normalized literal match the catch-all arm has become the default tail.
 func TestPrintNormLiteralMatch(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
-	other := matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
+	other := matchCase(wildcardPat(), nil, str("other"), span(85, 100))
 	target := ident("n")
-	expr := ast.NewMatch(target, []*ast.MatchCase{one, other}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{one, other}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 
 	norm := &NormSplit{
@@ -212,9 +212,9 @@ func TestPrintNormNestedPattern(t *testing.T) {
 		ast.Span{},
 	)
 	body := ast.NewArray([]ast.Expr{ident("x"), ident("y")}, ast.Span{})
-	line := matchCase(pattern, nil, body, span(2, 5, 40))
+	line := matchCase(pattern, nil, body, span(45, 80))
 	target := ident("l")
-	expr := ast.NewMatch(target, []*ast.MatchCase{line}, span(1, 1, 50))
+	expr := ast.NewMatch(target, []*ast.MatchCase{line}, span(1, 50))
 	origin := At(OriginMatchArm, expr)
 	armOrigin := At(OriginMatchArm, line)
 
@@ -263,10 +263,10 @@ func TestPrintNormNestedPattern(t *testing.T) {
 func TestPrintNormExtractorPattern(t *testing.T) {
 	okPat := ast.NewExtractorPat(ast.NewIdentifier("Ok", ast.Span{}), []ast.Pat{identPat("v")}, ast.Span{})
 	errPat := ast.NewExtractorPat(ast.NewIdentifier("Err", ast.Span{}), []ast.Pat{wildcardPat()}, ast.Span{})
-	okArm := matchCase(okPat, nil, ident("v"), span(2, 5, 16))
-	errArm := matchCase(errPat, nil, num(0), span(3, 5, 16))
+	okArm := matchCase(okPat, nil, ident("v"), span(45, 56))
+	errArm := matchCase(errPat, nil, num(0), span(85, 96))
 	target := ident("r")
-	expr := ast.NewMatch(target, []*ast.MatchCase{okArm, errArm}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{okArm, errArm}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 	okOrigin := At(OriginMatchArm, okArm)
 	errOrigin := At(OriginMatchArm, errArm)
@@ -308,9 +308,9 @@ func TestPrintNormExtractorPattern(t *testing.T) {
 // prefix, so `[first, ...rest]` binds `first` from `xs.0` and `rest` from `xs[1..]`.
 func TestPrintNormTupleRest(t *testing.T) {
 	pattern := ast.NewTuplePat([]ast.Pat{identPat("first"), ast.NewRestPat(identPat("rest"), ast.Span{})}, ast.Span{})
-	armCase := matchCase(pattern, nil, ident("first"), span(2, 5, 30))
+	armCase := matchCase(pattern, nil, ident("first"), span(45, 70))
 	target := ident("xs")
-	expr := ast.NewMatch(target, []*ast.MatchCase{armCase}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{armCase}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 	armOrigin := At(OriginMatchArm, armCase)
 
@@ -346,9 +346,9 @@ func TestPrintNormTupleRest(t *testing.T) {
 // scrutinee with the keys named here removed.
 func TestPrintNormObjectRest(t *testing.T) {
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{shorthandElem("x"), objRestElem("rest")}, ast.Span{})
-	armCase := matchCase(pattern, nil, ident("rest"), span(2, 5, 28))
+	armCase := matchCase(pattern, nil, ident("rest"), span(45, 68))
 	target := ident("p")
-	expr := ast.NewMatch(target, []*ast.MatchCase{armCase}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{armCase}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 	armOrigin := At(OriginMatchArm, armCase)
 
@@ -385,10 +385,10 @@ func TestPrintNormObjectRest(t *testing.T) {
 // the later unguarded arm stays reachable.
 func TestPrintNormGuardedArm(t *testing.T) {
 	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, ast.Span{})
-	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
-	fallthroughArm := matchCase(wildcardPat(), nil, num(0), span(3, 5, 16))
+	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(45, 70))
+	fallthroughArm := matchCase(wildcardPat(), nil, num(0), span(85, 96))
 	target := ident("p")
-	expr := ast.NewMatch(target, []*ast.MatchCase{guarded, fallthroughArm}, span(1, 1, 50))
+	expr := ast.NewMatch(target, []*ast.MatchCase{guarded, fallthroughArm}, span(1, 50))
 	origin := At(OriginMatchArm, expr)
 	guardedOrigin := At(OriginMatchArm, guarded)
 
@@ -447,7 +447,7 @@ func TestPrintNormEmptySplit(t *testing.T) {
 func TestPrintShowsOriginTags(t *testing.T) {
 	target := ident("p")
 	cons := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(ident("cons"), ast.Span{})}}
-	expr := ast.NewIfVal(objPat("x", "y"), target, cons, nil, span(1, 1, 32))
+	expr := ast.NewIfVal(objPat("x", "y"), target, cons, nil, span(1, 32))
 	origin := At(OriginIfVal, expr)
 	invented := Invented(OriginIfVal)
 
@@ -473,9 +473,9 @@ func TestPrintShowsOriginTags(t *testing.T) {
 // ShowArms turns on the surface-arm back-reference, rendered as the arm's span. The
 // synthetic fallthrough points at no arm, so it renders `arm=none`.
 func TestPrintShowsArmBackReferences(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
 	target := ident("n")
-	expr := ast.NewMatch(target, []*ast.MatchCase{one}, span(1, 1, 30))
+	expr := ast.NewMatch(target, []*ast.MatchCase{one}, span(1, 30))
 	origin := At(OriginMatchArm, expr)
 
 	norm := &NormSplit{
@@ -496,7 +496,7 @@ func TestPrintShowsArmBackReferences(t *testing.T) {
 	opts := DefaultPrintOptions()
 	opts.ShowArms = true
 	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split n {
-  1 arm=2:5-2:18 => leaf "one" arm=2:5-2:18
+  1 arm=45-58 => leaf "one" arm=45-58
 } default leaf undefined arm=none`))
 }
 
@@ -508,10 +508,10 @@ func TestPrintShowsArmBackReferences(t *testing.T) {
 // behind `at~`. The invented fallthrough below was minted from the `match`, so it
 // renders that expression's span.
 func TestPrintShowsSpans(t *testing.T) {
-	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, span(2, 14, 19))
-	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
+	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, span(54, 59))
+	guarded := matchCase(objPat("x", "y"), guardCond, ident("x"), span(45, 70))
 	target := ident("p")
-	expr := ast.NewMatch(target, []*ast.MatchCase{guarded}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{guarded}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 	armOrigin := At(OriginMatchArm, guarded)
 
@@ -533,9 +533,9 @@ func TestPrintShowsSpans(t *testing.T) {
 
 	opts := DefaultPrintOptions()
 	opts.ShowSpans = true
-	snaps.MatchInlineSnapshot(t, Print(core, opts), snaps.Inline(`split p at=1:1-1:40 {
-  pat {x, y} at=2:5-2:30 => guard (x > y) at=2:14-2:19 => leaf x at=2:5-2:30
-} else leaf 0 at~1:1-1:40`))
+	snaps.MatchInlineSnapshot(t, Print(core, opts), snaps.Inline(`split p at=1-40 {
+  pat {x, y} at=45-70 => guard (x > y) at=54-59 => leaf x at=45-70
+} else leaf 0 at~1-40`))
 }
 
 // With both options on, an arm back-reference that repeats the node's own span
@@ -544,10 +544,10 @@ func TestPrintShowsSpans(t *testing.T) {
 // origin points at the merged split while its back-reference keeps the arm the user
 // typed, and a reader needs both spans to see that.
 func TestPrintCollapsesAnArmThatRepeatsTheNodeSpan(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
-	two := matchCase(numPat(2), nil, str("two"), span(3, 5, 18))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
+	two := matchCase(numPat(2), nil, str("two"), span(85, 98))
 	target := ident("n")
-	expr := ast.NewMatch(target, []*ast.MatchCase{one, two}, span(1, 1, 40))
+	expr := ast.NewMatch(target, []*ast.MatchCase{one, two}, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 
 	norm := &NormSplit{
@@ -572,9 +572,9 @@ func TestPrintCollapsesAnArmThatRepeatsTheNodeSpan(t *testing.T) {
 	opts := DefaultPrintOptions()
 	opts.ShowSpans = true
 	opts.ShowArms = true
-	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split n at=1:1-1:40 {
-  1 at=2:5-2:18 arm=same => leaf "one" at=2:5-2:18 arm=same
-  2 at=1:1-1:40 arm=3:5-3:18 => leaf "two" at=3:5-3:18 arm=same
+	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split n at=1-40 {
+  1 at=45-58 arm=same => leaf "one" at=45-58 arm=same
+  2 at=1-40 arm=85-98 => leaf "two" at=85-98 arm=same
 } default ✗`))
 }
 
@@ -591,9 +591,9 @@ func TestPrintShowsNoSpanForAnUncausedSyntheticNode(t *testing.T) {
 // An empty Indent falls back to two spaces, so a zero-value PrintOptions still
 // renders nested splits readably.
 func TestPrintDefaultsIndentWhenEmpty(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
 	target := ident("n")
-	expr := ast.NewMatch(target, []*ast.MatchCase{one}, span(1, 1, 30))
+	expr := ast.NewMatch(target, []*ast.MatchCase{one}, span(1, 30))
 	origin := At(OriginMatchArm, expr)
 
 	norm := &NormSplit{
@@ -632,7 +632,7 @@ func TestPrintBlockBodyRendersOnOneLine(t *testing.T) {
 		ast.NewExprStmt(num(1), ast.Span{}),
 		ast.NewReturnStmt(num(2), ast.Span{}),
 	}}, ast.Span{})
-	armCase := matchCase(wildcardPat(), nil, body, span(2, 5, 20))
+	armCase := matchCase(wildcardPat(), nil, body, span(45, 60))
 	leaf := &BodyLeaf{Body: armCase.Body, Arm: armCase, Origin: At(OriginMatchArm, armCase)}
 
 	require.Equal(t, "leaf do { 1; return 2 }", leaf.String())
@@ -658,7 +658,7 @@ func TestPrintUnrenderedExpressionFallsBackToItsKind(t *testing.T) {
 // reads what the run bound.
 func TestPrintCoreBindRun(t *testing.T) {
 	guardCond := ast.NewBinary(ident("x"), ident("y"), ast.GreaterThan, ast.Span{})
-	armCase := matchCase(objPat("x", "y"), guardCond, ident("x"), span(2, 5, 30))
+	armCase := matchCase(objPat("x", "y"), guardCond, ident("x"), span(45, 70))
 	target := ident("p")
 	origin := At(OriginMatchArm, armCase)
 	root := NewRoot(target, origin)
@@ -696,7 +696,7 @@ func TestPrintCoreBindRun(t *testing.T) {
 // Every node renders through String(), so a failing require.Equal on any of them
 // prints the term rather than a struct address.
 func TestStringOnEveryNode(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	root := NewRoot(ident("p"), origin)
 	leaf := &BodyLeaf{Body: exprBody(num(1)), Arm: nil, Origin: origin}
 

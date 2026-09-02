@@ -131,7 +131,7 @@ func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }

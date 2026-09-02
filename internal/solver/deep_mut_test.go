@@ -57,7 +57,7 @@ func TestImmutableAnnotationRejectsNestedWrite(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
 			// The inner field-read result is a fresh variable; the message resolves it
 			// to its concrete bound so it reads `object`, not an internal `t{N}`.
-			require.Equal(t, []string{tc.want}, messagesWithSpan(errs))
+			require.Equal(t, []string{tc.want}, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -78,12 +78,12 @@ func TestNestedMutFieldAnnotationRejected(t *testing.T) {
 	const msg = "owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability"
 	t.Run("object", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val w: mut {a: mut {x: number}} = {a: {x: 0}}`)
-		require.Equal(t, []string{"1:20-1:21: " + msg}, messagesWithSpan(errs))
+		require.Equal(t, []string{"1:20-1:21: " + msg}, messagesWithSpan(t, errs))
 		require.Equal(t, "mut {a: {x: number}}", values["w"])
 	})
 	t.Run("tuple", func(t *testing.T) {
 		values, _, errs := inferSource(t, `val w: mut [mut {x: number}] = [{x: 0}]`)
-		require.Equal(t, []string{"1:17-1:18: " + msg}, messagesWithSpan(errs))
+		require.Equal(t, []string{"1:17-1:18: " + msg}, messagesWithSpan(t, errs))
 		require.Equal(t, "mut [{x: number}]", values["w"])
 	})
 }
@@ -91,7 +91,7 @@ func TestNestedMutFieldAnnotationRejected(t *testing.T) {
 // `readonly` rejects `obj.a = …` even on an owned-mutable enclosing object.
 func TestReadonlyRejectsFieldReassignment(t *testing.T) {
 	_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: number}) { obj.a = 5 }")
-	require.Equal(t, []string{"1:39-1:48: cannot assign to readonly property: a"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"1:39-1:48: cannot assign to readonly property: a"}, messagesWithSpan(t, errs))
 }
 
 // `readonly` forbids reassigning the field but not mutating through it: `obj.a.b
@@ -104,7 +104,7 @@ func TestReadonlyPermitsValueMutationButNotReassignment(t *testing.T) {
 	})
 	t.Run("reassign the field", func(t *testing.T) {
 		_, _, errs := inferSource(t, "fn f(obj: mut {readonly a: {b: number}}) { obj.a = {b: 9} }")
-		require.Equal(t, []string{"1:44-1:58: cannot assign to readonly property: a"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"1:44-1:58: cannot assign to readonly property: a"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -144,12 +144,12 @@ func TestReadonlySubtypingFlowsThroughCallAndReturn(t *testing.T) {
 		src := `fn sink(o: mut {a: number}) {}
 fn f(obj: mut {readonly a: number}) { sink(obj) }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:39-2:48: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"2:39-2:48: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("return: readonly source as writable return", func(t *testing.T) {
 		src := "fn f(obj: mut {readonly a: number}) -> mut {a: number} { return obj }"
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"1:1-1:70: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"1:1-1:70: readonly field a cannot satisfy a writable field requirement"}, messagesWithSpan(t, errs))
 	})
 	t.Run("call: writable source into readonly param is fine", func(t *testing.T) {
 		src := `fn sink(o: mut {readonly a: number}) {}
@@ -177,7 +177,7 @@ func TestOwnedMutFieldAnnotationRejected(t *testing.T) {
 	require.Equal(t, []string{
 		"1:17-1:18: owned-mutable field annotation is not allowed; the enclosing context decides mutability — wrap the whole annotation in `mut` to make this field writable, or use interior mutability",
 		"1:33-1:42: cannot constrain immutable object <: mutable object",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // Chained reads through three deep-mut layers stay mutable, so a depth-3 write
@@ -194,7 +194,7 @@ func TestDeepMutChainedReadsAllowDeepWrite(t *testing.T) {
 func TestReadonlyFieldOnImmutableContainerStillRejectsWrite(t *testing.T) {
 	src := "fn f(p: {readonly a: number}) { p.a = 5 }"
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"1:33-1:40: cannot assign to readonly property: a"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"1:33-1:40: cannot assign to readonly property: a"}, messagesWithSpan(t, errs))
 }
 
 // The fresh-literal upgrade reaches into tuples too.
@@ -232,7 +232,7 @@ func TestLazyDeepMutPinsNestedFieldInvariant(t *testing.T) {
 	src := `fn sink(q: mut {a: {x: number | string}}) {}
 fn f(p: mut {a: {x: number}}) { sink(p) }`
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 }
 
 // The same shapes under an immutable wrapper are covariant, so the strict-subtype

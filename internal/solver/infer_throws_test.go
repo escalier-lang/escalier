@@ -46,7 +46,7 @@ func runThrowsErrCases(t *testing.T, tests []throwsErrCase) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, len(test.wantErrs))
 			for i, want := range test.wantErrs {
-				require.Equal(t, want, msgWithSpan(errs[i]))
+				require.Equal(t, want, msgWithSpan(t, errs[i]))
 			}
 		})
 	}

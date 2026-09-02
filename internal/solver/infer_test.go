@@ -3,6 +3,8 @@ package solver
 import (
 	"context"
 	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -36,7 +38,44 @@ func parseModuleFiles(t *testing.T, srcs map[string]string) *ast.Module {
 	defer cancel()
 	module, parseErrors := parser.ParseLibFiles(ctx, sources)
 	require.Empty(t, parseErrors, "expected no parse errors")
+	registerTestSources(t, module.Sources)
 	return module
+}
+
+// testSources records the files each test parsed, keyed by the test's name.
+// An error's span holds byte offsets, and rendering them as line:column needs
+// the text they index into, so the assertion helpers look the source up here
+// instead of every call site passing it along.
+var testSources sync.Map
+
+// registerTestSources associates a test's parsed files with its name, and
+// drops them when the test finishes. Names are unique per test, so parallel
+// tests do not see each other's entries.
+func registerTestSources(t *testing.T, sources map[int]*ast.Source) {
+	t.Helper()
+	name := t.Name()
+	testSources.Store(name, sources)
+	t.Cleanup(func() { testSources.Delete(name) })
+}
+
+// sourceForTest returns the file a SourceID names in the running test. A
+// subtest that parsed nothing itself inherits from the ancestor that did, so a
+// table whose harness parses once still resolves. It returns nil when no
+// ancestor registered the source, and the caller then renders byte offsets.
+func sourceForTest(t *testing.T, sourceID int) *ast.Source {
+	for name := t.Name(); name != ""; {
+		if entry, ok := testSources.Load(name); ok {
+			if source, ok := entry.(map[int]*ast.Source)[sourceID]; ok {
+				return source
+			}
+		}
+		cut := strings.LastIndex(name, "/")
+		if cut < 0 {
+			break
+		}
+		name = name[:cut]
+	}
+	return nil
 }
 
 // parseModule parses a single in-memory .esc source and returns the module for
@@ -229,7 +268,7 @@ func TestInferModuleFieldReadMissingProperty(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:13-3:14: object is missing property: b", msgWithSpan(errs[0]))
+	require.Equal(t, "3:13-3:14: object is missing property: b", msgWithSpan(t, errs[0]))
 	// M2.5: blame the member's prop, not the whole decl.
 	require.Equal(t, "b", spanText(src, errs[0].Span()))
 	require.Equal(t, map[string]string{"o": "{a: 5}", "x": "never"}, values)
@@ -267,7 +306,7 @@ func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
 	src := `declare val x: number`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "1:1-1:14: Variable declaration requires an initializer: x", msgWithSpan(errs[0]))
+	require.Equal(t, "1:1-1:14: Variable declaration requires an initializer: x", msgWithSpan(t, errs[0]))
 	// M2.5: the error self-blames from the decl node (whose span, per the parser,
 	// covers the binder but not the trailing annotation).
 	require.Equal(t, "declare val x", spanText(src, errs[0].Span()))
@@ -282,8 +321,8 @@ func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 		val y = x
 	`)
 	require.Len(t, errs, 2)
-	require.Equal(t, "2:3-2:16: Variable declaration requires an initializer: x", msgWithSpan(errs[0]))
-	require.Equal(t, "3:11-3:12: Unknown identifier: x", msgWithSpan(errs[1]))
+	require.Equal(t, "2:3-2:16: Variable declaration requires an initializer: x", msgWithSpan(t, errs[0]))
+	require.Equal(t, "3:11-3:12: Unknown identifier: x", msgWithSpan(t, errs[1]))
 	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
 	// sentinel (`val y = <unknown>`) recovers AS `error` rather than freezing to
 	// `never`, so downstream uses of y absorb instead of cascading `<: never`.
@@ -299,7 +338,7 @@ func TestInferModuleDuplicateTopLevelValIsError(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:3-3:15: Duplicate declaration: x", msgWithSpan(errs[0]))
+	require.Equal(t, "3:3-3:15: Duplicate declaration: x", msgWithSpan(t, errs[0]))
 	// M2.5: blame the second decl; relate the first ("previously declared here").
 	require.Equal(t, `val x = "hi"`, spanText(src, errs[0].Span()))
 	require.Len(t, errs[0].Related(), 1)
@@ -327,7 +366,7 @@ func TestInferFuncBodyDiscardedTailStillChecked(t *testing.T) {
 	src := `fn f() { missing }`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "1:10-1:17: Unknown identifier: missing", msgWithSpan(errs[0]))
+	require.Equal(t, "1:10-1:17: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> undefined", values["f"])
 }
 
@@ -467,7 +506,7 @@ func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:3-4:4: Unsupported: NamespaceDecl", msgWithSpan(errs[0]))
+	require.Equal(t, "2:3-4:4: Unsupported: NamespaceDecl", msgWithSpan(t, errs[0]))
 	require.Empty(t, values)
 	// The unsupported decl must not leak a type binding for the namespace.
 	require.NotContains(t, types, "Foo")
@@ -552,7 +591,7 @@ func TestInferMultiFileUnknownIdentifier(t *testing.T) {
 		"b.esc": `val z = 5`,
 	})
 	require.Len(t, errs, 1)
-	require.Equal(t, "1:9-1:16: Unknown identifier: missing", msgWithSpan(errs[0]))
+	require.Equal(t, "1:9-1:16: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 	// M2.5: the error self-blames from the ident node.
 	require.Equal(t, "missing", spanText(srcA, errs[0].Span()))
 	// PR8 (Fix A): a binding whose definition is wholly the ErrorType recovery
@@ -572,6 +611,6 @@ func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 		val r = f(1, 2)
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-3:18: Too many arguments: expected at most 1, but got 2", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-3:18: Too many arguments: expected at most 1, but got 2", msgWithSpan(t, errs[0]))
 	require.Equal(t, "number", values["r"], "the result recovers to the declared return, not never")
 }

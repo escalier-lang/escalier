@@ -14,10 +14,11 @@ func parseThrowsSrc(t *testing.T, src string) []string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, errs := ParseLibFiles(ctx, []*ast.Source{{ID: 0, Path: "input.esc", Contents: src}})
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+	_, errs := ParseLibFiles(ctx, []*ast.Source{source})
 	out := make([]string, len(errs))
 	for i, e := range errs {
-		out[i] = e.String()
+		out[i] = ast.SpanString(source, e.Span) + ": " + e.Message
 	}
 	return out
 }

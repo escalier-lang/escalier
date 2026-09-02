@@ -15,7 +15,7 @@ import (
 // binder.wrap is what turns a nameless bind into a split of its own, and the tests that
 // assert flattening go through Normalize.
 func readPattern(p ast.Pat, target string) string {
-	origin := At(OriginMatchArm, arm(span(2, 5, 20)))
+	origin := At(OriginMatchArm, arm(span(45, 60)))
 	scrutinee := NewRoot(ident(target), origin)
 	test, binds := shallowTest(p, scrutinee, origin)
 
@@ -169,7 +169,7 @@ func TestShallowTestMarksDefaultedFieldsOptional(t *testing.T) {
 		readPattern(pattern, "p"),
 	)
 
-	origin := At(OriginMatchArm, arm(span(2, 5, 30)))
+	origin := At(OriginMatchArm, arm(span(45, 70)))
 	_, binds := shallowTest(pattern, NewRoot(ident("p"), origin), origin)
 	require.Len(t, binds, 2)
 	require.Same(t, shorthand, binds[0].elem)
@@ -210,10 +210,10 @@ func TestShallowTestKeepsABareRestWhole(t *testing.T) {
 // them when it binds the leaf.
 func TestShallowTestKeepsShorthandElements(t *testing.T) {
 	elem := ast.NewObjShorthandPat(
-		ast.NewIdentifier("x", ast.Span{}), true, ast.NewNumberTypeAnn(ast.Span{}), nil, span(2, 7, 20),
+		ast.NewIdentifier("x", ast.Span{}), true, ast.NewNumberTypeAnn(ast.Span{}), nil, span(47, 60),
 	)
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{elem}, ast.Span{})
-	origin := At(OriginMatchArm, arm(span(2, 5, 30)))
+	origin := At(OriginMatchArm, arm(span(45, 70)))
 
 	// `{mut x: number}` reads to `{x} => bind x = p.x; leaf 0`. The rendering names the
 	// key and the bound leaf and stops there, so the assertions below read the element
@@ -228,7 +228,7 @@ func TestShallowTestKeepsShorthandElements(t *testing.T) {
 // Every projection hangs off the one scrutinee node the branch tests, so a consumer
 // evaluates `f()` once and reads both fields off that one value.
 func TestShallowTestSharesTheScrutinee(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(2, 5, 24)))
+	origin := At(OriginMatchArm, arm(span(45, 64)))
 	scrutinee := NewRoot(ast.NewCall(ident("f"), []ast.Expr{}, false, ast.Span{}), origin)
 
 	// `{x, y}` against `f()` reads to `{x, y} => bind x = f().x, y = f().y; leaf 0`. The
@@ -246,11 +246,11 @@ func TestShallowTestSharesTheScrutinee(t *testing.T) {
 // A bind and its projection point at the pattern leaf they came from rather than at the
 // whole arm, so a message about one field blames the field the user wrote.
 func TestShallowTestPointsAtThePatternLeaf(t *testing.T) {
-	value := ast.NewIdentPat("a", false, nil, nil, span(2, 12, 13))
+	value := ast.NewIdentPat("a", false, nil, nil, span(52, 53))
 	pattern := ast.NewObjectPat([]ast.ObjPatElem{ast.NewObjKeyValuePat(
 		ast.NewIdentifier("x", ast.Span{}), value, ast.Span{},
 	)}, ast.Span{})
-	origin := At(OriginMatchArm, arm(span(2, 5, 24)))
+	origin := At(OriginMatchArm, arm(span(45, 64)))
 
 	// `{x: a}` reads to `{x} => bind a = p.x; leaf 0`. A span never renders, so the
 	// assertions below read the node each part of the bind blames.

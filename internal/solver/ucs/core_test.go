@@ -7,7 +7,7 @@ import (
 )
 
 func TestCoreNodesCarryProvenance(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(2, 5, 18)))
+	origin := At(OriginMatchArm, arm(span(45, 58)))
 	scrutinee := NewRoot(ident("p"), origin)
 
 	terms := map[string]Term{
@@ -28,7 +28,7 @@ func TestCoreNodesCarryProvenance(t *testing.T) {
 // is source order, and the first branch whose pattern matches wins. Removing the
 // backtracking that implies is normalization's job, not the core's.
 func TestCoreSplitKeepsSourceOrder(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	scrutinee := NewRoot(ident("p"), origin)
 
 	first := &CoreBranch{Pattern: identPat("a"), Cont: &BodyLeaf{Body: exprBody(num(1))}, Origin: origin}
@@ -44,7 +44,7 @@ func TestCoreSplitKeepsSourceOrder(t *testing.T) {
 // normalized form. A core branch holds the arm's pattern with its nesting intact, so
 // no tag-level flattening has happened yet.
 func TestCoreBranchKeepsItsPatternWhole(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	pattern := objPat("x", "y")
 	branch := &CoreBranch{Pattern: pattern, Origin: origin}
 

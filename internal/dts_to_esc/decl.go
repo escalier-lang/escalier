@@ -297,7 +297,7 @@ func convertInterfaceDecl(di *dts_parser.InterfaceDecl) (ast.Decl, error) {
 	if di.Name.Name == "PromiseLike" || di.Name.Name == "Promise" {
 		// The rejection parameter is synthesized rather than read from the `.d.ts`, so it
 		// borrows the declaration's own span.
-		synthSpan := ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0)
+		synthSpan := ast.NewSpan(ast.Location{Offset: 0}, ast.Location{Offset: 0}, 0)
 		errorTypeParam := ast.NewTypeParam("E", nil, ast.NewAnyTypeAnn(synthSpan), di.Span())
 		typeParams = append(typeParams, &errorTypeParam)
 		visitor := &PromiseVisitor{
@@ -326,11 +326,11 @@ func (v *PromiseVisitor) ExitTypeAnn(ta ast.TypeAnn) {
 	if typeRef, ok := ta.(*ast.TypeRefTypeAnn); ok {
 		if ident, ok := typeRef.Name.(*ast.Ident); ok && (ident.Name == "Promise" || ident.Name == "PromiseLike") {
 			// Add the error type parameter "E" with "any" as the default
-			eIdent := ast.NewIdentifier("E", ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0))
+			eIdent := ast.NewIdentifier("E", ast.NewSpan(ast.Location{Offset: 0}, ast.Location{Offset: 0}, 0))
 			errorTypeParam := ast.NewRefTypeAnn(
 				eIdent,
 				nil,
-				ast.NewSpan(ast.Location{Line: 0, Column: 0}, ast.Location{Line: 0, Column: 0}, 0),
+				ast.NewSpan(ast.Location{Offset: 0}, ast.Location{Offset: 0}, 0),
 			)
 			typeRef.TypeArgs = append(typeRef.TypeArgs, errorTypeParam)
 		}

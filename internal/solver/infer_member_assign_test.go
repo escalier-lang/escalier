@@ -167,7 +167,7 @@ func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 	require.Equal(t, []string{
 		"1:41-1:54: cannot constrain number <: string",
 		"1:41-1:54: cannot constrain string <: number",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // Writing a field absent from an EXACT annotated mut object still errors: the read
@@ -175,7 +175,7 @@ func TestInferMemberAssignAnnotatedMutWrongType(t *testing.T) {
 func TestInferMemberAssignAnnotatedMutMissingField(t *testing.T) {
 	src := "fn f(obj: mut {x: number}) { obj.z = 5 }"
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{"1:15-1:26: object is missing property: z"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"1:15-1:26: object is missing property: z"}, messagesWithSpan(t, errs))
 }
 
 // KNOWN GAP: two writes of INCOMPATIBLE types to one field produce an uninhabited
@@ -239,7 +239,7 @@ func TestInferMemberAssignClassReceiver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -343,7 +343,7 @@ func TestInferMemberAssignSetter(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -389,7 +389,7 @@ func TestInferMemberAssignAccessorPair(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -427,7 +427,7 @@ func TestInferMemberAssignGetterOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -448,7 +448,7 @@ func TestInferMemberAssignSetterValue(t *testing.T) {
 			return c.x
 		}
 	`)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "fn (c: mut C) -> number", values["written"])
 	require.Equal(t, "fn (c: mut C) -> string", values["readBack"])
 }
@@ -507,7 +507,7 @@ func TestInferMemberAssignSetterIndirectReceiver(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.want, messagesWithSpan(errs))
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
 		})
 	}
 }

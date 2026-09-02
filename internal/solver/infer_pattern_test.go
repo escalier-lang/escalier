@@ -47,7 +47,7 @@ func TestInferValObjectPatternMissingField(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:11-2:22: object is missing property: z", msgWithSpan(errs[0]))
+	require.Equal(t, "2:11-2:22: object is missing property: z", msgWithSpan(t, errs[0]))
 }
 
 // A tuple pattern binds per element at the element's type. Reordering the bound
@@ -73,7 +73,7 @@ func TestInferValTuplePatternWrongArity(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:11-2:27: cannot constrain tuple of length 2 <: tuple of length 3", msgWithSpan(errs[0]))
+	require.Equal(t, "2:11-2:27: cannot constrain tuple of length 2 <: tuple of length 3", msgWithSpan(t, errs[0]))
 }
 
 // A destructuring parameter types like a `val` destructuring of the argument: the
@@ -135,7 +135,7 @@ func TestInferObjectPatternLeafTypeAnnConflict(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:9-3:20: cannot constrain number <: string", msgWithSpan(errs[0]))
+	require.Equal(t, "3:9-3:20: cannot constrain number <: string", msgWithSpan(t, errs[0]))
 }
 
 // A matching leaf type annotation checks and is adopted as the leaf's type.
@@ -190,7 +190,7 @@ func TestInferObjectPatternOptionalProperty(t *testing.T) {
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, "fn (p: {x?: number}) -> number | undefined", values["f"])
 		})
 	}
@@ -700,7 +700,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 			val bad: string = f([1, 2])
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:22-3:31: cannot constrain tuple <: string", msgWithSpan(errs[0]))
+		require.Equal(t, "3:22-3:31: cannot constrain tuple <: string", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("destructuring past the leftover's guaranteed length is rejected", func(t *testing.T) {
@@ -712,7 +712,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:9-4:15: cannot constrain tuple of length 0 <: tuple of length 2", msgWithSpan(errs[0]))
+		require.Equal(t, "4:9-4:15: cannot constrain tuple of length 0 <: tuple of length 2", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("reading a field off the leftover is rejected", func(t *testing.T) {
@@ -723,7 +723,7 @@ func TestInferRestPatternUnknownLeftoverUses(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:17-4:18: object is missing property: y", msgWithSpan(errs[0]))
+		require.Equal(t, "4:17-4:18: object is missing property: y", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("an annotated scrutinee gives the leftover a length", func(t *testing.T) {
@@ -760,7 +760,7 @@ func TestInferRestPatternParamAdmitsExtraFields(t *testing.T) {
 			val r = f({x: 1, y: 2})
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:24-3:25: object has extra property: y", msgWithSpan(errs[0]))
+		require.Equal(t, "3:24-3:25: object has extra property: y", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("a tuple rest already admits a longer tuple", func(t *testing.T) {
@@ -819,7 +819,7 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 			// The rest still binds, so `return rest` resolves the name rather than
 			// cascading into an unknown-identifier error on top of the constraint error.
 			require.NotContains(t, values["f"], "error")
@@ -875,7 +875,7 @@ func TestInferRestPatternRejectedPositions(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -991,7 +991,7 @@ func TestInferObjectPatternLeafDefaultViolatesAnnotation(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, `3:23-3:27: cannot constrain "hi" <: number`, msgWithSpan(errs[0]))
+	require.Equal(t, `3:23-3:27: cannot constrain "hi" <: number`, msgWithSpan(t, errs[0]))
 }
 
 // --- M4 E2: the `match` expression ---
@@ -1100,7 +1100,7 @@ func TestInferMatchInexactNeedsCatchAll(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, y: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, y: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(t, errs[0]))
 }
 
 // An inexact-object scrutinee with an unguarded catch-all arm is exhaustive.
@@ -1149,7 +1149,7 @@ func TestInferMatchExactUnionMissingMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"b\"`", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"b\"`", msgWithSpan(t, errs[0]))
 }
 
 // A guarded arm binds its pattern before its guard runs, so a literal pattern in a
@@ -1243,7 +1243,7 @@ func TestInferMatchGuardedArmDoesNotCover(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number, ...}` admits values no pattern names, so add a catch-all branch", msgWithSpan(t, errs[0]))
 }
 
 // A guard is typed as a boolean over the arm's bindings, so a non-boolean guard is
@@ -1258,7 +1258,7 @@ func TestInferMatchGuardMustBeBoolean(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:12-4:13: cannot constrain number <: boolean", msgWithSpan(errs[0]))
+	require.Equal(t, "4:12-4:13: cannot constrain number <: boolean", msgWithSpan(t, errs[0]))
 }
 
 // An arm whose only structural pattern is refutable does not cover an exact
@@ -1274,7 +1274,7 @@ func TestInferMatchRefutableArmNonExhaustive(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; `{x: number}` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(t, errs[0]))
 }
 
 // A nested literal pattern flows against the scrutinee's concrete field type, so a
@@ -1289,7 +1289,7 @@ func TestInferMatchNestedWrongLiteralRejected(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, `4:9-4:13: cannot constrain "hi" <: number`, msgWithSpan(errs[0]))
+	require.Equal(t, `4:9-4:13: cannot constrain "hi" <: number`, msgWithSpan(t, errs[0]))
 }
 
 // The same check applies to a nested literal in a tuple pattern element.
@@ -1303,7 +1303,7 @@ func TestInferMatchTupleNestedWrongLiteralRejected(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, `4:9-4:13: cannot constrain "hi" <: number`, msgWithSpan(errs[0]))
+	require.Equal(t, `4:9-4:13: cannot constrain "hi" <: number`, msgWithSpan(t, errs[0]))
 }
 
 // A correctly-typed nested literal pattern still type-checks.

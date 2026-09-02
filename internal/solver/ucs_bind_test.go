@@ -25,7 +25,7 @@ func newPathChecker(t *testing.T, src string) (*checker, *Scope) {
 	scope := sharedPrelude().Child()
 	module := parseModule(t, src)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
-	require.Empty(t, messagesWithSpan(c.errs), "the harness source must infer cleanly")
+	require.Empty(t, messagesWithSpan(t, c.errs), "the harness source must infer cleanly")
 	return c, scope
 }
 
@@ -135,7 +135,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			steps:    []ucs.Step{ucs.FieldStep{Name: "z"}},
 			leaf:     "z",
 			want:     "never",
-			wantErrs: []string{"1:1-1:2: object is missing property: z"},
+			wantErrs: []string{"0-1: object is missing property: z"},
 		},
 		// An optional property reads as `T | undefined`, so the projection takes no upper
 		// bound of `T`: the bound would reject the `undefined` half of what the field
@@ -173,7 +173,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			steps:    []ucs.Step{ucs.IndexStep{Index: 0}},
 			leaf:     "a",
 			want:     "never",
-			wantErrs: []string{"1:1-1:2: cannot constrain tuple of length 2 <: tuple of length 3"},
+			wantErrs: []string{"0-1: cannot constrain tuple of length 2 <: tuple of length 3"},
 		},
 		// A trailing rest relaxes the test to a prefix and binds the suffix, which the path
 		// names with a suffix step rather than with an index.
@@ -321,7 +321,7 @@ func TestPathBinderProjectsAndBinds(t *testing.T) {
 			// invisible to the next, exactly as inferMatchArms scopes an arm.
 			armScope := scope.Child()
 			binder.bindAt(armScope, projectPath(root, tt.steps...), leafPat(tt.leaf))
-			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, c.errs))
 			require.Equal(t, tt.want, boundType(t, c, armScope, tt.leaf))
 		})
 	}
@@ -346,7 +346,7 @@ func TestPathBinderMaterializesEachScrutineeOnce(t *testing.T) {
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(inner, ucs.FieldStep{Name: "x"}), leafPat("x"))
 	binder.bindAt(armScope, projectPath(inner, ucs.FieldStep{Name: "y"}), leafPat("y"))
-	require.Empty(t, messagesWithSpan(c.errs))
+	require.Empty(t, messagesWithSpan(t, c.errs))
 	require.Equal(t, "number", boundType(t, c, armScope, "x"))
 	require.Equal(t, "string", boundType(t, c, armScope, "y"))
 }
@@ -365,7 +365,7 @@ func TestPathBinderSiblingBranchesShareOneProjection(t *testing.T) {
 	first := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "x"}}}, nil)
 	second := binder.narrowedBy(scope, inner, &ucs.ObjectTest{Keys: []ucs.ObjectKey{{Name: "y"}}}, nil)
 
-	require.Equal(t, []string{"1:1-1:2: object is missing property: a"}, messagesWithSpan(c.errs))
+	require.Equal(t, []string{"0-1: object is missing property: a"}, messagesWithSpan(t, c.errs))
 	// Neither test narrows a non-union scrutinee, so both branches still hold the one
 	// projection variable the shared resolution minted.
 	require.Same(t, first.typeAt(scope, inner), second.typeAt(scope, inner))
@@ -383,8 +383,8 @@ func TestPathBinderUntestedTupleIndexMintsOneRequirement(t *testing.T) {
 	binder.bindAt(armScope, projectPath(root, ucs.IndexStep{Index: 1}), leafPat("b"))
 	binder.bindAt(armScope, projectPath(root, ucs.IndexStep{Index: 0}), leafPat("a"))
 	require.Equal(t, []string{
-		"1:1-1:2: cannot constrain object <: tuple",
-	}, messagesWithSpan(c.errs))
+		"0-1: cannot constrain object <: tuple",
+	}, messagesWithSpan(t, c.errs))
 }
 
 // Applying a test returns a derived binder rather than mutating the one it came from, so
@@ -402,7 +402,7 @@ func TestPathBinderBranchesNarrowIndependently(t *testing.T) {
 	secondScope := scope.Child()
 	second.bindAt(secondScope, projectPath(root, ucs.FieldStep{Name: "y"}), leafPat("y"))
 
-	require.Empty(t, messagesWithSpan(c.errs))
+	require.Empty(t, messagesWithSpan(t, c.errs))
 	require.Equal(t, "number", boundType(t, c, firstScope, "x"))
 	require.Equal(t, "string", boundType(t, c, secondScope, "y"))
 }
@@ -419,7 +419,7 @@ func TestPathBinderDefaultFillsOptionalProperty(t *testing.T) {
 
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
-	require.Empty(t, messagesWithSpan(c.errs))
+	require.Empty(t, messagesWithSpan(t, c.errs))
 	require.Equal(t, "number | 0", boundType(t, c, armScope, "x"))
 }
 
@@ -441,7 +441,7 @@ func TestPathBinderDefaultedKeyBindsAgainstScrutineeWithoutTheField(t *testing.T
 
 	armScope := scope.Child()
 	binder.bindAt(armScope, projectPath(root, ucs.FieldStep{Name: "x"}), defaultedLeafPat("x"))
-	require.Empty(t, messagesWithSpan(c.errs))
+	require.Empty(t, messagesWithSpan(t, c.errs))
 	require.Equal(t, "0", boundType(t, c, armScope, "x"))
 }
 
@@ -502,7 +502,7 @@ func TestPathBinderBindsShorthandElements(t *testing.T) {
 
 			armScope := scope.Child()
 			binder.bindElemAt(armScope, projectPath(root, ucs.FieldStep{Name: key}), tt.elem)
-			require.Empty(t, messagesWithSpan(c.errs))
+			require.Empty(t, messagesWithSpan(t, c.errs))
 			require.Equal(t, tt.want, boundType(t, c, armScope, key))
 		})
 	}
@@ -521,12 +521,12 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 		"NotAClass": {
 			test: &ucs.ClassTest{Name: ast.NewIdentifier("Missing", builderSpan())},
 			step: ucs.FieldStep{Name: "x"},
-			want: "1:1-1:2: `Missing` does not name a class and cannot be used as an instance pattern.",
+			want: "0-1: `Missing` does not name a class and cannot be used as an instance pattern.",
 		},
 		"NotAConstructor": {
 			test: &ucs.ExtractorTest{Name: ast.NewIdentifier("Missing", builderSpan()), Arity: 1},
 			step: ucs.ExtractStep{Index: 0},
-			want: "1:1-1:2: `Missing` is not a constructor and cannot be used as an extractor pattern.",
+			want: "0-1: `Missing` is not a constructor and cannot be used as an extractor pattern.",
 		},
 	}
 	for name, tt := range tests {
@@ -536,7 +536,7 @@ func TestPathBinderUnresolvedTagNames(t *testing.T) {
 			binder = binder.narrowedBy(scope, root, tt.test, nil)
 			armScope := scope.Child()
 			binder.bindAt(armScope, projectPath(root, tt.step), leafPat("x"))
-			require.Equal(t, []string{tt.want}, messagesWithSpan(c.errs))
+			require.Equal(t, []string{tt.want}, messagesWithSpan(t, c.errs))
 			require.Contains(t, armScope.values, "x")
 		})
 	}
@@ -554,7 +554,7 @@ func TestPathBinderExtractorArityMismatch(t *testing.T) {
 	binder.bindAt(armScope, projectPath(root, ucs.ExtractStep{Index: 2}), leafPat("c"))
 	require.Equal(t, []string{
 		"1:1-1:2: extractor pattern `Point` expects 2 arguments but got 3",
-	}, messagesWithSpan(c.errs))
+	}, messagesWithSpan(t, c.errs))
 	// Value 0 still resolves through the constructor; value 2, which the constructor does
 	// not yield, recovers against a fresh variable rather than a second diagnostic.
 	require.Equal(t, "number", boundType(t, c, armScope, "a"))
@@ -570,7 +570,7 @@ func TestPathBinderLiteralTest(t *testing.T) {
 		wantErrs []string
 	}{
 		"Admissible":   {rootType: "number", lit: ast.NewNumber(1, builderSpan())},
-		"WrongKind":    {rootType: "number", lit: ast.NewString("one", builderSpan()), wantErrs: []string{`1:1-1:2: cannot constrain "one" <: number`}},
+		"WrongKind":    {rootType: "number", lit: ast.NewString("one", builderSpan()), wantErrs: []string{`0-1: cannot constrain "one" <: number`}},
 		"NarrowerType": {rootType: "1 | 2", lit: ast.NewNumber(1, builderSpan())},
 	}
 	for name, tt := range tests {
@@ -578,7 +578,7 @@ func TestPathBinderLiteralTest(t *testing.T) {
 			c, scope := newPathChecker(t, "")
 			root, binder := seedPath(c, parseType(t, tt.rootType))
 			binder.narrowedBy(scope, root, &ucs.LitTest{Lit: tt.lit}, nil)
-			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, c.errs))
 		})
 	}
 }

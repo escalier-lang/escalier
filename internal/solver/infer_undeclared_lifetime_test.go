@@ -24,7 +24,7 @@ func TestInferUndeclaredLifetimeNoClauseHardError(t *testing.T) {
 			"1:10-1:12: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
 			"1:30-1:32: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
 		},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // A used lifetime the clause does not bind is a hard error, with the nearest declared
@@ -34,7 +34,7 @@ func TestInferUndeclaredLifetimeWithClause(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<'a>(p: &'a {x: number}, q: &'b {x: number}) { return p }`)
 	require.Equal(t,
 		[]string{"1:34-1:36: lifetime 'b is used but not declared; did you mean 'a?"},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // A clause exists but no declared name is close enough to suggest, so the message falls
@@ -45,7 +45,7 @@ func TestInferUndeclaredLifetimeWithClauseNoCloseSuggestion(t *testing.T) {
 		`fn f<'xyz>(p: &'xyz {x: number}, q: &'a {x: number}) { return p }`)
 	require.Equal(t,
 		[]string{"1:38-1:40: lifetime 'a is used but not declared; add `<'a>` to the signature's lifetime list"},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // The right-hand side of a declared bound is a use, so an undeclared name there is
@@ -57,7 +57,7 @@ func TestInferUndeclaredLifetimeInBoundRHS(t *testing.T) {
 		`val f: fn<'a: 'b>(p: &'a {x: number}) -> &'a {x: number} = fn (p) { return p }`)
 	require.Equal(t,
 		[]string{"1:15-1:17: lifetime 'b is used but not declared; did you mean 'a?"},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // 'static is the built-in bottom of the outlives lattice, so it is never undeclared. A
@@ -82,7 +82,7 @@ func TestInferUndeclaredLifetimeNestedJudgedByOwnClause(t *testing.T) {
 			"2:23-2:25: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
 			"2:43-2:45: lifetime 'a is used but not declared; add `<'a>` to the enclosing function signature",
 		},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // A declared binder that no borrow and no bound references is dead weight. `<'a>` is
@@ -91,7 +91,7 @@ func TestInferUnusedLifetimeParamWarns(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<'a>(p: &{x: number}) { return p }`)
 	require.Equal(t,
 		[]string{"1:6-1:8: lifetime parameter 'a is declared but never used"},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 	require.True(t, errs[0].(*UnusedLifetimeParamError).IsWarning())
 }
 
@@ -103,11 +103,12 @@ func TestInferDuplicateLifetimeParam(t *testing.T) {
 		`fn f<'a, 'a>(p: &'a {x: number}) -> &'a {x: number} { return p }`)
 	require.Equal(t,
 		[]string{"1:10-1:12: lifetime parameter 'a is declared more than once"},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 	de, ok := errs[0].(*DuplicateLifetimeParamError)
 	require.True(t, ok)
 	require.Equal(t, "a", de.Name)
-	require.Equal(t, "1:6-1:8", de.Related()[0].String(), "the first binder is related")
+	require.Equal(t, "1:6-1:8", spanWithSpanSource(t, de.Related()[0]),
+		"the first binder is related")
 }
 
 // The duplicate and unused scans agree on deduplication. A repeated binder that nothing
@@ -120,7 +121,7 @@ func TestInferDuplicateLifetimeParamUnusedReportedOnce(t *testing.T) {
 			"1:10-1:12: lifetime parameter 'a is declared more than once",
 			"1:6-1:8: lifetime parameter 'a is declared but never used",
 		},
-		messagesWithSpan(errs))
+		messagesWithSpan(t, errs))
 }
 
 // A binder used only as a bound right-hand side counts as used, so it does not warn as

@@ -6,12 +6,12 @@
             &ast.ExprStmt{
                 Expr: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:6-1:7,
+                    span: 5-6,
                 },
-                span: 1:6-1:7,
+                span: 5-6,
             },
         },
-        Span: 1:4-1:9,
+        Span: 3-8,
     },
     Alt: &ast.BlockOrExpr{
         Block: &ast.Block{
@@ -19,22 +19,22 @@
                 &ast.ExprStmt{
                     Expr: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:17-1:18,
+                        span: 16-17,
                     },
-                    span: 1:17-1:18,
+                    span: 16-17,
                 },
             },
-            Span: 1:15-1:20,
+            Span: 14-19,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
 [TestParseExprErrorHandling/IfElseMissingCondition - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a condition",
     },
 }
@@ -44,12 +44,12 @@
 &ast.IfElseExpr{
     Cond: &ast.IdentExpr{
         Name: "cond",
-        span: 1:4-1:8,
+        span: 3-7,
     },
     Cons: ast.Block{
-        Span: 1:9-1:10,
+        Span: 8-9,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -57,18 +57,18 @@
 &ast.CallExpr{
     Callee: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Args: []ast.Expr{
         &ast.IdentExpr{
             Name: "a",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.ErrorExpr{
-            span: 1:7-1:7,
+            span: 6-6,
         },
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -76,15 +76,15 @@
 &ast.TaggedTemplateLitExpr{
     Tag: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "bar",
-            Span: 1:5-1:8,
+            Span: 4-7,
         },
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -94,37 +94,37 @@
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 1,
-                span: 1:2-1:3,
+                span: 1-2,
             },
-            span: 1:2-1:3,
+            span: 1-2,
         },
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 2,
-                span: 1:5-1:6,
+                span: 4-5,
             },
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 3,
-                span: 1:8-1:9,
+                span: 7-8,
             },
-            span: 1:8-1:9,
+            span: 7-8,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteCall - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:7-1:7,
+        Span: 6-6,
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a closing paren",
     },
 }
@@ -133,7 +133,7 @@
 [TestParseExprErrorHandling/MismatchedBracketsArrayLiteral - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:9-1:10,
+        Span: 8-9,
         Message: "Expected ] but got )",
     },
 }
@@ -143,29 +143,29 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "*",
     Right: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "b",
-            span: 1:6-1:7,
+            span: 5-6,
         },
         Op: "+",
         Right: &ast.IdentExpr{
             Name: "c",
-            span: 1:10-1:11,
+            span: 9-10,
         },
-        span: 1:6-1:11,
+        span: 5-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
 [TestParseExprErrorHandling/IfElseMissingOpeningBraces - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:9-1:10,
+        Span: 8-9,
         Message: "Expected an opening brace",
     },
 }
@@ -175,21 +175,21 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
 [TestParseExprErrorHandling/MismatchedParens - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:11-1:12,
+        Span: 10-11,
         Message: "Expected ) but got ]",
     },
 }
@@ -200,20 +200,20 @@
     Left: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Op: "-",
         Right: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     Op: "+",
     Right: &ast.ErrorExpr{
-        span: 1:8-1:8,
+        span: 7-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -222,17 +222,17 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "foo",
-            Span: 1:2-1:5,
+            Span: 1-4,
         },
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteTaggedTemplateLiteral - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:8,
+        Span: 3-7,
         Message: "Expected a closing backtick",
     },
 }
@@ -245,36 +245,36 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
             &ast.Param{
                 Pattern: &ast.InstancePat{
                     ClassName: &ast.Ident{
                         Name: "b",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
                     Object: &ast.ObjectPat{
                         Elems: []ast.ObjPatElem{
                             &ast.ObjShorthandPat{
                                 Key: &ast.Ident{
                                     Name: "a",
-                                    span: 1:12-1:13,
+                                    span: 11-12,
                                 },
-                                span: 1:12-1:13,
+                                span: 11-12,
                             },
                         },
-                        span: 1:8-1:15,
+                        span: 7-14,
                     },
-                    span: 1:8-1:15,
+                    span: 7-14,
                 },
             },
         },
     },
     Body: &ast.Block{
-        Span: 1:16-1:17,
+        Span: 15-16,
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -282,13 +282,13 @@
 &ast.IndexExpr{
     Object: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Index: &ast.IdentExpr{
         Name: "bar",
-        span: 1:5-1:8,
+        span: 4-7,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -296,27 +296,27 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         Prop: &ast.Ident{
-            span: 1:7-1:7,
+            span: 6-6,
         },
-        span: 1:5-1:7,
+        span: 4-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteBinaryExpr - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:8-1:8,
+        Span: 7-7,
         Message: "Expected an expression",
     },
 }
@@ -325,7 +325,7 @@
 [TestParseExprErrorHandling/ExtraOperatorsInBinaryExpr - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:5-1:6,
+        Span: 4-5,
         Message: "Unexpected token, '*'",
     },
 }
@@ -334,7 +334,7 @@
 [TestParseExprErrorHandling/MismatchedBracketsIndex - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a closing bracket",
     },
 }
@@ -343,7 +343,7 @@
 [TestParseExprErrorHandling/IncompleteMember - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:6-1:7,
+        Span: 5-6,
         Message: "expected an identifier after .",
     },
 }
@@ -352,7 +352,7 @@
 [TestParseExprErrorHandling/IncompleteTemplateLiteral - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:1-1:5,
+        Span: 0-4,
         Message: "Expected a closing backtick",
     },
 }
@@ -361,15 +361,15 @@
 [TestParseExprErrorHandling/ParamsMissingClosingParen - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:14-1:15,
+        Span: 13-14,
         Message: "Expected } but got +",
     },
     &parser.Error{
-        Span: 1:16-1:17,
+        Span: 15-16,
         Message: "Expected ) but got identifier",
     },
     &parser.Error{
-        Span: 1:16-1:17,
+        Span: 15-16,
         Message: "Expected an opening brace",
     },
 }
@@ -382,13 +382,13 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:4-1:5,
+                    span: 3-4,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:7-1:8,
+                    span: 6-7,
                 },
             },
         },
@@ -399,21 +399,21 @@
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:12-1:13,
+                        span: 11-12,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:16-1:17,
+                        span: 15-16,
                     },
-                    span: 1:12-1:17,
+                    span: 11-16,
                 },
-                span: 1:12-1:17,
+                span: 11-16,
             },
         },
-        Span: 1:10-1:19,
+        Span: 9-18,
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
@@ -421,28 +421,28 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         Prop: &ast.Ident{
-            span: 1:8-1:8,
+            span: 7-7,
         },
         OptChain: true,
-        span: 1:5-1:8,
+        span: 4-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
 [TestParseExprErrorHandling/ParamsMissingOpeningParen - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected ( but got identifier",
     },
 }
@@ -451,7 +451,7 @@
 [TestParseExprErrorHandling/IncompleteMemberOptChain - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:6-1:8,
+        Span: 5-7,
         Message: "expected an identifier after ?.",
     },
 }
@@ -464,25 +464,25 @@
             &ast.ExprStmt{
                 Expr: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:6-1:7,
+                    span: 5-6,
                 },
-                span: 1:6-1:7,
+                span: 5-6,
             },
         },
-        Span: 1:4-1:9,
+        Span: 3-8,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteElse - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a condition",
     },
     &parser.Error{
-        Span: 1:14-1:14,
+        Span: 13-13,
         Message: "Expected an if or an opening brace",
     },
 }
@@ -492,23 +492,23 @@
 &ast.CallExpr{
     Callee: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Args: []ast.Expr{
         &ast.IdentExpr{
             Name: "a",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.IdentExpr{
             Name: "b",
-            span: 1:8-1:9,
+            span: 7-8,
         },
         &ast.IdentExpr{
             Name: "c",
-            span: 1:11-1:12,
+            span: 10-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -516,9 +516,9 @@
 &ast.LiteralExpr{
     Lit: &ast.NumLit{
         Value: 1,
-        span: 1:1-1:3,
+        span: 0-2,
     },
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -526,21 +526,21 @@
 &ast.IndexExpr{
     Object: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Index: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "base",
-            span: 1:3-1:7,
+            span: 2-6,
         },
         Op: "+",
         Right: &ast.IdentExpr{
             Name: "offset",
-            span: 1:10-1:16,
+            span: 9-15,
         },
-        span: 1:3-1:16,
+        span: 2-15,
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -549,20 +549,20 @@
     Left: &ast.UnaryExpr{
         Arg: &ast.IdentExpr{
             Name: "a",
-            span: 1:2-1:3,
+            span: 1-2,
         },
-        span: 1:1-1:3,
+        span: 0-2,
     },
     Op: "-",
     Right: &ast.UnaryExpr{
         Op: 1,
         Arg: &ast.IdentExpr{
             Name: "b",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:6-1:8,
+        span: 5-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -571,10 +571,10 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "hello\nworld",
-            Span: 1:2-2:7,
+            Span: 1-13,
         },
     },
-    span: 1:1-2:7,
+    span: 0-13,
 }
 ---
 
@@ -582,15 +582,15 @@
 &ast.TaggedTemplateLitExpr{
     Tag: &ast.IdentExpr{
         Name: "gql",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "query userId { user { id } }",
-            Span: 1:5-1:34,
+            Span: 4-33,
         },
     },
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -600,32 +600,32 @@
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 1,
-                span: 1:2-1:3,
+                span: 1-2,
             },
-            span: 1:2-1:3,
+            span: 1-2,
         },
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 2,
-                span: 1:5-1:6,
+                span: 4-5,
             },
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 3,
-                span: 1:8-1:9,
+                span: 7-8,
             },
-            span: 1:8-1:9,
+            span: 7-8,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
 [TestParseExprNoErrors/EmptyObject - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -634,20 +634,20 @@
     Object: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Prop: &ast.Ident{
             Name: "b",
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Prop: &ast.Ident{
         Name: "c",
-        span: 1:6-1:7,
+        span: 5-6,
     },
     OptChain: true,
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -655,22 +655,22 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "*",
     Right: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "b",
-            span: 1:6-1:7,
+            span: 5-6,
         },
         Op: "+",
         Right: &ast.IdentExpr{
             Name: "c",
-            span: 1:10-1:11,
+            span: 9-10,
         },
-        span: 1:6-1:11,
+        span: 5-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -678,9 +678,9 @@
 &ast.LiteralExpr{
     Lit: &ast.StrLit{
         Value: "hello",
-        span: 1:1-1:8,
+        span: 0-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -688,21 +688,21 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.IndexExpr{
         Object: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         Index: &ast.IdentExpr{
             Name: "c",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:5-1:9,
+        span: 4-8,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -710,19 +710,19 @@
 &ast.IfElseExpr{
     Cond: &ast.IdentExpr{
         Name: "cond",
-        span: 1:4-1:8,
+        span: 3-7,
     },
     Cons: ast.Block{
         Stmts: []ast.Stmt{
             &ast.ExprStmt{
                 Expr: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:11-1:12,
+                    span: 10-11,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
         },
-        Span: 1:9-1:14,
+        Span: 8-13,
     },
     Alt: &ast.BlockOrExpr{
         Block: &ast.Block{
@@ -730,15 +730,15 @@
                 &ast.ExprStmt{
                     Expr: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:22-1:23,
+                        span: 21-22,
                     },
-                    span: 1:22-1:23,
+                    span: 21-22,
                 },
             },
-            Span: 1:20-1:25,
+            Span: 19-24,
         },
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -748,11 +748,11 @@
     Arg: &ast.LiteralExpr{
         Lit: &ast.NumLit{
             Value: 5,
-            span: 1:2-1:3,
+            span: 1-2,
         },
-        span: 1:2-1:3,
+        span: 1-2,
     },
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -761,11 +761,11 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "a",
-            Span: 1:2-1:5,
+            Span: 1-4,
         },
         &ast.Quasi{
             Value: "e",
-            Span: 1:14-1:16,
+            Span: 13-15,
         },
     },
     Exprs: []ast.Expr{
@@ -773,23 +773,23 @@
             Quasis: []*ast.Quasi{
                 &ast.Quasi{
                     Value: "b",
-                    Span: 1:6-1:9,
+                    Span: 5-8,
                 },
                 &ast.Quasi{
                     Value: "d",
-                    Span: 1:11-1:13,
+                    Span: 10-12,
                 },
             },
             Exprs: []ast.Expr{
                 &ast.IdentExpr{
                     Name: "c",
-                    span: 1:9-1:10,
+                    span: 8-9,
                 },
             },
-            span: 1:5-1:13,
+            span: 4-12,
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -797,37 +797,37 @@
 &ast.IfElseExpr{
     Cond: &ast.IdentExpr{
         Name: "cond1",
-        span: 1:4-1:9,
+        span: 3-8,
     },
     Cons: ast.Block{
         Stmts: []ast.Stmt{
             &ast.ExprStmt{
                 Expr: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
-                span: 1:12-1:13,
+                span: 11-12,
             },
         },
-        Span: 1:10-1:15,
+        Span: 9-14,
     },
     Alt: &ast.BlockOrExpr{
         Expr: &ast.IfElseExpr{
             Cond: &ast.IdentExpr{
                 Name: "cond2",
-                span: 1:24-1:29,
+                span: 23-28,
             },
             Cons: ast.Block{
                 Stmts: []ast.Stmt{
                     &ast.ExprStmt{
                         Expr: &ast.IdentExpr{
                             Name: "b",
-                            span: 1:32-1:33,
+                            span: 31-32,
                         },
-                        span: 1:32-1:33,
+                        span: 31-32,
                     },
                 },
-                Span: 1:30-1:35,
+                Span: 29-34,
             },
             Alt: &ast.BlockOrExpr{
                 Block: &ast.Block{
@@ -835,18 +835,18 @@
                         &ast.ExprStmt{
                             Expr: &ast.IdentExpr{
                                 Name: "c",
-                                span: 1:43-1:44,
+                                span: 42-43,
                             },
-                            span: 1:43-1:44,
+                            span: 42-43,
                         },
                     },
-                    Span: 1:41-1:46,
+                    Span: 40-45,
                 },
             },
-            span: 1:20-1:46,
+            span: 19-45,
         },
     },
-    span: 1:1-1:46,
+    span: 0-45,
 }
 ---
 
@@ -854,9 +854,9 @@
 &ast.LiteralExpr{
     Lit: &ast.NumLit{
         Value: 5,
-        span: 1:1-1:2,
+        span: 0-1,
     },
-    span: 1:1-1:2,
+    span: 0-1,
 }
 ---
 
@@ -865,21 +865,21 @@
     Left: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Op: "-",
         Right: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     Op: "+",
     Right: &ast.IdentExpr{
         Name: "c",
-        span: 1:9-1:10,
+        span: 8-9,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -887,9 +887,9 @@
 &ast.LiteralExpr{
     Lit: &ast.NumLit{
         Value: 1.5,
-        span: 1:1-1:4,
+        span: 0-3,
     },
-    span: 1:1-1:4,
+    span: 0-3,
 }
 ---
 
@@ -899,31 +899,31 @@
         Callee: &ast.CallExpr{
             Callee: &ast.IdentExpr{
                 Name: "foo",
-                span: 1:1-1:4,
+                span: 0-3,
             },
             Args: []ast.Expr{
                 &ast.IdentExpr{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
-            span: 1:1-1:7,
+            span: 0-6,
         },
         Args: []ast.Expr{
             &ast.IdentExpr{
                 Name: "b",
-                span: 1:8-1:9,
+                span: 7-8,
             },
         },
-        span: 1:1-1:10,
+        span: 0-9,
     },
     Args: []ast.Expr{
         &ast.IdentExpr{
             Name: "c",
-            span: 1:11-1:12,
+            span: 10-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -931,22 +931,22 @@
 &ast.IndexExpr{
     Object: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Index: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "base",
-            span: 1:4-1:8,
+            span: 3-7,
         },
         Op: "+",
         Right: &ast.IdentExpr{
             Name: "offset",
-            span: 1:11-1:17,
+            span: 10-16,
         },
-        span: 1:4-1:17,
+        span: 3-16,
     },
     OptChain: true,
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -955,21 +955,21 @@
     Left: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Op: "/",
         Right: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     Op: "*",
     Right: &ast.IdentExpr{
         Name: "c",
-        span: 1:9-1:10,
+        span: 8-9,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -978,29 +978,29 @@
     Left: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Op: "*",
         Right: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     Op: "+",
     Right: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "c",
-            span: 1:9-1:10,
+            span: 8-9,
         },
         Op: "*",
         Right: &ast.IdentExpr{
             Name: "d",
-            span: 1:13-1:14,
+            span: 12-13,
         },
-        span: 1:9-1:14,
+        span: 8-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1009,19 +1009,19 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "hello ",
-            Span: 1:2-1:10,
+            Span: 1-9,
         },
         &ast.Quasi{
-            Span: 1:15-1:16,
+            Span: 14-15,
         },
     },
     Exprs: []ast.Expr{
         &ast.IdentExpr{
             Name: "name",
-            span: 1:10-1:14,
+            span: 9-13,
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -1029,21 +1029,21 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         Prop: &ast.Ident{
             Name: "c",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:5-1:8,
+        span: 4-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1051,23 +1051,23 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.CallExpr{
         Callee: &ast.IdentExpr{
             Name: "foo",
-            span: 1:5-1:8,
+            span: 4-7,
         },
         Args: []ast.Expr{
             &ast.IdentExpr{
                 Name: "b",
-                span: 1:9-1:10,
+                span: 8-9,
             },
         },
-        span: 1:5-1:11,
+        span: 4-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1076,28 +1076,28 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "a",
-            Span: 1:2-1:5,
+            Span: 1-4,
         },
         &ast.Quasi{
             Value: "c",
-            Span: 1:7-1:10,
+            Span: 6-9,
         },
         &ast.Quasi{
             Value: "e",
-            Span: 1:12-1:14,
+            Span: 11-13,
         },
     },
     Exprs: []ast.Expr{
         &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.IdentExpr{
             Name: "d",
-            span: 1:10-1:11,
+            span: 9-10,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1105,14 +1105,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:5-1:6,
+        span: 4-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -1120,16 +1120,16 @@
 &ast.CallExpr{
     Callee: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Args: []ast.Expr{
         &ast.IdentExpr{
             Name: "bar",
-            span: 1:6-1:9,
+            span: 5-8,
         },
     },
     OptChain: true,
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -1137,9 +1137,9 @@
 &ast.LiteralExpr{
     Lit: &ast.NumLit{
         Value: 0.5,
-        span: 1:1-1:3,
+        span: 0-2,
     },
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -1148,19 +1148,19 @@
     Object: &ast.IndexExpr{
         Object: &ast.IdentExpr{
             Name: "a",
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Index: &ast.IdentExpr{
             Name: "i",
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:1-1:5,
+        span: 0-4,
     },
     Index: &ast.IdentExpr{
         Name: "j",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1171,13 +1171,13 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
         },
@@ -1188,21 +1188,21 @@
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:13-1:14,
+                        span: 12-13,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:17-1:18,
+                        span: 16-17,
                     },
-                    span: 1:13-1:18,
+                    span: 12-17,
                 },
-                span: 1:13-1:18,
+                span: 12-17,
             },
         },
-        Span: 1:11-1:20,
+        Span: 10-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1211,70 +1211,70 @@
     Elems: []ast.ObjExprElem{
         &ast.PropertyExpr{
             Name: &ast.NumLit{
-                span: 1:3-1:4,
+                span: 2-3,
             },
             Value: &ast.LiteralExpr{
                 Lit: &ast.StrLit{
                     Value: "hello",
-                    span: 1:6-1:13,
+                    span: 5-12,
                 },
-                span: 1:6-1:13,
+                span: 5-12,
             },
-            span: 1:3-1:13,
+            span: 2-12,
         },
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "foo",
-                span: 1:15-1:18,
+                span: 14-17,
             },
             Value: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 5,
-                    span: 1:20-1:21,
+                    span: 19-20,
                 },
-                span: 1:20-1:21,
+                span: 19-20,
             },
-            span: 1:15-1:21,
+            span: 14-20,
         },
         &ast.PropertyExpr{
             Name: &ast.StrLit{
                 Value: "bar",
-                span: 1:23-1:28,
+                span: 22-27,
             },
             Optional: true,
             Value: &ast.LiteralExpr{
                 Lit: &ast.BoolLit{
                     Value: true,
-                    span: 1:31-1:35,
+                    span: 30-34,
                 },
-                span: 1:31-1:35,
+                span: 30-34,
             },
-            span: 1:23-1:35,
+            span: 22-34,
         },
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "baz",
-                span: 1:37-1:40,
+                span: 36-39,
             },
-            span: 1:37-1:40,
+            span: 36-39,
         },
         &ast.PropertyExpr{
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
                     Name: "qux",
-                    span: 1:43-1:46,
+                    span: 42-45,
                 },
             },
             Value: &ast.LiteralExpr{
                 Lit: &ast.BoolLit{
-                    span: 1:49-1:54,
+                    span: 48-53,
                 },
-                span: 1:49-1:54,
+                span: 48-53,
             },
-            span: 1:43-1:54,
+            span: 42-53,
         },
     },
-    span: 1:1-1:56,
+    span: 0-55,
 }
 ---
 
@@ -1285,35 +1285,35 @@
             &ast.PropertyExpr{
                 Name: &ast.IdentExpr{
                     Name: "foo",
-                    span: 1:3-1:6,
+                    span: 2-5,
                 },
                 Value: &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
-                span: 1:3-1:9,
+                span: 2-8,
             },
         },
-        span: 1:1-1:13,
+        span: 0-12,
     },
     TypeAnn: &ast.LitTypeAnn{
         Lit: &ast.NumLit{
             Value: 10,
-            span: 1:15-1:17,
+            span: 14-16,
         },
-        span: 1:15-1:17,
+        span: 14-16,
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectMissingComma - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:10-1:13,
+        Span: 9-12,
         Message: "Expected } but got identifier",
     },
 }
@@ -1325,40 +1325,40 @@
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "foo",
-                span: 1:3-1:6,
+                span: 2-5,
             },
             Value: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 5,
-                    span: 1:7-1:8,
+                    span: 6-7,
                 },
-                span: 1:7-1:8,
+                span: 6-7,
             },
-            span: 1:3-1:6,
+            span: 2-5,
         },
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "bar",
-                span: 1:10-1:13,
+                span: 9-12,
             },
             Value: &ast.LiteralExpr{
                 Lit: &ast.NumLit{
                     Value: 10,
-                    span: 1:15-1:17,
+                    span: 14-16,
                 },
-                span: 1:15-1:17,
+                span: 14-16,
             },
-            span: 1:10-1:17,
+            span: 9-16,
         },
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectMissingColon - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:7-1:8,
+        Span: 6-7,
         Message: "Expected a comma or closing brace",
     },
 }
@@ -1368,14 +1368,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "<=",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1383,14 +1383,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: ">",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:5-1:6,
+        span: 4-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -1398,14 +1398,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: ">=",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1413,14 +1413,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "<",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:5-1:6,
+        span: 4-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -1428,14 +1428,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "!=",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1443,14 +1443,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "==",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1458,9 +1458,9 @@
 &ast.CallExpr{
     Callee: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -1470,16 +1470,16 @@
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "a",
-                span: 1:2-1:3,
+                span: 1-2,
             },
-            span: 1:2-1:3,
+            span: 1-2,
         },
         &ast.ObjSpreadExpr{
             Value: &ast.IdentExpr{
                 Name: "b",
-                span: 1:8-1:9,
+                span: 7-8,
             },
-            span: 1:5-1:9,
+            span: 4-8,
         },
         &ast.ObjSpreadExpr{
             Value: &ast.ObjectExpr{
@@ -1487,24 +1487,24 @@
                     &ast.PropertyExpr{
                         Name: &ast.IdentExpr{
                             Name: "c",
-                            span: 1:15-1:16,
+                            span: 14-15,
                         },
-                        span: 1:15-1:16,
+                        span: 14-15,
                     },
                     &ast.PropertyExpr{
                         Name: &ast.IdentExpr{
                             Name: "d",
-                            span: 1:18-1:19,
+                            span: 17-18,
                         },
-                        span: 1:18-1:19,
+                        span: 17-18,
                     },
                 },
-                span: 1:14-1:20,
+                span: 13-19,
             },
-            span: 1:11-1:20,
+            span: 10-19,
         },
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -1514,22 +1514,22 @@
         Callee: &ast.MemberExpr{
             Object: &ast.IdentExpr{
                 Name: "foo",
-                span: 1:1-1:4,
+                span: 0-3,
             },
             Prop: &ast.Ident{
                 Name: "bar",
-                span: 1:5-1:8,
+                span: 4-7,
             },
-            span: 1:1-1:8,
+            span: 0-7,
         },
-        span: 1:1-1:10,
+        span: 0-9,
     },
     Op: "/",
     Right: &ast.IdentExpr{
         Name: "baz",
-        span: 1:11-1:14,
+        span: 10-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1537,9 +1537,9 @@
 &ast.LiteralExpr{
     Lit: &ast.RegexLit{
         Value: "/hello/gi",
-        span: 1:1-1:9,
+        span: 0-9,
     },
-    span: 1:1-1:9,
+    span: 0-9,
 }
 ---
 
@@ -1547,14 +1547,14 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "++",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1562,7 +1562,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -1570,39 +1570,39 @@
                 Lit: &ast.NumLit{
                     Value: 1,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "one",
-                        span: 1:16-1:21,
+                        span: 15-20,
                     },
-                    span: 1:16-1:21,
+                    span: 15-20,
                 },
             },
-            span: 1:10-1:21,
+            span: 9-20,
         },
         &ast.MatchCase{
             Pattern: &ast.LitPat{
                 Lit: &ast.NumLit{
                     Value: 2,
                 },
-                span: 1:23-1:24,
+                span: 22-23,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "two",
-                        span: 1:28-1:33,
+                        span: 27-32,
                     },
-                    span: 1:28-1:33,
+                    span: 27-32,
                 },
             },
-            span: 1:22-1:33,
+            span: 21-32,
         },
     },
-    span: 1:1-1:35,
+    span: 0-34,
 }
 ---
 
@@ -1610,72 +1610,72 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "result",
-        span: 1:7-1:13,
+        span: 6-12,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.ExtractorPat{
                 Name: &ast.Ident{
                     Name: "Some",
-                    span: 1:16-1:20,
+                    span: 15-19,
                 },
                 Args: []ast.Pat{
                     &ast.IdentPat{
                         Name: "value",
-                        span: 1:21-1:26,
+                        span: 20-25,
                     },
                 },
-                span: 1:16-1:27,
+                span: 15-26,
             },
             Guard: &ast.BinaryExpr{
                 Left: &ast.IdentExpr{
                     Name: "value",
-                    span: 1:31-1:36,
+                    span: 30-35,
                 },
                 Op: ">",
                 Right: &ast.LiteralExpr{
                     Lit: &ast.NumLit{
-                        span: 1:39-1:40,
+                        span: 38-39,
                     },
-                    span: 1:39-1:40,
+                    span: 38-39,
                 },
-                span: 1:31-1:40,
+                span: 30-39,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.IdentExpr{
                     Name: "value",
-                    span: 1:44-1:49,
+                    span: 43-48,
                 },
             },
-            span: 1:15-1:49,
+            span: 14-48,
         },
         &ast.MatchCase{
             Pattern: &ast.ExtractorPat{
                 Name: &ast.Ident{
                     Name: "Some",
-                    span: 1:51-1:55,
+                    span: 50-54,
                 },
                 Args: []ast.Pat{
                     &ast.WildcardPat{
-                        span: 1:56-1:57,
+                        span: 55-56,
                     },
                 },
-                span: 1:51-1:58,
+                span: 50-57,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.NumLit{
-                        span: 1:62-1:63,
+                        span: 61-62,
                     },
-                    span: 1:62-1:63,
+                    span: 61-62,
                 },
             },
-            span: 1:50-1:63,
+            span: 49-62,
         },
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "None",
-                span: 1:65-1:69,
+                span: 64-68,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.UnaryExpr{
@@ -1683,17 +1683,17 @@
                     Arg: &ast.LiteralExpr{
                         Lit: &ast.NumLit{
                             Value: 1,
-                            span: 1:74-1:75,
+                            span: 73-74,
                         },
-                        span: 1:74-1:75,
+                        span: 73-74,
                     },
-                    span: 1:73-1:75,
+                    span: 72-74,
                 },
             },
-            span: 1:64-1:75,
+            span: 63-74,
         },
     },
-    span: 1:1-1:77,
+    span: 0-76,
 }
 ---
 
@@ -1701,7 +1701,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "value",
-        span: 1:7-1:12,
+        span: 6-11,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -1710,62 +1710,62 @@
                     &ast.ObjShorthandPat{
                         Key: &ast.Ident{
                             Name: "name",
-                            span: 1:16-1:20,
+                            span: 15-19,
                         },
-                        span: 1:16-1:20,
+                        span: 15-19,
                     },
                 },
-                span: 1:15-1:21,
+                span: 14-20,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.IdentExpr{
                     Name: "name",
-                    span: 1:25-1:29,
+                    span: 24-28,
                 },
             },
-            span: 1:14-1:29,
+            span: 13-28,
         },
         &ast.MatchCase{
             Pattern: &ast.TuplePat{
                 Elems: []ast.Pat{
                     &ast.IdentPat{
                         Name: "first",
-                        span: 1:32-1:37,
+                        span: 31-36,
                     },
                     &ast.RestPat{
                         Pattern: &ast.IdentPat{
                             Name: "rest",
-                            span: 1:42-1:46,
+                            span: 41-45,
                         },
-                        span: 1:39-1:46,
+                        span: 38-45,
                     },
                 },
-                span: 1:31-1:47,
+                span: 30-46,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.IdentExpr{
                     Name: "first",
-                    span: 1:51-1:56,
+                    span: 50-55,
                 },
             },
-            span: 1:30-1:56,
+            span: 29-55,
         },
         &ast.MatchCase{
             Pattern: &ast.WildcardPat{
-                span: 1:58-1:59,
+                span: 57-58,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.NullLit{
-                        span: 1:63-1:67,
+                        span: 62-66,
                     },
-                    span: 1:63-1:67,
+                    span: 62-66,
                 },
             },
-            span: 1:57-1:67,
+            span: 56-66,
         },
     },
-    span: 1:1-1:69,
+    span: 0-68,
 }
 ---
 
@@ -1773,7 +1773,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -1781,40 +1781,40 @@
                 Elems: []ast.Pat{
                     &ast.IdentPat{
                         Name: "a",
-                        span: 1:12-1:13,
+                        span: 11-12,
                     },
                     &ast.IdentPat{
                         Name: "b",
-                        span: 1:15-1:16,
+                        span: 14-15,
                     },
                 },
-                span: 1:11-1:17,
+                span: 10-16,
             },
             Guard: &ast.BinaryExpr{
                 Left: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:21-1:22,
+                    span: 20-21,
                 },
                 Op: ">",
                 Right: &ast.IdentExpr{
                     Name: "b",
-                    span: 1:25-1:26,
+                    span: 24-25,
                 },
-                span: 1:21-1:26,
+                span: 20-25,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "first is greater",
-                        span: 1:30-1:48,
+                        span: 29-47,
                     },
-                    span: 1:30-1:48,
+                    span: 29-47,
                 },
             },
-            span: 1:10-1:48,
+            span: 9-47,
         },
     },
-    span: 1:1-1:50,
+    span: 0-49,
 }
 ---
 
@@ -1822,12 +1822,12 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.WildcardPat{
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Body: ast.BlockOrExpr{
                 Block: &ast.Block{
@@ -1837,42 +1837,42 @@
                                 Callee: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "console",
-                                        span: 2:3-2:10,
+                                        span: 19-26,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "log",
-                                        span: 2:11-2:14,
+                                        span: 27-30,
                                     },
-                                    span: 2:3-2:14,
+                                    span: 19-30,
                                 },
                                 Args: []ast.Expr{
                                     &ast.IdentExpr{
                                         Name: "x",
-                                        span: 2:15-2:16,
+                                        span: 31-32,
                                     },
                                 },
-                                span: 2:3-2:17,
+                                span: 19-33,
                             },
-                            span: 2:3-2:17,
+                            span: 19-33,
                         },
                         &ast.ExprStmt{
                             Expr: &ast.LiteralExpr{
                                 Lit: &ast.StrLit{
                                     Value: "unknown",
-                                    span: 3:3-3:12,
+                                    span: 36-45,
                                 },
-                                span: 3:3-3:12,
+                                span: 36-45,
                             },
-                            span: 3:3-3:12,
+                            span: 36-45,
                         },
                     },
-                    Span: 1:16-4:2,
+                    Span: 15-47,
                 },
             },
-            span: 1:10-4:2,
+            span: 9-47,
         },
     },
-    span: 1:1-4:4,
+    span: 0-49,
 }
 ---
 
@@ -1880,9 +1880,9 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -1890,28 +1890,28 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingOpeningBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:9-1:10,
+        Span: 8-9,
         Message: "Expected { but got number",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected a pattern",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected pattern in match case",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected } but got =>",
     },
 }
@@ -1920,24 +1920,24 @@
 [TestParseExprErrorHandling/MatchMissingTarget - 1]
 &ast.MatchExpr{
     Target: &ast.ObjectExpr{
-        span: 1:7-1:13,
+        span: 6-12,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingPattern - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected a pattern",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected pattern in match case",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected } but got =>",
     },
 }
@@ -1947,7 +1947,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -1955,36 +1955,36 @@
                 Lit: &ast.NumLit{
                     Value: 1,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "one",
-                        span: 1:16-1:21,
+                        span: 15-20,
                     },
-                    span: 1:16-1:21,
+                    span: 15-20,
                 },
             },
-            span: 1:10-1:21,
+            span: 9-20,
         },
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingTarget - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected a comma or closing brace",
     },
     &parser.Error{
-        Span: 1:11-1:13,
+        Span: 10-12,
         Message: "Expected } but got =>",
     },
     &parser.Error{
-        Span: 1:14-1:19,
+        Span: 13-18,
         Message: "Expected { but got string",
     },
 }
@@ -1993,7 +1993,7 @@
 [TestParseExprErrorHandling/MatchMissingClosingBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:21-1:21,
+        Span: 20-20,
         Message: "Expected } but got ",
     },
 }
@@ -2003,7 +2003,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -2011,17 +2011,17 @@
                 Lit: &ast.NumLit{
                     Value: 1,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:16-1:17,
+                    span: 15-16,
                 },
             },
-            span: 1:10-1:17,
+            span: 9-16,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -2029,7 +2029,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -2037,17 +2037,17 @@
                 Lit: &ast.NumLit{
                     Value: 1,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:19-1:20,
+                    span: 18-19,
                 },
             },
-            span: 1:10-1:20,
+            span: 9-19,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -2055,7 +2055,7 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "x",
-        span: 1:7-1:8,
+        span: 6-7,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
@@ -2063,31 +2063,31 @@
                 Lit: &ast.NumLit{
                     Value: 1,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             Guard: &ast.LiteralExpr{
                 Lit: &ast.StrLit{
                     Value: "one",
-                    span: 1:19-1:24,
+                    span: 18-23,
                 },
-                span: 1:19-1:24,
+                span: 18-23,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:26-1:26,
+                    span: 25-25,
                 },
             },
-            span: 1:10-1:26,
+            span: 9-25,
         },
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
 [TestParseExprErrorHandling/MatchMissingBody - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:16-1:17,
+        Span: 15-16,
         Message: "Expected an expression",
     },
 }
@@ -2096,11 +2096,11 @@
 [TestParseExprErrorHandling/MatchMissingArrow - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:13-1:18,
+        Span: 12-17,
         Message: "Expected => but got string",
     },
     &parser.Error{
-        Span: 1:19-1:20,
+        Span: 18-19,
         Message: "Expected an expression",
     },
 }
@@ -2109,19 +2109,19 @@
 [TestParseExprErrorHandling/MatchIncompleteGuard - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:16-1:18,
+        Span: 15-17,
         Message: "Unexpected token, '=>'",
     },
     &parser.Error{
-        Span: 1:25-1:26,
+        Span: 24-25,
         Message: "Expected => but got }",
     },
     &parser.Error{
-        Span: 1:26-1:26,
+        Span: 25-25,
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: 1:26-1:26,
+        Span: 25-25,
         Message: "Expected } but got ",
     },
 }
@@ -2135,20 +2135,20 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "riskyOperation",
-                        span: 1:7-1:21,
+                        span: 6-20,
                     },
-                    span: 1:7-1:23,
+                    span: 6-22,
                 },
-                span: 1:7-1:23,
+                span: 6-22,
             },
         },
-        Span: 1:5-1:25,
+        Span: 4-24,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:34-1:39,
+                span: 33-38,
             },
             Body: ast.BlockOrExpr{
                 Block: &ast.Block{
@@ -2158,32 +2158,32 @@
                                 Callee: &ast.MemberExpr{
                                     Object: &ast.IdentExpr{
                                         Name: "console",
-                                        span: 1:45-1:52,
+                                        span: 44-51,
                                     },
                                     Prop: &ast.Ident{
                                         Name: "log",
-                                        span: 1:53-1:56,
+                                        span: 52-55,
                                     },
-                                    span: 1:45-1:56,
+                                    span: 44-55,
                                 },
                                 Args: []ast.Expr{
                                     &ast.IdentExpr{
                                         Name: "error",
-                                        span: 1:57-1:62,
+                                        span: 56-61,
                                     },
                                 },
-                                span: 1:45-1:63,
+                                span: 44-62,
                             },
-                            span: 1:45-1:63,
+                            span: 44-62,
                         },
                     },
-                    Span: 1:43-1:65,
+                    Span: 42-64,
                 },
             },
-            span: 1:33-1:65,
+            span: 32-64,
         },
     },
-    span: 1:1-1:65,
+    span: 0-64,
 }
 ---
 
@@ -2199,54 +2199,54 @@
                                 Expr: &ast.CallExpr{
                                     Callee: &ast.IdentExpr{
                                         Name: "innerOperation",
-                                        span: 1:13-1:27,
+                                        span: 12-26,
                                     },
-                                    span: 1:13-1:29,
+                                    span: 12-28,
                                 },
-                                span: 1:13-1:29,
+                                span: 12-28,
                             },
                         },
-                        Span: 1:11-1:31,
+                        Span: 10-30,
                     },
                     Catch: []*ast.MatchCase{
                         &ast.MatchCase{
                             Pattern: &ast.WildcardPat{
-                                span: 1:40-1:41,
+                                span: 39-40,
                             },
                             Body: ast.BlockOrExpr{
                                 Expr: &ast.LiteralExpr{
                                     Lit: &ast.NullLit{
-                                        span: 1:45-1:49,
+                                        span: 44-48,
                                     },
-                                    span: 1:45-1:49,
+                                    span: 44-48,
                                 },
                             },
-                            span: 1:39-1:49,
+                            span: 38-48,
                         },
                     },
-                    span: 1:7-1:49,
+                    span: 6-48,
                 },
-                span: 1:7-1:49,
+                span: 6-48,
             },
         },
-        Span: 1:5-1:53,
+        Span: 4-52,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "outer",
-                span: 1:62-1:67,
+                span: 61-66,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.IdentExpr{
                     Name: "outer",
-                    span: 1:71-1:76,
+                    span: 70-75,
                 },
             },
-            span: 1:61-1:76,
+            span: 60-75,
         },
     },
-    span: 1:1-1:76,
+    span: 0-75,
 }
 ---
 
@@ -2258,16 +2258,16 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "riskyOperation",
-                        span: 1:7-1:21,
+                        span: 6-20,
                     },
-                    span: 1:7-1:23,
+                    span: 6-22,
                 },
-                span: 1:7-1:23,
+                span: 6-22,
             },
         },
-        Span: 1:5-1:25,
+        Span: 4-24,
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -2279,76 +2279,76 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "getValue",
-                        span: 1:7-1:15,
+                        span: 6-14,
                     },
-                    span: 1:7-1:17,
+                    span: 6-16,
                 },
-                span: 1:7-1:17,
+                span: 6-16,
             },
         },
-        Span: 1:5-1:19,
+        Span: 4-18,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:28-1:33,
+                span: 27-32,
             },
             Guard: &ast.BinaryExpr{
                 Left: &ast.MemberExpr{
                     Object: &ast.IdentExpr{
                         Name: "error",
-                        span: 1:37-1:42,
+                        span: 36-41,
                     },
                     Prop: &ast.Ident{
                         Name: "code",
-                        span: 1:43-1:47,
+                        span: 42-46,
                     },
-                    span: 1:37-1:47,
+                    span: 36-46,
                 },
                 Op: "==",
                 Right: &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 404,
-                        span: 1:51-1:54,
+                        span: 50-53,
                     },
-                    span: 1:51-1:54,
+                    span: 50-53,
                 },
-                span: 1:37-1:54,
+                span: 36-53,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "Not found",
-                        span: 1:58-1:69,
+                        span: 57-68,
                     },
-                    span: 1:58-1:69,
+                    span: 57-68,
                 },
             },
-            span: 1:27-1:69,
+            span: 26-68,
         },
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:71-1:76,
+                span: 70-75,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.MemberExpr{
                     Object: &ast.IdentExpr{
                         Name: "error",
-                        span: 1:80-1:85,
+                        span: 79-84,
                     },
                     Prop: &ast.Ident{
                         Name: "message",
-                        span: 1:86-1:93,
+                        span: 85-92,
                     },
-                    span: 1:80-1:93,
+                    span: 79-92,
                 },
             },
-            span: 1:70-1:93,
+            span: 69-92,
         },
     },
-    span: 1:1-1:93,
+    span: 0-92,
 }
 ---
 
@@ -2360,82 +2360,82 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.ExtractorPat{
                 Name: &ast.Ident{
                     Name: "NetworkError",
-                    span: 1:29-1:41,
+                    span: 28-40,
                 },
                 Args: []ast.Pat{
                     &ast.IdentPat{
                         Name: "msg",
-                        span: 1:42-1:45,
+                        span: 41-44,
                     },
                 },
-                span: 1:29-1:46,
+                span: 28-45,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.BinaryExpr{
                     Left: &ast.LiteralExpr{
                         Lit: &ast.StrLit{
                             Value: "Network: ",
-                            span: 1:50-1:61,
+                            span: 49-60,
                         },
-                        span: 1:50-1:61,
+                        span: 49-60,
                     },
                     Op: "++",
                     Right: &ast.IdentExpr{
                         Name: "msg",
-                        span: 1:65-1:68,
+                        span: 64-67,
                     },
-                    span: 1:50-1:68,
+                    span: 49-67,
                 },
             },
-            span: 1:28-1:68,
+            span: 27-67,
         },
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "TimeoutError",
-                span: 1:70-1:82,
+                span: 69-81,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "Timeout",
-                        span: 1:86-1:95,
+                        span: 85-94,
                     },
-                    span: 1:86-1:95,
+                    span: 85-94,
                 },
             },
-            span: 1:69-1:95,
+            span: 68-94,
         },
         &ast.MatchCase{
             Pattern: &ast.WildcardPat{
-                span: 1:97-1:98,
+                span: 96-97,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "Unknown error",
-                        span: 1:102-1:117,
+                        span: 101-116,
                     },
-                    span: 1:102-1:117,
+                    span: 101-116,
                 },
             },
-            span: 1:96-1:117,
+            span: 95-116,
         },
     },
-    span: 1:1-1:117,
+    span: 0-116,
 }
 ---
 
@@ -2447,20 +2447,20 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "complexOperation",
-                        span: 1:7-1:23,
+                        span: 6-22,
                     },
-                    span: 1:7-1:25,
+                    span: 6-24,
                 },
-                span: 1:7-1:25,
+                span: 6-24,
             },
         },
-        Span: 1:5-1:27,
+        Span: 4-26,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:36-1:41,
+                span: 35-40,
             },
             Body: ast.BlockOrExpr{
                 Block: &ast.Block{
@@ -2469,45 +2469,45 @@
                             Expr: &ast.CallExpr{
                                 Callee: &ast.IdentExpr{
                                     Name: "logError",
-                                    span: 2:3-2:11,
+                                    span: 48-56,
                                 },
                                 Args: []ast.Expr{
                                     &ast.IdentExpr{
                                         Name: "error",
-                                        span: 2:12-2:17,
+                                        span: 57-62,
                                     },
                                 },
-                                span: 2:3-2:18,
+                                span: 48-63,
                             },
-                            span: 2:3-2:18,
+                            span: 48-63,
                         },
                         &ast.ExprStmt{
                             Expr: &ast.LiteralExpr{
                                 Lit: &ast.StrLit{
                                     Value: "Failed",
-                                    span: 3:3-3:11,
+                                    span: 66-74,
                                 },
-                                span: 3:3-3:11,
+                                span: 66-74,
                             },
-                            span: 3:3-3:11,
+                            span: 66-74,
                         },
                     },
-                    Span: 1:45-4:2,
+                    Span: 44-76,
                 },
             },
-            span: 1:35-4:2,
+            span: 34-76,
         },
     },
-    span: 1:1-4:2,
+    span: 0-76,
 }
 ---
 
 [TestParseExprErrorHandling/TryMissingOpeningBrace - 1]
 &ast.TryCatchExpr{
     Try: ast.Block{
-        Span: 1:5-1:12,
+        Span: 4-11,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -2519,32 +2519,32 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
 [TestParseExprErrorHandling/TryMissingBlock - 1]
 &ast.TryCatchExpr{
     Try: ast.Block{
-        Span: 1:4-1:4,
+        Span: 3-3,
     },
-    span: 1:1-1:4,
+    span: 0-3,
 }
 ---
 
 [TestParseExprErrorHandling/TryMissingOpeningBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:5-1:12,
+        Span: 4-11,
         Message: "Expected an opening brace",
     },
 }
@@ -2558,49 +2558,49 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:29-1:34,
+                span: 28-33,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:38-1:39,
+                    span: 37-38,
                 },
             },
-            span: 1:28-1:39,
+            span: 27-38,
         },
     },
-    span: 1:1-1:39,
+    span: 0-38,
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchMissingOpeningBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:27-1:32,
+        Span: 26-31,
         Message: "Expected { but got identifier",
     },
     &parser.Error{
-        Span: 1:33-1:35,
+        Span: 32-34,
         Message: "Expected a pattern",
     },
     &parser.Error{
-        Span: 1:33-1:35,
+        Span: 32-34,
         Message: "Expected pattern in match case",
     },
     &parser.Error{
-        Span: 1:33-1:35,
+        Span: 32-34,
         Message: "Expected } but got =>",
     },
 }
@@ -2614,44 +2614,44 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:29-1:34,
+                span: 28-33,
             },
             Guard: &ast.LiteralExpr{
                 Lit: &ast.StrLit{
                     Value: "failed",
-                    span: 1:41-1:49,
+                    span: 40-48,
                 },
-                span: 1:41-1:49,
+                span: 40-48,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:51-1:51,
+                    span: 50-50,
                 },
             },
-            span: 1:28-1:51,
+            span: 27-50,
         },
     },
-    span: 1:1-1:51,
+    span: 0-50,
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchMissingBody - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:38-1:39,
+        Span: 37-38,
         Message: "Expected an expression",
     },
 }
@@ -2665,16 +2665,16 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -2686,38 +2686,38 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:29-1:34,
+                span: 28-33,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.IdentExpr{
                     Name: "error",
-                    span: 1:38-1:43,
+                    span: 37-42,
                 },
             },
-            span: 1:28-1:43,
+            span: 27-42,
         },
     },
-    span: 1:1-1:43,
+    span: 0-42,
 }
 ---
 
 [TestParseExprErrorHandling/TryMissingBlock - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:4,
+        Span: 3-3,
         Message: "Expected an opening brace",
     },
 }
@@ -2726,19 +2726,19 @@
 [TestParseExprErrorHandling/TryCatchIncompleteGuard - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:38-1:40,
+        Span: 37-39,
         Message: "Unexpected token, '=>'",
     },
     &parser.Error{
-        Span: 1:50-1:51,
+        Span: 49-50,
         Message: "Expected => but got }",
     },
     &parser.Error{
-        Span: 1:51-1:51,
+        Span: 50-50,
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: 1:51-1:51,
+        Span: 50-50,
         Message: "Expected } but got ",
     },
 }
@@ -2747,15 +2747,15 @@
 [TestParseExprErrorHandling/TryCatchMissingPattern - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:29-1:31,
+        Span: 28-30,
         Message: "Expected a pattern",
     },
     &parser.Error{
-        Span: 1:29-1:31,
+        Span: 28-30,
         Message: "Expected pattern in match case",
     },
     &parser.Error{
-        Span: 1:29-1:31,
+        Span: 28-30,
         Message: "Expected } but got =>",
     },
 }
@@ -2769,37 +2769,37 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
     Catch: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.IdentPat{
                 Name: "error",
-                span: 1:29-1:34,
+                span: 28-33,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.ErrorExpr{
-                    span: 1:44-1:45,
+                    span: 43-44,
                 },
             },
-            span: 1:28-1:45,
+            span: 27-44,
         },
     },
-    span: 1:1-1:45,
+    span: 0-44,
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchMissingClosingBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:43-1:43,
+        Span: 42-42,
         Message: "Expected } but got ",
     },
 }
@@ -2808,11 +2808,11 @@
 [TestParseExprErrorHandling/TryCatchMissingArrow - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:35-1:43,
+        Span: 34-42,
         Message: "Expected => but got string",
     },
     &parser.Error{
-        Span: 1:44-1:45,
+        Span: 43-44,
         Message: "Expected an expression",
     },
 }
@@ -2825,18 +2825,18 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
         },
         Return: &ast.NumberTypeAnn{
-            span: 1:14-1:20,
+            span: 13-19,
         },
     },
     Body: &ast.Block{
@@ -2845,21 +2845,21 @@
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:23-1:24,
+                        span: 22-23,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:27-1:28,
+                        span: 26-27,
                     },
-                    span: 1:23-1:28,
+                    span: 22-27,
                 },
-                span: 1:23-1:28,
+                span: 22-27,
             },
         },
-        Span: 1:21-1:30,
+        Span: 20-29,
     },
-    span: 1:1-1:30,
+    span: 0-29,
 }
 ---
 
@@ -2870,25 +2870,25 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
         },
         Return: &ast.NumberTypeAnn{
-            span: 1:14-1:20,
+            span: 13-19,
         },
         Throws: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Error",
-                span: 1:28-1:33,
+                span: 27-32,
             },
-            span: 1:28-1:33,
+            span: 27-32,
         },
     },
     Body: &ast.Block{
@@ -2897,21 +2897,21 @@
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:36-1:37,
+                        span: 35-36,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:40-1:41,
+                        span: 39-40,
                     },
-                    span: 1:36-1:41,
+                    span: 35-40,
                 },
-                span: 1:36-1:41,
+                span: 35-40,
             },
         },
-        Span: 1:34-1:43,
+        Span: 33-42,
     },
-    span: 1:1-1:43,
+    span: 0-42,
 }
 ---
 
@@ -2920,11 +2920,11 @@
     Arg: &ast.CallExpr{
         Callee: &ast.IdentExpr{
             Name: "computeError",
-            span: 1:7-1:19,
+            span: 6-18,
         },
-        span: 1:7-1:21,
+        span: 6-20,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -2932,25 +2932,25 @@
 &ast.ThrowExpr{
     Arg: &ast.IdentExpr{
         Name: "error",
-        span: 1:7-1:12,
+        span: 6-11,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
 [TestParseExprErrorHandling/ThrowMissingExpression - 1]
 &ast.ThrowExpr{
     Arg: &ast.ErrorExpr{
-        span: 1:6-1:6,
+        span: 5-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ThrowMissingExpression - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:6-1:6,
+        Span: 5-5,
         Message: "Expected an expression",
     },
 }
@@ -2961,11 +2961,11 @@
     Arg: &ast.LiteralExpr{
         Lit: &ast.StrLit{
             Value: "divide by zero",
-            span: 1:7-1:23,
+            span: 6-22,
         },
-        span: 1:7-1:23,
+        span: 6-22,
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
@@ -2976,10 +2976,10 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "value",
-                    span: 1:5-1:10,
+                    span: 4-9,
                 },
                 TypeAnn: &ast.StringTypeAnn{
-                    span: 1:12-1:18,
+                    span: 11-17,
                 },
             },
         },
@@ -2991,28 +2991,28 @@
                     Cond: &ast.BinaryExpr{
                         Left: &ast.IdentExpr{
                             Name: "value",
-                            span: 1:32-1:37,
+                            span: 31-36,
                         },
                         Op: "!=",
                         Right: &ast.LiteralExpr{
                             Lit: &ast.StrLit{
-                                span: 1:41-1:43,
+                                span: 40-42,
                             },
-                            span: 1:41-1:43,
+                            span: 40-42,
                         },
-                        span: 1:32-1:43,
+                        span: 31-42,
                     },
                     Cons: ast.Block{
                         Stmts: []ast.Stmt{
                             &ast.ExprStmt{
                                 Expr: &ast.IdentExpr{
                                     Name: "value",
-                                    span: 1:46-1:51,
+                                    span: 45-50,
                                 },
-                                span: 1:46-1:51,
+                                span: 45-50,
                             },
                         },
-                        Span: 1:44-1:53,
+                        Span: 43-52,
                     },
                     Alt: &ast.BlockOrExpr{
                         Block: &ast.Block{
@@ -3021,24 +3021,24 @@
                                     Expr: &ast.LiteralExpr{
                                         Lit: &ast.StrLit{
                                             Value: "value is empty",
-                                            span: 1:61-1:77,
+                                            span: 60-76,
                                         },
-                                        span: 1:61-1:77,
+                                        span: 60-76,
                                     },
-                                    span: 1:61-1:77,
+                                    span: 60-76,
                                 },
                             },
-                            Span: 1:59-1:79,
+                            Span: 58-78,
                         },
                     },
-                    span: 1:28-1:79,
+                    span: 27-78,
                 },
-                span: 1:22-1:79,
+                span: 21-78,
             },
         },
-        Span: 1:20-1:81,
+        Span: 19-80,
     },
-    span: 1:1-1:81,
+    span: 0-80,
 }
 ---
 
@@ -3047,94 +3047,94 @@
     Elems: []ast.ObjExprElem{
         &ast.PropertyExpr{
             Name: &ast.NumLit{
-                span: 1:3-1:4,
+                span: 2-3,
             },
             Value: &ast.TypeCastExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.StrLit{
                         Value: "hello",
-                        span: 1:6-1:13,
+                        span: 5-12,
                     },
-                    span: 1:6-1:13,
+                    span: 5-12,
                 },
                 TypeAnn: &ast.StringTypeAnn{
-                    span: 1:14-1:20,
+                    span: 13-19,
                 },
-                span: 1:6-1:20,
+                span: 5-19,
             },
-            span: 1:3-1:20,
+            span: 2-19,
         },
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "foo",
-                span: 1:22-1:25,
+                span: 21-24,
             },
             Value: &ast.TypeCastExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.NumLit{
                         Value: 5,
-                        span: 1:27-1:28,
+                        span: 26-27,
                     },
-                    span: 1:27-1:28,
+                    span: 26-27,
                 },
                 TypeAnn: &ast.NumberTypeAnn{
-                    span: 1:29-1:35,
+                    span: 28-34,
                 },
-                span: 1:27-1:35,
+                span: 26-34,
             },
-            span: 1:22-1:35,
+            span: 21-34,
         },
         &ast.PropertyExpr{
             Name: &ast.StrLit{
                 Value: "bar",
-                span: 1:37-1:42,
+                span: 36-41,
             },
             Optional: true,
             Value: &ast.TypeCastExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.BoolLit{
                         Value: true,
-                        span: 1:45-1:49,
+                        span: 44-48,
                     },
-                    span: 1:45-1:49,
+                    span: 44-48,
                 },
                 TypeAnn: &ast.BooleanTypeAnn{
-                    span: 1:50-1:57,
+                    span: 49-56,
                 },
-                span: 1:45-1:57,
+                span: 44-56,
             },
-            span: 1:37-1:57,
+            span: 36-56,
         },
         &ast.PropertyExpr{
             Name: &ast.IdentExpr{
                 Name: "baz",
-                span: 1:59-1:62,
+                span: 58-61,
             },
-            span: 1:59-1:62,
+            span: 58-61,
         },
         &ast.PropertyExpr{
             Name: &ast.ComputedKey{
                 Expr: &ast.IdentExpr{
                     Name: "qux",
-                    span: 1:65-1:68,
+                    span: 64-67,
                 },
             },
             Value: &ast.TypeCastExpr{
                 Expr: &ast.LiteralExpr{
                     Lit: &ast.BoolLit{
-                        span: 1:71-1:76,
+                        span: 70-75,
                     },
-                    span: 1:71-1:76,
+                    span: 70-75,
                 },
                 TypeAnn: &ast.BooleanTypeAnn{
-                    span: 1:77-1:84,
+                    span: 76-83,
                 },
-                span: 1:71-1:84,
+                span: 70-83,
             },
-            span: 1:65-1:84,
+            span: 64-83,
         },
     },
-    span: 1:1-1:86,
+    span: 0-85,
 }
 ---
 
@@ -3143,17 +3143,17 @@
     Expr: &ast.TypeCastExpr{
         Expr: &ast.IdentExpr{
             Name: "value",
-            span: 1:1-1:6,
+            span: 0-5,
         },
         TypeAnn: &ast.StringTypeAnn{
-            span: 1:8-1:14,
+            span: 7-13,
         },
-        span: 1:1-1:14,
+        span: 0-13,
     },
     TypeAnn: &ast.UnknownTypeAnn{
-        span: 1:16-1:23,
+        span: 15-22,
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
@@ -3161,12 +3161,12 @@
 &ast.TypeCastExpr{
     Expr: &ast.IdentExpr{
         Name: "value",
-        span: 1:1-1:6,
+        span: 0-5,
     },
     TypeAnn: &ast.StringTypeAnn{
-        span: 1:8-1:14,
+        span: 7-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -3174,20 +3174,20 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "a",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.TypeCastExpr{
         Expr: &ast.IdentExpr{
             Name: "b",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         TypeAnn: &ast.NumberTypeAnn{
-            span: 1:8-1:14,
+            span: 7-13,
         },
-        span: 1:5-1:14,
+        span: 4-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -3197,30 +3197,30 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "T",
-                span: 1:5-1:6,
+                span: 4-5,
             },
         },
         Params: []*ast.Param{
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "value",
-                    span: 1:8-1:13,
+                    span: 7-12,
                 },
                 TypeAnn: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:15-1:16,
+                        span: 14-15,
                     },
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
             },
         },
         Return: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "T",
-                span: 1:21-1:22,
+                span: 20-21,
             },
-            span: 1:21-1:22,
+            span: 20-21,
         },
     },
     Body: &ast.Block{
@@ -3228,14 +3228,14 @@
             &ast.ExprStmt{
                 Expr: &ast.IdentExpr{
                     Name: "value",
-                    span: 1:25-1:30,
+                    span: 24-29,
                 },
-                span: 1:25-1:30,
+                span: 24-29,
             },
         },
-        Span: 1:23-1:32,
+        Span: 22-31,
     },
-    span: 1:1-1:32,
+    span: 0-31,
 }
 ---
 
@@ -3245,38 +3245,38 @@
         TypeParams: []*ast.TypeParam{
             &ast.TypeParam{
                 Name: "A",
-                span: 1:5-1:6,
+                span: 4-5,
             },
             &ast.TypeParam{
                 Name: "B",
-                span: 1:8-1:9,
+                span: 7-8,
             },
         },
         Params: []*ast.Param{
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:11-1:12,
+                    span: 10-11,
                 },
                 TypeAnn: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "A",
-                        span: 1:14-1:15,
+                        span: 13-14,
                     },
-                    span: 1:14-1:15,
+                    span: 13-14,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:17-1:18,
+                    span: 16-17,
                 },
                 TypeAnn: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "B",
-                        span: 1:20-1:21,
+                        span: 19-20,
                     },
-                    span: 1:20-1:21,
+                    span: 19-20,
                 },
             },
         },
@@ -3285,19 +3285,19 @@
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "A",
-                        span: 1:27-1:28,
+                        span: 26-27,
                     },
-                    span: 1:27-1:28,
+                    span: 26-27,
                 },
                 &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "B",
-                        span: 1:30-1:31,
+                        span: 29-30,
                     },
-                    span: 1:30-1:31,
+                    span: 29-30,
                 },
             },
-            span: 1:26-1:32,
+            span: 25-31,
         },
     },
     Body: &ast.Block{
@@ -3307,21 +3307,21 @@
                     Elems: []ast.Expr{
                         &ast.IdentExpr{
                             Name: "a",
-                            span: 1:36-1:37,
+                            span: 35-36,
                         },
                         &ast.IdentExpr{
                             Name: "b",
-                            span: 1:39-1:40,
+                            span: 38-39,
                         },
                     },
-                    span: 1:35-1:41,
+                    span: 34-40,
                 },
-                span: 1:35-1:41,
+                span: 34-40,
             },
         },
-        Span: 1:33-1:43,
+        Span: 32-42,
     },
-    span: 1:1-1:43,
+    span: 0-42,
 }
 ---
 
@@ -3329,112 +3329,112 @@
 &ast.MatchExpr{
     Target: &ast.IdentExpr{
         Name: "shape",
-        span: 2:11-2:16,
+        span: 11-16,
     },
     Cases: []*ast.MatchCase{
         &ast.MatchCase{
             Pattern: &ast.InstancePat{
                 ClassName: &ast.Ident{
                     Name: "Point",
-                    span: 3:6-3:11,
+                    span: 24-29,
                 },
                 Object: &ast.ObjectPat{
                     Elems: []ast.ObjPatElem{
                         &ast.ObjShorthandPat{
                             Key: &ast.Ident{
                                 Name: "x",
-                                span: 3:13-3:14,
+                                span: 31-32,
                             },
-                            span: 3:13-3:14,
+                            span: 31-32,
                         },
                         &ast.ObjShorthandPat{
                             Key: &ast.Ident{
                                 Name: "y",
-                                span: 3:16-3:17,
+                                span: 34-35,
                             },
-                            span: 3:16-3:17,
+                            span: 34-35,
                         },
                     },
-                    span: 3:6-3:18,
+                    span: 24-36,
                 },
-                span: 3:6-3:18,
+                span: 24-36,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "x",
-                        span: 3:22-3:23,
+                        span: 40-41,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "y",
-                        span: 3:26-3:27,
+                        span: 44-45,
                     },
-                    span: 3:22-3:27,
+                    span: 40-45,
                 },
             },
-            span: 2:18-3:27,
+            span: 18-45,
         },
         &ast.MatchCase{
             Pattern: &ast.InstancePat{
                 ClassName: &ast.Ident{
                     Name: "Circle",
-                    span: 4:6-4:12,
+                    span: 52-58,
                 },
                 Object: &ast.ObjectPat{
                     Elems: []ast.ObjPatElem{
                         &ast.ObjShorthandPat{
                             Key: &ast.Ident{
                                 Name: "radius",
-                                span: 4:14-4:20,
+                                span: 60-66,
                             },
-                            span: 4:14-4:20,
+                            span: 60-66,
                         },
                     },
-                    span: 4:6-4:21,
+                    span: 52-67,
                 },
-                span: 4:6-4:21,
+                span: 52-67,
             },
             Body: ast.BlockOrExpr{
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "radius",
-                        span: 4:25-4:31,
+                        span: 71-77,
                     },
                     Op: "*",
                     Right: &ast.LiteralExpr{
                         Lit: &ast.NumLit{
                             Value: 2,
-                            span: 4:34-4:35,
+                            span: 80-81,
                         },
-                        span: 4:34-4:35,
+                        span: 80-81,
                     },
-                    span: 4:25-4:35,
+                    span: 71-81,
                 },
             },
-            span: 3:28-4:35,
+            span: 46-81,
         },
     },
-    span: 2:5-5:6,
+    span: 5-88,
 }
 ---
 
 [TestParseExprErrorHandling/ArraySpreadMissingOperand - 1]
 &ast.TupleExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperand - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ArraySpreadMissingOperand - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:2-1:5,
+        Span: 1-4,
         Message: "Expected an expression after '...'",
     },
 }
@@ -3443,7 +3443,7 @@
 [TestParseExprErrorHandling/ObjectSpreadMissingOperand - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:2-1:5,
+        Span: 1-4,
         Message: "Expected an expression after '...'",
     },
 }
@@ -3451,24 +3451,24 @@
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 1]
 &ast.TupleExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectSpreadMissingOperandBeforeComma - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:2-1:5,
+        Span: 1-4,
         Message: "Expected an expression after '...'",
     },
     &parser.Error{
-        Span: 1:5-1:6,
+        Span: 4-5,
         Message: "Expected } but got ,",
     },
 }
@@ -3477,11 +3477,11 @@
 [TestParseExprErrorHandling/ArraySpreadMissingOperandBeforeComma - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:2-1:5,
+        Span: 1-4,
         Message: "Expected an expression after '...'",
     },
     &parser.Error{
-        Span: 1:5-1:6,
+        Span: 4-5,
         Message: "Expected ] but got ,",
     },
 }
@@ -3492,11 +3492,11 @@
     Value: &ast.LiteralExpr{
         Lit: &ast.NumLit{
             Value: 1,
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -3504,26 +3504,26 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "x",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.YieldExpr{
         Value: &ast.LiteralExpr{
             Lit: &ast.NumLit{
                 Value: 1,
-                span: 1:11-1:12,
+                span: 10-11,
             },
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:5-1:12,
+        span: 4-11,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
 [TestParseExprNoErrors/BareYield - 1]
 &ast.YieldExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -3531,18 +3531,18 @@
 &ast.BinaryExpr{
     Left: &ast.IdentExpr{
         Name: "x",
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Op: "+",
     Right: &ast.YieldExpr{
         Value: &ast.IdentExpr{
             Name: "items",
-            span: 1:16-1:21,
+            span: 15-20,
         },
         IsDelegate: true,
-        span: 1:5-1:21,
+        span: 4-20,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -3550,10 +3550,10 @@
 &ast.YieldExpr{
     Value: &ast.IdentExpr{
         Name: "items",
-        span: 1:12-1:17,
+        span: 11-16,
     },
     IsDelegate: true,
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -3561,26 +3561,26 @@
 &ast.CallExpr{
     Callee: &ast.IdentExpr{
         Name: "foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Args: []ast.Expr{
         &ast.IdentExpr{
             Name: "a",
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.IdentExpr{
             Name: "b",
-            span: 1:8-1:9,
+            span: 7-8,
         },
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteCallMissingCloseParen - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a closing paren",
     },
 }
@@ -3590,23 +3590,23 @@
 &ast.IndexExpr{
     Object: &ast.IdentExpr{
         Name: "arr",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     Index: &ast.ErrorExpr{
-        span: 1:5-1:5,
+        span: 4-4,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
 [TestParseExprErrorHandling/IncompleteIndex - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:5-1:5,
+        Span: 4-4,
         Message: "Expected an expression",
     },
     &parser.Error{
-        Span: 1:4-1:5,
+        Span: 3-4,
         Message: "Expected a closing bracket",
     },
 }
@@ -3614,18 +3614,18 @@
 
 [TestParseExprErrorHandling/ObjectSetterShorthand - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectSetterShorthand - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:3-1:6,
+        Span: 2-5,
         Message: "Method shorthand is not allowed in object literals; use a class instead",
     },
     &parser.Error{
-        Span: 1:3-1:6,
+        Span: 2-5,
         Message: "Expected } but got ",
     },
 }
@@ -3633,18 +3633,18 @@
 
 [TestParseExprErrorHandling/ObjectGetterShorthand - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectGetterShorthand - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:3-1:6,
+        Span: 2-5,
         Message: "Method shorthand is not allowed in object literals; use a class instead",
     },
     &parser.Error{
-        Span: 1:3-1:6,
+        Span: 2-5,
         Message: "Expected } but got ",
     },
 }
@@ -3652,18 +3652,18 @@
 
 [TestParseExprErrorHandling/ObjectMethodShorthand - 1]
 &ast.ObjectExpr{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestParseExprErrorHandling/ObjectMethodShorthand - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:6-1:7,
+        Span: 5-6,
         Message: "Method shorthand is not allowed in object literals; use a class instead",
     },
     &parser.Error{
-        Span: 1:6-1:7,
+        Span: 5-6,
         Message: "Expected } but got (",
     },
 }
@@ -3673,9 +3673,9 @@
 &ast.BorrowExpr{
     Arg: &ast.IdentExpr{
         Name: "p",
-        span: 1:2-1:3,
+        span: 1-2,
     },
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -3684,11 +3684,11 @@
     Arg: &ast.CallExpr{
         Callee: &ast.IdentExpr{
             Name: "getValue",
-            span: 1:2-1:10,
+            span: 1-9,
         },
-        span: 1:2-1:12,
+        span: 1-11,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -3697,15 +3697,15 @@
     Arg: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "obj",
-            span: 1:2-1:5,
+            span: 1-4,
         },
         Prop: &ast.Ident{
             Name: "f",
-            span: 1:6-1:7,
+            span: 5-6,
         },
-        span: 1:2-1:7,
+        span: 1-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -3714,9 +3714,9 @@
     Mut: true,
     Arg: &ast.IdentExpr{
         Name: "p",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -3726,15 +3726,15 @@
     Arg: &ast.MemberExpr{
         Object: &ast.IdentExpr{
             Name: "obj",
-            span: 1:6-1:9,
+            span: 5-8,
         },
         Prop: &ast.Ident{
             Name: "f",
-            span: 1:10-1:11,
+            span: 9-10,
         },
-        span: 1:6-1:11,
+        span: 5-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -3745,11 +3745,11 @@
         Mut: true,
         Arg: &ast.IdentExpr{
             Name: "p",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:2-1:8,
+        span: 1-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -3759,11 +3759,11 @@
     Arg: &ast.BorrowExpr{
         Arg: &ast.IdentExpr{
             Name: "p",
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:2-1:4,
+        span: 1-3,
     },
-    span: 1:1-1:4,
+    span: 0-3,
 }
 ---
 
@@ -3772,16 +3772,16 @@
     Left: &ast.BorrowExpr{
         Arg: &ast.IdentExpr{
             Name: "a",
-            span: 1:2-1:3,
+            span: 1-2,
         },
-        span: 1:1-1:3,
+        span: 0-2,
     },
     Op: "+",
     Right: &ast.IdentExpr{
         Name: "b",
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -3790,16 +3790,16 @@
     Arg: &ast.BinaryExpr{
         Left: &ast.IdentExpr{
             Name: "a",
-            span: 1:3-1:4,
+            span: 2-3,
         },
         Op: "+",
         Right: &ast.IdentExpr{
             Name: "b",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:3-1:8,
+        span: 2-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -3810,22 +3810,22 @@
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "a",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
             },
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "b",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
         },
         Throws: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Error",
-                span: 1:18-1:23,
+                span: 17-22,
             },
-            span: 1:18-1:23,
+            span: 17-22,
         },
     },
     Body: &ast.Block{
@@ -3834,21 +3834,21 @@
                 Expr: &ast.BinaryExpr{
                     Left: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:26-1:27,
+                        span: 25-26,
                     },
                     Op: "+",
                     Right: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:30-1:31,
+                        span: 29-30,
                     },
-                    span: 1:26-1:31,
+                    span: 25-30,
                 },
-                span: 1:26-1:31,
+                span: 25-30,
             },
         },
-        Span: 1:24-1:33,
+        Span: 23-32,
     },
-    span: 1:1-1:33,
+    span: 0-32,
 }
 ---
 
@@ -3860,23 +3860,23 @@
                 Expr: &ast.CallExpr{
                     Callee: &ast.IdentExpr{
                         Name: "operation",
-                        span: 1:7-1:16,
+                        span: 6-15,
                     },
-                    span: 1:7-1:18,
+                    span: 6-17,
                 },
-                span: 1:7-1:18,
+                span: 6-17,
             },
         },
-        Span: 1:5-1:20,
+        Span: 4-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
 [TestParseExprErrorHandling/TryCatchEmptyMissingClosingBrace - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:28-1:28,
+        Span: 27-27,
         Message: "Expected } but got ",
     },
 }
@@ -3884,18 +3884,18 @@
 
 [TestParseExprErrorHandling/GenWithoutFn - 1]
 &ast.ErrorExpr{
-    span: 1:5-1:6,
+    span: 4-5,
 }
 ---
 
 [TestParseExprErrorHandling/GenWithoutFn - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:1-1:4,
+        Span: 0-3,
         Message: "Expected 'fn' after 'gen'",
     },
     &parser.Error{
-        Span: 1:5-1:6,
+        Span: 4-5,
         Message: "Expected an expression",
     },
 }
@@ -3903,18 +3903,18 @@
 
 [TestParseExprErrorHandling/AsyncGenWithoutFn - 1]
 &ast.ErrorExpr{
-    span: 1:11-1:12,
+    span: 10-11,
 }
 ---
 
 [TestParseExprErrorHandling/AsyncGenWithoutFn - 2]
 []*parser.Error{
     &parser.Error{
-        Span: 1:7-1:10,
+        Span: 6-9,
         Message: "Expected 'fn' after 'async gen'",
     },
     &parser.Error{
-        Span: 1:11-1:12,
+        Span: 10-11,
         Message: "Expected an expression",
     },
 }

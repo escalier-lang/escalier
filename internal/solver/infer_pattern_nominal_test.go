@@ -83,7 +83,7 @@ func TestInferExtractorPatExplicitConstructor(t *testing.T) {
 		require.Len(t, errs, 1)
 		// M7: `Celsius` has no `[Symbol.customMatcher]` method, so it cannot be used as an
 		// extractor pattern. The exact error type lands with the matcher resolution.
-		require.Equal(t, "`Celsius` has no [Symbol.customMatcher] method", msgWithSpan(errs[0]))
+		require.Equal(t, "`Celsius` has no [Symbol.customMatcher] method", msgWithSpan(t, errs[0]))
 	*/
 }
 
@@ -171,7 +171,7 @@ func TestInferInstancePatWrongField(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:16-5:17: object is missing property: z", msgWithSpan(errs[0]))
+	require.Equal(t, "5:16-5:17: object is missing property: z", msgWithSpan(t, errs[0]))
 }
 
 // An extractor pattern whose argument count differs from the constructor's parameter count
@@ -186,7 +186,7 @@ func TestInferExtractorPatWrongArity(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:5-5:13: extractor pattern `Point` expects 2 arguments but got 1", msgWithSpan(errs[0]))
+	require.Equal(t, "5:5-5:13: extractor pattern `Point` expects 2 arguments but got 1", msgWithSpan(t, errs[0]))
 }
 
 // An instance pattern whose name resolves to no class is an InstancePatternNotClassError.
@@ -204,7 +204,7 @@ func TestInferInstancePatNotAClass(t *testing.T) {
 	require.Equal(t, []string{
 		"4:5-4:18: `Missing` does not name a class and cannot be used as an instance pattern.",
 		"3:11-5:5: match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // An extractor pattern naming a value binding rather than a constructor is invalid, and that
@@ -222,7 +222,7 @@ func TestInferExtractorPatNotAConstructor(t *testing.T) {
 	require.Equal(t, []string{
 		"5:5-5:9: `g` is not a constructor and cannot be used as an extractor pattern.",
 		"4:11-6:5: match is not exhaustive; `number` admits values no pattern names, so add a catch-all branch",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // An instance pattern narrows the scrutinee to the named class. A scrutinee that is a
@@ -238,7 +238,7 @@ func TestInferInstancePatNominalMismatch(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "6:5-6:19: cannot constrain Point <: Circle", msgWithSpan(errs[0]))
+	require.Equal(t, "6:5-6:19: cannot constrain Point <: Circle", msgWithSpan(t, errs[0]))
 }
 
 // --- M5 D2: nominal union exhaustiveness ---
@@ -304,7 +304,7 @@ func TestInferMatchEnumExhaustiveness(t *testing.T) {
 				require.Equal(t, tt.wantVal, values["f"])
 			} else {
 				require.Len(t, errs, 1)
-				require.Equal(t, tt.wantErr, msgWithSpan(errs[0]))
+				require.Equal(t, tt.wantErr, msgWithSpan(t, errs[0]))
 			}
 		})
 	}
@@ -369,7 +369,7 @@ func TestInferMatchUnionAliasExhaustiveness(t *testing.T) {
 				require.Empty(t, errs)
 			} else {
 				require.Len(t, errs, 1)
-				require.Equal(t, tt.wantErr, msgWithSpan(errs[0]))
+				require.Equal(t, tt.wantErr, msgWithSpan(t, errs[0]))
 			}
 		})
 	}
@@ -393,7 +393,7 @@ func TestInferMatchNominalMemberUncoveredStructural(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:11-7:5: match is not exhaustive; add a branch for `{y: 2}`", msgWithSpan(errs[0]))
+	require.Equal(t, "5:11-7:5: match is not exhaustive; add a branch for `{y: 2}`", msgWithSpan(t, errs[0]))
 }
 
 // A union mixing a structural-object member with a non-object member, `"a" | {x: number}`,
@@ -410,7 +410,7 @@ func TestInferMatchUnionUncoveredWithStructuralMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"a\"`", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-6:5: match is not exhaustive; add a branch for `\"a\"`", msgWithSpan(t, errs[0]))
 }
 
 // A match over a structural-object union such as `{x: number} | {y: string}` with an object
@@ -443,7 +443,7 @@ func TestInferMatchStructuralObjectUnionUncovered(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-6:5: match is not exhaustive; add a branch for `{z: boolean}`", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-6:5: match is not exhaustive; add a branch for `{z: boolean}`", msgWithSpan(t, errs[0]))
 }
 
 // Match-arm narrowing routes each tuple pattern to the union members of its fixed arity, so
@@ -548,7 +548,7 @@ func TestInferMemberUnionAbsentFieldErrors(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:13-3:14: object is missing property: z", msgWithSpan(errs[0]))
+	require.Equal(t, "3:13-3:14: object is missing property: z", msgWithSpan(t, errs[0]))
 }
 
 // Reading an optional property off a single object is the single-object counterpart of the
@@ -697,7 +697,7 @@ func TestInferMemberClassUnionAbsentFieldErrors(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:13-5:14: object is missing property: z", msgWithSpan(errs[0]))
+	require.Equal(t, "5:13-5:14: object is missing property: z", msgWithSpan(t, errs[0]))
 }
 
 // A setter-only member reads as undefined at runtime, so when another member exposes the name
@@ -743,5 +743,5 @@ func TestInferMemberClassUnionSetterOnlyEverywhereErrors(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "5:13-5:14: object is missing property: v", msgWithSpan(errs[0]))
+	require.Equal(t, "5:13-5:14: object is missing property: v", msgWithSpan(t, errs[0]))
 }

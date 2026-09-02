@@ -101,8 +101,8 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 	} else {
 		// Empty script - use a zero span with the current source ID
 		span = ast.Span{
-			Start:    ast.Location{Line: 0, Column: 0},
-			End:      ast.Location{Line: 0, Column: 0},
+			Start:    ast.Location{Offset: 0},
+			End:      ast.Location{Offset: 0},
 			SourceID: p.lexer.source.ID,
 		}
 	}
@@ -162,8 +162,7 @@ func (p *Parser) decls() []ast.Decl {
 				// If no tokens have been consumed then we've encountered
 				// something we don't know how to parse.  We consume the token
 				// and then try to parse the another statement.
-				if token.Span.End.Line == nextToken.Span.End.Line &&
-					token.Span.End.Column == nextToken.Span.End.Column {
+				if token.Span.End == nextToken.Span.End {
 					p.reportError(token.Span, "Unexpected token")
 					p.lexer.consume()
 				}

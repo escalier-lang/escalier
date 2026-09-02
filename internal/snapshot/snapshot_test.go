@@ -16,12 +16,12 @@ func TestString(t *testing.T) {
 	cyc.Next = cyc
 
 	span := ast.Span{
-		Start: ast.Location{Line: 1, Column: 1},
-		End:   ast.Location{Line: 1, Column: 4},
+		Start: ast.Location{Offset: 1},
+		End:   ast.Location{Offset: 4},
 	}
 	spanWithSrc := ast.Span{
-		Start:    ast.Location{Line: 2, Column: 3},
-		End:      ast.Location{Line: 2, Column: 7},
+		Start:    ast.Location{Offset: 43},
+		End:      ast.Location{Offset: 47},
 		SourceID: 5,
 	}
 
@@ -49,12 +49,12 @@ func TestString(t *testing.T) {
 		{
 			name: "span compact",
 			in:   span,
-			want: "1:1-1:4",
+			want: "1-4",
 		},
 		{
 			name: "span with source id",
 			in:   spanWithSrc,
-			want: "2:3-2:7@5",
+			want: "43-47@5",
 		},
 		{
 			name: "ident expr omits zero fields",

@@ -20,10 +20,10 @@ import (
 // `namedNs` maps module-specifier string → namespace, populated by the
 // checker from each `override declare module "name" { ... }` block.
 //
-// `filePath` is the locator for the override file being extracted. It
-// is set on every Origin produced by this call (always with
-// Kind=OverrideFile) and surfaced in diagnostics. See Origin.FilePath
-// for the locator-string convention.
+// `site` names the override file being extracted, pairing the locator a
+// diagnostic prints with the source a span resolves against. Every Origin
+// this call produces is stamped from it, always with Kind=OverrideFile. See
+// Origin.FilePath for the locator-string convention.
 //
 // Top-level sugar (`override declare class Foo { ... }` etc.) is
 // expected to have been desugared by the parser per
@@ -31,15 +31,39 @@ import (
 // either a DeclareModuleDecl or a DeclareGlobalDecl whose Override()
 // reports true. Anything else is ignored (returned as a parse-shape
 // error in §5.5 step 4 — this extractor trusts its input).
+// originSite is the override file an extraction is reading. It pairs the
+// locator a diagnostic prints with the source text a span's byte offset is
+// resolved against, so every Origin stamped below can report both.
+type originSite struct {
+	filePath string
+	source   *ast.Source
+}
+
+// NewOriginSite pairs a diagnostic locator with the source the spans index
+// into. Pass a nil source when none is available, and origins from this site
+// report line 0.
+func NewOriginSite(filePath string, source *ast.Source) originSite {
+	return originSite{filePath: filePath, source: source}
+}
+
+// originAt stamps an Origin for one span in this file.
+func (s originSite) originAt(span ast.Span) Origin {
+	return Origin{
+		Kind:     OverrideFile,
+		FilePath: s.filePath,
+		Span:     span,
+		Source:   s.source,
+	}
+}
+
 func Extract(
 	decls []ast.Decl,
 	globalNs *type_system.Namespace,
 	namedNs map[string]*type_system.Namespace,
-	filePath string,
+	site originSite,
 	tier OverrideTier,
 ) map[string]*ModuleScope {
 	out := make(map[string]*ModuleScope)
-	origin := Origin{Kind: OverrideFile, FilePath: filePath}
 
 	for _, d := range decls {
 		switch decl := d.(type) {
@@ -47,19 +71,15 @@ func Extract(
 			if !decl.Override() {
 				continue
 			}
-			declOrigin := origin
-			declOrigin.Span = decl.Span()
-			ms := ensureModule(out, "", declOrigin)
-			extractIntoContainer(decl.Decls, globalNs, &ms.Container, filePath, tier)
+			ms := ensureModule(out, "", site.originAt(decl.Span()))
+			extractIntoContainer(decl.Decls, globalNs, &ms.Container, site, tier)
 		case *ast.DeclareModuleDecl:
 			if !decl.Override() || decl.Name == nil {
 				continue
 			}
 			modName := decl.Name.Value
-			declOrigin := origin
-			declOrigin.Span = decl.Span()
-			ms := ensureModule(out, modName, declOrigin)
-			extractIntoContainer(decl.Decls, namedNs[modName], &ms.Container, filePath, tier)
+			ms := ensureModule(out, modName, site.originAt(decl.Span()))
+			extractIntoContainer(decl.Decls, namedNs[modName], &ms.Container, site, tier)
 		}
 	}
 	return out
@@ -93,7 +113,7 @@ func extractIntoContainer(
 	decls []ast.Decl,
 	ns *type_system.Namespace,
 	container *Container,
-	filePath string,
+	site originSite,
 	tier OverrideTier,
 ) {
 	for _, d := range decls {
@@ -102,13 +122,13 @@ func extractIntoContainer(
 			if decl.Name == nil {
 				continue
 			}
-			eff := buildLeafFromValue(ns, decl.Name.Name, filePath, decl.Span(), tier)
+			eff := buildLeafFromValue(ns, decl.Name.Name, site, decl.Span(), tier)
 			if eff != nil {
 				container.Free[decl.Name.Name] = eff
 			}
 		case *ast.VarDecl:
 			for name := range ast.FindBindings(decl.Pattern) {
-				eff := buildLeafFromValue(ns, name, filePath, decl.Span(), tier)
+				eff := buildLeafFromValue(ns, name, site, decl.Span(), tier)
 				if eff != nil {
 					container.Free[name] = eff
 				}
@@ -123,7 +143,7 @@ func extractIntoContainer(
 			// with the same identifier. Container.Free keys by string,
 			// which collapses the two into one slot — whichever loses the
 			// race is silently dropped. Tracked in §5.13.
-			eff := buildLeafFromTypeAlias(ns, decl.Name.Name, filePath, decl.Span(), tier)
+			eff := buildLeafFromTypeAlias(ns, decl.Name.Name, site, decl.Span(), tier)
 			if eff != nil {
 				container.Free[decl.Name.Name] = eff
 			}
@@ -131,12 +151,12 @@ func extractIntoContainer(
 			if decl.Name == nil {
 				continue
 			}
-			container.Children[decl.Name.Name] = buildClassChild(decl, ns, filePath, tier)
+			container.Children[decl.Name.Name] = buildClassChild(decl, ns, site, tier)
 		case *ast.InterfaceDecl:
 			if decl.Name == nil {
 				continue
 			}
-			container.Children[decl.Name.Name] = buildInterfaceChild(decl, ns, filePath, tier)
+			container.Children[decl.Name.Name] = buildInterfaceChild(decl, ns, site, tier)
 		case *ast.NamespaceDecl:
 			if decl.Name == nil {
 				continue
@@ -146,16 +166,16 @@ func extractIntoContainer(
 				Container: Container{
 					Free:     make(map[string]*Effective),
 					Children: make(map[string]ChildScope),
-					Origin:   Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()},
+					Origin:   site.originAt(decl.Span()),
 				},
 			}
-			extractIntoContainer(decl.Decls, subNs, &child.Container, filePath, tier)
+			extractIntoContainer(decl.Decls, subNs, &child.Container, site, tier)
 			container.Children[decl.Name.Name] = child
 		}
 	}
 }
 
-func buildLeafFromValue(ns *type_system.Namespace, name, filePath string, span ast.Span, tier OverrideTier) *Effective {
+func buildLeafFromValue(ns *type_system.Namespace, name string, site originSite, span ast.Span, tier OverrideTier) *Effective {
 	if ns == nil {
 		return nil
 	}
@@ -166,12 +186,12 @@ func buildLeafFromValue(ns *type_system.Namespace, name, filePath string, span a
 	return &Effective{
 		Type:    b.Type,
 		Source:  tier.ResolutionTierFor(),
-		Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+		Origins: []Origin{site.originAt(span)},
 		Tier:    tier,
 	}
 }
 
-func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, span ast.Span, tier OverrideTier) *Effective {
+func buildLeafFromTypeAlias(ns *type_system.Namespace, name string, site originSite, span ast.Span, tier OverrideTier) *Effective {
 	if ns == nil {
 		return nil
 	}
@@ -182,7 +202,7 @@ func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, sp
 	return &Effective{
 		Type:    ta.Type,
 		Source:  tier.ResolutionTierFor(),
-		Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: span}},
+		Origins: []Origin{site.originAt(span)},
 		Tier:    tier,
 	}
 }
@@ -200,8 +220,8 @@ func buildLeafFromTypeAlias(ns *type_system.Namespace, name, filePath string, sp
 // slot. References to upstream base classes in `extends` clauses are
 // not a concern — those resolve through the checker's outer scope,
 // which already contains the .d.ts symbols (§5.2 sequencing).
-func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *ClassScope {
-	origin := Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()}
+func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, site originSite, tier OverrideTier) *ClassScope {
+	origin := site.originAt(decl.Span())
 	child := &ClassScope{
 		Origin:   origin,
 		Instance: NewMemberSet(),
@@ -238,7 +258,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 			setFor(e.Static).Methods[name] = &Effective{
 				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.GetterElem:
@@ -249,7 +269,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 			setFor(e.Static).Getters[name] = &Effective{
 				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.SetterElem:
@@ -260,7 +280,7 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 			setFor(e.Static).Setters[name] = &Effective{
 				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.FieldElem:
@@ -271,14 +291,14 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 			setFor(e.Static).Properties[name] = &Effective{
 				Type:    lookupObjElemType(objFor(e.Static), name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.ConstructorElem:
 			eff := &Effective{
 				Type:    lookupCtorType(staticType),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 			child.Instance.Ctor = eff
@@ -290,8 +310,8 @@ func buildClassChild(decl *ast.ClassDecl, ns *type_system.Namespace, filePath st
 // buildInterfaceChild mirrors buildClassChild for interfaces. Same
 // slot routing; types come from the interface's object type in `ns`.
 // Interfaces have no static side — only Instance is populated.
-func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, filePath string, tier OverrideTier) *InterfaceScope {
-	origin := Origin{Kind: OverrideFile, FilePath: filePath, Span: decl.Span()}
+func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, site originSite, tier OverrideTier) *InterfaceScope {
+	origin := site.originAt(decl.Span())
 	child := &InterfaceScope{
 		Origin:   origin,
 		Instance: NewMemberSet(),
@@ -310,7 +330,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Methods[name] = &Effective{
 				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.GetterTypeAnn:
@@ -321,7 +341,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Getters[name] = &Effective{
 				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.SetterTypeAnn:
@@ -332,7 +352,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Setters[name] = &Effective{
 				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		case *ast.PropertyTypeAnn:
@@ -343,7 +363,7 @@ func buildInterfaceChild(decl *ast.InterfaceDecl, ns *type_system.Namespace, fil
 			child.Instance.Properties[name] = &Effective{
 				Type:    lookupObjElemType(interfaceType, name),
 				Source:  tier.ResolutionTierFor(),
-				Origins: []Origin{{Kind: OverrideFile, FilePath: filePath, Span: e.Span()}},
+				Origins: []Origin{site.originAt(e.Span())},
 				Tier:    tier,
 			}
 		}

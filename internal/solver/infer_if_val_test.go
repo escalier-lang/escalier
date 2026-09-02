@@ -205,7 +205,7 @@ func TestInferIfValAndValElse(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			if tt.wantErrs != nil {
-				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)
@@ -355,7 +355,7 @@ func TestInferValElseChecksTheFallbackAgainstThePattern(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -375,7 +375,7 @@ func TestInferValElseJoinsPastAnUnsupportedAnnotation(t *testing.T) {
 	require.Equal(t, []string{
 		"2:9-2:12: Unsupported: narrowing type annotation on a destructuring pattern",
 		"2:37-2:45: object is missing property: x",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 	// The fallback carries no `x`, so the only lower bound reaching the name is the one the
 	// narrowed initializer projected.
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["f"])
@@ -447,7 +447,7 @@ func TestInferValElseTypesALeafDefaultOnce(t *testing.T) {
 			val {x = nope} = p else { {x: 5} }
 			return x
 		}`)
-	require.Equal(t, []string{"2:13-2:17: Unknown identifier: nope"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"2:13-2:17: Unknown identifier: nope"}, messagesWithSpan(t, errs))
 }
 
 // A `mut` leaf of an owned scrutinee is an owned-mutable cell, and the fallback flows into
@@ -471,7 +471,7 @@ func TestInferValElseChecksTheFallbackAgainstALeafAnnotation(t *testing.T) {
 			val {x::number} = p else { {x: "s"} }
 			return x
 		}`)
-	require.Equal(t, []string{`2:35-2:38: cannot constrain "s" <: number`}, messagesWithSpan(errs))
+	require.Equal(t, []string{`2:35-2:38: cannot constrain "s" <: number`}, messagesWithSpan(t, errs))
 	require.Equal(t, "fn (p: {x: number} | {y: string}) -> number", values["f"])
 }
 
@@ -510,7 +510,7 @@ func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
 			module := parseModule(t, tt.src)
 			c := newChecker()
 			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
-			require.Equal(t, tt.wantErrs, messagesWithSpan(c.errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, c.errs))
 			leaf := findIdentPat(module, "v")
 			require.NotNil(t, leaf)
 			// The name binds at the annotation on both paths, with no fallback member beside it.
@@ -553,7 +553,7 @@ func TestInferValElseReportsAPatternFaultOnce(t *testing.T) {
 		}`)
 	require.Equal(t, []string{
 		"2:8-2:14: `Foo` does not name a class and cannot be used as an instance pattern.",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // findIdentPat returns the identifier pattern binding name, and nil when the module holds
@@ -618,7 +618,7 @@ func TestInferIfValBindingDoesNotEscape(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:11-4:12: Unknown identifier: x", msgWithSpan(errs[0]))
+	require.Equal(t, "4:11-4:12: Unknown identifier: x", msgWithSpan(t, errs[0]))
 }
 
 // The target expression is inferred once, before the walk, and the pattern binds against
@@ -648,7 +648,7 @@ func TestInferRefutableFormsInferTheTargetOnce(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -678,7 +678,7 @@ func TestInferRefutableFormsTypeAnUnreachableElse(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -769,7 +769,7 @@ func TestInferMatchArmAnnotationNarrows(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			if tt.wantErrs != nil {
-				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)
@@ -801,7 +801,7 @@ func TestInferUnreachableArmAnnotationStillNarrows(t *testing.T) {
 	for name, src := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, src)
-			require.Equal(t, []string{want}, messagesWithSpan(errs))
+			require.Equal(t, []string{want}, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -918,7 +918,7 @@ func TestInferAnnotationWiderThanAMemberBindsTheAnnotation(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			if tt.wantErrs != nil {
-				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)
@@ -1030,7 +1030,7 @@ func TestInferNestedLeafAnnotations(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			if tt.wantErrs != nil {
-				require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+				require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 				return
 			}
 			require.Empty(t, errs)

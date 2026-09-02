@@ -462,7 +462,7 @@ func TestInferExactnessIntrinsicChecksConstraints(t *testing.T) {
 			val r = f({x: 1, y: 2})
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "4:24-4:25: object has extra property: y", msgWithSpan(errs[0]))
+		require.Equal(t, "4:24-4:25: object has extra property: y", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("exact parameter accepts an exactly-matching argument", func(t *testing.T) {
@@ -579,7 +579,7 @@ func TestInferInexactFuncAnnotationDoesNotWidenAValue(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t,
 			"3:4-3:50: cannot constrain function of arity 1 <: function of arity 1 or more",
-			msgWithSpan(errs[0]))
+			msgWithSpan(t, errs[0]))
 	})
 }
 

@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -26,19 +27,28 @@ func Messages(errs []SolverError) []string {
 // span-prefixed form the parser uses. Source-driven tests assert against this so
 // the expected string shows where in the source the error is blamed, which makes
 // the test cases easier to review.
-func msgWithSpan(e SolverError) string {
-	return e.Span().String() + ": " + e.Message()
+func msgWithSpan(t *testing.T, e SolverError) string {
+	t.Helper()
+	return spanWithSpanSource(t, e.Span()) + ": " + e.Message()
+}
+
+// spanWithSpanSource renders one span against the source the running test
+// parsed, the same way msgWithSpan renders the span on an error.
+func spanWithSpanSource(t *testing.T, span ast.Span) string {
+	t.Helper()
+	return ast.SpanString(sourceForTest(t, span.SourceID), span)
 }
 
 // messagesWithSpan is the span-prefixed counterpart to Messages, for source-driven
 // tests whose errors carry real source spans.
-func messagesWithSpan(errs []SolverError) []string {
+func messagesWithSpan(t *testing.T, errs []SolverError) []string {
+	t.Helper()
 	if len(errs) == 0 {
 		return nil
 	}
 	msgs := make([]string, len(errs))
 	for i, e := range errs {
-		msgs[i] = msgWithSpan(e)
+		msgs[i] = msgWithSpan(t, e)
 	}
 	return msgs
 }
@@ -1261,7 +1271,7 @@ func TestInferRecursiveMismatchAtSiblingFieldsReportsOnce(t *testing.T) {
 		declare fn make() -> {x: A, y: A}
 		val v: {x: B, y: B} = make()
 	`)
-	require.Equal(t, []string{"5:25-5:31: cannot constrain number <: string"}, messagesWithSpan(errs))
+	require.Equal(t, []string{"5:25-5:31: cannot constrain number <: string"}, messagesWithSpan(t, errs))
 }
 
 // Without the memo record, a derivation that asks one pair from two positions pays for it twice.
@@ -1278,7 +1288,7 @@ func TestInferDoublyReferencedAliasChainStaysLinear(t *testing.T) {
 	}
 	src += fmt.Sprintf("declare fn make() -> A%d\nval v: B%d = make()\n", depth, depth)
 	_, _, errs := inferSource(t, src)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 }
 
 // A trial the caller discards must leave shallowestAssumed as it found it, so the goals the trial

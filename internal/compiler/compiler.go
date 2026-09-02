@@ -41,8 +41,19 @@ type CheckOutput struct {
 	Scripts      map[int]*ast.Script    // SourceID -> parsed script AST
 	ScriptScopes map[int]*checker.Scope // SourceID -> script scope
 
+	// Sources maps a SourceID to the file it names. A Span carries byte
+	// offsets, so anything turning one into a line and column needs the text
+	// it indexes into.
+	Sources map[int]*ast.Source
+
 	ParseErrors []*parser.Error
 	TypeErrors  []checker.Error
+}
+
+// SourceByID returns the file a SourceID names, or nil when the output holds
+// no source for it.
+func (o *CheckOutput) SourceByID(sourceID int) *ast.Source {
+	return o.Sources[sourceID]
 }
 
 // CheckLibOutput contains the results of type-checking lib/ files.
@@ -101,12 +112,18 @@ func CheckPackage(sources []*ast.Source) CheckOutput {
 
 	libOutput := CheckLib(ctx, libSources)
 
+	sourcesByID := make(map[int]*ast.Source, len(sources))
+	for _, src := range sources {
+		sourcesByID[src.ID] = src
+	}
+
 	output := CheckOutput{
 		Module:       libOutput.Module,
 		ModuleScope:  libOutput.ModuleScope,
 		FileScopes:   libOutput.FileScopes,
 		Scripts:      map[int]*ast.Script{},
 		ScriptScopes: map[int]*checker.Scope{},
+		Sources:      sourcesByID,
 		ParseErrors:  libOutput.ParseErrors,
 		TypeErrors:   libOutput.TypeErrors,
 	}
