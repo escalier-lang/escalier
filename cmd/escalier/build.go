@@ -65,7 +65,10 @@ func loadSource(file string, id int) (*ast.Source, error) {
 // printErrors outputs parse and type errors to stderr with formatted context
 func printErrors(stderr io.Writer, output compiler.CompilerOutput, idToSource map[int]*ast.Source) {
 	for _, err := range output.ParseErrors {
-		fmt.Fprintln(stderr, err)
+		// A span holds byte offsets, so naming a line needs the file it came
+		// from. SpanString falls back to the offsets when the file is unknown.
+		fmt.Fprintf(stderr, "%s: %s\n",
+			ast.SpanString(idToSource[err.Span.SourceID], err.Span), err.Message)
 	}
 
 	// TODO: sort by err.Location()

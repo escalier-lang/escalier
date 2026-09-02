@@ -49,18 +49,19 @@ func posToLoc(lineMap *ast.LineMap, pos protocol.Position) ast.Location {
 	return ast.Location{Offset: lineMap.Offset(line, column, ast.UTF16Columns)}
 }
 
-// lineMapForURI returns a map over the text of an open document. The text
-// changes with every edit, so the map is built per request rather than kept.
-// It returns a map over the empty string for a document the server has not
-// opened.
+// lineMapForURI returns a map over the text of a document. An open document's
+// text changes with every edit, so its map is built per request rather than
+// kept. A request can also name a file the editor has not opened, and the text
+// the last check parsed stands in for it.
 func (s *Server) lineMapForURI(uri protocol.DocumentUri) *ast.LineMap {
 	s.mu.RLock()
-	doc, ok := s.documents[uri]
+	doc, opened := s.documents[uri]
+	co := s.checkOutput
 	s.mu.RUnlock()
-	if !ok {
-		return ast.NewLineMap("")
+	if opened {
+		return ast.NewLineMap(doc.Text)
 	}
-	return ast.NewLineMap(doc.Text)
+	return lineMapForSourceID(co, s.sourceIDForURI(uri))
 }
 
 // lineMapForSourceID returns a map over the file a SourceID names, taken from
@@ -433,6 +434,13 @@ func (server *Server) validateBinScript(
 	// Update only this script's entries in the existing checkOutput.
 	co.Scripts[triggerSourceID] = result.Script
 	co.ScriptScopes[triggerSourceID] = result.Scope
+	// The new AST's spans index the text just parsed, so the source has to move
+	// with them. Leaving the previous one would convert the new offsets against
+	// the text from the last full check.
+	if co.Sources == nil {
+		co.Sources = map[int]*ast.Source{}
+	}
+	co.Sources[triggerSourceID] = src
 	// Rebuild errors: keep non-script errors, replace this script's errors.
 	co.ParseErrors = filterOutSourceID(co.ParseErrors, triggerSourceID)
 	co.ParseErrors = append(co.ParseErrors, result.ParseErrors...)

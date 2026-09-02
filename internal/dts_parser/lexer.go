@@ -176,9 +176,6 @@ func (lexer *Lexer) next() *Token {
 					i += 2
 					break
 				}
-				if lexer.source.Contents[i] == '\n' {
-				} else {
-				}
 				i++
 			}
 			endOffset = i
