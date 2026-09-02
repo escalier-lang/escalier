@@ -5,6 +5,8 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/printer"
+	"github.com/stretchr/testify/require"
 )
 
 // Helper function to parse a .d.ts string and return the first statement
@@ -688,6 +690,62 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			if tt.checkFunc != nil {
 				tt.checkFunc(t, result)
 			}
+		})
+	}
+}
+
+// TestRaiseParam covers the trailing parameter the converter appends to
+// the declarations in RaiseParamDecls, both its default and the way it
+// threads through a reference the declaration makes to one of them.
+//
+// The default is `never` rather than `unknown` or `any`. It is the
+// bottom of the raise lattice, so a reference that omits the argument
+// and one that writes `never` mean the same thing, and later filling the
+// slot with a derived rejects set only adds to it.
+func TestRaiseParam(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "promise takes the parameter and threads it through a self reference",
+			input: "interface Promise<T> { then(): Promise<T>; }",
+			want: `declare interface Promise<T, E = never> {
+    then() -> Promise<T, E>
+}`,
+		},
+		{
+			name:  "generator takes it as a fourth parameter",
+			input: "interface Generator<T, TReturn, TNext> { self(): Generator<T, TReturn, TNext>; }",
+			want: `declare interface Generator<T, TReturn, TNext, E = never> {
+    self() -> Generator<T, TReturn, TNext, E>
+}`,
+		},
+		{
+			name:  "async generator threads it through the promise it returns",
+			input: "interface AsyncGenerator<T, TReturn, TNext> { next(): Promise<T>; }",
+			want: `declare interface AsyncGenerator<T, TReturn, TNext, E = never> {
+    next() -> Promise<T, E>
+}`,
+		},
+		{
+			name:  "a declaration outside the set is left alone",
+			input: "interface Iterator<T> { next(): Promise<T>; }",
+			want: `declare interface Iterator<T> {
+    next() -> Promise<T>
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			decl, err := convertStatement(&convertCtx{}, parseStatement(t, tt.input))
+			require.NoError(t, err)
+			text, err := printer.Print(decl, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tt.want, text)
 		})
 	}
 }
