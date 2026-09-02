@@ -20,10 +20,10 @@ import (
 // `namedNs` maps module-specifier string → namespace, populated by the
 // checker from each `override declare module "name" { ... }` block.
 //
-// `site` names the override file being extracted. It
-// is set on every Origin produced by this call (always with
-// Kind=OverrideFile) and surfaced in diagnostics. See Origin.FilePath
-// for the locator-string convention.
+// `site` names the override file being extracted, pairing the locator a
+// diagnostic prints with the source a span resolves against. Every Origin
+// this call produces is stamped from it, always with Kind=OverrideFile. See
+// Origin.FilePath for the locator-string convention.
 //
 // Top-level sugar (`override declare class Foo { ... }` etc.) is
 // expected to have been desugared by the parser per

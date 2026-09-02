@@ -24,8 +24,8 @@ const (
 )
 
 // LineMap converts between byte offsets and 1-based line and column positions
-// in one source file. Build it once per file and reuse it. Source.LineMap
-// memoizes one per Source.
+// in one source file. Build it once per file and reuse it; Source.LineMap
+// keeps one per Source for that.
 type LineMap struct {
 	contents string
 	// lineStarts[i] is the byte offset where line i+1 begins. The first entry
@@ -34,8 +34,8 @@ type LineMap struct {
 	lineStarts []int
 }
 
-// NewLineMap scans contents for line breaks and returns a map over it. The
-// scan is linear in the length of contents and happens once.
+// NewLineMap returns a map over contents. Each call scans contents once for
+// line breaks, taking time linear in its length.
 func NewLineMap(contents string) *LineMap {
 	lineStarts := []int{0}
 	for i := range len(contents) {
@@ -174,8 +174,9 @@ func countColumns(s string, enc ColumnEncoding) int {
 }
 
 // columnsForRune returns how many columns of the given encoding one rune
-// occupies. Only a rune outside the basic multilingual plane differs between
-// the encodings, and only for UTF16Columns, where it takes a surrogate pair.
+// occupies. The encodings agree on every rune up to U+FFFF. Above that a rune
+// takes two UTF-16 code units, a surrogate pair, where the other encodings
+// still count it as one column or as its byte length.
 func columnsForRune(r rune, enc ColumnEncoding) int {
 	switch enc {
 	case ByteColumns:

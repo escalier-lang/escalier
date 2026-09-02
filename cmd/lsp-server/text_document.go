@@ -435,8 +435,8 @@ func (server *Server) validateBinScript(
 	co.Scripts[triggerSourceID] = result.Script
 	co.ScriptScopes[triggerSourceID] = result.Scope
 	// The new AST's spans index the text just parsed, so the source has to move
-	// with them. Leaving the previous one would convert the new offsets against
-	// the text from the last full check.
+	// with them. Keeping the one the last full check stored would convert the
+	// new offsets against stale text.
 	if co.Sources == nil {
 		co.Sources = map[int]*ast.Source{}
 	}

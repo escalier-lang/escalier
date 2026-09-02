@@ -193,7 +193,7 @@ func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
 		`fn (x: number) -> number { return x }`)
 }
 
-// tspan builds a single-SourceID span from byte offsets — only the hand-built
+// tspan builds a single-SourceID span from byte offsets. Only the hand-built
 // degrade-path test below needs it.
 func tspan(start, end int) ast.Span {
 	return ast.NewSpan(ast.Location{Offset: start}, ast.Location{Offset: end}, 0)

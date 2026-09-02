@@ -105,8 +105,8 @@ var keywords = map[string]TokenType{
 	"global":     Global,
 }
 
-// skipWhitespace advances past whitespace characters and returns the new offset and location.
-// It handles spaces, tabs, and newlines.
+// skipWhitespace advances past spaces, tabs, and newlines, and returns the
+// offset of the first character that is none of those.
 func (lexer *Lexer) skipWhitespace(startOffset int) int {
 	contents := lexer.source.Contents
 	for startOffset < len(contents) {

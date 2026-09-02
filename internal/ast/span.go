@@ -17,6 +17,10 @@ type Source struct {
 // LineMap returns a map over this source's contents, building it on the first
 // call and reusing it after. Use it to turn the byte offsets on a Span into
 // the line and column a diagnostic or an editor needs.
+//
+// The map is built from Contents as it stands at the first call, so a caller
+// that rewrites Contents afterwards is left with a map over the old text.
+// Build a new Source instead of editing one in place.
 func (s *Source) LineMap() *LineMap {
 	s.lineMapOnce.Do(func() {
 		s.lineMap = NewLineMap(s.Contents)
@@ -66,9 +70,10 @@ func (s Span) Contains(loc Location) bool {
 }
 
 // ContainsSpan reports whether inner lies entirely within s, meaning the same
-// source and both of inner's endpoints contained in s. Used to decide whether
-// a finer-grained span such as an operand's source node sits inside a coarser
-// one such as a constraint site before preferring it for blame.
+// source and both of inner's endpoints contained in s. Callers consult it to
+// decide whether a finer-grained span such as an operand's source node sits
+// inside a coarser one such as a constraint site before preferring it for
+// blame.
 func (s Span) ContainsSpan(inner Span) bool {
 	return s.SourceID == inner.SourceID && s.Contains(inner.Start) && s.Contains(inner.End)
 }
