@@ -1,0 +1,16 @@
+# The .esc packages under internal/interop/data/std/ and
+# internal/interop/data/web/ are build outputs. A converter run writes
+# each one from scratch, so a one-line converter change replaces all of
+# them and the resulting diff buries the change under review. Marking
+# them generated collapses them by default in a pull request diff and
+# drops them from the repository's language statistics.
+#
+# The patterns cover the two directories because the partition table in
+# internal/dts_to_esc/partition.go routes a generated package to every
+# .esc file under them. A hand-authored package under either directory
+# needs a carve-out here.
+#
+# The tree is committed on purpose, so it is neither marked
+# linguist-vendored nor listed in .gitignore.
+internal/interop/data/std/*.esc linguist-generated=true
+internal/interop/data/web/*.esc linguist-generated=true
