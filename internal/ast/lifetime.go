@@ -15,12 +15,13 @@ type LifetimeAnnNode interface {
 type LifetimeAnn struct {
 	Name string
 	span Span
+	commentSlots
 }
 
 func NewLifetimeAnn(name string, span Span) *LifetimeAnn {
-	return &LifetimeAnn{Name: name, span: span}
+	return &LifetimeAnn{Name: name, span: span, commentSlots: commentSlots{}}
 }
-func (l *LifetimeAnn) Span() Span         { return l.span }
+func (l *LifetimeAnn) Span() Span       { return l.span }
 func (*LifetimeAnn) isLifetimeAnnNode() {}
 
 // LifetimeParam is a lifetime binder in a <…> quantifier list. Bounds are the
@@ -37,9 +38,10 @@ type LifetimeParam struct {
 	Name   string
 	Bounds []*LifetimeAnn
 	span   Span
+	commentSlots
 }
 
 func NewLifetimeParam(name string, bounds []*LifetimeAnn, span Span) *LifetimeParam {
-	return &LifetimeParam{Name: name, Bounds: bounds, span: span}
+	return &LifetimeParam{Name: name, Bounds: bounds, span: span, commentSlots: commentSlots{}}
 }
 func (l *LifetimeParam) Span() Span { return l.span }

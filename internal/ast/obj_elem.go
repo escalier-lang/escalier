@@ -12,10 +12,11 @@ func (*ComputedKey) isObjKey() {}
 
 type ComputedKey struct {
 	Expr Expr
+	commentSlots
 }
 
 func NewComputedKey(expr Expr) *ComputedKey {
-	return &ComputedKey{Expr: expr}
+	return &ComputedKey{Expr: expr, commentSlots: commentSlots{}}
 }
 func (c *ComputedKey) Span() Span { return c.Expr.Span() }
 func (c *ComputedKey) Accept(v Visitor) {

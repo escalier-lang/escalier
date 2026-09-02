@@ -64,6 +64,7 @@ type VarDecl struct {
 	span         Span
 	InferredType Type // optional, used to store the inferred pattern type
 	provenance   provenance.Provenance
+	commentSlots
 }
 
 func NewVarDecl(
@@ -85,6 +86,7 @@ func NewVarDecl(
 		span:         span,
 		InferredType: nil,
 		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *VarDecl) Export() bool       { return d.export }
@@ -125,6 +127,7 @@ type Param struct {
 	// before a parameter pattern; elsewhere `open` is an ordinary identifier.
 	Open    bool
 	TypeAnn TypeAnn // optional
+	commentSlots
 }
 
 func (p *Param) Span() Span {
@@ -143,6 +146,7 @@ type FuncDecl struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewFuncDecl(
@@ -168,11 +172,12 @@ func NewFuncDecl(
 			Throws:         throwsType,
 			Async:          async,
 		},
-		Body:       body,
-		export:     export,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Body:         body,
+		export:       export,
+		declare:      declare,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *FuncDecl) Export() bool       { return d.export }
@@ -215,17 +220,19 @@ type TypeDecl struct {
 	override       bool
 	span           Span
 	provenance     provenance.Provenance
+	commentSlots
 }
 
 func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *TypeDecl {
 	return &TypeDecl{
-		Name:       name,
-		TypeParams: typeParams,
-		TypeAnn:    typeAnn,
-		export:     export,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Name:         name,
+		TypeParams:   typeParams,
+		TypeAnn:      typeAnn,
+		export:       export,
+		declare:      declare,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *TypeDecl) Export() bool       { return d.export }
@@ -262,6 +269,7 @@ type InterfaceDecl struct {
 	override       bool
 	span           Span
 	provenance     provenance.Provenance
+	commentSlots
 }
 
 func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends []*TypeRefTypeAnn, typeAnn *ObjectTypeAnn, export, declare bool, span Span) *InterfaceDecl {
@@ -275,6 +283,7 @@ func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams [
 		declare:        declare,
 		span:           span,
 		provenance:     nil,
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *InterfaceDecl) Export() bool       { return d.export }
@@ -320,13 +329,15 @@ type EnumVariant struct {
 	Name   *Ident
 	Params []*Param // optional tuple parameters, e.g., Some(value: T)
 	span   Span
+	commentSlots
 }
 
 func NewEnumVariant(name *Ident, params []*Param, span Span) *EnumVariant {
 	return &EnumVariant{
-		Name:   name,
-		Params: params,
-		span:   span,
+		Name:         name,
+		Params:       params,
+		span:         span,
+		commentSlots: commentSlots{},
 	}
 }
 func (v *EnumVariant) Span() Span  { return v.span }
@@ -340,12 +351,14 @@ func (v *EnumVariant) Accept(vis Visitor) {
 type EnumSpread struct {
 	Arg  *Ident
 	span Span
+	commentSlots
 }
 
 func NewEnumSpread(arg *Ident, span Span) *EnumSpread {
 	return &EnumSpread{
-		Arg:  arg,
-		span: span,
+		Arg:          arg,
+		span:         span,
+		commentSlots: commentSlots{},
 	}
 }
 func (s *EnumSpread) Span() Span  { return s.span }
@@ -366,17 +379,19 @@ type EnumDecl struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export, declare bool, span Span) *EnumDecl {
 	return &EnumDecl{
-		Name:       name,
-		TypeParams: typeParams,
-		Elems:      elems,
-		export:     export,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Name:         name,
+		TypeParams:   typeParams,
+		Elems:        elems,
+		export:       export,
+		declare:      declare,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *EnumDecl) Export() bool       { return d.export }
@@ -419,14 +434,16 @@ type ExportAssignmentStmt struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewExportAssignmentStmt(name *Ident, declare bool, span Span) *ExportAssignmentStmt {
 	return &ExportAssignmentStmt{
-		Name:       name,
-		declare:    declare,
-		span:       span,
-		provenance: nil,
+		Name:         name,
+		declare:      declare,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (e *ExportAssignmentStmt) Export() bool       { return true } // Always exported
@@ -460,15 +477,17 @@ type DeclareModuleDecl struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewDeclareModuleDecl(name *StrLit, decls []Decl, override bool, span Span) *DeclareModuleDecl {
 	return &DeclareModuleDecl{
-		Name:       name,
-		Decls:      decls,
-		override:   override,
-		span:       span,
-		provenance: nil,
+		Name:         name,
+		Decls:        decls,
+		override:     override,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *DeclareModuleDecl) Export() bool       { return false }
@@ -497,14 +516,16 @@ type DeclareGlobalDecl struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewDeclareGlobalDecl(decls []Decl, override bool, span Span) *DeclareGlobalDecl {
 	return &DeclareGlobalDecl{
-		Decls:      decls,
-		override:   override,
-		span:       span,
-		provenance: nil,
+		Decls:        decls,
+		override:     override,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *DeclareGlobalDecl) Export() bool       { return false }
@@ -537,16 +558,18 @@ type NamespaceDecl struct {
 	override   bool
 	span       Span
 	provenance provenance.Provenance
+	commentSlots
 }
 
 func NewNamespaceDecl(name *Ident, decls []Decl, export, override bool, span Span) *NamespaceDecl {
 	return &NamespaceDecl{
-		Name:       name,
-		Decls:      decls,
-		export:     export,
-		override:   override,
-		span:       span,
-		provenance: nil,
+		Name:         name,
+		Decls:        decls,
+		export:       export,
+		override:     override,
+		span:         span,
+		provenance:   nil,
+		commentSlots: commentSlots{},
 	}
 }
 func (d *NamespaceDecl) Export() bool       { return d.export }

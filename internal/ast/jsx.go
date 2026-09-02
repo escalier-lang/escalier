@@ -5,20 +5,22 @@ type JSXOpening struct {
 	Attrs     []JSXAttrElem
 	SelfClose bool
 	span      Span
+	commentSlots
 }
 
 func NewJSXOpening(name QualIdent, attrs []JSXAttrElem, selfClose bool, span Span) *JSXOpening {
-	return &JSXOpening{Name: name, Attrs: attrs, SelfClose: selfClose, span: span}
+	return &JSXOpening{Name: name, Attrs: attrs, SelfClose: selfClose, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXOpening) Span() Span { return n.span }
 
 type JSXClosing struct {
 	Name QualIdent // nil for fragments
 	span Span
+	commentSlots
 }
 
 func NewJSXClosing(name QualIdent, span Span) *JSXClosing {
-	return &JSXClosing{Name: name, span: span}
+	return &JSXClosing{Name: name, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXClosing) Span() Span { return n.span }
 
@@ -33,12 +35,13 @@ type JSXAttr struct {
 	Name  string
 	Value *JSXAttrValue
 	span  Span
+	commentSlots
 }
 
 func (*JSXAttr) isJSXAttrElem() {}
 
 func NewJSXAttr(name string, value *JSXAttrValue, span Span) *JSXAttr {
-	return &JSXAttr{Name: name, Value: value, span: span}
+	return &JSXAttr{Name: name, Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXAttr) Span() Span { return n.span }
 
@@ -46,12 +49,13 @@ func (n *JSXAttr) Span() Span { return n.span }
 type JSXSpreadAttr struct {
 	Expr Expr
 	span Span
+	commentSlots
 }
 
 func (*JSXSpreadAttr) isJSXAttrElem() {}
 
 func NewJSXSpreadAttr(expr Expr, span Span) *JSXSpreadAttr {
-	return &JSXSpreadAttr{Expr: expr, span: span}
+	return &JSXSpreadAttr{Expr: expr, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXSpreadAttr) Span() Span { return n.span }
 
@@ -72,29 +76,32 @@ func (*JSXFragmentExpr) isJSXChild()  {}
 type JSXText struct {
 	Value string
 	span  Span
+	commentSlots
 }
 
 func NewJSXText(value string, span Span) *JSXText {
-	return &JSXText{Value: value, span: span}
+	return &JSXText{Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXText) Span() Span { return n.span }
 
 type JSXExprContainer struct {
 	Expr Expr
 	span Span
+	commentSlots
 }
 
 func NewJSXExprContainer(expr Expr, span Span) *JSXExprContainer {
-	return &JSXExprContainer{Expr: expr, span: span}
+	return &JSXExprContainer{Expr: expr, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXExprContainer) Span() Span { return n.span }
 
 type JSXString struct {
 	Value string
 	span  Span
+	commentSlots
 }
 
 func NewJSXString(value string, span Span) *JSXString {
-	return &JSXString{Value: value, span: span}
+	return &JSXString{Value: value, span: span, commentSlots: commentSlots{}}
 }
 func (n *JSXString) Span() Span { return n.span }
