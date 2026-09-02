@@ -32,11 +32,6 @@ func (lexer *Lexer) spanBetween(startOffset, endOffset int) ast.Span {
 	}
 }
 
-// currentLoc returns the position the lexer will read from next.
-func (lexer *Lexer) currentLoc() ast.Location {
-	return ast.Location{Offset: lexer.currentOffset}
-}
-
 var keywords = map[string]TokenType{
 	"private":    Private,
 	"protected":  Protected,

@@ -194,12 +194,14 @@ func TestLineMapLineCount(t *testing.T) {
 
 func TestSourceLineMapIsReused(t *testing.T) {
 	t.Parallel()
+	//nolint: exhaustruct // The memoized line map is built on first use.
 	source := &Source{ID: 0, Path: "input.esc", Contents: "abc\ndef\n"}
 	require.Same(t, source.LineMap(), source.LineMap())
 }
 
 func TestSpanString(t *testing.T) {
 	t.Parallel()
+	//nolint: exhaustruct // The memoized line map is built on first use.
 	source := &Source{ID: 0, Path: "input.esc", Contents: "val x = 1\nval y = 2\n"}
 	span := NewSpan(Location{Offset: 10}, Location{Offset: 13}, 0)
 
