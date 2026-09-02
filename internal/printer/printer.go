@@ -23,6 +23,12 @@ type Options struct {
 	// written with the newline escaped as `\n` so the one-line guarantee holds. Compact
 	// output is meant to be read, not reparsed.
 	Compact bool
+
+	// OmitDocComments leaves every doc comment out of the output,
+	// printing the declaration or member alone. A caller comparing two
+	// renderings for a difference in shape sets it, so an edit to the
+	// prose above a member does not read as a change to the member.
+	OmitDocComments bool
 }
 
 // DefaultOptions returns default printer options
@@ -275,7 +281,7 @@ func (p *Printer) printImportStmt(s *ast.ImportStmt) {
 func (p *Printer) printDecl(decl ast.Decl) {
 	// Compact mode renders the declaration on one line, where a doc comment
 	// would either swallow the rest of the line or need escaping to avoid it.
-	if doc := decl.Doc(); doc != "" && !p.opts.Compact {
+	if doc := decl.Doc(); doc != "" && !p.opts.Compact && !p.opts.OmitDocComments {
 		p.writeDoc(doc)
 	}
 	switch d := decl.(type) {
@@ -388,7 +394,7 @@ func (p *Printer) writeDoc(doc string) {
 }
 
 func (p *Printer) printClassElem(elem ast.ClassElem) {
-	if doc := elem.Doc(); doc != "" {
+	if doc := elem.Doc(); doc != "" && !p.opts.OmitDocComments {
 		p.writeDoc(doc)
 	}
 	switch e := elem.(type) {
@@ -1517,7 +1523,7 @@ func (p *Printer) printObjectTypeAnn(typ *ast.ObjectTypeAnn) {
 }
 
 func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
-	if doc := elem.Doc(); doc != "" {
+	if doc := elem.Doc(); doc != "" && !p.opts.OmitDocComments {
 		p.writeDoc(doc)
 	}
 	switch e := elem.(type) {
