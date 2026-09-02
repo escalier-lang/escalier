@@ -75,10 +75,10 @@ type Overlay struct {
 	Files []OverlayFile
 }
 
-// LoadOverlay parses every `.esc` file under dir. A file that does not
-// parse is a defect in a committed input, so the load stops and names
-// it — the generator never reads a file it wrote, and this is the only
-// `.esc` it reads at all.
+// LoadOverlay parses every `.esc` file under dir. These are the only
+// `.esc` files the generator reads, since it never reads a file it
+// wrote. One that does not parse is a defect in a committed input, so
+// the load stops and names it.
 //
 // Recognized layouts, both relative to dir:
 //

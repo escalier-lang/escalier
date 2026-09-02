@@ -212,7 +212,11 @@ func runGenerate(args []string, stderr io.Writer) error {
 	}
 	libDir, escDir := flags.Arg(0), flags.Arg(1)
 	if *overlayDir == "" {
-		*overlayDir = filepath.Join(filepath.Dir(escDir), defaultOverlayDirName)
+		// filepath.Dir("internal/interop/data/") is the argument itself,
+		// so a trailing separator would look inside the generated tree
+		// rather than beside it. Cleaning the path first drops the
+		// separator.
+		*overlayDir = filepath.Join(filepath.Dir(filepath.Clean(escDir)), defaultOverlayDirName)
 	}
 
 	facts, join, err := loadFacts(*cfgPath, stderr)

@@ -15,8 +15,8 @@ import (
 //
 // A package named by an `add` file that routed no upstream declaration
 // is created from the overlay alone, so an addition is never silently
-// lost. A `replace` or `drop` naming such a package fails: there is
-// nothing to stand in for or remove.
+// lost. A `replace` or `drop` naming such a package fails, since there
+// is nothing to stand in for or remove.
 //
 // An overlay entry naming a declaration or member the converted module
 // does not have fails the run and names it. That is how a removal on the
@@ -123,9 +123,10 @@ func applyDropFile(ns *ast.Namespace, f OverlayFile) error {
 	return nil
 }
 
-// dropDeclMembers removes every member of host whose name is in names,
-// overload set and both sides of a class included. A name that matches
-// nothing fails the run.
+// dropDeclMembers removes every member of host whose name is in names.
+// A name takes its whole overload set with it, and reaches a static
+// member as readily as an instance one. A name that matches nothing
+// fails the run.
 func dropDeclMembers(f OverlayFile, owner string, host ast.Decl, names set.Set[string]) error {
 	hit := set.NewSet[string]()
 	switch d := host.(type) {

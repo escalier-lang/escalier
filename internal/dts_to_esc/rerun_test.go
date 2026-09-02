@@ -312,8 +312,14 @@ declare var Array: ArrayConstructor;
 	require.Equal(t, 1, report.Packages[0].AddedDecls)
 
 	// The whole file, written from scratch: the trio fused into one
-	// class, decorated, exported.
-	snaps.MatchInlineSnapshot(t, readEsc(t, filepath.Join(root, "std", "array.esc")), snaps.Inline(`@js("Array")
+	// class, decorated, exported. The banner every generated file opens
+	// with is pinned by TestGenerate_WritesTheTreeWithAHeader and cut
+	// here, because go-snaps cannot write its backticks back into an
+	// inline snapshot.
+	written := readEsc(t, filepath.Join(root, "std", "array.esc"))
+	body, hasHeader := strings.CutPrefix(written, GeneratedHeader)
+	require.True(t, hasHeader, "a package created from scratch opens with the generated-file header")
+	snaps.MatchInlineSnapshot(t, body, snaps.Inline(`@js("Array")
 export declare class Array<T> {
     length: number,
     constructor(mut self),

@@ -322,9 +322,9 @@ const raiseParamName = "E"
 
 // RaiseParamDecls are the declarations the converter gives a trailing
 // raise parameter to, so `interface Promise<T>` is emitted as
-// `Promise<T, E>`. Escalier's own form of each takes that parameter —
-// the solver reads `Promise<T, E>` and `Generator<Y, R, N, E>` — where
-// the TypeScript declaration has no slot for it.
+// `Promise<T, E>`. Escalier's own form of each takes that parameter
+// where the TypeScript declaration has no slot for it. The solver reads
+// `Promise<T, E>` and `Generator<Y, R, N, E>`.
 //
 // The parameter defaults to `any` and no fact is consulted for it.
 // Deriving it from the ECMA-262 rejects set is #1352.

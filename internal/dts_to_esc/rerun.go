@@ -683,6 +683,12 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 
 	spliced := p.splice()
 	updated := applyEdits(p.contents, spliced.edits)
+	if !p.diff.Exists {
+		// A package this run creates from scratch is a generated file
+		// like any other, so it opens with the same banner
+		// WriteConvertedTree writes.
+		updated = GeneratedHeader + updated
+	}
 	if p.diff.Exists && updated == p.contents {
 		// Every owner was skipped and nothing was appended, so there is
 		// no byte to write. Rewriting identical contents would move the

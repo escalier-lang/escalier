@@ -103,6 +103,15 @@ against the hand-written mutability sources. See §5, §6, and §9.2 of
    ./bin/dts_to_esc generate node_modules/typescript/lib internal/interop/data
    ```
 
+   `internal/interop/data/std/` still holds the two §2-era stubs,
+   `array.esc` and `math.esc`, rather than generated packages. Both name
+   packages the partition table routes to, so a run overwrites them and
+   the fixtures that read them fail. The first run against the committed
+   tree is §7's stdlib bootstrap,
+   [#1232](https://github.com/escalier-lang/escalier/issues/1232), which
+   reviews the whole output and lands it together with the inputs that
+   produce it. Until then, point `<esc-dir>` at a scratch directory.
+
 3. Review `git diff` and commit. A declaration TypeScript removed shows
    up as a deletion in that diff rather than as a report, because the run
    does not carry the old tree forward.

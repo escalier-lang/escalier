@@ -18,8 +18,8 @@ const (
 
 // validateDropDecls rejects a drop entry carrying more than the minimal
 // form. Every type annotation, signature, and body in a drop file is
-// ignored, so accepting a real signature would leave whoever wrote it
-// expecting it to matter.
+// ignored. Accepting one would leave whoever wrote it expecting it to
+// matter.
 //
 // A `val` entry names a whole declaration. An `interface` entry names
 // members of the declaration it is titled with, one `<member>: unknown`
@@ -121,10 +121,11 @@ func validateDropInterfaceDecl(rel string, d *ast.InterfaceDecl) error {
 // dropPlan is what one package's drop files ask of the converted module:
 // whole declarations by name, and members by owning declaration name.
 //
-// A member drop removes every member under that name, its overload set
-// and both sides of the class included, which is why the member sets
-// hold bare names rather than the memberSlot the add and replace paths
-// key on.
+// A member drop removes every member under that name. It takes the
+// whole overload set with it, and reaches a static member as readily as
+// an instance one. That is why the member sets hold bare names rather
+// than the memberSlot the add and replace paths key on, which also
+// records which side of the class a member lives on.
 type dropPlan struct {
 	decls   set.Set[string]
 	members map[string]set.Set[string]

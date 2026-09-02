@@ -11,10 +11,10 @@ import (
 )
 
 // GeneratedHeader opens every `.esc` file a run writes. Two kinds of
-// file live under internal/interop/data/ — generated packages and
-// hand-authored ones — and which kind a package is has to be readable
-// without re-running the generator and diffing. The banner says so and
-// names the command that rewrites the file.
+// file live under internal/interop/data/, generated packages and
+// hand-authored ones, and a reader has to tell them apart without
+// re-running the generator and diffing the result. The header marks the
+// file as a build output and names the command that rewrites it.
 //
 // The first line follows Go's `// Code generated ... DO NOT EDIT.`
 // convention, which review tooling already recognizes.
@@ -143,9 +143,9 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 }
 
 // removeStalePackages deletes every `.esc` file in the generated
-// subtrees that this run did not write. A package that stops being
-// routed, and a file no package in the partition table accounts for,
-// both leave the tree that way.
+// subtrees that this run did not write. That covers two cases. A
+// package that stops being routed leaves the tree, and so does a file
+// that matches no package in the partition table at all.
 //
 // Only the subtrees the partition table writes into are scanned, so
 // data/node/ and anything else beside them is untouched. A file whose
