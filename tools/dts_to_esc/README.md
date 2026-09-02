@@ -43,9 +43,38 @@ the `std/`, `web/`, and `node/` subtrees.
 | Command                                          | Writes  | Use                                        |
 | ------------------------------------------------ | ------- | ------------------------------------------ |
 | `dts_to_esc <path-to-d.ts>`                      | stdout  | Convert one file, for trying things out.   |
+| `dts_to_esc generate [--cfg …] <lib-dir> <esc-dir>` | tree | Write the whole tree from its inputs.      |
 | `dts_to_esc check <lib-dir> <esc-dir>`           | nothing | Verify the committed tree.                 |
 | `dts_to_esc regenerate <lib-dir> <esc-dir>`      | tree    | Fold upstream additions into that tree.    |
 | `dts_to_esc bootstrap [--cfg …] <lib-dir> <out>` | tree    | Seed a tree from scratch.                  |
+
+`generate` is the mode a TypeScript version bump uses. It writes every
+package from scratch and reads no file it wrote, so seeding an empty tree
+and re-running against a populated one are the same operation. Every fact
+in a package it writes comes from one of three committed inputs: the
+pinned `.d.ts` set, the ECMA-262 derived facts in
+[internal/ecma262/](../../internal/ecma262/), and the overlay in
+[internal/interop/overlay/](../../internal/interop/overlay/). Correcting
+the output means editing one of those and re-running.
+
+Two consequences worth knowing before the first run. Every file the run
+writes opens with a `Code generated` header, which is what tells a reader
+of the tree that the file is a build output. And a generated package the
+run no longer emits is deleted, so a package that stops being routed
+leaves the tree rather than lingering as a file no input accounts for.
+Hand-authored packages, listed in `HandAuthoredPackages` in
+[internal/dts_to_esc/generate.go](../../internal/dts_to_esc/generate.go),
+are exempt from both.
+
+The overlay defaults to the `overlay` directory beside `<esc-dir>`, so
+`internal/interop/data` as `<esc-dir>` resolves it to
+`internal/interop/overlay`. `--overlay` names another one.
+`internal/interop/overlay/README.md` covers what each operation does and
+how a file's name carries it.
+
+`check`, `regenerate`, and `bootstrap` are the additive re-run model
+`generate` replaces. They are removed in
+[#1345](https://github.com/escalier-lang/escalier/issues/1345).
 
 `check` prints the unified diff a `regenerate` run would apply and exits
 non-zero when anything upstream is missing from the committed tree.
@@ -55,15 +84,48 @@ declaration byte-for-byte alone, so hand-edits survive a re-run.
 `bootstrap` writes each package file whole, so pointing it at the
 committed tree discards those hand-edits.
 
-`bootstrap --cfg <cfg.json>` additionally joins every `std:*` member it
-emits against the ECMA-262 effect facts derived from that control-flow
-graph and reports the names present on one side only. It also reports what
-the curated layer and the coercion filter did to those facts, and diffs the
-receiver claim of every instance method against the hand-written mutability
-sources. See §5, §6, and §9.2 of
+`--cfg <cfg.json>`, on `generate` or `bootstrap`, additionally joins
+every `std:*` member the run emits against the ECMA-262 effect facts
+derived from that control-flow graph and reports the names present on one
+side only. It also reports what the curated layer and the coercion filter
+did to those facts, and diffs the receiver claim of every instance method
+against the hand-written mutability sources. See §5, §6, and §9.2 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
 
 ## Bumping the pinned TypeScript version
+
+1. Raise the `typescript` version in `package.json` and run
+   `pnpm install`.
+
+2. Write the tree:
+
+   ```
+   ./bin/dts_to_esc generate node_modules/typescript/lib internal/interop/data
+   ```
+
+   `internal/interop/data/std/` still holds the two §2-era stubs,
+   `array.esc` and `math.esc`, rather than generated packages. Both name
+   packages the partition table routes to, so a run overwrites them and
+   the fixtures that read them fail. The first run against the committed
+   tree is §7's stdlib bootstrap,
+   [#1232](https://github.com/escalier-lang/escalier/issues/1232), which
+   reviews the whole output and lands it together with the inputs that
+   produce it. Until then, point `<esc-dir>` at a scratch directory.
+
+3. Review `git diff` and commit. A declaration TypeScript removed shows
+   up as a deletion in that diff rather than as a report, because the run
+   does not carry the old tree forward.
+
+An overlay `replace` or `drop` naming a declaration or member the
+upstream source no longer has fails the run and names it. That is the
+removal signal for the one input the diff cannot show, since the overlay
+wins by construction wherever it applies.
+
+## The additive re-run workflow
+
+What follows is the workflow `check` and `regenerate` implement, kept
+until [#1345](https://github.com/escalier-lang/escalier/issues/1345)
+removes them.
 
 1. Raise the `typescript` version in `package.json` and run
    `pnpm install`.
