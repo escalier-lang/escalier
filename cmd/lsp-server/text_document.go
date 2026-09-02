@@ -206,7 +206,14 @@ func (server *Server) textDocumentHover(context *glsp.Context, params *protocol.
 	fmt.Fprintf(os.Stderr, "textDocumentHover - uri = %s\n", params.TextDocument.URI)
 
 	loc := posToLoc(server.lineMapForURI(params.TextDocument.URI), params.Position)
-	value := fmt.Sprintf("textDocumentHover - loc = offset:%d\n", loc.Offset)
+	// The client's position is already a line and column, so report it directly
+	// rather than converting the offset back. It is 0-based, where a person
+	// counts from 1.
+	value := fmt.Sprintf(
+		"textDocumentHover - loc = line:%d, column:%d\n",
+		params.Position.Line+1,
+		params.Position.Character+1,
+	)
 
 	sourceID := server.sourceIDForURI(params.TextDocument.URI)
 	server.mu.RLock()
