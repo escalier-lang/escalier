@@ -19,17 +19,21 @@ interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
 `
 
-// convertWithOverlay routes overlayLib, converts every bucket, and folds
-// the given overlay files in. It runs the three steps a generation runs
-// before it writes anything to disk.
-func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+// applyOverlayIn routes lib, converts every bucket, and folds in the
+// overlay tree already seeded at dir. It runs the three steps a
+// generation runs before it writes anything to disk. Under record it
+// takes the digest of whatever the overlay replaces as the current
+// answer and writes the sidecars, the way
+// `dts_to_esc generate --update-digests` does.
+func applyOverlayIn(t *testing.T, dir, lib string, record bool) (map[string]*StandaloneModule, error) {
 	t.Helper()
-	overlay, err := LoadOverlay(seedOverlay(t, files))
+	overlay, err := LoadOverlay(dir)
 	if err != nil {
 		return nil, err
 	}
+	overlay.RecordDigests = record
 	res, err := PartitionLibWithOverlay(
-		[]LibInput{parseLib(t, "lib.es5.d.ts", overlayLib)}, overlay)
+		[]LibInput{parseLib(t, "lib.es5.d.ts", lib)}, overlay)
 	if err != nil {
 		return nil, err
 	}
@@ -38,6 +42,31 @@ func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*Stan
 		return nil, err
 	}
 	return mods, ApplyOverlay(mods, overlay)
+}
+
+// convertWithOverlay folds an overlay tree into the converted
+// overlayLib. It runs the two steps a contributor takes for a
+// `replace`: record what the overlay stands in for, then run the check
+// that reads those digests back. Every replace case therefore covers
+// the round trip as well as its own subject.
+func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	return convertLibWithOverlay(t, overlayLib, files)
+}
+
+// convertLibWithOverlay is convertWithOverlay over a chosen `.d.ts`
+// input, for the shapes overlayLib does not hold.
+func convertLibWithOverlay(
+	t *testing.T,
+	lib string,
+	files map[string]string,
+) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	dir := seedOverlay(t, files)
+	if _, err := applyOverlayIn(t, dir, lib, true); err != nil {
+		return nil, err
+	}
+	return applyOverlayIn(t, dir, lib, false)
 }
 
 // overlayModules is convertWithOverlay for a case expected to succeed.
@@ -324,4 +353,331 @@ func TestApplyOverlay_AddCreatesAPackageNothingRoutesTo(t *testing.T) {
 	require.Equal(t, `@js("Date.now")
 export declare fn now() -> number
 `, renderPackage(t, mods, "std:date"))
+}
+
+// overlayKindLib converts to a class holding a getter and a setter under
+// one name plus a two-signature overload set. Those are the two shapes a
+// member key has to tell apart: one name over several kinds, and one
+// name over several signatures of one kind.
+const overlayKindLib = `
+interface Array<T> { get size(): number; set size(v: number); get first(): T; find(x: number): T; find(x: string): T; }
+interface ArrayConstructor { new <T>(): Array<T>; }
+declare var Array: ArrayConstructor;
+`
+
+// overlayKindModules folds an overlay into the converted overlayKindLib
+// for a case expected to succeed.
+func overlayKindModules(t *testing.T, files map[string]string) map[string]*StandaloneModule {
+	t.Helper()
+	mods, err := convertLibWithOverlay(t, overlayKindLib, files)
+	require.NoError(t, err)
+	return mods
+}
+
+// overlayKindError is overlayKindModules for a case expected to fail,
+// and returns the message.
+func overlayKindError(t *testing.T, files map[string]string) string {
+	t.Helper()
+	_, err := convertLibWithOverlay(t, overlayKindLib, files)
+	require.Error(t, err)
+	return err.Error()
+}
+
+// TestApplyOverlay_KeysAMemberOnItsKind pins the half of the member key
+// that is not the name. A `readonly x: T` and a `get x()` are two
+// members, so an overlay addresses one without disturbing the other and
+// cannot turn one into the other by writing the name in a new form.
+func TestApplyOverlay_KeysAMemberOnItsKind(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    get size(self) -> number | undefined,
+    set size(mut self, v: number) -> undefined,
+    get first(self) -> T,
+    find(self, x: number) -> T,
+    find(self, x: string) -> T,
+    constructor(mut self)
+}
+`, renderPackage(t, overlayKindModules(t, map[string]string{
+		"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"    get size(self) -> number | undefined,\n}\n",
+	}), "std:array"))
+}
+
+// TestApplyOverlay_RejectsAKindChange covers the two ways an overlay can
+// write a name the converted declaration holds under another kind.
+// Neither substitutes across kinds, since that would retype a member
+// under cover of replacing it.
+func TestApplyOverlay_RejectsAKindChange(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "replace writing a getter as a method",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    size(self) -> number,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc replaces Array.size as a method, which " +
+				"the converted declaration declares as a getter and a setter; drop the " +
+				"member and add the new form to change its kind",
+		},
+		{
+			name: "replace writing the half of an accessor the declaration lacks",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    set first(mut self, v: T),\n}\n",
+			},
+			want: "overlay: std/array.replace.esc replaces Array.first as a setter, " +
+				"which the converted declaration declares only as a getter; " +
+				"contribute the setter with an add overlay instead",
+		},
+		{
+			name: "add writing a getter as a field",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare class Array<T> {\n" +
+					"    size: number,\n}\n",
+			},
+			want: "overlay: std/array.add.esc adds Array.size as a field, which the " +
+				"converted declaration declares as a getter and a setter; drop the " +
+				"member and add the new form to change its kind",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayKindError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_ReplaceRestatesTheWholeOverloadSet covers the rule a
+// name-shaped key forces. `find` addresses both of the converted
+// signatures, so an overlay that restates one of them would drop the
+// other without saying so.
+func TestApplyOverlay_ReplaceRestatesTheWholeOverloadSet(t *testing.T) {
+	t.Parallel()
+	t.Run("restating every signature substitutes the set", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    get size(self) -> number,
+    set size(mut self, v: number) -> undefined,
+    get first(self) -> T,
+    find(self, x: number) -> T | undefined,
+    find(self, x: string) -> T | undefined,
+    constructor(mut self)
+}
+`, renderPackage(t, overlayKindModules(t, map[string]string{
+			"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"    find(self, x: number) -> T | undefined,\n" +
+				"    find(self, x: string) -> T | undefined,\n}\n",
+		}), "std:array"))
+	})
+
+	t.Run("restating one signature fails and names the member", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t,
+			"overlay: std/array.replace.esc replaces 1 of the 2 signatures of "+
+				"Array.find; a replace restates the whole overload set, since a name "+
+				"is what addresses it",
+			overlayKindError(t, map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    find(self, x: number) -> T | undefined,\n}\n",
+			}))
+	})
+}
+
+// TestApplyOverlay_AddContributesAnOverloadSet covers a name the
+// converted declaration has no signature of. The overlay writes each
+// signature as its own member, the way the declaration itself does.
+func TestApplyOverlay_AddContributesAnOverloadSet(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean,
+    indexOf(self, item: T) -> number,
+    indexOf(self, item: T, from: number) -> number
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`, renderPackage(t, overlayModules(t, map[string]string{
+		"std/array.add.esc": "export declare class Array<T> {\n" +
+			"    indexOf(self, item: T) -> number,\n" +
+			"    indexOf(self, item: T, from: number) -> number,\n}\n",
+	}), "std:array"))
+}
+
+// TestApplyOverlay_AddsTheOtherHalfOfAnAccessor covers the one pair of
+// members that share a name. The converted declaration holds the getter
+// for `first` alone, so the setter is an addition rather than a kind
+// change.
+func TestApplyOverlay_AddsTheOtherHalfOfAnAccessor(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    get size(self) -> number,
+    set size(mut self, v: number) -> undefined,
+    get first(self) -> T,
+    find(self, x: number) -> T,
+    find(self, x: string) -> T,
+    constructor(mut self),
+    set first(mut self, v: T)
+}
+`, renderPackage(t, overlayKindModules(t, map[string]string{
+		"std/array.add.esc": "export declare class Array<T> {\n" +
+			"    set first(mut self, v: T),\n}\n",
+	}), "std:array"))
+}
+
+// TestApplyOverlay_RejectsAddingOneNameAsTwoMembers covers the clash an
+// overlay file can only have with itself. Neither member is in the
+// converted declaration, so the checks against it pass and the file's own
+// members are what carry the clash.
+func TestApplyOverlay_RejectsAddingOneNameAsTwoMembers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay string
+		want    string
+	}{
+		{
+			name: "a field and a getter",
+			overlay: "export declare class Array<T> {\n" +
+				"    first: T,\n    get first(self) -> T,\n}\n",
+			want: "overlay: std/array.add.esc adds Array.first as a getter beside a " +
+				"field it adds under the same name; one name holds one member, or a " +
+				"getter and a setter",
+		},
+		{
+			name: "one name as two fields",
+			overlay: "export declare class Array<T> {\n" +
+				"    first: T,\n    first: number,\n}\n",
+			want: "overlay: std/array.add.esc adds Array.first twice as a field; " +
+				"only signatures overload",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want,
+				overlayError(t, map[string]string{"std/array.add.esc": tt.overlay}))
+		})
+	}
+}
+
+// TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters
+// covers the header a member `add` or `replace` does not get to change.
+// The converted declaration keeps its own, so an overlay binding other
+// names would leave its members referring to nothing.
+func TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "replace binding another name",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<U> {\n" +
+					"    at(self, index: number) -> U,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes Array<U>, which the converted " +
+				"declaration binds as Array<T>; a member operation keeps the converted " +
+				"declaration's type parameters, so the overlay restates them as they are",
+		},
+		{
+			name: "add binding none at all",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike {\n" +
+					"    readonly first: unknown,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes ArrayLike, which the converted " +
+				"declaration binds as ArrayLike<T>; a member operation keeps the " +
+				"converted declaration's type parameters, so the overlay restates " +
+				"them as they are",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_ReplaceKeepsTheConvertedMemberDoc covers the prose a
+// member operation would otherwise drop. The overlay states the shape
+// and the upstream documentation of that member still reaches the
+// output, so a doc edit upstream lands even under a `replace`.
+func TestApplyOverlay_ReplaceKeepsTheConvertedMemberDoc(t *testing.T) {
+	t.Parallel()
+	mods, err := convertLibWithOverlay(t, overlayDocLib, map[string]string{
+		"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"    at(self, index: number) -> T,\n}\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    /** Reads one element. */
+    at(self, index: number) -> T,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`, renderPackage(t, mods, "std:array"))
+}
+
+// TestApplyOverlay_RejectsAHeaderAMemberOperationWouldDrop covers what
+// an overlay writes around its members. The converted declaration keeps
+// its own header, so a clause the merge would not read is a report
+// rather than a silent omission.
+func TestApplyOverlay_RejectsAHeaderAMemberOperationWouldDrop(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "an extends clause on an interface",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike<T> " +
+					"extends Iterable<T> {\n    readonly first: T,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes an extends clause on ArrayLike, " +
+				"which a member operation does not read; the converted declaration " +
+				"keeps its own header, so drop it from the overlay",
+		},
+		{
+			name: "a decorator on a class",
+			overlay: map[string]string{
+				"std/array.replace.esc": "@js(\"Array\")\n" +
+					"export declare class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes a decorator on Array, which " +
+				"a member operation does not read; the converted declaration keeps " +
+				"its own header, so drop it from the overlay",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
 }

@@ -1936,39 +1936,55 @@ export declare interface Array<T> {
 ```
 
 `add` and `replace` therefore differ only in what happens on a key
-collision, not in syntax. The pieces exist:
-[memberKey](../../internal/dts_to_esc/partition_writer.go) already
-gives a member its addressable key, covering idents, string literals,
-and `[Symbol.*]` computed keys, and the readonly-twin fold in the same
-file already walks one interface's members by that key and folds them
-into another. Member `replace` is that fold with substitution in place
-of append-if-absent.
+collision, not in syntax. A member's key is
+[memberSlot](../../internal/dts_to_esc/decl_key.go): its name, which
+side of the class it lives on, and its kind. Names cover idents, string
+literals, and `[Symbol.*]` computed keys.
 
-The substitution runs in `mergeDecls`, before trio fusion. At that
-point `Array`, `Map`, and `Promise` are all still interfaces, so
-overriding a member of an eventual class needs no post-fusion surgery.
-The pinned lib set holds two genuine `declare class` declarations, so
-the post-fusion path is a corner rather than the norm. Substituting in
-place rather than appending is what keeps regeneration byte-identical.
+The substitution runs in
+[ApplyOverlay](../../internal/dts_to_esc/overlay_apply.go), after the
+conversion and the trio fusion, so the overlay is matched against the
+converted declarations rather than against the `.d.ts` shapes. A trio
+TypeScript spells as `interface Foo` + `interface FooConstructor` +
+`declare var Foo` is therefore addressed as the single `class Foo` the
+generated file holds. Substituting in place rather than appending is
+what keeps regeneration byte-identical.
 
 Whole-declaration replacement stays available for a shape the converter
 gets structurally wrong, where restating members one at a time does not
 express the fix.
 
 Two rules the granularity needs. An overlay replaces a name's **entire
-overload set** and restates every signature in it, since `memberKey`
-returns `find` for both of `Array.find`'s signatures and a per-signature
-key would have to tiebreak the twelve overload sets that differ only in
-parameter types. And the key is name plus member kind, so a
-`readonly x: T` and a `get x()` do not collide silently.
+overload set** and restates every signature in it, since a name alone
+cannot pick one of `Array.find`'s two signatures apart and a
+per-signature key would have to tiebreak the twelve overload sets that
+differ only in parameter types. Restating fewer signatures than the
+converted declaration holds fails the run and names the member, and an
+`add` file contributes a whole set the same way. And the key carries
+member kind, so a `readonly x: T` and a `get x()` do not collide
+silently. An overlay that writes a name under another kind fails rather
+than substituting across kinds, so changing a member's kind is a `drop`
+and an `add`. A `get x()` and a `set x()` are the one pair that shares a
+name, and an overlay adds the missing half of one.
 
 Granularity shrinks the staleness hazard rather than removing it. A
 replaced member is still forked from upstream, but a change to any
 other member of the same declaration still flows through, which
-declaration-granular replacement swallows.
-[#1356](https://github.com/escalier-lang/escalier/issues/1356) carries
-both the granularity and the check that fails a run when a replaced
-member's upstream counterpart has moved.
+declaration-granular replacement swallows. What stays forked is pinned
+by a digest. Beside each `replace` file sits a `.digests.json` sidecar
+recording the printed Escalier form of every converted declaration and
+member that file stands in for, and a run whose converted form no
+longer matches the recorded one fails and names the member.
+`dts_to_esc generate --update-digests` rewrites the sidecars, which is
+how a contributor records a new entry or accepts a moved one.
+
+The digest is taken over the printed member with its doc comment left
+out, so the prose churn of a version bump moves nothing. A printer
+formatting change does invalidate every entry at once. The eventual answer is the comparison this section defers to
+SimpleSub M7.5: infer both sides and ask the solver's `constrain`
+whether the overlay member is still compatible with the converted one.
+That is robust to formatting, and it is the one check §6.4 still wants
+`constrain` for.
 
 **`drop` names what the generator must not emit.** A drop file's
 declarations are read for their **names alone** — every type
@@ -2038,9 +2054,11 @@ signature drift, and incompatible property-type drift. Checks 2 and
 `constrain`, which needs the solver to ingest a declaration module —
 SimpleSub M7.5. Regenerating and diffing catches all three at once
 and needs no checker, so drift detection comes off M7.5's critical
-path. One check still wants `constrain`: comparing an overlay
+path. One check still wants `constrain`, comparing an overlay
 `replace` against the upstream declaration it stands in for. Until
-M7.5 lands, an overlay `replace` is reviewed by hand.
+M7.5 lands, the digest sidecars above stand in for it: they catch a
+converted form that moved, at the cost of reporting a printer
+formatting change as movement too.
 
 **Declarations the generator drops on purpose** are the overlay's
 `drop` files above — `globalThis`, `eval`, and the `intrinsic`-typed

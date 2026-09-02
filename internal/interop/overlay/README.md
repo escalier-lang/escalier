@@ -59,6 +59,15 @@ export declare val iteratorKey: unique symbol
 Adding a member the converted declaration already has fails the run.
 Correcting one is `replace`.
 
+One file may add several signatures under one name, which is how it
+contributes an overload set the converted declaration has no signature
+of.
+
+A name holds one member, with one exception: a `get x()` and a
+`set x()` are two halves of one accessor and share a name. So an overlay
+may add the setter beside a converted getter, and adding any other form
+of a name the converted declaration holds fails.
+
 ## `replace`
 
 Takes the same file shape as `add` and differs only in what happens on a
@@ -73,14 +82,78 @@ export declare interface Array<T> {
 }
 ```
 
+A member is addressed by its name, which side of the class it lives on,
+and its kind. Two rules follow.
+
 A name addresses a whole overload set, so an overlay that replaces
-`Array.find` restates every signature under that name.
+`Array.find` restates both of its signatures. Restating fewer than the
+converted declaration holds fails the run and names the member, since a
+name is what addresses the set and there is no way to point at one
+signature in it.
+
+The kind is part of the key, so a `readonly x: T` and a `get x()` are
+two members rather than one. An overlay that writes a name under a kind
+the converted declaration does not hold it under fails, rather than
+retyping the member under cover of replacing it. Changing a member's
+kind is a `drop` and an `add`, and supplying the missing half of an
+accessor is an `add` on its own.
+
+## Digest sidecars
+
+A `replace` forks its target. The overlay wins by construction, so
+TypeScript can retype the member it stands in for and the generated tree
+would not move. The sidecar beside each `replace` file is what turns
+that silence into a failed run:
+
+```
+overlay/std/array.replace.esc
+overlay/std/array.replace.digests.json
+```
+
+The sidecar records the printed Escalier form of every converted
+declaration and member the file stands in for, one entry each. A run
+recomputes those digests and fails when one no longer matches, naming
+the member and the file.
+
+Recording is a separate run, so writing a new `replace` is two steps:
+
+1. Write the overlay file.
+2. Run `dts_to_esc generate --update-digests <lib-dir> <esc-dir>`, which
+   rewrites the sidecars from what the overlay currently replaces.
+
+Commit both files. The same two steps accept a member that moved
+upstream, after checking the overlay still says what it should about the
+new upstream form.
+
+A digest covers the converted form, not the overlay's own text, so
+editing the overlay alone needs no re-record. Doc comments are left out
+of the form, so the prose churn of a version bump moves no digest. An
+upstream comment reaches the output either way, since it carries onto
+the overlay member replacing it. Any change to the printer's output does
+invalidate every entry at once. The comparison that replaces this reads
+both sides through the solver's `constrain` and waits on SimpleSub M7.5.
 
 Write the overlay in the shape the generated file has. The generator
 converts the `.d.ts` first and matches the overlay against the result,
 so a declaration TypeScript spells as the `interface Foo` +
 `interface FooConstructor` + `declare var Foo` trio is addressed as the
 single `class Foo` the generated file holds.
+
+A member operation keeps the converted declaration's header and
+substitutes members under it, so the overlay writes the name and the
+type parameters and nothing else. The type parameters have to agree,
+since the members are read under them: writing `class Array<U>` where
+the generated file holds `class Array<T>` fails the run rather than
+emitting members that refer to a name nothing binds. The rest of the
+header goes unread, so an `extends` clause, an `implements` clause, a
+lifetime parameter, or a decorator on the overlay declaration fails
+rather than being dropped in silence. This holds for `add` as well as
+`replace`.
+
+The converted member's doc comment carries onto the overlay member
+replacing it, unless the overlay wrote one of its own. Upstream
+documentation therefore reaches the generated tree whether or not an
+overlay stands in for the member it describes.
 
 A declaration the converter gets structurally wrong is replaced whole
 rather than member by member. That happens when the overlay declaration
@@ -128,6 +201,10 @@ belong to none.
 - A `replace` or a `drop` naming a declaration or member the upstream
   source no longer has. That is the TypeScript-side-removal signal,
   keyed on the overlay rather than on the tree the run overwrites.
+- A `replace` whose converted counterpart has moved since its digest was
+  recorded, or that has no recorded digest at all.
+- A sidecar entry the overlay file beside it no longer replaces, and a
+  sidecar with no `replace` file beside it.
 - An `add` naming a declaration or member the upstream source already
   has.
 - A drop entry carrying a type annotation, a signature, or an

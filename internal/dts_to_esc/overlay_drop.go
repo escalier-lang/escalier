@@ -98,7 +98,7 @@ func validateDropInterfaceDecl(rel string, d *ast.InterfaceDecl) error {
 				"overlay: %s drops a member of %s as a signature, which a drop "+
 					"ignores; write `%s`", rel, owner, dropMemberForm)
 		}
-		slot, ok := slotFor(prop.Name, false)
+		slot, ok := slotFor(prop.Name, false, kindProperty)
 		if !ok {
 			return fmt.Errorf(
 				"overlay: %s drops a member of %s whose key has no textual name; "+
@@ -158,7 +158,7 @@ func newDropPlan(files []OverlayFile) dropPlan {
 				plan.members[owner] = names
 			}
 			for _, elem := range iface.TypeAnn.Elems {
-				if slot, ok := slotFor(elem.(*ast.PropertyTypeAnn).Name, false); ok {
+				if slot, ok := slotFor(elem.(*ast.PropertyTypeAnn).Name, false, kindProperty); ok {
 					names.Add(slot.Name)
 				}
 			}
