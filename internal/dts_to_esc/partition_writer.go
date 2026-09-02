@@ -793,24 +793,21 @@ func ParseLibFiles(dir string, basenames []string) ([]LibInput, error) {
 	return inputs, nil
 }
 
-// ReportPartition prints a short summary of a PartitionResult to w:
-// per-package decl count and drop count. Used by the CLI to give the
-// operator a sense of what landed where without dumping the full
-// output. The btree.Map keeps the package list sorted.
+// ReportPartition prints what the routing pass decided to leave out, so
+// the operator reads the drops without dumping the full output. Two
+// causes, kept apart: names the partition drops on purpose, and whole
+// source files it skips.
+//
+// It reports no per-package count. A count of the statements routed to a
+// package is an input-side number that reads as an output-side one, and
+// it sits next to a line saying how many packages the run wrote. What
+// each package holds is what `git diff` shows, per §6.4, which is also
+// the only side that reflects trio fusion and the overlay.
 func ReportPartition(result *PartitionResult, w io.Writer) error {
 	// The report is assembled in memory and written once. A
 	// strings.Builder write cannot fail, so the body stays free of
 	// error plumbing and the caller's writer is touched a single time.
 	var b strings.Builder
-
-	counts := btree.Map[string, int]{}
-	for uri, stmts := range result.Buckets {
-		counts.Set(uri, len(stmts))
-	}
-	counts.Scan(func(uri string, n int) bool {
-		fmt.Fprintf(&b, "  %s: %d decls\n", uri, n)
-		return true
-	})
 
 	// Split the drop list by cause. A name in ExplicitDrops is worth
 	// naming; a whole dropped source file is worth a count, and naming
