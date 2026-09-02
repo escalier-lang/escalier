@@ -19,36 +19,19 @@ interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
 `
 
-// overlayDocLib is overlayLib with a doc comment above the member the
-// overlay tests replace. Prose is the bulk of what a TypeScript version
-// bump moves, so what happens to it under a `replace` is worth pinning.
-const overlayDocLib = `
-interface Array<T> { length: number; /** Reads one element. */ at(index: number): T | undefined; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
-declare var Array: ArrayConstructor;
-interface ArrayLike<T> { readonly length: number; }
-`
-
-// convertWithOverlay folds an overlay tree into the converted
-// overlayLib.
-func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+// applyOverlayIn routes lib, converts every bucket, and folds in the
+// overlay tree already seeded at dir. It runs the three steps a
+// generation runs before it writes anything to disk. Under record it
+// takes the digest of whatever the overlay replaces as the current
+// answer and writes the sidecars, the way
+// `dts_to_esc generate --update-digests` does.
+func applyOverlayIn(t *testing.T, dir, lib string, record bool) (map[string]*StandaloneModule, error) {
 	t.Helper()
-	return convertLibWithOverlay(t, overlayLib, files)
-}
-
-// convertLibWithOverlay routes one `.d.ts` input, converts every bucket,
-// and folds the given overlay files in. It runs the three steps a
-// generation runs before it writes anything to disk.
-func convertLibWithOverlay(
-	t *testing.T,
-	lib string,
-	files map[string]string,
-) (map[string]*StandaloneModule, error) {
-	t.Helper()
-	overlay, err := LoadOverlay(seedOverlay(t, files))
+	overlay, err := LoadOverlay(dir)
 	if err != nil {
 		return nil, err
 	}
+	overlay.RecordDigests = record
 	res, err := PartitionLibWithOverlay(
 		[]LibInput{parseLib(t, "lib.es5.d.ts", lib)}, overlay)
 	if err != nil {
@@ -59,6 +42,31 @@ func convertLibWithOverlay(
 		return nil, err
 	}
 	return mods, ApplyOverlay(mods, overlay)
+}
+
+// convertWithOverlay folds an overlay tree into the converted
+// overlayLib. It runs the two steps a contributor takes for a
+// `replace`: record what the overlay stands in for, then run the check
+// that reads those digests back. Every replace case therefore covers
+// the round trip as well as its own subject.
+func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	return convertLibWithOverlay(t, overlayLib, files)
+}
+
+// convertLibWithOverlay is convertWithOverlay over a chosen `.d.ts`
+// input, for the shapes overlayLib does not hold.
+func convertLibWithOverlay(
+	t *testing.T,
+	lib string,
+	files map[string]string,
+) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	dir := seedOverlay(t, files)
+	if _, err := applyOverlayIn(t, dir, lib, true); err != nil {
+		return nil, err
+	}
+	return applyOverlayIn(t, dir, lib, false)
 }
 
 // overlayModules is convertWithOverlay for a case expected to succeed.

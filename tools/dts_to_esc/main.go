@@ -10,7 +10,7 @@
 //	    recognition, namespace flattening, and `@js(...)` decorator
 //	    emission.
 //
-//	dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] <lib-dir> <esc-dir>
+//	dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] [--update-digests] <lib-dir> <esc-dir>
 //	    Writes the whole `.esc` tree under <esc-dir> from the three
 //	    inputs of §6.4: the pinned lib set under <lib-dir>, the
 //	    ECMA-262 derived facts the converter applies, and the overlay.
@@ -18,7 +18,10 @@
 //	    re-running against a populated one are the same operation and
 //	    `git diff` is the review surface for a version bump. Generated
 //	    packages the run no longer emits are deleted. The overlay
-//	    defaults to <esc-dir>/../overlay.
+//	    defaults to <esc-dir>/../overlay. --update-digests rewrites the
+//	    digest sidecar beside each overlay `replace` file, recording the
+//	    converted form it stands in for, instead of checking what those
+//	    sidecars already record.
 //
 //	dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>
 //	    One-time seeding of a fresh `.esc` tree per §6.6: discover every
@@ -77,7 +80,7 @@ func main() {
 
 const usage = `usage:
   dts_to_esc <path-to-d.ts>
-  dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] <lib-dir> <esc-dir>
+  dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] [--update-digests] <lib-dir> <esc-dir>
   dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>
   dts_to_esc check <lib-dir> <esc-dir>
   dts_to_esc regenerate <lib-dir> <esc-dir>`
@@ -184,7 +187,7 @@ func runSingleFile(args []string, out io.Writer) error {
 
 // generateUsage is the one-line synopsis every generate-mode argument
 // error ends with.
-const generateUsage = "usage: dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] <lib-dir> <esc-dir>"
+const generateUsage = "usage: dts_to_esc generate [--cfg <cfg.json>] [--overlay <dir>] [--update-digests] <lib-dir> <esc-dir>"
 
 // defaultOverlayDirName is the overlay tree's directory name. It sits
 // beside the generated tree, so `internal/interop/data` as <esc-dir>
@@ -198,6 +201,7 @@ func runGenerate(args []string, stderr io.Writer) error {
 	flags.SetOutput(io.Discard)
 	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
 	overlayDir := flags.String("overlay", "", "`path` to the overlay tree; defaults to the overlay directory beside <esc-dir>")
+	updateDigests := flags.Bool("update-digests", false, "record what every overlay replace stands in for, rather than checking the recorded digests")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, generateUsage)
@@ -225,10 +229,11 @@ func runGenerate(args []string, stderr io.Writer) error {
 	}
 
 	res, err := dts_to_esc.Generate(dts_to_esc.GenerateOptions{
-		LibDir:       libDir,
-		OverlayDir:   *overlayDir,
-		OutDir:       escDir,
-		HandAuthored: dts_to_esc.HandAuthoredPackages,
+		LibDir:        libDir,
+		OverlayDir:    *overlayDir,
+		OutDir:        escDir,
+		HandAuthored:  dts_to_esc.HandAuthoredPackages,
+		RecordDigests: *updateDigests,
 	})
 	if err != nil {
 		return err

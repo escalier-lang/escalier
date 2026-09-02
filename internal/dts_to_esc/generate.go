@@ -38,6 +38,12 @@ type GenerateOptions struct {
 	// HandAuthored names the packages the run leaves alone. Callers pass
 	// HandAuthoredPackages; a nil set means the run owns every package.
 	HandAuthored set.Set[string]
+
+	// RecordDigests makes the run rewrite each `replace` file's digest
+	// sidecar from the converted forms it stands in for, rather than
+	// checking the recorded ones. It is how a contributor records what a
+	// new or revised overlay entry replaces.
+	RecordDigests bool
 }
 
 // GenerateResult reports what one run did, for the caller to print.
@@ -79,6 +85,7 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	overlay.RecordDigests = opts.RecordDigests
 
 	basenames, err := DiscoverLibFiles(opts.LibDir)
 	if err != nil {

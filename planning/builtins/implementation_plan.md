@@ -1970,10 +1970,21 @@ name, and an overlay adds the missing half of one.
 Granularity shrinks the staleness hazard rather than removing it. A
 replaced member is still forked from upstream, but a change to any
 other member of the same declaration still flows through, which
-declaration-granular replacement swallows.
-[#1356](https://github.com/escalier-lang/escalier/issues/1356) carries
-both the granularity and the check that fails a run when a replaced
-member's upstream counterpart has moved.
+declaration-granular replacement swallows. What stays forked is pinned
+by a digest. Beside each `replace` file sits a `.digests.json` sidecar
+recording the printed Escalier form of every converted declaration and
+member that file stands in for, and a run whose converted form no
+longer matches the recorded one fails and names the member.
+`dts_to_esc generate --update-digests` rewrites the sidecars, which is
+how a contributor records a new entry or accepts a moved one.
+
+The digest is taken over the printed member with its doc comment left
+out, so the prose churn of a version bump moves nothing. A printer
+formatting change does invalidate every entry at once. The eventual answer is the comparison this section defers to
+SimpleSub M7.5: infer both sides and ask the solver's `constrain`
+whether the overlay member is still compatible with the converted one.
+That is robust to formatting, and it is the one check §6.4 still wants
+`constrain` for.
 
 **`drop` names what the generator must not emit.** A drop file's
 declarations are read for their **names alone** — every type
@@ -2043,9 +2054,11 @@ signature drift, and incompatible property-type drift. Checks 2 and
 `constrain`, which needs the solver to ingest a declaration module —
 SimpleSub M7.5. Regenerating and diffing catches all three at once
 and needs no checker, so drift detection comes off M7.5's critical
-path. One check still wants `constrain`: comparing an overlay
+path. One check still wants `constrain`, comparing an overlay
 `replace` against the upstream declaration it stands in for. Until
-M7.5 lands, an overlay `replace` is reviewed by hand.
+M7.5 lands, the digest sidecars above stand in for it: they catch a
+converted form that moved, at the cost of reporting a printer
+formatting change as movement too.
 
 **Declarations the generator drops on purpose** are the overlay's
 `drop` files above — `globalThis`, `eval`, and the `intrinsic`-typed

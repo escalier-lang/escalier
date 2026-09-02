@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 )
 
 // memberKind is the form a member takes: a field, a method, an
@@ -102,6 +103,42 @@ func slotFor(key ast.ObjKey, static bool, kind memberKind) (memberSlot, bool) {
 		}
 	}
 	return memberSlot{}, false
+}
+
+// memberOps is how the merge reads one member list: the slot a member
+// fills and the Escalier source a digest is taken over. The two member
+// lists a declaration can hold, a class body and an interface body, have
+// no element type in common, so each supplies its own pair.
+type memberOps[E any] struct {
+	slot func(E) (memberSlot, bool)
+	form func(E) (string, error)
+}
+
+// digestOptions returns the printer options a digest is taken under.
+// Doc comments are left out. An overlay stands in for a member's shape,
+// and carryMemberDocs hands the converted member's prose to the overlay
+// member replacing it wherever that member wrote none of its own. So an
+// upstream doc edit forks nothing and must not read as movement.
+func digestOptions() printer.Options {
+	opts := printer.DefaultOptions()
+	opts.OmitDocComments = true
+	return opts
+}
+
+// classMemberOps reads a class body.
+var classMemberOps = memberOps[ast.ClassElem]{
+	slot: classElemSlot,
+	form: func(elem ast.ClassElem) (string, error) {
+		return printer.PrintClassElem(elem, digestOptions())
+	},
+}
+
+// objMemberOps reads an interface or object-type body.
+var objMemberOps = memberOps[ast.ObjTypeAnnElem]{
+	slot: objElemSlot,
+	form: func(elem ast.ObjTypeAnnElem) (string, error) {
+		return printer.PrintObjTypeAnnElem(elem, digestOptions())
+	},
 }
 
 // escDeclName returns the name a top-level declaration is addressed by,

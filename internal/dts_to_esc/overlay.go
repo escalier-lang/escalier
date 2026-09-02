@@ -63,6 +63,12 @@ type OverlayFile struct {
 	// Decls are the file's top-level declarations, parsed by Escalier's
 	// own parser.
 	Decls []ast.Decl
+
+	// Digests are the digests recorded in the sidecar beside a `replace`
+	// file, keyed by the declaration or member each one addresses. Every
+	// other operation leaves it empty, since only `replace` forks what
+	// the upstream source says.
+	Digests map[digestKey]string
 }
 
 // Overlay is the parsed contents of internal/interop/overlay/, the third
@@ -72,7 +78,23 @@ type OverlayFile struct {
 // Files are sorted by path, so a run applies them in the same order
 // every time.
 type Overlay struct {
+	// Dir is the overlay root the files were read from. A run that
+	// records digests writes the sidecars back under it.
+	Dir string
+
 	Files []OverlayFile
+
+	// Sidecars are the digest sidecars found under the root, by path
+	// relative to it and sorted. A run reads a sidecar through the
+	// `replace` file it pairs with, so this list is what turns up the
+	// ones that pair with none.
+	Sidecars []string
+
+	// RecordDigests makes a run take the digest of every converted
+	// declaration and member a `replace` stands in for as the current
+	// answer, and write the sidecars, instead of checking the recorded
+	// ones. `dts_to_esc generate --update-digests` sets it.
+	RecordDigests bool
 }
 
 // LoadOverlay parses every `.esc` file under dir. These are the only
@@ -88,8 +110,9 @@ type Overlay struct {
 //     "std/symbol.add.esc" applies to the package written to
 //     "std/symbol.esc".
 //
-// Any other `.esc` path is an error. Non-`.esc` files, README.md among
-// them, are ignored.
+// Any other `.esc` path is an error. A `replace` file also reads the
+// digest sidecar beside it, named by DigestSuffix. Every other file,
+// README.md among them, is ignored.
 func LoadOverlay(dir string) (*Overlay, error) {
 	info, err := os.Stat(dir)
 	if err != nil {
@@ -100,11 +123,12 @@ func LoadOverlay(dir string) (*Overlay, error) {
 	}
 
 	var files []OverlayFile
+	var sidecars []string
 	walkErr := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		if d.IsDir() || !strings.HasSuffix(d.Name(), ".esc") {
+		if d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel(dir, path)
@@ -112,6 +136,13 @@ func LoadOverlay(dir string) (*Overlay, error) {
 			return err
 		}
 		rel = filepath.ToSlash(rel)
+		if strings.HasSuffix(d.Name(), DigestSuffix) {
+			sidecars = append(sidecars, rel)
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".esc") {
+			return nil
+		}
 		op, uri, err := classifyOverlayPath(rel)
 		if err != nil {
 			return err
@@ -125,14 +156,53 @@ func LoadOverlay(dir string) (*Overlay, error) {
 				return err
 			}
 		}
-		files = append(files, OverlayFile{Path: rel, Op: op, PkgURI: uri, Decls: decls})
+		file := OverlayFile{Path: rel, Op: op, PkgURI: uri, Decls: decls}
+		if op == OverlayReplace {
+			file.Digests, err = loadOverlayDigests(path)
+			if err != nil {
+				return err
+			}
+		}
+		files = append(files, file)
 		return nil
 	})
 	if walkErr != nil {
 		return nil, walkErr
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
-	return &Overlay{Files: files}, nil
+	sort.Strings(sidecars)
+	return &Overlay{Dir: dir, Files: files, Sidecars: sidecars}, nil
+}
+
+// unpairedSidecars returns the digest sidecars that pair with no
+// `replace` file, in path order. Nothing reads one, so leaving it would
+// let a renamed or retired overlay keep a record no run ever checks. A
+// run that records digests deletes them once it has applied the whole
+// overlay. Every other run fails and names the first.
+func (o *Overlay) unpairedSidecars() []string {
+	paired := set.NewSet[string]()
+	for _, f := range o.Files {
+		if f.Op == OverlayReplace {
+			paired.Add(digestPathFor(f.Path))
+		}
+	}
+	var unpaired []string
+	for _, rel := range o.Sidecars {
+		if !paired.Contains(rel) {
+			unpaired = append(unpaired, rel)
+		}
+	}
+	return unpaired
+}
+
+// unpairedSidecarError names a sidecar with no `replace` file to pair
+// with, and the file it would pair with if the overlay held one.
+func unpairedSidecarError(rel string) error {
+	return fmt.Errorf(
+		"overlay: %s records digests for %s, which is not a replace file the "+
+			"overlay holds; run `dts_to_esc generate --update-digests` to remove "+
+			"the sidecar, or restore the replace file it belongs beside",
+		rel, strings.TrimSuffix(rel, DigestSuffix)+".esc")
 }
 
 // classifyOverlayPath reads a file's operation and target package out of

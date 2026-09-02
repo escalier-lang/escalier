@@ -111,7 +111,12 @@ func TestGenerate_IsIdempotent(t *testing.T) {
 	outDir := t.TempDir()
 	opts := GenerateOptions{LibDir: libDir, OverlayDir: overlayDir, OutDir: outDir}
 
-	_, err := Generate(opts)
+	record := opts
+	record.RecordDigests = true
+	_, err := Generate(record)
+	require.NoError(t, err)
+
+	_, err = Generate(opts)
 	require.NoError(t, err)
 	first := readPackage(t, outDir, "std/array.esc")
 
