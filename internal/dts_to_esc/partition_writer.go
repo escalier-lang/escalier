@@ -52,8 +52,23 @@ type DropNote struct {
 }
 
 // PartitionLib routes every top-level declaration across the inputs
-// into its target package per Route. Returns an error on the first
-// unmapped symbol (§6.1 fail-safe).
+// into its target package per Route, with no overlay. Returns an error
+// on the first unmapped symbol (§6.1 fail-safe).
+func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
+	return PartitionLibWithOverlay(inputs, nil)
+}
+
+// PartitionLibWithOverlay routes every top-level declaration across the
+// inputs into its target package per Route, and drops the names the
+// overlay's root drop file holds alongside the ones ExplicitDrops holds.
+// A whole-symbol drop resolves here rather than in Route because it
+// belongs to no package, so it has to be settled before the partition
+// lookup assigns one.
+//
+// A drop naming a symbol the lib set does not declare fails the run.
+// That is the TypeScript-side-removal signal for the overlay: the tree
+// the run overwrites is never consulted, so the overlay is the only
+// place a stale name can be caught.
 //
 // A file in DroppedSources contributes nothing. Every declaration in it
 // is recorded in Drops, including the ones that augment a type another
@@ -64,10 +79,12 @@ type DropNote struct {
 // SourceFile, not where a declaration physically lives in a nested
 // namespace — top-level `declare namespace Intl { ... }` routes as a
 // single unit to std:intl regardless of which lib file declared it.
-func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
+func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionResult, error) {
 	out := &PartitionResult{
 		Buckets: make(map[string][]dts_parser.Statement),
 	}
+	overlayDrops := overlay.GlobalDrops()
+	matched := set.NewSet[string]()
 	for _, in := range inputs {
 		if in.Module == nil {
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
@@ -83,7 +100,14 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				// unroutable statements into a bucket.
 				continue
 			}
-			if dropped {
+			// A name declared in a DroppedSources file counts as
+			// matched even though the file contributes nothing, so an
+			// overlay drop of it is not reported as stale.
+			overlayDropped := overlayDrops.Contains(name)
+			if overlayDropped {
+				matched.Add(name)
+			}
+			if dropped || overlayDropped {
 				out.Drops = append(out.Drops,
 					DropNote{Name: name, SourceFile: in.SourceFile})
 				continue
@@ -97,6 +121,13 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 				return nil, UnmappedError(name, in.SourceFile)
 			}
 			out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
+		}
+	}
+	for _, name := range sortedNames(overlayDrops) {
+		if !matched.Contains(name) {
+			return nil, fmt.Errorf(
+				"overlay: %s drops %s, which no lib.*.d.ts file declares",
+				RootDropFile, name)
 		}
 	}
 	for uri, stmts := range out.Buckets {

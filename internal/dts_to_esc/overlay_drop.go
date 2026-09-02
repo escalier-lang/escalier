@@ -2,8 +2,10 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // Minimal forms a drop entry is written in. A drop is read for names
@@ -114,4 +116,77 @@ func validateDropInterfaceDecl(rel string, d *ast.InterfaceDecl) error {
 		}
 	}
 	return nil
+}
+
+// dropPlan is what one package's drop files ask of the converted module:
+// whole declarations by name, and members by owning declaration name.
+//
+// A member drop removes every member under that name. It takes the
+// whole overload set with it, and reaches a static member as readily as
+// an instance one. That is why the member sets hold bare names rather
+// than the memberSlot the add and replace paths key on, which also
+// records which side of the class a member lives on.
+type dropPlan struct {
+	decls   set.Set[string]
+	members map[string]set.Set[string]
+}
+
+// newDropPlan reads the drop entries of one package's overlay files.
+//
+// The declaration kind read here is the drop file's own grammar, not the
+// target's. validateDropDecls holds a drop file to `val` for a whole
+// declaration and `interface` for a member list, so an `interface` entry
+// names members of whatever the converted declaration turns out to be.
+// dropDeclMembers is where the target's kind matters, and it takes a
+// class as readily as an interface.
+func newDropPlan(files []OverlayFile) dropPlan {
+	plan := dropPlan{decls: set.NewSet[string](), members: map[string]set.Set[string]{}}
+	for _, f := range files {
+		if f.Op != OverlayDrop {
+			continue
+		}
+		for _, decl := range f.Decls {
+			iface, ok := decl.(*ast.InterfaceDecl)
+			if !ok {
+				plan.decls.Add(escDeclName(decl))
+				continue
+			}
+			owner := iface.Name.Name
+			names, ok := plan.members[owner]
+			if !ok {
+				names = set.NewSet[string]()
+				plan.members[owner] = names
+			}
+			for _, elem := range iface.TypeAnn.Elems {
+				if slot, ok := slotFor(elem.(*ast.PropertyTypeAnn).Name, false); ok {
+					names.Add(slot.Name)
+				}
+			}
+		}
+	}
+	return plan
+}
+
+// empty reports whether the plan asks for nothing.
+func (p dropPlan) empty() bool {
+	return p.decls.Len() == 0 && len(p.members) == 0
+}
+
+// sortedNames returns a set's members in sorted order, so a run that
+// fails on more than one of them names the same one every time.
+func sortedNames(names set.Set[string]) []string {
+	out := names.ToSlice()
+	sort.Strings(out)
+	return out
+}
+
+// sortedOwners returns the declaration names a member-drop map is keyed
+// by, sorted for the same reason sortedNames is.
+func sortedOwners(members map[string]set.Set[string]) []string {
+	out := make([]string, 0, len(members))
+	for owner := range members {
+		out = append(out, owner)
+	}
+	sort.Strings(out)
+	return out
 }
