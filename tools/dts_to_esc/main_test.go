@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/dts_to_esc"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -98,8 +99,7 @@ func TestRun_BootstrapWithCFGPrintsEveryReport(t *testing.T) {
 	var stderr strings.Builder
 	require.NoError(t, run([]string{"bootstrap", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
 
-	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  std:array: 3 decls
-  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
+	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
   coercion filter: 4882 TypeError sites adjudicated, 362 dropped
   receivers: 194 confirmed by a heuristic, 24 redundant overrides, 0 disagreements, 48 answered by the facts alone, 37 overrides no fact answers
   join: 1 matched (1 with a receiver claim), 0 declarations without a fact, 436 facts without a declaration, 0 unkeyed declarations, 64 unjoinable facts
@@ -174,6 +174,20 @@ func treeOf(t *testing.T, root string) []string {
 	return out
 }
 
+// readGenerated reads one generated package file and returns it without
+// the `Code generated` header. The header holds backticks, which
+// go-snaps cannot write back into an inline snapshot, and
+// TestGenerate_WritesTheTreeWithAHeader in internal/dts_to_esc pins it
+// already.
+func readGenerated(t *testing.T, path string) string {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	require.NoError(t, err)
+	body, found := strings.CutPrefix(string(contents), dts_to_esc.GeneratedHeader)
+	require.True(t, found, "%s should open with the generated-file header", path)
+	return body
+}
+
 // TestRun_BootstrapWritesTheTree covers the seeding mode. The snapshot
 // holds the operator-facing report, the tree the run laid down, and the
 // one package file it emitted, so a change to any of the three shows up
@@ -189,8 +203,7 @@ func TestRun_BootstrapWritesTheTree(t *testing.T) {
 	var stderr strings.Builder
 	require.NoError(t, run([]string{"bootstrap", libDir, outDir}, io.Discard, &stderr))
 
-	contents, err := os.ReadFile(filepath.Join(outDir, "std", "array.esc"))
-	require.NoError(t, err)
+	contents := readGenerated(t, filepath.Join(outDir, "std", "array.esc"))
 
 	report := strings.ReplaceAll(stderr.String(), outDir, "<out-dir>")
 	snaps.MatchInlineSnapshot(t, fmt.Sprintf(
@@ -198,7 +211,6 @@ func TestRun_BootstrapWritesTheTree(t *testing.T) {
 		report, strings.Join(treeOf(t, outDir), "\n"), contents), snaps.Inline(`--- stderr ---
 discovered 1 lib files
 wrote 1 packages under <out-dir>
-  std:array: 3 decls
 --- tree ---
 node/README.md
 std/array.esc
@@ -322,7 +334,7 @@ func TestRun_CheckDiffsACommittedFile(t *testing.T) {
 	require.ErrorIs(t, err, errCheckFailed)
 	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- a/std/array.esc
 +++ b/std/array.esc
-@@ -4,5 +4,10 @@
+@@ -8,5 +8,10 @@
      constructor(mut self),
      static isArray(arg: any) -> boolean,
      // Hand-written note.
@@ -337,4 +349,73 @@ func TestRun_CheckDiffsACommittedFile(t *testing.T) {
 check: 1 missing declarations, 1 missing members, 0 extra declarations
 note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
 `))
+}
+
+// TestRun_GenerateWritesTheTree covers the generating subcommand end to
+// end. The snapshot holds the operator-facing report, the tree the run
+// laid down, and the one package file it emitted, so a change to any of
+// the three shows up in the diff rather than behind a Contains check.
+//
+// The overlay adds a declaration no `.d.ts` has, which is what shows the
+// third generation input reaching the output.
+//
+// The out-dir is a fresh temp path on every run, so the report has it
+// replaced by a placeholder before the comparison.
+func TestRun_GenerateWritesTheTree(t *testing.T) {
+	t.Parallel()
+	libDir := seedLib(t, arrayLib)
+	escDir := t.TempDir()
+	overlayDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(overlayDir, "std"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(overlayDir, "std", "array.add.esc"),
+		[]byte("@js(\"Symbol.iterator\")\nexport declare val iteratorKey: unique symbol\n"), 0o644))
+
+	var stderr strings.Builder
+	require.NoError(t, run(
+		[]string{"generate", "--overlay", overlayDir, libDir, escDir}, io.Discard, &stderr))
+
+	contents := readGenerated(t, filepath.Join(escDir, "std", "array.esc"))
+
+	report := strings.ReplaceAll(stderr.String(), escDir, "<esc-dir>")
+	snaps.MatchInlineSnapshot(t, fmt.Sprintf(
+		"--- stderr ---\n%s--- tree ---\n%s\n--- std/array.esc ---\n%s",
+		report, strings.Join(treeOf(t, escDir), "\n"), contents), snaps.Inline(`--- stderr ---
+discovered 1 lib files
+wrote 1 packages under <esc-dir>
+--- tree ---
+node/README.md
+std/array.esc
+--- std/array.esc ---
+@js("Array")
+export declare class Array<T> {
+    length: number,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean,
+    static readonly prototype: Array<any>
+}
+
+@js("Symbol.iterator")
+export declare val iteratorKey: unique symbol
+`))
+}
+
+// TestRun_GenerateResolvesTheOverlayBesideTheTree covers the default
+// overlay location. `internal/interop/data` as <esc-dir> resolves the
+// overlay to `internal/interop/overlay`, so the bump workflow needs no
+// flag.
+func TestRun_GenerateResolvesTheOverlayBesideTheTree(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	escDir := filepath.Join(root, "data")
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "overlay", "std"), 0o755))
+	require.NoError(t, os.WriteFile(
+		filepath.Join(root, "overlay", "std", "array.drop.esc"),
+		[]byte("export declare interface Array {\n    isArray: unknown,\n}\n"), 0o644))
+
+	require.NoError(t, run(
+		[]string{"generate", seedLib(t, arrayLib), escDir}, io.Discard, io.Discard))
+
+	require.NotContains(t,
+		readGenerated(t, filepath.Join(escDir, "std", "array.esc")), "isArray")
 }

@@ -601,7 +601,12 @@ export declare class Array<T> {
 	require.Equal(t, "Array", ast.QualIdentToString(rhs.Name))
 }
 
-func TestReportPartition_FormatsSortedSummary(t *testing.T) {
+// TestReportPartition_NamesDropsWithoutRoutedCounts pins both halves of
+// the report's scope. Drops are named and sorted, and no package the run
+// routed to is counted: that number counts input statements, which trio
+// fusion and the overlay both move, so it reads as an output count it is
+// not.
+func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 	t.Parallel()
 	res := &PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
@@ -615,12 +620,7 @@ func TestReportPartition_FormatsSortedSummary(t *testing.T) {
 	}
 	var sb strings.Builder
 	require.NoError(t, ReportPartition(res, &sb))
-	out := sb.String()
-	require.Contains(t, out, "std:array: 3 decls")
-	require.Contains(t, out, "web:dom: 5 decls")
-	require.Contains(t, out, "drops: 2 (eval, globalThis)")
-	// Sorted: std comes before web.
-	require.Less(t, strings.Index(out, "std:array"), strings.Index(out, "web:dom"))
+	require.Equal(t, "  drops: 2 (eval, globalThis)\n", sb.String())
 }
 
 func TestReportPartition_SeparatesDropCauses(t *testing.T) {
@@ -642,7 +642,6 @@ func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	var sb strings.Builder
 	require.NoError(t, ReportPartition(res, &sb))
 	out := sb.String()
-	require.Contains(t, out, "std:date: 3 decls")
 	require.Contains(t, out, "drops: 1 (eval)")
 	require.Contains(t, out, "dropped source lib.scripthost.d.ts: 2 decls")
 }

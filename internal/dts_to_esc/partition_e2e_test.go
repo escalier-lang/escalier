@@ -207,3 +207,80 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
 	require.Empty(t, sb.String())
 }
+
+// TestGenerate_PinnedLibSet is the §6.6 gate over the real inputs:
+// `generate` writes the whole pinned lib set through the committed
+// overlay, every file it emits parses with Escalier's own parser, and a
+// second run leaves the tree byte-identical.
+//
+// Between the two runs the test hand-edits one package file, adding a
+// declaration no input produces. The second run overwrites the edit,
+// which is what proves the run reads no file it wrote. Byte-identity
+// alone would not: a run that read the tree and merged into it would
+// also be stable, since its own output already holds everything it
+// would add.
+func TestGenerate_PinnedLibSet(t *testing.T) {
+	t.Parallel()
+
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err)
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+	if _, err := os.Stat(libDir); err != nil {
+		t.Skipf("pinned TypeScript lib set not present at %s: %v", libDir, err)
+	}
+
+	outDir := t.TempDir()
+	opts := GenerateOptions{
+		LibDir:       libDir,
+		OverlayDir:   filepath.Join(repoRoot, "internal", "interop", "overlay"),
+		OutDir:       outDir,
+		HandAuthored: HandAuthoredPackages,
+	}
+
+	res, err := Generate(opts)
+	require.NoError(t, err)
+	require.NotEmpty(t, res.Written)
+
+	// editedFile is the package the hand-edit below goes into. Any
+	// generated file would do. std:array is named because the pinned lib
+	// set always routes to it.
+	const editedFile = "std/array.esc"
+
+	first := map[string]string{}
+	for _, uri := range res.Written {
+		pkg, ok := PackageForURI(uri)
+		require.True(t, ok, "URI %q from the run must be a known package", uri)
+		path := filepath.Join(outDir, filepath.FromSlash(pkg.File))
+		contents, err := os.ReadFile(path)
+		require.NoError(t, err, "%s should be on disk", pkg.File)
+		require.True(t, strings.HasPrefix(string(contents), GeneratedHeader),
+			"%s should open with the generated-file header", pkg.File)
+		first[pkg.File] = string(contents)
+
+		_, parseErrs := parser.ParseDecls(context.Background(), &ast.Source{
+			Path:     path,
+			Contents: string(contents),
+		})
+		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
+	}
+
+	// Add a declaration no input produces, the way a hand-edit to a
+	// generated file would. A run that reads what the first one wrote
+	// carries the edit forward; one that reads nothing overwrites it.
+	// Byte-identity on its own does not tell the two apart, since a run
+	// that merges into its own output is stable too.
+	edited := filepath.Join(outDir, filepath.FromSlash(editedFile))
+	require.NoError(t, os.WriteFile(edited,
+		[]byte(first[editedFile]+"\nexport declare val __handEdited__\n"), 0o644))
+
+	second, err := Generate(opts)
+	require.NoError(t, err)
+	require.Equal(t, res.Written, second.Written)
+	require.Empty(t, second.Removed)
+	require.Contains(t, first, editedFile, "%s must have been written for the edit above to mean anything", editedFile)
+	for file, contents := range first {
+		again, err := os.ReadFile(filepath.Join(outDir, filepath.FromSlash(file)))
+		require.NoError(t, err)
+		require.Equal(t, contents, string(again), "%s must regenerate byte-identically", file)
+	}
+}
