@@ -28,6 +28,9 @@ type Package struct {
 //
 // Lookup order at the routing site (see Route below):
 //
+//  0. The overlay's root drop file, applied by PartitionLibWithOverlay
+//     ahead of Route. A whole-symbol drop belongs to no package, so it
+//     is settled before a package is assigned.
 //  1. ExplicitDrops — symbols intentionally dropped (`globalThis`,
 //     `eval`). The routing site logs and skips emission.
 //  2. Partition (this map) — the hand-maintained, full enumeration of
@@ -933,6 +936,27 @@ func PackageForURI(uri string) (Package, bool) {
 		}
 	}
 	if uri == WebDOM.URI {
+		return WebDOM, true
+	}
+	return Package{}, false
+}
+
+// PackageForFile returns the Package whose generated file is the given
+// slash-separated path under internal/interop/data/, such as
+// "std/symbol.esc". The overlay reads this to turn a filename like
+// "std/symbol.add.esc" into the package it applies to.
+func PackageForFile(file string) (Package, bool) {
+	for _, p := range stdPackages {
+		if p.File == file {
+			return Package{URI: p.URI, File: p.File}, true
+		}
+	}
+	for _, p := range webPackages {
+		if p.File == file {
+			return Package{URI: p.URI, File: p.File}, true
+		}
+	}
+	if file == WebDOM.File {
 		return WebDOM, true
 	}
 	return Package{}, false

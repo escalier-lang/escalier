@@ -662,134 +662,6 @@ func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, er
 	return nil, nil
 }
 
-// memberSlot identifies a member by the name it is addressed with plus
-// which side of the class it lives on. Members share a slot when a
-// hand-edit could have turned one into the other: a converted
-// `readonly x: T` field and a committed `get x() -> T` occupy the same
-// slot, so the re-run leaves the hand-written getter alone instead of
-// adding a duplicate field beside it.
-//
-// Overload sets collapse to one slot too. Whether the committed
-// overloads still cover the `.d.ts` ones is a signature question, which
-// §6.4 checks 2 and 3 answer once the solver can compare them.
-type memberSlot struct {
-	Name   string
-	Static bool
-}
-
-// classElemSlot returns the slot a class member fills. The bool is
-// false for a member whose key is neither an identifier, a string
-// literal, nor a dotted computed key such as `[Symbol.iterator]`. Both
-// sides run through this function, so an unnameable member is invisible
-// to the member diff. It is never reported and never written.
-func classElemSlot(elem ast.ClassElem) (memberSlot, bool) {
-	switch e := elem.(type) {
-	case *ast.FieldElem:
-		return slotFor(e.Name, e.Static)
-	case *ast.MethodElem:
-		return slotFor(e.Name, e.Static)
-	case *ast.GetterElem:
-		return slotFor(e.Name, e.Static)
-	case *ast.SetterElem:
-		return slotFor(e.Name, e.Static)
-	case *ast.ConstructorElem:
-		return memberSlot{Name: "constructor"}, true
-	}
-	return memberSlot{}, false
-}
-
-// objElemSlot is classElemSlot for an interface or object-type member.
-// Call and construct signatures carry no name, so the diff passes over
-// them the same way it passes over an unnameable key.
-func objElemSlot(elem ast.ObjTypeAnnElem) (memberSlot, bool) {
-	switch e := elem.(type) {
-	case *ast.PropertyTypeAnn:
-		return slotFor(e.Name, false)
-	case *ast.MethodTypeAnn:
-		return slotFor(e.Name, false)
-	case *ast.GetterTypeAnn:
-		return slotFor(e.Name, false)
-	case *ast.SetterTypeAnn:
-		return slotFor(e.Name, false)
-	}
-	return memberSlot{}, false
-}
-
-// slotFor builds a memberSlot from a member key, reporting false for a
-// key with no stable textual name.
-func slotFor(key ast.ObjKey, static bool) (memberSlot, bool) {
-	switch k := key.(type) {
-	case *ast.IdentExpr:
-		return memberSlot{Name: k.Name, Static: static}, true
-	case *ast.StrLit:
-		return memberSlot{Name: k.Value, Static: static}, true
-	case *ast.ComputedKey:
-		if dotted := astExprDottedName(k.Expr); dotted != "" {
-			return memberSlot{Name: dotted, Static: static}, true
-		}
-	}
-	return memberSlot{}, false
-}
-
-// escDeclName returns the name a top-level declaration is addressed by,
-// or "" for a declaration with no single-identifier name — a VarDecl
-// bound to a destructuring pattern, say. Unnamed declarations take no
-// part in the diff.
-func escDeclName(decl ast.Decl) string {
-	switch d := decl.(type) {
-	case *ast.VarDecl:
-		if id, ok := d.Pattern.(*ast.IdentPat); ok {
-			return id.Name
-		}
-	case *ast.FuncDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.ClassDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.TypeDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.InterfaceDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.EnumDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	case *ast.NamespaceDecl:
-		if d.Name != nil {
-			return d.Name.Name
-		}
-	}
-	return ""
-}
-
-// escDeclKind returns the Escalier form of a declaration, for reports.
-func escDeclKind(decl ast.Decl) string {
-	switch decl.(type) {
-	case *ast.ClassDecl:
-		return "class"
-	case *ast.InterfaceDecl:
-		return "interface"
-	case *ast.TypeDecl:
-		return "type"
-	case *ast.FuncDecl:
-		return "function"
-	case *ast.VarDecl:
-		return "value"
-	case *ast.EnumDecl:
-		return "enum"
-	case *ast.NamespaceDecl:
-		return "namespace"
-	}
-	return "declaration"
-}
-
 // apply writes this package's additions to disk and returns what it
 // did. A package whose contents would not change is not rewritten, so
 // an unchanged file keeps its mtime.
@@ -811,6 +683,12 @@ func (p *packagePlan) apply(escDir string) (RegenResult, error) {
 
 	spliced := p.splice()
 	updated := applyEdits(p.contents, spliced.edits)
+	if !p.diff.Exists {
+		// A package this run creates from scratch is a generated file
+		// like any other, so it opens with the same banner
+		// WriteConvertedTree writes.
+		updated = GeneratedHeader + updated
+	}
 	if p.diff.Exists && updated == p.contents {
 		// Every owner was skipped and nothing was appended, so there is
 		// no byte to write. Rewriting identical contents would move the
@@ -1004,4 +882,3 @@ func indentLines(text, indent string) string {
 	}
 	return strings.Join(lines, "\n")
 }
-
