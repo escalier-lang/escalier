@@ -7,8 +7,8 @@
 #
 # The patterns cover the two directories because the partition table in
 # internal/dts_to_esc/partition.go routes a generated package to every
-# .esc file under them. A hand-authored package needs a carve-out here,
-# and internal/dts_to_esc/gitattributes_test.go fails until it has one.
+# .esc file under them. A hand-authored package under either directory
+# needs a carve-out here.
 #
 # The tree is committed on purpose, so it is neither marked
 # linguist-vendored nor listed in .gitignore.
