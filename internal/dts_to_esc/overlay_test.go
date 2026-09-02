@@ -58,6 +58,127 @@ func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	require.Equal(t, []string{"std:array", "std:date", "std:symbol"}, overlay.PackageURIs())
 }
 
+// TestLoadOverlay_Accepts is the happy-path twin of
+// TestLoadOverlay_Rejects: one overlay file per case, each naming the
+// operation and package the loader reads off its path, and the
+// declarations it parses out of the file.
+//
+// Between them the two tables are the accepted surface. This one covers
+// the filename-to-package mapping across both schemes, a multi-word
+// package name, and the file shapes each operation is written in.
+func TestLoadOverlay_Accepts(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		path      string
+		body      string
+		wantOp    OverlayOp
+		wantPkg   string
+		wantDecls []string
+	}{
+		{
+			name:      "root drop file names symbols that belong to no package",
+			path:      "drop.esc",
+			body:      "export declare val eval\nexport declare val globalThis\n",
+			wantOp:    OverlayDrop,
+			wantPkg:   "",
+			wantDecls: []string{"eval", "globalThis"},
+		},
+		{
+			name:      "add extends a declaration of its package",
+			path:      "std/symbol.add.esc",
+			body:      "export declare interface SymbolConstructor {\n    readonly customMatcher: unique symbol,\n}\n",
+			wantOp:    OverlayAdd,
+			wantPkg:   "std:symbol",
+			wantDecls: []string{"SymbolConstructor"},
+		},
+		{
+			name:      "add contributes a decorated top-level declaration",
+			path:      "std/iterator.add.esc",
+			body:      "@js(\"Symbol.iterator\")\nexport declare val iteratorKey: unique symbol\n",
+			wantOp:    OverlayAdd,
+			wantPkg:   "std:iterator",
+			wantDecls: []string{"iteratorKey"},
+		},
+		{
+			name:      "replace restates the members it stands in for",
+			path:      "std/array.replace.esc",
+			body:      "export declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
+			wantOp:    OverlayReplace,
+			wantPkg:   "std:array",
+			wantDecls: []string{"Array"},
+		},
+		{
+			name:      "drop names a member of one of its package's declarations",
+			path:      "std/date.drop.esc",
+			body:      "export declare interface Date {\n    getYear: unknown,\n}\n",
+			wantOp:    OverlayDrop,
+			wantPkg:   "std:date",
+			wantDecls: []string{"Date"},
+		},
+		{
+			name:      "drop names whole declarations of its package",
+			path:      "std/error.drop.esc",
+			body:      "export declare val EvalError\nexport declare val EvalErrorConstructor\n",
+			wantOp:    OverlayDrop,
+			wantPkg:   "std:error",
+			wantDecls: []string{"EvalError", "EvalErrorConstructor"},
+		},
+		{
+			name:      "a multi-word package name keeps its underscores",
+			path:      "std/typed_arrays.add.esc",
+			body:      "export declare interface Int8Array {\n    readonly kind: string,\n}\n",
+			wantOp:    OverlayAdd,
+			wantPkg:   "std:typed_arrays",
+			wantDecls: []string{"Int8Array"},
+		},
+		{
+			name:      "the web scheme resolves the same way as std",
+			path:      "web/fetch.replace.esc",
+			body:      "export declare interface Headers {\n    get(self, name: string) -> string | null,\n}\n",
+			wantOp:    OverlayReplace,
+			wantPkg:   "web:fetch",
+			wantDecls: []string{"Headers"},
+		},
+		{
+			name:      "the catch-all dom package is addressable too",
+			path:      "web/dom.replace.esc",
+			body:      "export declare interface Element {\n    readonly tagName: string,\n}\n",
+			wantOp:    OverlayReplace,
+			wantPkg:   "web:dom",
+			wantDecls: []string{"Element"},
+		},
+		{
+			name: "one file carries several declarations, in source order",
+			path: "std/object.add.esc",
+			body: "export declare type Mutable<T> = T\n" +
+				"export declare interface ObjectConstructor {\n    readonly marker: string,\n}\n",
+			wantOp:    OverlayAdd,
+			wantPkg:   "std:object",
+			wantDecls: []string{"Mutable", "ObjectConstructor"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			overlay, err := LoadOverlay(seedOverlay(t, map[string]string{tt.path: tt.body}))
+			require.NoError(t, err)
+			require.Len(t, overlay.Files, 1)
+
+			f := overlay.Files[0]
+			require.Equal(t, tt.path, f.Path)
+			require.Equal(t, tt.wantOp, f.Op)
+			require.Equal(t, tt.wantPkg, f.PkgURI)
+
+			names := make([]string, 0, len(f.Decls))
+			for _, decl := range f.Decls {
+				names = append(names, escDeclName(decl))
+			}
+			require.Equal(t, tt.wantDecls, names)
+		})
+	}
+}
+
 // TestLoadOverlay_Rejects covers every way a committed overlay file can
 // be wrong. An overlay is an input the generator parses, so each of
 // these stops the run rather than being skipped.
