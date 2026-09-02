@@ -236,3 +236,63 @@ func TestAttachModuleCommentsKeepsFilesApart(t *testing.T) {
 		require.Equal(t, decl.Span().SourceID, leading[0].Span().SourceID)
 	}
 }
+
+// A comment at the end of a block belongs to the block. Without the check that
+// a neighbour lies inside the node enclosing the comment, it would lead the
+// statement after the closing brace instead.
+func TestAttachCommentsKeepsTheLastCommentInABlock(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, []string{"dangling *ast.FuncDecl // nothing here"},
+		attachments(t, "fn f() {\n    // nothing here\n}\nval y = 2\n"))
+}
+
+// A module indexes the nodes of every file together, so the node nearest a
+// comment by offset often belongs to another file. The search for the node
+// before a comment walks back past those.
+func TestAttachModuleCommentsTrailsAcrossFiles(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	// The first file's declaration ends at offset 10 and the second file's at
+	// offset 9, and the comment starts at 10. The nearest end at or before the
+	// comment therefore belongs to the wrong file, which is what a search that
+	// stops at the first such offset would settle for.
+	first := &ast.Source{ID: 0, Path: "lib/a.esc", Contents: "val qq = 1\n"}
+	second := &ast.Source{ID: 1, Path: "lib/b.esc", Contents: "val b = 2 // note\n"}
+	module, errors := ParseLibFiles(ctx, []*ast.Source{first, second})
+	require.Empty(t, errors)
+
+	var trailed []string
+	for _, decl := range namespacesOf(module)[0].Decls {
+		for _, comment := range decl.TrailingComments() {
+			trailed = append(trailed, comment.Text)
+		}
+	}
+	require.Equal(t, []string{"// note"}, trailed)
+}
+
+// The parser retains a declaration's leading JSDoc on the node, so the same
+// text must not also fill the leading slot. A printer writes the doc before a
+// node's leading comments, and holding it in both places would write it twice.
+func TestAttachCommentsLeavesAJSDocToTheDeclaration(t *testing.T) {
+	t.Parallel()
+	module, _ := parseSource(t, "/** what f does */\nfn f() {\n    return 1\n}\n")
+
+	decls := namespacesOf(module)[0].Decls
+	require.Len(t, decls, 1)
+	require.Equal(t, "/** what f does */", decls[0].Doc())
+	require.Empty(t, decls[0].LeadingComments())
+}
+
+// A plain block comment above a declaration is not its doc, so it fills the
+// leading slot as any other comment would.
+func TestAttachCommentsKeepsANonDocBlockLeading(t *testing.T) {
+	t.Parallel()
+	module, _ := parseSource(t, "/* not a doc */\nfn f() {\n    return 1\n}\n")
+
+	decls := namespacesOf(module)[0].Decls
+	require.Len(t, decls, 1)
+	require.Empty(t, decls[0].Doc())
+	require.Len(t, decls[0].LeadingComments(), 1)
+	require.Equal(t, "/* not a doc */", decls[0].LeadingComments()[0].Text)
+}

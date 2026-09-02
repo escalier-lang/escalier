@@ -38,8 +38,8 @@ type ClassElem interface {
 // also non-static instance methods that omit `self` (the checker reports
 // MissingSelfReceiverError for the latter).
 //
-//	self           → &MethodReceiver{Mut: false, commentSlots: commentSlots{}}
-//	mut self       → &MethodReceiver{Mut: true, commentSlots: commentSlots{}}
+//	self           → &MethodReceiver{Mut: false}
+//	mut self       → &MethodReceiver{Mut: true}
 //	'a self        → &MethodReceiver{Mut: false, Lifetime: 'a}
 //	mut 'a self    → &MethodReceiver{Mut: true,  Lifetime: 'a}
 type MethodReceiver struct {

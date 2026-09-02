@@ -111,6 +111,22 @@ type attachment struct {
 	dangling map[Node][]*Comment
 }
 
+// lead gives comment to n's leading slot, unless n already holds the same text
+// as its own JSDoc. The parser retains a declaration's leading `/** ... */` on
+// the node, and a printer writes that doc before the node's leading comments,
+// so storing it in both places would write it twice. The comment is still
+// listed in the file's comment list either way.
+//
+// It always reports the comment placed, since a node holding the text as its
+// doc is as much its owner as one holding it in a slot.
+func (a *attachment) lead(n Node, comment *Comment) bool {
+	if documented, ok := n.(Documented); ok && comment.IsDoc() && documented.Doc() == comment.Text {
+		return true
+	}
+	a.leading[n] = append(a.leading[n], comment)
+	return true
+}
+
 func (a *attachment) apply() {
 	for node, comments := range a.leading {
 		node.SetLeadingComments(comments)
@@ -170,23 +186,26 @@ func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment)
 	}
 	span := comment.span
 
-	if next := x.after(span.End.Offset, span.SourceID); next != nil {
-		if lineMap.SameLine(span.End.Offset, next.Span().Start.Offset) {
-			slots.leading[next] = append(slots.leading[next], comment)
-			return true
-		}
+	// inner is the innermost node the comment sits inside. A neighbour outside
+	// it cannot own the comment, or the last comment in a block would lead
+	// whatever follows the block instead of staying in it.
+	inner := x.enclosing(span)
+	next := x.after(span.End.Offset, span.SourceID)
+	prev := x.before(span.Start.Offset, span.SourceID)
+
+	if next != nil && enclosedBy(inner, next) &&
+		lineMap.SameLine(span.End.Offset, next.Span().Start.Offset) {
+		return slots.lead(next, comment)
 	}
-	if prev := x.before(span.Start.Offset, span.SourceID); prev != nil {
-		if lineMap.SameLine(prev.Span().End.Offset, span.Start.Offset) {
-			slots.trailing[prev] = append(slots.trailing[prev], comment)
-			return true
-		}
-	}
-	if next := x.after(span.End.Offset, span.SourceID); next != nil {
-		slots.leading[next] = append(slots.leading[next], comment)
+	if prev != nil && enclosedBy(inner, prev) &&
+		lineMap.SameLine(prev.Span().End.Offset, span.Start.Offset) {
+		slots.trailing[prev] = append(slots.trailing[prev], comment)
 		return true
 	}
-	if inner := x.enclosing(span); inner != nil {
+	if next != nil && enclosedBy(inner, next) {
+		return slots.lead(next, comment)
+	}
+	if inner != nil {
 		slots.dangling[inner] = append(slots.dangling[inner], comment)
 		return true
 	}
@@ -207,24 +226,33 @@ func (x *nodeIndex) after(offset, sourceID int) Node {
 	return nil
 }
 
-// before returns the last node ending at or before offset, preferring the
-// widest of the nodes that end there.
+// before returns the last node of sourceID ending at or before offset,
+// preferring the widest of the nodes that end there.
+//
+// The scan walks back over every node ending at or before offset, not only the
+// run sharing the largest such offset. A module holds the nodes of all its
+// files in one index, so the nearest node by offset is often from another file
+// and the one this is looking for lies further back.
 func (x *nodeIndex) before(offset, sourceID int) Node {
 	i := sort.Search(len(x.byEnd), func(i int) bool {
 		return x.byEnd[i].Span().End.Offset > offset
 	})
-	i--
-	if i < 0 {
-		return nil
-	}
-	end := x.byEnd[i].Span().End.Offset
-	var found Node
-	for ; i >= 0 && x.byEnd[i].Span().End.Offset == end; i-- {
-		if x.byEnd[i].Span().SourceID == sourceID {
-			found = x.byEnd[i]
+	for i--; i >= 0; i-- {
+		if x.byEnd[i].Span().SourceID != sourceID {
+			continue
 		}
+		// byEnd puts a node ahead of the nodes it encloses when they end
+		// together, so walking back to the start of the run reaches the widest.
+		end := x.byEnd[i].Span().End.Offset
+		found := x.byEnd[i]
+		for j := i - 1; j >= 0 && x.byEnd[j].Span().End.Offset == end; j-- {
+			if x.byEnd[j].Span().SourceID == sourceID {
+				found = x.byEnd[j]
+			}
+		}
+		return found
 	}
-	return found
+	return nil
 }
 
 // enclosing returns the innermost node whose span contains span.
@@ -250,6 +278,12 @@ func (x *nodeIndex) enclosing(span Span) Node {
 }
 
 func spanWidth(s Span) int { return s.End.Offset - s.Start.Offset }
+
+// enclosedBy reports whether candidate lies inside inner. A nil inner means no
+// node encloses the comment being placed, which leaves every candidate open.
+func enclosedBy(inner, candidate Node) bool {
+	return inner == nil || inner.Span().ContainsSpan(candidate.Span())
+}
 
 // nodeCollector gathers the nodes a walk reaches. It records on the way in, so
 // a parent lands in the slice before its children, which is the order the two
