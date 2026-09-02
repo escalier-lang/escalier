@@ -286,3 +286,55 @@ func TestPrintErrors(t *testing.T) {
 		assert.Empty(t, result)
 	})
 }
+
+func TestFormatTypeError(t *testing.T) {
+	t.Parallel()
+	// `π` takes two bytes, so a caret placed by byte offset would sit one
+	// column too far right on the line that follows it.
+	source := &ast.Source{
+		ID:       0,
+		Path:     "lib/index.esc",
+		Contents: "val π = 1\nval x: number = \"hi\"\nval y = (1 +\n    2)\n",
+	}
+
+	tests := []struct {
+		name  string
+		start int
+		end   int
+		want  string
+	}{
+		{
+			name:  "underlines the offending text",
+			start: 27,
+			end:   31,
+			want: "lib/index.esc:2:17: mismatch\n\n" +
+				"2:  val x: number = \"hi\"\n" +
+				"                    ^^^^\n",
+		},
+		{
+			name:  "a span running onto a later line stops at the first line's end",
+			start: 40,
+			end:   51,
+			want: "lib/index.esc:3:9: mismatch\n\n" +
+				"3:  val y = (1 +\n" +
+				"            ^^^^\n",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			span := ast.NewSpan(ast.Location{Offset: tc.start}, ast.Location{Offset: tc.end}, source.ID)
+			got := formatTypeError(checker.NewGenericError("mismatch", span), source)
+			require.Equal(t, tc.want, got)
+		})
+	}
+}
+
+// A span the checker synthesized covers no source text, so there is no line to
+// quote under it.
+func TestFormatTypeErrorOnASynthesizedSpan(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{ID: 0, Path: "lib/index.esc", Contents: "val x = 1\n"}
+	err := checker.NewGenericError("mismatch", checker.DEFAULT_SPAN)
+	require.Equal(t, "lib/index.esc: mismatch\n", formatTypeError(err, source))
+}
