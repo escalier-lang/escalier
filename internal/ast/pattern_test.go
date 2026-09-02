@@ -10,8 +10,8 @@ import (
 // Helper function to create an empty span for testing
 func emptySpan() Span {
 	return Span{
-		Start:    Location{Line: 0, Column: 0},
-		End:      Location{Line: 0, Column: 0},
+		Start:    Location{Offset: 0},
+		End:      Location{Offset: 0},
 		SourceID: 0,
 	}
 }

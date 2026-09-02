@@ -41,7 +41,7 @@ func IsIdentStart(r rune) bool {
 }
 
 // Based on https://www.unicode.org/reports/tr31/#D1
-func isIdentContinue(r rune) bool {
+func IsIdentContinue(r rune) bool {
 	// ASCII fast path
 	if r < 128 {
 		return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
@@ -82,7 +82,7 @@ func scanIdentContinuation(contents string, i int, runeCount int) (int, int) {
 
 		// Unicode path
 		codePoint, width := utf8.DecodeRuneInString(contents[i:])
-		if !isIdentContinue(codePoint) {
+		if !IsIdentContinue(codePoint) {
 			break // trigger on unicode operators or punctuation
 		}
 		i += width

@@ -4,18 +4,18 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     IndexType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:3-1:4,
+        span: 2-3,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -24,17 +24,17 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     IndexType: &dts_parser.LiteralType{
         Literal: &dts_parser.NumberLiteral{
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:3-1:4,
+        span: 2-3,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -44,27 +44,27 @@
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:1-1:2,
+                span: 0-1,
             },
-            span: 1:1-1:2,
+            span: 0-1,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:3-1:4,
+                span: 2-3,
             },
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:1-1:5,
+        span: 0-4,
     },
     IndexType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "P",
-            span: 1:6-1:7,
+            span: 5-6,
         },
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -73,30 +73,30 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     IndexType: &dts_parser.UnionType{
         Types: []dts_parser.TypeAnn{
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:3-1:4,
+                    span: 2-3,
                 },
-                span: 1:3-1:4,
+                span: 2-3,
             },
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "P",
-                    span: 1:7-1:8,
+                    span: 6-7,
                 },
-                span: 1:7-1:8,
+                span: 6-7,
             },
         },
-        span: 1:3-1:8,
+        span: 2-7,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -105,17 +105,17 @@
     ObjectType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
-        span: 1:1-1:9,
+        span: 0-8,
     },
     IndexType: &dts_parser.LiteralType{
         Literal: &dts_parser.NumberLiteral{
-            span: 1:10-1:11,
+            span: 9-10,
         },
-        span: 1:10-1:11,
+        span: 9-10,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -125,23 +125,23 @@
         Name: &dts_parser.Member{
             Left: &dts_parser.Ident{
                 Name: "Foo",
-                span: 1:1-1:4,
+                span: 0-3,
             },
             Right: &dts_parser.Ident{
                 Name: "Bar",
-                span: 1:5-1:8,
+                span: 4-7,
             },
         },
-        span: 1:1-1:8,
+        span: 0-7,
     },
     IndexType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:9-1:10,
+        span: 8-9,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -152,36 +152,36 @@
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:1-1:2,
+                    span: 0-1,
                 },
-                span: 1:1-1:2,
+                span: 0-1,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:3-1:4,
+                    span: 2-3,
                 },
-                span: 1:3-1:4,
+                span: 2-3,
             },
-            span: 1:1-1:5,
+            span: 0-4,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "P",
-                span: 1:6-1:7,
+                span: 5-6,
             },
-            span: 1:6-1:7,
+            span: 5-6,
         },
-        span: 1:1-1:8,
+        span: 0-7,
     },
     IndexType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Q",
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:9-1:10,
+        span: 8-9,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -190,21 +190,21 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     IndexType: &dts_parser.KeyOfType{
         Type: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "U",
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:3-1:10,
+        span: 2-9,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -213,28 +213,28 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Record",
-            span: 1:1-1:7,
+            span: 0-6,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:8-1:14,
+                span: 7-13,
             },
             &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:16-1:22,
+                span: 15-21,
             },
         },
-        span: 1:1-1:23,
+        span: 0-22,
     },
     IndexType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:24-1:25,
+            span: 23-24,
         },
-        span: 1:24-1:25,
+        span: 23-24,
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
@@ -243,32 +243,32 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:15-1:16,
+            span: 14-15,
         },
-        span: 1:15-1:16,
+        span: 14-15,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Y",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -277,28 +277,28 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: 1:11-1:17,
+        span: 10-16,
     },
     TrueType: &dts_parser.LiteralType{
         Literal: &dts_parser.BooleanLiteral{
             Value: true,
-            span: 1:20-1:24,
+            span: 19-23,
         },
-        span: 1:20-1:24,
+        span: 19-23,
     },
     FalseType: &dts_parser.LiteralType{
         Literal: &dts_parser.BooleanLiteral{
-            span: 1:27-1:32,
+            span: 26-31,
         },
-        span: 1:27-1:32,
+        span: 26-31,
     },
-    span: 1:1-1:32,
+    span: 0-31,
 }
 ---
 
@@ -307,59 +307,59 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     TrueType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.ConditionalType{
             CheckType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "X",
-                    span: 1:16-1:17,
+                    span: 15-16,
                 },
-                span: 1:16-1:17,
+                span: 15-16,
             },
             ExtendsType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Y",
-                    span: 1:26-1:27,
+                    span: 25-26,
                 },
-                span: 1:26-1:27,
+                span: 25-26,
             },
             TrueType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "A",
-                    span: 1:30-1:31,
+                    span: 29-30,
                 },
-                span: 1:30-1:31,
+                span: 29-30,
             },
             FalseType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "B",
-                    span: 1:34-1:35,
+                    span: 33-34,
                 },
-                span: 1:34-1:35,
+                span: 33-34,
             },
-            span: 1:16-1:35,
+            span: 15-34,
         },
-        span: 1:15-1:36,
+        span: 14-35,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Z",
-            span: 1:39-1:40,
+            span: 38-39,
         },
-        span: 1:39-1:40,
+        span: 38-39,
     },
-    span: 1:1-1:40,
+    span: 0-39,
 }
 ---
 
@@ -368,59 +368,59 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:15-1:16,
+            span: 14-15,
         },
-        span: 1:15-1:16,
+        span: 14-15,
     },
     FalseType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.ConditionalType{
             CheckType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Y",
-                    span: 1:20-1:21,
+                    span: 19-20,
                 },
-                span: 1:20-1:21,
+                span: 19-20,
             },
             ExtendsType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Z",
-                    span: 1:30-1:31,
+                    span: 29-30,
                 },
-                span: 1:30-1:31,
+                span: 29-30,
             },
             TrueType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "A",
-                    span: 1:34-1:35,
+                    span: 33-34,
                 },
-                span: 1:34-1:35,
+                span: 33-34,
             },
             FalseType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "B",
-                    span: 1:38-1:39,
+                    span: 37-38,
                 },
-                span: 1:38-1:39,
+                span: 37-38,
             },
-            span: 1:20-1:39,
+            span: 19-38,
         },
-        span: 1:19-1:40,
+        span: 18-39,
     },
-    span: 1:1-1:40,
+    span: 0-39,
 }
 ---
 
@@ -429,44 +429,44 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.IntersectionType{
         Types: []dts_parser.TypeAnn{
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:11-1:12,
+                    span: 10-11,
                 },
-                span: 1:11-1:12,
+                span: 10-11,
             },
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "V",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
         },
-        span: 1:11-1:16,
+        span: 10-15,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Y",
-            span: 1:23-1:24,
+            span: 22-23,
         },
-        span: 1:23-1:24,
+        span: 22-23,
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -475,38 +475,38 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
-            span: 1:11-1:14,
+            span: 10-13,
         },
-        span: 1:11-1:16,
+        span: 10-15,
     },
     TrueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:19-1:20,
+                span: 18-19,
             },
-            span: 1:19-1:20,
+            span: 18-19,
         },
         IndexType: &dts_parser.PrimitiveType{
             Kind: 7,
-            span: 1:21-1:27,
+            span: 20-26,
         },
-        span: 1:19-1:28,
+        span: 18-27,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:31-1:32,
+            span: 30-31,
         },
-        span: 1:31-1:32,
+        span: 30-31,
     },
-    span: 1:1-1:32,
+    span: 0-31,
 }
 ---
 
@@ -515,44 +515,44 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: 1:11-1:16,
+            span: 10-15,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:23-1:24,
+                        span: 22-23,
                     },
-                    span: 1:17-1:24,
+                    span: 16-23,
                 },
-                span: 1:17-1:24,
+                span: 16-23,
             },
         },
-        span: 1:11-1:25,
+        span: 10-24,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:28-1:29,
+            span: 27-28,
         },
-        span: 1:28-1:29,
+        span: 27-28,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:32-1:33,
+            span: 31-32,
         },
-        span: 1:32-1:33,
+        span: 31-32,
     },
-    span: 1:1-1:33,
+    span: 0-32,
 }
 ---
 
@@ -561,54 +561,54 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "arg",
-                    span: 1:12-1:15,
+                    span: 11-14,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:23-1:24,
+                            span: 22-23,
                         },
-                        span: 1:17-1:24,
+                        span: 16-23,
                     },
-                    span: 1:17-1:24,
+                    span: 16-23,
                 },
-                span: 1:12-1:24,
+                span: 11-23,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:35-1:36,
+                    span: 34-35,
                 },
-                span: 1:29-1:36,
+                span: 28-35,
             },
-            span: 1:29-1:36,
+            span: 28-35,
         },
-        span: 1:11-1:36,
+        span: 10-35,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "R",
-            span: 1:39-1:40,
+            span: 38-39,
         },
-        span: 1:39-1:40,
+        span: 38-39,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:43-1:48,
+        span: 42-47,
     },
-    span: 1:1-1:48,
+    span: 0-47,
 }
 ---
 
@@ -617,48 +617,48 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.ObjectType{
         Members: []dts_parser.InterfaceMember{
             &dts_parser.PropertySignature{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:13-1:14,
+                    span: 12-13,
                 },
                 TypeAnn: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "U",
-                            span: 1:22-1:23,
+                            span: 21-22,
                         },
-                        span: 1:16-1:23,
+                        span: 15-22,
                     },
-                    span: 1:16-1:23,
+                    span: 15-22,
                 },
-                span: 1:13-1:23,
+                span: 12-22,
             },
             &dts_parser.PropertySignature{
                 Name: &dts_parser.Ident{
                     Name: "b",
-                    span: 1:25-1:26,
+                    span: 24-25,
                 },
                 TypeAnn: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "V",
-                            span: 1:34-1:35,
+                            span: 33-34,
                         },
-                        span: 1:28-1:35,
+                        span: 27-34,
                     },
-                    span: 1:28-1:35,
+                    span: 27-34,
                 },
-                span: 1:25-1:35,
+                span: 24-34,
             },
         },
-        span: 1:11-1:37,
+        span: 10-36,
     },
     TrueType: &dts_parser.TupleType{
         Elements: []dts_parser.TupleElement{
@@ -666,30 +666,30 @@
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:41-1:42,
+                        span: 40-41,
                     },
-                    span: 1:41-1:42,
+                    span: 40-41,
                 },
-                span: 1:41-1:42,
+                span: 40-41,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "V",
-                        span: 1:44-1:45,
+                        span: 43-44,
                     },
-                    span: 1:44-1:45,
+                    span: 43-44,
                 },
-                span: 1:44-1:45,
+                span: 43-44,
             },
         },
-        span: 1:40-1:46,
+        span: 39-45,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:49-1:54,
+        span: 48-53,
     },
-    span: 1:1-1:54,
+    span: 0-53,
 }
 ---
 
@@ -698,41 +698,41 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: 1:11-1:16,
+            span: 10-15,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:23-1:24,
+                        span: 22-23,
                     },
-                    span: 1:17-1:24,
+                    span: 16-23,
                 },
-                span: 1:17-1:24,
+                span: 16-23,
             },
         },
-        span: 1:11-1:25,
+        span: 10-24,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:28-1:29,
+            span: 27-28,
         },
-        span: 1:28-1:29,
+        span: 27-28,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:32-1:37,
+        span: 31-36,
     },
-    span: 1:1-1:37,
+    span: 0-36,
 }
 ---
 
@@ -741,50 +741,50 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "args",
-                    span: 1:15-1:19,
+                    span: 14-18,
                 },
                 Type: &dts_parser.ArrayType{
                     ElementType: &dts_parser.PrimitiveType{
-                        span: 1:21-1:24,
+                        span: 20-23,
                     },
-                    span: 1:21-1:26,
+                    span: 20-25,
                 },
                 Rest: true,
-                span: 1:12-1:26,
+                span: 11-25,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:37-1:38,
+                    span: 36-37,
                 },
-                span: 1:31-1:38,
+                span: 30-37,
             },
-            span: 1:31-1:38,
+            span: 30-37,
         },
-        span: 1:11-1:38,
+        span: 10-37,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "R",
-            span: 1:41-1:42,
+            span: 40-41,
         },
-        span: 1:41-1:42,
+        span: 40-41,
     },
     FalseType: &dts_parser.PrimitiveType{
-        span: 1:45-1:48,
+        span: 44-47,
     },
-    span: 1:1-1:48,
+    span: 0-47,
 }
 ---
 
@@ -793,58 +793,58 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:21-1:22,
+                            span: 20-21,
                         },
-                        span: 1:15-1:22,
+                        span: 14-21,
                     },
-                    span: 1:15-1:22,
+                    span: 14-21,
                 },
-                span: 1:12-1:22,
+                span: 11-21,
             },
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "b",
-                    span: 1:24-1:25,
+                    span: 23-24,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "B",
-                            span: 1:33-1:34,
+                            span: 32-33,
                         },
-                        span: 1:27-1:34,
+                        span: 26-33,
                     },
-                    span: 1:27-1:34,
+                    span: 26-33,
                 },
-                span: 1:24-1:34,
+                span: 23-33,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:45-1:46,
+                    span: 44-45,
                 },
-                span: 1:39-1:46,
+                span: 38-45,
             },
-            span: 1:39-1:46,
+            span: 38-45,
         },
-        span: 1:11-1:46,
+        span: 10-45,
     },
     TrueType: &dts_parser.TupleType{
         Elements: []dts_parser.TupleElement{
@@ -852,40 +852,40 @@
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "A",
-                        span: 1:50-1:51,
+                        span: 49-50,
                     },
-                    span: 1:50-1:51,
+                    span: 49-50,
                 },
-                span: 1:50-1:51,
+                span: 49-50,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "B",
-                        span: 1:53-1:54,
+                        span: 52-53,
                     },
-                    span: 1:53-1:54,
+                    span: 52-53,
                 },
-                span: 1:53-1:54,
+                span: 52-53,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "R",
-                        span: 1:56-1:57,
+                        span: 55-56,
                     },
-                    span: 1:56-1:57,
+                    span: 55-56,
                 },
-                span: 1:56-1:57,
+                span: 55-56,
             },
         },
-        span: 1:49-1:58,
+        span: 48-57,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:61-1:66,
+        span: 60-65,
     },
-    span: 1:1-1:66,
+    span: 0-65,
 }
 ---
 
@@ -894,44 +894,44 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.ObjectType{
         Members: []dts_parser.InterfaceMember{
             &dts_parser.PropertySignature{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:13-1:14,
+                    span: 12-13,
                 },
                 TypeAnn: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:22-1:23,
+                            span: 21-22,
                         },
-                        span: 1:16-1:23,
+                        span: 15-22,
                     },
-                    span: 1:16-1:23,
+                    span: 15-22,
                 },
-                span: 1:13-1:23,
+                span: 12-22,
             },
         },
-        span: 1:11-1:25,
+        span: 10-24,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "A",
-            span: 1:28-1:29,
+            span: 27-28,
         },
-        span: 1:28-1:29,
+        span: 27-28,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:32-1:37,
+        span: 31-36,
     },
-    span: 1:1-1:37,
+    span: 0-36,
 }
 ---
 
@@ -940,83 +940,83 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Promise",
-            span: 1:11-1:18,
+            span: 10-17,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:25-1:26,
+                        span: 24-25,
                     },
-                    span: 1:19-1:26,
+                    span: 18-25,
                 },
-                span: 1:19-1:26,
+                span: 18-25,
             },
         },
-        span: 1:11-1:27,
+        span: 10-26,
     },
     TrueType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.ConditionalType{
             CheckType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:31-1:32,
+                    span: 30-31,
                 },
-                span: 1:31-1:32,
+                span: 30-31,
             },
             ExtendsType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Array",
-                    span: 1:41-1:46,
+                    span: 40-45,
                 },
                 TypeArgs: []dts_parser.TypeAnn{
                     &dts_parser.InferType{
                         TypeParam: &dts_parser.TypeParam{
                             Name: &dts_parser.Ident{
                                 Name: "V",
-                                span: 1:53-1:54,
+                                span: 52-53,
                             },
-                            span: 1:47-1:54,
+                            span: 46-53,
                         },
-                        span: 1:47-1:54,
+                        span: 46-53,
                     },
                 },
-                span: 1:41-1:55,
+                span: 40-54,
             },
             TrueType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "V",
-                    span: 1:58-1:59,
+                    span: 57-58,
                 },
-                span: 1:58-1:59,
+                span: 57-58,
             },
             FalseType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:62-1:63,
+                    span: 61-62,
                 },
-                span: 1:62-1:63,
+                span: 61-62,
             },
-            span: 1:31-1:63,
+            span: 30-62,
         },
-        span: 1:30-1:64,
+        span: 29-63,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:67-1:68,
+            span: 66-67,
         },
-        span: 1:67-1:68,
+        span: 66-67,
     },
-    span: 1:1-1:68,
+    span: 0-67,
 }
 ---
 
@@ -1025,25 +1025,25 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:4-1:10,
+        span: 3-9,
     },
     ValueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:13-1:14,
+            span: 12-13,
         },
-        span: 1:13-1:14,
+        span: 12-13,
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -1052,38 +1052,38 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:19-1:20,
+                span: 18-19,
             },
-            span: 1:19-1:20,
+            span: 18-19,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:21-1:22,
+                span: 20-21,
             },
-            span: 1:21-1:22,
+            span: 20-21,
         },
-        span: 1:19-1:23,
+        span: 18-22,
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -1092,39 +1092,39 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:13-1:14,
+            span: 12-13,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:24-1:25,
+                    span: 23-24,
                 },
-                span: 1:24-1:25,
+                span: 23-24,
             },
-            span: 1:18-1:25,
+            span: 17-24,
         },
-        span: 1:13-1:25,
+        span: 12-24,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:28-1:29,
+                span: 27-28,
             },
-            span: 1:28-1:29,
+            span: 27-28,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:30-1:31,
+                span: 29-30,
             },
-            span: 1:30-1:31,
+            span: 29-30,
         },
-        span: 1:28-1:32,
+        span: 27-31,
     },
     Readonly: 1,
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -1133,39 +1133,39 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:20-1:21,
+                span: 19-20,
             },
-            span: 1:20-1:21,
+            span: 19-20,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:22-1:23,
+                span: 21-22,
             },
-            span: 1:22-1:23,
+            span: 21-22,
         },
-        span: 1:20-1:24,
+        span: 19-23,
     },
     Optional: 1,
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
@@ -1174,40 +1174,40 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:13-1:14,
+            span: 12-13,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:24-1:25,
+                    span: 23-24,
                 },
-                span: 1:24-1:25,
+                span: 23-24,
             },
-            span: 1:18-1:25,
+            span: 17-24,
         },
-        span: 1:13-1:25,
+        span: 12-24,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:29-1:30,
+                span: 28-29,
             },
-            span: 1:29-1:30,
+            span: 28-29,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:31-1:32,
+                span: 30-31,
             },
-            span: 1:31-1:32,
+            span: 30-31,
         },
-        span: 1:29-1:33,
+        span: 28-32,
     },
     Optional: 1,
     Readonly: 1,
-    span: 1:1-1:35,
+    span: 0-34,
 }
 ---
 
@@ -1216,40 +1216,40 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:14-1:15,
+            span: 13-14,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:25-1:26,
+                    span: 24-25,
                 },
-                span: 1:25-1:26,
+                span: 24-25,
             },
-            span: 1:19-1:26,
+            span: 18-25,
         },
-        span: 1:14-1:26,
+        span: 13-25,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:31-1:32,
+                span: 30-31,
             },
-            span: 1:31-1:32,
+            span: 30-31,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:33-1:34,
+                span: 32-33,
             },
-            span: 1:33-1:34,
+            span: 32-33,
         },
-        span: 1:31-1:35,
+        span: 30-34,
     },
     Optional: 1,
     Readonly: 1,
-    span: 1:1-1:37,
+    span: 0-36,
 }
 ---
 
@@ -1258,40 +1258,40 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:14-1:15,
+            span: 13-14,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:25-1:26,
+                    span: 24-25,
                 },
-                span: 1:25-1:26,
+                span: 24-25,
             },
-            span: 1:19-1:26,
+            span: 18-25,
         },
-        span: 1:14-1:26,
+        span: 13-25,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:31-1:32,
+                span: 30-31,
             },
-            span: 1:31-1:32,
+            span: 30-31,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:33-1:34,
+                span: 32-33,
             },
-            span: 1:33-1:34,
+            span: 32-33,
         },
-        span: 1:31-1:35,
+        span: 30-34,
     },
     Optional: 2,
     Readonly: 2,
-    span: 1:1-1:37,
+    span: 0-36,
 }
 ---
 
@@ -1300,65 +1300,65 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.ConditionalType{
         CheckType: &dts_parser.IndexedAccessType{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:19-1:20,
+                    span: 18-19,
                 },
-                span: 1:19-1:20,
+                span: 18-19,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:21-1:22,
+                    span: 20-21,
                 },
-                span: 1:21-1:22,
+                span: 20-21,
             },
-            span: 1:19-1:23,
+            span: 18-22,
         },
         ExtendsType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "Function",
-                span: 1:32-1:40,
+                span: 31-39,
             },
-            span: 1:32-1:40,
+            span: 31-39,
         },
         TrueType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:43-1:44,
+                span: 42-43,
             },
-            span: 1:43-1:44,
+            span: 42-43,
         },
         FalseType: &dts_parser.PrimitiveType{
             Kind: 5,
-            span: 1:47-1:52,
+            span: 46-51,
         },
-        span: 1:19-1:52,
+        span: 18-51,
     },
-    span: 1:1-1:54,
+    span: 0-53,
 }
 ---
 
 [TestTemplateLiteralTypes/empty_template - 1]
 &dts_parser.TemplateLiteralType{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -1367,11 +1367,11 @@
     Type: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1382,29 +1382,29 @@
             &dts_parser.PropertySignature{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:9-1:10,
+                    span: 8-9,
                 },
                 TypeAnn: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:12-1:18,
+                    span: 11-17,
                 },
-                span: 1:9-1:18,
+                span: 8-17,
             },
             &dts_parser.PropertySignature{
                 Name: &dts_parser.Ident{
                     Name: "b",
-                    span: 1:20-1:21,
+                    span: 19-20,
                 },
                 TypeAnn: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:23-1:29,
+                    span: 22-28,
                 },
-                span: 1:20-1:29,
+                span: 19-28,
             },
         },
-        span: 1:7-1:31,
+        span: 6-30,
     },
-    span: 1:1-1:31,
+    span: 0-30,
 }
 ---
 
@@ -1413,11 +1413,11 @@
     Type: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:7-1:13,
+            span: 6-12,
         },
-        span: 1:7-1:15,
+        span: 6-14,
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
@@ -1429,23 +1429,23 @@
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "T",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:12-1:13,
+                        span: 11-12,
                     },
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
             },
-            span: 1:8-1:13,
+            span: 7-12,
         },
-        span: 1:7-1:14,
+        span: 6-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1455,20 +1455,20 @@
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:7-1:8,
+                span: 6-7,
             },
-            span: 1:7-1:8,
+            span: 6-7,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:7-1:11,
+        span: 6-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1478,13 +1478,13 @@
         Type: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:13-1:14,
+                span: 12-13,
             },
-            span: 1:13-1:14,
+            span: 12-13,
         },
-        span: 1:7-1:14,
+        span: 6-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1493,20 +1493,20 @@
     Types: []dts_parser.TypeAnn{
         &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:16-1:17,
+                    span: 15-16,
                 },
-                span: 1:16-1:17,
+                span: 15-16,
             },
-            span: 1:10-1:17,
+            span: 9-16,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -1516,16 +1516,16 @@
         Name: &dts_parser.Member{
             Left: &dts_parser.Ident{
                 Name: "Foo",
-                span: 1:7-1:10,
+                span: 6-9,
             },
             Right: &dts_parser.Ident{
                 Name: "Bar",
-                span: 1:11-1:14,
+                span: 10-13,
             },
         },
-        span: 1:7-1:14,
+        span: 6-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1533,9 +1533,9 @@
 &dts_parser.TypeOfType{
     Expr: &dts_parser.Ident{
         Name: "foo",
-        span: 1:8-1:11,
+        span: 7-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1544,14 +1544,14 @@
     Expr: &dts_parser.Member{
         Left: &dts_parser.Ident{
             Name: "Foo",
-            span: 1:8-1:11,
+            span: 7-10,
         },
         Right: &dts_parser.Ident{
             Name: "bar",
-            span: 1:12-1:15,
+            span: 11-14,
         },
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
@@ -1561,19 +1561,19 @@
         Left: &dts_parser.Member{
             Left: &dts_parser.Ident{
                 Name: "Foo",
-                span: 1:8-1:11,
+                span: 7-10,
             },
             Right: &dts_parser.Ident{
                 Name: "Bar",
-                span: 1:12-1:15,
+                span: 11-14,
             },
         },
         Right: &dts_parser.Ident{
             Name: "baz",
-            span: 1:16-1:19,
+            span: 15-18,
         },
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
@@ -1582,17 +1582,17 @@
     Types: []dts_parser.TypeAnn{
         &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &dts_parser.TypeOfType{
             Expr: &dts_parser.Ident{
                 Name: "foo",
-                span: 1:17-1:20,
+                span: 16-19,
             },
-            span: 1:10-1:20,
+            span: 9-19,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1601,24 +1601,24 @@
     ObjectType: &dts_parser.TypeOfType{
         Expr: &dts_parser.Ident{
             Name: "foo",
-            span: 1:8-1:11,
+            span: 7-10,
         },
-        span: 1:1-1:11,
+        span: 0-10,
     },
     IndexType: &dts_parser.LiteralType{
         Literal: &dts_parser.NumberLiteral{
-            span: 1:12-1:13,
+            span: 11-12,
         },
-        span: 1:12-1:13,
+        span: 11-12,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
 [TestImportTypes/simple_import - 1]
 &dts_parser.ImportType{
     Module: "module",
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -1627,9 +1627,9 @@
     Module: "module",
     Name: &dts_parser.Ident{
         Name: "Type",
-        span: 1:18-1:22,
+        span: 17-21,
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -1639,14 +1639,14 @@
     Name: &dts_parser.Member{
         Left: &dts_parser.Ident{
             Name: "Foo",
-            span: 1:18-1:21,
+            span: 17-20,
         },
         Right: &dts_parser.Ident{
             Name: "Bar",
-            span: 1:22-1:25,
+            span: 21-24,
         },
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -1655,18 +1655,18 @@
     Module: "module",
     Name: &dts_parser.Ident{
         Name: "Type",
-        span: 1:18-1:22,
+        span: 17-21,
     },
     TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:23-1:24,
+                span: 22-23,
             },
-            span: 1:23-1:24,
+            span: 22-23,
         },
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -1675,25 +1675,25 @@
     Module: "module",
     Name: &dts_parser.Ident{
         Name: "Generic",
-        span: 1:18-1:25,
+        span: 17-24,
     },
     TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:26-1:27,
+                span: 25-26,
             },
-            span: 1:26-1:27,
+            span: 25-26,
         },
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "U",
-                span: 1:29-1:30,
+                span: 28-29,
             },
-            span: 1:29-1:30,
+            span: 28-29,
         },
     },
-    span: 1:1-1:31,
+    span: 0-30,
 }
 ---
 
@@ -1702,24 +1702,24 @@
     Types: []dts_parser.TypeAnn{
         &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &dts_parser.ImportType{
             Module: "module",
             Name: &dts_parser.Ident{
                 Name: "Type",
-                span: 1:27-1:31,
+                span: 26-30,
             },
-            span: 1:10-1:31,
+            span: 9-30,
         },
     },
-    span: 1:1-1:31,
+    span: 0-30,
 }
 ---
 
 [TestThisType/this_type_alone - 1]
 &dts_parser.ThisType{
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -1727,14 +1727,14 @@
 &dts_parser.UnionType{
     Types: []dts_parser.TypeAnn{
         &dts_parser.ThisType{
-            span: 1:1-1:5,
+            span: 0-4,
         },
         &dts_parser.PrimitiveType{
             Kind: 3,
-            span: 1:8-1:12,
+            span: 7-11,
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -1742,26 +1742,26 @@
 &dts_parser.IntersectionType{
     Types: []dts_parser.TypeAnn{
         &dts_parser.ThisType{
-            span: 1:1-1:5,
+            span: 0-4,
         },
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:8-1:9,
+                span: 7-8,
             },
-            span: 1:8-1:9,
+            span: 7-8,
         },
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
 [TestThisType/this_array - 1]
 &dts_parser.ArrayType{
     ElementType: &dts_parser.ThisType{
-        span: 1:1-1:5,
+        span: 0-4,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1769,9 +1769,9 @@
 &dts_parser.RestType{
     Type: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: 1:4-1:10,
+        span: 3-9,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -1781,13 +1781,13 @@
         ElementType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:4-1:5,
+                span: 3-4,
             },
-            span: 1:4-1:5,
+            span: 3-4,
         },
-        span: 1:4-1:7,
+        span: 3-6,
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -1798,18 +1798,18 @@
             Types: []dts_parser.TypeAnn{
                 &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:5-1:11,
+                    span: 4-10,
                 },
                 &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:14-1:20,
+                    span: 13-19,
                 },
             },
-            span: 1:5-1:20,
+            span: 4-19,
         },
-        span: 1:4-1:21,
+        span: 3-20,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -1818,11 +1818,11 @@
     Type: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Args",
-            span: 1:4-1:8,
+            span: 3-7,
         },
-        span: 1:4-1:8,
+        span: 3-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1831,62 +1831,62 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.ConditionalType{
         CheckType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:19-1:20,
+                span: 18-19,
             },
-            span: 1:19-1:20,
+            span: 18-19,
         },
         ExtendsType: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:35-1:36,
+                    span: 34-35,
                 },
-                span: 1:35-1:36,
+                span: 34-35,
             },
-            span: 1:29-1:36,
+            span: 28-35,
         },
         TrueType: &dts_parser.IndexedAccessType{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:39-1:40,
+                    span: 38-39,
                 },
-                span: 1:39-1:40,
+                span: 38-39,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:41-1:42,
+                    span: 40-41,
                 },
-                span: 1:41-1:42,
+                span: 40-41,
             },
-            span: 1:39-1:43,
+            span: 38-42,
         },
         FalseType: &dts_parser.PrimitiveType{
             Kind: 5,
-            span: 1:46-1:51,
+            span: 45-50,
         },
-        span: 1:19-1:51,
+        span: 18-50,
     },
-    span: 1:1-1:53,
+    span: 0-52,
 }
 ---
 
@@ -1895,29 +1895,29 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     TrueType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:15-1:20,
+        span: 14-19,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:23-1:24,
+            span: 22-23,
         },
-        span: 1:23-1:24,
+        span: 22-23,
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -1926,50 +1926,50 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "args",
-                    span: 1:15-1:19,
+                    span: 14-18,
                 },
                 Type: &dts_parser.ArrayType{
                     ElementType: &dts_parser.PrimitiveType{
-                        span: 1:21-1:24,
+                        span: 20-23,
                     },
-                    span: 1:21-1:26,
+                    span: 20-25,
                 },
                 Rest: true,
-                span: 1:12-1:26,
+                span: 11-25,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:37-1:38,
+                    span: 36-37,
                 },
-                span: 1:31-1:38,
+                span: 30-37,
             },
-            span: 1:31-1:38,
+            span: 30-37,
         },
-        span: 1:11-1:38,
+        span: 10-37,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "R",
-            span: 1:41-1:42,
+            span: 40-41,
         },
-        span: 1:41-1:42,
+        span: 40-41,
     },
     FalseType: &dts_parser.PrimitiveType{
-        span: 1:45-1:48,
+        span: 44-47,
     },
-    span: 1:1-1:48,
+    span: 0-47,
 }
 ---
 
@@ -1978,39 +1978,39 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:20-1:21,
+                span: 19-20,
             },
-            span: 1:20-1:21,
+            span: 19-20,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:22-1:23,
+                span: 21-22,
             },
-            span: 1:22-1:23,
+            span: 21-22,
         },
-        span: 1:20-1:24,
+        span: 19-23,
     },
     Optional: 1,
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
@@ -2019,39 +2019,39 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:21-1:22,
+                span: 20-21,
             },
-            span: 1:21-1:22,
+            span: 20-21,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:23-1:24,
+                span: 22-23,
             },
-            span: 1:23-1:24,
+            span: 22-23,
         },
-        span: 1:21-1:25,
+        span: 20-24,
     },
     Optional: 2,
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -2060,39 +2060,39 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:13-1:14,
+            span: 12-13,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:24-1:25,
+                    span: 23-24,
                 },
-                span: 1:24-1:25,
+                span: 23-24,
             },
-            span: 1:18-1:25,
+            span: 17-24,
         },
-        span: 1:13-1:25,
+        span: 12-24,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:28-1:29,
+                span: 27-28,
             },
-            span: 1:28-1:29,
+            span: 27-28,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:30-1:31,
+                span: 29-30,
             },
-            span: 1:30-1:31,
+            span: 29-30,
         },
-        span: 1:28-1:32,
+        span: 27-31,
     },
     Readonly: 1,
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -2101,28 +2101,28 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -2131,92 +2131,92 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:21-1:22,
+                            span: 20-21,
                         },
-                        span: 1:15-1:22,
+                        span: 14-21,
                     },
-                    span: 1:15-1:22,
+                    span: 14-21,
                 },
-                span: 1:12-1:22,
+                span: 11-21,
             },
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "b",
-                    span: 1:24-1:25,
+                    span: 23-24,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "B",
-                            span: 1:33-1:34,
+                            span: 32-33,
                         },
-                        span: 1:27-1:34,
+                        span: 26-33,
                     },
-                    span: 1:27-1:34,
+                    span: 26-33,
                 },
-                span: 1:24-1:34,
+                span: 23-33,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:45-1:46,
+                    span: 44-45,
                 },
-                span: 1:39-1:46,
+                span: 38-45,
             },
-            span: 1:39-1:46,
+            span: 38-45,
         },
-        span: 1:11-1:46,
+        span: 10-45,
     },
     TrueType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.ConditionalType{
             CheckType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "A",
-                    span: 1:50-1:51,
+                    span: 49-50,
                 },
-                span: 1:50-1:51,
+                span: 49-50,
             },
             ExtendsType: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:60-1:66,
+                span: 59-65,
             },
             TrueType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:69-1:70,
+                    span: 68-69,
                 },
-                span: 1:69-1:70,
+                span: 68-69,
             },
             FalseType: &dts_parser.PrimitiveType{
                 Kind: 5,
-                span: 1:73-1:78,
+                span: 72-77,
             },
-            span: 1:50-1:78,
+            span: 49-77,
         },
-        span: 1:49-1:79,
+        span: 48-78,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:82-1:87,
+        span: 81-86,
     },
-    span: 1:1-1:87,
+    span: 0-86,
 }
 ---
 
@@ -2225,84 +2225,84 @@
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.ConditionalType{
         CheckType: &dts_parser.IndexedAccessType{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:19-1:20,
+                    span: 18-19,
                 },
-                span: 1:19-1:20,
+                span: 18-19,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:21-1:22,
+                    span: 20-21,
                 },
-                span: 1:21-1:22,
+                span: 20-21,
             },
-            span: 1:19-1:23,
+            span: 18-22,
         },
         ExtendsType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "Array",
-                span: 1:32-1:37,
+                span: 31-36,
             },
             TypeArgs: []dts_parser.TypeAnn{
                 &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "U",
-                            span: 1:44-1:45,
+                            span: 43-44,
                         },
-                        span: 1:38-1:45,
+                        span: 37-44,
                     },
-                    span: 1:38-1:45,
+                    span: 37-44,
                 },
             },
-            span: 1:32-1:46,
+            span: 31-45,
         },
         TrueType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "U",
-                span: 1:49-1:50,
+                span: 48-49,
             },
-            span: 1:49-1:50,
+            span: 48-49,
         },
         FalseType: &dts_parser.IndexedAccessType{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:53-1:54,
+                    span: 52-53,
                 },
-                span: 1:53-1:54,
+                span: 52-53,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:55-1:56,
+                    span: 54-55,
                 },
-                span: 1:55-1:56,
+                span: 54-55,
             },
-            span: 1:53-1:57,
+            span: 52-56,
         },
-        span: 1:19-1:57,
+        span: 18-56,
     },
-    span: 1:1-1:59,
+    span: 0-58,
 }
 ---
 
@@ -2311,18 +2311,18 @@
     ObjectType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     IndexType: &dts_parser.LiteralType{
         Literal: &dts_parser.StringLiteral{
             Value: "name",
-            span: 1:3-1:9,
+            span: 2-8,
         },
-        span: 1:3-1:9,
+        span: 2-8,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -2331,38 +2331,38 @@
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.UnionType{
         Types: []dts_parser.TypeAnn{
             &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:11-1:17,
+                span: 10-16,
             },
             &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:20-1:26,
+                span: 19-25,
             },
         },
-        span: 1:11-1:26,
+        span: 10-25,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:29-1:30,
+            span: 28-29,
         },
-        span: 1:29-1:30,
+        span: 28-29,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Y",
-            span: 1:33-1:34,
+            span: 32-33,
         },
-        span: 1:33-1:34,
+        span: 32-33,
     },
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -3626,10 +3626,10 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     Parts: []dts_parser.TemplatePart{
         &dts_parser.TemplateString{
             Value: "hello",
-            span: 1:2-1:7,
+            span: 1-6,
         },
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -3640,14 +3640,14 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:4-1:5,
+                    span: 3-4,
                 },
-                span: 1:4-1:5,
+                span: 3-4,
             },
-            span: 1:2-1:6,
+            span: 1-5,
         },
     },
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -3656,20 +3656,20 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     Parts: []dts_parser.TemplatePart{
         &dts_parser.TemplateString{
             Value: "hello ",
-            span: 1:2-1:8,
+            span: 1-7,
         },
         &dts_parser.TemplateType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:10-1:11,
+                    span: 9-10,
                 },
-                span: 1:10-1:11,
+                span: 9-10,
             },
-            span: 1:8-1:12,
+            span: 7-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -3680,18 +3680,18 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:4-1:5,
+                    span: 3-4,
                 },
-                span: 1:4-1:5,
+                span: 3-4,
             },
-            span: 1:2-1:6,
+            span: 1-5,
         },
         &dts_parser.TemplateString{
             Value: " world",
-            span: 1:6-1:12,
+            span: 5-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -3702,28 +3702,28 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "A",
-                    span: 1:4-1:5,
+                    span: 3-4,
                 },
-                span: 1:4-1:5,
+                span: 3-4,
             },
-            span: 1:2-1:6,
+            span: 1-5,
         },
         &dts_parser.TemplateString{
             Value: "-",
-            span: 1:6-1:7,
+            span: 5-6,
         },
         &dts_parser.TemplateType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "B",
-                    span: 1:9-1:10,
+                    span: 8-9,
                 },
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:7-1:11,
+            span: 6-10,
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -3732,38 +3732,38 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     Parts: []dts_parser.TemplatePart{
         &dts_parser.TemplateString{
             Value: "Hello, ",
-            span: 1:2-1:9,
+            span: 1-8,
         },
         &dts_parser.TemplateType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "First",
-                    span: 1:11-1:16,
+                    span: 10-15,
                 },
-                span: 1:11-1:16,
+                span: 10-15,
             },
-            span: 1:9-1:17,
+            span: 8-16,
         },
         &dts_parser.TemplateString{
             Value: " ",
-            span: 1:17-1:18,
+            span: 16-17,
         },
         &dts_parser.TemplateType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Last",
-                    span: 1:20-1:24,
+                    span: 19-23,
                 },
-                span: 1:20-1:24,
+                span: 19-23,
             },
-            span: 1:18-1:25,
+            span: 17-24,
         },
         &dts_parser.TemplateString{
             Value: "!",
-            span: 1:25-1:26,
+            span: 24-25,
         },
     },
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -3776,24 +3776,24 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "T",
-                            span: 1:4-1:5,
+                            span: 3-4,
                         },
-                        span: 1:4-1:5,
+                        span: 3-4,
                     },
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "U",
-                            span: 1:8-1:9,
+                            span: 7-8,
                         },
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
                 },
-                span: 1:4-1:9,
+                span: 3-8,
             },
-            span: 1:2-1:10,
+            span: 1-9,
         },
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -3802,57 +3802,57 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.IndexedAccessType{
         ObjectType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "T",
-                span: 1:32-1:33,
+                span: 31-32,
             },
-            span: 1:32-1:33,
+            span: 31-32,
         },
         IndexType: &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "K",
-                span: 1:34-1:35,
+                span: 33-34,
             },
-            span: 1:34-1:35,
+            span: 33-34,
         },
-        span: 1:32-1:36,
+        span: 31-35,
     },
     AsClause: &dts_parser.TemplateLiteralType{
         Parts: []dts_parser.TemplatePart{
             &dts_parser.TemplateString{
                 Value: "get",
-                span: 1:21-1:24,
+                span: 20-23,
             },
             &dts_parser.TemplateType{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "K",
-                        span: 1:26-1:27,
+                        span: 25-26,
                     },
-                    span: 1:26-1:27,
+                    span: 25-26,
                 },
-                span: 1:24-1:28,
+                span: 23-27,
             },
         },
-        span: 1:20-1:29,
+        span: 19-28,
     },
-    span: 1:1-1:38,
+    span: 0-37,
 }
 ---
 
@@ -3861,60 +3861,60 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     TypeParam: &dts_parser.TypeParam{
         Name: &dts_parser.Ident{
             Name: "K",
-            span: 1:4-1:5,
+            span: 3-4,
         },
         Constraint: &dts_parser.KeyOfType{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:15-1:16,
+                    span: 14-15,
                 },
-                span: 1:15-1:16,
+                span: 14-15,
             },
-            span: 1:9-1:16,
+            span: 8-15,
         },
-        span: 1:4-1:16,
+        span: 3-15,
     },
     ValueType: &dts_parser.FunctionType{
         ReturnType: &dts_parser.IndexedAccessType{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:38-1:39,
+                    span: 37-38,
                 },
-                span: 1:38-1:39,
+                span: 37-38,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:40-1:41,
+                    span: 39-40,
                 },
-                span: 1:40-1:41,
+                span: 39-40,
             },
-            span: 1:38-1:42,
+            span: 37-41,
         },
-        span: 1:32-1:42,
+        span: 31-41,
     },
     AsClause: &dts_parser.TemplateLiteralType{
         Parts: []dts_parser.TemplatePart{
             &dts_parser.TemplateString{
                 Value: "get",
-                span: 1:21-1:24,
+                span: 20-23,
             },
             &dts_parser.TemplateType{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "K",
-                        span: 1:26-1:27,
+                        span: 25-26,
                     },
-                    span: 1:26-1:27,
+                    span: 25-26,
                 },
-                span: 1:24-1:28,
+                span: 23-27,
             },
         },
-        span: 1:20-1:29,
+        span: 19-28,
     },
-    span: 1:1-1:44,
+    span: 0-43,
 }
 ---
 
@@ -3924,13 +3924,13 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
             Optional: true,
-            span: 1:2-1:8,
+            span: 1-7,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -3940,20 +3940,20 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
             Optional: true,
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -3963,29 +3963,29 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
             Optional: true,
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:11-1:17,
+                span: 10-16,
             },
             Optional: true,
-            span: 1:11-1:17,
+            span: 10-16,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: 1:20-1:27,
+                span: 19-26,
             },
             Optional: true,
-            span: 1:20-1:27,
+            span: 19-26,
         },
     },
-    span: 1:1-1:29,
+    span: 0-28,
 }
 ---
 
@@ -3995,17 +3995,17 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:6-1:12,
+                span: 5-11,
             },
             Optional: true,
-            span: 1:2-1:12,
+            span: 1-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -4015,28 +4015,28 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:5-1:11,
+                span: 4-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: 1:13-1:14,
+                span: 12-13,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:17-1:23,
+                span: 16-22,
             },
             Optional: true,
-            span: 1:13-1:23,
+            span: 12-22,
         },
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -4049,22 +4049,22 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                     Types: []dts_parser.TypeAnn{
                         &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:3-1:9,
+                            span: 2-8,
                         },
                         &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:12-1:18,
+                            span: 11-17,
                         },
                     },
-                    span: 1:3-1:18,
+                    span: 2-17,
                 },
-                span: 1:2-1:19,
+                span: 1-18,
             },
             Optional: true,
-            span: 1:2-1:19,
+            span: 1-18,
         },
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -4077,22 +4077,22 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                     Types: []dts_parser.TypeAnn{
                         &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:3-1:9,
+                            span: 2-8,
                         },
                         &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:12-1:18,
+                            span: 11-17,
                         },
                     },
-                    span: 1:3-1:18,
+                    span: 2-17,
                 },
-                span: 1:2-1:19,
+                span: 1-18,
             },
             Optional: true,
-            span: 1:2-1:19,
+            span: 1-18,
         },
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -4103,15 +4103,15 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:10,
+                span: 1-9,
             },
             Optional: true,
-            span: 1:2-1:10,
+            span: 1-9,
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -4122,24 +4122,24 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Array",
-                    span: 1:2-1:7,
+                    span: 1-6,
                 },
                 TypeArgs: []dts_parser.TypeAnn{
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "T",
-                            span: 1:8-1:9,
+                            span: 7-8,
                         },
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
                 },
-                span: 1:2-1:10,
+                span: 1-9,
             },
             Optional: true,
-            span: 1:2-1:10,
+            span: 1-9,
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -4153,28 +4153,28 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                         &dts_parser.Param{
                             Name: &dts_parser.Ident{
                                 Name: "x",
-                                span: 1:4-1:5,
+                                span: 3-4,
                             },
                             Type: &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: 1:7-1:13,
+                                span: 6-12,
                             },
-                            span: 1:4-1:13,
+                            span: 3-12,
                         },
                     },
                     ReturnType: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:18-1:24,
+                        span: 17-23,
                     },
-                    span: 1:3-1:24,
+                    span: 2-23,
                 },
-                span: 1:2-1:25,
+                span: 1-24,
             },
             Optional: true,
-            span: 1:2-1:25,
+            span: 1-24,
         },
     },
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -4187,22 +4187,22 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                     &dts_parser.PropertySignature{
                         Name: &dts_parser.Ident{
                             Name: "a",
-                            span: 1:4-1:5,
+                            span: 3-4,
                         },
                         TypeAnn: &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:7-1:13,
+                            span: 6-12,
                         },
-                        span: 1:4-1:13,
+                        span: 3-12,
                     },
                 },
-                span: 1:2-1:15,
+                span: 1-14,
             },
             Optional: true,
-            span: 1:2-1:15,
+            span: 1-14,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -4215,25 +4215,25 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:3-1:9,
+                            span: 2-8,
                         },
-                        span: 1:3-1:9,
+                        span: 2-8,
                     },
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:11-1:17,
+                            span: 10-16,
                         },
-                        span: 1:11-1:17,
+                        span: 10-16,
                     },
                 },
-                span: 1:2-1:18,
+                span: 1-17,
             },
             Optional: true,
-            span: 1:2-1:18,
+            span: 1-17,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -4244,48 +4244,48 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Array",
-                    span: 1:2-1:7,
+                    span: 1-6,
                 },
                 TypeArgs: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:8-1:14,
+                        span: 7-13,
                     },
                 },
-                span: 1:2-1:15,
+                span: 1-14,
             },
             Optional: true,
-            span: 1:2-1:15,
+            span: 1-14,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Map",
-                    span: 1:18-1:21,
+                    span: 17-20,
                 },
                 TypeArgs: []dts_parser.TypeAnn{
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "K",
-                            span: 1:22-1:23,
+                            span: 21-22,
                         },
-                        span: 1:22-1:23,
+                        span: 21-22,
                     },
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "V",
-                            span: 1:25-1:26,
+                            span: 24-25,
                         },
-                        span: 1:25-1:26,
+                        span: 24-25,
                     },
                 },
-                span: 1:18-1:27,
+                span: 17-26,
             },
             Optional: true,
-            span: 1:18-1:27,
+            span: 17-26,
         },
     },
-    span: 1:1-1:29,
+    span: 0-28,
 }
 ---
 
@@ -4294,45 +4294,45 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: 1:11-1:16,
+            span: 10-15,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:23-1:24,
+                        span: 22-23,
                     },
                     Constraint: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:33-1:39,
+                        span: 32-38,
                     },
-                    span: 1:17-1:39,
+                    span: 16-38,
                 },
-                span: 1:17-1:39,
+                span: 16-38,
             },
         },
-        span: 1:11-1:40,
+        span: 10-39,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:43-1:44,
+            span: 42-43,
         },
-        span: 1:43-1:44,
+        span: 42-43,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:47-1:52,
+        span: 46-51,
     },
-    span: 1:1-1:52,
+    span: 0-51,
 }
 ---
 
@@ -4341,57 +4341,57 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "arg",
-                    span: 1:12-1:15,
+                    span: 11-14,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:23-1:24,
+                            span: 22-23,
                         },
                         Constraint: &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:33-1:39,
+                            span: 32-38,
                         },
-                        span: 1:17-1:39,
+                        span: 16-38,
                     },
-                    span: 1:17-1:39,
+                    span: 16-38,
                 },
-                span: 1:12-1:39,
+                span: 11-38,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:50-1:51,
+                    span: 49-50,
                 },
-                span: 1:44-1:51,
+                span: 43-50,
             },
-            span: 1:44-1:51,
+            span: 43-50,
         },
-        span: 1:11-1:51,
+        span: 10-50,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "R",
-            span: 1:54-1:55,
+            span: 53-54,
         },
-        span: 1:54-1:55,
+        span: 53-54,
     },
     FalseType: &dts_parser.PrimitiveType{
-        span: 1:58-1:61,
+        span: 57-60,
     },
-    span: 1:1-1:61,
+    span: 0-60,
 }
 ---
 
@@ -4400,57 +4400,57 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: 1:11-1:16,
+            span: 10-15,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:23-1:24,
+                        span: 22-23,
                     },
                     Constraint: &dts_parser.ObjectType{
                         Members: []dts_parser.InterfaceMember{
                             &dts_parser.PropertySignature{
                                 Name: &dts_parser.Ident{
                                     Name: "name",
-                                    span: 1:35-1:39,
+                                    span: 34-38,
                                 },
                                 TypeAnn: &dts_parser.PrimitiveType{
                                     Kind: 6,
-                                    span: 1:41-1:47,
+                                    span: 40-46,
                                 },
-                                span: 1:35-1:47,
+                                span: 34-46,
                             },
                         },
-                        span: 1:33-1:49,
+                        span: 32-48,
                     },
-                    span: 1:17-1:49,
+                    span: 16-48,
                 },
-                span: 1:17-1:49,
+                span: 16-48,
             },
         },
-        span: 1:11-1:50,
+        span: 10-49,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:53-1:54,
+            span: 52-53,
         },
-        span: 1:53-1:54,
+        span: 52-53,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:57-1:62,
+        span: 56-61,
     },
-    span: 1:1-1:62,
+    span: 0-61,
 }
 ---
 
@@ -4459,57 +4459,57 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Promise",
-            span: 1:11-1:18,
+            span: 10-17,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:25-1:26,
+                        span: 24-25,
                     },
                     Constraint: &dts_parser.UnionType{
                         Types: []dts_parser.TypeAnn{
                             &dts_parser.PrimitiveType{
                                 Kind: 6,
-                                span: 1:35-1:41,
+                                span: 34-40,
                             },
                             &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: 1:44-1:50,
+                                span: 43-49,
                             },
                         },
-                        span: 1:35-1:50,
+                        span: 34-49,
                     },
-                    span: 1:19-1:50,
+                    span: 18-49,
                 },
-                span: 1:19-1:50,
+                span: 18-49,
             },
         },
-        span: 1:11-1:51,
+        span: 10-50,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "U",
-            span: 1:54-1:55,
+            span: 53-54,
         },
-        span: 1:54-1:55,
+        span: 53-54,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:58-1:59,
+            span: 57-58,
         },
-        span: 1:58-1:59,
+        span: 57-58,
     },
-    span: 1:1-1:59,
+    span: 0-58,
 }
 ---
 
@@ -4518,59 +4518,59 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "arg",
-                    span: 1:12-1:15,
+                    span: 11-14,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:23-1:24,
+                            span: 22-23,
                         },
                         Constraint: &dts_parser.ArrayType{
                             ElementType: &dts_parser.PrimitiveType{
-                                span: 1:33-1:36,
+                                span: 32-35,
                             },
-                            span: 1:33-1:38,
+                            span: 32-37,
                         },
-                        span: 1:17-1:38,
+                        span: 16-37,
                     },
-                    span: 1:17-1:38,
+                    span: 16-37,
                 },
-                span: 1:12-1:38,
+                span: 11-37,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:49-1:50,
+                    span: 48-49,
                 },
-                span: 1:43-1:50,
+                span: 42-49,
             },
-            span: 1:43-1:50,
+            span: 42-49,
         },
-        span: 1:11-1:50,
+        span: 10-49,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "R",
-            span: 1:53-1:54,
+            span: 52-53,
         },
-        span: 1:53-1:54,
+        span: 52-53,
     },
     FalseType: &dts_parser.PrimitiveType{
-        span: 1:57-1:60,
+        span: 56-59,
     },
-    span: 1:1-1:60,
+    span: 0-59,
 }
 ---
 
@@ -4579,66 +4579,66 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.FunctionType{
         Params: []*dts_parser.Param{
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "a",
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "A",
-                            span: 1:21-1:22,
+                            span: 20-21,
                         },
                         Constraint: &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:31-1:37,
+                            span: 30-36,
                         },
-                        span: 1:15-1:37,
+                        span: 14-36,
                     },
-                    span: 1:15-1:37,
+                    span: 14-36,
                 },
-                span: 1:12-1:37,
+                span: 11-36,
             },
             &dts_parser.Param{
                 Name: &dts_parser.Ident{
                     Name: "b",
-                    span: 1:39-1:40,
+                    span: 38-39,
                 },
                 Type: &dts_parser.InferType{
                     TypeParam: &dts_parser.TypeParam{
                         Name: &dts_parser.Ident{
                             Name: "B",
-                            span: 1:48-1:49,
+                            span: 47-48,
                         },
                         Constraint: &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:58-1:64,
+                            span: 57-63,
                         },
-                        span: 1:42-1:64,
+                        span: 41-63,
                     },
-                    span: 1:42-1:64,
+                    span: 41-63,
                 },
-                span: 1:39-1:64,
+                span: 38-63,
             },
         },
         ReturnType: &dts_parser.InferType{
             TypeParam: &dts_parser.TypeParam{
                 Name: &dts_parser.Ident{
                     Name: "R",
-                    span: 1:75-1:76,
+                    span: 74-75,
                 },
-                span: 1:69-1:76,
+                span: 68-75,
             },
-            span: 1:69-1:76,
+            span: 68-75,
         },
-        span: 1:11-1:76,
+        span: 10-75,
     },
     TrueType: &dts_parser.TupleType{
         Elements: []dts_parser.TupleElement{
@@ -4646,40 +4646,40 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "A",
-                        span: 1:80-1:81,
+                        span: 79-80,
                     },
-                    span: 1:80-1:81,
+                    span: 79-80,
                 },
-                span: 1:80-1:81,
+                span: 79-80,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "B",
-                        span: 1:83-1:84,
+                        span: 82-83,
                     },
-                    span: 1:83-1:84,
+                    span: 82-83,
                 },
-                span: 1:83-1:84,
+                span: 82-83,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "R",
-                        span: 1:86-1:87,
+                        span: 85-86,
                     },
-                    span: 1:86-1:87,
+                    span: 85-86,
                 },
-                span: 1:86-1:87,
+                span: 85-86,
             },
         },
-        span: 1:79-1:88,
+        span: 78-87,
     },
     FalseType: &dts_parser.PrimitiveType{
         Kind: 5,
-        span: 1:91-1:96,
+        span: 90-95,
     },
-    span: 1:1-1:96,
+    span: 0-95,
 }
 ---
 
@@ -4688,67 +4688,67 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
     CheckType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Promise",
-            span: 1:11-1:18,
+            span: 10-17,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.InferType{
                 TypeParam: &dts_parser.TypeParam{
                     Name: &dts_parser.Ident{
                         Name: "U",
-                        span: 1:25-1:26,
+                        span: 24-25,
                     },
                     Constraint: &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Array",
-                            span: 1:35-1:40,
+                            span: 34-39,
                         },
                         TypeArgs: []dts_parser.TypeAnn{
                             &dts_parser.InferType{
                                 TypeParam: &dts_parser.TypeParam{
                                     Name: &dts_parser.Ident{
                                         Name: "V",
-                                        span: 1:47-1:48,
+                                        span: 46-47,
                                     },
                                     Constraint: &dts_parser.PrimitiveType{
                                         Kind: 6,
-                                        span: 1:57-1:63,
+                                        span: 56-62,
                                     },
-                                    span: 1:41-1:63,
+                                    span: 40-62,
                                 },
-                                span: 1:41-1:63,
+                                span: 40-62,
                             },
                         },
-                        span: 1:35-1:64,
+                        span: 34-63,
                     },
-                    span: 1:19-1:64,
+                    span: 18-63,
                 },
-                span: 1:19-1:64,
+                span: 18-63,
             },
         },
-        span: 1:11-1:65,
+        span: 10-64,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "V",
-            span: 1:68-1:69,
+            span: 67-68,
         },
-        span: 1:68-1:69,
+        span: 67-68,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "T",
-            span: 1:72-1:73,
+            span: 71-72,
         },
-        span: 1:72-1:73,
+        span: 71-72,
     },
-    span: 1:1-1:73,
+    span: 0-72,
 }
 ---
 
@@ -4759,42 +4759,42 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:1-1:2,
+                    span: 0-1,
                 },
-                span: 1:1-1:2,
+                span: 0-1,
             },
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
-                span: 1:5-1:6,
+                span: 4-5,
             },
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "V",
-            span: 1:15-1:16,
+            span: 14-15,
         },
-        span: 1:15-1:16,
+        span: 14-15,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Y",
-            span: 1:23-1:24,
+            span: 22-23,
         },
-        span: 1:23-1:24,
+        span: 22-23,
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -4805,42 +4805,42 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:1-1:2,
+                    span: 0-1,
                 },
-                span: 1:1-1:2,
+                span: 0-1,
             },
             &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "U",
-                    span: 1:5-1:6,
+                    span: 4-5,
                 },
-                span: 1:5-1:6,
+                span: 4-5,
             },
         },
-        span: 1:1-1:6,
+        span: 0-5,
     },
     ExtendsType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "V",
-            span: 1:15-1:16,
+            span: 14-15,
         },
-        span: 1:15-1:16,
+        span: 14-15,
     },
     TrueType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "X",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
     FalseType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Y",
-            span: 1:23-1:24,
+            span: 22-23,
         },
-        span: 1:23-1:24,
+        span: 22-23,
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -4851,15 +4851,15 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             ElementType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:7-1:8,
+                    span: 6-7,
                 },
-                span: 1:7-1:8,
+                span: 6-7,
             },
-            span: 1:7-1:10,
+            span: 6-9,
         },
-        span: 1:7-1:12,
+        span: 6-11,
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -4870,21 +4870,21 @@ struct { Type dts_parser.TypeAnn; Errors []*dts_parser.Error }{
             ObjectType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "T",
-                    span: 1:7-1:8,
+                    span: 6-7,
                 },
-                span: 1:7-1:8,
+                span: 6-7,
             },
             IndexType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "K",
-                    span: 1:9-1:10,
+                    span: 8-9,
                 },
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:7-1:11,
+            span: 6-10,
         },
-        span: 1:7-1:13,
+        span: 6-12,
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---

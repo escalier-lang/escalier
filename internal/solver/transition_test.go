@@ -135,7 +135,7 @@ func transitionMessagesWithSpan(t *testing.T, errs []SolverError) []string {
 	t.Helper()
 	var msgs []string
 	for _, e := range errs {
-		msgs = append(msgs, msgWithSpan(e))
+		msgs = append(msgs, msgWithSpan(t, e))
 	}
 	return msgs
 }
@@ -260,7 +260,7 @@ func TestStaticEscapeTransitionFromSource(t *testing.T) {
 	`)
 	require.ElementsMatch(t, []string{
 		"5:29-5:30: use of moved value 'p'",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestGlobalWriteMutTransition covers Option 1: a store into a module-level binding is a
@@ -519,7 +519,7 @@ func TestTransitionWiringReportsMoveError(t *testing.T) {
 	`)
 	require.ElementsMatch(t, []string{
 		"4:4-4:5: use of moved value 'p'",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestCollectOuterBindingsPreludeCache covers the outer-binding collection that feeds
@@ -724,7 +724,7 @@ func TestRule2TransitionFromSource(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		"6:4-6:12: use of moved value 'config'",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestMutabilityTransitionReassignFromSource exercises the reassignment transition path

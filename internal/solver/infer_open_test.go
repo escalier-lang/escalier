@@ -39,7 +39,7 @@ val r = foo({x: 1, y: 2, z: 3})`)
  p.y }
 val r = foo({x: 1, y: 2, z: 3})`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:29-3:30: object has extra property: z", msgWithSpan(errs[0]))
+		require.Equal(t, "3:29-3:30: object has extra property: z", msgWithSpan(t, errs[0]))
 	})
 
 	// An exact argument still checks against a closed param.
@@ -92,13 +92,13 @@ val r = foo({a: {b: 1}, d: 2})`)
 		_, _, errs := inferSource(t, `fn foo(p) { p.a.b }
 val r = foo({a: {b: 1, c: 2}})`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "2:27-2:28: object has extra property: c", msgWithSpan(errs[0]))
+		require.Equal(t, "2:27-2:28: object has extra property: c", msgWithSpan(t, errs[0]))
 	})
 
 	t.Run("closed rejects an extra field on the outer object", func(t *testing.T) {
 		_, _, errs := inferSource(t, `fn foo(p) { p.a.b }
 val r = foo({a: {b: 1}, d: 2})`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "2:28-2:29: object has extra property: d", msgWithSpan(errs[0]))
+		require.Equal(t, "2:28-2:29: object has extra property: d", msgWithSpan(t, errs[0]))
 	})
 }

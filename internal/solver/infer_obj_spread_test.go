@@ -278,7 +278,7 @@ func TestInferObjectSpreadResidualErrorMessage(t *testing.T) {
 	_, _, errs := inferSource(t, `fn f<T>(x: {...T, ...}) -> number { return x }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:12-1:23: cannot constrain {...t1, ...} <: number", msgWithSpan(errs[0]))
+	require.Equal(t, "1:12-1:23: cannot constrain {...t1, ...} <: number", msgWithSpan(t, errs[0]))
 }
 
 // keyof and indexed access compose with an object spread: over a ground spread they merge the

@@ -124,7 +124,7 @@ func TestInferGenericFuncBodyOverPromises(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.IsType(t, &TypeParamNotProducibleError{}, errs[0])
-			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+			require.Equal(t, tt.msg, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -164,7 +164,7 @@ func TestInferGenericFuncAnnotationBodyOverPromises(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.IsType(t, &CannotConstrainError{}, errs[0])
-			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+			require.Equal(t, tt.msg, msgWithSpan(t, errs[0]))
 			require.Equal(t, tt.want, values["f"])
 		})
 	}

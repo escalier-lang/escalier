@@ -480,11 +480,7 @@ func TestInferGenericTypeAliasParamBoundBlamesArgument(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain number <: string", errs[0].Message())
-	span := errs[0].Span()
-	require.Equal(t, 2, span.Start.Line)
-	require.Equal(t, 12, span.Start.Column)
-	require.Equal(t, 2, span.End.Line)
-	require.Equal(t, 18, span.End.Column)
+	require.Equal(t, "number", spanText(src, errs[0].Span()))
 }
 
 // TestInferGenericTypeAliasParamBoundReportedOncePerReference checks that the bound is

@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
@@ -83,28 +84,40 @@ func printErrors(stderr io.Writer, output compiler.CompilerOutput, idToSource ma
 
 // formatTypeError formats a type error with source context and location highlighting
 func formatTypeError(err checker.Error, source *ast.Source) string {
-	// TODO: cache this to avoid splitting the contents every time
-	lines := strings.Split(source.Contents, "\n")
+	span := err.Span()
+	lineMap := source.LineMap()
 
-	if err.Span().Start.String() == "0:0" {
-		return fmt.Sprintf("%s:%s: %s\n", source.Path, err.Span().Start, err.Message())
+	// A span the checker synthesized covers no source text, so there is no
+	// line to quote and no column to point at.
+	if span.End.Offset <= span.Start.Offset {
+		return fmt.Sprintf("%s: %s\n", source.Path, err.Message())
 	}
 
+	// Columns count code points so the caret lands under the character the
+	// span starts at, whatever bytes it takes to encode.
+	startLine, startColumn := lineMap.Position(span.Start.Offset, ast.CodePointColumns)
+	endLine, endColumn := lineMap.Position(span.End.Offset, ast.CodePointColumns)
+
 	var message strings.Builder
-	message.WriteString(fmt.Sprintf("%s:%s: %s\n", source.Path, err.Span().Start, err.Message()))
-	message.WriteString("\n")
+	fmt.Fprintf(&message, "%s:%d:%d: %s\n\n", source.Path, startLine, startColumn, err.Message())
 
-	lineNum := strconv.Itoa(err.Span().Start.Line) + ":"
-	message.WriteString(fmt.Sprintf("%-4s", lineNum))
-	message.WriteString(lines[err.Span().Start.Line-1] + "\n")
+	lineText := lineMap.LineText(startLine)
+	message.WriteString(fmt.Sprintf("%-4s", strconv.Itoa(startLine)+":"))
+	message.WriteString(lineText + "\n")
 
-	// Add spaces before the caret
-	for range 4 + err.Span().Start.Column - 1 {
+	// Indent past the four-column line-number gutter, then to the column the
+	// error starts at.
+	for range 4 + startColumn - 1 {
 		message.WriteString(" ")
 	}
 
-	// Add carets to highlight the error
-	for range err.Span().End.Column - err.Span().Start.Column {
+	// Only the first line of the span is quoted, so a span running onto a
+	// later line is underlined to the end of that first line.
+	caretEnd := endColumn
+	if endLine != startLine {
+		caretEnd = 1 + utf8.RuneCountInString(lineText)
+	}
+	for range max(caretEnd-startColumn, 1) {
 		message.WriteString("^")
 	}
 	message.WriteString("\n")

@@ -56,13 +56,30 @@ func getCompletionLabels(items []protocol.CompletionItem) []string {
 	return labels
 }
 
+// offsetToPos converts a Location back into the position an LSP client would
+// have sent for it, so a test can drive a handler through its real entry point.
+func offsetToPos(src string, loc ast.Location) protocol.Position {
+	line, column := ast.NewLineMap(src).Position(loc.Offset, ast.UTF16Columns)
+	return protocol.Position{
+		Line:      protocol.UInteger(line - 1),
+		Character: protocol.UInteger(column - 1),
+	}
+}
+
+// cursorAt returns the position a 1-based line and column names in src. Tests
+// write a cursor the way an editor shows one, and a Location holds a byte
+// offset, so the two are converted here rather than at each call.
+func cursorAt(src string, line, column int) ast.Location {
+	return ast.Location{Offset: ast.NewLineMap(src).Offset(line, column, ast.CodePointColumns)}
+}
+
 func TestMemberCompletionHidesMutSelfOnImmutableReceiver(t *testing.T) {
 	source := `declare val m: Map<string, number>
 m.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at end of "m." — line 2, after the dot
-	loc := ast.Location{Line: 2, Column: 3}
+	loc := cursorAt(source, 2, 3)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -86,7 +103,7 @@ func TestMemberCompletionShowsMutSelfOnMutableReceiver(t *testing.T) {
 m.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
-	loc := ast.Location{Line: 2, Column: 3}
+	loc := cursorAt(source, 2, 3)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -113,7 +130,7 @@ func TestMemberCompletionGetterVisibleSetterHiddenOnImmutableReceiver(t *testing
 obj.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
-	loc := ast.Location{Line: 5, Column: 5}
+	loc := cursorAt(source, 5, 5)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -144,7 +161,7 @@ func TestMemberCompletionGetterAndSetterBothVisibleOnMutableReceiver(t *testing.
 obj.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
-	loc := ast.Location{Line: 5, Column: 5}
+	loc := cursorAt(source, 5, 5)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -171,7 +188,7 @@ obj.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at end of "obj." — line 2, after the dot
-	loc := ast.Location{Line: 2, Column: 5}
+	loc := cursorAt(source, 2, 5)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -194,7 +211,7 @@ obj.al`
 
 	// Cursor at "al" after dot — line 2, col 7
 	// The parser produces a MemberExpr with Prop.Name = "al"
-	loc := ast.Location{Line: 2, Column: 7}
+	loc := cursorAt(source, 2, 7)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -218,7 +235,7 @@ x.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at end of "x." — line 3, after the dot
-	loc := ast.Location{Line: 3, Column: 3}
+	loc := cursorAt(source, 3, 3)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -256,14 +273,12 @@ func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol
 	}
 	s.validatedVersion[uri] = version
 
-	// LSP positions are 0-based; loc is already 1-based from the test.
+	// The handler takes an LSP position, so the offset goes back through the
+	// same conversion the server applies to a real request.
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: uri},
-			Position: protocol.Position{
-				Line:      protocol.UInteger(loc.Line - 1),
-				Character: protocol.UInteger(loc.Column - 1),
-			},
+			Position:     offsetToPos(source, loc),
 		},
 	}
 	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
@@ -278,21 +293,21 @@ func scriptCompletions(t *testing.T, source string, loc ast.Location) []protocol
 
 func TestNoCompletionsOnIdentPat(t *testing.T) {
 	// Cursor at "p" — line 1, col 5
-	items := scriptCompletions(t, `val p`, ast.Location{Line: 1, Column: 5})
+	items := scriptCompletions(t, "val p", cursorAt("val p", 1, 5))
 	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat")
 }
 
 func TestNoCompletionsOnIdentPatInCompleteDecl(t *testing.T) {
 	source := "type Point = {x: number, y: number}\nval p = 10"
 	// Cursor right after "p" in a complete declaration — still in the pattern.
-	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	items := scriptCompletions(t, source, cursorAt(source, 2, 6))
 	assert.Empty(t, items, "should not provide completions on IdentPat in complete val decl")
 }
 
 func TestNoCompletionsOnIdentPatInIncompleteDecl(t *testing.T) {
 	source := "type Point = {x: number, y: number}\nval p"
 	// Cursor right after "p" in an incomplete declaration — still in the pattern.
-	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 6})
+	items := scriptCompletions(t, source, cursorAt(source, 2, 6))
 	assert.Empty(t, items, "should not provide completions on IdentPat in incomplete val decl")
 }
 
@@ -302,7 +317,7 @@ func TestCompletionsOnTypeAnnotationInVarDecl(t *testing.T) {
 	// Cursor on "P" in the type annotation (col 8) and right after "P" (col 9).
 	// In `val p: P`, P starts at column 8.
 	for _, col := range []int{8, 9} {
-		items := scriptCompletions(t, source, ast.Location{Line: 2, Column: col})
+		items := scriptCompletions(t, source, cursorAt(source, 2, col))
 		labels := getCompletionLabels(items)
 		assert.Contains(t, labels, "Point",
 			"col %d: should provide type completions in type annotation position", col)
@@ -312,7 +327,7 @@ func TestCompletionsOnTypeAnnotationInVarDecl(t *testing.T) {
 func TestCompletionsOnIdentExpr(t *testing.T) {
 	source := "type Point = {x: number, y: number}\np"
 	// Cursor at "p" on line 2 — this is an IdentExpr, not IdentPat.
-	items := scriptCompletions(t, source, ast.Location{Line: 2, Column: 1})
+	items := scriptCompletions(t, source, cursorAt(source, 2, 1))
 	labels := getCompletionLabels(items)
 	assert.Contains(t, labels, "Point", "should provide completions when cursor is on IdentExpr")
 }
@@ -324,7 +339,7 @@ x`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "x" on line 3
-	loc := ast.Location{Line: 3, Column: 1}
+	loc := cursorAt(source, 3, 1)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 	items = filterByPrefix(items, "x")
 	labels := getCompletionLabels(items)
@@ -338,7 +353,7 @@ gre`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "gre" — line 2, col 3
-	loc := ast.Location{Line: 2, Column: 3}
+	loc := cursorAt(source, 2, 3)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 	items = filterByPrefix(items, "gre")
 	labels := getCompletionLabels(items)
@@ -352,7 +367,7 @@ a`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "a" on line 3 — both a and b should be visible
-	loc := ast.Location{Line: 3, Column: 1}
+	loc := cursorAt(source, 3, 1)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -370,7 +385,7 @@ val b: number = 2`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "a" on line 2 — only a should be visible, not b
-	loc := ast.Location{Line: 2, Column: 1}
+	loc := cursorAt(source, 2, 1)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -429,7 +444,7 @@ func TestScopeCompletionInsideFuncBody(t *testing.T) {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "sum" on line 3, inside the function body
-	loc := ast.Location{Line: 3, Column: 2}
+	loc := cursorAt(source, 3, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -450,7 +465,7 @@ fn foo() -> number {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "outer" on line 3, inside foo's body
-	loc := ast.Location{Line: 3, Column: 2}
+	loc := cursorAt(source, 3, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -475,7 +490,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "b" on line 5, inside the if-block
-	loc := ast.Location{Line: 5, Column: 3}
+	loc := cursorAt(source, 5, 3)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -488,7 +503,7 @@ func TestScopeCompletionInsideNestedBlocks(t *testing.T) {
 	assert.False(t, seen["c"], "else-block var c should NOT be visible in if-block")
 
 	// Cursor at "a" on line 8, inside the else-block
-	loc2 := ast.Location{Line: 8, Column: 3}
+	loc2 := cursorAt(source, 8, 3)
 	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
@@ -513,7 +528,7 @@ func TestScopeCompletionInsideMatchCase(t *testing.T) {
 	// Line 3: "    {myField} => myField,"
 	//          123456789012345678901
 	// "myField" after => starts at col 19
-	loc := ast.Location{Line: 3, Column: 19}
+	loc := cursorAt(source, 3, 19)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -535,7 +550,7 @@ func TestScopeCompletionMatchBindingNotVisibleOutside(t *testing.T) {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "x" on line 5, outside the match expression
-	loc := ast.Location{Line: 5, Column: 3}
+	loc := cursorAt(source, 5, 3)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -556,7 +571,7 @@ for item in items {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "item" on line 3, col 3
-	loc := ast.Location{Line: 3, Column: 3}
+	loc := cursorAt(source, 3, 3)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -576,7 +591,7 @@ items`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "items" on line 5, after the for-in loop
-	loc := ast.Location{Line: 5, Column: 1}
+	loc := cursorAt(source, 5, 1)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -594,7 +609,7 @@ func TestScopeCompletionInsideFuncExpr(t *testing.T) {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "name" on line 2, inside the function expression body
-	loc := ast.Location{Line: 2, Column: 2}
+	loc := cursorAt(source, 2, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -614,7 +629,7 @@ add`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "add" on line 5, outside the function
-	loc := ast.Location{Line: 5, Column: 1}
+	loc := cursorAt(source, 5, 1)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -641,7 +656,7 @@ try {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor inside try block at "a" on line 4
-	loc := ast.Location{Line: 4, Column: 2}
+	loc := cursorAt(source, 4, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -654,7 +669,7 @@ try {
 	assert.False(t, seen["b"], "catch-block var b should NOT be visible in try block")
 
 	// Cursor inside catch block at "b" on line 8
-	loc2 := ast.Location{Line: 8, Column: 3}
+	loc2 := cursorAt(source, 8, 3)
 	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
@@ -678,7 +693,7 @@ if val [a, b] = target {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor inside consequent at "a" on line 3
-	loc := ast.Location{Line: 3, Column: 2}
+	loc := cursorAt(source, 3, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -691,7 +706,7 @@ if val [a, b] = target {
 	assert.False(t, seen["c"], "else-block var c should NOT be visible in consequent")
 
 	// Cursor inside else at "c" on line 6
-	loc2 := ast.Location{Line: 6, Column: 2}
+	loc2 := cursorAt(source, 6, 2)
 	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
@@ -713,7 +728,7 @@ val result = do {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor at "inner" on line 4
-	loc := ast.Location{Line: 4, Column: 2}
+	loc := cursorAt(source, 4, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -736,7 +751,7 @@ if (true) {
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor inside consequent at "a" on line 4
-	loc := ast.Location{Line: 4, Column: 2}
+	loc := cursorAt(source, 4, 2)
 	items := testServer().completionsFromScope(script, scope, loc, "")
 
 	seen := map[string]bool{}
@@ -748,7 +763,7 @@ if (true) {
 	assert.False(t, seen["b"], "else-block var b should NOT be visible in if-block")
 
 	// Cursor inside else at "b" on line 7
-	loc2 := ast.Location{Line: 7, Column: 2}
+	loc2 := cursorAt(source, 7, 2)
 	items2 := testServer().completionsFromScope(script, scope, loc2, "")
 
 	seen2 := map[string]bool{}
@@ -765,7 +780,7 @@ func TestUnionCompletionIncludesAllProperties(t *testing.T) {
 obj.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
-	loc := ast.Location{Line: 2, Column: 5}
+	loc := cursorAt(source, 2, 5)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -797,7 +812,7 @@ func TestIntersectionCompletionOnlyCommonKeys(t *testing.T) {
 obj.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
-	loc := ast.Location{Line: 2, Column: 5}
+	loc := cursorAt(source, 2, 5)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -819,7 +834,7 @@ obj?.`
 	script, scope := parseAndInferAllowErrors(t, source)
 
 	// Cursor after "?." — line 2, col 6
-	loc := ast.Location{Line: 2, Column: 6}
+	loc := cursorAt(source, 2, 6)
 	node, _ := findNodeAndParent(script, loc)
 
 	require.NotNil(t, node)
@@ -890,7 +905,7 @@ val defaultId: UserId = 0
 
 	// Cursor at start of a new line in utils.esc (after the declarations)
 	// Line 3, col 1 (inside the file, after defaultId declaration)
-	loc := ast.Location{Line: 4, Column: 1}
+	loc := cursorAt(sources[1].Contents, 4, 1)
 	fileScope := fileScopes[1]
 
 	items := testServer().completionsFromModuleScope(module, 1, fileScope, moduleScope, loc)
@@ -917,7 +932,7 @@ val c: number = 3`},
 	// Cursor at line 2, col 1 — between a and b declarations
 	// All top-level declarations are visible anywhere in the file because
 	// the DepGraph reorders them before type checking and code generation.
-	loc := ast.Location{Line: 2, Column: 1}
+	loc := cursorAt(sources[0].Contents, 2, 1)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -939,7 +954,7 @@ val b: number = 20`},
 
 	// Cursor at line 1 col 1 in file1 — all declarations from file2 should be visible
 	// even though the cursor is "before" them (they're in a different file)
-	loc := ast.Location{Line: 1, Column: 1}
+	loc := cursorAt(sources[0].Contents, 1, 1)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -961,7 +976,7 @@ fn laterFunc() -> number { 42 }`},
 	// Cursor at line 1 col 1 — before laterFunc declaration
 	// Function declarations are always visible in modules just like all other
 	// declarations
-	loc := ast.Location{Line: 1, Column: 1}
+	loc := cursorAt(sources[0].Contents, 1, 1)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -982,7 +997,7 @@ func TestModuleMemberCompletionOnCrossFileType(t *testing.T) {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Cursor after "p." inside the function body — line 2, col 3
-	loc := ast.Location{Line: 2, Column: 4}
+	loc := cursorAt(sources[1].Contents, 2, 4)
 	node, _ := findNodeAndParentInFile(module, 1, loc)
 
 	require.NotNil(t, node)
@@ -1016,7 +1031,7 @@ fn foo(a: number) -> number {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Cursor at "inner" on line 5, inside foo's body (after inner and later declarations)
-	loc := ast.Location{Line: 5, Column: 2}
+	loc := cursorAt(sources[0].Contents, 5, 2)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -1031,7 +1046,7 @@ fn foo(a: number) -> number {
 
 	// Cursor at line 3, col 15 (after "val inner" declaration but before "later" declaration)
 	// Variables declared after this point should not be visible
-	locEarly := ast.Location{Line: 3, Column: 15}
+	locEarly := cursorAt(sources[0].Contents, 3, 15)
 	itemsEarly := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, locEarly)
 	seenEarly := map[string]bool{}
 	for _, item := range itemsEarly {
@@ -1068,7 +1083,7 @@ declare val x: number`},
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
 
 	// Completions from file1 (which has the import)
-	loc := ast.Location{Line: 2, Column: 1}
+	loc := cursorAt(sources[0].Contents, 2, 1)
 	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
@@ -1125,7 +1140,7 @@ fn usePkg() -> number { 1 }`},
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
 
-	loc := ast.Location{Line: 2, Column: 1}
+	loc := cursorAt(sources[0].Contents, 2, 1)
 
 	// file1 completions: pkg namespace should be present
 	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
@@ -1159,7 +1174,7 @@ func TestModuleNamespaceVisibleFromRootFile(t *testing.T) {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Completions from main.esc (root namespace)
-	loc := ast.Location{Line: 1, Column: 1}
+	loc := cursorAt(sources[0].Contents, 1, 1)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 
 	seen := map[string]bool{}
@@ -1185,7 +1200,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	}
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
-	loc := ast.Location{Line: 1, Column: 1}
+	loc := cursorAt(sources[0].Contents, 1, 1)
 
 	// Completions from add.esc
 	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
@@ -1218,7 +1233,7 @@ func TestModuleMultipleNamespacesVisible(t *testing.T) {
 	}
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
-	loc := ast.Location{Line: 1, Column: 1}
+	loc := cursorAt(sources[0].Contents, 1, 1)
 	items := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
 
 	seen := map[string]bool{}
@@ -1246,7 +1261,7 @@ func TestModuleNamespaceMemberCompletion(t *testing.T) {
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Cursor after "math." — line 2, col 7
-	loc := ast.Location{Line: 2, Column: 7}
+	loc := cursorAt(sources[0].Contents, 2, 7)
 	node, _ := findNodeAndParentInFile(module, 0, loc)
 
 	require.NotNil(t, node)
@@ -1281,7 +1296,7 @@ fn rootFunc() -> string { "hello" }`},
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Cursor at "rootDecl" on line 2 inside helperFunc in the lib/helper.esc file
-	loc := ast.Location{Line: 2, Column: 2}
+	loc := cursorAt(sources[1].Contents, 2, 2)
 	items := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
 	seen := map[string]bool{}
 	for _, item := range items {
@@ -1306,7 +1321,7 @@ val other: number = 2`},
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
 	// Cursor on the partial identifier "roo" in helper.esc.
-	loc := ast.Location{Line: 2, Column: 4}
+	loc := cursorAt(sources[1].Contents, 2, 4)
 	node, _ := findNodeAndParentInFile(module, 1, loc)
 	require.NotNil(t, node)
 	identExpr, ok := node.(*ast.IdentExpr)
@@ -1331,7 +1346,7 @@ func TestModuleNamespaceMemberCompletionFilteredByPrefix(t *testing.T) {
 	module, moduleScope, _ := parseModuleAndInfer(t, sources)
 
 	// Cursor on the partial member "s" in "math.s".
-	loc := ast.Location{Line: 2, Column: 8}
+	loc := cursorAt(sources[0].Contents, 2, 8)
 	node, _ := findNodeAndParentInFile(module, 0, loc)
 	require.NotNil(t, node)
 	memberExpr, ok := node.(*ast.MemberExpr)
@@ -1358,67 +1373,68 @@ func TestModuleNamespaceMemberCompletionFilteredByPrefix(t *testing.T) {
 func TestWordAtCursorBasic(t *testing.T) {
 	text := "val foo = bar"
 	// Cursor right after "bar" (line 1, col 14).
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 14})
+	result := wordAtCursor(text, cursorAt(text, 1, 14))
 	assert.Equal(t, "bar", result)
 }
 
 func TestWordAtCursorMiddleOfWord(t *testing.T) {
 	text := "val foo = bar"
 	// Cursor after "ba" in "bar" (col 13, 1-based → colIdx 12 → runes[10:12] = "ba").
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 13})
+	result := wordAtCursor(text, cursorAt(text, 1, 13))
 	assert.Equal(t, "ba", result)
 }
 
 func TestWordAtCursorAtStart(t *testing.T) {
 	text := "val foo = bar"
 	// Cursor at beginning of line — no word behind.
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 1})
+	result := wordAtCursor(text, cursorAt(text, 1, 1))
 	assert.Equal(t, "", result)
 }
 
 func TestWordAtCursorOnSpace(t *testing.T) {
 	text := "val foo = bar"
 	// Cursor on space before "bar" (col 11).
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 11})
+	result := wordAtCursor(text, cursorAt(text, 1, 11))
 	assert.Equal(t, "", result)
 }
 
 func TestWordAtCursorMultiLine(t *testing.T) {
 	text := "val x = 1\nval y = 2"
 	// Cursor after "y" on line 2 (col 6).
-	result := wordAtCursor(text, ast.Location{Line: 2, Column: 6})
+	result := wordAtCursor(text, cursorAt(text, 2, 6))
 	assert.Equal(t, "y", result)
 }
 
 func TestWordAtCursorUnderscoreAndDigits(t *testing.T) {
 	text := "val my_var2 = 1"
 	// Cursor after "my_var2" (col 12).
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 12})
+	result := wordAtCursor(text, cursorAt(text, 1, 12))
 	assert.Equal(t, "my_var2", result)
 }
 
 func TestWordAtCursorMultibyteRunes(t *testing.T) {
-	// Known limitation: loc.Column is a byte offset from the lexer, but
-	// wordAtCursor indexes into a []rune slice. When multi-byte characters
-	// precede the cursor, the column points to the wrong rune. This test
-	// documents the current (incorrect) behavior. See the NOTE in
-	// wordAtCursor's docstring.
+	// `é` takes two bytes, so a cursor after `café` sits at byte offset 9
+	// while a reader counts it as column 9 of 8 characters. Both the offset
+	// conversion and the walk back over runes have to agree for the whole
+	// name to come back.
 	text := "val café = 1"
-	// 'é' is 2 bytes in UTF-8, so byte column 8 (1-based) is the first
-	// byte of 'é', but rune index 7 is also 'é'. By coincidence the rune
-	// and byte indices agree here since only one multi-byte char is involved
-	// and it's at the boundary. Column 9 (byte offset of 'é's second byte)
-	// would index rune 8 (' '), producing "" — a wrong result.
-	result := wordAtCursor(text, ast.Location{Line: 1, Column: 9})
-	assert.Equal(t, "", result, "documents current behavior: byte/rune mismatch causes incorrect result for multi-byte input")
+	result := wordAtCursor(text, cursorAt(text, 1, 9))
+	assert.Equal(t, "café", result)
+}
+
+func TestWordAtCursorPartWayThroughAWord(t *testing.T) {
+	text := "val café = 1"
+	// Cursor between `caf` and `é`.
+	assert.Equal(t, "caf", wordAtCursor(text, cursorAt(text, 1, 8)))
 }
 
 func TestWordAtCursorOutOfBounds(t *testing.T) {
 	text := "hello"
-	// Line out of bounds.
-	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 5, Column: 1}))
-	// Column out of bounds.
-	assert.Equal(t, "", wordAtCursor(text, ast.Location{Line: 1, Column: 100}))
+	// An offset outside the document yields nothing. A line or column past
+	// the end of the file clamps to the last position in it, so the offsets
+	// here are built directly rather than through cursorAt.
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Offset: -1}))
+	assert.Equal(t, "", wordAtCursor(text, ast.Location{Offset: len(text) + 1}))
 }
 
 // --- filterTypeItems tests ---
@@ -1498,13 +1514,18 @@ func moduleCompletions(
 
 	targetURI := protocol.DocumentUri(fmt.Sprintf("file:///workspace/%s", targetPath))
 
+	var targetContents string
+	for _, src := range sources {
+		if src.Path == targetPath {
+			targetContents = src.Contents
+			break
+		}
+	}
+
 	params := &protocol.CompletionParams{
 		TextDocumentPositionParams: protocol.TextDocumentPositionParams{
 			TextDocument: protocol.TextDocumentIdentifier{URI: targetURI},
-			Position: protocol.Position{
-				Line:      protocol.UInteger(loc.Line - 1),
-				Character: protocol.UInteger(loc.Column - 1),
-			},
+			Position:     offsetToPos(targetContents, loc),
 		},
 	}
 	result, err := s.textDocumentCompletion(&glsp.Context{}, params)
@@ -1522,7 +1543,7 @@ func TestModuleNoCompletionsOnIdentPat(t *testing.T) {
 		{ID: stableSourceID("lib/main.esc"), Path: "lib/main.esc", Contents: "val p"},
 	}
 	// Cursor at "p" — line 1, col 5.
-	items := moduleCompletions(t, sources, "lib/main.esc", ast.Location{Line: 1, Column: 5})
+	items := moduleCompletions(t, sources, "lib/main.esc", cursorAt(sources[0].Contents, 1, 5))
 	assert.Empty(t, items, "should not provide completions when cursor is on IdentPat in a module file")
 }
 
@@ -1531,7 +1552,7 @@ func TestModuleNoCompletionsOnIdentPatComplete(t *testing.T) {
 		{ID: stableSourceID("lib/main.esc"), Path: "lib/main.esc", Contents: "val p = 10"},
 	}
 	// Cursor right after "p" (col 6) — still in the pattern.
-	items := moduleCompletions(t, sources, "lib/main.esc", ast.Location{Line: 1, Column: 6})
+	items := moduleCompletions(t, sources, "lib/main.esc", cursorAt(sources[0].Contents, 1, 6))
 	assert.Empty(t, items, "should not provide completions on IdentPat in complete module val decl")
 }
 

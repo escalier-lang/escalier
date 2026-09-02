@@ -89,7 +89,7 @@ func TestInferRecursiveRendersMuKnot(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}
@@ -308,7 +308,7 @@ func TestInferRecursiveThroughSourcePaths(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 			require.Equal(t, tt.want, values[tt.binding])
 		})
 	}

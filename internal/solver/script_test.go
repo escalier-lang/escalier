@@ -23,6 +23,7 @@ func parseScript(t *testing.T, src string) *ast.Script {
 	p := parser.NewParser(ctx, source)
 	script, parseErrors := p.ParseScript()
 	require.Empty(t, parseErrors, "expected no parse errors")
+	registerTestSources(t, map[int]*ast.Source{source.ID: source})
 	return script
 }
 
@@ -215,7 +216,7 @@ func TestScriptLinearScoping(t *testing.T) {
 	`
 	_, _, scriptErrs := inferScriptSource(t, src)
 	require.Len(t, scriptErrs, 1)
-	require.Equal(t, "2:11-2:12: Unknown identifier: x", msgWithSpan(scriptErrs[0]))
+	require.Equal(t, "2:11-2:12: Unknown identifier: x", msgWithSpan(t, scriptErrs[0]))
 
 	// The identical source is well-formed as a module. The dep graph types `val x`
 	// before the `val y` that refers to it.
@@ -252,7 +253,7 @@ func TestScriptRedeclaration(t *testing.T) {
 	// The same source is a duplicate-declaration error as a module.
 	_, _, moduleErrs := inferSource(t, src)
 	require.Len(t, moduleErrs, 1)
-	require.Equal(t, "3:3-3:15: Duplicate declaration: x", msgWithSpan(moduleErrs[0]))
+	require.Equal(t, "3:3-3:15: Duplicate declaration: x", msgWithSpan(t, moduleErrs[0]))
 }
 
 // TestScriptReassignTransition exercises the reassignment transition path
@@ -317,6 +318,6 @@ func TestScriptAwaitOutsideAsync(t *testing.T) {
 		val y = await x
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-3:18: await can only be used inside an async function", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-3:18: await can only be used inside an async function", msgWithSpan(t, errs[0]))
 	require.Empty(t, errs[0].Related())
 }

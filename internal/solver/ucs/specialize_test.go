@@ -19,8 +19,8 @@ import (
 func TestSpecializeOverlappingArmsOfTheSameShape(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(2, 5, 30)),
-		matchCase(objPat("x", "y"), nil, num(0), span(3, 5, 22)),
+		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(45, 70)),
+		matchCase(objPat("x", "y"), nil, num(0), span(85, 102)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
@@ -36,9 +36,9 @@ func TestSpecializeOverlappingArmsOfTheSameShape(t *testing.T) {
 func TestSpecializeOverlappingArmsOfDifferentShapes(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(2, 5, 30)),
-		matchCase(objPat("x"), nil, num(1), span(3, 5, 20)),
-		matchCase(wildcardPat(), nil, num(0), span(4, 5, 16)),
+		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(45, 70)),
+		matchCase(objPat("x"), nil, num(1), span(85, 100)),
+		matchCase(wildcardPat(), nil, num(0), span(125, 136)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {
@@ -56,9 +56,9 @@ func TestSpecializeOverlappingArmsOfDifferentShapes(t *testing.T) {
 func TestSpecializeDropsArmsTheGuardedTestRulesOut(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), greaterThan(), str("one"), span(2, 5, 26)),
-		matchCase(numPat(2), nil, str("two"), span(3, 5, 18)),
-		matchCase(wildcardPat(), nil, str("other"), span(4, 5, 20)),
+		matchCase(numPat(1), greaterThan(), str("one"), span(45, 66)),
+		matchCase(numPat(2), nil, str("two"), span(85, 98)),
+		matchCase(wildcardPat(), nil, str("other"), span(125, 140)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
@@ -78,9 +78,9 @@ func TestSpecializeDropsArmsTheGuardedTestRulesOut(t *testing.T) {
 func TestSpecializeChainsGuardsOnOneTag(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), ident("f"), str("a"), span(2, 5, 24)),
-		matchCase(numPat(1), ident("g"), str("b"), span(3, 5, 24)),
-		matchCase(wildcardPat(), nil, str("c"), span(4, 5, 16)),
+		matchCase(numPat(1), ident("f"), str("a"), span(45, 64)),
+		matchCase(numPat(1), ident("g"), str("b"), span(85, 104)),
+		matchCase(wildcardPat(), nil, str("c"), span(125, 136)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
@@ -99,8 +99,8 @@ func TestSpecializeChainsGuardsOnOneTag(t *testing.T) {
 func TestSpecializeKeepsAnArmNothingInlined(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), nil, str("a"), span(2, 5, 20)),
-		matchCase(numPat(1), nil, str("b"), span(3, 5, 20)),
+		matchCase(numPat(1), nil, str("a"), span(45, 60)),
+		matchCase(numPat(1), nil, str("b"), span(85, 100)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
@@ -116,9 +116,9 @@ func TestSpecializeKeepsAnArmNothingInlined(t *testing.T) {
 func TestSpecializeKeepsTheArmNoFallthroughCouldTake(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), ident("f"), str("a"), span(2, 5, 24)),
-		matchCase(numPat(1), nil, str("b"), span(3, 5, 20)),
-		matchCase(numPat(1), nil, str("c"), span(4, 5, 20)),
+		matchCase(numPat(1), ident("f"), str("a"), span(45, 64)),
+		matchCase(numPat(1), nil, str("b"), span(85, 100)),
+		matchCase(numPat(1), nil, str("c"), span(125, 140)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split n {
@@ -141,9 +141,9 @@ func TestSpecializeClearsANestedBranchsTest(t *testing.T) {
 	second := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("x", numPat(2))}, ast.Span{})
 	core := coreMatch(
 		ident("p"),
-		matchCase(first, ident("g"), str("a"), span(2, 5, 26)),
-		matchCase(second, nil, str("b"), span(3, 5, 22)),
-		matchCase(wildcardPat(), nil, str("c"), span(4, 5, 16)),
+		matchCase(first, ident("g"), str("a"), span(45, 66)),
+		matchCase(second, nil, str("b"), span(85, 102)),
+		matchCase(wildcardPat(), nil, str("c"), span(125, 136)),
 	)
 
 	snaps.MatchInlineSnapshot(t, normalized(core), snaps.Inline(`split p {

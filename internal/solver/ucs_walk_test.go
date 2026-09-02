@@ -65,7 +65,7 @@ func TestMatchDiagnosticsNameTheMatch(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -142,7 +142,7 @@ func TestInferMatchTypesAFallthroughArmOnce(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -161,7 +161,7 @@ func TestInferMatchArmBindingDoesNotEscape(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "7:11-7:16: Unknown identifier: other", msgWithSpan(errs[0]))
+	require.Equal(t, "7:11-7:16: Unknown identifier: other", msgWithSpan(t, errs[0]))
 }
 
 // The target expression is inferred once, before the walk, and every arm binds against
@@ -183,7 +183,7 @@ func TestInferMatchInfersTheTargetOnce(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:19-4:20: cannot constrain 2 <: string", msgWithSpan(errs[0]))
+	require.Equal(t, "4:19-4:20: cannot constrain 2 <: string", msgWithSpan(t, errs[0]))
 }
 
 // A diverging arm produces no value, so it joins nothing. A `match` whose arms all
@@ -292,7 +292,7 @@ func TestInferMatchTypesArmsAfterACatchAll(t *testing.T) {
 	require.Equal(t, []string{
 		unreachableArm(5, 5, 15),
 		unreachableArm(6, 5, 15),
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 	for _, e := range errs {
 		require.Len(t, e.Related(), 1)
 		require.Equal(t, "all => all", spanText(src, e.Related()[0]))
@@ -314,7 +314,7 @@ func TestInferMatchReportsFaultsAfterACatchAll(t *testing.T) {
 	require.Equal(t, []string{
 		unreachableArm(5, 5, 14),
 		"5:10-5:14: Unknown identifier: nope",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // The unreachable diagnostic blames the dead arm and points at the arm that covers it, so
@@ -338,7 +338,7 @@ func TestInferMatchBareRestDoesNotCoverLaterArms(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:5-4:12: Unsupported: RestPat", msgWithSpan(errs[0]))
+	require.Equal(t, "4:5-4:12: Unsupported: RestPat", msgWithSpan(t, errs[0]))
 }
 
 // A guarded catch-all can fail its condition, so it covers nothing and the arms below it
@@ -371,7 +371,7 @@ func TestInferMatchUnreachableArmNarrowsItsScrutinee(t *testing.T) {
 			}
 		}
 	`)
-	require.Equal(t, []string{unreachableArm(5, 5, 16)}, messagesWithSpan(errs))
+	require.Equal(t, []string{unreachableArm(5, 5, 16)}, messagesWithSpan(t, errs))
 }
 
 // unreachableArm renders the unreachable-arm message prefixed by the span of the arm it

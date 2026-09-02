@@ -3,9 +3,9 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: 1:1-1:7,
+        span: 0-6,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -13,9 +13,9 @@
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 7,
-        span: 1:1-1:7,
+        span: 0-6,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -24,11 +24,11 @@
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
-        span: 1:1-1:9,
+        span: 0-8,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -38,13 +38,13 @@
         ElementType: &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:1-1:7,
+                span: 0-6,
             },
-            span: 1:1-1:9,
+            span: 0-8,
         },
-        span: 1:1-1:11,
+        span: 0-10,
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -53,11 +53,11 @@
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Foo",
-            span: 1:1-1:4,
+            span: 0-3,
         },
-        span: 1:1-1:4,
+        span: 0-3,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -68,18 +68,18 @@
             Types: []dts_parser.TypeAnn{
                 &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
                 &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:11-1:17,
+                    span: 10-16,
                 },
             },
-            span: 1:2-1:17,
+            span: 1-16,
         },
-        span: 1:1-1:18,
+        span: 0-17,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -91,23 +91,23 @@
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "Foo",
-                        span: 1:2-1:5,
+                        span: 1-4,
                     },
-                    span: 1:2-1:5,
+                    span: 1-4,
                 },
                 &dts_parser.TypeReference{
                     Name: &dts_parser.Ident{
                         Name: "Bar",
-                        span: 1:8-1:11,
+                        span: 7-10,
                     },
-                    span: 1:8-1:11,
+                    span: 7-10,
                 },
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
-        span: 1:1-1:12,
+        span: 0-11,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -116,17 +116,17 @@
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Array",
-            span: 1:1-1:6,
+            span: 0-5,
         },
         TypeArgs: []dts_parser.TypeAnn{
             &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:7-1:13,
+                span: 6-12,
             },
         },
-        span: 1:1-1:14,
+        span: 0-13,
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -136,22 +136,22 @@
         Name: &dts_parser.Member{
             Left: &dts_parser.Ident{
                 Name: "Foo",
-                span: 1:1-1:4,
+                span: 0-3,
             },
             Right: &dts_parser.Ident{
                 Name: "Bar",
-                span: 1:5-1:8,
+                span: 4-7,
             },
         },
-        span: 1:1-1:8,
+        span: 0-7,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
 [TestTupleTypes/empty_tuple - 1]
 &dts_parser.TupleType{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -161,12 +161,12 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -176,19 +176,19 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -198,26 +198,26 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
-            span: 1:10-1:16,
+            span: 9-15,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: 1:18-1:25,
+                span: 17-24,
             },
-            span: 1:18-1:25,
+            span: 17-24,
         },
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
@@ -226,26 +226,26 @@
     Elements: []dts_parser.TupleElement{
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
-                span: 1:2-1:5,
+                span: 1-4,
             },
-            span: 1:2-1:5,
+            span: 1-4,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 1,
-                span: 1:7-1:14,
+                span: 6-13,
             },
-            span: 1:7-1:14,
+            span: 6-13,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 5,
-                span: 1:16-1:21,
+                span: 15-20,
             },
-            span: 1:16-1:21,
+            span: 15-20,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -256,34 +256,34 @@
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: 1:2-1:5,
+                    span: 1-4,
                 },
-                span: 1:2-1:5,
+                span: 1-4,
             },
-            span: 1:2-1:5,
+            span: 1-4,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
-                    span: 1:7-1:10,
+                    span: 6-9,
                 },
-                span: 1:7-1:10,
+                span: 6-9,
             },
-            span: 1:7-1:10,
+            span: 6-9,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
-                    span: 1:12-1:15,
+                    span: 11-14,
                 },
-                span: 1:12-1:15,
+                span: 11-14,
             },
-            span: 1:12-1:15,
+            span: 11-14,
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -293,29 +293,29 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: 1:10-1:13,
+                    span: 9-12,
                 },
-                span: 1:10-1:13,
+                span: 9-12,
             },
-            span: 1:10-1:13,
+            span: 9-12,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:15-1:21,
+                span: 14-20,
             },
-            span: 1:15-1:21,
+            span: 14-20,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -327,26 +327,26 @@
                 Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:2-1:8,
+                        span: 1-7,
                     },
                     &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: 1:11-1:17,
+                        span: 10-16,
                     },
                 },
-                span: 1:2-1:17,
+                span: 1-16,
             },
-            span: 1:2-1:17,
+            span: 1-16,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: 1:19-1:26,
+                span: 18-25,
             },
-            span: 1:19-1:26,
+            span: 18-25,
         },
     },
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -359,34 +359,34 @@
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Foo",
-                            span: 1:2-1:5,
+                            span: 1-4,
                         },
-                        span: 1:2-1:5,
+                        span: 1-4,
                     },
                     &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Bar",
-                            span: 1:8-1:11,
+                            span: 7-10,
                         },
-                        span: 1:8-1:11,
+                        span: 7-10,
                     },
                 },
-                span: 1:2-1:11,
+                span: 1-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Baz",
-                    span: 1:13-1:16,
+                    span: 12-15,
                 },
-                span: 1:13-1:16,
+                span: 12-15,
             },
-            span: 1:13-1:16,
+            span: 12-15,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -399,21 +399,21 @@
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 6,
-                            span: 1:3-1:9,
+                            span: 2-8,
                         },
-                        span: 1:3-1:9,
+                        span: 2-8,
                     },
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 7,
-                            span: 1:11-1:17,
+                            span: 10-16,
                         },
-                        span: 1:11-1:17,
+                        span: 10-16,
                     },
                 },
-                span: 1:2-1:18,
+                span: 1-17,
             },
-            span: 1:2-1:18,
+            span: 1-17,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.TupleType{
@@ -421,23 +421,23 @@
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
                             Kind: 8,
-                            span: 1:21-1:28,
+                            span: 20-27,
                         },
-                        span: 1:21-1:28,
+                        span: 20-27,
                     },
                     dts_parser.TupleElement{
                         Type: &dts_parser.PrimitiveType{
-                            span: 1:30-1:33,
+                            span: 29-32,
                         },
-                        span: 1:30-1:33,
+                        span: 29-32,
                     },
                 },
-                span: 1:20-1:34,
+                span: 19-33,
             },
-            span: 1:20-1:34,
+            span: 19-33,
         },
     },
-    span: 1:1-1:35,
+    span: 0-34,
 }
 ---
 
@@ -448,24 +448,24 @@
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:10,
+                span: 1-9,
             },
-            span: 1:2-1:10,
+            span: 1-9,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:12-1:18,
+                    span: 11-17,
                 },
-                span: 1:12-1:20,
+                span: 11-19,
             },
-            span: 1:12-1:20,
+            span: 11-19,
         },
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -476,21 +476,21 @@
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:8,
+                span: 1-7,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:10-1:16,
+                    span: 9-15,
                 },
-                span: 1:10-1:16,
+                span: 9-15,
             },
         },
-        span: 1:1-1:17,
+        span: 0-16,
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
@@ -500,13 +500,13 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
             Optional: true,
-            span: 1:2-1:8,
+            span: 1-7,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -516,20 +516,20 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
             Optional: true,
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -539,21 +539,21 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
             Optional: true,
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:11-1:17,
+                span: 10-16,
             },
             Optional: true,
-            span: 1:11-1:17,
+            span: 10-16,
         },
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
@@ -563,27 +563,27 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
             Optional: true,
-            span: 1:10-1:16,
+            span: 9-15,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: 1:19-1:26,
+                span: 18-25,
             },
-            span: 1:19-1:26,
+            span: 18-25,
         },
     },
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -593,23 +593,23 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:13-1:19,
+                    span: 12-18,
                 },
-                span: 1:13-1:21,
+                span: 12-20,
             },
             Rest: true,
-            span: 1:10-1:21,
+            span: 9-20,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -620,15 +620,15 @@
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:5-1:11,
+                    span: 4-10,
                 },
-                span: 1:5-1:13,
+                span: 4-12,
             },
             Rest: true,
-            span: 1:2-1:13,
+            span: 1-12,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -638,30 +638,30 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:10-1:16,
+                span: 9-15,
             },
-            span: 1:10-1:16,
+            span: 9-15,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 8,
-                    span: 1:21-1:28,
+                    span: 20-27,
                 },
-                span: 1:21-1:30,
+                span: 20-29,
             },
             Rest: true,
-            span: 1:18-1:30,
+            span: 17-29,
         },
     },
-    span: 1:1-1:31,
+    span: 0-30,
 }
 ---
 
@@ -671,9 +671,9 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.ArrayType{
@@ -682,24 +682,24 @@
                         Types: []dts_parser.TypeAnn{
                             &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: 1:14-1:20,
+                                span: 13-19,
                             },
                             &dts_parser.PrimitiveType{
                                 Kind: 8,
-                                span: 1:23-1:30,
+                                span: 22-29,
                             },
                         },
-                        span: 1:14-1:30,
+                        span: 13-29,
                     },
-                    span: 1:13-1:31,
+                    span: 12-30,
                 },
-                span: 1:13-1:33,
+                span: 12-32,
             },
             Rest: true,
-            span: 1:10-1:33,
+            span: 9-32,
         },
     },
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -709,16 +709,16 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:5-1:11,
+                span: 4-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -728,27 +728,27 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:5-1:11,
+                span: 4-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: 1:13-1:14,
+                span: 12-13,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:16-1:22,
+                span: 15-21,
             },
-            span: 1:13-1:22,
+            span: 12-21,
         },
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
@@ -758,23 +758,23 @@
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: 1:10-1:11,
+                span: 9-10,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:13-1:19,
+                span: 12-18,
             },
-            span: 1:10-1:19,
+            span: 9-18,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -784,17 +784,17 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:6-1:12,
+                span: 5-11,
             },
             Optional: true,
-            span: 1:2-1:12,
+            span: 1-11,
         },
     },
-    span: 1:1-1:13,
+    span: 0-12,
 }
 ---
 
@@ -804,28 +804,28 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:6-1:12,
+                span: 5-11,
             },
             Optional: true,
-            span: 1:2-1:12,
+            span: 1-11,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: 1:14-1:15,
+                span: 13-14,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:17-1:23,
+                span: 16-22,
             },
-            span: 1:14-1:23,
+            span: 13-22,
         },
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -835,31 +835,31 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:5-1:11,
+                span: 4-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "rest",
-                span: 1:16-1:20,
+                span: 15-19,
             },
             Type: &dts_parser.ArrayType{
                 ElementType: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:22-1:28,
+                    span: 21-27,
                 },
-                span: 1:22-1:30,
+                span: 21-29,
             },
             Rest: true,
-            span: 1:13-1:30,
+            span: 12-29,
         },
     },
-    span: 1:1-1:31,
+    span: 0-30,
 }
 ---
 
@@ -869,38 +869,38 @@
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "x",
-                span: 1:2-1:3,
+                span: 1-2,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:5-1:11,
+                span: 4-10,
             },
-            span: 1:2-1:11,
+            span: 1-10,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "y",
-                span: 1:13-1:14,
+                span: 12-13,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:16-1:22,
+                span: 15-21,
             },
-            span: 1:13-1:22,
+            span: 12-21,
         },
         dts_parser.TupleElement{
             Name: &dts_parser.Ident{
                 Name: "z",
-                span: 1:24-1:25,
+                span: 23-24,
             },
             Type: &dts_parser.PrimitiveType{
                 Kind: 8,
-                span: 1:27-1:34,
+                span: 26-33,
             },
-            span: 1:24-1:34,
+            span: 23-33,
         },
     },
-    span: 1:1-1:35,
+    span: 0-34,
 }
 ---
 
@@ -912,19 +912,19 @@ map[string]interface {}{
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:8,
+                span: 1-7,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:10-1:16,
+                    span: 9-15,
                 },
-                span: 1:10-1:16,
+                span: 9-15,
             },
         },
-        span: 1:1-1:18,
+        span: 0-17,
     },
 }
 ---
@@ -937,12 +937,12 @@ map[string]interface {}{
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:8,
+                span: 1-7,
             },
         },
-        span: 1:1-1:10,
+        span: 0-9,
     },
 }
 ---
@@ -951,11 +951,11 @@ map[string]interface {}{
 map[string]interface {}{
     "errors": []*dts_parser.Error{
         &dts_parser.Error{
-            Span: 1:9-1:10,
+            Span: 8-9,
             Message: "Expected tuple element",
         },
         &dts_parser.Error{
-            Span: 1:9-1:10,
+            Span: 8-9,
             Message: "Expected 13 but got 16",
         },
     },
@@ -964,12 +964,12 @@ map[string]interface {}{
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
-                span: 1:2-1:8,
+                span: 1-7,
             },
         },
-        span: 1:1-1:8,
+        span: 0-7,
     },
 }
 ---
@@ -982,19 +982,19 @@ map[string]interface {}{
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:3-1:9,
+                    span: 2-8,
                 },
-                span: 1:3-1:9,
+                span: 2-8,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:12-1:18,
+                    span: 11-17,
                 },
-                span: 1:12-1:18,
+                span: 11-17,
             },
         },
-        span: 1:1-1:20,
+        span: 0-19,
     },
 }
 ---
@@ -1007,19 +1007,19 @@ map[string]interface {}{
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 2:3-2:9,
+                    span: 4-10,
                 },
-                span: 2:3-2:9,
+                span: 4-10,
             },
             dts_parser.TupleElement{
                 Type: &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 3:3-3:9,
+                    span: 14-20,
                 },
-                span: 3:3-3:9,
+                span: 14-20,
             },
         },
-        span: 1:1-4:2,
+        span: 0-22,
     },
 }
 ---
@@ -1030,19 +1030,19 @@ map[string]interface {}{
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:1-1:7,
+                span: 0-6,
             },
-            span: 1:1-1:9,
+            span: 0-8,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:12-1:18,
+                span: 11-17,
             },
-            span: 1:12-1:20,
+            span: 11-19,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1054,34 +1054,34 @@ map[string]interface {}{
                 dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:2-1:8,
+                        span: 1-7,
                     },
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
                 dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: 1:10-1:16,
+                        span: 9-15,
                     },
-                    span: 1:10-1:16,
+                    span: 9-15,
                 },
             },
-            span: 1:1-1:17,
+            span: 0-16,
         },
         &dts_parser.TupleType{
             Elements: []dts_parser.TupleElement{
                 dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 8,
-                        span: 1:21-1:28,
+                        span: 20-27,
                     },
-                    span: 1:21-1:28,
+                    span: 20-27,
                 },
             },
-            span: 1:20-1:29,
+            span: 19-28,
         },
     },
-    span: 1:1-1:29,
+    span: 0-28,
 }
 ---
 
@@ -1092,24 +1092,24 @@ map[string]interface {}{
             ElementType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Foo",
-                    span: 1:1-1:4,
+                    span: 0-3,
                 },
-                span: 1:1-1:4,
+                span: 0-3,
             },
-            span: 1:1-1:6,
+            span: 0-5,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.TypeReference{
                 Name: &dts_parser.Ident{
                     Name: "Bar",
-                    span: 1:9-1:12,
+                    span: 8-11,
                 },
-                span: 1:9-1:12,
+                span: 8-11,
             },
-            span: 1:9-1:14,
+            span: 8-13,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1120,18 +1120,18 @@ map[string]interface {}{
             Types: []dts_parser.TypeAnn{
                 &dts_parser.PrimitiveType{
                     Kind: 6,
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
                 &dts_parser.PrimitiveType{
                     Kind: 7,
-                    span: 1:11-1:17,
+                    span: 10-16,
                 },
             },
-            span: 1:2-1:17,
+            span: 1-16,
         },
-        span: 1:1-1:18,
+        span: 0-17,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1143,34 +1143,34 @@ map[string]interface {}{
                 Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:2-1:8,
+                        span: 1-7,
                     },
                     &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: 1:11-1:17,
+                        span: 10-16,
                     },
                 },
-                span: 1:2-1:17,
+                span: 1-16,
             },
-            span: 1:2-1:17,
+            span: 1-16,
         },
         dts_parser.TupleElement{
             Type: &dts_parser.UnionType{
                 Types: []dts_parser.TypeAnn{
                     &dts_parser.PrimitiveType{
                         Kind: 8,
-                        span: 1:19-1:26,
+                        span: 18-25,
                     },
                     &dts_parser.PrimitiveType{
-                        span: 1:29-1:32,
+                        span: 28-31,
                     },
                 },
-                span: 1:19-1:32,
+                span: 18-31,
             },
-            span: 1:19-1:32,
+            span: 18-31,
         },
     },
-    span: 1:1-1:33,
+    span: 0-32,
 }
 ---
 
@@ -1180,7 +1180,7 @@ map[string]interface {}{
         &dts_parser.TypeReference{
             Name: &dts_parser.Ident{
                 Name: "Array",
-                span: 1:1-1:6,
+                span: 0-5,
             },
             TypeArgs: []dts_parser.TypeAnn{
                 &dts_parser.TupleType{
@@ -1188,22 +1188,22 @@ map[string]interface {}{
                         dts_parser.TupleElement{
                             Type: &dts_parser.PrimitiveType{
                                 Kind: 6,
-                                span: 1:8-1:14,
+                                span: 7-13,
                             },
-                            span: 1:8-1:14,
+                            span: 7-13,
                         },
                         dts_parser.TupleElement{
                             Type: &dts_parser.PrimitiveType{
                                 Kind: 7,
-                                span: 1:16-1:22,
+                                span: 15-21,
                             },
-                            span: 1:16-1:22,
+                            span: 15-21,
                         },
                     },
-                    span: 1:7-1:23,
+                    span: 6-22,
                 },
             },
-            span: 1:1-1:24,
+            span: 0-23,
         },
         &dts_parser.TupleType{
             Elements: []dts_parser.TupleElement{
@@ -1212,29 +1212,29 @@ map[string]interface {}{
                         ElementType: &dts_parser.TypeReference{
                             Name: &dts_parser.Ident{
                                 Name: "Foo",
-                                span: 1:28-1:31,
+                                span: 27-30,
                             },
-                            span: 1:28-1:31,
+                            span: 27-30,
                         },
-                        span: 1:28-1:33,
+                        span: 27-32,
                     },
-                    span: 1:28-1:33,
+                    span: 27-32,
                 },
                 dts_parser.TupleElement{
                     Type: &dts_parser.TypeReference{
                         Name: &dts_parser.Ident{
                             Name: "Bar",
-                            span: 1:35-1:38,
+                            span: 34-37,
                         },
-                        span: 1:35-1:38,
+                        span: 34-37,
                     },
-                    span: 1:35-1:38,
+                    span: 34-37,
                 },
             },
-            span: 1:27-1:39,
+            span: 26-38,
         },
     },
-    span: 1:1-1:39,
+    span: 0-38,
 }
 ---
 
@@ -1243,11 +1243,11 @@ map[string]interface {}{
     ElementType: &dts_parser.ParenthesizedType{
         Type: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:2-1:8,
+            span: 1-7,
         },
-        span: 1:1-1:9,
+        span: 0-8,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1255,22 +1255,22 @@ map[string]interface {}{
 &dts_parser.TypeReference{
     Name: &dts_parser.Ident{
         Name: "Map",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:5-1:11,
+            span: 4-10,
         },
         &dts_parser.ArrayType{
             ElementType: &dts_parser.PrimitiveType{
                 Kind: 7,
-                span: 1:13-1:19,
+                span: 12-18,
             },
-            span: 1:13-1:21,
+            span: 12-20,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -1278,7 +1278,7 @@ map[string]interface {}{
 &dts_parser.TypeReference{
     Name: &dts_parser.Ident{
         Name: "Result",
-        span: 1:1-1:7,
+        span: 0-6,
     },
     TypeArgs: []dts_parser.TypeAnn{
         &dts_parser.TupleType{
@@ -1286,22 +1286,22 @@ map[string]interface {}{
                 dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 6,
-                        span: 1:9-1:15,
+                        span: 8-14,
                     },
-                    span: 1:9-1:15,
+                    span: 8-14,
                 },
                 dts_parser.TupleElement{
                     Type: &dts_parser.PrimitiveType{
                         Kind: 7,
-                        span: 1:17-1:23,
+                        span: 16-22,
                     },
-                    span: 1:17-1:23,
+                    span: 16-22,
                 },
             },
-            span: 1:8-1:24,
+            span: 7-23,
         },
     },
-    span: 1:1-1:25,
+    span: 0-24,
 }
 ---
 
@@ -1309,9 +1309,9 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: 1:1-1:7,
+        span: 0-6,
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -1320,11 +1320,11 @@ map[string]interface {}{
     ElementType: &dts_parser.TypeReference{
         Name: &dts_parser.Ident{
             Name: "Foo",
-            span: 1:1-1:4,
+            span: 0-3,
         },
-        span: 1:1-1:4,
+        span: 0-3,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -1333,11 +1333,11 @@ map[string]interface {}{
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:1-1:7,
+            span: 0-6,
         },
-        span: 1:1-1:9,
+        span: 0-8,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1347,18 +1347,18 @@ map[string]interface {}{
         dts_parser.TupleElement{
             Type: &dts_parser.PrimitiveType{
                 Kind: 6,
-                span: 1:2-1:8,
+                span: 1-7,
             },
-            span: 1:2-1:8,
+            span: 1-7,
         },
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
 [TestArrayVsIndexAccess/empty_tuple - 1]
 &dts_parser.TupleType{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -1366,10 +1366,10 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 6,
-        span: 1:10-1:16,
+        span: 9-15,
     },
     Readonly: true,
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -1377,10 +1377,10 @@ map[string]interface {}{
 &dts_parser.ArrayType{
     ElementType: &dts_parser.PrimitiveType{
         Kind: 7,
-        span: 1:10-1:16,
+        span: 9-15,
     },
     Readonly: true,
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -1389,11 +1389,11 @@ map[string]interface {}{
     ElementType: &dts_parser.ArrayType{
         ElementType: &dts_parser.PrimitiveType{
             Kind: 6,
-            span: 1:10-1:16,
+            span: 9-15,
         },
         Readonly: true,
-        span: 1:1-1:18,
+        span: 0-17,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---

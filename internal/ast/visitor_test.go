@@ -129,7 +129,7 @@ func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	if !visitor.EnterTypeAnn(nil) {
 		t.Error("EnterTypeAnn should return true")
 	}
-	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}}) {
+	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}}) {
 		t.Error("EnterBlock should return true")
 	}
 }
@@ -151,12 +151,12 @@ func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
 	visitor.ExitStmt(nil)
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
-	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
+	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
 }
 
 func TestErrorExpr_Accept(t *testing.T) {
 	visitor := newMockVisitor()
-	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 0}, SourceID: 0}
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}
 	expr := NewError(span)
 
 	expr.Accept(visitor)
@@ -186,11 +186,11 @@ func TestErrorExpr_Accept(t *testing.T) {
 
 func TestBinaryExpr_Accept_TraversesChildren(t *testing.T) {
 	visitor := newMockVisitor()
-	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 10}, SourceID: 0}
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 10}, SourceID: 0}
 
 	// Create a binary expression: left + right
-	left := NewError(Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 4}, SourceID: 0})
-	right := NewError(Span{Start: Location{Line: 1, Column: 6}, End: Location{Line: 1, Column: 10}, SourceID: 0})
+	left := NewError(Span{Start: Location{Offset: 0}, End: Location{Offset: 4}, SourceID: 0})
+	right := NewError(Span{Start: Location{Offset: 6}, End: Location{Offset: 10}, SourceID: 0})
 	binary := NewBinary(left, right, Plus, span)
 
 	binary.Accept(visitor)
@@ -226,9 +226,9 @@ func TestBinaryExpr_Accept_SkipsChildrenWhenEnterReturnsFalse(t *testing.T) {
 	visitor := newMockVisitor()
 	visitor.skipNode("Expr") // Skip all expressions
 
-	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 10}, SourceID: 0}
-	left := NewError(Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 4}, SourceID: 0})
-	right := NewError(Span{Start: Location{Line: 1, Column: 6}, End: Location{Line: 1, Column: 10}, SourceID: 0})
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 10}, SourceID: 0}
+	left := NewError(Span{Start: Location{Offset: 0}, End: Location{Offset: 4}, SourceID: 0})
+	right := NewError(Span{Start: Location{Offset: 6}, End: Location{Offset: 10}, SourceID: 0})
 	binary := NewBinary(left, right, Plus, span)
 
 	binary.Accept(visitor)
@@ -248,7 +248,7 @@ func TestBinaryExpr_Accept_SkipsChildrenWhenEnterReturnsFalse(t *testing.T) {
 
 func TestIdentPat_Accept(t *testing.T) {
 	visitor := newMockVisitor()
-	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 3}, SourceID: 0}
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 3}, SourceID: 0}
 	pat := NewIdentPat("foo", false, nil, nil, span)
 
 	pat.Accept(visitor)
@@ -300,7 +300,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.EnterStmt(nil)
 	visitor.EnterDecl(nil)
 	visitor.EnterTypeAnn(nil)
-	visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
+	visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
 
 	// Test Exit methods with nil
 	visitor.ExitLit(nil)
@@ -310,15 +310,15 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.ExitStmt(nil)
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
-	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Line: 0, Column: 0}, End: Location{Line: 0, Column: 0}, SourceID: 0}})
+	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
 }
 
 // Benchmark basic visitor traversal
 func BenchmarkDefaultVisitor_SimpleTraversal(b *testing.B) {
 	visitor := &DefaultVisitor{}
-	span := Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 10}, SourceID: 0}
-	left := NewError(Span{Start: Location{Line: 1, Column: 0}, End: Location{Line: 1, Column: 4}, SourceID: 0})
-	right := NewError(Span{Start: Location{Line: 1, Column: 6}, End: Location{Line: 1, Column: 10}, SourceID: 0})
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 10}, SourceID: 0}
+	left := NewError(Span{Start: Location{Offset: 0}, End: Location{Offset: 4}, SourceID: 0})
+	right := NewError(Span{Start: Location{Offset: 6}, End: Location{Offset: 10}, SourceID: 0})
 	binary := NewBinary(left, right, Plus, span)
 
 	b.ResetTimer()

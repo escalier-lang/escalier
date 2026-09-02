@@ -1,64 +1,64 @@
 
 [TestConvertTypeAnn/primitive_any - 1]
 &ast.AnyTypeAnn{
-    span: 1:1-1:4,
+    span: 0-3,
 }
 ---
 
 [TestConvertTypeAnn/primitive_unknown - 1]
 &ast.UnknownTypeAnn{
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
 [TestConvertTypeAnn/primitive_void - 1]
 &ast.LitTypeAnn{
     Lit: &ast.UndefinedLit{
-        span: 1:1-1:5,
+        span: 0-4,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
 [TestConvertTypeAnn/primitive_never - 1]
 &ast.NeverTypeAnn{
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
 [TestConvertTypeAnn/primitive_string - 1]
 &ast.StringTypeAnn{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestConvertTypeAnn/primitive_number - 1]
 &ast.NumberTypeAnn{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestConvertTypeAnn/primitive_boolean - 1]
 &ast.BooleanTypeAnn{
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
 [TestConvertTypeAnn/primitive_bigint - 1]
 &ast.BigintTypeAnn{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestConvertTypeAnn/primitive_symbol - 1]
 &ast.SymbolTypeAnn{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
 [TestConvertTypeAnn/primitive_object - 1]
 &ast.ObjectTypeAnn{
-    span: 1:1-1:7,
+    span: 0-6,
 }
 ---
 
@@ -66,9 +66,9 @@
 &ast.LitTypeAnn{
     Lit: &ast.StrLit{
         Value: "hello",
-        span: 1:1-1:8,
+        span: 0-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -76,9 +76,9 @@
 &ast.LitTypeAnn{
     Lit: &ast.NumLit{
         Value: 42,
-        span: 1:1-1:3,
+        span: 0-2,
     },
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -86,9 +86,9 @@
 &ast.LitTypeAnn{
     Lit: &ast.NumLit{
         Value: -3.14,
-        span: 1:1-1:6,
+        span: 0-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -96,18 +96,18 @@
 &ast.LitTypeAnn{
     Lit: &ast.BoolLit{
         Value: true,
-        span: 1:1-1:5,
+        span: 0-4,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
 [TestConvertTypeAnn/boolean_literal_false - 1]
 &ast.LitTypeAnn{
     Lit: &ast.BoolLit{
-        span: 1:1-1:6,
+        span: 0-5,
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -115,9 +115,9 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Foo",
-        span: 1:1-1:4,
+        span: 0-3,
     },
-    span: 1:1-1:4,
+    span: 0-3,
 }
 ---
 
@@ -125,14 +125,14 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Array",
-        span: 1:1-1:6,
+        span: 0-5,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:7-1:13,
+            span: 6-12,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -140,17 +140,17 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Map",
-        span: 1:1-1:4,
+        span: 0-3,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:5-1:11,
+            span: 4-10,
         },
         &ast.NumberTypeAnn{
-            span: 1:13-1:19,
+            span: 12-18,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -159,14 +159,14 @@
     Name: &ast.Member{
         Left: &ast.Ident{
             Name: "Foo",
-            span: 1:1-1:4,
+            span: 0-3,
         },
         Right: &ast.Ident{
             Name: "Bar",
-            span: 1:5-1:8,
+            span: 4-7,
         },
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -176,19 +176,19 @@
         Left: &ast.Member{
             Left: &ast.Ident{
                 Name: "A",
-                span: 1:1-1:2,
+                span: 0-1,
             },
             Right: &ast.Ident{
                 Name: "B",
-                span: 1:3-1:4,
+                span: 2-3,
             },
         },
         Right: &ast.Ident{
             Name: "C",
-            span: 1:5-1:6,
+            span: 4-5,
         },
     },
-    span: 1:1-1:6,
+    span: 0-5,
 }
 ---
 
@@ -197,23 +197,23 @@
     Name: &ast.Member{
         Left: &ast.Ident{
             Name: "Foo",
-            span: 1:1-1:4,
+            span: 0-3,
         },
         Right: &ast.Ident{
             Name: "Bar",
-            span: 1:5-1:8,
+            span: 4-7,
         },
     },
     TypeArgs: []ast.TypeAnn{
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "T",
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:9-1:10,
+            span: 8-9,
         },
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -221,14 +221,14 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Array",
-        span: 1:1-1:9,
+        span: 0-8,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:1-1:7,
+            span: 0-6,
         },
     },
-    span: 1:1-1:9,
+    span: 0-8,
 }
 ---
 
@@ -236,23 +236,23 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Array",
-        span: 1:1-1:11,
+        span: 0-10,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Array",
-                span: 1:1-1:9,
+                span: 0-8,
             },
             TypeArgs: []ast.TypeAnn{
                 &ast.NumberTypeAnn{
-                    span: 1:1-1:7,
+                    span: 0-6,
                 },
             },
-            span: 1:1-1:9,
+            span: 0-8,
         },
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -260,14 +260,14 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "ReadonlyArray",
-        span: 1:1-1:18,
+        span: 0-17,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -275,13 +275,13 @@
 &ast.TupleTypeAnn{
     Elems: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:2-1:8,
+            span: 1-7,
         },
         &ast.NumberTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -289,10 +289,10 @@
 &ast.TupleTypeAnn{
     Elems: []ast.TypeAnn{
         &ast.BooleanTypeAnn{
-            span: 1:2-1:9,
+            span: 1-8,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -300,22 +300,22 @@
 &ast.TupleTypeAnn{
     Elems: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:2-1:8,
+            span: 1-7,
         },
         &ast.NumberTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
         &ast.BooleanTypeAnn{
-            span: 1:18-1:25,
+            span: 17-24,
         },
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
 [TestConvertTypeAnn/empty_tuple - 1]
 &ast.TupleTypeAnn{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -323,25 +323,25 @@
 &ast.TupleTypeAnn{
     Elems: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:2-1:8,
+            span: 1-7,
         },
         &ast.RestSpreadTypeAnn{
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "Array",
-                    span: 1:13-1:21,
+                    span: 12-20,
                 },
                 TypeArgs: []ast.TypeAnn{
                     &ast.NumberTypeAnn{
-                        span: 1:13-1:19,
+                        span: 12-18,
                     },
                 },
-                span: 1:13-1:21,
+                span: 12-20,
             },
-            span: 1:10-1:21,
+            span: 9-20,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -349,13 +349,13 @@
 &ast.UnionTypeAnn{
     Types: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &ast.NumberTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -363,16 +363,16 @@
 &ast.UnionTypeAnn{
     Types: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &ast.NumberTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
         &ast.BooleanTypeAnn{
-            span: 1:19-1:26,
+            span: 18-25,
         },
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
@@ -380,16 +380,16 @@
 &ast.UnionTypeAnn{
     Types: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &ast.LitTypeAnn{
             Lit: &ast.NullLit{
-                span: 1:10-1:14,
+                span: 9-13,
             },
-            span: 1:10-1:14,
+            span: 9-13,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -397,16 +397,16 @@
 &ast.UnionTypeAnn{
     Types: []ast.TypeAnn{
         &ast.NumberTypeAnn{
-            span: 1:1-1:7,
+            span: 0-6,
         },
         &ast.LitTypeAnn{
             Lit: &ast.UndefinedLit{
-                span: 1:10-1:19,
+                span: 9-18,
             },
-            span: 1:10-1:19,
+            span: 9-18,
         },
     },
-    span: 1:1-1:19,
+    span: 0-18,
 }
 ---
 
@@ -416,19 +416,19 @@
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Foo",
-                span: 1:1-1:4,
+                span: 0-3,
             },
-            span: 1:1-1:4,
+            span: 0-3,
         },
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Bar",
-                span: 1:7-1:10,
+                span: 6-9,
             },
-            span: 1:7-1:10,
+            span: 6-9,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -438,26 +438,26 @@
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "A",
-                span: 1:1-1:2,
+                span: 0-1,
             },
-            span: 1:1-1:2,
+            span: 0-1,
         },
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "B",
-                span: 1:5-1:6,
+                span: 4-5,
             },
-            span: 1:5-1:6,
+            span: 4-5,
         },
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "C",
-                span: 1:9-1:10,
+                span: 8-9,
             },
-            span: 1:9-1:10,
+            span: 8-9,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -469,40 +469,40 @@
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name: "a",
-                        span: 1:2-1:3,
+                        span: 1-2,
                     },
                     Value: &ast.StringTypeAnn{
-                        span: 1:5-1:11,
+                        span: 4-10,
                     },
                 },
             },
-            span: 1:1-1:12,
+            span: 0-11,
         },
         &ast.ObjectTypeAnn{
             Elems: []ast.ObjTypeAnnElem{
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
                         Name: "b",
-                        span: 1:16-1:17,
+                        span: 15-16,
                     },
                     Value: &ast.NumberTypeAnn{
-                        span: 1:19-1:25,
+                        span: 18-24,
                     },
                 },
             },
-            span: 1:15-1:26,
+            span: 14-25,
         },
     },
-    span: 1:1-1:26,
+    span: 0-25,
 }
 ---
 
 [TestConvertTypeAnn/simple_function - 1]
 &ast.FuncTypeAnn{
     Return: &ast.UnknownTypeAnn{
-        span: 1:7-1:11,
+        span: 6-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -512,17 +512,17 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:2-1:11,
+                span: 1-10,
             },
             TypeAnn: &ast.NumberTypeAnn{
-                span: 1:5-1:11,
+                span: 4-10,
             },
         },
     },
     Return: &ast.StringTypeAnn{
-        span: 1:16-1:22,
+        span: 15-21,
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -532,26 +532,26 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:2-1:11,
+                span: 1-10,
             },
             TypeAnn: &ast.NumberTypeAnn{
-                span: 1:5-1:11,
+                span: 4-10,
             },
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "y",
-                span: 1:13-1:22,
+                span: 12-21,
             },
             TypeAnn: &ast.StringTypeAnn{
-                span: 1:16-1:22,
+                span: 15-21,
             },
         },
     },
     Return: &ast.BooleanTypeAnn{
-        span: 1:27-1:34,
+        span: 26-33,
     },
-    span: 1:1-1:34,
+    span: 0-33,
 }
 ---
 
@@ -561,18 +561,18 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:2-1:12,
+                span: 1-11,
             },
             Optional: true,
             TypeAnn: &ast.NumberTypeAnn{
-                span: 1:6-1:12,
+                span: 5-11,
             },
         },
     },
     Return: &ast.UnknownTypeAnn{
-        span: 1:17-1:21,
+        span: 16-20,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -583,28 +583,28 @@
             Pattern: &ast.RestPat{
                 Pattern: &ast.IdentPat{
                     Name: "args",
-                    span: 1:2-1:19,
+                    span: 1-18,
                 },
-                span: 1:2-1:19,
+                span: 1-18,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "Array",
-                    span: 1:11-1:19,
+                    span: 10-18,
                 },
                 TypeArgs: []ast.TypeAnn{
                     &ast.StringTypeAnn{
-                        span: 1:11-1:17,
+                        span: 10-16,
                     },
                 },
-                span: 1:11-1:19,
+                span: 10-18,
             },
         },
     },
     Return: &ast.UnknownTypeAnn{
-        span: 1:24-1:28,
+        span: 23-27,
     },
-    span: 1:1-1:28,
+    span: 0-27,
 }
 ---
 
@@ -613,32 +613,32 @@
     TypeParams: []*ast.TypeParam{
         &ast.TypeParam{
             Name: "T",
-            span: 1:2-1:3,
+            span: 1-2,
         },
     },
     Params: []*ast.Param{
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:5-1:9,
+                span: 4-8,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "T",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
-                span: 1:8-1:9,
+                span: 7-8,
             },
         },
     },
     Return: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:14-1:15,
+            span: 13-14,
         },
-        span: 1:14-1:15,
+        span: 13-14,
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
@@ -648,34 +648,34 @@
         &ast.TypeParam{
             Name: "T",
             Constraint: &ast.StringTypeAnn{
-                span: 1:12-1:18,
+                span: 11-17,
             },
-            span: 1:2-1:18,
+            span: 1-17,
         },
     },
     Params: []*ast.Param{
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:20-1:24,
+                span: 19-23,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "T",
-                    span: 1:23-1:24,
+                    span: 22-23,
                 },
-                span: 1:23-1:24,
+                span: 22-23,
             },
         },
     },
     Return: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:29-1:30,
+            span: 28-29,
         },
-        span: 1:29-1:30,
+        span: 28-29,
     },
-    span: 1:1-1:30,
+    span: 0-29,
 }
 ---
 
@@ -684,11 +684,11 @@
     Return: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Foo",
-            span: 1:11-1:14,
+            span: 10-13,
         },
-        span: 1:11-1:14,
+        span: 10-13,
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -698,21 +698,21 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:6-1:15,
+                span: 5-14,
             },
             TypeAnn: &ast.NumberTypeAnn{
-                span: 1:9-1:15,
+                span: 8-14,
             },
         },
     },
     Return: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Bar",
-            span: 1:20-1:23,
+            span: 19-22,
         },
-        span: 1:20-1:23,
+        span: 19-22,
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
@@ -721,17 +721,17 @@
     Return: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Baz",
-            span: 1:20-1:23,
+            span: 19-22,
         },
-        span: 1:20-1:23,
+        span: 19-22,
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
 [TestConvertTypeAnn/empty_object - 1]
 &ast.ObjectTypeAnn{
-    span: 1:1-1:3,
+    span: 0-2,
 }
 ---
 
@@ -741,14 +741,14 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "name",
-                span: 1:2-1:6,
+                span: 1-5,
             },
             Value: &ast.StringTypeAnn{
-                span: 1:8-1:14,
+                span: 7-13,
             },
         },
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
@@ -758,23 +758,23 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "name",
-                span: 1:2-1:6,
+                span: 1-5,
             },
             Value: &ast.StringTypeAnn{
-                span: 1:8-1:14,
+                span: 7-13,
             },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "age",
-                span: 1:16-1:19,
+                span: 15-18,
             },
             Value: &ast.NumberTypeAnn{
-                span: 1:21-1:27,
+                span: 20-26,
             },
         },
     },
-    span: 1:1-1:28,
+    span: 0-27,
 }
 ---
 
@@ -784,15 +784,15 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "name",
-                span: 1:2-1:6,
+                span: 1-5,
             },
             Optional: true,
             Value: &ast.StringTypeAnn{
-                span: 1:9-1:15,
+                span: 8-14,
             },
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -802,15 +802,15 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "id",
-                span: 1:11-1:13,
+                span: 10-12,
             },
             Readonly: true,
             Value: &ast.NumberTypeAnn{
-                span: 1:15-1:21,
+                span: 14-20,
             },
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -819,18 +819,18 @@
     Target: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Index: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "K",
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:3-1:4,
+        span: 2-3,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -839,18 +839,18 @@
     Target: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Index: &ast.LitTypeAnn{
         Lit: &ast.StrLit{
             Value: "name",
-            span: 1:3-1:9,
+            span: 2-8,
         },
-        span: 1:3-1:9,
+        span: 2-8,
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -859,17 +859,17 @@
     Target: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Index: &ast.LitTypeAnn{
         Lit: &ast.NumLit{
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:3-1:4,
+        span: 2-3,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -879,27 +879,27 @@
         Target: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "T",
-                span: 1:1-1:2,
+                span: 0-1,
             },
-            span: 1:1-1:2,
+            span: 0-1,
         },
         Index: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "K",
-                span: 1:3-1:4,
+                span: 2-3,
             },
-            span: 1:3-1:4,
+            span: 2-3,
         },
-        span: 1:1-1:5,
+        span: 0-4,
     },
     Index: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "P",
-            span: 1:6-1:7,
+            span: 5-6,
         },
-        span: 1:6-1:7,
+        span: 5-6,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -908,32 +908,32 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "X",
-            span: 1:15-1:16,
+            span: 14-15,
         },
-        span: 1:15-1:16,
+        span: 14-15,
     },
     Else: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Y",
-            span: 1:19-1:20,
+            span: 18-19,
         },
-        span: 1:19-1:20,
+        span: 18-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -942,27 +942,27 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.StringTypeAnn{
-        span: 1:11-1:17,
+        span: 10-16,
     },
     Then: &ast.LitTypeAnn{
         Lit: &ast.BoolLit{
             Value: true,
-            span: 1:20-1:24,
+            span: 19-23,
         },
-        span: 1:20-1:24,
+        span: 19-23,
     },
     Else: &ast.LitTypeAnn{
         Lit: &ast.BoolLit{
-            span: 1:27-1:32,
+            span: 26-31,
         },
-        span: 1:27-1:32,
+        span: 26-31,
     },
-    span: 1:1-1:32,
+    span: 0-31,
 }
 ---
 
@@ -971,56 +971,56 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "U",
-            span: 1:11-1:12,
+            span: 10-11,
         },
-        span: 1:11-1:12,
+        span: 10-11,
     },
     Then: &ast.CondTypeAnn{
         Check: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "X",
-                span: 1:16-1:17,
+                span: 15-16,
             },
-            span: 1:16-1:17,
+            span: 15-16,
         },
         Extends: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Y",
-                span: 1:26-1:27,
+                span: 25-26,
             },
-            span: 1:26-1:27,
+            span: 25-26,
         },
         Then: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "A",
-                span: 1:30-1:31,
+                span: 29-30,
             },
-            span: 1:30-1:31,
+            span: 29-30,
         },
         Else: &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "B",
-                span: 1:34-1:35,
+                span: 33-34,
             },
-            span: 1:34-1:35,
+            span: 33-34,
         },
-        span: 1:16-1:35,
+        span: 15-34,
     },
     Else: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Z",
-            span: 1:39-1:40,
+            span: 38-39,
         },
-        span: 1:39-1:40,
+        span: 38-39,
     },
-    span: 1:1-1:40,
+    span: 0-39,
 }
 ---
 
@@ -1029,38 +1029,38 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "Array",
-            span: 1:11-1:16,
+            span: 10-15,
         },
         TypeArgs: []ast.TypeAnn{
             &ast.InferTypeAnn{
                 Name: "U",
-                span: 1:17-1:24,
+                span: 16-23,
             },
         },
-        span: 1:11-1:25,
+        span: 10-24,
     },
     Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "U",
-            span: 1:28-1:29,
+            span: 27-28,
         },
-        span: 1:28-1:29,
+        span: 27-28,
     },
     Else: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:32-1:33,
+            span: 31-32,
         },
-        span: 1:32-1:33,
+        span: 31-32,
     },
-    span: 1:1-1:33,
+    span: 0-32,
 }
 ---
 
@@ -1069,40 +1069,40 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.FuncTypeAnn{
         Params: []*ast.Param{
             &ast.Param{
                 Pattern: &ast.IdentPat{
                     Name: "arg",
-                    span: 1:12-1:24,
+                    span: 11-23,
                 },
                 TypeAnn: &ast.InferTypeAnn{
                     Name: "A",
-                    span: 1:17-1:24,
+                    span: 16-23,
                 },
             },
         },
         Return: &ast.InferTypeAnn{
             Name: "R",
-            span: 1:29-1:36,
+            span: 28-35,
         },
-        span: 1:11-1:36,
+        span: 10-35,
     },
     Then: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "R",
-            span: 1:39-1:40,
+            span: 38-39,
         },
-        span: 1:39-1:40,
+        span: 38-39,
     },
     Else: &ast.NeverTypeAnn{
-        span: 1:43-1:48,
+        span: 42-47,
     },
-    span: 1:1-1:48,
+    span: 0-47,
 }
 ---
 
@@ -1111,10 +1111,10 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "hello",
-            Span: 1:2-1:7,
+            Span: 1-6,
         },
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1123,15 +1123,15 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "hello ",
-            Span: 1:2-1:8,
+            Span: 1-7,
         },
     },
     TypeAnns: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:10-1:16,
+            span: 9-15,
         },
     },
-    span: 1:1-1:18,
+    span: 0-17,
 }
 ---
 
@@ -1140,18 +1140,18 @@
     Quasis: []*ast.Quasi{
         &ast.Quasi{
             Value: "-",
-            Span: 1:11-1:12,
+            Span: 10-11,
         },
     },
     TypeAnns: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:4-1:10,
+            span: 3-9,
         },
         &ast.NumberTypeAnn{
-            span: 1:14-1:20,
+            span: 13-19,
         },
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -1160,11 +1160,11 @@
     Type: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:7-1:8,
+            span: 6-7,
         },
-        span: 1:7-1:8,
+        span: 6-7,
     },
-    span: 1:1-1:8,
+    span: 0-7,
 }
 ---
 
@@ -1175,25 +1175,25 @@
             &ast.PropertyTypeAnn{
                 Name: &ast.IdentExpr{
                     Name: "a",
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
                 Value: &ast.StringTypeAnn{
-                    span: 1:11-1:17,
+                    span: 10-16,
                 },
             },
             &ast.PropertyTypeAnn{
                 Name: &ast.IdentExpr{
                     Name: "b",
-                    span: 1:19-1:20,
+                    span: 18-19,
                 },
                 Value: &ast.NumberTypeAnn{
-                    span: 1:22-1:28,
+                    span: 21-27,
                 },
             },
         },
-        span: 1:7-1:29,
+        span: 6-28,
     },
-    span: 1:1-1:29,
+    span: 0-28,
 }
 ---
 
@@ -1201,9 +1201,9 @@
 &ast.TypeOfTypeAnn{
     Value: &ast.Ident{
         Name: "foo",
-        span: 1:8-1:11,
+        span: 7-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1212,21 +1212,21 @@
     Value: &ast.Member{
         Left: &ast.Ident{
             Name: "Foo",
-            span: 1:8-1:11,
+            span: 7-10,
         },
         Right: &ast.Ident{
             Name: "bar",
-            span: 1:12-1:15,
+            span: 11-14,
         },
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
 [TestConvertTypeAnn/import_type - 1]
 &ast.ImportTypeAnn{
     Source: "module",
-    span: 1:1-1:17,
+    span: 0-16,
 }
 ---
 
@@ -1235,9 +1235,9 @@
     Source: "module",
     Qualifier: &ast.Ident{
         Name: "Foo",
-        span: 1:18-1:21,
+        span: 17-20,
     },
-    span: 1:1-1:21,
+    span: 0-20,
 }
 ---
 
@@ -1246,18 +1246,18 @@
     Source: "module",
     Qualifier: &ast.Ident{
         Name: "Foo",
-        span: 1:18-1:21,
+        span: 17-20,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "T",
-                span: 1:22-1:23,
+                span: 21-22,
             },
-            span: 1:22-1:23,
+            span: 21-22,
         },
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -1267,17 +1267,17 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:2-1:8,
+                span: 1-7,
             },
             TypeAnn: &ast.AnyTypeAnn{
-                span: 1:5-1:8,
+                span: 4-7,
             },
         },
     },
     Return: &ast.BooleanTypeAnn{
-        span: 1:13-1:24,
+        span: 12-23,
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -1288,19 +1288,19 @@
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "Array",
-                    span: 1:5-1:13,
+                    span: 4-12,
                 },
                 TypeArgs: []ast.TypeAnn{
                     &ast.StringTypeAnn{
-                        span: 1:5-1:11,
+                        span: 4-10,
                     },
                 },
-                span: 1:5-1:13,
+                span: 4-12,
             },
-            span: 1:2-1:13,
+            span: 1-12,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1308,10 +1308,10 @@
 &ast.TupleTypeAnn{
     Elems: []ast.TypeAnn{
         &ast.StringTypeAnn{
-            span: 1:2-1:8,
+            span: 1-7,
         },
     },
-    span: 1:1-1:10,
+    span: 0-9,
 }
 ---
 
@@ -1320,29 +1320,29 @@
     Types: []ast.TypeAnn{
         &ast.FuncTypeAnn{
             Return: &ast.StringTypeAnn{
-                span: 1:8-1:14,
+                span: 7-13,
             },
-            span: 1:2-1:14,
+            span: 1-13,
         },
         &ast.FuncTypeAnn{
             Params: []*ast.Param{
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "x",
-                        span: 1:20-1:29,
+                        span: 19-28,
                     },
                     TypeAnn: &ast.NumberTypeAnn{
-                        span: 1:23-1:29,
+                        span: 22-28,
                     },
                 },
             },
             Return: &ast.BooleanTypeAnn{
-                span: 1:34-1:41,
+                span: 33-40,
             },
-            span: 1:19-1:41,
+            span: 18-40,
         },
     },
-    span: 1:1-1:42,
+    span: 0-41,
 }
 ---
 
@@ -1350,22 +1350,22 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Array",
-        span: 1:1-1:20,
+        span: 0-19,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.UnionTypeAnn{
             Types: []ast.TypeAnn{
                 &ast.StringTypeAnn{
-                    span: 1:2-1:8,
+                    span: 1-7,
                 },
                 &ast.NumberTypeAnn{
-                    span: 1:11-1:17,
+                    span: 10-16,
                 },
             },
-            span: 1:2-1:17,
+            span: 1-16,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1375,29 +1375,29 @@
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Array",
-                span: 1:1-1:9,
+                span: 0-8,
             },
             TypeArgs: []ast.TypeAnn{
                 &ast.StringTypeAnn{
-                    span: 1:1-1:7,
+                    span: 0-6,
                 },
             },
-            span: 1:1-1:9,
+            span: 0-8,
         },
         &ast.TypeRefTypeAnn{
             Name: &ast.Ident{
                 Name: "Array",
-                span: 1:12-1:20,
+                span: 11-19,
             },
             TypeArgs: []ast.TypeAnn{
                 &ast.NumberTypeAnn{
-                    span: 1:12-1:18,
+                    span: 11-17,
                 },
             },
-            span: 1:12-1:20,
+            span: 11-19,
         },
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---
 
@@ -1406,15 +1406,15 @@
     Return: &ast.UnionTypeAnn{
         Types: []ast.TypeAnn{
             &ast.StringTypeAnn{
-                span: 1:7-1:13,
+                span: 6-12,
             },
             &ast.NumberTypeAnn{
-                span: 1:16-1:22,
+                span: 15-21,
             },
         },
-        span: 1:7-1:22,
+        span: 6-21,
     },
-    span: 1:1-1:22,
+    span: 0-21,
 }
 ---
 
@@ -1423,35 +1423,35 @@
     Check: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "T",
-            span: 1:1-1:2,
+            span: 0-1,
         },
-        span: 1:1-1:2,
+        span: 0-1,
     },
     Extends: &ast.UnionTypeAnn{
         Types: []ast.TypeAnn{
             &ast.StringTypeAnn{
-                span: 1:11-1:17,
+                span: 10-16,
             },
             &ast.NumberTypeAnn{
-                span: 1:20-1:26,
+                span: 19-25,
             },
         },
-        span: 1:11-1:26,
+        span: 10-25,
     },
     Then: &ast.LitTypeAnn{
         Lit: &ast.BoolLit{
             Value: true,
-            span: 1:29-1:33,
+            span: 28-32,
         },
-        span: 1:29-1:33,
+        span: 28-32,
     },
     Else: &ast.LitTypeAnn{
         Lit: &ast.BoolLit{
-            span: 1:36-1:41,
+            span: 35-40,
         },
-        span: 1:36-1:41,
+        span: 35-40,
     },
-    span: 1:1-1:41,
+    span: 0-40,
 }
 ---
 
@@ -1462,28 +1462,28 @@
             &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "A",
-                    span: 1:2-1:3,
+                    span: 1-2,
                 },
-                span: 1:2-1:3,
+                span: 1-2,
             },
             &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "B",
-                    span: 1:6-1:7,
+                    span: 5-6,
                 },
-                span: 1:6-1:7,
+                span: 5-6,
             },
         },
-        span: 1:2-1:7,
+        span: 1-6,
     },
     Index: &ast.TypeRefTypeAnn{
         Name: &ast.Ident{
             Name: "K",
-            span: 1:9-1:10,
+            span: 8-9,
         },
-        span: 1:9-1:10,
+        span: 8-9,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -1493,50 +1493,50 @@
         &ast.TypeParam{
             Name: "T",
             Constraint: &ast.StringTypeAnn{
-                span: 1:12-1:18,
+                span: 11-17,
             },
-            span: 1:2-1:18,
+            span: 1-17,
         },
         &ast.TypeParam{
             Name: "U",
             Constraint: &ast.NumberTypeAnn{
-                span: 1:30-1:36,
+                span: 29-35,
             },
-            span: 1:20-1:36,
+            span: 19-35,
         },
     },
     Params: []*ast.Param{
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:38-1:42,
+                span: 37-41,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "T",
-                    span: 1:41-1:42,
+                    span: 40-41,
                 },
-                span: 1:41-1:42,
+                span: 40-41,
             },
         },
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "y",
-                span: 1:44-1:48,
+                span: 43-47,
             },
             TypeAnn: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:47-1:48,
+                    span: 46-47,
                 },
-                span: 1:47-1:48,
+                span: 46-47,
             },
         },
     },
     Return: &ast.UnknownTypeAnn{
-        span: 1:53-1:57,
+        span: 52-56,
     },
-    span: 1:1-1:57,
+    span: 0-56,
 }
 ---
 
@@ -1549,21 +1549,21 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:12-1:13,
+                    span: 11-12,
                 },
-                span: 1:12-1:13,
+                span: 11-12,
             },
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -1576,22 +1576,22 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:17-1:18,
+                        span: 16-17,
                     },
-                    span: 1:17-1:18,
+                    span: 16-17,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:21-1:22,
+                    span: 20-21,
                 },
-                span: 1:21-1:22,
+                span: 20-21,
             },
             ReadOnly: &"add",
         },
     },
-    span: 1:1-1:23,
+    span: 0-22,
 }
 ---
 
@@ -1604,22 +1604,22 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:13-1:14,
+                    span: 12-13,
                 },
-                span: 1:13-1:14,
+                span: 12-13,
             },
             Optional: &"add",
         },
     },
-    span: 1:1-1:15,
+    span: 0-14,
 }
 ---
 
@@ -1632,23 +1632,23 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:17-1:18,
+                        span: 16-17,
                     },
-                    span: 1:17-1:18,
+                    span: 16-17,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:22-1:23,
+                    span: 21-22,
                 },
-                span: 1:22-1:23,
+                span: 21-22,
             },
             Optional: &"add",
             ReadOnly: &"add",
         },
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -1661,22 +1661,22 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:18-1:19,
+                        span: 17-18,
                     },
-                    span: 1:18-1:19,
+                    span: 17-18,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:22-1:23,
+                    span: 21-22,
                 },
-                span: 1:22-1:23,
+                span: 21-22,
             },
             ReadOnly: &"remove",
         },
     },
-    span: 1:1-1:24,
+    span: 0-23,
 }
 ---
 
@@ -1689,22 +1689,22 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:14-1:15,
+                    span: 13-14,
                 },
-                span: 1:14-1:15,
+                span: 13-14,
             },
             Optional: &"remove",
         },
     },
-    span: 1:1-1:16,
+    span: 0-15,
 }
 ---
 
@@ -1717,39 +1717,39 @@
                 Constraint: &ast.TypeRefTypeAnn{
                     Name: &ast.Ident{
                         Name: "T",
-                        span: 1:8-1:9,
+                        span: 7-8,
                     },
-                    span: 1:8-1:9,
+                    span: 7-8,
                 },
             },
             Name: &ast.TemplateLitTypeAnn{
                 Quasis: []*ast.Quasi{
                     &ast.Quasi{
                         Value: "get",
-                        Span: 1:14-1:17,
+                        Span: 13-16,
                     },
                 },
                 TypeAnns: []ast.TypeAnn{
                     &ast.TypeRefTypeAnn{
                         Name: &ast.Ident{
                             Name: "K",
-                            span: 1:19-1:20,
+                            span: 18-19,
                         },
-                        span: 1:19-1:20,
+                        span: 18-19,
                     },
                 },
-                span: 1:13-1:22,
+                span: 12-21,
             },
             Value: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "U",
-                    span: 1:25-1:26,
+                    span: 24-25,
                 },
-                span: 1:25-1:26,
+                span: 24-25,
             },
         },
     },
-    span: 1:1-1:27,
+    span: 0-26,
 }
 ---
 
@@ -1757,9 +1757,9 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Self",
-        span: 1:1-1:5,
+        span: 0-4,
     },
-    span: 1:1-1:5,
+    span: 0-4,
 }
 ---
 
@@ -1767,7 +1767,7 @@
 &ast.MethodElem{
     Name: &ast.IdentExpr{
         Name: "foo",
-        span: 1:22-1:25,
+        span: 21-24,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
@@ -1775,24 +1775,24 @@
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "x",
-                        span: 1:26-1:35,
+                        span: 25-34,
                     },
                     TypeAnn: &ast.NumberTypeAnn{
-                        span: 1:29-1:35,
+                        span: 28-34,
                     },
                 },
             },
             Return: &ast.StringTypeAnn{
-                span: 1:38-1:44,
+                span: 37-43,
             },
         },
-        span: 1:22-1:44,
+        span: 21-43,
     },
     Receiver: &ast.MethodReceiver{
         Mut: true,
-        Span_: 1:22-1:44,
+        Span_: 21-43,
     },
-    Span_: 1:22-1:44,
+    Span_: 21-43,
 }
 ---
 
@@ -1800,18 +1800,18 @@
 &ast.MethodElem{
     Name: &ast.IdentExpr{
         Name: "create",
-        span: 1:29-1:35,
+        span: 28-34,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.UnknownTypeAnn{
-                span: 1:39-1:43,
+                span: 38-42,
             },
         },
-        span: 1:29-1:43,
+        span: 28-42,
     },
     Static: true,
-    Span_: 1:29-1:43,
+    Span_: 28-42,
 }
 ---
 
@@ -1819,22 +1819,22 @@
 &ast.MethodElem{
     Name: &ast.IdentExpr{
         Name: "helper",
-        span: 1:30-1:36,
+        span: 29-35,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.UnknownTypeAnn{
-                span: 1:40-1:44,
+                span: 39-43,
             },
         },
-        span: 1:30-1:44,
+        span: 29-43,
     },
     Receiver: &ast.MethodReceiver{
         Mut: true,
-        Span_: 1:30-1:44,
+        Span_: 29-43,
     },
     Private: true,
-    Span_: 1:30-1:44,
+    Span_: 29-43,
 }
 ---
 
@@ -1842,34 +1842,34 @@
 &ast.MethodElem{
     Name: &ast.IdentExpr{
         Name: "fetchData",
-        span: 1:28-1:37,
+        span: 27-36,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "Promise",
-                    span: 1:41-1:48,
+                    span: 40-47,
                 },
                 TypeArgs: []ast.TypeAnn{
                     &ast.LitTypeAnn{
                         Lit: &ast.UndefinedLit{
-                            span: 1:49-1:53,
+                            span: 48-52,
                         },
-                        span: 1:49-1:53,
+                        span: 48-52,
                     },
                 },
-                span: 1:41-1:54,
+                span: 40-53,
             },
             Async: true,
         },
-        span: 1:28-1:54,
+        span: 27-53,
     },
     Receiver: &ast.MethodReceiver{
         Mut: true,
-        Span_: 1:28-1:54,
+        Span_: 27-53,
     },
-    Span_: 1:28-1:54,
+    Span_: 27-53,
 }
 ---
 
@@ -1877,48 +1877,48 @@
 &ast.MethodElem{
     Name: &ast.IdentExpr{
         Name: "map",
-        span: 1:22-1:25,
+        span: 21-24,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             TypeParams: []*ast.TypeParam{
                 &ast.TypeParam{
                     Name: "T",
-                    span: 1:26-1:27,
+                    span: 25-26,
                 },
             },
             Params: []*ast.Param{
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "fn",
-                        span: 1:29-1:40,
+                        span: 28-39,
                     },
                     TypeAnn: &ast.FuncTypeAnn{
                         Return: &ast.TypeRefTypeAnn{
                             Name: &ast.Ident{
                                 Name: "T",
-                                span: 1:39-1:40,
+                                span: 38-39,
                             },
-                            span: 1:39-1:40,
+                            span: 38-39,
                         },
-                        span: 1:33-1:40,
+                        span: 32-39,
                     },
                 },
             },
             Return: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "T",
-                    span: 1:43-1:44,
+                    span: 42-43,
                 },
-                span: 1:43-1:44,
+                span: 42-43,
             },
         },
-        span: 1:22-1:44,
+        span: 21-43,
     },
     Receiver: &ast.MethodReceiver{
-        Span_: 1:22-1:44,
+        Span_: 21-43,
     },
-    Span_: 1:22-1:44,
+    Span_: 21-43,
 }
 ---
 
@@ -1926,12 +1926,12 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "count",
-        span: 1:22-1:27,
+        span: 21-26,
     },
     Type: &ast.NumberTypeAnn{
-        span: 1:29-1:35,
+        span: 28-34,
     },
-    Span_: 1:22-1:35,
+    Span_: 21-34,
 }
 ---
 
@@ -1939,13 +1939,13 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "id",
-        span: 1:31-1:33,
+        span: 30-32,
     },
     Type: &ast.StringTypeAnn{
-        span: 1:35-1:41,
+        span: 34-40,
     },
     Readonly: true,
-    Span_: 1:31-1:41,
+    Span_: 30-40,
 }
 ---
 
@@ -1953,13 +1953,13 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "version",
-        span: 1:29-1:36,
+        span: 28-35,
     },
     Type: &ast.StringTypeAnn{
-        span: 1:38-1:44,
+        span: 37-43,
     },
     Static: true,
-    Span_: 1:29-1:44,
+    Span_: 28-43,
 }
 ---
 
@@ -1967,13 +1967,13 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "secret",
-        span: 1:30-1:36,
+        span: 29-35,
     },
     Type: &ast.StringTypeAnn{
-        span: 1:38-1:44,
+        span: 37-43,
     },
     Private: true,
-    Span_: 1:30-1:44,
+    Span_: 29-43,
 }
 ---
 
@@ -1981,13 +1981,13 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "description",
-        span: 1:22-1:33,
+        span: 21-32,
     },
     Type: &ast.StringTypeAnn{
-        span: 1:36-1:42,
+        span: 35-41,
     },
     Optional: true,
-    Span_: 1:22-1:42,
+    Span_: 21-41,
 }
 ---
 
@@ -1995,14 +1995,14 @@
 &ast.FieldElem{
     Name: &ast.IdentExpr{
         Name: "MAX_SIZE",
-        span: 1:38-1:46,
+        span: 37-45,
     },
     Type: &ast.NumberTypeAnn{
-        span: 1:48-1:54,
+        span: 47-53,
     },
     Static: true,
     Readonly: true,
-    Span_: 1:38-1:54,
+    Span_: 37-53,
 }
 ---
 
@@ -2010,20 +2010,20 @@
 &ast.GetterElem{
     Name: &ast.IdentExpr{
         Name: "value",
-        span: 1:26-1:31,
+        span: 25-30,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.NumberTypeAnn{
-                span: 1:35-1:41,
+                span: 34-40,
             },
         },
-        span: 1:22-1:41,
+        span: 21-40,
     },
     Receiver: &ast.MethodReceiver{
-        Span_: 1:22-1:41,
+        Span_: 21-40,
     },
-    Span_: 1:22-1:41,
+    Span_: 21-40,
 }
 ---
 
@@ -2031,22 +2031,22 @@
 &ast.GetterElem{
     Name: &ast.IdentExpr{
         Name: "instance",
-        span: 1:33-1:41,
+        span: 32-40,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.TypeRefTypeAnn{
                 Name: &ast.Ident{
                     Name: "MyClass",
-                    span: 1:45-1:52,
+                    span: 44-51,
                 },
-                span: 1:45-1:52,
+                span: 44-51,
             },
         },
-        span: 1:29-1:52,
+        span: 28-51,
     },
     Static: true,
-    Span_: 1:29-1:52,
+    Span_: 28-51,
 }
 ---
 
@@ -2054,21 +2054,21 @@
 &ast.GetterElem{
     Name: &ast.IdentExpr{
         Name: "internalState",
-        span: 1:34-1:47,
+        span: 33-46,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
             Return: &ast.AnyTypeAnn{
-                span: 1:51-1:54,
+                span: 50-53,
             },
         },
-        span: 1:30-1:54,
+        span: 29-53,
     },
     Receiver: &ast.MethodReceiver{
-        Span_: 1:30-1:54,
+        Span_: 29-53,
     },
     Private: true,
-    Span_: 1:30-1:54,
+    Span_: 29-53,
 }
 ---
 
@@ -2076,7 +2076,7 @@
 &ast.SetterElem{
     Name: &ast.IdentExpr{
         Name: "value",
-        span: 1:26-1:31,
+        span: 25-30,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
@@ -2084,27 +2084,27 @@
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "v",
-                        span: 1:32-1:41,
+                        span: 31-40,
                     },
                     TypeAnn: &ast.NumberTypeAnn{
-                        span: 1:35-1:41,
+                        span: 34-40,
                     },
                 },
             },
             Return: &ast.LitTypeAnn{
                 Lit: &ast.UndefinedLit{
-                    span: 1:22-1:41,
+                    span: 21-40,
                 },
-                span: 1:22-1:41,
+                span: 21-40,
             },
         },
-        span: 1:22-1:41,
+        span: 21-40,
     },
     Receiver: &ast.MethodReceiver{
         Mut: true,
-        Span_: 1:22-1:41,
+        Span_: 21-40,
     },
-    Span_: 1:22-1:41,
+    Span_: 21-40,
 }
 ---
 
@@ -2112,7 +2112,7 @@
 &ast.SetterElem{
     Name: &ast.IdentExpr{
         Name: "config",
-        span: 1:33-1:39,
+        span: 32-38,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
@@ -2120,24 +2120,24 @@
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "cfg",
-                        span: 1:40-1:51,
+                        span: 39-50,
                     },
                     TypeAnn: &ast.ObjectTypeAnn{
-                        span: 1:45-1:51,
+                        span: 44-50,
                     },
                 },
             },
             Return: &ast.LitTypeAnn{
                 Lit: &ast.UndefinedLit{
-                    span: 1:29-1:51,
+                    span: 28-50,
                 },
-                span: 1:29-1:51,
+                span: 28-50,
             },
         },
-        span: 1:29-1:51,
+        span: 28-50,
     },
     Static: true,
-    Span_: 1:29-1:51,
+    Span_: 28-50,
 }
 ---
 
@@ -2145,7 +2145,7 @@
 &ast.SetterElem{
     Name: &ast.IdentExpr{
         Name: "data",
-        span: 1:34-1:38,
+        span: 33-37,
     },
     Fn: &ast.FuncExpr{
         FuncSig: ast.FuncSig{
@@ -2153,37 +2153,37 @@
                 &ast.Param{
                     Pattern: &ast.IdentPat{
                         Name: "d",
-                        span: 1:39-1:45,
+                        span: 38-44,
                     },
                     TypeAnn: &ast.AnyTypeAnn{
-                        span: 1:42-1:45,
+                        span: 41-44,
                     },
                 },
             },
             Return: &ast.LitTypeAnn{
                 Lit: &ast.UndefinedLit{
-                    span: 1:30-1:45,
+                    span: 29-44,
                 },
-                span: 1:30-1:45,
+                span: 29-44,
             },
         },
-        span: 1:30-1:45,
+        span: 29-44,
     },
     Receiver: &ast.MethodReceiver{
         Mut: true,
-        Span_: 1:30-1:45,
+        Span_: 29-44,
     },
     Private: true,
-    Span_: 1:30-1:45,
+    Span_: 29-44,
 }
 ---
 
 [TestConvertTypeAnn/void_return_lowers_to_unknown - 1]
 &ast.FuncTypeAnn{
     Return: &ast.UnknownTypeAnn{
-        span: 1:7-1:11,
+        span: 6-10,
     },
-    span: 1:1-1:11,
+    span: 0-10,
 }
 ---
 
@@ -2191,17 +2191,17 @@
 &ast.TypeRefTypeAnn{
     Name: &ast.Ident{
         Name: "Promise",
-        span: 1:1-1:8,
+        span: 0-7,
     },
     TypeArgs: []ast.TypeAnn{
         &ast.LitTypeAnn{
             Lit: &ast.UndefinedLit{
-                span: 1:9-1:13,
+                span: 8-12,
             },
-            span: 1:9-1:13,
+            span: 8-12,
         },
     },
-    span: 1:1-1:14,
+    span: 0-13,
 }
 ---
 
@@ -2211,17 +2211,17 @@
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
                 Name: "x",
-                span: 1:3-1:4,
+                span: 2-3,
             },
             Value: &ast.LitTypeAnn{
                 Lit: &ast.UndefinedLit{
-                    span: 1:6-1:10,
+                    span: 5-9,
                 },
-                span: 1:6-1:10,
+                span: 5-9,
             },
         },
     },
-    span: 1:1-1:12,
+    span: 0-11,
 }
 ---
 
@@ -2254,16 +2254,16 @@
         &ast.Param{
             Pattern: &ast.IdentPat{
                 Name: "x",
-                span: 1:2-1:9,
+                span: 1-8,
             },
             TypeAnn: &ast.NeverTypeAnn{
-                span: 1:5-1:9,
+                span: 4-8,
             },
         },
     },
     Return: &ast.NumberTypeAnn{
-        span: 1:14-1:20,
+        span: 13-19,
     },
-    span: 1:1-1:20,
+    span: 0-19,
 }
 ---

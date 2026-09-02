@@ -119,7 +119,7 @@ func TestInferAssignThroughBrokenBindingNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:12-3:19: Unknown identifier: missing", msgWithSpan(errs[0]))
+	require.Equal(t, "3:12-3:19: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 }
 
 // Assigning to an undeclared name surfaces an UnknownIdentifierError on the target
@@ -155,7 +155,7 @@ func TestInferAssignTopLevelBrokenBindingNoCascade(t *testing.T) {
 		fn f() { a = 5 }
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:11-2:18: Unknown identifier: missing", msgWithSpan(errs[0]))
+	require.Equal(t, "2:11-2:18: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 	require.Equal(t, "error", values["a"]) // recovered as the sentinel, not never
 }
 
@@ -179,7 +179,7 @@ func TestInferAssignUnionTarget(t *testing.T) {
 }`
 		_, _, errs := inferSource(t, src)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:7-3:8: cannot constrain 3 <: 1 | 2", msgWithSpan(errs[0]))
+		require.Equal(t, "3:7-3:8: cannot constrain 3 <: 1 | 2", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -244,7 +244,7 @@ func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {
 	require.Equal(t, []string{
 		"3:16-3:23: Unknown identifier: missing",
 		"3:12-3:23: Cannot assign to immutable binding: a",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // A malformed assignment node with a nil operand (hand-built; the real parser

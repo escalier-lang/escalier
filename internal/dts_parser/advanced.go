@@ -310,8 +310,6 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 	parts := []TemplatePart{}
 	currentOffset := startOffset
 	stringStart := currentOffset
-	stringStartLocation := p.lexer.currentLocation // Track location at string start
-	currentLocation := p.lexer.currentLocation
 
 	// Scan until we find the closing backtick
 	for currentOffset < len(contents) {
@@ -320,29 +318,21 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 		if ch == '`' {
 			// Add any pending string part
 			if stringStart < currentOffset {
-				stringValue := contents[stringStart:currentOffset]
-				strSpan := ast.Span{
-					Start:    stringStartLocation,
-					End:      currentLocation,
-					SourceID: source.ID,
-				}
 				parts = append(parts, &TemplateString{
-					Value: stringValue,
-					span:  strSpan,
+					Value: contents[stringStart:currentOffset],
+					span:  p.lexer.spanBetween(stringStart, currentOffset),
 				})
 			}
 
 			// Advance past the closing backtick
 			currentOffset++
-			currentLocation.Column++
 
 			// Update lexer position
 			p.lexer.currentOffset = currentOffset
-			p.lexer.currentLocation = currentLocation
 
 			span := ast.Span{
 				Start:    startToken.Span.Start,
-				End:      currentLocation,
+				End:      ast.Location{Offset: currentOffset},
 				SourceID: source.ID,
 			}
 			return &TemplateLiteralType{Parts: parts, span: span}
@@ -351,26 +341,18 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 		if ch == '$' && currentOffset+1 < len(contents) && contents[currentOffset+1] == '{' {
 			// Add any pending string part before the placeholder
 			if stringStart < currentOffset {
-				stringValue := contents[stringStart:currentOffset]
-				strSpan := ast.Span{
-					Start:    stringStartLocation,
-					End:      currentLocation,
-					SourceID: source.ID,
-				}
 				parts = append(parts, &TemplateString{
-					Value: stringValue,
-					span:  strSpan,
+					Value: contents[stringStart:currentOffset],
+					span:  p.lexer.spanBetween(stringStart, currentOffset),
 				})
 			}
 
 			// Mark the start of ${
-			placeholderStart := currentLocation
+			placeholderStart := currentOffset
 
 			// Skip ${
 			currentOffset += 2
-			currentLocation.Column += 2
 			p.lexer.currentOffset = currentOffset
-			p.lexer.currentLocation = currentLocation
 
 			// Parse the type inside ${}
 			typeAnn := p.parseTypeAnn()
@@ -387,31 +369,17 @@ func (p *DtsParser) parseTemplateLiteralType() TypeAnn {
 
 			// Update our tracking variables
 			currentOffset = p.lexer.currentOffset
-			currentLocation = p.lexer.currentLocation
-
-			templateTypeSpan := ast.Span{
-				Start:    placeholderStart,
-				End:      currentLocation,
-				SourceID: source.ID,
-			}
 
 			parts = append(parts, &TemplateType{
 				Type: typeAnn,
-				span: templateTypeSpan,
+				span: p.lexer.spanBetween(placeholderStart, currentOffset),
 			})
 
 			// Start a new string part after the placeholder
 			stringStart = currentOffset
-			stringStartLocation = currentLocation // Update string start location
 		} else {
 			// Regular character
 			currentOffset++
-			if ch == '\n' {
-				currentLocation.Line++
-				currentLocation.Column = 1
-			} else {
-				currentLocation.Column++
-			}
 		}
 	}
 

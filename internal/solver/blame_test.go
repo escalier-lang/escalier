@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -9,20 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// spanText returns the source substring covered by s. Columns are 1-indexed and
-// the end is exclusive (the lexer's convention), so a token at columns [c, c+n)
-// renders n characters. M2.5's error spans are single-line; a multi-line span is
-// not expected here and yields "".
+// spanText returns the source substring covered by s. A span holds byte
+// offsets into the file it came from, so the substring is a direct slice. It
+// returns "" for a span whose offsets fall outside src.
 func spanText(src string, s ast.Span) string {
-	lines := strings.Split(src, "\n")
-	if s.Start.Line < 1 || s.Start.Line > len(lines) || s.Start.Line != s.End.Line {
+	if s.Start.Offset < 0 || s.End.Offset > len(src) || s.Start.Offset > s.End.Offset {
 		return ""
 	}
-	line := lines[s.Start.Line-1]
-	if s.Start.Column < 1 || s.End.Column-1 > len(line) || s.Start.Column > s.End.Column {
-		return ""
-	}
-	return line[s.Start.Column-1 : s.End.Column-1]
+	return src[s.Start.Offset:s.End.Offset]
 }
 
 // requireBlame asserts the sole error's span-prefixed message ("line:col-line:col:
@@ -32,7 +25,7 @@ func spanText(src string, s ast.Span) string {
 func requireBlame(t *testing.T, src string, errs []SolverError, msg, primary string, related ...string) {
 	t.Helper()
 	require.Len(t, errs, 1)
-	require.Equal(t, msg, msgWithSpan(errs[0]))
+	require.Equal(t, msg, msgWithSpan(t, errs[0]))
 	require.Equal(t, primary, spanText(src, errs[0].Span()), "primary blame")
 	got := []string{}
 	for _, s := range errs[0].Related() {
@@ -200,10 +193,10 @@ func TestBlameCallTooManyArgsInlineCalleeRelated(t *testing.T) {
 		`fn (x: number) -> number { return x }`)
 }
 
-// tspan builds a single-SourceID span from 1-indexed line/column ints — only the
-// hand-built degrade-path test below needs it.
-func tspan(sl, sc, el, ec int) ast.Span {
-	return ast.NewSpan(ast.Location{Line: sl, Column: sc}, ast.Location{Line: el, Column: ec}, 0)
+// tspan builds a single-SourceID span from byte offsets — only the hand-built
+// degrade-path test below needs it.
+func tspan(start, end int) ast.Span {
+	return ast.NewSpan(ast.Location{Offset: start}, ast.Location{Offset: end}, 0)
 }
 
 // The three site-carrying constraint kinds degrade to the constraint site when
@@ -214,7 +207,7 @@ func tspan(sl, sc, el, ec int) ast.Span {
 // without a tuple sink — so it must be exercised with hand-built errors and a
 // seeded Prov here; it becomes live with M4 record/tuple sinks.
 func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
-	site := ast.NewIdent("site", tspan(7, 3, 7, 12))
+	site := ast.NewIdent("site", tspan(70, 79))
 
 	t.Run("FuncArity", func(t *testing.T) {
 		e := &FuncArityMismatchError{
@@ -278,7 +271,7 @@ func TestConstraintKindsFallBackToSiteWhenUnrecorded(t *testing.T) {
 // directly through c.constrain because an exact-object sink is not reachable from
 // source until object annotations land (A3).
 func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
-	node := ast.NewIdent("site", tspan(4, 2, 4, 6))
+	node := ast.NewIdent("site", tspan(40, 44))
 
 	t.Run("ExtraPropertyError", func(t *testing.T) {
 		c := newChecker()

@@ -24,8 +24,8 @@ func TestLeavesBelongToBothForms(t *testing.T) {
 }
 
 func TestBodySpan(t *testing.T) {
-	exprSpan := span(2, 14, 19)
-	blockSpan := span(3, 1, 12)
+	exprSpan := span(54, 59)
+	blockSpan := span(81, 92)
 
 	found, ok := BodySpan(ast.BlockOrExpr{Expr: ast.NewIdent("x", exprSpan)})
 	require.True(t, ok)
@@ -40,7 +40,7 @@ func TestBodySpan(t *testing.T) {
 }
 
 func TestLeavesCarryProvenance(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(2, 5, 18)))
+	origin := At(OriginMatchArm, arm(span(45, 58)))
 
 	terms := map[string]Term{
 		"BodyLeaf":     &BodyLeaf{Body: exprBody(num(1)), Origin: origin},

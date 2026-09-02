@@ -826,17 +826,14 @@ func annotatedOverloadArms(g *dep_graph.DepGraph, key dep_graph.BindingKey) []*a
 // position rather than to the order sources happened to reach the parser, so a name
 // whose arms span several files in a lib/ resolves as "first matching arm, reading
 // top-to-bottom, file by file alphabetically". module maps a Span's SourceID back to
-// its path; arms within one file compare by line then column.
+// its path, and arms within one file compare by the byte offset they start at.
 func armPosLess(module *ast.Module, a, b *ast.FuncDecl) bool {
 	as, bs := a.Span(), b.Span()
 	ap, bp := module.GetSourcePath(as.SourceID), module.GetSourcePath(bs.SourceID)
 	if ap != bp {
 		return ap < bp
 	}
-	if as.Start.Line != bs.Start.Line {
-		return as.Start.Line < bs.Start.Line
-	}
-	return as.Start.Column < bs.Start.Column
+	return as.Start.Offset < bs.Start.Offset
 }
 
 // sortArmDecls stable-sorts overload arm declarations into source-position order

@@ -22,7 +22,7 @@ func TestInferFuncAnnotationRejectsMismatchedBody(t *testing.T) {
 	_, _, errs := inferSource(t, `val f: fn(x: number) -> string = fn (x) { return 5 }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:50-1:51: cannot constrain 5 <: string", msgWithSpan(errs[0]))
+	require.Equal(t, "1:50-1:51: cannot constrain 5 <: string", msgWithSpan(t, errs[0]))
 }
 
 // An inexact function annotation resolves its trailing `...` onto FuncType.Inexact
@@ -174,8 +174,8 @@ val r = f(inc)`
 	require.Len(t, errs, 2)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
 	require.IsType(t, &CannotConstrainError{}, errs[1])
-	require.Equal(t, "4:9-4:15: cannot constrain T <: number", msgWithSpan(errs[0]))
-	require.Equal(t, "4:9-4:15: cannot constrain number <: T", msgWithSpan(errs[1]))
+	require.Equal(t, "4:9-4:15: cannot constrain T <: number", msgWithSpan(t, errs[0]))
+	require.Equal(t, "4:9-4:15: cannot constrain number <: T", msgWithSpan(t, errs[1]))
 }
 
 // A function-literal body whose return type is not the declared parameter does not
@@ -188,7 +188,7 @@ func TestInferGenericFuncAnnotationRejectsNonPolymorphicBody(t *testing.T) {
 	_, _, errs := inferSource(t, `val f: fn<T>(x: T) -> T = fn (x) { return 5 }`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "1:43-1:44: cannot constrain 5 <: T", msgWithSpan(errs[0]))
+	require.Equal(t, "1:43-1:44: cannot constrain 5 <: T", msgWithSpan(t, errs[0]))
 }
 
 // Checking-mode skolems are concrete, so a parameter's skolem propagates through the
@@ -226,7 +226,7 @@ func TestInferGenericFuncAnnotationChecksIndirectReturn(t *testing.T) {
 			values, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
 			require.IsType(t, &CannotConstrainError{}, errs[0])
-			require.Equal(t, tt.msg, msgWithSpan(errs[0]))
+			require.Equal(t, tt.msg, msgWithSpan(t, errs[0]))
 			require.Equal(t, tt.want, values["f"])
 		})
 	}
@@ -275,7 +275,7 @@ func TestInferGenericFuncAnnotationChecksBoundedParam(t *testing.T) {
 		values, _, errs := inferSource(t, `val f: fn<T, U: T>(x: T) -> U = fn (x) { return x }`)
 		require.Len(t, errs, 1)
 		require.IsType(t, &CannotConstrainError{}, errs[0])
-		require.Equal(t, "1:33-1:52: cannot constrain T <: U", msgWithSpan(errs[0]))
+		require.Equal(t, "1:33-1:52: cannot constrain T <: U", msgWithSpan(t, errs[0]))
 		require.Equal(t, "fn <T, U: T>(x: T) -> U", values["f"])
 	})
 }
@@ -420,7 +420,7 @@ func TestInferRestParamFuncAnnotationRejections(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -624,7 +624,7 @@ val slot: fn(x: number, ...) -> number = wide`
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.IsType(t, &CannotConstrainError{}, errs[0])
-	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(errs[0]))
+	require.Equal(t, "2:42-2:46: cannot constrain unknown <: number", msgWithSpan(t, errs[0]))
 }
 
 // `fn (...args: Array<_>) -> _` is the written top of the function lattice. Its rest parameter

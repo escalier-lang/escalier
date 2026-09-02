@@ -155,7 +155,8 @@ func parseFromFS(
 		decls, pErrs := parser.ParseDecls(ctx, src)
 		if len(pErrs) > 0 {
 			for _, pe := range pErrs {
-				errs = append(errs, fmt.Errorf("parsing %s: %s", fullPath, pe.String()))
+				errs = append(errs, fmt.Errorf("parsing %s: %s: %s",
+					fullPath, ast.SpanString(src, pe.Span), pe.Message))
 			}
 			return nil
 		}
@@ -212,7 +213,7 @@ func Build(
 		// the checker did populate still contribute to the store, with
 		// the errors flowing back alongside. Extract is nil-safe per
 		// name, so partial namespaces just produce partial overrides.
-		contributions := Extract(f.Decls, globalNs, namedNs, f.FilePath, f.Tier)
+		contributions := Extract(f.Decls, globalNs, namedNs, NewOriginSite(f.FilePath, f.Source), f.Tier)
 		mergeWithinTier(tierMaps[f.Tier], contributions, &errs)
 	}
 

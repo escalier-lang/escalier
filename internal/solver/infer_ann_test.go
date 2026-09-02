@@ -41,7 +41,7 @@ func TestInferInexactObjectAnnotationRejectsExcessLiteralField(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number, ...} = {x: 1, y: 2}`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &ExtraPropertyError{}, errs[0])
-	require.Equal(t, "1:37-1:38: object has extra property: y", msgWithSpan(errs[0]))
+	require.Equal(t, "1:37-1:38: object has extra property: y", msgWithSpan(t, errs[0]))
 }
 
 // The variable escape hatch: a NON-literal source against an inexact target takes
@@ -61,7 +61,7 @@ func TestInferExactObjectAnnotationRejectsExtraField(t *testing.T) {
 	_, _, errs := inferSource(t, `val r: {x: number} = {x: 1, y: 2}`)
 	require.Len(t, errs, 1)
 	require.IsType(t, &ExtraPropertyError{}, errs[0])
-	require.Equal(t, "1:32-1:33: object has extra property: y", msgWithSpan(errs[0]))
+	require.Equal(t, "1:32-1:33: object has extra property: y", msgWithSpan(t, errs[0]))
 }
 
 // A tuple annotation resolves to a TupleType and an annotated binding adopts it.
@@ -77,8 +77,8 @@ func TestInferInexactTupleAnnotationRejectsExcessLiteralElements(t *testing.T) {
 	values, _, errs := inferSource(t, `val t: [number, ...] = [1, 2, 3]`)
 	require.Len(t, errs, 2)
 	require.IsType(t, &ExtraElementError{}, errs[0])
-	require.Equal(t, "1:28-1:29: tuple has extra element at index 1", msgWithSpan(errs[0]))
-	require.Equal(t, "1:31-1:32: tuple has extra element at index 2", msgWithSpan(errs[1]))
+	require.Equal(t, "1:28-1:29: tuple has extra element at index 1", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:31-1:32: tuple has extra element at index 2", msgWithSpan(t, errs[1]))
 	// The binding still adopts the inexact annotation (error recovery).
 	require.Equal(t, "[number, ...]", values["t"])
 }
@@ -93,8 +93,8 @@ func TestInferInexactTupleAnnotationExcessThroughSpread(t *testing.T) {
 	// Inferred [5, 6, 7] against [number]: indices 1 and 2 are excess, so two errors.
 	require.Len(t, errs, 2)
 	require.IsType(t, &ExtraElementError{}, errs[0])
-	require.Equal(t, "1:32-1:33: tuple has extra element at index 1", msgWithSpan(errs[0]))
-	require.Equal(t, "1:36-1:37: tuple has extra element at index 2", msgWithSpan(errs[1]))
+	require.Equal(t, "1:32-1:33: tuple has extra element at index 1", msgWithSpan(t, errs[0]))
+	require.Equal(t, "1:36-1:37: tuple has extra element at index 2", msgWithSpan(t, errs[1]))
 	// Per-element blame resolves through prov to each spliced element's own node:
 	// index 1 is the spread's `6`, index 2 is the trailing `7`.
 	require.Equal(t, "6", spanText(src, errs[0].Span()))
@@ -122,7 +122,7 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		_, _, errs := inferSource(t, `val r: mut {x: number, ...} = {x: 1, y: 2}`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
-			msgs[i] = msgWithSpan(e)
+			msgs[i] = msgWithSpan(t, e)
 		}
 		require.Equal(t, []string{"1:41-1:42: object has extra property: y"}, msgs)
 	})
@@ -130,7 +130,7 @@ func TestInferMutInexactAnnotationStillChecksExcess(t *testing.T) {
 		_, _, errs := inferSource(t, `val t: mut [number, ...] = [1, 2, 3]`)
 		msgs := make([]string, len(errs))
 		for i, e := range errs {
-			msgs[i] = msgWithSpan(e)
+			msgs[i] = msgWithSpan(t, e)
 		}
 		require.ElementsMatch(t, []string{
 			"1:32-1:33: tuple has extra element at index 1",
@@ -182,7 +182,7 @@ func TestInferOwnedMutFromMovedVariable(t *testing.T) {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -218,7 +218,7 @@ func TestInferOwnedMutFromMovedVariableNested(t *testing.T) {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -259,7 +259,7 @@ func TestInferOwnedMutReassign(t *testing.T) {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -290,7 +290,7 @@ fn f() {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 	t.Run("already-mutable argument keeps strict invariance", func(t *testing.T) {
 		// An owned-mutable argument is not upgraded; it flows through the strict mut<:mut
@@ -299,7 +299,7 @@ fn f() {
 		src := `fn sink(q: mut {a: {x: number | string}}) {}
 fn f(p: mut {a: {x: number}}) { sink(p) }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"2:33-2:40: cannot constrain string <: number"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -353,14 +353,14 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 	t.Run("immutable receiver rejected", func(t *testing.T) {
 		src := `fn f(obj: {a: {x: number}}) {
 	obj.a = {x: 5}
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"2:2-2:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"2:2-2:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -377,7 +377,7 @@ func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 	m
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"3:13-3:14: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"3:13-3:14: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
 	})
 	t.Run("return", func(t *testing.T) {
 		src := `fn f() -> mut {p: {x: number | string}} {
@@ -385,7 +385,7 @@ func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 	return {p: inner}
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"1:15-1:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"1:15-1:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
 	})
 }
 
@@ -416,7 +416,7 @@ fn f() {
 	cfg.x
 }`
 		_, _, errs := inferSource(t, src)
-		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(errs))
+		require.Equal(t, []string{"5:2-5:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
 	})
 }
 

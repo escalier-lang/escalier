@@ -92,7 +92,7 @@ func TestInferPhantomArgumentsCompareEqual(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -163,7 +163,7 @@ func TestInferPhantomParamWarns(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 			require.Len(t, errs, 1)
 			require.True(t, isWarning(errs[0]))
 		})
@@ -206,7 +206,7 @@ func TestInferPhantomParamStaysSilent(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -220,7 +220,7 @@ func TestInferRelevantParameterKeepsItsArgument(t *testing.T) {
 		declare fn make() -> Nest<number>
 		val d: Nest<string> = make()
 	`)
-	require.Contains(t, messagesWithSpan(errs), "4:25-4:31: cannot constrain number <: string")
+	require.Contains(t, messagesWithSpan(t, errs), "4:25-4:31: cannot constrain number <: string")
 }
 
 // The erasure is confined to the canonical identity constrain keys on. A reference still carries the
@@ -235,7 +235,7 @@ func TestInferPhantomArgumentSurvivesInTheRenderedType(t *testing.T) {
 	require.Equal(t, []string{
 		"2:13-2:14: no argument passed to type parameter T can appear in the type, so " +
 			"Deep<number> and Deep<string> are the same type",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 	require.Equal(t, "Deep<string>", values["d"])
 	require.Equal(t, "fn (p: Deep<number>) -> Deep<number>", values["f"])
 }
@@ -356,7 +356,7 @@ func TestInferUnusedTypeParamOnClassAndEnum(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -430,7 +430,7 @@ func TestInferUnusedTypeParamSkipsARecoveredDeclaration(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }

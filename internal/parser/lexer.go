@@ -10,10 +10,9 @@ import (
 )
 
 type Lexer struct {
-	source          *ast.Source
-	currentOffset   int
-	currentLocation ast.Location
-	lastToken       *Token // Track last token for regex context
+	source        *ast.Source
+	currentOffset int
+	lastToken     *Token // Track last token for regex context
 	// comments records every comment token this lexer produces. Save points
 	// share one log so backtracking neither loses a comment nor records it
 	// twice; see commentLog.
@@ -22,11 +21,10 @@ type Lexer struct {
 
 func NewLexer(source *ast.Source) *Lexer {
 	return &Lexer{
-		source:          source,
-		currentOffset:   0,
-		currentLocation: ast.Location{Line: 1, Column: 1},
-		lastToken:       nil,
-		comments:        newCommentLog(),
+		source:        source,
+		currentOffset: 0,
+		lastToken:     nil,
+		comments:      newCommentLog(),
 	}
 }
 
@@ -153,9 +151,7 @@ func (lexer *Lexer) isRegexContext() bool {
 }
 
 // lexRegex lexes a regex literal starting from the given position
-func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
-	end := start
-
+func (lexer *Lexer) lexRegex(startOffset int) *Token {
 	contents := lexer.source.Contents
 	n := len(contents)
 	i := startOffset + 1 // Skip the opening '/'
@@ -165,13 +161,11 @@ func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
 		c := contents[i]
 		if c == '/' {
 			i++ // Include the closing '/'
-			end.Column++
 			break
 		}
 		if c == '\\' && i+1 < n {
 			// Skip escaped character (both the backslash and the next char)
 			i += 2
-			end.Column += 2
 			continue
 		}
 		if c == '\n' {
@@ -184,7 +178,6 @@ func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
 			break
 		}
 		i++
-		end.Column++
 	}
 
 	// Parse regex flags (if any)
@@ -192,7 +185,6 @@ func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
 		c := contents[i]
 		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') {
 			i++
-			end.Column++
 		} else {
 			break
 		}
@@ -201,26 +193,20 @@ func (lexer *Lexer) lexRegex(startOffset int, start ast.Location) *Token {
 	endOffset := i
 	value := contents[startOffset:endOffset]
 
-	return NewToken(RegexLit, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+	return NewToken(RegexLit, value, lexer.spanBetween(startOffset, endOffset))
 }
 
 func (lexer *Lexer) next() *Token {
 	startOffset := lexer.currentOffset
-	start := lexer.currentLocation
 
 	if startOffset >= len(lexer.source.Contents) {
-		return NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
+		return NewToken(EndOfFile, "", lexer.spanBetween(startOffset, startOffset))
 	}
 
 	// Skip over whitespace with ASCII fast path
 	for startOffset < len(lexer.source.Contents) {
 		c := lexer.source.Contents[startOffset]
-		if c == ' ' || c == '\t' {
-			start.Column++
-			startOffset++
-		} else if c == '\n' {
-			start.Line++
-			start.Column = 1
+		if c == ' ' || c == '\t' || c == '\n' {
 			startOffset++
 		} else if c < 128 {
 			// Non-whitespace ASCII, break
@@ -230,7 +216,6 @@ func (lexer *Lexer) next() *Token {
 			codePoint, width := utf8.DecodeRuneInString(lexer.source.Contents[startOffset:])
 			if unicode.IsSpace(codePoint) {
 				startOffset += width
-				start.Column++
 			} else {
 				break
 			}
@@ -248,34 +233,30 @@ func (lexer *Lexer) next() *Token {
 	}
 
 	endOffset := startOffset + width
-	end := ast.Location{Line: start.Line, Column: start.Column + 1}
 
 	var token *Token
 	switch codePoint {
 	case '+':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '+' {
 			endOffset++
-			end.Column++
-			token = NewToken(PlusPlus, "++", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(PlusPlus, "++", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Plus, "+", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Plus, "+", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '-':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '>' {
 			endOffset++
-			end.Column++
-			token = NewToken(Arrow, "->", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Arrow, "->", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Minus, "-", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Minus, "-", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '*':
-		token = NewToken(Asterisk, "*", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(Asterisk, "*", lexer.spanBetween(startOffset, endOffset))
 	case '/':
 		// Handle regex literals vs division/comments
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '>' {
 			endOffset++
-			end.Column++
-			token = NewToken(SlashGreaterThan, "/>", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(SlashGreaterThan, "/>", lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '/' {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
@@ -286,9 +267,8 @@ func (lexer *Lexer) next() *Token {
 				i++
 			}
 			endOffset = i
-			end.Column = start.Column + (i - startOffset)
 			value := lexer.source.Contents[startOffset:i]
-			token = NewToken(LineComment, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(LineComment, value, lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '*' {
 			i := startOffset + 2
 			n := len(lexer.source.Contents)
@@ -298,135 +278,118 @@ func (lexer *Lexer) next() *Token {
 					break
 				}
 				if lexer.source.Contents[i] == '\n' {
-					end.Line++
-					end.Column = 1
 				} else {
-					end.Column++
 				}
 				i++
 			}
 			endOffset = i
 			value := lexer.source.Contents[startOffset:i]
-			token = NewToken(BlockComment, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(BlockComment, value, lexer.spanBetween(startOffset, endOffset))
 		} else if lexer.isRegexContext() {
 			// Lex as regex literal
-			token = lexer.lexRegex(startOffset, start)
-			endOffset = startOffset + len(token.Value)
-			end = token.Span.End
+			token = lexer.lexRegex(startOffset)
+			endOffset = token.Span.End.Offset
 		} else {
-			token = NewToken(Slash, "/", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Slash, "/", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '=':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '=' {
 			endOffset++
-			end.Column++
-			token = NewToken(EqualEqual, "==", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(EqualEqual, "==", lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '>' {
 			endOffset++
-			end.Column++
-			token = NewToken(FatArrow, "=>", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(FatArrow, "=>", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Equal, "=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Equal, "=", lexer.spanBetween(startOffset, endOffset))
 		}
 	case ',':
-		token = NewToken(Comma, ",", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(Comma, ",", lexer.spanBetween(startOffset, endOffset))
 	case '@':
-		token = NewToken(AtSign, "@", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(AtSign, "@", lexer.spanBetween(startOffset, endOffset))
 	case '(':
-		token = NewToken(OpenParen, "(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(OpenParen, "(", lexer.spanBetween(startOffset, endOffset))
 	case ')':
-		token = NewToken(CloseParen, ")", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(CloseParen, ")", lexer.spanBetween(startOffset, endOffset))
 	case '{':
-		token = NewToken(OpenBrace, "{", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(OpenBrace, "{", lexer.spanBetween(startOffset, endOffset))
 	case '}':
-		token = NewToken(CloseBrace, "}", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(CloseBrace, "}", lexer.spanBetween(startOffset, endOffset))
 	case '[':
-		token = NewToken(OpenBracket, "[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(OpenBracket, "[", lexer.spanBetween(startOffset, endOffset))
 	case ']':
-		token = NewToken(CloseBracket, "]", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(CloseBracket, "]", lexer.spanBetween(startOffset, endOffset))
 	case '<':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '=' {
 			endOffset++
-			end.Column++
-			token = NewToken(LessThanEqual, "<=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(LessThanEqual, "<=", lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '/' {
 			endOffset++
-			end.Column++
-			token = NewToken(LessThanSlash, "</", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(LessThanSlash, "</", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(LessThan, "<", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(LessThan, "<", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '>':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '=' {
 			endOffset++
-			end.Column++
-			token = NewToken(GreaterThanEqual, ">=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(GreaterThanEqual, ">=", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(GreaterThan, ">", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(GreaterThan, ">", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '|':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '|' {
 			endOffset++
-			end.Column++
-			token = NewToken(PipePipe, "||", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(PipePipe, "||", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Pipe, "|", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Pipe, "|", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '&':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '&' {
 			endOffset++
-			end.Column++
-			token = NewToken(AmpersandAmpersand, "&&", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(AmpersandAmpersand, "&&", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Ampersand, "&", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Ampersand, "&", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '~':
-		token = NewToken(Negation, "~", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(Negation, "~", lexer.spanBetween(startOffset, endOffset))
 	case '`':
-		token = NewToken(BackTick, "`", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(BackTick, "`", lexer.spanBetween(startOffset, endOffset))
 	case '?':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '.' {
 			endOffset++
-			end.Column++
-			token = NewToken(QuestionDot, "?.", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(QuestionDot, "?.", lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '(' {
 			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenParen, "?(", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(QuestionOpenParen, "?(", lexer.spanBetween(startOffset, endOffset))
 		} else if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '[' {
 			endOffset++
-			end.Column++
-			token = NewToken(QuestionOpenBracket, "?[", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(QuestionOpenBracket, "?[", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Question, "?", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Question, "?", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '!':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == '=' {
 			endOffset++
-			end.Column++
-			token = NewToken(NotEqual, "!=", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(NotEqual, "!=", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Bang, "!", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Bang, "!", lexer.spanBetween(startOffset, endOffset))
 		}
 	case ':':
 		if startOffset+1 < len(lexer.source.Contents) && lexer.source.Contents[startOffset+1] == ':' {
 			endOffset++
-			end.Column++
-			token = NewToken(DoubleColon, "::", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(DoubleColon, "::", lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Colon, ":", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Colon, ":", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '\'':
 		// Lifetime token: ' followed by an identifier (e.g. 'a, 'static).
 		// Escalier uses double quotes for strings and has no character literals,
 		// so a lone ' followed by an ident-start is unambiguously a lifetime.
-		identValue, identEndOffset, runeCount := lexer_util.ScanIdent(lexer.source.Contents, startOffset+1)
+		identValue, identEndOffset, _ := lexer_util.ScanIdent(lexer.source.Contents, startOffset+1)
 		if identValue != "" {
 			endOffset = identEndOffset
-			end.Column = start.Column + 1 + runeCount
-			token = NewToken(Lifetime, identValue, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Lifetime, identValue, lexer.spanBetween(startOffset, endOffset))
 		} else {
-			token = NewToken(Invalid, "'", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Invalid, "'", lexer.spanBetween(startOffset, endOffset))
 		}
 	case '"':
 		contents := lexer.source.Contents
@@ -441,8 +404,7 @@ func (lexer *Lexer) next() *Token {
 		}
 		endOffset = i + 1                    // + 1 to include the closing quote
 		value := contents[startOffset+1 : i] // without the quotes
-		end.Column = start.Column + (endOffset - startOffset)
-		token = NewToken(StrLit, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+		token = NewToken(StrLit, value, lexer.spanBetween(startOffset, endOffset))
 	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '.':
 		contents := lexer.source.Contents
 		n := len(contents)
@@ -473,21 +435,18 @@ func (lexer *Lexer) next() *Token {
 		if isDecimal && i == startOffset+1 {
 			if startOffset+2 < len(contents) && contents[startOffset+1] == '.' && contents[startOffset+2] == '.' {
 				endOffset += 2
-				end.Column += 2
-				token = NewToken(DotDotDot, "...", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+				token = NewToken(DotDotDot, "...", lexer.spanBetween(startOffset, endOffset))
 			} else {
-				token = NewToken(Dot, ".", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+				token = NewToken(Dot, ".", lexer.spanBetween(startOffset, endOffset))
 			}
 		} else {
-			end.Column = start.Column + (i - startOffset)
-			token = NewToken(NumLit, contents[startOffset:i], ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(NumLit, contents[startOffset:i], lexer.spanBetween(startOffset, endOffset))
 		}
 	default:
-		value, _endOffset, runeCount := lexer_util.ScanIdent(lexer.source.Contents, startOffset)
+		value, identEndOffset, _ := lexer_util.ScanIdent(lexer.source.Contents, startOffset)
 		if value != "" {
-			endOffset = _endOffset
-			end.Column = start.Column + runeCount
-			span := ast.Span{Start: start, End: end, SourceID: lexer.source.ID}
+			endOffset = identEndOffset
+			span := lexer.spanBetween(startOffset, endOffset)
 
 			if keyword, ok := keywords[value]; ok {
 				token = NewToken(keyword, value, span)
@@ -497,22 +456,15 @@ func (lexer *Lexer) next() *Token {
 				token = NewToken(Identifier, value, span)
 			}
 		} else if startOffset >= len(lexer.source.Contents) {
-			token = NewToken(EndOfFile, "", ast.Span{Start: start, End: start, SourceID: lexer.source.ID})
+			token = NewToken(EndOfFile, "", lexer.spanBetween(startOffset, startOffset))
 		} else {
 			// Invalid character - ensure we advance past it to avoid infinite loop
 			// endOffset was already set to startOffset + width at the top
-			end.Column = start.Column + 1
-			token = NewToken(Invalid, "", ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+			token = NewToken(Invalid, "", lexer.spanBetween(startOffset, endOffset))
 		}
 	}
 
-	// Byte offsets are tracked alongside line and column so a consumer that
-	// slices the source does not have to re-derive them by counting columns.
-	end.Offset = endOffset
-	token.Span.Start.Offset = startOffset
-	token.Span.End.Offset = endOffset
 	lexer.currentOffset = endOffset
-	lexer.currentLocation = end
 	lexer.lastToken = token // Track the last token for regex context
 	lexer.comments.record(token)
 
@@ -521,19 +473,42 @@ func (lexer *Lexer) next() *Token {
 
 func (lexer *Lexer) saveState() *Lexer {
 	return &Lexer{
-		source:          lexer.source,
-		currentOffset:   lexer.currentOffset,
-		currentLocation: lexer.currentLocation,
-		lastToken:       lexer.lastToken,
-		comments:        lexer.comments,
+		source:        lexer.source,
+		currentOffset: lexer.currentOffset,
+		lastToken:     lexer.lastToken,
+		comments:      lexer.comments,
 	}
 }
 
 func (lexer *Lexer) restoreState(saved *Lexer) {
 	lexer.source = saved.source
 	lexer.currentOffset = saved.currentOffset
-	lexer.currentLocation = saved.currentLocation
 	lexer.lastToken = saved.lastToken
+}
+
+// currentLoc returns the position the lexer will read from next. The parser
+// uses it to close a span it opened at an earlier token.
+func (lexer *Lexer) currentLoc() ast.Location {
+	return ast.Location{Offset: lexer.currentOffset}
+}
+
+// sameLine reports whether two positions fall on the same source line. The
+// parser consults it where a line break separates two constructs that would
+// otherwise read as one, such as an argument list opening on the line after
+// its callee.
+func (lexer *Lexer) sameLine(a, b ast.Location) bool {
+	return lexer.source.LineMap().SameLine(a.Offset, b.Offset)
+}
+
+// spanBetween builds the span of a token running from one byte offset to
+// another. Every token the lexer produces gets its span this way, so a span
+// and the text it covers can never disagree.
+func (lexer *Lexer) spanBetween(startOffset, endOffset int) ast.Span {
+	return ast.Span{
+		Start:    ast.Location{Offset: startOffset},
+		End:      ast.Location{Offset: endOffset},
+		SourceID: lexer.source.ID,
+	}
 }
 
 // SaveState creates a snapshot of the current lexer state (exported for use by dts_parser)
@@ -570,8 +545,6 @@ func (lexer *Lexer) consume() {
 
 func (lexer *Lexer) lexQuasi() *Token {
 	startOffset := lexer.currentOffset
-	start := lexer.currentLocation
-	end := start
 
 	contents := lexer.source.Contents
 	n := len(contents)
@@ -581,31 +554,18 @@ func (lexer *Lexer) lexQuasi() *Token {
 		if c == '$' {
 			if i+1 < n && contents[i+1] == '{' {
 				i += 2
-				end.Column += 2
 				break
 			}
 		}
 		if c == '`' {
 			i++
-			end.Column++
 			break
 		}
-
-		if c == '\n' {
-			end.Line++
-			end.Column = 1
-		} else {
-			end.Column++
-		}
-
 		i++
 	}
 	endOffset := i
 
-	start.Offset = startOffset
-	end.Offset = endOffset
 	lexer.currentOffset = endOffset
-	lexer.currentLocation = end
 	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
@@ -616,13 +576,11 @@ func (lexer *Lexer) lexQuasi() *Token {
 		value = contents[startOffset:i]
 	}
 
-	return NewToken(Quasi, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+	return NewToken(Quasi, value, lexer.spanBetween(startOffset, endOffset))
 }
 
 func (lexer *Lexer) lexJSXText() *Token {
 	startOffset := lexer.currentOffset
-	start := lexer.currentLocation
-	end := start
 
 	contents := lexer.source.Contents
 	n := len(contents)
@@ -633,20 +591,11 @@ func (lexer *Lexer) lexJSXText() *Token {
 		if c == '<' || c == '{' {
 			break
 		}
-		if c == '\n' {
-			end.Line++
-			end.Column = 1
-		} else {
-			end.Column++
-		}
 		i++
 	}
 	endOffset := i
 
-	start.Offset = startOffset
-	end.Offset = endOffset
 	lexer.currentOffset = endOffset
-	lexer.currentLocation = end
 	lexer.comments.discard(startOffset, endOffset)
 
 	var value string
@@ -656,7 +605,7 @@ func (lexer *Lexer) lexJSXText() *Token {
 	} else {
 		value = contents[startOffset:endOffset]
 	}
-	return NewToken(JSXText, value, ast.Span{Start: start, End: end, SourceID: lexer.source.ID})
+	return NewToken(JSXText, value, lexer.spanBetween(startOffset, endOffset))
 }
 
 func (lexer *Lexer) Lex() []*Token {

@@ -2,7 +2,6 @@ package tests
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -489,31 +488,12 @@ func TestPatternLevelMut_SpanIncludesMutKeyword(t *testing.T) {
 			leaf := findMutLeafSpan(script, test.findName)
 			require.NotNil(t, leaf, "expected to find mut leaf for %s", test.findName)
 
-			startCol := leaf.Span().Start.Column
-			endCol := leaf.Span().End.Column
-			startLine := leaf.Span().Start.Line
-			endLine := leaf.Span().End.Line
-			lines := strings.Split(test.input, "\n")
-			require.True(t, int(startLine) >= 1 && int(startLine)-1 < len(lines),
-				"start line out of range")
-			require.True(t, int(endLine) >= 1 && int(endLine)-1 < len(lines),
-				"end line out of range")
+			span := leaf.Span()
+			require.GreaterOrEqual(t, span.Start.Offset, 0, "start offset out of range")
+			require.LessOrEqual(t, span.End.Offset, len(test.input), "end offset out of range")
+			require.LessOrEqual(t, span.Start.Offset, span.End.Offset, "span ends before it starts")
 
-			var snippet string
-			if startLine == endLine {
-				line := lines[startLine-1]
-				require.True(t, int(startCol) >= 1 && int(startCol)-1 <= len(line),
-					"start column out of range on its line")
-				require.True(t, int(endCol)-1 <= len(line),
-					"end column out of range on its line")
-				snippet = line[startCol-1 : endCol-1]
-			} else {
-				snippet = lines[startLine-1][startCol-1:]
-				for i := int(startLine); i < int(endLine)-1; i++ {
-					snippet += "\n" + lines[i]
-				}
-				snippet += "\n" + lines[endLine-1][:endCol-1]
-			}
+			snippet := test.input[span.Start.Offset:span.End.Offset]
 			assert.Containsf(t, snippet, "mut",
 				"expected pattern span to include the `mut` keyword, got %q",
 				snippet)

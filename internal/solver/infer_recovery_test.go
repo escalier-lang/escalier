@@ -28,7 +28,7 @@ func TestInferErrorBindingFlowsIntoCallNoCascade(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:12-4:19: Unknown identifier: missing", msgWithSpan(errs[0]))
+	require.Equal(t, "4:12-4:19: Unknown identifier: missing", msgWithSpan(t, errs[0]))
 	// id's call still recovers its declared return type — the error arg absorbs.
 	require.Equal(t, "fn () -> number", values["f"])
 }
@@ -41,6 +41,6 @@ func TestInferObjectSpreadOverUnknownIdentifierRecovers(t *testing.T) {
 		val o = {...xs}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "2:15-2:17: Unknown identifier: xs", msgWithSpan(errs[0]))
+	require.Equal(t, "2:15-2:17: Unknown identifier: xs", msgWithSpan(t, errs[0]))
 	require.Equal(t, "{}", values["o"])
 }

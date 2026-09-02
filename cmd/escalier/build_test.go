@@ -245,8 +245,8 @@ func TestPrintErrors(t *testing.T) {
 	t.Run("print parse errors", func(t *testing.T) {
 		stderr := &bytes.Buffer{}
 		span := ast.Span{
-			Start:    ast.Location{Line: 1, Column: 1},
-			End:      ast.Location{Line: 1, Column: 5},
+			Start:    ast.Location{Offset: 0},
+			End:      ast.Location{Offset: 4},
 			SourceID: 0,
 		}
 		parseErr1 := &parser.Error{

@@ -20,52 +20,52 @@ func TestConvertIdent(t *testing.T) {
 		{
 			name: "simple identifier",
 			input: dts_parser.NewIdent("foo", ast.Span{
-				Start:    ast.Location{Line: 1, Column: 0},
-				End:      ast.Location{Line: 1, Column: 3},
+				Start:    ast.Location{Offset: 0},
+				End:      ast.Location{Offset: 3},
 				SourceID: 0,
 			}),
 			expected: ast.NewIdentifier("foo", ast.Span{
-				Start:    ast.Location{Line: 1, Column: 0},
-				End:      ast.Location{Line: 1, Column: 3},
+				Start:    ast.Location{Offset: 0},
+				End:      ast.Location{Offset: 3},
 				SourceID: 0,
 			}),
 		},
 		{
 			name: "identifier with underscores",
 			input: dts_parser.NewIdent("my_var", ast.Span{
-				Start:    ast.Location{Line: 2, Column: 10},
-				End:      ast.Location{Line: 2, Column: 16},
+				Start:    ast.Location{Offset: 50},
+				End:      ast.Location{Offset: 56},
 				SourceID: 0,
 			}),
 			expected: ast.NewIdentifier("my_var", ast.Span{
-				Start:    ast.Location{Line: 2, Column: 10},
-				End:      ast.Location{Line: 2, Column: 16},
+				Start:    ast.Location{Offset: 50},
+				End:      ast.Location{Offset: 56},
 				SourceID: 0,
 			}),
 		},
 		{
 			name: "camelCase identifier",
 			input: dts_parser.NewIdent("myVariable", ast.Span{
-				Start:    ast.Location{Line: 3, Column: 5},
-				End:      ast.Location{Line: 3, Column: 15},
+				Start:    ast.Location{Offset: 85},
+				End:      ast.Location{Offset: 95},
 				SourceID: 0,
 			}),
 			expected: ast.NewIdentifier("myVariable", ast.Span{
-				Start:    ast.Location{Line: 3, Column: 5},
-				End:      ast.Location{Line: 3, Column: 15},
+				Start:    ast.Location{Offset: 85},
+				End:      ast.Location{Offset: 95},
 				SourceID: 0,
 			}),
 		},
 		{
 			name: "PascalCase identifier",
 			input: dts_parser.NewIdent("MyClass", ast.Span{
-				Start:    ast.Location{Line: 4, Column: 20},
-				End:      ast.Location{Line: 4, Column: 27},
+				Start:    ast.Location{Offset: 140},
+				End:      ast.Location{Offset: 147},
 				SourceID: 0,
 			}),
 			expected: ast.NewIdentifier("MyClass", ast.Span{
-				Start:    ast.Location{Line: 4, Column: 20},
-				End:      ast.Location{Line: 4, Column: 27},
+				Start:    ast.Location{Offset: 140},
+				End:      ast.Location{Offset: 147},
 				SourceID: 0,
 			}),
 		},
@@ -95,13 +95,13 @@ func TestConvertQualIdent(t *testing.T) {
 		{
 			name: "simple identifier",
 			input: dts_parser.NewIdent("foo", ast.Span{
-				Start:    ast.Location{Line: 1, Column: 0},
-				End:      ast.Location{Line: 1, Column: 3},
+				Start:    ast.Location{Offset: 0},
+				End:      ast.Location{Offset: 3},
 				SourceID: 0,
 			}),
 			expected: ast.NewIdentifier("foo", ast.Span{
-				Start:    ast.Location{Line: 1, Column: 0},
-				End:      ast.Location{Line: 1, Column: 3},
+				Start:    ast.Location{Offset: 0},
+				End:      ast.Location{Offset: 3},
 				SourceID: 0,
 			}),
 		},
@@ -109,25 +109,25 @@ func TestConvertQualIdent(t *testing.T) {
 			name: "member access - one level",
 			input: &dts_parser.Member{
 				Left: dts_parser.NewIdent("obj", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 0},
-					End:      ast.Location{Line: 1, Column: 3},
+					Start:    ast.Location{Offset: 0},
+					End:      ast.Location{Offset: 3},
 					SourceID: 0,
 				}),
 				Right: dts_parser.NewIdent("prop", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 4},
-					End:      ast.Location{Line: 1, Column: 8},
+					Start:    ast.Location{Offset: 4},
+					End:      ast.Location{Offset: 8},
 					SourceID: 0,
 				}),
 			},
 			expected: &ast.Member{
 				Left: ast.NewIdentifier("obj", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 0},
-					End:      ast.Location{Line: 1, Column: 3},
+					Start:    ast.Location{Offset: 0},
+					End:      ast.Location{Offset: 3},
 					SourceID: 0,
 				}),
 				Right: ast.NewIdentifier("prop", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 4},
-					End:      ast.Location{Line: 1, Column: 8},
+					Start:    ast.Location{Offset: 4},
+					End:      ast.Location{Offset: 8},
 					SourceID: 0,
 				}),
 			},
@@ -137,38 +137,38 @@ func TestConvertQualIdent(t *testing.T) {
 			input: &dts_parser.Member{
 				Left: &dts_parser.Member{
 					Left: dts_parser.NewIdent("a", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 0},
-						End:      ast.Location{Line: 1, Column: 1},
+						Start:    ast.Location{Offset: 0},
+						End:      ast.Location{Offset: 1},
 						SourceID: 0,
 					}),
 					Right: dts_parser.NewIdent("b", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 2},
-						End:      ast.Location{Line: 1, Column: 3},
+						Start:    ast.Location{Offset: 2},
+						End:      ast.Location{Offset: 3},
 						SourceID: 0,
 					}),
 				},
 				Right: dts_parser.NewIdent("c", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 4},
-					End:      ast.Location{Line: 1, Column: 5},
+					Start:    ast.Location{Offset: 4},
+					End:      ast.Location{Offset: 5},
 					SourceID: 0,
 				}),
 			},
 			expected: &ast.Member{
 				Left: &ast.Member{
 					Left: ast.NewIdentifier("a", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 0},
-						End:      ast.Location{Line: 1, Column: 1},
+						Start:    ast.Location{Offset: 0},
+						End:      ast.Location{Offset: 1},
 						SourceID: 0,
 					}),
 					Right: ast.NewIdentifier("b", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 2},
-						End:      ast.Location{Line: 1, Column: 3},
+						Start:    ast.Location{Offset: 2},
+						End:      ast.Location{Offset: 3},
 						SourceID: 0,
 					}),
 				},
 				Right: ast.NewIdentifier("c", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 4},
-					End:      ast.Location{Line: 1, Column: 5},
+					Start:    ast.Location{Offset: 4},
+					End:      ast.Location{Offset: 5},
 					SourceID: 0,
 				}),
 			},
@@ -179,25 +179,25 @@ func TestConvertQualIdent(t *testing.T) {
 				Left: &dts_parser.Member{
 					Left: &dts_parser.Member{
 						Left: dts_parser.NewIdent("ns", ast.Span{
-							Start:    ast.Location{Line: 1, Column: 0},
-							End:      ast.Location{Line: 1, Column: 2},
+							Start:    ast.Location{Offset: 0},
+							End:      ast.Location{Offset: 2},
 							SourceID: 0,
 						}),
 						Right: dts_parser.NewIdent("mod", ast.Span{
-							Start:    ast.Location{Line: 1, Column: 3},
-							End:      ast.Location{Line: 1, Column: 6},
+							Start:    ast.Location{Offset: 3},
+							End:      ast.Location{Offset: 6},
 							SourceID: 0,
 						}),
 					},
 					Right: dts_parser.NewIdent("sub", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 7},
-						End:      ast.Location{Line: 1, Column: 10},
+						Start:    ast.Location{Offset: 7},
+						End:      ast.Location{Offset: 10},
 						SourceID: 0,
 					}),
 				},
 				Right: dts_parser.NewIdent("item", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 11},
-					End:      ast.Location{Line: 1, Column: 15},
+					Start:    ast.Location{Offset: 11},
+					End:      ast.Location{Offset: 15},
 					SourceID: 0,
 				}),
 			},
@@ -205,25 +205,25 @@ func TestConvertQualIdent(t *testing.T) {
 				Left: &ast.Member{
 					Left: &ast.Member{
 						Left: ast.NewIdentifier("ns", ast.Span{
-							Start:    ast.Location{Line: 1, Column: 0},
-							End:      ast.Location{Line: 1, Column: 2},
+							Start:    ast.Location{Offset: 0},
+							End:      ast.Location{Offset: 2},
 							SourceID: 0,
 						}),
 						Right: ast.NewIdentifier("mod", ast.Span{
-							Start:    ast.Location{Line: 1, Column: 3},
-							End:      ast.Location{Line: 1, Column: 6},
+							Start:    ast.Location{Offset: 3},
+							End:      ast.Location{Offset: 6},
 							SourceID: 0,
 						}),
 					},
 					Right: ast.NewIdentifier("sub", ast.Span{
-						Start:    ast.Location{Line: 1, Column: 7},
-						End:      ast.Location{Line: 1, Column: 10},
+						Start:    ast.Location{Offset: 7},
+						End:      ast.Location{Offset: 10},
 						SourceID: 0,
 					}),
 				},
 				Right: ast.NewIdentifier("item", ast.Span{
-					Start:    ast.Location{Line: 1, Column: 11},
-					End:      ast.Location{Line: 1, Column: 15},
+					Start:    ast.Location{Offset: 11},
+					End:      ast.Location{Offset: 15},
 					SourceID: 0,
 				}),
 			},

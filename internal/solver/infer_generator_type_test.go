@@ -108,7 +108,7 @@ func TestGeneratorVariance(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
 			require.Len(t, errs, len(test.wantErrs))
 			for i, want := range test.wantErrs {
-				require.Equal(t, want, msgWithSpan(errs[i]))
+				require.Equal(t, want, msgWithSpan(t, errs[i]))
 			}
 		})
 	}
@@ -176,6 +176,6 @@ func TestGeneratorRaiseVariance(t *testing.T) {
 			val f: fn () -> Generator<number, string, never, "a"> = g
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, `3:60-3:61: cannot constrain "b" <: "a"`, msgWithSpan(errs[0]))
+		require.Equal(t, `3:60-3:61: cannot constrain "b" <: "a"`, msgWithSpan(t, errs[0]))
 	})
 }

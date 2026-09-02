@@ -213,7 +213,7 @@ loop:
 		// against it to avoid crashing during error recovery.
 		var span ast.Span
 		if typeAnns.IsEmpty() {
-			span = ast.Span{Start: p.lexer.currentLocation, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			span = ast.Span{Start: p.lexer.currentLoc(), End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		} else {
 			span = typeAnns.Peek().Span()
 		}
@@ -1377,7 +1377,7 @@ func (p *Parser) templateLitTypeAnn(token *Token) ast.TypeAnn {
 		select {
 		case <-p.ctx.Done():
 			// Return what we have so far when context is done
-			span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
+			span := ast.NewSpan(token.Span.Start, p.lexer.currentLoc(), p.lexer.source.ID)
 			return ast.NewTemplateLitTypeAnn(quasis, typeAnns, span)
 		default:
 			// continue
@@ -1408,6 +1408,6 @@ func (p *Parser) templateLitTypeAnn(token *Token) ast.TypeAnn {
 			break
 		}
 	}
-	span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
+	span := ast.NewSpan(token.Span.Start, p.lexer.currentLoc(), p.lexer.source.ID)
 	return ast.NewTemplateLitTypeAnn(quasis, typeAnns, span)
 }

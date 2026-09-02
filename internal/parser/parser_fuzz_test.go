@@ -196,9 +196,9 @@ func FuzzParseScript(f *testing.F) {
 		if ctx.Err() == context.DeadlineExceeded {
 			// Print debug info about where we are
 			token := parser.lexer.peek()
-			t.Errorf("ParseScript timed out on input %q\nCurrent offset: %d/%d\nCurrent token: %v at line %d col %d",
+			t.Errorf("ParseScript timed out on input %q\nCurrent offset: %d/%d\nCurrent token: %v at offset %d",
 				input, parser.lexer.currentOffset, len(parser.lexer.source.Contents),
-				token.Type, token.Span.Start.Line, token.Span.Start.Column)
+				token.Type, token.Span.Start.Offset)
 		}
 	})
 }

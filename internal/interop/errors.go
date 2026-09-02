@@ -17,8 +17,8 @@ func (e *ErrDuplicateMember) Error() string {
 	return fmt.Sprintf(
 		"duplicate override entry for %s\n  first defined at %s:%d\n  redefined at %s:%d",
 		pathString(e.Path),
-		e.First.FilePath, e.First.Span.Start.Line,
-		e.Second.FilePath, e.Second.Span.Start.Line,
+		e.First.FilePath, e.First.Line(),
+		e.Second.FilePath, e.Second.Line(),
 	)
 }
 
@@ -36,8 +36,8 @@ func (e *ErrShapeConflict) Error() string {
 	return fmt.Sprintf(
 		"shape conflict for %s\n  first defined at %s:%d\n  redefined at %s:%d",
 		pathString(e.Path),
-		e.First.FilePath, e.First.Span.Start.Line,
-		e.Second.FilePath, e.Second.Span.Start.Line,
+		e.First.FilePath, e.First.Line(),
+		e.Second.FilePath, e.Second.Line(),
 	)
 }
 
@@ -55,7 +55,7 @@ func (e *ErrUnknownMember) Error() string {
 	msg := fmt.Sprintf(
 		"override target %s not found on original declaration\n  override at %s:%d",
 		pathString(e.Path),
-		e.Override.FilePath, e.Override.Span.Start.Line,
+		e.Override.FilePath, e.Override.Line(),
 	)
 	if len(e.Available) > 0 {
 		msg += "\n  available: " + strings.Join(e.Available, ", ")
@@ -78,7 +78,7 @@ func (e *ErrSignatureMismatch) Error() string {
 	return fmt.Sprintf(
 		"override of %s changes signature shape (%s): override=%s, original=%s\n  override at %s:%d",
 		pathString(e.Path), e.Field, e.Override, e.Original,
-		e.OverrideOrigin.FilePath, e.OverrideOrigin.Span.Start.Line,
+		e.OverrideOrigin.FilePath, e.OverrideOrigin.Line(),
 	)
 }
 
@@ -105,7 +105,7 @@ func (e *ErrPropertyTypeMismatch) Error() string {
 	return fmt.Sprintf(
 		"override of %s changes property type incompatibly: override=%s, original=%s\n  override at %s:%d",
 		pathString(e.Path), e.Override, e.Original,
-		e.OverrideOrigin.FilePath, e.OverrideOrigin.Span.Start.Line,
+		e.OverrideOrigin.FilePath, e.OverrideOrigin.Line(),
 	)
 }
 

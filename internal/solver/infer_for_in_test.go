@@ -210,7 +210,7 @@ func TestInferForInErrors(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -234,7 +234,7 @@ func TestForInBackEdgeMoves(t *testing.T) {
 		}
 	`
 	_, _, errs := inferSource(t, src)
-	require.Equal(t, []string{`5:13-5:14: use of moved value 'p'`}, messagesWithSpan(errs))
+	require.Equal(t, []string{`5:13-5:14: use of moved value 'p'`}, messagesWithSpan(t, errs))
 }
 
 // TestForInBorrowAvoidsMove pairs each move that a loop makes into a use-after-move
@@ -307,7 +307,7 @@ func TestForInBorrowAvoidsMove(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -387,7 +387,7 @@ func TestForInBackEdgeBorrows(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}

@@ -29,7 +29,7 @@ import (
 // ceiling to coalesce so a guard bypass fails cleanly instead of crashing).
 func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() { return {x: f()} }`)
-	require.Equal(t, []string{nonReturningMsg("1:4-1:5", "f", "fn () -> {x: μX0.{x: X0}}")}, messagesWithSpan(errs))
+	require.Equal(t, []string{nonReturningMsg("1:4-1:5", "f", "fn () -> {x: μX0.{x: X0}}")}, messagesWithSpan(t, errs))
 	require.Equal(t, "fn () -> {x: μX0.{x: X0}}", values["f"])
 }
 

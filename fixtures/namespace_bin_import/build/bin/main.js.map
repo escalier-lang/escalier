@@ -1,1 +1,1 @@
-{"version":3,"file":"./main.js","sources":["../../bin/main.esc"],"sourcesContent":["val p = geo.Point(3, 4)\nval o = geo.makeOrigin()\nconsole.log(p.x + o.y)\n"],"names":[],"mappings":";MCAI,AAAA,IAAI,IAAA,AAAA,IAAI,MAAM,GAAG;MACjB,AAAA,IAAI,AAAA,AAAA,IAAI;AACZ,AAAA,AAAA,QAAQ,IAAI,AAAA,AAAA,EAAE,IAAI,AAAA,EAAE"}
+{"version":3,"file":"./main.js","sources":["../../bin/main.esc"],"sourcesContent":["val p = geo.Point(3, 4)\nval o = geo.makeOrigin()\nconsole.log(p.x + o.y)\n"],"names":[],"mappings":";;;"}

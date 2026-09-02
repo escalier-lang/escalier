@@ -146,7 +146,7 @@ func TestInferNullUndefinedUnrelated(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -207,7 +207,7 @@ func TestInferMatchNullArmMissingUndefinedMember(t *testing.T) {
 		}
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "3:11-5:5: match is not exhaustive; add a branch for `undefined`", msgWithSpan(errs[0]))
+	require.Equal(t, "3:11-5:5: match is not exhaustive; add a branch for `undefined`", msgWithSpan(t, errs[0]))
 }
 
 // Naming both atoms covers a scrutinee made of nothing else.
@@ -270,7 +270,7 @@ func TestInferUndefinedReturnAnnotationOverADivergingBody(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		"1:25-1:34: every path through the body throws, so the declared return type `undefined` is unreachable; the body returns `never`",
-		msgWithSpan(errs[0]))
+		msgWithSpan(t, errs[0]))
 
 	// `-> never` is what the body delivers, so it is not flagged.
 	_, _, errs = inferSource(t, `fn fail(msg: string) -> never throws string { throw msg }`)
@@ -297,7 +297,7 @@ func TestInferUndefinedCallbackReturnIsInvariant(t *testing.T) {
 	`
 	_, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
-	require.Equal(t, "4:33-4:34: cannot constrain 5 <: undefined", msgWithSpan(errs[0]))
+	require.Equal(t, "4:33-4:34: cannot constrain 5 <: undefined", msgWithSpan(t, errs[0]))
 }
 
 // A `-> unknown` return position accepts a callback returning anything, since every type

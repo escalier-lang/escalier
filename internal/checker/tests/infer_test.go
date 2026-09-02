@@ -2136,11 +2136,12 @@ func TestIssue371(t *testing.T) {
 
 	// All errors should have spans pointing into the `add` function (lines 2-4),
 	// not into the `subtract` function (lines 6-8).
+	lineMap := source.LineMap()
 	for _, err := range inferErrors {
-		span := err.Span()
-		assert.LessOrEqual(t, span.Start.Line, 4,
+		line := lineMap.Line(err.Span().Start.Offset)
+		assert.LessOrEqual(t, line, 4,
 			"Error %q should not have a span in the subtract function (line %d)",
-			err.Message(), span.Start.Line)
+			err.Message(), line)
 	}
 }
 

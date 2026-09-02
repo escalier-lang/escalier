@@ -87,7 +87,7 @@ func TestMatchCoverageNonExhaustive(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
 			require.Len(t, errs, 1)
-			require.Equal(t, tt.want, msgWithSpan(errs[0]))
+			require.Equal(t, tt.want, msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -175,7 +175,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "3:12-7:6: match is not exhaustive; `{b: string}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it", msgWithSpan(errs[0]))
+		require.Equal(t, "3:12-7:6: match is not exhaustive; `{b: string}` is matched only by a guarded branch, whose guard can fail, so add an unguarded branch for it", msgWithSpan(t, errs[0]))
 	})
 
 	// The same shape on the nominal path. `Color.RGB(0, g, b)` matches only when the first
@@ -196,7 +196,7 @@ func TestMatchCoverageIgnoresBranchesUnderAnotherTag(t *testing.T) {
 			}
 		`)
 		require.Len(t, errs, 1)
-		require.Equal(t, "7:12-11:6: match is not exhaustive; `Color.RGB` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(errs[0]))
+		require.Equal(t, "7:12-11:6: match is not exhaustive; `Color.RGB` is matched only by a branch whose own pattern can fail, so add a branch that matches it irrefutably", msgWithSpan(t, errs[0]))
 	})
 }
 
@@ -226,7 +226,7 @@ func TestMatchCoverageBareRestArmReportsOnlyTheUnsupportedPattern(t *testing.T) 
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, src)
 			require.Len(t, errs, 1)
-			require.Equal(t, "4:6-4:13: Unsupported: RestPat", msgWithSpan(errs[0]))
+			require.Equal(t, "4:6-4:13: Unsupported: RestPat", msgWithSpan(t, errs[0]))
 		})
 	}
 }
@@ -309,7 +309,7 @@ func TestMatchCoverageCreditsAnnotationTests(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tt.src)
-			require.Equal(t, tt.wantErrs, messagesWithSpan(errs))
+			require.Equal(t, tt.wantErrs, messagesWithSpan(t, errs))
 		})
 	}
 }

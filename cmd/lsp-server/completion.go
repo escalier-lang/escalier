@@ -5,12 +5,14 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/tliron/glsp"
 	protocol "github.com/tliron/glsp/protocol_3_16"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/checker"
+	"github.com/escalier-lang/escalier/internal/lexer_util"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -209,7 +211,7 @@ func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID 
 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
-	loc := posToLoc(params.Position)
+	loc := posToLoc(s.lineMapForURI(uri), params.Position)
 
 	// Wait for an in-flight validation to complete if the cached AST is
 	// stale (i.e. the document has been updated but validation hasn't
@@ -1105,8 +1107,7 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool
 
 	// Declarations before the cursor (variable and, when not hoisted, function/import)
 	for _, stmt := range stmts {
-		if stmt.Span().Start.Line > cursor.Line ||
-			(stmt.Span().Start.Line == cursor.Line && stmt.Span().Start.Column > cursor.Column) {
+		if stmt.Span().Start.Offset > cursor.Offset {
 			continue
 		}
 		if declStmt, ok := stmt.(*ast.DeclStmt); ok {
@@ -1282,36 +1283,28 @@ func filterTypeItems(items []protocol.CompletionItem) []protocol.CompletionItem 
 // wordAtCursor extracts the partial identifier at the cursor position from
 // the document text. Returns "" if the cursor is not on an identifier.
 //
-// NOTE: loc.Column is a 1-based byte offset (from the lexer), but this
-// function indexes into a []rune slice. This mismatch means the column can
-// point to the wrong rune when multi-byte characters precede the cursor on
-// the same line. Fixing this properly requires deciding on a single column
-// encoding (bytes vs runes vs UTF-16) across the LSP layer and the parser.
+// loc is a byte offset into text, so the walk back from the cursor decodes one
+// rune at a time. It uses the lexer's own identifier rule, so a name the lexer
+// accepts is a name the cursor can sit at the end of, `café` included.
 func wordAtCursor(text string, loc ast.Location) string {
-	lines := strings.Split(text, "\n")
-	lineIdx := loc.Line - 1 // convert to 0-based
-	if lineIdx < 0 || lineIdx >= len(lines) {
-		return ""
-	}
-	runes := []rune(lines[lineIdx])
-	colIdx := loc.Column - 1 // convert to 0-based
-	if colIdx < 0 || colIdx > len(runes) {
+	at := loc.Offset
+	if at < 0 || at > len(text) {
 		return ""
 	}
 
 	// Walk backwards from cursor to find the start of the word.
-	start := colIdx
-	for start > 0 && isIdentRune(runes[start-1]) {
-		start--
+	start := at
+	for start > 0 {
+		r, width := utf8.DecodeLastRuneInString(text[:start])
+		if !lexer_util.IsIdentContinue(r) {
+			break
+		}
+		start -= width
 	}
-	if start == colIdx {
+	if start == at {
 		return ""
 	}
-	return string(runes[start:colIdx])
-}
-
-func isIdentRune(r rune) bool {
-	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+	return text[start:at]
 }
 
 // Helper functions

@@ -15,10 +15,11 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 	t.Parallel()
 
 	t.Run("declared_but_no_inline_use", func(t *testing.T) {
-		errs := mustInferScriptAllErrors(t, `
+		src := `
 			type Point = {x: number}
 			fn f<'a>(p: Point) -> Point { return {x: 0} }
-		`)
+		`
+		errs := mustInferScriptAllErrors(t, src)
 		var found *UnusedLifetimeParamError
 		for _, e := range errs {
 			if ue, ok := e.(UnusedLifetimeParamError); ok {
@@ -31,18 +32,12 @@ func TestPhase9_7_UnusedLifetimeParam(t *testing.T) {
 		assert.True(t, found.IsWarning(), "class 1 is a warning")
 		assert.Equal(t, "lifetime parameter 'a is declared but never used", found.Message())
 
-		// Span must point at the `'a` declaration itself, not the
-		// whole function. The script puts the function on line 3
-		// (the leading newline + the type alias on line 2). The fn
-		// declaration occupies the line; the `<'a>` is a few chars
-		// in. We assert the diagnostic span is strictly inside the
-		// function span — i.e. not the entire function range — by
-		// checking the column is past the `fn f` identifier.
+		// The span must cover the `'a` declaration itself rather than the
+		// whole function, so slicing the source with it yields exactly the
+		// lifetime parameter.
 		span := found.Span()
-		assert.Equal(t, 3, span.Start.Line,
-			"diagnostic should be on the line containing the fn decl")
-		assert.Greater(t, span.Start.Column, 7,
-			"diagnostic span should point at `<'a>` (past `fn f`), not at the start of the function")
+		assert.Equal(t, "'a", src[span.Start.Offset:span.End.Offset],
+			"diagnostic span should cover `'a`, not the whole function")
 	})
 
 	t.Run("used_param_does_not_warn", func(t *testing.T) {

@@ -495,7 +495,7 @@ func TestInferTryCatchLeavesAnUnusedClauseUnused(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t,
 		"1:15-1:21: the body raises nothing, so the declared `throws string` is unreachable; drop the clause",
-		msgWithSpan(errs[0]))
+		msgWithSpan(t, errs[0]))
 	require.Equal(t, "fn () -> undefined throws string", values["f"])
 }
 

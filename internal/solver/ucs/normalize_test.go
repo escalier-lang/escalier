@@ -14,7 +14,7 @@ import (
 // is an ordinary branch of the core. It stands in for the desugarer, which normalize
 // does not need.
 func coreMatch(target ast.Expr, arms ...*ast.MatchCase) *CoreSplit {
-	expr := ast.NewMatch(target, arms, span(1, 1, 40))
+	expr := ast.NewMatch(target, arms, span(1, 40))
 	origin := At(OriginMatchArm, expr)
 
 	branches := make([]*CoreBranch, len(arms))
@@ -53,8 +53,8 @@ func greaterThan() ast.Expr {
 func TestNormalizeFlatLiteralMatch(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), nil, str("one"), span(2, 5, 18)),
-		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+		matchCase(numPat(1), nil, str("one"), span(45, 58)),
+		matchCase(wildcardPat(), nil, str("other"), span(85, 100)),
 	)
 
 	// Before normalization:
@@ -73,10 +73,10 @@ func TestNormalizeFlatLiteralMatch(t *testing.T) {
 func TestNormalizeMergesSameScrutineeArms(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), nil, str("one"), span(2, 5, 18)),
-		matchCase(numPat(2), nil, str("two"), span(3, 5, 18)),
-		matchCase(numPat(3), nil, str("three"), span(4, 5, 20)),
-		matchCase(wildcardPat(), nil, str("other"), span(5, 5, 20)),
+		matchCase(numPat(1), nil, str("one"), span(45, 58)),
+		matchCase(numPat(2), nil, str("two"), span(85, 98)),
+		matchCase(numPat(3), nil, str("three"), span(125, 140)),
+		matchCase(wildcardPat(), nil, str("other"), span(165, 180)),
 	)
 
 	// Before normalization:
@@ -104,8 +104,8 @@ func TestNormalizeMergesSameScrutineeArms(t *testing.T) {
 func TestNormalizeGuardFallsToTheTail(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(2, 5, 30)),
-		matchCase(wildcardPat(), nil, num(0), span(3, 5, 16)),
+		matchCase(objPat("x", "y"), greaterThan(), ident("x"), span(45, 70)),
+		matchCase(wildcardPat(), nil, num(0), span(85, 96)),
 	)
 
 	// Before normalization:
@@ -133,8 +133,8 @@ func TestNormalizeGuardFallsToTheTail(t *testing.T) {
 func TestNormalizeDropsArmsAfterACatchAll(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(identPat("all"), nil, ident("all"), span(2, 5, 20)),
-		matchCase(numPat(1), nil, str("one"), span(3, 5, 18)),
+		matchCase(identPat("all"), nil, ident("all"), span(45, 60)),
+		matchCase(numPat(1), nil, str("one"), span(85, 98)),
 	)
 
 	// Before normalization:
@@ -151,8 +151,8 @@ func TestNormalizeDropsArmsAfterACatchAll(t *testing.T) {
 func TestNormalizeKeepsArmsAfterAGuardedCatchAll(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(identPat("all"), greaterThan(), ident("all"), span(2, 5, 30)),
-		matchCase(numPat(1), nil, str("one"), span(3, 5, 18)),
+		matchCase(identPat("all"), greaterThan(), ident("all"), span(45, 70)),
+		matchCase(numPat(1), nil, str("one"), span(85, 98)),
 	)
 
 	// Before normalization:
@@ -174,7 +174,7 @@ func TestNormalizeThreadsTheElseIntoTheTail(t *testing.T) {
 	target := ident("p")
 	cons := ast.Block{Stmts: []ast.Stmt{ast.NewExprStmt(ident("cons"), ast.Span{})}}
 	alt := blockBody(ident("alt"))
-	expr := ast.NewIfVal(objPat("x", "y"), target, cons, &alt, span(1, 1, 45))
+	expr := ast.NewIfVal(objPat("x", "y"), target, cons, &alt, span(1, 45))
 	origin := At(OriginIfVal, expr)
 
 	core := &CoreSplit{
@@ -204,7 +204,7 @@ func TestNormalizeThreadsTheElseIntoTheTail(t *testing.T) {
 // success path and its fallback in the tail.
 func TestNormalizeValElse(t *testing.T) {
 	target := ident("p")
-	decl := ast.NewVarDecl(ast.ValKind, objPat("x", "y"), nil, target, false, false, span(1, 1, 35))
+	decl := ast.NewVarDecl(ast.ValKind, objPat("x", "y"), nil, target, false, false, span(1, 35))
 	decl.Else = &ast.Block{Stmts: []ast.Stmt{ast.NewReturnStmt(nil, ast.Span{})}}
 	origin := At(OriginValElse, decl)
 
@@ -238,7 +238,7 @@ func TestNormalizeFlattensANestedObjectPattern(t *testing.T) {
 	start := objPat("x", "y")
 	core := coreMatch(
 		ident("l"),
-		matchCase(instancePat("Line", fieldPat("start", start)), nil, ident("body"), span(2, 5, 34)),
+		matchCase(instancePat("Line", fieldPat("start", start)), nil, ident("body"), span(45, 74)),
 	)
 
 	// Before normalization the arm's pattern is one deep shape:
@@ -268,7 +268,7 @@ func TestNormalizeFlattensANestedTuplePattern(t *testing.T) {
 		ident("xs"),
 		matchCase(
 			tuplePat(tuplePat(identPat("a"), identPat("b")), identPat("c")),
-			nil, ident("a"), span(2, 5, 30),
+			nil, ident("a"), span(45, 70),
 		),
 	)
 
@@ -289,7 +289,7 @@ func TestNormalizeFlattensANestedTuplePattern(t *testing.T) {
 func TestNormalizeFlattensToArbitraryDepth(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(fieldPat("a", fieldPat("b", fieldPat("c", numPat(1)))), nil, str("deep"), span(2, 5, 32)),
+		matchCase(fieldPat("a", fieldPat("b", fieldPat("c", numPat(1)))), nil, str("deep"), span(45, 72)),
 	)
 
 	// Before normalization:
@@ -314,8 +314,8 @@ func TestNormalizeFlattensToArbitraryDepth(t *testing.T) {
 func TestNormalizeNestedSplitFallsToTheArmBelow(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(fieldPat("x", numPat(1)), nil, str("one"), span(2, 5, 22)),
-		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+		matchCase(fieldPat("x", numPat(1)), nil, str("one"), span(45, 62)),
+		matchCase(wildcardPat(), nil, str("other"), span(85, 100)),
 	)
 
 	// Before normalization:
@@ -346,8 +346,8 @@ func TestNormalizeKeepsTheFallthroughOutOfTheArmsScope(t *testing.T) {
 	}, ast.Span{})
 	core := coreMatch(
 		ident("p"),
-		matchCase(pattern, nil, str("one"), span(2, 5, 28)),
-		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+		matchCase(pattern, nil, str("one"), span(45, 68)),
+		matchCase(wildcardPat(), nil, str("other"), span(85, 100)),
 	)
 
 	// Before normalization:
@@ -406,9 +406,9 @@ func pathNodes(t Norm, seen set.Set[Norm], out map[string]set.Set[*Scrutinee]) {
 func TestNormalizeNamesOneScrutineePerPath(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(fieldPat("x", numPat(1)), nil, str("first"), span(2, 5, 22)),
-		matchCase(fieldPat("y", objPat("z")), nil, str("second"), span(3, 5, 26)),
-		matchCase(wildcardPat(), nil, str("other"), span(4, 5, 20)),
+		matchCase(fieldPat("x", numPat(1)), nil, str("first"), span(45, 62)),
+		matchCase(fieldPat("y", objPat("z")), nil, str("second"), span(85, 106)),
+		matchCase(wildcardPat(), nil, str("other"), span(125, 140)),
 	)
 
 	// The second arm is built twice, once for its own branch of the split over `p` and
@@ -429,8 +429,8 @@ func TestNormalizeNamesOneScrutineePerPath(t *testing.T) {
 func TestNormalizeChainsArmsThatNestUnderOneTag(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(fieldPat("a", objPat("x")), nil, str("obj"), span(2, 5, 26)),
-		matchCase(fieldPat("a", tuplePat(identPat("y"))), nil, str("tuple"), span(3, 5, 26)),
+		matchCase(fieldPat("a", objPat("x")), nil, str("obj"), span(45, 66)),
+		matchCase(fieldPat("a", tuplePat(identPat("y"))), nil, str("tuple"), span(85, 106)),
 	)
 
 	// Before normalization:
@@ -453,8 +453,8 @@ func TestNormalizeChainsArmsThatNestUnderOneTag(t *testing.T) {
 func TestNormalizeGuardReadsNestedBinds(t *testing.T) {
 	core := coreMatch(
 		ident("p"),
-		matchCase(fieldPat("start", objPat("x", "y")), greaterThan(), ident("x"), span(2, 5, 40)),
-		matchCase(wildcardPat(), nil, num(0), span(3, 5, 16)),
+		matchCase(fieldPat("start", objPat("x", "y")), greaterThan(), ident("x"), span(45, 80)),
+		matchCase(wildcardPat(), nil, num(0), span(85, 96)),
 	)
 
 	// Before normalization:
@@ -476,7 +476,7 @@ func TestNormalizeGuardReadsNestedBinds(t *testing.T) {
 // one, and it stays a nameless bind that hands the pattern to the solver's walk.
 func TestNormalizeKeepsATagLessPatternWhole(t *testing.T) {
 	rest := ast.NewRestPat(identPat("rest"), ast.Span{})
-	core := coreMatch(ident("xs"), matchCase(rest, nil, ident("rest"), span(2, 5, 24)))
+	core := coreMatch(ident("xs"), matchCase(rest, nil, ident("rest"), span(45, 64)))
 
 	// Before normalization:
 	//
@@ -490,9 +490,9 @@ func TestNormalizeKeepsATagLessPatternWhole(t *testing.T) {
 // points at the arm the user wrote, and the origin tags still name the construct each
 // arm lowered from.
 func TestNormalizeKeepsArmBackReferences(t *testing.T) {
-	one := matchCase(numPat(1), nil, str("one"), span(2, 5, 18))
-	two := matchCase(numPat(2), greaterThan(), str("two"), span(3, 5, 26))
-	other := matchCase(wildcardPat(), nil, str("other"), span(4, 5, 20))
+	one := matchCase(numPat(1), nil, str("one"), span(45, 58))
+	two := matchCase(numPat(2), greaterThan(), str("two"), span(85, 106))
+	other := matchCase(wildcardPat(), nil, str("other"), span(125, 140))
 	core := coreMatch(ident("n"), one, two, other)
 
 	// Before normalization:
@@ -511,22 +511,22 @@ func TestNormalizeKeepsArmBackReferences(t *testing.T) {
 	opts.ShowArms = true
 	opts.ShowOrigins = true
 	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split n [match arm] {
-  1 [match arm] arm=2:5-2:18 => leaf "one" [match arm] arm=2:5-2:18
-  2 [match arm] arm=3:5-3:26 => guard (x > y) [guard] {
-    leaf "two" [match arm] arm=3:5-3:26
-  } default leaf "other" [match arm] arm=4:5-4:20
-} default leaf "other" [match arm] arm=4:5-4:20`))
+  1 [match arm] arm=45-58 => leaf "one" [match arm] arm=45-58
+  2 [match arm] arm=85-106 => guard (x > y) [guard] {
+    leaf "two" [match arm] arm=85-106
+  } default leaf "other" [match arm] arm=125-140
+} default leaf "other" [match arm] arm=125-140`))
 }
 
 // A split flattening introduced blames the sub-pattern it tests and still points back at
 // the arm the user wrote. The `at=` span is the nested `{x, y}`, and `arm=` is the whole
 // arm, so a message about the projected split can name either.
 func TestNormalizeFlattenedSplitKeepsItsArmAndPattern(t *testing.T) {
-	x := ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), false, nil, nil, span(2, 20, 21))
-	y := ast.NewObjShorthandPat(ast.NewIdentifier("y", ast.Span{}), false, nil, nil, span(2, 23, 24))
-	start := ast.NewObjectPat([]ast.ObjPatElem{x, y}, span(2, 19, 25))
-	pattern := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("start", start)}, span(2, 5, 26))
-	armCase := matchCase(pattern, nil, ident("x"), span(2, 5, 31))
+	x := ast.NewObjShorthandPat(ast.NewIdentifier("x", ast.Span{}), false, nil, nil, span(60, 61))
+	y := ast.NewObjShorthandPat(ast.NewIdentifier("y", ast.Span{}), false, nil, nil, span(63, 64))
+	start := ast.NewObjectPat([]ast.ObjPatElem{x, y}, span(59, 65))
+	pattern := ast.NewObjectPat([]ast.ObjPatElem{keyValueElem("start", start)}, span(45, 66))
+	armCase := matchCase(pattern, nil, ident("x"), span(45, 71))
 	core := coreMatch(ident("p"), armCase)
 
 	// Before normalization:
@@ -538,9 +538,9 @@ func TestNormalizeFlattenedSplitKeepsItsArmAndPattern(t *testing.T) {
 	opts.ShowArms = true
 	opts.ShowSpans = true
 	norm := Normalize(core)
-	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split p at=1:1-1:40 {
-  {start} at=2:5-2:31 arm=same => split p.start at=2:19-2:25 {
-    {x, y} at=2:19-2:25 arm=2:5-2:31 => bind x = p.start.x at=2:20-2:21, y = p.start.y at=2:23-2:24; leaf x at=2:5-2:31 arm=same
+	snaps.MatchInlineSnapshot(t, Print(norm, opts), snaps.Inline(`split p at=1-40 {
+  {start} at=45-71 arm=same => split p.start at=59-65 {
+    {x, y} at=59-65 arm=45-71 => bind x = p.start.x at=60-61, y = p.start.y at=63-64; leaf x at=45-71 arm=same
   } default ✗
 } default ✗`))
 
@@ -554,8 +554,8 @@ func TestNormalizeFlattenedSplitKeepsItsArmAndPattern(t *testing.T) {
 func TestNormalizeKeepsLeafNodes(t *testing.T) {
 	core := coreMatch(
 		ident("n"),
-		matchCase(numPat(1), nil, str("one"), span(2, 5, 18)),
-		matchCase(wildcardPat(), nil, str("other"), span(3, 5, 20)),
+		matchCase(numPat(1), nil, str("one"), span(45, 58)),
+		matchCase(wildcardPat(), nil, str("other"), span(85, 100)),
 	)
 
 	// Before normalization:
@@ -585,7 +585,7 @@ func TestNormalizeEmptySplit(t *testing.T) {
 // A term that is not a split normalizes to itself, so a caller can hand normalize any
 // core term rather than only the top-level split.
 func TestNormalizeBareTerms(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	leaf := &BodyLeaf{Body: exprBody(num(1)), Origin: origin}
 
 	require.Nil(t, Normalize(nil))

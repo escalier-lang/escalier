@@ -106,7 +106,7 @@ func TestCheckProductiveAccepts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -224,7 +224,7 @@ func TestCheckProductiveRejects(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, "\n\t\t\t\t"+test.src+"\n")
-			require.Equal(t, test.want, messagesWithSpan(errs))
+			require.Equal(t, test.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -266,7 +266,7 @@ func TestInferNonRegularAliasChecks(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, _, errs := inferSource(t, test.src)
-			require.Equal(t, deepIsPhantom, messagesWithSpan(errs))
+			require.Equal(t, deepIsPhantom, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -288,7 +288,7 @@ func TestInferNonRegularAliasComparisonDoesNotSettle(t *testing.T) {
 		"4:25-4:31: comparing two instantiations of `Nest` reached the limit of 200 type-operator " +
 			"expansions and was cut off; either the two sides recurse without ever repeating a pair " +
 			"the check can close on, or their alias chains run deeper than the limit unfolds",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // The same limit cuts off a chain of aliases that each name the one below them, which settles in
@@ -323,5 +323,5 @@ func TestInferNotProductiveAliasAbsorbs(t *testing.T) {
 		"2:8-2:12: recursive type alias `Grow` reaches itself without passing under a type " +
 			"constructor, so no lap of the recursion emits any structure and the alias names no type; " +
 			"wrap the recursive reference in an object, tuple, or function type",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }

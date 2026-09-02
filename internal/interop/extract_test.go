@@ -31,7 +31,7 @@ func TestExtractFreeFunctionFromDeclareGlobal(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"builtin:/test.esc",
+		NewOriginSite("builtin:/test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	require.Contains(t, out, "", "expected entry under \"\" (global)")
@@ -64,7 +64,7 @@ func TestExtractFreeFunctionFromDeclareModule(t *testing.T) {
 		[]ast.Decl{declareModule},
 		nil,
 		map[string]*type_system.Namespace{"lodash": modNs},
-		"builtin:/lodash.esc",
+		NewOriginSite("builtin:/lodash.esc", nil),
 		OverrideTierBuiltin,
 	)
 	require.Contains(t, out, "lodash")
@@ -89,7 +89,7 @@ func TestExtractSkipsNonOverrideBlocks(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierUserProject,
 	)
 	require.Empty(t, out, "non-override blocks must produce no scope contributions")
@@ -112,7 +112,7 @@ func TestExtractTypeAlias(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierUserProject,
 	)
 	ms := out[""]
@@ -146,7 +146,7 @@ func TestExtractInterfaceInstanceMethod(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	ms := out[""]
@@ -182,7 +182,7 @@ func TestExtractNamespaceNesting(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierUserProject,
 	)
 	ms := out[""]
@@ -218,7 +218,7 @@ func TestExtractDestructuredVarDecl(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	ms := out[""]
@@ -272,7 +272,7 @@ func TestExtractClassRecordsStaticMembers(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	ms := out[""]
@@ -320,7 +320,7 @@ func TestExtractClassResolvesStaticViaTypeRef(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	ms := out[""]
@@ -348,7 +348,7 @@ func TestExtractMissingNamespaceEntryProducesNilType(t *testing.T) {
 	out := Extract(
 		[]ast.Decl{declareGlobal},
 		globalNs, nil,
-		"test.esc",
+		NewOriginSite("test.esc", nil),
 		OverrideTierBuiltin,
 	)
 	ms := out[""]

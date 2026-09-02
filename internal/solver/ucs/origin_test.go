@@ -9,7 +9,7 @@ import (
 )
 
 func TestAtRecordsTheSurfaceNode(t *testing.T) {
-	node := arm(span(3, 5, 20))
+	node := arm(span(85, 100))
 	origin := At(OriginIfVal, node)
 
 	require.Equal(t, OriginIfVal, origin.Kind)
@@ -46,11 +46,11 @@ func TestAtWithoutANodeIsSynthetic(t *testing.T) {
 }
 
 func TestSourceSpanReadsTheSurfaceNode(t *testing.T) {
-	node := arm(span(4, 3, 21))
+	node := arm(span(123, 141))
 	found, ok := At(OriginMatchArm, node).SourceSpan()
 
 	require.True(t, ok)
-	require.Equal(t, span(4, 3, 21), found)
+	require.Equal(t, span(123, 141), found)
 }
 
 // TestSpanOfToleratesATypedNil keeps the printer and any diagnostic reader total. A
@@ -87,7 +87,7 @@ func TestOriginKindString(t *testing.T) {
 // Term, the accessor diagnostics read. Each IR node type is checked the same way as
 // it is added.
 func TestScrutineeCarriesProvenance(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(2, 5, 18)))
+	origin := At(OriginMatchArm, arm(span(45, 58)))
 	var term Term = NewRoot(ident("p"), origin)
 
 	require.Equal(t, origin, term.Prov())
@@ -98,7 +98,7 @@ func TestScrutineeCarriesProvenance(t *testing.T) {
 // diagnostic about an invented node could only recover a position by threading the
 // enclosing origin down a walk. Following Cause recovers it from the node alone.
 func TestInventedFromKeepsAProvenanceChain(t *testing.T) {
-	decl := arm(span(3, 1, 40))
+	decl := arm(span(81, 120))
 	declOrigin := At(OriginValElse, decl)
 	tail := InventedFrom(OriginValElse, declOrigin)
 
@@ -114,19 +114,19 @@ func TestInventedFromKeepsAProvenanceChain(t *testing.T) {
 	// Following the chain reaches the declaration that produced it.
 	found, ok := tail.NearestSpan()
 	require.True(t, ok)
-	require.Equal(t, span(3, 1, 40), found)
+	require.Equal(t, span(81, 120), found)
 }
 
 // A chain several links long still resolves, which is what a tail minted while
 // lowering another minted node produces.
 func TestNearestSpanFollowsSeveralLinks(t *testing.T) {
-	outer := At(OriginMatchArm, arm(span(1, 1, 8)))
+	outer := At(OriginMatchArm, arm(span(1, 8)))
 	mid := InventedFrom(OriginGuard, outer)
 	inner := InventedFrom(OriginValElse, mid)
 
 	found, ok := inner.NearestSpan()
 	require.True(t, ok)
-	require.Equal(t, span(1, 1, 8), found)
+	require.Equal(t, span(1, 8), found)
 	require.Equal(t, OriginValElse, inner.Kind, "the chain carries a span, not the kind")
 }
 
@@ -146,9 +146,9 @@ func TestNearestSpanMissesWhenTheChainHasNoRealNode(t *testing.T) {
 // NearestSpan on a real origin is its own span, so a caller can read it uniformly
 // without first asking whether the origin is synthetic.
 func TestNearestSpanOnARealOrigin(t *testing.T) {
-	found, ok := At(OriginMatchArm, arm(span(2, 5, 18))).NearestSpan()
+	found, ok := At(OriginMatchArm, arm(span(45, 58))).NearestSpan()
 	require.True(t, ok)
-	require.Equal(t, span(2, 5, 18), found)
+	require.Equal(t, span(45, 58), found)
 }
 
 // Cause is exported, so a caller can assign a cycle by hand. Diagnostics must stay
@@ -174,25 +174,25 @@ func TestNearestSpanToleratesACauseCycle(t *testing.T) {
 // A long chain still resolves. Nothing bounds the walk by length, so a legitimate
 // chain does not lose its span for being deep — only a repeated link stops it.
 func TestNearestSpanFollowsALongChain(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(7, 2, 30)))
+	origin := At(OriginMatchArm, arm(span(242, 270)))
 	for range 200 {
 		origin = InventedFrom(OriginValElse, origin)
 	}
 
 	found, ok := origin.NearestSpan()
 	require.True(t, ok)
-	require.Equal(t, span(7, 2, 30), found)
+	require.Equal(t, span(242, 270), found)
 }
 
 // Two links sharing one *Origin are a diamond, not a cycle. A walk down a single
 // path visits each link once, so the seen set must not cut the chain short here.
 func TestNearestSpanToleratesASharedCause(t *testing.T) {
-	shared := At(OriginIfVal, arm(span(4, 1, 12)))
+	shared := At(OriginIfVal, arm(span(121, 132)))
 	left := InventedFrom(OriginValElse, shared)
 	right := InventedFrom(OriginGuard, shared)
 	right.Cause = left.Cause // both links now point at the same *Origin
 
 	found, ok := right.NearestSpan()
 	require.True(t, ok)
-	require.Equal(t, span(4, 1, 12), found)
+	require.Equal(t, span(121, 132), found)
 }

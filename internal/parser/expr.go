@@ -84,7 +84,7 @@ loop:
 			break loop
 		}
 
-		if token.Span.Start.Line != p.lexer.currentLocation.Line {
+		if !p.lexer.sameLine(token.Span.Start, p.lexer.currentLoc()) {
 			if len(p.exprMode) == 0 || p.exprMode.Peek() != MultiLineExpr {
 				return values.Pop()
 			}
@@ -128,7 +128,7 @@ loop:
 		// against it to avoid crashing during error recovery.
 		var span ast.Span
 		if values.IsEmpty() {
-			span = ast.Span{Start: p.lexer.currentLocation, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			span = ast.Span{Start: p.lexer.currentLoc(), End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		} else {
 			span = values.Peek().Span()
 		}
@@ -287,7 +287,7 @@ loop:
 // describes for the initializer of a `val`.
 func (p *Parser) keywordNamesAProperty(dotToken, propToken *Token) bool {
 	return isKeyword(propToken.Type) &&
-		propToken.Span.Start.Line == dotToken.Span.Start.Line
+		p.lexer.sameLine(propToken.Span.Start, dotToken.Span.Start)
 }
 
 // objExprKey parses the name of an object member: a property in an object
@@ -638,7 +638,7 @@ func (p *Parser) fnExpr(start ast.Location, async bool, gen bool) ast.Expr {
 // per the design).
 func (p *Parser) selfReceiver() *ast.MethodReceiver {
 	saved := p.lexer.saveState()
-	start := p.lexer.currentLocation
+	start := p.lexer.currentLoc()
 
 	mut := false
 	if p.lexer.peek().Type == Mut {
@@ -654,7 +654,7 @@ func (p *Parser) selfReceiver() *ast.MethodReceiver {
 
 	if next := p.lexer.peek(); next.Type == Identifier && next.Value == "self" {
 		p.lexer.consume() // consume 'self'
-		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		return &ast.MethodReceiver{Mut: mut, Lifetime: lifetime, Span_: span}
 	}
 
@@ -917,7 +917,7 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 		select {
 		case <-p.ctx.Done():
 			// Return what we have so far when context is done
-			span := ast.Span{Start: token.Span.Start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+			span := ast.Span{Start: token.Span.Start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 			if tag != nil {
 				return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 			} else {
@@ -953,16 +953,16 @@ func (p *Parser) templateLitExpr(token *Token, tag ast.Expr) ast.Expr {
 		}
 	}
 	if tag != nil {
-		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: tag.Span().Start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		return ast.NewTaggedTemplateLit(tag, quasis, exprs, span)
 	} else {
-		span := ast.NewSpan(token.Span.Start, p.lexer.currentLocation, p.lexer.source.ID)
+		span := ast.NewSpan(token.Span.Start, p.lexer.currentLoc(), p.lexer.source.ID)
 		return ast.NewTemplateLit(quasis, exprs, span)
 	}
 }
 
 func (p *Parser) ifElse() ast.Expr {
-	start := p.lexer.currentLocation
+	start := p.lexer.currentLoc()
 
 	p.lexer.consume() // consume 'if'
 
@@ -1150,7 +1150,7 @@ func (p *Parser) matchExpr() ast.Expr {
 
 // matchCase = pattern (('if' expr)?) '=>' (block | expr)
 func (p *Parser) matchCase() *ast.MatchCase {
-	start := p.lexer.currentLocation
+	start := p.lexer.currentLoc()
 
 	pattern := p.pattern(false, true)
 	if pattern == nil {

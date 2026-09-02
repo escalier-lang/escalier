@@ -10,8 +10,8 @@ import (
 )
 
 var DEFAULT_SPAN = ast.Span{
-	Start:    ast.Location{Line: 1, Column: 1},
-	End:      ast.Location{Line: 1, Column: 1},
+	Start:    ast.Location{Offset: 0},
+	End:      ast.Location{Offset: 0},
 	SourceID: -1,
 }
 

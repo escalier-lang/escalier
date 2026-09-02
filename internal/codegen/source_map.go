@@ -99,6 +99,10 @@ func EncodeSegments(groups [][]*Segment) string {
 
 type SourceMapGenerator struct {
 	groups [][]*Segment
+	// sources is indexed by a Span's SourceID. A generated node's source span
+	// carries a byte offset, and the source map format wants a line and a
+	// column, so the source it came from has to be on hand to convert.
+	sources []*ast.Source
 }
 
 func (s *SourceMapGenerator) TraverseModule(module *Module) {
@@ -171,17 +175,25 @@ func (s *SourceMapGenerator) AddSegmentForNode(generated Node) {
 	}
 
 	sourceSpan := source.Span()
-	if sourceSpan.Start.Line == 0 && sourceSpan.Start.Column == 0 {
-		// this is a special case where the source is nil
-		// so we don't need to add a segment
+	// A span the checker or a converter synthesized carries no offsets, so it
+	// covers no source text and there is nothing to map back to.
+	if sourceSpan.End.Offset <= sourceSpan.Start.Offset {
 		return
 	}
+	if sourceSpan.SourceID < 0 || sourceSpan.SourceID >= len(s.sources) {
+		return
+	}
+
+	// The source map format numbers lines and columns from 0, and counts a
+	// column in UTF-16 code units the way a JavaScript engine does.
+	lineMap := s.sources[sourceSpan.SourceID].LineMap()
+	sourceLine, sourceColumn := lineMap.Position(sourceSpan.Start.Offset, ast.UTF16Columns)
 
 	segment := &Segment{
 		GeneratedStartColumn: generated.Span().Start.Column - 1,
 		SourceIndex:          sourceSpan.SourceID,
-		SourceStartLine:      sourceSpan.Start.Line - 1,
-		SourceStartColumn:    sourceSpan.Start.Column - 1,
+		SourceStartLine:      sourceLine - 1,
+		SourceStartColumn:    sourceColumn - 1,
 		NameIndex:            -1, // not used for now
 	}
 
@@ -360,7 +372,8 @@ func (s *SourceMapGenerator) TraverseExpr(expr Expr) {
 
 func GenerateSourceMap(srcs []*ast.Source, jsMod *Module, outName string) string {
 	s := &SourceMapGenerator{
-		groups: [][]*Segment{},
+		groups:  [][]*Segment{},
+		sources: srcs,
 	}
 
 	s.TraverseModule(jsMod)

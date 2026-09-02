@@ -4,12 +4,12 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// span builds a single-line span in source 0, so a test that asserts an arm
+// span builds a span in source 0, so a test that asserts an arm
 // back-reference has a stable, readable rendering.
-func span(line, start, end int) ast.Span {
+func span(start, end int) ast.Span {
 	return ast.NewSpan(
-		ast.Location{Line: line, Column: start},
-		ast.Location{Line: line, Column: end},
+		ast.Location{Offset: start},
+		ast.Location{Offset: end},
 		0,
 	)
 }

@@ -10,7 +10,7 @@ import (
 
 func TestNewRootIsARootScrutinee(t *testing.T) {
 	target := ident("p")
-	root := NewRoot(target, At(OriginMatchArm, arm(span(1, 1, 8))))
+	root := NewRoot(target, At(OriginMatchArm, arm(span(1, 8))))
 
 	require.True(t, root.IsRoot())
 	require.Nil(t, root.Parent)
@@ -22,7 +22,7 @@ func TestNewRootIsARootScrutinee(t *testing.T) {
 // projections hold the same parent pointer, so a consumer evaluates the parent once
 // and reads both projections off it.
 func TestProjectSharesItsParent(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	root := NewRoot(ident("p"), origin)
 	x := root.Project(FieldStep{Name: "x"}, origin)
 	y := root.Project(FieldStep{Name: "y"}, origin)
@@ -90,7 +90,7 @@ func TestStepEqual(t *testing.T) {
 }
 
 func TestScrutineePaths(t *testing.T) {
-	origin := At(OriginMatchArm, arm(span(1, 1, 8)))
+	origin := At(OriginMatchArm, arm(span(1, 8)))
 	root := func(name string) *Scrutinee { return NewRoot(ident(name), origin) }
 
 	tests := []struct {

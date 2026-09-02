@@ -603,7 +603,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 	// Parse class body
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start class body")
-		end := p.lexer.currentLocation
+		end := p.lexer.currentLoc()
 		span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 		decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, nil, export, declare, final, span)
 		return decl
@@ -613,7 +613,7 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 	body := parseDelimSeq(p, CloseBrace, Comma, p.parseClassElem)
 	p.expect(CloseBrace, AlwaysConsume)
 
-	end := p.lexer.currentLocation
+	end := p.lexer.currentLoc()
 	span := ast.Span{Start: start, End: end, SourceID: p.lexer.source.ID}
 	decl := ast.NewClassDecl(name, lifetimeParams, typeParams, extends, implements, body, export, declare, final, span)
 	return decl
@@ -664,13 +664,13 @@ func (p *Parser) parseConstructorElem(
 		// (`'a self`) is captured into receiver.Lifetime and reported by
 		// the checker (MutSelfHasLifetime); the parser stays silent so
 		// the user sees one diagnostic, not two.
-		selfStart := p.lexer.currentLocation
+		selfStart := p.lexer.currentLoc()
 		receiver = p.selfReceiver()
 		if receiver == nil {
 			// No `self` at all — error and continue parsing the rest of the
 			// param list as if `self` had been there.
 			p.reportError(
-				ast.Span{Start: selfStart, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID},
+				ast.Span{Start: selfStart, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID},
 				"constructors must declare `mut self` as their first parameter",
 			)
 		} else if !receiver.Mut {
@@ -755,7 +755,7 @@ func (p *Parser) parseConstructorElem(
 		body = &block
 	}
 
-	span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+	span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 	return &ast.ConstructorElem{
 		Fn:       ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
 		Receiver: receiver,
@@ -921,7 +921,7 @@ modifiers_done:
 			body = &block
 		}
 
-		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		return &ast.GetterElem{
 			Name:     name,
 			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, []*ast.Param{}, returnType, throwsType, false, body, span),
@@ -974,7 +974,7 @@ modifiers_done:
 			body = &block
 		}
 
-		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		return &ast.SetterElem{
 			Name:     name,
 			Fn:       ast.NewFuncExpr(lifetimeParams, typeParams, params, nil, throwsType, false, body, span),
@@ -1031,7 +1031,7 @@ modifiers_done:
 			body = &block
 		}
 
-		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		fn := ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span)
 		fn.Gen = isGen
 		return &ast.MethodElem{
@@ -1104,7 +1104,7 @@ modifiers_done:
 		}
 
 		// TODO: report an error if `isAsync` is true
-		span := ast.Span{Start: start, End: p.lexer.currentLocation, SourceID: p.lexer.source.ID}
+		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		return &ast.FieldElem{
 			Name:     name,
 			Type:     typeAnn,
@@ -1153,7 +1153,7 @@ func (p *Parser) varDecl(
 	if !declare {
 		if token.Type != Equal {
 			p.reportError(token.Span, "Expected equals sign")
-			onNewLine := token.Span.Start.Line != end.Line
+			onNewLine := !p.lexer.sameLine(token.Span.Start, end)
 			if p.isStatementInitiator(token.Type) || onNewLine {
 				zeroSpan := ast.Span{Start: token.Span.Start, End: token.Span.Start, SourceID: p.lexer.source.ID}
 				init = ast.NewError(zeroSpan)
@@ -1212,7 +1212,7 @@ func (p *Parser) fnDecl(start ast.Location, export bool, declare bool, async boo
 		p.reportError(token.Span, "Expected an opening paren")
 		if ident.Name == "" ||
 			p.isStatementInitiator(token.Type) ||
-			token.Span.Start.Line != ident.Span().Start.Line {
+			!p.lexer.sameLine(token.Span.Start, ident.Span().Start) {
 			// The declaration is incomplete (e.g. "export fn" or
 			// "export fn foo" while the user is still typing). Return a
 			// partial node to avoid consuming tokens from subsequent
@@ -1300,7 +1300,7 @@ func (p *Parser) typeDecl(start ast.Location, export bool, declare bool) ast.Dec
 	typeAnn := p.typeAnn()
 
 	if typeAnn == nil {
-		end := p.lexer.currentLocation
+		end := p.lexer.currentLoc()
 		span := ast.NewSpan(start, end, p.lexer.source.ID)
 		decl := ast.NewTypeDecl(ident, typeParams, nil, export, declare, span)
 		decl.LifetimeParams = lifetimeParams
@@ -1352,7 +1352,7 @@ func (p *Parser) interfaceDecl(start ast.Location, export bool, declare bool) as
 	token = p.lexer.peek()
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start interface body")
-		end := p.lexer.currentLocation
+		end := p.lexer.currentLoc()
 		span := ast.NewSpan(start, end, p.lexer.source.ID)
 		objType := ast.NewObjectTypeAnn(nil, span)
 		return ast.NewInterfaceDecl(ident, lifetimeParams, typeParams, extends, objType, export, declare, span)
@@ -1382,7 +1382,7 @@ func (p *Parser) enumElem() ast.EnumElem {
 		}
 		p.lexer.consume()
 		arg := ast.NewIdentifier(token.Value, token.Span)
-		spreadEnd := p.lexer.currentLocation
+		spreadEnd := p.lexer.currentLoc()
 		spreadSpan := ast.NewSpan(spreadStart, spreadEnd, p.lexer.source.ID)
 		return ast.NewEnumSpread(arg, spreadSpan)
 	}
@@ -1403,7 +1403,7 @@ func (p *Parser) enumElem() ast.EnumElem {
 			p.expect(CloseParen, AlwaysConsume)
 		}
 
-		variantEnd := p.lexer.currentLocation
+		variantEnd := p.lexer.currentLoc()
 		variantSpan := ast.NewSpan(variantStart, variantEnd, p.lexer.source.ID)
 		return ast.NewEnumVariant(variantName, params, variantSpan)
 	}
@@ -1435,7 +1435,7 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 	token = p.lexer.peek()
 	if token.Type != OpenBrace {
 		p.reportError(token.Span, "Expected '{' to start enum body")
-		end := p.lexer.currentLocation
+		end := p.lexer.currentLoc()
 		span := ast.NewSpan(start, end, p.lexer.source.ID)
 		return ast.NewEnumDecl(name, typeParams, nil, export, declare, span)
 	}
@@ -1447,7 +1447,7 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 	// Expect closing brace
 	p.expect(CloseBrace, AlwaysConsume)
 
-	end := p.lexer.currentLocation
+	end := p.lexer.currentLoc()
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewEnumDecl(name, typeParams, elems, export, declare, span)
 	return decl
