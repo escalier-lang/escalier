@@ -39,6 +39,33 @@ import "sort"
 // lineMap must cover the file the comments came from. Comments from another
 // file are returned unattached.
 func AttachComments(root Walkable, comments []*Comment, lineMap *LineMap) []*Comment {
+	return attachComments(root, comments, func(int) *LineMap { return lineMap })
+}
+
+// AttachModuleComments attaches the comments every file of m holds, and
+// returns the ones no node took, in source order.
+//
+// A Module is not a node, so it cannot stand in as a file's own owner the way
+// a Script does. A comment below the last declaration of a file therefore
+// comes back unattached. It is still reachable through Module.Comments, which
+// keeps every comment the parse read whether or not a node took it.
+func AttachModuleComments(m *Module) []*Comment {
+	var all []*Comment
+	for _, comments := range m.Comments {
+		all = append(all, comments...)
+	}
+	return attachComments(m, all, func(sourceID int) *LineMap {
+		if source, ok := m.Sources[sourceID]; ok {
+			return source.LineMap()
+		}
+		return nil
+	})
+}
+
+// attachComments is the shared body of the two entry points. lineMapFor
+// returns the map covering one source, or nil for a source the caller does not
+// hold, whose comments no node can take.
+func attachComments(root Walkable, comments []*Comment, lineMapFor func(int) *LineMap) []*Comment {
 	if len(comments) == 0 {
 		return nil
 	}
@@ -64,7 +91,7 @@ func AttachComments(root Walkable, comments []*Comment, lineMap *LineMap) []*Com
 	var unattached []*Comment
 	for _, comment := range sorted {
 		switch {
-		case nodes.place(comment, lineMap, slots):
+		case nodes.place(comment, lineMapFor(comment.span.SourceID), slots):
 		case container != nil && container.Span().SourceID == comment.span.SourceID:
 			slots.dangling[container] = append(slots.dangling[container], comment)
 		default:
@@ -138,6 +165,9 @@ func collectNodes(root Walkable) *nodeIndex {
 // down is one no node in the tree covers, which AttachComments then offers to
 // the file's own container.
 func (x *nodeIndex) place(comment *Comment, lineMap *LineMap, slots *attachment) bool {
+	if lineMap == nil {
+		return false
+	}
 	span := comment.span
 
 	if next := x.after(span.End.Offset, span.SourceID); next != nil {

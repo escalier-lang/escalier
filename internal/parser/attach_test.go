@@ -189,3 +189,50 @@ func TestAttachCommentsRejectsAnotherSource(t *testing.T) {
 	require.Len(t, unattached, 1)
 	require.Equal(t, "// elsewhere", unattached[0].Text)
 }
+
+// ParseLibFiles attaches as it parses, so a caller reading a module gets the
+// comments already placed on its declarations.
+func TestParseLibFilesAttachesComments(t *testing.T) {
+	t.Parallel()
+	module, _ := parseSource(t, "// about x\nval x = 1 // trailing\n")
+
+	decls := namespacesOf(module)[0].Decls
+	require.Len(t, decls, 1)
+	require.Len(t, decls[0].LeadingComments(), 1)
+	require.Equal(t, "// about x", decls[0].LeadingComments()[0].Text)
+	require.Len(t, decls[0].TrailingComments(), 1)
+	require.Equal(t, "// trailing", decls[0].TrailingComments()[0].Text)
+}
+
+// A module holds no node covering the whole file, so a comment below the last
+// declaration has no owner. Module.Comments still lists it, which is where a
+// caller that needs every comment looks.
+func TestAttachModuleCommentsLeavesTheLastLineUnattached(t *testing.T) {
+	t.Parallel()
+	module, source := parseSource(t, "val x = 1\n// after everything\n")
+
+	unattached := ast.AttachModuleComments(module)
+	require.Len(t, unattached, 1)
+	require.Equal(t, "// after everything", unattached[0].Text)
+	require.Len(t, module.Comments[source.ID], 1)
+}
+
+// Each file's comments land on that file's declarations. The pass reads a
+// comment's SourceID rather than assuming one file per module.
+func TestAttachModuleCommentsKeepsFilesApart(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	first := &ast.Source{ID: 0, Path: "lib/a.esc", Contents: "// about a\nval a = 1\n"}
+	second := &ast.Source{ID: 1, Path: "lib/b.esc", Contents: "// about b\nval b = 2\n"}
+	module, errors := ParseLibFiles(ctx, []*ast.Source{first, second})
+	require.Empty(t, errors)
+
+	decls := namespacesOf(module)[0].Decls
+	require.Len(t, decls, 2)
+	for _, decl := range decls {
+		leading := decl.LeadingComments()
+		require.Len(t, leading, 1)
+		require.Equal(t, decl.Span().SourceID, leading[0].Span().SourceID)
+	}
+}
