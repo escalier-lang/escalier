@@ -69,11 +69,7 @@ func (m *LineMap) Offset(line, column int, enc ColumnEncoding) int {
 	if line > len(m.lineStarts) {
 		return len(m.contents)
 	}
-	start := m.lineStarts[line-1]
-	end := len(m.contents)
-	if line < len(m.lineStarts) {
-		end = m.lineStarts[line]
-	}
+	start, end := m.lineBounds(line)
 	if column < 1 {
 		return start
 	}
@@ -114,15 +110,25 @@ func (m *LineMap) LineText(line int) string {
 	if line < 1 || line > len(m.lineStarts) {
 		return ""
 	}
-	start := m.lineStarts[line-1]
-	end := len(m.contents)
-	if line < len(m.lineStarts) {
-		end = m.lineStarts[line] - 1
-	}
-	if end > start && m.contents[end-1] == '\r' {
-		end--
-	}
+	start, end := m.lineBounds(line)
 	return m.contents[start:end]
+}
+
+// lineBounds returns the byte range of a 1-based line's text, excluding the
+// line break that ends it. A column is clamped to this range so a column past
+// the end of a line lands on that line rather than the start of the next.
+// The line must be within the file.
+func (m *LineMap) lineBounds(line int) (start, end int) {
+	start = m.lineStarts[line-1]
+	end = len(m.contents)
+	if line < len(m.lineStarts) {
+		// Drop the newline, and the carriage return of a CRLF pair with it.
+		end = m.lineStarts[line] - 1
+		if end > start && m.contents[end-1] == '\r' {
+			end--
+		}
+	}
+	return start, end
 }
 
 // LineCount returns the number of lines in the file. A file ending in a
