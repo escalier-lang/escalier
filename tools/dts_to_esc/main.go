@@ -197,7 +197,7 @@ func runGenerate(args []string, stderr io.Writer) error {
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
-	overlayDir := flags.String("overlay", "", "path to the overlay tree; defaults to the `overlay` directory beside <esc-dir>")
+	overlayDir := flags.String("overlay", "", "`path` to the overlay tree; defaults to the overlay directory beside <esc-dir>")
 	if err := flags.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			fmt.Fprintln(stderr, generateUsage)

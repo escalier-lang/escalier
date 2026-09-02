@@ -137,7 +137,8 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 //
 // Only the subtrees the partition table writes into are scanned, so
 // data/node/ and anything else beside them is untouched. A file whose
-// package is hand-authored is left alone.
+// package is hand-authored is left alone, whether or not the partition
+// table names that package.
 //
 // Returns the deleted paths, relative to outDir and slash-separated,
 // sorted.
@@ -156,10 +157,9 @@ func removeStalePackages(outDir string, written, handAuthored set.Set[string]) (
 				continue
 			}
 			rel := dir + "/" + entry.Name()
-			if pkg, ok := PackageForFile(rel); ok {
-				if written.Contains(pkg.URI) || handAuthored.Contains(pkg.URI) {
-					continue
-				}
+			uri := packageURIForFile(rel)
+			if written.Contains(uri) || handAuthored.Contains(uri) {
+				continue
 			}
 			if err := os.Remove(filepath.Join(outDir, filepath.FromSlash(rel))); err != nil {
 				return nil, fmt.Errorf("removing stale %s: %w", rel, err)
@@ -169,6 +169,22 @@ func removeStalePackages(outDir string, written, handAuthored set.Set[string]) (
 	}
 	sort.Strings(removed)
 	return removed, nil
+}
+
+// packageURIForFile returns the package URI a generated file belongs to,
+// so "std/typed_arrays.esc" gives "std:typed_arrays". Every entry in the
+// partition table pairs its URI with its file by that rule, which
+// TestPackageURIForFile_MatchesThePartitionTable holds the two to.
+//
+// removeStalePackages derives the URI rather than looking the file up in
+// the table, so a hand-authored package the table does not name is still
+// recognized and left where it is.
+func packageURIForFile(file string) string {
+	dir, base, found := strings.Cut(file, "/")
+	if !found {
+		return ""
+	}
+	return dir + ":" + strings.TrimSuffix(base, ".esc")
 }
 
 // generatedDirs returns the subdirectories of the output root that hold

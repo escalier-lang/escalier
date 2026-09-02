@@ -213,9 +213,12 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 // overlay, every file it emits parses with Escalier's own parser, and a
 // second run leaves the tree byte-identical.
 //
-// Byte-identical is what proves the run reads no file it wrote. A run
-// that consulted the tree would fold its own previous output back in and
-// drift on the second pass.
+// Between the two runs the test hand-edits one package file, adding a
+// declaration no input produces. The second run overwrites the edit,
+// which is what proves the run reads no file it wrote. Byte-identity
+// alone would not: a run that read the tree and merged into it would
+// also be stable, since its own output already holds everything it
+// would add.
 func TestGenerate_PinnedLibSet(t *testing.T) {
 	t.Parallel()
 
@@ -238,6 +241,11 @@ func TestGenerate_PinnedLibSet(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Written)
 
+	// editedFile is the package the hand-edit below goes into. Any
+	// generated file would do. std:array is named because the pinned lib
+	// set always routes to it.
+	const editedFile = "std/array.esc"
+
 	first := map[string]string{}
 	for _, uri := range res.Written {
 		pkg, ok := PackageForURI(uri)
@@ -256,10 +264,20 @@ func TestGenerate_PinnedLibSet(t *testing.T) {
 		require.Empty(t, parseErrs, "%s must parse back", pkg.File)
 	}
 
+	// Add a declaration no input produces, the way a hand-edit to a
+	// generated file would. A run that reads what the first one wrote
+	// carries the edit forward; one that reads nothing overwrites it.
+	// Byte-identity on its own does not tell the two apart, since a run
+	// that merges into its own output is stable too.
+	edited := filepath.Join(outDir, filepath.FromSlash(editedFile))
+	require.NoError(t, os.WriteFile(edited,
+		[]byte(first[editedFile]+"\nexport declare val __handEdited__\n"), 0o644))
+
 	second, err := Generate(opts)
 	require.NoError(t, err)
 	require.Equal(t, res.Written, second.Written)
 	require.Empty(t, second.Removed)
+	require.Contains(t, first, editedFile, "%s must have been written for the edit above to mean anything", editedFile)
 	for file, contents := range first {
 		again, err := os.ReadFile(filepath.Join(outDir, filepath.FromSlash(file)))
 		require.NoError(t, err)

@@ -43,7 +43,7 @@ the `std/`, `web/`, and `node/` subtrees.
 | Command                                          | Writes  | Use                                        |
 | ------------------------------------------------ | ------- | ------------------------------------------ |
 | `dts_to_esc <path-to-d.ts>`                      | stdout  | Convert one file, for trying things out.   |
-| `dts_to_esc generate [--cfg …] <lib-dir> <esc-dir>` | tree | Write the whole tree from its inputs.      |
+| `dts_to_esc generate [--cfg …] [--overlay …] <lib-dir> <esc-dir>` | tree | Write the whole tree from its inputs. |
 | `dts_to_esc check <lib-dir> <esc-dir>`           | nothing | Verify the committed tree.                 |
 | `dts_to_esc regenerate <lib-dir> <esc-dir>`      | tree    | Fold upstream additions into that tree.    |
 | `dts_to_esc bootstrap [--cfg …] <lib-dir> <out>` | tree    | Seed a tree from scratch.                  |
