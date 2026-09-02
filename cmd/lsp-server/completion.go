@@ -211,7 +211,6 @@ func shouldSuppressCompletions(script *ast.Script, module *ast.Module, sourceID 
 
 func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.CompletionParams) (any, error) {
 	uri := params.TextDocument.URI
-	loc := posToLoc(s.lineMapForURI(uri), params.Position)
 
 	// Wait for an in-flight validation to complete if the cached AST is
 	// stale (i.e. the document has been updated but validation hasn't
@@ -227,6 +226,7 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 	var fileScopes map[int]*checker.Scope
 	var script *ast.Script
 	var scope *checker.Scope
+	var checkedSrc *ast.Source
 	sourceID := s.sourceIDForURI(uri)
 	if co := s.checkOutput; co != nil {
 		module = co.Module
@@ -234,9 +234,20 @@ func (s *Server) textDocumentCompletion(context *glsp.Context, params *protocol.
 		fileScopes = co.FileScopes
 		script = co.Scripts[sourceID]
 		scope = co.ScriptScopes[sourceID]
+		checkedSrc = co.SourceByID(sourceID)
 	}
-	doc := s.documents[uri]
+	doc, opened := s.documents[uri]
 	s.mu.RUnlock()
+
+	// The cursor comes from the same snapshot as the AST, so the offset the
+	// position converts to indexes the text the AST was parsed from. Reading
+	// the document before the wait above would leave the two describing
+	// different revisions of the file.
+	lineMap := lineMapFor(checkedSrc)
+	if opened {
+		lineMap = ast.NewLineMap(doc.Text)
+	}
+	loc := posToLoc(lineMap, params.Position)
 
 	isModule := s.isModuleFile(uri)
 

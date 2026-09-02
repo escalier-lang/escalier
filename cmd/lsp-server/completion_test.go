@@ -1083,8 +1083,9 @@ declare val x: number`},
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
 
 	// Completions from file1 (which has the import)
-	loc := cursorAt(sources[0].Contents, 2, 1)
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	loc0 := cursorAt(sources[0].Contents, 2, 1)
+	loc1 := cursorAt(sources[1].Contents, 2, 1)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1095,7 +1096,7 @@ declare val x: number`},
 	assert.True(t, seen1["y"], "y from other file should be visible (cross-file)")
 
 	// Completions from file2 (which does NOT have the import)
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1140,10 +1141,11 @@ fn usePkg() -> number { 1 }`},
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
 
-	loc := cursorAt(sources[0].Contents, 2, 1)
+	loc0 := cursorAt(sources[0].Contents, 2, 1)
+	loc1 := cursorAt(sources[1].Contents, 2, 1)
 
 	// file1 completions: pkg namespace should be present
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1153,7 +1155,7 @@ fn usePkg() -> number { 1 }`},
 	assert.True(t, seen1["other"], "other from file2 should be visible (cross-file)")
 
 	// file2 completions: pkg namespace should NOT be present
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1200,10 +1202,11 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	}
 	module, moduleScope, fileScopes := parseModuleAndInfer(t, sources)
 
-	loc := cursorAt(sources[0].Contents, 1, 1)
+	loc0 := cursorAt(sources[0].Contents, 1, 1)
+	loc1 := cursorAt(sources[1].Contents, 1, 1)
 
 	// Completions from add.esc
-	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc)
+	items1 := testServer().completionsFromModuleScope(module, 0, fileScopes[0], moduleScope, loc0)
 	seen1 := map[string]bool{}
 	for _, item := range items1 {
 		seen1[item.Label] = true
@@ -1213,7 +1216,7 @@ func TestModuleNamespaceDeclsVisibleWithinSameNamespace(t *testing.T) {
 	assert.True(t, seen1["sub"], "sub from other file in same namespace should be visible")
 
 	// Completions from sub.esc
-	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc)
+	items2 := testServer().completionsFromModuleScope(module, 1, fileScopes[1], moduleScope, loc1)
 	seen2 := map[string]bool{}
 	for _, item := range items2 {
 		seen2[item.Label] = true
@@ -1379,7 +1382,8 @@ func TestWordAtCursorBasic(t *testing.T) {
 
 func TestWordAtCursorMiddleOfWord(t *testing.T) {
 	text := "val foo = bar"
-	// Cursor after "ba" in "bar" (col 13, 1-based → colIdx 12 → runes[10:12] = "ba").
+	// The cursor sits after "ba" in "bar", at 1-based column 13. That is byte
+	// offset 12, and the word behind it starts at offset 10.
 	result := wordAtCursor(text, cursorAt(text, 1, 13))
 	assert.Equal(t, "ba", result)
 }

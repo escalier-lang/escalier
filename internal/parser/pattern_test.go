@@ -235,7 +235,7 @@ func TestParseMutOnObjKeyValueErrorSpan(t *testing.T) {
 	for _, err := range p.errors {
 		// The error's span should cover the `mut` keyword rather than the key
 		// `x` that follows it.
-		assert.Equalf(t, "mut x", source.Contents[err.Span.Start.Offset:err.Span.End.Offset],
+		require.Equalf(t, "mut x", source.Contents[err.Span.Start.Offset:err.Span.End.Offset],
 			"error span should start at the `mut` keyword rather than the key (msg: %s)",
 			err.Message)
 	}

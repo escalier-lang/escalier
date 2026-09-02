@@ -212,3 +212,52 @@ func TestSpanString(t *testing.T) {
 	past := NewSpan(Location{Offset: 10}, Location{Offset: 500}, 0)
 	require.Equal(t, "10-500", SpanString(source, past))
 }
+
+// An offset inside a multi-byte character belongs to that character for the
+// encodings that count whole characters, so it reports the same column as the
+// character's first byte. A byte column counts bytes and keeps advancing.
+func TestLineMapPositionInsideAMultiByteCharacter(t *testing.T) {
+	t.Parallel()
+	// `é` occupies bytes 7 and 8, and byte 9 is the space after it.
+	contents := "val café = 2"
+	lineMap := NewLineMap(contents)
+
+	tests := []struct {
+		name   string
+		offset int
+		enc    ColumnEncoding
+		column int
+	}{
+		{"first byte of the character", 7, CodePointColumns, 8},
+		{"second byte of the character", 8, CodePointColumns, 8},
+		{"the byte after the character", 9, CodePointColumns, 9},
+		{"first byte of the character in UTF-16", 7, UTF16Columns, 8},
+		{"second byte of the character in UTF-16", 8, UTF16Columns, 8},
+		{"the byte after the character in UTF-16", 9, UTF16Columns, 9},
+		{"a byte column counts the byte", 8, ByteColumns, 9},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			line, column := lineMap.Position(tc.offset, tc.enc)
+			require.Equal(t, 1, line)
+			require.Equal(t, tc.column, column)
+		})
+	}
+}
+
+// A four-byte character has three interior bytes, all of which belong to it.
+func TestLineMapPositionInsideAFourByteCharacter(t *testing.T) {
+	t.Parallel()
+	// `𝄞` occupies bytes 4 through 7.
+	contents := "val 𝄞 = 3"
+	lineMap := NewLineMap(contents)
+
+	for _, offset := range []int{4, 5, 6, 7} {
+		line, column := lineMap.Position(offset, CodePointColumns)
+		require.Equal(t, 1, line)
+		require.Equalf(t, 5, column, "offset %d should report the character's own column", offset)
+	}
+	_, column := lineMap.Position(8, CodePointColumns)
+	require.Equal(t, 6, column, "the byte after the character starts the next column")
+}

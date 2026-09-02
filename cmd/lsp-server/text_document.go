@@ -56,25 +56,41 @@ func posToLoc(lineMap *ast.LineMap, pos protocol.Position) ast.Location {
 func (s *Server) lineMapForURI(uri protocol.DocumentUri) *ast.LineMap {
 	s.mu.RLock()
 	doc, opened := s.documents[uri]
-	co := s.checkOutput
 	s.mu.RUnlock()
 	if opened {
 		return ast.NewLineMap(doc.Text)
 	}
-	return lineMapForSourceID(co, s.sourceIDForURI(uri))
+	return s.checkedLineMap(s.sourceIDForURI(uri))
 }
 
-// lineMapForSourceID returns a map over the file a SourceID names, taken from
-// the sources the last check parsed. It returns a map over the empty string
-// when the output holds no source for that id.
-func lineMapForSourceID(co *compiler.CheckOutput, sourceID int) *ast.LineMap {
+// checkedLineMap returns a map over the file a SourceID names in the last
+// check's output. The lookup runs under the read lock, because validateBinScript
+// replaces an entry in that map while requests are being served. Building the
+// map happens after the lock is released, which is safe because Source.LineMap
+// builds it once however many goroutines ask at the same time.
+func (s *Server) checkedLineMap(sourceID int) *ast.LineMap {
+	s.mu.RLock()
+	src := checkedSource(s.checkOutput, sourceID)
+	s.mu.RUnlock()
+	return lineMapFor(src)
+}
+
+// checkedSource returns the file a SourceID names in a check output, or nil
+// when the output holds none for that id.
+func checkedSource(co *compiler.CheckOutput, sourceID int) *ast.Source {
 	if co == nil {
+		return nil
+	}
+	return co.SourceByID(sourceID)
+}
+
+// lineMapFor returns a map over a source, or over the empty string when the
+// source is unknown.
+func lineMapFor(src *ast.Source) *ast.LineMap {
+	if src == nil {
 		return ast.NewLineMap("")
 	}
-	if src := co.SourceByID(sourceID); src != nil {
-		return src.LineMap()
-	}
-	return ast.NewLineMap("")
+	return src.LineMap()
 }
 
 func (*Server) textDocumentDeclaration(context *glsp.Context, params *protocol.DeclarationParams) (any, error) {
@@ -120,7 +136,7 @@ func (s *Server) textDocumentDefinition(context *glsp.Context, params *protocol.
 		}
 		loc := protocol.Location{
 			URI:   declURI,
-			Range: spanToRange(lineMapForSourceID(co, span.SourceID), span),
+			Range: spanToRange(s.checkedLineMap(span.SourceID), span),
 		}
 
 		return loc, nil
@@ -520,7 +536,7 @@ func (server *Server) validateFull(
 	diagsBySourceID := make(map[int][]protocol.Diagnostic)
 	for _, err := range output.ParseErrors {
 		diagsBySourceID[err.Span.SourceID] = append(diagsBySourceID[err.Span.SourceID], protocol.Diagnostic{
-			Range:    spanToRange(lineMapForSourceID(&output, err.Span.SourceID), err.Span),
+			Range:    spanToRange(lineMapFor(checkedSource(&output, err.Span.SourceID)), err.Span),
 			Severity: &severity,
 			Source:   &source,
 			Message:  err.Message,
@@ -529,7 +545,7 @@ func (server *Server) validateFull(
 	for _, err := range output.TypeErrors {
 		span := err.Span()
 		diagsBySourceID[span.SourceID] = append(diagsBySourceID[span.SourceID], protocol.Diagnostic{
-			Range:    spanToRange(lineMapForSourceID(&output, span.SourceID), span),
+			Range:    spanToRange(lineMapFor(checkedSource(&output, span.SourceID)), span),
 			Severity: &severity,
 			Source:   &source,
 			Message:  err.Message(),

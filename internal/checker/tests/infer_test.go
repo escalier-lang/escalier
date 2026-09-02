@@ -2139,6 +2139,9 @@ func TestIssue371(t *testing.T) {
 	lineMap := source.LineMap()
 	for _, err := range inferErrors {
 		line := lineMap.Line(err.Span().Start.Offset)
+		assert.GreaterOrEqual(t, line, 2,
+			"Error %q should have a span inside the add function (line %d)",
+			err.Message(), line)
 		assert.LessOrEqual(t, line, 4,
 			"Error %q should not have a span in the subtract function (line %d)",
 			err.Message(), line)

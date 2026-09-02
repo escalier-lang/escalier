@@ -50,13 +50,29 @@ func NewLineMap(contents string) *LineMap {
 // before the start or past the end of the file is clamped to the nearest
 // position in it.
 //
-// An offset that lands inside a multi-byte character reports the column of
-// the character containing it. Only a caller that built the offset by hand
-// can produce one, since every offset the lexer records sits on a boundary.
+// An offset landing inside a multi-byte character reports the column of the
+// character containing it, for the encodings that count whole characters. A
+// byte column counts bytes, so it reports the offset itself. Only a caller
+// that built the offset by hand can land inside a character, since every
+// offset the lexer records sits on a boundary.
 func (m *LineMap) Position(offset int, enc ColumnEncoding) (line, column int) {
 	offset = m.clamp(offset)
+	if enc != ByteColumns {
+		offset = m.runeStart(offset)
+	}
 	line = m.lineAt(offset)
 	return line, 1 + countColumns(m.contents[m.lineStarts[line-1]:offset], enc)
+}
+
+// runeStart backs an offset up to the first byte of the character containing
+// it. An offset already on a boundary is returned unchanged. A UTF-8
+// continuation byte is the only thing that can sit inside a character, and a
+// newline is never one, so the line an offset falls on does not change.
+func (m *LineMap) runeStart(offset int) int {
+	for offset > 0 && offset < len(m.contents) && m.contents[offset]&0xC0 == 0x80 {
+		offset--
+	}
+	return offset
 }
 
 // Offset converts a 1-based line and column into a byte offset. A line or
