@@ -702,3 +702,85 @@ func TestApplyOverlay_ReportsWhichSideAMemberIsMissingFrom(t *testing.T) {
 		"overlay: std/array.replace.esc replaces static Array.at, which the "+
 			"converted declaration does not have")
 }
+
+// TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters
+// covers the header a member `add` or `replace` does not get to change.
+// The converted declaration keeps its own, so an overlay binding other
+// names would leave its members referring to nothing.
+func TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "replace binding another name",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<U> {\n" +
+					"    at(self, index: number) -> U,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes Array<U>, which the converted " +
+				"declaration binds as Array<T>; a member operation keeps the converted " +
+				"declaration's type parameters, so the overlay restates them as they are",
+		},
+		{
+			name: "add binding none at all",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike {\n" +
+					"    readonly first: unknown,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes ArrayLike, which the converted " +
+				"declaration binds as ArrayLike<T>; a member operation keeps the " +
+				"converted declaration's type parameters, so the overlay restates " +
+				"them as they are",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_RejectsAHeaderAMemberOperationWouldDrop covers what
+// an overlay writes around its members. The converted declaration keeps
+// its own header, so a clause the merge would not read is a report
+// rather than a silent omission.
+func TestApplyOverlay_RejectsAHeaderAMemberOperationWouldDrop(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "an extends clause on an interface",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike<T> " +
+					"extends Iterable<T> {\n    readonly first: T,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes an extends clause on ArrayLike, " +
+				"which a member operation does not read; the converted declaration " +
+				"keeps its own header, so drop it from the overlay",
+		},
+		{
+			name: "a decorator on a class",
+			overlay: map[string]string{
+				"std/array.replace.esc": "@js(\"Array\")\n" +
+					"export declare class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes a decorator on Array, which " +
+				"a member operation does not read; the converted declaration keeps " +
+				"its own header, so drop it from the overlay",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
