@@ -1,7 +1,5 @@
 package ast
 
-import "github.com/escalier-lang/escalier/internal/provenance"
-
 type ClassDecl struct {
 	declDoc
 	Name           *Ident
@@ -16,7 +14,7 @@ type ClassDecl struct {
 	override       bool
 	final          bool
 	span           Span
-	provenance     provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
@@ -64,7 +62,7 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*Ty
 		declare:        declare,
 		final:          final,
 		span:           span,
-		provenance:     nil,
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -96,14 +94,9 @@ func (d *ClassDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *ClassDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *ClassDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
-}
 
 type FieldElem struct {
+	declDoc
 	Name ObjKey
 	Type TypeAnn // required for class fields; optional for object-pattern shorthands
 	// Value is the field's initializer expression (`= expr`). Only valid
@@ -115,7 +108,6 @@ type FieldElem struct {
 	Private  bool // true if this field is private
 	Readonly bool // true if this field is readonly
 	Optional bool // true if this field is declared `name?: T`
-	doc      string
 	Span_    Span
 	commentSlots
 }
@@ -133,17 +125,15 @@ func (f *FieldElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(f)
 }
-func (f *FieldElem) Span() Span        { return f.Span_ }
-func (f *FieldElem) Doc() string       { return f.doc }
-func (f *FieldElem) SetDoc(doc string) { f.doc = doc }
+func (f *FieldElem) Span() Span { return f.Span_ }
 
 type MethodElem struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static method
 	Private  bool            // true if this is a private method
-	doc      string
 	Span_    Span
 	commentSlots
 }
@@ -158,18 +148,16 @@ func (m *MethodElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(m)
 }
-func (m *MethodElem) Span() Span        { return m.Span_ }
-func (m *MethodElem) Doc() string       { return m.doc }
-func (m *MethodElem) SetDoc(doc string) { m.doc = doc }
+func (m *MethodElem) Span() Span { return m.Span_ }
 
 // GetterElem represents a getter in a class.
 type GetterElem struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static getter
 	Private  bool            // true if this is a private getter
-	doc      string
 	Span_    Span
 	commentSlots
 }
@@ -184,9 +172,7 @@ func (g *GetterElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(g)
 }
-func (g *GetterElem) Span() Span        { return g.Span_ }
-func (g *GetterElem) Doc() string       { return g.doc }
-func (g *GetterElem) SetDoc(doc string) { g.doc = doc }
+func (g *GetterElem) Span() Span { return g.Span_ }
 
 // ConstructorElem represents an explicit `constructor(...) { ... }` block
 // inside a class body. The constructor's receiver is represented by
@@ -198,10 +184,10 @@ func (g *GetterElem) SetDoc(doc string) { g.doc = doc }
 // always `Self` and is not part of the AST; `Fn.Return` must remain nil.
 // `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
+	declDoc
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if absent. Carried for diagnostics — a non-nil Lifetime is rejected by validation.
 	Private  bool            // reserved for future "Private Constructors" work
-	doc      string
 	Span_    Span
 	commentSlots
 }
@@ -215,18 +201,16 @@ func (c *ConstructorElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(c)
 }
-func (c *ConstructorElem) Span() Span        { return c.Span_ }
-func (c *ConstructorElem) Doc() string       { return c.doc }
-func (c *ConstructorElem) SetDoc(doc string) { c.doc = doc }
+func (c *ConstructorElem) Span() Span { return c.Span_ }
 
 // SetterElem represents a setter in a class.
 type SetterElem struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncExpr
 	Receiver *MethodReceiver // nil if static / no receiver
 	Static   bool            // true if this is a static setter
 	Private  bool            // true if this is a private setter
-	doc      string
 	Span_    Span
 	commentSlots
 }
@@ -241,6 +225,4 @@ func (s *SetterElem) Accept(v Visitor) {
 	}
 	v.ExitClassElem(s)
 }
-func (s *SetterElem) Span() Span        { return s.Span_ }
-func (s *SetterElem) Doc() string       { return s.doc }
-func (s *SetterElem) SetDoc(doc string) { s.doc = doc }
+func (s *SetterElem) Span() Span { return s.Span_ }
