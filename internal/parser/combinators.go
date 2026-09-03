@@ -41,11 +41,13 @@ func (p *Parser) parseFuncParams() (params []*ast.Param, inexact bool) {
 		}
 		params = append(params, param)
 
-		if p.lexer.peek().Type != Comma {
+		// A comment after a parameter precedes either the comma or the closing
+		// paren, so it belongs to the list rather than to the next parameter.
+		if p.skipComments().Type != Comma {
 			return params, inexact
 		}
 		p.lexer.consume() // consume separator
-		if p.lexer.peek().Type == CloseParen {
+		if p.skipComments().Type == CloseParen {
 			return params, inexact // tolerated trailing comma
 		}
 	}
@@ -135,7 +137,11 @@ func parseDelimSeqHelper[T any](
 		}
 		items = append(items, item)
 
-		if p.lexer.peek().Type != separator {
+		// A comment after an item precedes either the separator or the
+		// terminator, so it belongs to the list rather than to the next item.
+		// Consuming it here is what lets `val {a, b /* m */} = o` reach the
+		// closing brace.
+		if p.skipComments().Type != separator {
 			return items, inexact
 		}
 		p.lexer.consume() // consume separator

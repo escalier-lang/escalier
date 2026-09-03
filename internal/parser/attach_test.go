@@ -339,3 +339,103 @@ func TestAttachCommentsAfterAFunctionParam(t *testing.T) {
 		})
 	}
 }
+
+// A comment inside an object literal, a parameter list, an object pattern, or
+// a type parameter list parses and reaches the tree. Each of these four
+// productions used to read the comment token where the next member belonged
+// and report a syntax error. See #1373.
+//
+// Two owners here are the enclosing construct rather than the member the
+// comment was written about. An object pattern's bindings and a type parameter
+// are not offered by ast.Visitor, so ast.AttachComments cannot index them and
+// has to fall back. #1371 covers the same gap for object type annotation
+// members.
+func TestAttachCommentsInDelimitedLists(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "inline in an object literal",
+			src:  "val o = {a: 1, /* m */ b: 2}\n",
+			want: []string{"leading *ast.PropertyExpr /* m */"},
+		},
+		{
+			name: "on its own line in an object literal",
+			src:  "val o = {\n    // about b\n    b: 2,\n}\n",
+			want: []string{"leading *ast.PropertyExpr // about b"},
+		},
+		{
+			name: "after the last member of an object literal",
+			src:  "val o = {\n    a: 1,\n    // last\n}\n",
+			want: []string{"dangling *ast.ObjectExpr // last"},
+		},
+		{
+			name: "inline in a parameter list",
+			src:  "fn g(a: number, /* m */ b: number) -> number {\n    return a\n}\n",
+			want: []string{"leading *ast.IdentPat /* m */"},
+		},
+		{
+			name: "on its own line in a parameter list",
+			src:  "fn g(\n    // about b\n    b: number\n) -> number {\n    return b\n}\n",
+			want: []string{"leading *ast.IdentPat // about b"},
+		},
+		{
+			// The bindings of an object pattern are not nodes the pass reaches,
+			// so the pattern itself takes the comment.
+			name: "inline in an object pattern",
+			src:  "val {a, /* m */ b} = o\n",
+			want: []string{"dangling *ast.ObjectPat /* m */"},
+		},
+		{
+			name: "on its own line in an object pattern",
+			src:  "val {\n    // about b\n    b,\n} = o\n",
+			want: []string{"dangling *ast.ObjectPat // about b"},
+		},
+		{
+			name: "after the last binding of an object pattern",
+			src:  "val {a, b /* m */} = o\n",
+			want: []string{"dangling *ast.ObjectPat /* m */"},
+		},
+		{
+			// A type parameter is not a node the pass reaches either, so the
+			// comment carries past the list to the first value parameter.
+			name: "inline in a type parameter list",
+			src:  "fn h<T, /* m */ U>(a: T) -> T {\n    return a\n}\n",
+			want: []string{"leading *ast.IdentPat /* m */"},
+		},
+		{
+			name: "on its own line in a type parameter list",
+			src:  "fn h<\n    // about T\n    T,\n>(a: T) -> T {\n    return a\n}\n",
+			want: []string{"leading *ast.IdentPat // about T"},
+		},
+		{
+			name: "after the last type parameter",
+			src:  "fn h<T /* m */>(a: T) -> T {\n    return a\n}\n",
+			want: []string{"leading *ast.IdentPat /* m */"},
+		},
+		{
+			name: "alone in an empty object literal",
+			src:  "val o = {/* m */}\n",
+			want: []string{"dangling *ast.ObjectExpr /* m */"},
+		},
+		{
+			name: "alone in an empty object pattern",
+			src:  "val {/* m */} = o\n",
+			want: []string{"dangling *ast.ObjectPat /* m */"},
+		},
+		{
+			name: "alone in an empty parameter list",
+			src:  "fn g(/* m */) -> number {\n    return 1\n}\n",
+			want: []string{"leading *ast.NumberTypeAnn /* m */"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, nilIfEmpty(attachments(t, tc.src)))
+		})
+	}
+}
