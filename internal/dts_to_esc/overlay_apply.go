@@ -201,7 +201,7 @@ func applyOverlayDecl(
 	switch hostDecl := host.(type) {
 	case *ast.ClassDecl:
 		if ovClass, ok := ovDecl.(*ast.ClassDecl); ok {
-			if err := checkMergeHeader(f, name, hostDecl.TypeParams, ovClass); err != nil {
+			if err := checkMergeDecl(f, name, hostDecl.TypeParams, ovClass); err != nil {
 				return err
 			}
 			body, err := mergeMembers(
@@ -217,7 +217,7 @@ func applyOverlayDecl(
 			if hostDecl.TypeAnn == nil || ovIface.TypeAnn == nil {
 				break
 			}
-			if err := checkMergeHeader(f, name, hostDecl.TypeParams, ovIface); err != nil {
+			if err := checkMergeDecl(f, name, hostDecl.TypeParams, ovIface); err != nil {
 				return err
 			}
 			elems, err := mergeMembers(
@@ -241,13 +241,14 @@ func applyOverlayDecl(
 	return nil
 }
 
-// checkMergeHeader holds an overlay's member operation to the converted
-// declaration's header, which the merge keeps whole. The type parameters
-// have to agree, since an overlay binding `<U>` would leave its members
-// referring to a name the generated declaration does not bind. The rest
-// of the header goes unread, so writing any of it fails rather than
-// being dropped in silence.
-func checkMergeHeader(f OverlayFile, name string, host []*ast.TypeParam, overlay ast.Decl) error {
+// checkMergeDecl holds an overlay's member operation to what a merge
+// reads: the members, and the type parameters they are read under. The
+// type parameters have to agree, since an overlay binding `<U>` would
+// leave its members referring to a name the generated declaration does
+// not bind. Everything else the overlay writes around its members goes
+// unread, so writing any of it fails rather than being dropped in
+// silence.
+func checkMergeDecl(f OverlayFile, name string, host []*ast.TypeParam, overlay ast.Decl) error {
 	if typeParamNames(host) != typeParamNames(overlayTypeParams(overlay)) {
 		return fmt.Errorf(
 			"overlay: %s writes %s%s, which the converted declaration binds as %s%s; "+
@@ -256,11 +257,11 @@ func checkMergeHeader(f OverlayFile, name string, host []*ast.TypeParam, overlay
 			f.Path, name, typeParamNames(overlayTypeParams(overlay)), name,
 			typeParamNames(host))
 	}
-	if part := unreadHeaderPart(overlay); part != "" {
+	if part := unreadDeclPart(overlay); part != "" {
 		return fmt.Errorf(
 			"overlay: %s writes %s on %s, which a member operation does not read; "+
-				"the converted declaration keeps its own header, so drop it from the "+
-				"overlay", f.Path, part, name)
+				"it contributes members alone, so drop it from the overlay",
+			f.Path, part, name)
 	}
 	return nil
 }
@@ -277,9 +278,12 @@ func overlayTypeParams(decl ast.Decl) []*ast.TypeParam {
 	return nil
 }
 
-// unreadHeaderPart names the first part of an overlay declaration's
-// header a member operation would drop, or "" when it writes none.
-func unreadHeaderPart(decl ast.Decl) string {
+// unreadDeclPart names the first thing an overlay declaration writes
+// around its members that a member operation would drop, or "" when it
+// writes none. A decorator, a `final` modifier, an `extends` or
+// `implements` clause, and a lifetime parameter all belong to the
+// converted declaration alone.
+func unreadDeclPart(decl ast.Decl) string {
 	switch d := decl.(type) {
 	case *ast.ClassDecl:
 		switch {
