@@ -242,16 +242,11 @@ func applyOverlayDecl(
 }
 
 // checkMergeHeader holds an overlay's member operation to the converted
-// declaration's header. A member `add` or `replace` substitutes members
-// and keeps everything around them, so the overlay writes the name and
-// the type parameters and nothing else.
-//
-// The type parameters have to agree, since the members the overlay
-// writes are read under the converted declaration's. An overlay binding
-// `<U>` would leave them referring to a name the generated declaration
-// does not bind, with nothing in the output to say so. The rest of the
-// header the overlay writes goes unread, so writing any of it fails
-// rather than being dropped in silence.
+// declaration's header, which the merge keeps whole. The type parameters
+// have to agree, since an overlay binding `<U>` would leave its members
+// referring to a name the generated declaration does not bind. The rest
+// of the header goes unread, so writing any of it fails rather than
+// being dropped in silence.
 func checkMergeHeader(f OverlayFile, name string, host []*ast.TypeParam, overlay ast.Decl) error {
 	if typeParamNames(host) != typeParamNames(overlayTypeParams(overlay)) {
 		return fmt.Errorf(
@@ -312,9 +307,8 @@ func unreadHeaderPart(decl ast.Decl) string {
 
 // typeParamNames renders a type parameter list by name alone, as `<T>`.
 // Constraints and defaults are the converted declaration's to state, so
-// they take no part in the comparison. The empty list renders as the
-// empty string, so a declaration with no parameters reads as its own
-// name.
+// they take no part in the comparison. An empty list renders as "", so a
+// declaration with no parameters reads as its own name.
 func typeParamNames(params []*ast.TypeParam) string {
 	if len(params) == 0 {
 		return ""
