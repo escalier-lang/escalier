@@ -1980,7 +1980,14 @@ how a contributor records a new entry or accepts a moved one.
 
 The digest is taken over the printed member with its doc comment left
 out, so the prose churn of a version bump moves nothing. A printer
-formatting change does invalidate every entry at once. The eventual answer is the comparison this section defers to
+formatting change does invalidate every entry at once.
+
+Taking it over the converted form rather than over any one input is
+what lets it widen on its own. It covers the `.d.ts` shape, the trio
+fusion, and every derived determination the generator has wired in, so
+a fact that starts shaping a declaration starts moving its digest with
+no change here. §6.8 keeps that true by applying each determination
+before the overlay. The eventual answer is the comparison this section defers to
 SimpleSub M7.5: infer both sides and ask the solver's `constrain`
 whether the overlay member is still compatible with the converted one.
 That is robust to formatting, and it is the one check §6.4 still wants
@@ -2273,6 +2280,22 @@ As of the pinned lib set the generated tree carries 394 `mut self`
 receivers, all of them from the name-tier classifier in
 [mutability.go](../../internal/dts_to_esc/mutability.go), and zero
 `throws` clauses, zero parameter `mut`, and zero `&` borrows.
+
+**Where the application runs.** Each determination is applied to the
+converted declarations before `ApplyOverlay` folds the overlay in. The
+digest §6.4 records for an overlay `replace` is taken over the printed
+converted member, so a determination applied at that point lands inside
+it. A `throws` set that widens or a parameter that becomes `mut` moves
+the digest, and the `replace` standing in for that member fails until a
+contributor re-records it.
+
+Applying a determination after the overlay would annotate the overlay's
+own member instead. The digest would have been taken from an
+un-annotated form, so the fact would reach no check for exactly the
+members an overlay forks. Receiver mutability already runs in the right
+place: `ConvertBuckets` decides it and `ApplyOverlay` follows, so a
+reclassified receiver already moves the digest of a member an overlay
+replaces.
 
 **Known fusion gaps.** A determination can only land on a fused
 class, since an `interface` member has no receiver to annotate.

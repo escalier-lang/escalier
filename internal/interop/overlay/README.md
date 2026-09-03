@@ -127,7 +127,10 @@ upstream, after checking the overlay still says what it should about the
 new upstream form.
 
 A digest covers the converted form, not the overlay's own text, so
-editing the overlay alone needs no re-record. Doc comments are left out
+editing the overlay alone needs no re-record. The converted form is
+what the generator makes of the `.d.ts` declaration, so the digest
+moves when the upstream type moves and when a derived fact the
+generator applies to that member moves. Doc comments are left out
 of the form, so the prose churn of a version bump moves no digest. Such
 an edit still reaches the output, since the converted member's comment
 carries onto the overlay member replacing it wherever that member wrote
