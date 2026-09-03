@@ -222,40 +222,34 @@ type ConstructorTypeAnn struct {
 	commentSlots
 }
 type MethodTypeAnn struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
-	doc      string
 	commentSlots
 }
 
-func (m *MethodTypeAnn) Span() Span        { return m.Name.Span() }
-func (m *MethodTypeAnn) Doc() string       { return m.doc }
-func (m *MethodTypeAnn) SetDoc(doc string) { m.doc = doc }
+func (m *MethodTypeAnn) Span() Span { return m.Name.Span() }
 
 type GetterTypeAnn struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
-	doc      string
 	commentSlots
 }
 
-func (g *GetterTypeAnn) Span() Span        { return g.Name.Span() }
-func (g *GetterTypeAnn) Doc() string       { return g.doc }
-func (g *GetterTypeAnn) SetDoc(doc string) { g.doc = doc }
+func (g *GetterTypeAnn) Span() Span { return g.Name.Span() }
 
 type SetterTypeAnn struct {
+	declDoc
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
-	doc      string
 	commentSlots
 }
 
-func (s *SetterTypeAnn) Span() Span        { return s.Name.Span() }
-func (s *SetterTypeAnn) Doc() string       { return s.doc }
-func (s *SetterTypeAnn) SetDoc(doc string) { s.doc = doc }
+func (s *SetterTypeAnn) Span() Span { return s.Name.Span() }
 
 type MappedModifier string
 
@@ -269,17 +263,15 @@ const (
 // name's span so callers get a per-member position instead of the
 // enclosing container's span.
 type PropertyTypeAnn struct {
+	declDoc
 	Name     ObjKey
 	Optional bool
 	Readonly bool
 	Value    TypeAnn
-	doc      string
 	commentSlots
 }
 
-func (p *PropertyTypeAnn) Span() Span        { return p.Name.Span() }
-func (p *PropertyTypeAnn) Doc() string       { return p.doc }
-func (p *PropertyTypeAnn) SetDoc(doc string) { p.doc = doc }
+func (p *PropertyTypeAnn) Span() Span { return p.Name.Span() }
 
 type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
@@ -303,8 +295,11 @@ type IndexParamTypeAnn struct {
 }
 
 type RestSpreadTypeAnn struct {
+	// A rest spread keeps a real doc field, where CallableTypeAnn,
+	// ConstructorTypeAnn, and MappedTypeAnn return a constant `""`. A
+	// hand-authored `interface F { /** doc */ ...Bar }` round-trips its JSDoc.
+	declDoc
 	Value        TypeAnn
-	doc          string
 	span         Span
 	inferredType Type
 	commentSlots
@@ -320,11 +315,6 @@ func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 	}
 	v.ExitTypeAnn(t)
 }
-
-// RestSpreadTypeAnn carries a real doc field: a hand-authored
-// `interface F { /** doc */ ...Bar }` should round-trip the JSDoc.
-func (t *RestSpreadTypeAnn) Doc() string       { return t.doc }
-func (t *RestSpreadTypeAnn) SetDoc(doc string) { t.doc = doc }
 
 type ObjectTypeAnn struct {
 	Elems        []ObjTypeAnnElem

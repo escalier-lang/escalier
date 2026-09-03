@@ -21,15 +21,25 @@ type Decl interface {
 	Node
 }
 
-// declDoc carries the leading JSDoc retained on a declaration. Every Decl
-// embeds it so the parser and the .d.ts converter can attach a doc without
-// each declaration kind repeating the field and its two accessors.
+// declDoc carries the leading JSDoc retained on a node. Every Decl embeds it,
+// as do the class elems and object-type-annotation elems that keep a doc.
+// Embedding lets the parser and the .d.ts converter attach a doc without each
+// kind repeating the field and its two accessors.
 type declDoc struct {
 	doc string
 }
 
 func (d *declDoc) Doc() string       { return d.doc }
 func (d *declDoc) SetDoc(doc string) { d.doc = doc }
+
+// declProvenance carries the provenance recorded on a declaration. Every Decl
+// embeds it so no declaration kind repeats the field and its two accessors.
+type declProvenance struct {
+	provenance provenance.Provenance
+}
+
+func (d *declProvenance) Provenance() provenance.Provenance     { return d.provenance }
+func (d *declProvenance) SetProvenance(p provenance.Provenance) { d.provenance = p }
 
 func (*VarDecl) isDecl()              {}
 func (*FuncDecl) isDecl()             {}
@@ -63,7 +73,7 @@ type VarDecl struct {
 	override     bool
 	span         Span
 	InferredType Type // optional, used to store the inferred pattern type
-	provenance   provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
@@ -77,16 +87,16 @@ func NewVarDecl(
 	span Span,
 ) *VarDecl {
 	return &VarDecl{
-		Kind:         kind,
-		Pattern:      pattern,
-		TypeAnn:      typeAnn,
-		Init:         init,
-		export:       export,
-		declare:      declare,
-		span:         span,
-		InferredType: nil,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Kind:           kind,
+		Pattern:        pattern,
+		TypeAnn:        typeAnn,
+		Init:           init,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		InferredType:   nil,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *VarDecl) Export() bool       { return d.export }
@@ -110,12 +120,6 @@ func (d *VarDecl) Accept(v Visitor) {
 		}
 	}
 	v.ExitDecl(d)
-}
-func (d *VarDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *VarDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
 }
 
 type Param struct {
@@ -145,7 +149,7 @@ type FuncDecl struct {
 	declare    bool
 	override   bool
 	span       Span
-	provenance provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
@@ -172,12 +176,12 @@ func NewFuncDecl(
 			Throws:         throwsType,
 			Async:          async,
 		},
-		Body:         body,
-		export:       export,
-		declare:      declare,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Body:           body,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *FuncDecl) Export() bool       { return d.export }
@@ -202,12 +206,6 @@ func (d *FuncDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *FuncDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *FuncDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
-}
 
 type TypeDecl struct {
 	declDoc
@@ -219,20 +217,20 @@ type TypeDecl struct {
 	declare        bool
 	override       bool
 	span           Span
-	provenance     provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
 func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, declare bool, span Span) *TypeDecl {
 	return &TypeDecl{
-		Name:         name,
-		TypeParams:   typeParams,
-		TypeAnn:      typeAnn,
-		export:       export,
-		declare:      declare,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Name:           name,
+		TypeParams:     typeParams,
+		TypeAnn:        typeAnn,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *TypeDecl) Export() bool       { return d.export }
@@ -250,12 +248,6 @@ func (d *TypeDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *TypeDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *TypeDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
-}
 
 type InterfaceDecl struct {
 	declDoc
@@ -268,7 +260,7 @@ type InterfaceDecl struct {
 	declare        bool
 	override       bool
 	span           Span
-	provenance     provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
@@ -282,7 +274,7 @@ func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams [
 		export:         export,
 		declare:        declare,
 		span:           span,
-		provenance:     nil,
+		declProvenance: declProvenance{provenance: nil},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -308,12 +300,6 @@ func (d *InterfaceDecl) Accept(v Visitor) {
 		d.TypeAnn.Accept(v)
 	}
 	v.ExitDecl(d)
-}
-func (d *InterfaceDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *InterfaceDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
 }
 
 // EnumVariant represents a single variant of an enum
@@ -378,20 +364,20 @@ type EnumDecl struct {
 	declare    bool
 	override   bool
 	span       Span
-	provenance provenance.Provenance
+	declProvenance
 	commentSlots
 }
 
 func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export, declare bool, span Span) *EnumDecl {
 	return &EnumDecl{
-		Name:         name,
-		TypeParams:   typeParams,
-		Elems:        elems,
-		export:       export,
-		declare:      declare,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Name:           name,
+		TypeParams:     typeParams,
+		Elems:          elems,
+		export:         export,
+		declare:        declare,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *EnumDecl) Export() bool       { return d.export }
@@ -417,33 +403,27 @@ func (d *EnumDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *EnumDecl) Provenance() provenance.Provenance {
-	return d.provenance
-}
-func (d *EnumDecl) SetProvenance(p provenance.Provenance) {
-	d.provenance = p
-}
 
 // ExportAssignmentStmt represents: export = identifier (TypeScript interop only)
 // This is used when converting TypeScript .d.ts files that use the CommonJS-style
 // export assignment pattern. Escalier's parser does not produce this node.
 type ExportAssignmentStmt struct {
 	declDoc
-	Name       *Ident
-	declare    bool
-	override   bool
-	span       Span
-	provenance provenance.Provenance
+	Name     *Ident
+	declare  bool
+	override bool
+	span     Span
+	declProvenance
 	commentSlots
 }
 
 func NewExportAssignmentStmt(name *Ident, declare bool, span Span) *ExportAssignmentStmt {
 	return &ExportAssignmentStmt{
-		Name:         name,
-		declare:      declare,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Name:           name,
+		declare:        declare,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (e *ExportAssignmentStmt) Export() bool       { return true } // Always exported
@@ -458,8 +438,6 @@ func (e *ExportAssignmentStmt) Accept(v Visitor) {
 	}
 	v.ExitDecl(e)
 }
-func (e *ExportAssignmentStmt) Provenance() provenance.Provenance     { return e.provenance }
-func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.provenance = p }
 
 // DeclareModuleDecl represents `declare module "<name>" { <decl>* }` written
 // in Escalier source (.esc files), optionally prefixed by `override`.
@@ -472,22 +450,22 @@ func (e *ExportAssignmentStmt) SetProvenance(p provenance.Provenance) { e.proven
 // exist solely for the Escalier override-file format.
 type DeclareModuleDecl struct {
 	declDoc
-	Name       *StrLit // module name as a string literal
-	Decls      []Decl
-	override   bool
-	span       Span
-	provenance provenance.Provenance
+	Name     *StrLit // module name as a string literal
+	Decls    []Decl
+	override bool
+	span     Span
+	declProvenance
 	commentSlots
 }
 
 func NewDeclareModuleDecl(name *StrLit, decls []Decl, override bool, span Span) *DeclareModuleDecl {
 	return &DeclareModuleDecl{
-		Name:         name,
-		Decls:        decls,
-		override:     override,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Name:           name,
+		Decls:          decls,
+		override:       override,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *DeclareModuleDecl) Export() bool       { return false }
@@ -504,28 +482,26 @@ func (d *DeclareModuleDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *DeclareModuleDecl) Provenance() provenance.Provenance     { return d.provenance }
-func (d *DeclareModuleDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
 
 // DeclareGlobalDecl represents `declare global { <decl>* }` written in
 // Escalier source (.esc files), optionally prefixed by `override`. See the
 // note on DeclareModuleDecl for how this differs from dts_parser.GlobalDecl.
 type DeclareGlobalDecl struct {
 	declDoc
-	Decls      []Decl
-	override   bool
-	span       Span
-	provenance provenance.Provenance
+	Decls    []Decl
+	override bool
+	span     Span
+	declProvenance
 	commentSlots
 }
 
 func NewDeclareGlobalDecl(decls []Decl, override bool, span Span) *DeclareGlobalDecl {
 	return &DeclareGlobalDecl{
-		Decls:        decls,
-		override:     override,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Decls:          decls,
+		override:       override,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *DeclareGlobalDecl) Export() bool       { return false }
@@ -542,8 +518,6 @@ func (d *DeclareGlobalDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *DeclareGlobalDecl) Provenance() provenance.Provenance     { return d.provenance }
-func (d *DeclareGlobalDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
 
 // NamespaceDecl represents `namespace Name { <decl>* }` inside a declare
 // block (e.g. inside `declare module "x" { ... }` or `declare global { ... }`).
@@ -552,24 +526,24 @@ func (d *DeclareGlobalDecl) SetProvenance(p provenance.Provenance) { d.provenanc
 // Declare() always returns true because namespaces are inherently ambient.
 type NamespaceDecl struct {
 	declDoc
-	Name       *Ident
-	Decls      []Decl
-	export     bool
-	override   bool
-	span       Span
-	provenance provenance.Provenance
+	Name     *Ident
+	Decls    []Decl
+	export   bool
+	override bool
+	span     Span
+	declProvenance
 	commentSlots
 }
 
 func NewNamespaceDecl(name *Ident, decls []Decl, export, override bool, span Span) *NamespaceDecl {
 	return &NamespaceDecl{
-		Name:         name,
-		Decls:        decls,
-		export:       export,
-		override:     override,
-		span:         span,
-		provenance:   nil,
-		commentSlots: commentSlots{},
+		Name:           name,
+		Decls:          decls,
+		export:         export,
+		override:       override,
+		span:           span,
+		declProvenance: declProvenance{provenance: nil},
+		commentSlots:   commentSlots{},
 	}
 }
 func (d *NamespaceDecl) Export() bool       { return d.export }
@@ -586,5 +560,3 @@ func (d *NamespaceDecl) Accept(v Visitor) {
 	}
 	v.ExitDecl(d)
 }
-func (d *NamespaceDecl) Provenance() provenance.Provenance     { return d.provenance }
-func (d *NamespaceDecl) SetProvenance(p provenance.Provenance) { d.provenance = p }
