@@ -226,3 +226,41 @@ func TestOverlayDigests_IgnoreADocCommentEdit(t *testing.T) {
 	_, err = applyOverlayIn(t, dir, overlayEditedDocLib, false)
 	require.NoError(t, err)
 }
+
+// TestOverlayDigests_KeepTheTwoSidesOfAClassApart covers a name that
+// reaches an instance member and a static one. The sidecar records which
+// side each entry stands in for, and a report of a missing entry marks
+// the static side rather than naming a member the class holds on the
+// other one.
+func TestOverlayDigests_KeepTheTwoSidesOfAClassApart(t *testing.T) {
+	t.Parallel()
+	overlay := map[string]string{
+		"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"    static isArray(arg: unknown) -> boolean,\n}\n",
+	}
+
+	dir := seedOverlay(t, overlay)
+	_, err := applyOverlayIn(t, dir, overlayLib, false)
+	require.EqualError(t, err,
+		"overlay: std/array.replace.esc replaces static Array.isArray, and "+
+			"std/array.replace.digests.json records no digest for it; run "+
+			"`dts_to_esc generate --update-digests` to record what the overlay "+
+			"stands in for")
+
+	dir = seedOverlay(t, overlay)
+	_, err = applyOverlayIn(t, dir, overlayLib, true)
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/array.replace.digests.json"), snaps.Inline(`[
+  {
+    "decl": "Array",
+    "member": "isArray",
+    "kind": "method",
+    "static": true,
+    "digest": "60de184c2c659aec"
+  }
+]
+`))
+
+	_, err = applyOverlayIn(t, dir, overlayLib, false)
+	require.NoError(t, err)
+}

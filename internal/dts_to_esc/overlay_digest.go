@@ -29,11 +29,13 @@ type digestKey struct {
 }
 
 // label names what a key addresses, in the form the overlay errors use.
+// A member goes through memberLabel, so a sidecar report marks the
+// static side the way every other report does.
 func (k digestKey) label() string {
 	if k.Member == "" {
 		return k.Decl
 	}
-	return k.Decl + "." + k.Member
+	return memberLabel(k.Decl, memberSlot{Name: k.Member, Static: k.Static, Kind: k.Kind})
 }
 
 // keyForSlot addresses the digest of the converted members one overlay
