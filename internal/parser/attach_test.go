@@ -295,3 +295,41 @@ func TestAttachCommentsKeepsANonDocBlockLeading(t *testing.T) {
 	require.Len(t, decls[0].LeadingComments(), 1)
 	require.Equal(t, "/* not a doc */", decls[0].LeadingComments()[0].Text)
 }
+
+// A comment written after a parameter attaches, but not to that parameter.
+// These cases pin what the pass does today so a fix announces itself.
+//
+// Two things put the comment on the wrong node. The pass reads nodes and line
+// breaks and never sees the comma, so a comment before one still leads the
+// parameter after it. And no traversal visits Param.TypeAnn, so a parameter's
+// type is not a node the pass can reach; the nearest node after a comment
+// following the last parameter is the return type. See #1381 and #1373.
+func TestAttachCommentsAfterAFunctionParam(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// Reads as a note about `a`. The comma is invisible to the pass, so
+			// the next node on the line, `b`, leads it instead.
+			name: "after a parameter and before the comma",
+			src:  "fn g(a: number /* m */, b: number) -> number {\n    return a\n}\n",
+			want: []string{"leading *ast.IdentPat /* m */"},
+		},
+		{
+			// Reads as a note about `b`. Its type is not a node, so the nearest
+			// node after the comment is the return type annotation.
+			name: "after the last parameter",
+			src:  "fn g(a: number, b: number /* m */) -> number {\n    return a\n}\n",
+			want: []string{"leading *ast.NumberTypeAnn /* m */"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, nilIfEmpty(attachments(t, tc.src)))
+		})
+	}
+}
