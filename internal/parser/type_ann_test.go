@@ -486,3 +486,78 @@ func TestMappedTypeMinusModifiers(t *testing.T) {
 		})
 	}
 }
+
+// Every member of an object type annotation carries the range it was written
+// from, running from its first modifier or name through its type. ast.AttachComments
+// reads that range to tell a comment written before a member from one after it,
+// and a diagnostic about the member's name still underlines the name alone.
+func TestObjTypeAnnElemSpans(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "two properties on one line",
+			src:  "type T = {a: number, b: string}",
+			want: []string{"a: number", "b: string"},
+		},
+		{
+			name: "modifiers and the optional marker",
+			src:  "type T = {readonly a?: number}",
+			want: []string{"readonly a?: number"},
+		},
+		{
+			// The union type parser consumes a comment on its way to the comma,
+			// so the member's end comes from the last code token rather than
+			// from where the lexer stopped.
+			name: "a comment after a property",
+			src:  "type T = {a: number /* m */, b: string}",
+			want: []string{"a: number", "b: string"},
+		},
+		{
+			name: "a method, an accessor pair, and a rest spread",
+			src:  "type T = {m(self) -> number, get a(self) -> number, set a(mut self, v: number), ...Other}",
+			want: []string{
+				"m(self) -> number",
+				"get a(self) -> number",
+				"set a(mut self, v: number)",
+				"...Other",
+			},
+		},
+		{
+			name: "a call signature and a construct signature",
+			src:  "type T = {fn (a: number) -> string, new (a: number) -> string}",
+			want: []string{"fn (a: number) -> string", "new (a: number) -> string"},
+		},
+		{
+			name: "a mapped member",
+			src:  "type T = {[K]: string for K in Keys}",
+			want: []string{"[K]: string for K in Keys"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: tc.src}
+			script, errors := NewParser(ctx, source).ParseScript()
+			require.Empty(t, errors)
+
+			require.Len(t, script.Stmts, 1)
+			decl, ok := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.TypeDecl)
+			require.True(t, ok)
+			obj, ok := decl.TypeAnn.(*ast.ObjectTypeAnn)
+			require.True(t, ok)
+
+			got := make([]string, 0, len(obj.Elems))
+			for _, elem := range obj.Elems {
+				span := elem.Span()
+				got = append(got, tc.src[span.Start.Offset:span.End.Offset])
+			}
+			require.Equal(t, tc.want, got)
+		})
+	}
+}

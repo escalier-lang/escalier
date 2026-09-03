@@ -186,6 +186,12 @@ func (t *NeverTypeAnn) Accept(v Visitor) {
 
 type ObjTypeAnnElem interface {
 	isObjTypeAnnElem()
+	Accept(v Visitor)
+	Span() Span
+	// SetSpan records the range the parser read the member from. A member a
+	// converter synthesizes from a `.d.ts` file has no Escalier source to point
+	// at and keeps the zero Span, which ast.AttachComments skips.
+	SetSpan(Span)
 	Commented
 	// Doc returns the leading JSDoc retained on the elem, verbatim
 	// with `/** ... */` delimiters, or "" if absent. Variants that
@@ -205,6 +211,18 @@ func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
 func (*MappedTypeAnn) isObjTypeAnnElem()      {}
 func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 
+// elemSpan carries the range of one object type annotation member, covering
+// the whole member from its first modifier or name through its type. Seven of
+// the eight ObjTypeAnnElem variants embed it, so the interface can require a
+// span without each variant repeating the field and its two accessors.
+// RestSpreadTypeAnn keeps its own span field, which it needs as a TypeAnn too.
+type elemSpan struct {
+	span Span
+}
+
+func (e *elemSpan) Span() Span        { return e.span }
+func (e *elemSpan) SetSpan(span Span) { e.span = span }
+
 // No-op Doc/SetDoc impls for the variants that don't carry a JSDoc.
 func (*CallableTypeAnn) Doc() string      { return "" }
 func (*CallableTypeAnn) SetDoc(string)    {}
@@ -215,10 +233,12 @@ func (*MappedTypeAnn) SetDoc(string)      {}
 
 type CallableTypeAnn struct {
 	Fn *FuncTypeAnn
+	elemSpan
 	commentSlots
 }
 type ConstructorTypeAnn struct {
 	Fn *FuncTypeAnn
+	elemSpan
 	commentSlots
 }
 type MethodTypeAnn struct {
@@ -226,30 +246,27 @@ type MethodTypeAnn struct {
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	elemSpan
 	commentSlots
 }
-
-func (m *MethodTypeAnn) Span() Span { return m.Name.Span() }
 
 type GetterTypeAnn struct {
 	declDoc
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	elemSpan
 	commentSlots
 }
-
-func (g *GetterTypeAnn) Span() Span { return g.Name.Span() }
 
 type SetterTypeAnn struct {
 	declDoc
 	Name     ObjKey
 	Fn       *FuncTypeAnn
 	Receiver *MethodReceiver // nil if no receiver
+	elemSpan
 	commentSlots
 }
-
-func (s *SetterTypeAnn) Span() Span { return s.Name.Span() }
 
 type MappedModifier string
 
@@ -258,20 +275,15 @@ const (
 	MMRemove MappedModifier = "remove"
 )
 
-// TODO: include a dedicated span covering the full property declaration
-// (including modifiers like `readonly`/`?`); for now Span() returns the
-// name's span so callers get a per-member position instead of the
-// enclosing container's span.
 type PropertyTypeAnn struct {
 	declDoc
 	Name     ObjKey
 	Optional bool
 	Readonly bool
 	Value    TypeAnn
+	elemSpan
 	commentSlots
 }
-
-func (p *PropertyTypeAnn) Span() Span { return p.Name.Span() }
 
 type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
@@ -287,6 +299,7 @@ type MappedTypeAnn struct {
 	// `[K: Keys]: Value` rather than in a trailing `for K in Keys`. The two spellings lower to the
 	// same type, so this only tells the printer which one to write back.
 	Shorthand bool
+	elemSpan
 	commentSlots
 }
 type IndexParamTypeAnn struct {
@@ -316,6 +329,11 @@ func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 	v.ExitTypeAnn(t)
 }
 
+// SetSpan records the member's range the way elemSpan does for the other seven
+// variants. RestSpreadTypeAnn is a TypeAnn as well as a member, so one span
+// field serves both roles and it embeds no elemSpan.
+func (t *RestSpreadTypeAnn) SetSpan(span Span) { t.span = span }
+
 type ObjectTypeAnn struct {
 	Elems        []ObjTypeAnnElem
 	Inexact      bool // trailing `...` marker: `{x: number, ...}` tolerates extra fields
@@ -329,40 +347,78 @@ func NewObjectTypeAnn(elems []ObjTypeAnnElem, span Span) *ObjectTypeAnn {
 }
 func (t *ObjectTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
+		// Each member offers itself to EnterObjTypeAnnElem and then walks its own
+		// types, leaving its name alone. An ObjKey is an IdentExpr, a StrLit, or a
+		// NumLit, so offering one to EnterExpr would report a value reference where
+		// the source wrote a property name, and a pass such as dep_graph's
+		// DependencyVisitor would record a dependency on it. ClassElem visits its
+		// names because a class member's name sits in a value position.
 		for _, elem := range t.Elems {
-			switch e := (elem).(type) {
-			case *CallableTypeAnn:
-				e.Fn.Accept(v)
-			case *ConstructorTypeAnn:
-				e.Fn.Accept(v)
-			case *MethodTypeAnn:
-				e.Fn.Accept(v)
-			case *GetterTypeAnn:
-				e.Fn.Accept(v)
-			case *SetterTypeAnn:
-				e.Fn.Accept(v)
-			case *PropertyTypeAnn:
-				if e.Value != nil {
-					e.Value.Accept(v)
-				}
-			case *MappedTypeAnn:
-				e.TypeParam.Constraint.Accept(v)
-				if e.Name != nil {
-					e.Name.Accept(v)
-				}
-				e.Value.Accept(v)
-				if e.Check != nil {
-					e.Check.Accept(v)
-				}
-				if e.Extends != nil {
-					e.Extends.Accept(v)
-				}
-			case *RestSpreadTypeAnn:
-				e.Value.Accept(v)
-			}
+			elem.Accept(v)
 		}
 	}
 	v.ExitTypeAnn(t)
+}
+
+func (c *CallableTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(c) {
+		c.Fn.Accept(v)
+	}
+	v.ExitObjTypeAnnElem(c)
+}
+
+func (c *ConstructorTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(c) {
+		c.Fn.Accept(v)
+	}
+	v.ExitObjTypeAnnElem(c)
+}
+
+func (m *MethodTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(m) {
+		m.Fn.Accept(v)
+	}
+	v.ExitObjTypeAnnElem(m)
+}
+
+func (g *GetterTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(g) {
+		g.Fn.Accept(v)
+	}
+	v.ExitObjTypeAnnElem(g)
+}
+
+func (s *SetterTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(s) {
+		s.Fn.Accept(v)
+	}
+	v.ExitObjTypeAnnElem(s)
+}
+
+func (p *PropertyTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(p) {
+		if p.Value != nil {
+			p.Value.Accept(v)
+		}
+	}
+	v.ExitObjTypeAnnElem(p)
+}
+
+func (t *MappedTypeAnn) Accept(v Visitor) {
+	if v.EnterObjTypeAnnElem(t) {
+		t.TypeParam.Constraint.Accept(v)
+		if t.Name != nil {
+			t.Name.Accept(v)
+		}
+		t.Value.Accept(v)
+		if t.Check != nil {
+			t.Check.Accept(v)
+		}
+		if t.Extends != nil {
+			t.Extends.Accept(v)
+		}
+	}
+	v.ExitObjTypeAnnElem(t)
 }
 
 type TupleTypeAnn struct {

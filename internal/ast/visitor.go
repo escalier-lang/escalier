@@ -10,6 +10,7 @@ type Visitor interface {
 	EnterTypeAnn(t TypeAnn) bool
 	EnterBlock(b Block) bool
 	EnterClassElem(e ClassElem) bool
+	EnterObjTypeAnnElem(e ObjTypeAnnElem) bool
 
 	ExitLit(l Lit)
 	ExitPat(p Pat)
@@ -20,6 +21,7 @@ type Visitor interface {
 	ExitTypeAnn(t TypeAnn)
 	ExitBlock(b Block)
 	ExitClassElem(e ClassElem)
+	ExitObjTypeAnnElem(e ObjTypeAnnElem)
 }
 
 type DefaultVisitor struct{}
@@ -34,12 +36,18 @@ func (v *DefaultVisitor) EnterTypeAnn(t TypeAnn) bool         { return true }
 func (v *DefaultVisitor) EnterBlock(b Block) bool             { return true }
 func (v *DefaultVisitor) EnterClassElem(e ClassElem) bool     { return true }
 
-func (v *DefaultVisitor) ExitLit(l Lit)                 {}
-func (v *DefaultVisitor) ExitPat(p Pat)                 {}
-func (v *DefaultVisitor) ExitExpr(e Expr)               {}
-func (v *DefaultVisitor) ExitObjExprElem(e ObjExprElem) {}
-func (v *DefaultVisitor) ExitStmt(s Stmt)               {}
-func (v *DefaultVisitor) ExitDecl(d Decl)               {}
-func (v *DefaultVisitor) ExitTypeAnn(t TypeAnn)         {}
-func (v *DefaultVisitor) ExitBlock(b Block)             {}
-func (v *DefaultVisitor) ExitClassElem(e ClassElem)     {}
+// EnterObjTypeAnnElem is offered a member of an object type annotation. A
+// RestSpreadTypeAnn member arrives through EnterTypeAnn instead, since it is a
+// TypeAnn as well as an ObjTypeAnnElem.
+func (v *DefaultVisitor) EnterObjTypeAnnElem(e ObjTypeAnnElem) bool { return true }
+
+func (v *DefaultVisitor) ExitLit(l Lit)                       {}
+func (v *DefaultVisitor) ExitPat(p Pat)                       {}
+func (v *DefaultVisitor) ExitExpr(e Expr)                     {}
+func (v *DefaultVisitor) ExitObjExprElem(e ObjExprElem)       {}
+func (v *DefaultVisitor) ExitStmt(s Stmt)                     {}
+func (v *DefaultVisitor) ExitDecl(d Decl)                     {}
+func (v *DefaultVisitor) ExitTypeAnn(t TypeAnn)               {}
+func (v *DefaultVisitor) ExitBlock(b Block)                   {}
+func (v *DefaultVisitor) ExitClassElem(e ClassElem)           {}
+func (v *DefaultVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {}

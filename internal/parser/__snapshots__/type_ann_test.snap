@@ -324,6 +324,9 @@
                 },
                 span: 4-5,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-5,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
@@ -337,6 +340,9 @@
                     span: 11-12,
                 },
                 span: 11-12,
+            },
+            elemSpan: ast.elemSpan{
+                span: 7-12,
             },
         },
         &ast.PropertyTypeAnn{
@@ -353,6 +359,9 @@
                 },
                 span: 19-20,
             },
+            elemSpan: ast.elemSpan{
+                span: 14-20,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.ComputedKey{
@@ -368,6 +377,9 @@
                     span: 28-29,
                 },
                 span: 28-29,
+            },
+            elemSpan: ast.elemSpan{
+                span: 22-29,
             },
         },
     },
@@ -414,6 +426,9 @@
                     span: 8-9,
                 },
                 span: 6-10,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-27,
             },
         },
     },
@@ -646,6 +661,9 @@
             Value: &ast.StringTypeAnn{
                 span: 4-10,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-10,
+            },
         },
         &ast.RestSpreadTypeAnn{
             Value: &ast.TypeRefTypeAnn{
@@ -691,6 +709,9 @@
             Value: &ast.StringTypeAnn{
                 span: 4-10,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-10,
+            },
         },
         &ast.RestSpreadTypeAnn{
             Value: &ast.TypeRefTypeAnn{
@@ -709,6 +730,9 @@
             },
             Value: &ast.NumberTypeAnn{
                 span: 21-27,
+            },
+            elemSpan: ast.elemSpan{
+                span: 18-27,
             },
         },
         &ast.RestSpreadTypeAnn{
@@ -844,6 +868,9 @@
                 Value: &ast.StringTypeAnn{
                     span: 10-16,
                 },
+                elemSpan: ast.elemSpan{
+                    span: 7-16,
+                },
             },
             &ast.PropertyTypeAnn{
                 Name: &ast.IdentExpr{
@@ -852,6 +879,9 @@
                 },
                 Value: &ast.NumberTypeAnn{
                     span: 21-27,
+                },
+                elemSpan: ast.elemSpan{
+                    span: 18-27,
                 },
             },
         },
@@ -921,6 +951,9 @@
                 span: 7-11,
             },
             Optional: &"add",
+            elemSpan: ast.elemSpan{
+                span: 1-28,
+            },
         },
     },
     span: 0-29,
@@ -982,6 +1015,9 @@
                 },
                 span: 18-22,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-39,
+            },
         },
     },
     span: 0-40,
@@ -1042,6 +1078,9 @@
             Extends: &ast.StringTypeAnn{
                 span: 38-44,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-44,
+            },
         },
     },
     span: 0-45,
@@ -1083,6 +1122,9 @@
                 span: 8-12,
             },
             Optional: &"remove",
+            elemSpan: ast.elemSpan{
+                span: 1-29,
+            },
         },
     },
     span: 0-30,
@@ -1124,6 +1166,9 @@
                 span: 8-12,
             },
             Optional: &"add",
+            elemSpan: ast.elemSpan{
+                span: 1-29,
+            },
         },
     },
     span: 0-30,
@@ -1158,6 +1203,9 @@
             Value: &ast.NumberTypeAnn{
                 span: 5-11,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-11,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
@@ -1167,6 +1215,9 @@
             Readonly: true,
             Value: &ast.StringTypeAnn{
                 span: 28-34,
+            },
+            elemSpan: ast.elemSpan{
+                span: 13-34,
             },
         },
     },
@@ -1209,6 +1260,9 @@
                 span: 16-20,
             },
             ReadOnly: &"add",
+            elemSpan: ast.elemSpan{
+                span: 1-37,
+            },
         },
     },
     span: 0-38,
@@ -1250,6 +1304,9 @@
                 span: 15-19,
             },
             ReadOnly: &"add",
+            elemSpan: ast.elemSpan{
+                span: 1-36,
+            },
         },
     },
     span: 0-37,
@@ -1291,6 +1348,9 @@
                 span: 16-20,
             },
             ReadOnly: &"remove",
+            elemSpan: ast.elemSpan{
+                span: 1-37,
+            },
         },
     },
     span: 0-38,
@@ -1359,6 +1419,9 @@
             },
             Value: &ast.ErrorTypeAnn{
                 span: 4-5,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-3,
             },
         },
     },
@@ -1735,6 +1798,9 @@
             Value: &ast.NumberTypeAnn{
                 span: 4-10,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-10,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
@@ -1743,6 +1809,9 @@
             },
             Value: &ast.NumberTypeAnn{
                 span: 15-21,
+            },
+            elemSpan: ast.elemSpan{
+                span: 12-21,
             },
         },
     },
@@ -1789,6 +1858,9 @@
                 },
                 Value: &ast.NumberTypeAnn{
                     span: 12-18,
+                },
+                elemSpan: ast.elemSpan{
+                    span: 9-18,
                 },
             },
         },
@@ -1883,6 +1955,9 @@
                 Value: &ast.NumberTypeAnn{
                     span: 9-15,
                 },
+                elemSpan: ast.elemSpan{
+                    span: 6-15,
+                },
             },
         },
         span: 5-16,
@@ -1919,6 +1994,9 @@
                 },
                 Value: &ast.NumberTypeAnn{
                     span: 8-14,
+                },
+                elemSpan: ast.elemSpan{
+                    span: 5-14,
                 },
             },
         },
@@ -1964,6 +2042,9 @@
                 },
                 Value: &ast.NumberTypeAnn{
                     span: 5-11,
+                },
+                elemSpan: ast.elemSpan{
+                    span: 2-11,
                 },
             },
         },
@@ -2028,6 +2109,9 @@
                 span: 30-36,
             },
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 1-36,
+            },
         },
     },
     span: 0-37,
@@ -2045,6 +2129,9 @@
             Value: &ast.NumberTypeAnn{
                 span: 5-11,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-11,
+            },
         },
         &ast.MappedTypeAnn{
             TypeParam: &ast.IndexParamTypeAnn{
@@ -2058,6 +2145,9 @@
             },
             Optional: &"add",
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 13-33,
+            },
         },
     },
     span: 0-34,
@@ -2079,6 +2169,9 @@
             },
             Optional: &"add",
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 1-21,
+            },
         },
     },
     span: 0-22,
@@ -2120,6 +2213,9 @@
                 span: 15-19,
             },
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 1-19,
+            },
         },
     },
     span: 0-20,
@@ -2162,6 +2258,9 @@
             },
             ReadOnly: &"add",
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 1-28,
+            },
         },
     },
     span: 0-29,
@@ -2211,6 +2310,9 @@
             },
             Optional: &"add",
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 1-21,
+            },
         },
         &ast.MappedTypeAnn{
             TypeParam: &ast.IndexParamTypeAnn{
@@ -2224,6 +2326,9 @@
             },
             Optional: &"add",
             Shorthand: true,
+            elemSpan: ast.elemSpan{
+                span: 23-44,
+            },
         },
     },
     span: 0-45,
@@ -2278,6 +2383,9 @@
             Value: &ast.NumberTypeAnn{
                 span: 19-25,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-25,
+            },
         },
     },
     span: 0-26,
@@ -2321,6 +2429,9 @@
             Value: &ast.NumberTypeAnn{
                 span: 18-24,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-24,
+            },
         },
     },
     span: 0-25,
@@ -2359,6 +2470,9 @@
             },
             Receiver: &ast.MethodReceiver{
                 Span_: 7-11,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-41,
             },
         },
     },
@@ -2437,6 +2551,9 @@
                 },
                 span: 1-24,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-24,
+            },
         },
     },
     span: 0-25,
@@ -2466,6 +2583,9 @@
                     },
                     span: 20-25,
                 },
+                span: 1-25,
+            },
+            elemSpan: ast.elemSpan{
                 span: 1-25,
             },
         },
@@ -2499,6 +2619,9 @@
                 },
                 span: 1-25,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-25,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
@@ -2511,6 +2634,9 @@
                     span: 35-40,
                 },
                 span: 35-40,
+            },
+            elemSpan: ast.elemSpan{
+                span: 27-40,
             },
         },
     },
@@ -2554,6 +2680,9 @@
                 },
                 span: 1-41,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-41,
+            },
         },
     },
     span: 0-42,
@@ -2579,6 +2708,9 @@
                 Return: &ast.ErrorTypeAnn{
                     span: 17-17,
                 },
+                span: 1-17,
+            },
+            elemSpan: ast.elemSpan{
                 span: 1-17,
             },
         },
@@ -2643,6 +2775,9 @@
                 },
                 span: 5-16,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-16,
+            },
         },
     },
     span: 0-17,
@@ -2673,6 +2808,9 @@
                     span: 17-23,
                 },
                 span: 2-23,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-23,
             },
         },
     },
@@ -2705,6 +2843,9 @@
             Receiver: &ast.MethodReceiver{
                 Mut: true,
                 Span_: 7-15,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-27,
             },
         },
     },
@@ -2740,6 +2881,9 @@
             Receiver: &ast.MethodReceiver{
                 Mut: true,
                 Span_: 3-11,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-33,
             },
         },
     },
@@ -2779,6 +2923,9 @@
                 Mut: true,
                 Span_: 7-15,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-40,
+            },
         },
     },
     span: 0-41,
@@ -2801,6 +2948,9 @@
             },
             Receiver: &ast.MethodReceiver{
                 Span_: 7-11,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-22,
             },
         },
     },
@@ -2831,6 +2981,9 @@
             },
             Receiver: &ast.MethodReceiver{
                 Span_: 7-11,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-40,
             },
         },
     },
@@ -2870,6 +3023,9 @@
             Receiver: &ast.MethodReceiver{
                 Mut: true,
                 Span_: 7-15,
+            },
+            elemSpan: ast.elemSpan{
+                span: 1-45,
             },
         },
     },

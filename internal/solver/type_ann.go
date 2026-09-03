@@ -282,10 +282,10 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 			if resolved == nil || !b.addElem(resolved) {
 				continue
 			}
-			// Every member that can displace another carries a span. ObjTypeAnnElem does
-			// not declare Span, since a callable signature and a mapped member have none,
-			// and neither of those reaches the builder.
-			if blame, hasSpan := elem.(spanned); hasSpan {
+			// The name is what the diagnostic underlines, since a redeclaration is
+			// about the key rather than the type written after it. Every member that
+			// can displace another declares one.
+			if blame := memberKey(elem); blame != nil {
 				c.report(&DuplicateObjectMemberError{Name: soltype.ObjElemName(resolved), Elem: blame})
 			}
 		}
@@ -379,7 +379,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		// first parameter, or from `unknown` when there is none, so the object still carries a
 		// member under the name the source wrote. This mirrors the class-member recovery.
 		if len(sig.Params) != 1 {
-			l.c.report(&SetterArityError{Name: name, Elem: elem, Count: len(sig.Params)})
+			l.c.report(&SetterArityError{Name: name, Elem: elem.Name, Count: len(sig.Params)})
 		}
 		var param soltype.Type = &soltype.UnknownType{}
 		if len(sig.Params) > 0 {
@@ -1323,4 +1323,24 @@ func (c *checker) annPrim(ta ast.TypeAnn, p soltype.Prim) soltype.Type {
 	t := &soltype.PrimType{Prim: p}
 	c.recordProv(t, ta, AnnotationType)
 	return t
+}
+
+// memberKey returns the key a named object type annotation member declares, or
+// nil for a member that declares none. A call signature, a construct signature,
+// a mapped member, and a rest spread are the four without one. A diagnostic
+// about a member's name underlines the key rather than the member's whole
+// range, which runs from its first modifier through the type written after it.
+func memberKey(elem ast.ObjTypeAnnElem) ast.ObjKey {
+	switch e := elem.(type) {
+	case *ast.PropertyTypeAnn:
+		return e.Name
+	case *ast.MethodTypeAnn:
+		return e.Name
+	case *ast.GetterTypeAnn:
+		return e.Name
+	case *ast.SetterTypeAnn:
+		return e.Name
+	default:
+		return nil
+	}
 }

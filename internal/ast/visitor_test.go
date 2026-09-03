@@ -2,6 +2,8 @@ package ast
 
 import (
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // Mock visitor that tracks method calls
@@ -68,6 +70,11 @@ func (v *mockVisitor) EnterClassElem(e ClassElem) bool {
 	return !v.skipNodes["ClassElem"]
 }
 
+func (v *mockVisitor) EnterObjTypeAnnElem(e ObjTypeAnnElem) bool {
+	v.enterCalls = append(v.enterCalls, "EnterObjTypeAnnElem")
+	return !v.skipNodes["ObjTypeAnnElem"]
+}
+
 func (v *mockVisitor) ExitLit(l Lit) {
 	v.exitCalls = append(v.exitCalls, "ExitLit")
 }
@@ -104,6 +111,10 @@ func (v *mockVisitor) ExitClassElem(e ClassElem) {
 	v.exitCalls = append(v.exitCalls, "ExitClassElem")
 }
 
+func (v *mockVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {
+	v.exitCalls = append(v.exitCalls, "ExitObjTypeAnnElem")
+}
+
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	visitor := &DefaultVisitor{}
 
@@ -132,6 +143,9 @@ func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}}) {
 		t.Error("EnterBlock should return true")
 	}
+	if !visitor.EnterObjTypeAnnElem(nil) {
+		t.Error("EnterObjTypeAnnElem should return true")
+	}
 }
 
 func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
@@ -152,6 +166,7 @@ func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
 	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
+	visitor.ExitObjTypeAnnElem(nil)
 }
 
 func TestErrorExpr_Accept(t *testing.T) {
@@ -301,6 +316,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.EnterDecl(nil)
 	visitor.EnterTypeAnn(nil)
 	visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
+	visitor.EnterObjTypeAnnElem(nil)
 
 	// Test Exit methods with nil
 	visitor.ExitLit(nil)
@@ -311,6 +327,7 @@ func TestVisitorWithNilArguments(t *testing.T) {
 	visitor.ExitDecl(nil)
 	visitor.ExitTypeAnn(nil)
 	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
+	visitor.ExitObjTypeAnnElem(nil)
 }
 
 // Benchmark basic visitor traversal
@@ -325,4 +342,55 @@ func BenchmarkDefaultVisitor_SimpleTraversal(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		binary.Accept(visitor)
 	}
+}
+
+// ObjectTypeAnn offers each member to EnterObjTypeAnnElem, then walks the
+// member's own types. A RestSpreadTypeAnn is a TypeAnn as well as a member, so
+// it arrives through EnterTypeAnn instead.
+func TestObjectTypeAnn_Accept_OffersEachMember(t *testing.T) {
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+	property := &PropertyTypeAnn{
+		Name:     NewIdent("a", span),
+		Optional: false,
+		Readonly: false,
+		Value:    NewNumberTypeAnn(span),
+	}
+	spread := NewRestSpreadTypeAnn(NewStringTypeAnn(span), span)
+	obj := NewObjectTypeAnn([]ObjTypeAnnElem{property, spread}, span)
+
+	visitor := newMockVisitor()
+	obj.Accept(visitor)
+
+	require.Equal(t, []string{
+		"EnterTypeAnn",        // the object type itself
+		"EnterObjTypeAnnElem", // the property
+		"EnterTypeAnn",        // the property's `number`
+		"EnterTypeAnn",        // the rest spread
+		"EnterTypeAnn",        // the rest spread's `string`
+	}, visitor.enterCalls)
+	require.Equal(t, []string{
+		"ExitTypeAnn",        // the property's `number`
+		"ExitObjTypeAnnElem", // the property
+		"ExitTypeAnn",        // the rest spread's `string`
+		"ExitTypeAnn",        // the rest spread
+		"ExitTypeAnn",        // the object type itself
+	}, visitor.exitCalls)
+}
+
+// A visitor that turns a member down keeps the walk out of the member's types.
+func TestObjectTypeAnn_Accept_SkipsMemberChildren(t *testing.T) {
+	span := Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+	property := &PropertyTypeAnn{
+		Name:     NewIdent("a", span),
+		Optional: false,
+		Readonly: false,
+		Value:    NewNumberTypeAnn(span),
+	}
+	obj := NewObjectTypeAnn([]ObjTypeAnnElem{property}, span)
+
+	visitor := newMockVisitor()
+	visitor.skipNodes["ObjTypeAnnElem"] = true
+	obj.Accept(visitor)
+
+	require.Equal(t, []string{"EnterTypeAnn", "EnterObjTypeAnnElem"}, visitor.enterCalls)
 }
