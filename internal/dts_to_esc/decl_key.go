@@ -31,11 +31,13 @@ type memberSlot struct {
 	Kind   memberKind
 }
 
-// nameSlot is the slot with its kind dropped, leaving the name and the
-// side of the class the member lives on. Two members sharing that much
-// collide in the output whatever their kinds, so `add` rejects the
-// second and `replace` pairs the two sides on it before comparing kind.
-func (s memberSlot) nameSlot() memberSlot {
+// nameAndSide is the slot with its kind dropped, leaving the name a
+// member is addressed with and which side of the class it lives on.
+// Two members sharing that much land on one name in the output whatever
+// their kinds, so `add` rejects the second and `replace` pairs the two
+// sides on it before comparing kind. A getter and a setter are the one
+// pair allowed to share it.
+func (s memberSlot) nameAndSide() memberSlot {
 	return memberSlot{Name: s.Name, Static: s.Static}
 }
 

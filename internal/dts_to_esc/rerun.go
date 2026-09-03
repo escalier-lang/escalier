@@ -616,16 +616,16 @@ func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, er
 		filled := set.NewSet[memberSlot]()
 		for _, elem := range host.Body {
 			if slot, ok := classElemSlot(elem); ok {
-				filled.Add(slot.nameSlot())
+				filled.Add(slot.nameAndSide())
 			}
 		}
 		var out []NewMember
 		for _, elem := range conv.Body {
 			slot, ok := classElemSlot(elem)
-			if !ok || filled.Contains(slot.nameSlot()) {
+			if !ok || filled.Contains(slot.nameAndSide()) {
 				continue
 			}
-			filled.Add(slot.nameSlot())
+			filled.Add(slot.nameAndSide())
 			text, err := printer.PrintClassElem(elem, opts)
 			if err != nil {
 				return nil, err
@@ -644,16 +644,16 @@ func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, er
 		filled := set.NewSet[memberSlot]()
 		for _, elem := range host.TypeAnn.Elems {
 			if slot, ok := objElemSlot(elem); ok {
-				filled.Add(slot.nameSlot())
+				filled.Add(slot.nameAndSide())
 			}
 		}
 		var out []NewMember
 		for _, elem := range conv.TypeAnn.Elems {
 			slot, ok := objElemSlot(elem)
-			if !ok || filled.Contains(slot.nameSlot()) {
+			if !ok || filled.Contains(slot.nameAndSide()) {
 				continue
 			}
-			filled.Add(slot.nameSlot())
+			filled.Add(slot.nameAndSide())
 			text, err := printer.PrintObjTypeAnnElem(elem, opts)
 			if err != nil {
 				return nil, err

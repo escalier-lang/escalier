@@ -307,18 +307,18 @@ func addMembers[E any](
 					"has; correct it with a replace overlay instead",
 				f.Path, owner, slot.Name)
 		}
-		if clash := unpairedKinds(hostKinds[slot.nameSlot()], slot.Kind); len(clash) > 0 {
+		if clash := unpairedKinds(hostKinds[slot.nameAndSide()], slot.Kind); len(clash) > 0 {
 			return nil, fmt.Errorf(
 				"overlay: %s adds %s.%s as a %s, which the converted declaration "+
 					"declares as %s; drop the member and add the new form to change "+
 					"its kind", f.Path, owner, slot.Name, slot.Kind, joinKinds(clash))
 		}
-		held := added[slot.nameSlot()]
+		held := added[slot.nameAndSide()]
 		if err := checkAddedKinds(f, owner, slot, held); err != nil {
 			return nil, err
 		}
 		if !containsKind(held, slot.Kind) {
-			added[slot.nameSlot()] = append(held, slot.Kind)
+			added[slot.nameAndSide()] = append(held, slot.Kind)
 		}
 		out = append(out, m)
 	}
@@ -493,7 +493,7 @@ func groupMembers[E any](
 			continue
 		}
 		if _, seen := groups[slot]; !seen {
-			kinds[slot.nameSlot()] = append(kinds[slot.nameSlot()], slot.Kind)
+			kinds[slot.nameAndSide()] = append(kinds[slot.nameAndSide()], slot.Kind)
 		}
 		groups[slot] = append(groups[slot], m)
 	}
@@ -512,7 +512,7 @@ func missingSlotError(
 	slot memberSlot,
 	hostKinds map[memberSlot][]memberKind,
 ) error {
-	held := hostKinds[slot.nameSlot()]
+	held := hostKinds[slot.nameAndSide()]
 	if len(held) == 0 {
 		return fmt.Errorf(
 			"overlay: %s replaces %s.%s, which the converted declaration does "+
