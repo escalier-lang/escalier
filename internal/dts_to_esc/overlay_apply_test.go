@@ -766,6 +766,16 @@ func TestApplyOverlay_RejectsAHeaderAMemberOperationWouldDrop(t *testing.T) {
 				"keeps its own header, so drop it from the overlay",
 		},
 		{
+			name: "a final modifier on a class",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare final class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes a final modifier on Array, " +
+				"which a member operation does not read; the converted declaration " +
+				"keeps its own header, so drop it from the overlay",
+		},
+		{
 			name: "a decorator on a class",
 			overlay: map[string]string{
 				"std/array.replace.esc": "@js(\"Array\")\n" +

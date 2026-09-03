@@ -290,6 +290,8 @@ func unreadHeaderPart(decl ast.Decl) string {
 		switch {
 		case len(d.Decorators) > 0:
 			return "a decorator"
+		case d.Final():
+			return "a final modifier"
 		case d.Extends != nil:
 			return "an extends clause"
 		case len(d.Implements) > 0:

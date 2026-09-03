@@ -117,8 +117,8 @@ since the members are read under them: writing `class Array<U>` where
 the generated file holds `class Array<T>` fails the run rather than
 emitting members that refer to a name nothing binds. The rest of the
 header goes unread, so an `extends` clause, an `implements` clause, a
-lifetime parameter, or a decorator on the overlay declaration fails
-rather than being dropped in silence. This holds for `add` as well as
+lifetime parameter, a `final` modifier, or a decorator on the overlay
+declaration fails rather than being dropped in silence. This holds for `add` as well as
 `replace`.
 
 A declaration the converter gets structurally wrong is replaced whole
