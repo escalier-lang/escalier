@@ -27,10 +27,11 @@ type IdentPat struct {
 	Default      Expr    // optional
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewIdentPat(name string, mutable bool, typeAnn TypeAnn, _default Expr, span Span) *IdentPat {
-	return &IdentPat{Name: name, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil}
+	return &IdentPat{Name: name, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *IdentPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -58,10 +59,11 @@ type ObjKeyValuePat struct {
 	Value        Pat
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewObjKeyValuePat(key *Ident, value Pat, span Span) *ObjKeyValuePat {
-	return &ObjKeyValuePat{Key: key, Value: value, span: span, inferredType: nil}
+	return &ObjKeyValuePat{Key: key, Value: value, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *ObjKeyValuePat) Accept(v Visitor) {
 	// TODO
@@ -74,10 +76,11 @@ type ObjShorthandPat struct {
 	TypeAnn TypeAnn // optional
 	Default Expr    // optional
 	span    Span
+	commentSlots
 }
 
 func NewObjShorthandPat(key *Ident, mutable bool, typeAnn TypeAnn, _default Expr, span Span) *ObjShorthandPat {
-	return &ObjShorthandPat{Key: key, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span}
+	return &ObjShorthandPat{Key: key, Mutable: mutable, TypeAnn: typeAnn, Default: _default, span: span, commentSlots: commentSlots{}}
 }
 func (p *ObjShorthandPat) Span() Span { return p.span }
 func (p *ObjShorthandPat) Accept(v Visitor) {
@@ -88,10 +91,11 @@ func (p *ObjShorthandPat) Accept(v Visitor) {
 type ObjRestPat struct {
 	Pattern Pat
 	span    Span
+	commentSlots
 }
 
 func NewObjRestPat(pattern Pat, span Span) *ObjRestPat {
-	return &ObjRestPat{Pattern: pattern, span: span}
+	return &ObjRestPat{Pattern: pattern, span: span, commentSlots: commentSlots{}}
 }
 func (p *ObjRestPat) Span() Span { return p.span }
 func (p *ObjRestPat) Accept(v Visitor) {
@@ -102,10 +106,11 @@ type ObjectPat struct {
 	Elems        []ObjPatElem
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewObjectPat(elems []ObjPatElem, span Span) *ObjectPat {
-	return &ObjectPat{Elems: elems, span: span, inferredType: nil}
+	return &ObjectPat{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *ObjectPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -132,10 +137,11 @@ type TuplePat struct {
 	Elems        []Pat
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewTuplePat(elems []Pat, span Span) *TuplePat {
-	return &TuplePat{Elems: elems, span: span, inferredType: nil}
+	return &TuplePat{Elems: elems, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *TuplePat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -151,10 +157,11 @@ type ExtractorPat struct {
 	Args         []Pat
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewExtractorPat(name QualIdent, args []Pat, span Span) *ExtractorPat {
-	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil}
+	return &ExtractorPat{Name: name, Args: args, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *ExtractorPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -170,10 +177,11 @@ type InstancePat struct {
 	Object       *ObjectPat
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewInstancePat(className QualIdent, object *ObjectPat, span Span) *InstancePat {
-	return &InstancePat{ClassName: className, Object: object, span: span, inferredType: nil}
+	return &InstancePat{ClassName: className, Object: object, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *InstancePat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -186,10 +194,11 @@ type RestPat struct {
 	Pattern      Pat
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewRestPat(pattern Pat, span Span) *RestPat {
-	return &RestPat{Pattern: pattern, span: span, inferredType: nil}
+	return &RestPat{Pattern: pattern, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *RestPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -202,10 +211,11 @@ type LitPat struct {
 	Lit          Lit
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewLitPat(lit Lit, span Span) *LitPat {
-	return &LitPat{Lit: lit, span: span, inferredType: nil}
+	return &LitPat{Lit: lit, span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *LitPat) Accept(v Visitor) {
 	if v.EnterPat(p) {
@@ -217,10 +227,11 @@ func (p *LitPat) Accept(v Visitor) {
 type WildcardPat struct {
 	span         Span
 	inferredType Type
+	commentSlots
 }
 
 func NewWildcardPat(span Span) *WildcardPat {
-	return &WildcardPat{span: span, inferredType: nil}
+	return &WildcardPat{span: span, inferredType: nil, commentSlots: commentSlots{}}
 }
 func (p *WildcardPat) Accept(v Visitor) {
 	v.EnterPat(p)

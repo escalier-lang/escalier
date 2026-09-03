@@ -13,6 +13,7 @@ type Decorator struct {
 	Name  *Ident
 	Args  []Expr
 	Span_ Span
+	commentSlots
 }
 
 func (d *Decorator) Span() Span { return d.Span_ }

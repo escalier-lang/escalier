@@ -109,6 +109,7 @@ func (p *Parser) ParseScript() (*ast.Script, []*Error) {
 
 	script := ast.NewScript(*stmts, span)
 	script.Comments = p.Comments()
+	ast.AttachComments(script, script.Comments, p.lexer.source.LineMap())
 	return script, p.errors
 }
 
@@ -271,6 +272,7 @@ func ParseLibFiles(ctx context.Context, sources []*ast.Source) (*ast.Module, []*
 
 	module := ast.NewModuleWithFiles(namespaces, files, sourcesMap)
 	module.Comments = comments
+	ast.AttachModuleComments(module)
 	return module, allErrors
 }
 

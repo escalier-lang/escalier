@@ -9,10 +9,11 @@ type Stmt interface {
 type ExprStmt struct {
 	Expr Expr
 	span Span
+	commentSlots
 }
 
 func NewExprStmt(expr Expr, span Span) *ExprStmt {
-	return &ExprStmt{Expr: expr, span: span}
+	return &ExprStmt{Expr: expr, span: span, commentSlots: commentSlots{}}
 }
 func (*ExprStmt) isStmt()      {}
 func (s *ExprStmt) Span() Span { return s.span }
@@ -26,10 +27,11 @@ func (s *ExprStmt) Accept(v Visitor) {
 type DeclStmt struct {
 	Decl Decl
 	span Span
+	commentSlots
 }
 
 func NewDeclStmt(decl Decl, span Span) *DeclStmt {
-	return &DeclStmt{Decl: decl, span: span}
+	return &DeclStmt{Decl: decl, span: span, commentSlots: commentSlots{}}
 }
 func (*DeclStmt) isStmt()      {}
 func (s *DeclStmt) Span() Span { return s.span }
@@ -43,10 +45,11 @@ func (s *DeclStmt) Accept(v Visitor) {
 type ReturnStmt struct {
 	Expr Expr // optional
 	span Span
+	commentSlots
 }
 
 func NewReturnStmt(expr Expr, span Span) *ReturnStmt {
-	return &ReturnStmt{Expr: expr, span: span}
+	return &ReturnStmt{Expr: expr, span: span, commentSlots: commentSlots{}}
 }
 func (*ReturnStmt) isStmt()      {}
 func (s *ReturnStmt) Span() Span { return s.span }
@@ -66,10 +69,11 @@ type ImportSpecifier struct {
 	Name  string // The name being imported (or "*" for namespace imports)
 	Alias string // The local name (optional for named imports, required for namespace imports)
 	span  Span
+	commentSlots
 }
 
 func NewImportSpecifier(name, alias string, span Span) *ImportSpecifier {
-	return &ImportSpecifier{Name: name, Alias: alias, span: span}
+	return &ImportSpecifier{Name: name, Alias: alias, span: span, commentSlots: commentSlots{}}
 }
 func (i *ImportSpecifier) Span() Span { return i.span }
 
@@ -78,6 +82,7 @@ type ImportStmt struct {
 	PackageName string   // module specifier without the `?flag` suffix, e.g. "lodash", "std:math"
 	Flags       []string // `?flag1&flag2` suffix parsed into a list, preserving order; nil if none
 	span        Span
+	commentSlots
 }
 
 // Bare reports whether this import has no binding clause (no specifiers and no
@@ -85,7 +90,7 @@ type ImportStmt struct {
 func (s *ImportStmt) Bare() bool { return len(s.Specifiers) == 0 }
 
 func NewImportStmt(specifiers []*ImportSpecifier, packageName string, flags []string, span Span) *ImportStmt {
-	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, Flags: flags, span: span}
+	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, Flags: flags, span: span, commentSlots: commentSlots{}}
 }
 func (*ImportStmt) isStmt()      {}
 func (s *ImportStmt) Span() Span { return s.span }
@@ -98,10 +103,11 @@ func (s *ImportStmt) Accept(v Visitor) {
 
 type ErrorStmt struct {
 	span Span
+	commentSlots
 }
 
 func NewErrorStmt(span Span) *ErrorStmt {
-	return &ErrorStmt{span: span}
+	return &ErrorStmt{span: span, commentSlots: commentSlots{}}
 }
 func (*ErrorStmt) isStmt()      {}
 func (s *ErrorStmt) Span() Span { return s.span }
@@ -116,15 +122,17 @@ type ForInStmt struct {
 	Body     Block // Loop body
 	IsAwait  bool  // true for `for await...in`
 	span     Span
+	commentSlots
 }
 
 func NewForInStmt(pattern Pat, iterable Expr, body Block, isAwait bool, span Span) *ForInStmt {
 	return &ForInStmt{
-		Pattern:  pattern,
-		Iterable: iterable,
-		Body:     body,
-		IsAwait:  isAwait,
-		span:     span,
+		Pattern:      pattern,
+		Iterable:     iterable,
+		Body:         body,
+		IsAwait:      isAwait,
+		span:         span,
+		commentSlots: commentSlots{},
 	}
 }
 

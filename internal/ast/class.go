@@ -17,12 +17,14 @@ type ClassDecl struct {
 	final          bool
 	span           Span
 	provenance     provenance.Provenance
+	commentSlots
 }
 
 type ClassElem interface {
 	IsClassElem()
 	Accept(v Visitor)
 	Span() Span
+	Commented
 	// Doc returns the leading JSDoc (`/** ... */`) retained on the elem,
 	// verbatim with delimiters, or "" if absent. Populated by both the
 	// dts_to_esc converter and the regular parser (#663).
@@ -44,6 +46,7 @@ type MethodReceiver struct {
 	Mut      bool
 	Lifetime LifetimeAnnNode // optional
 	Span_    Span
+	commentSlots
 }
 
 func (r *MethodReceiver) Span() Span { return r.Span_ }
@@ -62,6 +65,7 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*Ty
 		final:          final,
 		span:           span,
 		provenance:     nil,
+		commentSlots:   commentSlots{},
 	}
 }
 
@@ -113,6 +117,7 @@ type FieldElem struct {
 	Optional bool // true if this field is declared `name?: T`
 	doc      string
 	Span_    Span
+	commentSlots
 }
 
 func (*FieldElem) IsClassElem() {}
@@ -140,6 +145,7 @@ type MethodElem struct {
 	Private  bool            // true if this is a private method
 	doc      string
 	Span_    Span
+	commentSlots
 }
 
 func (*MethodElem) IsClassElem() {}
@@ -165,6 +171,7 @@ type GetterElem struct {
 	Private  bool            // true if this is a private getter
 	doc      string
 	Span_    Span
+	commentSlots
 }
 
 func (*GetterElem) IsClassElem() {}
@@ -196,6 +203,7 @@ type ConstructorElem struct {
 	Private  bool            // reserved for future "Private Constructors" work
 	doc      string
 	Span_    Span
+	commentSlots
 }
 
 func (*ConstructorElem) IsClassElem() {}
@@ -220,6 +228,7 @@ type SetterElem struct {
 	Private  bool            // true if this is a private setter
 	doc      string
 	Span_    Span
+	commentSlots
 }
 
 func (*SetterElem) IsClassElem() {}

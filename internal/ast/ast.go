@@ -8,6 +8,7 @@ import (
 type Node interface {
 	Span() Span
 	Accept(v Visitor)
+	Commented
 }
 
 type Type type_system.Type
@@ -34,10 +35,11 @@ type Documented interface {
 type Ident struct {
 	Name string
 	span Span
+	commentSlots
 }
 
 func NewIdentifier(name string, span Span) *Ident {
-	return &Ident{Name: name, span: span}
+	return &Ident{Name: name, span: span, commentSlots: commentSlots{}}
 }
 func (i *Ident) Accept(v Visitor) {
 	// TODO
@@ -67,6 +69,7 @@ func QualIdentToString(qi QualIdent) string {
 type Member struct {
 	Left  QualIdent
 	Right *Ident
+	commentSlots
 }
 
 func (m *Member) Span() Span {
@@ -153,12 +156,14 @@ type Script struct {
 	// start offset. See Module.Comments.
 	Comments []*Comment
 	span     Span
+	commentSlots
 }
 
 func NewScript(stmts []Stmt, span Span) *Script {
 	return &Script{
-		Stmts: stmts,
-		span:  span,
+		Stmts:        stmts,
+		span:         span,
+		commentSlots: commentSlots{},
 	}
 }
 

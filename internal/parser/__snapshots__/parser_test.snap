@@ -5155,6 +5155,66 @@
         span: 839-950,
     },
     span: 839-950,
+    commentSlots: ast.commentSlots{
+        leading: []*ast.Comment{
+            &ast.Comment{
+                Text: "// Demonstrates the override-file syntax landed in Phase 0a:",
+                span: 0-60,
+            },
+            &ast.Comment{
+                Text: "// `override declare module \"<name>\" { ... }` and",
+                span: 61-110,
+            },
+            &ast.Comment{
+                Text: "// `override declare global { ... }`. Each declaration inside the",
+                span: 111-176,
+            },
+            &ast.Comment{
+                Text: "// block carries its own `declare`; the implicit-`declare` shorthand",
+                span: 177-245,
+            },
+            &ast.Comment{
+                Text: "// is reserved for a later phase.",
+                span: 246-279,
+            },
+            &ast.Comment{
+                Text: "// Inside `override declare module / global { ... }`, the `override`",
+                span: 281-349,
+            },
+            &ast.Comment{
+                Text: "// keyword is implied on each contained declaration (mirrors",
+                span: 350-410,
+            },
+            &ast.Comment{
+                Text: "// TypeScript's `declare module \"x\" { ... }` augmentation behavior).",
+                span: 411-479,
+            },
+            &ast.Comment{
+                Text: "// `export` is still required inside `override declare module` for",
+                span: 480-546,
+            },
+            &ast.Comment{
+                Text: "// symbols that are part of the module's public surface; inside",
+                span: 547-610,
+            },
+            &ast.Comment{
+                Text: "// `override declare global`, declarations are ambient and `export`",
+                span: 611-678,
+            },
+            &ast.Comment{
+                Text: "// is neither required nor allowed.",
+                span: 679-714,
+            },
+            &ast.Comment{
+                Text: "// Partial override: only `setHours` is patched; every other method",
+                span: 716-783,
+            },
+            &ast.Comment{
+                Text: "// of Date passes through from lib.es5.d.ts unchanged.",
+                span: 784-838,
+            },
+        },
+    },
 }
 ---
 
@@ -5237,6 +5297,18 @@
         span: 1080-1205,
     },
     span: 1080-1205,
+    commentSlots: ast.commentSlots{
+        leading: []*ast.Comment{
+            &ast.Comment{
+                Text: "// Overload collapsing: original Array.prototype.slice has multiple",
+                span: 952-1019,
+            },
+            &ast.Comment{
+                Text: "// overloads. A single override entry replaces all of them.",
+                span: 1020-1079,
+            },
+        },
+    },
 }
 ---
 
@@ -5318,6 +5390,18 @@
         span: 1334-1471,
     },
     span: 1334-1471,
+    commentSlots: ast.commentSlots{
+        leading: []*ast.Comment{
+            &ast.Comment{
+                Text: "// Override-defined overloads: declaring the same method twice in the",
+                span: 1207-1276,
+            },
+            &ast.Comment{
+                Text: "// override forms an overload set in the effective type.",
+                span: 1277-1333,
+            },
+        },
+    },
 }
 ---
 
@@ -5371,6 +5455,46 @@
         span: 1881-1979,
     },
     span: 1881-1979,
+    commentSlots: ast.commentSlots{
+        leading: []*ast.Comment{
+            &ast.Comment{
+                Text: "// Module-level pragma + per-member exception. The `@all_pure` blanket",
+                span: 1473-1543,
+            },
+            &ast.Comment{
+                Text: "// pragma lands in a later phase; once it parses, the surrounding",
+                span: 1544-1609,
+            },
+            &ast.Comment{
+                Text: "// `declare` becomes implicit and `unsafePush` opts back into a",
+                span: 1610-1673,
+            },
+            &ast.Comment{
+                Text: "// mutating receiver. Today the override is per-member only.",
+                span: 1674-1734,
+            },
+            &ast.Comment{
+                Text: "//",
+                span: 1735-1737,
+            },
+            &ast.Comment{
+                Text: "//   override declare module \"fp-ts\" {",
+                span: 1738-1776,
+            },
+            &ast.Comment{
+                Text: "//       @all_pure",
+                span: 1777-1795,
+            },
+            &ast.Comment{
+                Text: "//       export fn unsafePush(arr: mut Array<number>, x: number) -> undefined",
+                span: 1796-1873,
+            },
+            &ast.Comment{
+                Text: "//   }",
+                span: 1874-1880,
+            },
+        },
+    },
 }
 ---
 
