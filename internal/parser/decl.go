@@ -124,7 +124,9 @@ func (p *Parser) maybeLifetimeAndTypeParams(allowVariance bool) ([]*ast.Lifetime
 			return lifetimeParams, typeParams
 		default:
 		}
-		token = p.lexer.peek()
+		// A comment between two binders, or before the closing `>`, is consumed
+		// here so it is not read where the next binder belongs.
+		token = p.skipComments()
 		if token.Type == GreaterThan {
 			break
 		}
@@ -137,7 +139,7 @@ func (p *Parser) maybeLifetimeAndTypeParams(allowVariance bool) ([]*ast.Lifetime
 			}
 			typeParams = append(typeParams, tp)
 		}
-		token = p.lexer.peek()
+		token = p.skipComments()
 		if token.Type == Comma {
 			p.lexer.consume()
 			continue

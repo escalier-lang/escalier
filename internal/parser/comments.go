@@ -107,3 +107,26 @@ func LexComments(source *ast.Source) []*ast.Comment {
 	lexer.Lex()
 	return lexer.comments.sorted()
 }
+
+// skipComments consumes the comment tokens ahead of the next non-comment
+// token and returns that token, without consuming it.
+//
+// A production that reads one member of a list calls this before it dispatches
+// on the token it finds. Without it the comment token itself is read where the
+// member belongs, and `{a: 1, /* m */ b: 2}` reports "Expected a property
+// name" on the comment. The comment stays in the parser's comment log either
+// way, and ast.AttachComments gives it an owner once the parse is done.
+func (p *Parser) skipComments() *Token {
+	for {
+		select {
+		case <-p.ctx.Done():
+			return p.lexer.peek()
+		default:
+		}
+		token := p.lexer.peek()
+		if token.Type != LineComment && token.Type != BlockComment {
+			return token
+		}
+		p.lexer.consume()
+	}
+}

@@ -234,6 +234,13 @@ func (p *Parser) literalPat() ast.Pat {
 }
 
 func (p *Parser) objPatElem() ast.ObjPatElem {
+	// A comment written between two bindings would otherwise be read where the
+	// next binding belongs. Only a closing brace after it means the comment was
+	// the last thing in the pattern.
+	if p.skipComments().Type == CloseBrace {
+		return nil
+	}
+
 	token := p.lexer.peek()
 
 	// Shorthand `mut` prefix: `{ mut x }`. Mutability lives on the

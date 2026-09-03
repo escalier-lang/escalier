@@ -702,6 +702,13 @@ func (p *Parser) arrayElem() ast.Expr {
 }
 
 func (p *Parser) objExprElem() ast.ObjExprElem {
+	// A comment written between two members would otherwise be read where the
+	// next member's name belongs. Only a closing brace after it means the
+	// comment was the last thing in the literal, so there is no member to parse.
+	if p.skipComments().Type == CloseBrace {
+		return nil
+	}
+
 	token := p.lexer.peek()
 
 	if token.Type == DotDotDot {
@@ -817,6 +824,13 @@ func (p *Parser) objExprElem() ast.ObjExprElem {
 // <pattern>?
 // <pattern>
 func (p *Parser) param() *ast.Param {
+	// A comment written between two parameters would otherwise be read where
+	// the next parameter's pattern belongs. Only a closing paren after it means
+	// the comment was the last thing in the list.
+	if p.skipComments().Type == CloseParen {
+		return nil
+	}
+
 	// `open` is a provisional, context-sensitive keyword: it marks a
 	// row-polymorphic parameter only when a parameter pattern follows (`open p`,
 	// `open mut p`, `open {x}`). Otherwise it is an ordinary identifier — a param
