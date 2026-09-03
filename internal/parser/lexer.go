@@ -13,6 +13,11 @@ type Lexer struct {
 	source        *ast.Source
 	currentOffset int
 	lastToken     *Token // Track last token for regex context
+	// lastCodeEnd is the end offset of the last non-comment token read. Several
+	// productions consume a trailing comment on their way to the next token, so
+	// currentOffset can sit past one. A span closed at lastCodeEnd stops at the
+	// code instead.
+	lastCodeEnd int
 	// comments records every comment token this lexer produces. Save points
 	// share one log so backtracking neither loses a comment nor records it
 	// twice; see commentLog.
@@ -24,6 +29,7 @@ func NewLexer(source *ast.Source) *Lexer {
 		source:        source,
 		currentOffset: 0,
 		lastToken:     nil,
+		lastCodeEnd:   0,
 		comments:      newCommentLog(),
 	}
 }
@@ -463,6 +469,9 @@ func (lexer *Lexer) next() *Token {
 
 	lexer.currentOffset = endOffset
 	lexer.lastToken = token // Track the last token for regex context
+	if token.Type != LineComment && token.Type != BlockComment {
+		lexer.lastCodeEnd = endOffset
+	}
 	lexer.comments.record(token)
 
 	return token
@@ -473,6 +482,7 @@ func (lexer *Lexer) saveState() *Lexer {
 		source:        lexer.source,
 		currentOffset: lexer.currentOffset,
 		lastToken:     lexer.lastToken,
+		lastCodeEnd:   lexer.lastCodeEnd,
 		comments:      lexer.comments,
 	}
 }
@@ -481,12 +491,20 @@ func (lexer *Lexer) restoreState(saved *Lexer) {
 	lexer.source = saved.source
 	lexer.currentOffset = saved.currentOffset
 	lexer.lastToken = saved.lastToken
+	lexer.lastCodeEnd = saved.lastCodeEnd
 }
 
 // currentLoc returns the position the lexer will read from next. The parser
 // uses it to close a span it opened at an earlier token.
 func (lexer *Lexer) currentLoc() ast.Location {
 	return ast.Location{Offset: lexer.currentOffset}
+}
+
+// lastCodeLoc returns the end of the last non-comment token the lexer read.
+// The parser closes a span with it where currentLoc would reach past a comment
+// written after the construct, as in `{a: number /* m */, b: string}`.
+func (lexer *Lexer) lastCodeLoc() ast.Location {
+	return ast.Location{Offset: lexer.lastCodeEnd}
 }
 
 // sameLine reports whether two positions fall on the same source line. The

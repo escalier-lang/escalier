@@ -66,6 +66,10 @@ func (c *attachmentLister) EnterTypeAnn(t ast.TypeAnn) bool         { c.record(t
 func (c *attachmentLister) EnterPat(p ast.Pat) bool                 { c.record(p); return true }
 func (c *attachmentLister) EnterClassElem(e ast.ClassElem) bool     { c.record(e); return true }
 func (c *attachmentLister) EnterObjExprElem(e ast.ObjExprElem) bool { c.record(e); return true }
+func (c *attachmentLister) EnterObjTypeAnnElem(e ast.ObjTypeAnnElem) bool {
+	c.record(e)
+	return true
+}
 
 func TestAttachComments(t *testing.T) {
 	t.Parallel()
@@ -430,6 +434,71 @@ func TestAttachCommentsInDelimitedLists(t *testing.T) {
 			name: "alone in an empty parameter list",
 			src:  "fn g(/* m */) -> number {\n    return 1\n}\n",
 			want: []string{"leading *ast.NumberTypeAnn /* m */"},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.want, nilIfEmpty(attachments(t, tc.src)))
+		})
+	}
+}
+
+// A member of an object type annotation owns the comments written beside it.
+// Before #1371 the pass could not reach a member at all, so a comment landed on
+// the member's own type annotation or on the enclosing ObjectTypeAnn.
+func TestAttachCommentsOnObjectTypeMembers(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "above a property",
+			src:  "type T = {\n    // about b\n    b: string,\n}\n",
+			want: []string{"leading *ast.PropertyTypeAnn // about b"},
+		},
+		{
+			name: "after a property on the same line",
+			src:  "type T = {\n    b: string, // note\n}\n",
+			want: []string{"trailing *ast.PropertyTypeAnn // note"},
+		},
+		{
+			// The member's span ends at its type, so the comment falls between
+			// two members and rule 1 gives it to the one it opens.
+			name: "between two properties",
+			src:  "type T = {a: number /* m */, b: string}\n",
+			want: []string{"leading *ast.PropertyTypeAnn /* m */"},
+		},
+		{
+			name: "above a method",
+			src:  "type T = {\n    // about the method\n    m(self) -> number,\n}\n",
+			want: []string{"leading *ast.MethodTypeAnn // about the method"},
+		},
+		{
+			name: "above a rest spread",
+			src:  "type T = {\n    // about the spread\n    ...Other,\n}\n",
+			want: []string{"leading *ast.RestSpreadTypeAnn // about the spread"},
+		},
+		{
+			// No member encloses it and none follows, so the object type takes it.
+			name: "alone in an empty object type",
+			src:  "type T = {\n    // dangling\n}\n",
+			want: []string{"dangling *ast.ObjectTypeAnn // dangling"},
+		},
+		{
+			name: "after the last member",
+			src:  "type T = {\n    b: string,\n    // last\n}\n",
+			want: []string{"dangling *ast.ObjectTypeAnn // last"},
+		},
+		{
+			// The member retains a JSDoc as its Doc, which a printer writes
+			// ahead of its leading comments, so the pass leaves the slot empty
+			// rather than writing the text twice.
+			name: "a JSDoc above a property stays the member's doc",
+			src:  "type T = {\n    /** doc */\n    b: string,\n}\n",
+			want: nil,
 		},
 	}
 	for _, tc := range tests {

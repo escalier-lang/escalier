@@ -531,6 +531,9 @@
                     Receiver: &ast.MethodReceiver{
                         Span_: 32-36,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 21-62,
+                    },
                 },
             },
             span: 19-64,
@@ -688,6 +691,9 @@
                             span: 26-28,
                         },
                         span: 29-34,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 23-34,
                     },
                 },
             },
@@ -1035,6 +1041,9 @@
                         },
                         Span_: 28-35,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 19-48,
+                    },
                 },
             },
             span: 17-50,
@@ -1103,6 +1112,9 @@
                             span: 36-38,
                         },
                         Span_: 32-43,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 20-74,
                     },
                 },
             },

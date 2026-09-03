@@ -2310,6 +2310,9 @@
                     Value: &ast.NumberTypeAnn{
                         span: 41-47,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 38-47,
+                    },
                 },
             },
             span: 31-53,
@@ -2353,6 +2356,9 @@
                     Value: &ast.NumberTypeAnn{
                         span: 46-52,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 43-52,
+                    },
                 },
             },
             span: 36-58,
@@ -2394,6 +2400,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 45-51,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 42-51,
                     },
                 },
             },
@@ -2450,6 +2459,9 @@
                         },
                         span: 51-52,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 44-52,
+                    },
                 },
             },
             span: 37-58,
@@ -2490,6 +2502,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 49-55,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 46-55,
                     },
                 },
             },
@@ -2544,6 +2559,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 58-64,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 55-64,
                     },
                 },
             },
@@ -2627,6 +2645,9 @@
                         },
                         span: 63-64,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 60-64,
+                    },
                 },
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -2639,6 +2660,9 @@
                             span: 74-75,
                         },
                         span: 74-75,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 71-75,
                     },
                 },
             },
@@ -2667,6 +2691,9 @@
                     Value: &ast.StringTypeAnn{
                         span: 42-48,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 36-48,
+                    },
                 },
                 &ast.PropertyTypeAnn{
                     Name: &ast.IdentExpr{
@@ -2675,6 +2702,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 60-66,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 55-66,
                     },
                 },
             },
@@ -4945,6 +4975,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 36-42,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 33-42,
                     },
                 },
             },

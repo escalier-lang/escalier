@@ -318,3 +318,7 @@ func (c *nodeCollector) EnterTypeAnn(t TypeAnn) bool         { c.add(t); return 
 func (c *nodeCollector) EnterPat(p Pat) bool                 { c.add(p); return true }
 func (c *nodeCollector) EnterClassElem(e ClassElem) bool     { c.add(e); return true }
 func (c *nodeCollector) EnterObjExprElem(e ObjExprElem) bool { c.add(e); return true }
+
+// A RestSpreadTypeAnn member reaches the collector through EnterTypeAnn, so
+// this covers the other seven ObjTypeAnnElem variants.
+func (c *nodeCollector) EnterObjTypeAnnElem(e ObjTypeAnnElem) bool { c.add(e); return true }

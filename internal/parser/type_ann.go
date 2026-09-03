@@ -869,6 +869,7 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 // shape of parseClassElem — see #663.
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	doc := p.consumeLeadingDoc()
+	start := p.lexer.peek().Span.Start
 	// After consuming a leading JSDoc, if we're sitting on the object
 	// type's closing brace, there's no elem to attach the doc to.
 	// Surface that to the user as a parse error AND return nil so
@@ -882,6 +883,17 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	}
 	elem := p.objTypeAnnElemInner()
 	attachDoc(elem, doc)
+	if elem != nil {
+		// The member runs from its first modifier or name through the last code
+		// token the inner read. Recording it here covers every variant at once,
+		// and it is what lets ast.AttachComments tell a comment written before a
+		// member from one written after it.
+		elem.SetSpan(ast.Span{
+			Start:    start,
+			End:      p.lexer.lastCodeLoc(),
+			SourceID: p.lexer.source.ID,
+		})
+	}
 	return elem
 }
 
