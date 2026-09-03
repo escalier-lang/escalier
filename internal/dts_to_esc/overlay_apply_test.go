@@ -602,3 +602,103 @@ func TestApplyOverlay_RejectsAddingOneNameAsTwoMembers(t *testing.T) {
 		})
 	}
 }
+
+// overlaySideLib converts to a class holding `of` on both sides, one
+// instance member and one static. Which side a member lives on is the
+// part of its key that neither its name nor its kind carries.
+const overlaySideLib = `
+interface Array<T> { of(x: number): T; at(x: number): T; }
+interface ArrayConstructor { new <T>(): Array<T>; of(x: string): Array<any>; }
+declare var Array: ArrayConstructor;
+`
+
+// overlaySideModules folds an overlay into the converted overlaySideLib
+// for a case expected to succeed.
+func overlaySideModules(t *testing.T, files map[string]string) map[string]*StandaloneModule {
+	t.Helper()
+	mods, err := convertLibWithOverlay(t, overlaySideLib, files)
+	require.NoError(t, err)
+	return mods
+}
+
+// TestApplyOverlay_KeysAMemberOnItsSideOfTheClass covers the one name
+// that reaches two members without either being an accessor. `Array.of`
+// is an instance member and a static one, so an overlay addresses each
+// on its own and neither operation disturbs the other side.
+func TestApplyOverlay_KeysAMemberOnItsSideOfTheClass(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "replace reaches the instance member alone",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    of(mut self, x: number) -> T | undefined,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    of(mut self, x: number) -> T | undefined,
+    at(self, x: number) -> T,
+    constructor(mut self),
+    static of(x: string) -> Array<any>
+}
+`,
+		},
+		{
+			name: "replace reaches the static member alone",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    static of(x: string) -> Array<T>,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    of(mut self, x: number) -> T,
+    at(self, x: number) -> T,
+    constructor(mut self),
+    static of(x: string) -> Array<T>
+}
+`,
+		},
+		{
+			name: "add contributes the static half of a name the instance side holds",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare class Array<T> {\n" +
+					"    static at(x: number) -> T,\n}\n",
+			},
+			want: `@js("Array")
+export declare class Array<T> {
+    of(mut self, x: number) -> T,
+    at(self, x: number) -> T,
+    constructor(mut self),
+    static of(x: string) -> Array<any>,
+    static at(x: number) -> T
+}
+`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want,
+				renderPackage(t, overlaySideModules(t, tt.overlay), "std:array"))
+		})
+	}
+}
+
+// TestApplyOverlay_ReportsWhichSideAMemberIsMissingFrom keeps a report
+// from naming a member that visibly exists. `at` is on the class, so a
+// report of a missing `Array.at` would send a contributor looking at the
+// member they can already see rather than at the side they wrote.
+func TestApplyOverlay_ReportsWhichSideAMemberIsMissingFrom(t *testing.T) {
+	t.Parallel()
+	_, err := convertLibWithOverlay(t, overlaySideLib, map[string]string{
+		"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"    static at(x: number) -> T,\n}\n",
+	})
+	require.EqualError(t, err,
+		"overlay: std/array.replace.esc replaces static Array.at, which the "+
+			"converted declaration does not have")
+}

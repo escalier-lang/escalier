@@ -297,15 +297,15 @@ func addMembers[E any](
 		}
 		if _, taken := converted[slot]; taken {
 			return nil, fmt.Errorf(
-				"overlay: %s adds %s.%s, which the converted declaration already "+
+				"overlay: %s adds %s, which the converted declaration already "+
 					"has; correct it with a replace overlay instead",
-				f.Path, owner, slot.Name)
+				f.Path, memberLabel(owner, slot))
 		}
 		if clash := unpairedKinds(hostKinds[slot.nameAndSide()], slot.Kind); len(clash) > 0 {
 			return nil, fmt.Errorf(
-				"overlay: %s adds %s.%s as a %s, which the converted declaration "+
+				"overlay: %s adds %s as a %s, which the converted declaration "+
 					"declares as %s; drop the member and add the new form to change "+
-					"its kind", f.Path, owner, slot.Name, slot.Kind, joinKinds(clash))
+					"its kind", f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
 		}
 		held := added[slot.nameAndSide()]
 		if err := checkAddedKinds(f, owner, slot, held); err != nil {
@@ -329,14 +329,14 @@ func checkAddedKinds(f OverlayFile, owner string, slot memberSlot, held []member
 			return nil
 		}
 		return fmt.Errorf(
-			"overlay: %s adds %s.%s twice as a %s; only signatures overload",
-			f.Path, owner, slot.Name, slot.Kind)
+			"overlay: %s adds %s twice as a %s; only signatures overload",
+			f.Path, memberLabel(owner, slot), slot.Kind)
 	}
 	if clash := unpairedKinds(held, slot.Kind); len(clash) > 0 {
 		return fmt.Errorf(
-			"overlay: %s adds %s.%s as a %s beside %s it adds under the same name; "+
+			"overlay: %s adds %s as a %s beside %s it adds under the same name; "+
 				"one name holds one member, or a getter and a setter",
-			f.Path, owner, slot.Name, slot.Kind, joinKinds(clash))
+			f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
 	}
 	return nil
 }
@@ -403,14 +403,14 @@ func replaceMembers[E any](
 		}
 		if len(groups[slot]) > 1 && slot.Kind != kindMethod {
 			return nil, fmt.Errorf(
-				"overlay: %s replaces %s.%s twice as a %s; only signatures overload",
-				f.Path, owner, slot.Name, slot.Kind)
+				"overlay: %s replaces %s twice as a %s; only signatures overload",
+				f.Path, memberLabel(owner, slot), slot.Kind)
 		}
 		if len(groups[slot]) < len(converted) {
 			return nil, fmt.Errorf(
-				"overlay: %s replaces %d of the %d signatures of %s.%s; a replace "+
+				"overlay: %s replaces %d of the %d signatures of %s; a replace "+
 					"restates the whole overload set, since a name is what addresses it",
-				f.Path, len(groups[slot]), len(converted), owner, slot.Name)
+				f.Path, len(groups[slot]), len(converted), memberLabel(owner, slot))
 		}
 		carryMemberDocs(converted, groups[slot])
 	}
@@ -501,20 +501,31 @@ func missingSlotError(
 	held := hostKinds[slot.nameAndSide()]
 	if len(held) == 0 {
 		return fmt.Errorf(
-			"overlay: %s replaces %s.%s, which the converted declaration does "+
-				"not have", f.Path, owner, slot.Name)
+			"overlay: %s replaces %s, which the converted declaration does "+
+				"not have", f.Path, memberLabel(owner, slot))
 	}
 	clash := unpairedKinds(held, slot.Kind)
 	if len(clash) == 0 {
 		return fmt.Errorf(
-			"overlay: %s replaces %s.%s as a %s, which the converted declaration "+
+			"overlay: %s replaces %s as a %s, which the converted declaration "+
 				"declares only as %s; contribute the %s with an add overlay instead",
-			f.Path, owner, slot.Name, slot.Kind, joinKinds(held), slot.Kind)
+			f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(held), slot.Kind)
 	}
 	return fmt.Errorf(
-		"overlay: %s replaces %s.%s as a %s, which the converted declaration "+
+		"overlay: %s replaces %s as a %s, which the converted declaration "+
 			"declares as %s; drop the member and add the new form to change its kind",
-		f.Path, owner, slot.Name, slot.Kind, joinKinds(clash))
+		f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
+}
+
+// memberLabel names a member the way an overlay report does. A static
+// member is marked, since one name reaches both sides of a class and
+// `Array.of` alone would read as the instance member of a declaration
+// that has both.
+func memberLabel(owner string, slot memberSlot) string {
+	if slot.Static {
+		return "static " + owner + "." + slot.Name
+	}
+	return owner + "." + slot.Name
 }
 
 // joinKinds names the kinds one member name is declared under, as `a
