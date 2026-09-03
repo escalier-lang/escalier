@@ -299,11 +299,8 @@ func TestAttachCommentsKeepsANonDocBlockLeading(t *testing.T) {
 // A comment written after a parameter attaches, but not to that parameter.
 // These cases pin what the pass does today so a fix announces itself.
 //
-// Two things put the comment on the wrong node. The pass reads nodes and line
-// breaks and never sees the comma, so a comment before one still leads the
-// parameter after it. And no traversal visits Param.TypeAnn, so a parameter's
-// type is not a node the pass can reach; the nearest node after a comment
-// following the last parameter is the return type. See #1381 and #1373.
+// The pass reads nodes and line breaks and never sees the comma, so a comment
+// written before one still leads the parameter after it. See #1373.
 func TestAttachCommentsAfterAFunctionParam(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
@@ -319,10 +316,19 @@ func TestAttachCommentsAfterAFunctionParam(t *testing.T) {
 			want: []string{"leading *ast.IdentPat /* m */"},
 		},
 		{
-			// Reads as a note about `b`. Its type is not a node, so the nearest
-			// node after the comment is the return type annotation.
+			// Reads as a note about `b`. Rule 1 runs before rule 2, so the
+			// return type annotation leads the comment instead of `b`'s own
+			// type annotation trailing it.
 			name: "after the last parameter",
 			src:  "fn g(a: number, b: number /* m */) -> number {\n    return a\n}\n",
+			want: []string{"leading *ast.NumberTypeAnn /* m */"},
+		},
+		{
+			// A parameter's type annotation is a node the pass reaches, so it
+			// takes a comment written just before it rather than the comment
+			// carrying past the parameter list to the return type.
+			name: "before a parameter type",
+			src:  "fn g(a: /* m */ number) -> string {\n    return \"\"\n}\n",
 			want: []string{"leading *ast.NumberTypeAnn /* m */"},
 		},
 	}

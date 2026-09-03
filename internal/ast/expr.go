@@ -465,6 +465,9 @@ func (e *FuncExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
+			if param.TypeAnn != nil {
+				param.TypeAnn.Accept(v)
+			}
 		}
 		for _, tp := range e.TypeParams {
 			if tp.Constraint != nil {

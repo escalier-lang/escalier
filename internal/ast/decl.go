@@ -196,6 +196,9 @@ func (d *FuncDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
+			if param.TypeAnn != nil {
+				param.TypeAnn.Accept(v)
+			}
 		}
 		if d.Return != nil {
 			d.Return.Accept(v)
@@ -395,6 +398,9 @@ func (d *EnumDecl) Accept(v Visitor) {
 				e.Name.Accept(v)
 				for _, param := range e.Params {
 					param.Pattern.Accept(v)
+					if param.TypeAnn != nil {
+						param.TypeAnn.Accept(v)
+					}
 				}
 			case *EnumSpread:
 				e.Arg.Accept(v)
