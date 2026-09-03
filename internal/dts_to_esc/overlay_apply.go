@@ -274,17 +274,11 @@ func mergeMembers[E any](
 }
 
 // addMembers appends every overlay member, failing on a member the
-// converted declaration already holds.
-//
-// A name is not a slot, so the two are checked apart. An addition whose
-// whole slot is taken is a correction, and `replace` is what makes one.
-// An addition that only shares a name with a converted member is a kind
-// change, which is a `drop` and an `add`. The exception is the accessor
-// pair: an overlay may add the `set x()` beside a converted `get x()`.
-//
-// One overlay file may add several signatures under one name, which is
-// how it contributes an overload set the converted declaration has no
-// signature of.
+// converted declaration already holds. A taken slot is a correction, so
+// the report points at `replace`. A name taken under another kind is a
+// kind change, so it points at a `drop` and an `add` instead. One file
+// may add several signatures under one name, and may add the `set x()`
+// beside a converted `get x()`.
 func addMembers[E any](
 	f OverlayFile,
 	owner string,
@@ -325,10 +319,10 @@ func addMembers[E any](
 	return out, nil
 }
 
-// checkAddedKinds pairs one overlay member against the members the same
-// file already adds under that name. Two signatures of one method are an
-// overload set, and a getter and a setter are one accessor. Every other
-// repeat is two members under one name, which no declaration can hold.
+// checkAddedKinds pairs one overlay member against what the same file
+// already adds under that name. Signatures of one method overload and a
+// getter pairs with a setter; every other repeat is two members under
+// one name, which no declaration can hold.
 func checkAddedKinds(f OverlayFile, owner string, slot memberSlot, held []memberKind) error {
 	if containsKind(held, slot.Kind) {
 		if slot.Kind == kindMethod {
@@ -348,8 +342,8 @@ func checkAddedKinds(f OverlayFile, owner string, slot memberSlot, held []member
 }
 
 // unpairedKinds returns the kinds under one name that cannot stand
-// beside kind. The empty result means the name is free, or holds only
-// the other half of kind's accessor.
+// beside kind. Empty means the name is free, or holds only the other
+// half of kind's accessor.
 func unpairedKinds(held []memberKind, kind memberKind) []memberKind {
 	var clash []memberKind
 	for _, h := range held {
@@ -374,18 +368,12 @@ func containsKind(held []memberKind, kind memberKind) bool {
 // member sharing its key, in place, and fails on a key the converted
 // declaration does not have.
 //
-// A key is a name, a side of the class, and a member kind, so a
-// `readonly x: T` field and a `get x() -> T` getter do not silently
-// occupy one slot. An overlay that writes a name the converted
-// declaration holds under another kind fails rather than substituting
-// across kinds, so changing a member's kind is a drop and an add.
-//
-// A key addresses a whole overload set, since a name alone cannot pick
-// one of `Array.find`'s two signatures apart from the other. So a
-// `replace` restates every signature under the name it replaces, and
-// restating fewer than the converted declaration holds fails the run.
-// Only signatures overload, so a second field or accessor under one name
-// fails as well, the way it does under `add`.
+// The key carries the member's kind, so a `readonly x: T` and a
+// `get x()` do not occupy one slot and no substitution crosses kinds. It
+// addresses a whole overload set, since a name alone cannot pick one of
+// `Array.find`'s two signatures apart, so a `replace` restates every
+// signature under the name. Restating fewer fails, and so does a second
+// field or accessor under one name.
 func replaceMembers[E any](
 	f OverlayFile,
 	owner string,
@@ -477,10 +465,9 @@ func carryMemberDocs[E any](converted, overlay []E) {
 }
 
 // groupMembers collects a declaration's members by the slot each fills,
-// and records which kinds every name is declared under. An overlay
-// member that matches no slot is either a member the declaration does
-// not have or one written under the wrong kind. The recorded kinds are
-// what tells the two apart.
+// and records which kinds every name is declared under. The kinds are
+// what tells a member the declaration does not have from one the overlay
+// wrote under the wrong kind.
 func groupMembers[E any](
 	members []E,
 	slotOf func(E) (memberSlot, bool),
@@ -501,11 +488,10 @@ func groupMembers[E any](
 }
 
 // missingSlotError reports an overlay member the converted declaration
-// cannot be paired with. A name it holds under some other kind gets a
-// narrower message, since the overlay found its target and wrote it in a
-// form the declaration does not hold it in. Which form decides what to
-// do: the missing half of an accessor is an addition, and every other
-// mismatch is a kind change, which is a `drop` and an `add`.
+// cannot be paired with. A name held under another kind gets a narrower
+// message, since the overlay found its target and wrote it in the wrong
+// form. The missing half of an accessor is an addition; every other
+// mismatch is a kind change, so a `drop` and an `add`.
 func missingSlotError(
 	f OverlayFile,
 	owner string,
