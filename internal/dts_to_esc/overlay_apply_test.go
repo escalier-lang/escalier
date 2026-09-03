@@ -496,6 +496,17 @@ export declare class Array<T> {
 		}), "std:array"))
 	})
 
+	t.Run("writing one name as two fields fails", func(t *testing.T) {
+		t.Parallel()
+		require.Equal(t,
+			"overlay: std/array.replace.esc replaces Array.length twice as a field; "+
+				"only signatures overload",
+			overlayError(t, map[string]string{
+				"std/array.replace.esc": "export declare class Array<T> {\n" +
+					"    length: number,\n    length: string,\n}\n",
+			}))
+	})
+
 	t.Run("restating one signature fails and names the member", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t,

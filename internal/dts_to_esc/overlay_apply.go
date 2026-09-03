@@ -384,6 +384,8 @@ func containsKind(held []memberKind, kind memberKind) bool {
 // one of `Array.find`'s two signatures apart from the other. So a
 // `replace` restates every signature under the name it replaces, and
 // restating fewer than the converted declaration holds fails the run.
+// Only signatures overload, so a second field or accessor under one name
+// fails as well, the way it does under `add`.
 func replaceMembers[E any](
 	f OverlayFile,
 	owner string,
@@ -410,6 +412,11 @@ func replaceMembers[E any](
 		converted, ok := hostGroups[slot]
 		if !ok {
 			return nil, missingSlotError(f, owner, slot, hostKinds)
+		}
+		if len(groups[slot]) > 1 && slot.Kind != kindMethod {
+			return nil, fmt.Errorf(
+				"overlay: %s replaces %s.%s twice as a %s; only signatures overload",
+				f.Path, owner, slot.Name, slot.Kind)
 		}
 		if len(groups[slot]) < len(converted) {
 			return nil, fmt.Errorf(

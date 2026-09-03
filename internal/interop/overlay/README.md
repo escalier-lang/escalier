@@ -89,7 +89,8 @@ A name addresses a whole overload set, so an overlay that replaces
 `Array.find` restates both of its signatures. Restating fewer than the
 converted declaration holds fails the run and names the member, since a
 name is what addresses the set and there is no way to point at one
-signature in it.
+signature in it. Only signatures overload, so writing one name as two
+fields or two accessors fails as well.
 
 The kind is part of the key, so a `readonly x: T` and a `get x()` are
 two members rather than one. An overlay that writes a name under a kind
