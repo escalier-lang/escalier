@@ -62,7 +62,7 @@ func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*Ty
 		declare:        declare,
 		final:          final,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }

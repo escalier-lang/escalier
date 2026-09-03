@@ -95,7 +95,7 @@ func NewVarDecl(
 		declare:        declare,
 		span:           span,
 		InferredType:   nil,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -180,7 +180,7 @@ func NewFuncDecl(
 		export:         export,
 		declare:        declare,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -229,7 +229,7 @@ func NewTypeDecl(name *Ident, typeParams []*TypeParam, typeAnn TypeAnn, export, 
 		export:         export,
 		declare:        declare,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -274,7 +274,7 @@ func NewInterfaceDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams [
 		export:         export,
 		declare:        declare,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -376,7 +376,7 @@ func NewEnumDecl(name *Ident, typeParams []*TypeParam, elems []EnumElem, export,
 		export:         export,
 		declare:        declare,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -422,7 +422,7 @@ func NewExportAssignmentStmt(name *Ident, declare bool, span Span) *ExportAssign
 		Name:           name,
 		declare:        declare,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -464,7 +464,7 @@ func NewDeclareModuleDecl(name *StrLit, decls []Decl, override bool, span Span) 
 		Decls:          decls,
 		override:       override,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -500,7 +500,7 @@ func NewDeclareGlobalDecl(decls []Decl, override bool, span Span) *DeclareGlobal
 		Decls:          decls,
 		override:       override,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
@@ -542,7 +542,7 @@ func NewNamespaceDecl(name *Ident, decls []Decl, export, override bool, span Spa
 		export:         export,
 		override:       override,
 		span:           span,
-		declProvenance: declProvenance{provenance: nil},
+		declProvenance: declProvenance{},
 		commentSlots:   commentSlots{},
 	}
 }
