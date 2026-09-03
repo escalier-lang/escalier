@@ -25,11 +25,13 @@ func (p *Parser) parseFuncParams() (params []*ast.Param, inexact bool) {
 
 		// A bare `...` (the next token after it is the closing paren) marks the
 		// function inexact. Anything else after `...` is a rest param (`...rest`),
-		// which p.param parses, so back the lexer up and fall through.
-		if p.lexer.peek().Type == DotDotDot {
+		// which p.param parses, so back the lexer up and fall through. Both reads
+		// skip comments, so a comment written on either side of the marker, as in
+		// `fn f(a: number, ... /* open */)`, still reaches this branch.
+		if p.skipComments().Type == DotDotDot {
 			saved := p.lexer.saveState()
 			p.lexer.consume() // tentatively consume '...'
-			if p.lexer.peek().Type == CloseParen {
+			if p.skipComments().Type == CloseParen {
 				return params, true
 			}
 			p.lexer.restoreState(saved)

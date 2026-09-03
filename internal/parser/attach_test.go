@@ -341,15 +341,15 @@ func TestAttachCommentsAfterAFunctionParam(t *testing.T) {
 }
 
 // A comment inside an object literal, a parameter list, an object pattern, or
-// a type parameter list parses and reaches the tree. Each of these four
-// productions used to read the comment token where the next member belonged
-// and report a syntax error. See #1373.
+// a type parameter list parses, and the comment reaches the tree. Each of these
+// four productions consumes the comment before it dispatches on the token where
+// the next member belongs.
 //
 // Two owners here are the enclosing construct rather than the member the
 // comment was written about. An object pattern's bindings and a type parameter
 // are not offered by ast.Visitor, so ast.AttachComments cannot index them and
-// has to fall back. #1371 covers the same gap for object type annotation
-// members.
+// has to fall back. The members of an object type annotation have the same
+// gap.
 func TestAttachCommentsInDelimitedLists(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
