@@ -56,7 +56,7 @@ export declare interface IteratorReturnResult<TReturn> {
 
 export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
 
-export declare interface Iterator<T, TReturn = any, TNext = any> extends globalThis.IteratorObject<T, TResult, TNext> {
+export declare interface Iterator<T, TReturn = any, TNext = any> extends globalThis.IteratorObject<T, TReturn, TNext> {
     next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
     return(value?: TReturn) -> IteratorResult<T, TReturn>,
     throw(e?: any) -> IteratorResult<T, TReturn>

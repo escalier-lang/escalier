@@ -21,20 +21,20 @@ export declare class Function {
      * @param thisArg The object to be used as the this object.
      * @param argArray A set of arguments to be passed to the function.
      */
-    apply(mut self, this: Function, thisArg: any, argArray?: any) -> any,
+    apply(self, this: Function, thisArg: any, argArray?: any) -> any,
     /**
      * Calls a method of an object, substituting another object for the current object.
      * @param thisArg The object to be used as the current object.
      * @param argArray A list of arguments to be passed to the method.
      */
-    call(mut self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
+    call(self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
     /**
      * For a given function, creates a bound function that has the same body as the original function.
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.
      * @param thisArg An object to which the this keyword can refer inside the new function.
      * @param argArray A list of arguments to be passed to the new function.
      */
-    bind(mut self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
+    bind(self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
     /** Returns a string representation of a function. */
     toString(self) -> string,
     prototype: any,

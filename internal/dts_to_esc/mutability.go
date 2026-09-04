@@ -194,6 +194,9 @@ func ClassifyMethodOn(owner, name string) bool {
 	if ImmutableOwners.Contains(owner) {
 		return false
 	}
+	if NonMutatingOverrides(owner).Contains(name) {
+		return false
+	}
 	if mut, ok := ClassifyMethodByName(name); ok {
 		return mut
 	}
@@ -239,11 +242,11 @@ var ImmutableOwners = set.FromSlice([]string{
 // does not belong here. The reader applies the heuristics as a fall-through
 // for any method with no entry.
 //
-// The one production reader is `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types. Classify does not consult this
-// table. Its tier 4 reads the override store of `internal/interop`, whose
-// built-in subtree is still empty, so the converter reaches a `.d.ts` method
-// through the name-only tiers alone.
+// Two readers consult it: `checker.UpdateMethodMutability`, which strips
+// `mut self` from the `.d.ts`-loaded lib types, and `ClassifyMethodOn`,
+// which the converter's trio fusion calls. `Classify` does not — its tier 4
+// reads the override store of `internal/interop`, whose built-in subtree is
+// still empty.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //

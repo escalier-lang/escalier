@@ -601,3 +601,18 @@ func TestClassifyMethodOn_ImmutableOwner(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyMethodOn_ReadsNonMutatingOverrides covers the tier between
+// the owner-wide rule and the name-only heuristics. `propertyIsEnumerable`
+// matches no prefix, so the heuristics leave it to the mutating default,
+// and nonMutatingOverrides records the answer for it under Object.
+func TestClassifyMethodOn_ReadsNonMutatingOverrides(t *testing.T) {
+	t.Parallel()
+	_, ok := ClassifyMethodByName("propertyIsEnumerable")
+	require.False(t, ok, "the name-only tiers should miss this name")
+	require.True(t, NonMutatingOverrides("Object").Contains("propertyIsEnumerable"))
+
+	require.False(t, ClassifyMethodOn("Object", "propertyIsEnumerable"))
+	// An owner with no entry keeps the name-only answer.
+	require.True(t, ClassifyMethodOn("Widget", "propertyIsEnumerable"))
+}

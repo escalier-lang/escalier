@@ -155,6 +155,51 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 	return out, nil
 }
 
+// renameTypeParams rewrites decl's type-parameter names to keep, matched
+// by position, so decl's members and heritage read against the merged
+// declaration's parameters.
+//
+// Merged declarations of one interface are free to name their parameters
+// differently. `lib.es2015.iterable.d.ts` declares `interface Iterator<T,
+// TReturn = any, TNext = any>` and `lib.esnext.iterator.d.ts` declares
+// `interface Iterator<T, TResult, TNext> extends
+// globalThis.IteratorObject<T, TResult, TNext>`. mergeDecls keeps the
+// first declaration's parameters, so appending the second's heritage
+// unchanged leaves `TResult` naming nothing.
+//
+// A parameter the merged declaration does not have is left alone. Arity
+// is equal across every merged pair in the pinned corpus, and renaming
+// past the end would invent a binding rather than resolve one.
+func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypeParam) {
+	renames := map[string]string{}
+	for i, tp := range decl.TypeParams {
+		if i >= len(keep) || tp.Name.Name == keep[i].Name.Name {
+			continue
+		}
+		renames[tp.Name.Name] = keep[i].Name.Name
+	}
+	if len(renames) == 0 {
+		return
+	}
+	rename := func(t dts_parser.TypeAnn) {
+		walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
+			id, ok := ref.Name.(*dts_parser.Ident)
+			if !ok {
+				return
+			}
+			if to, ok := renames[id.Name]; ok {
+				id.Name = to
+			}
+		})
+	}
+	for _, ext := range decl.Extends {
+		rename(ext)
+	}
+	for _, m := range decl.Members {
+		walkInterfaceMemberTypes(m, rename)
+	}
+}
+
 // topLevelName returns the addressable name of a top-level statement,
 // or "" for statements that carry none (ImportDecl, re-export forms,
 // ambient module/global blocks).
@@ -228,13 +273,13 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 		case *dts_parser.InterfaceDecl:
 			if i, ok := ifaceIdx[s.Name.Name]; ok {
 				existing := out[i].(*dts_parser.InterfaceDecl)
+				renameTypeParams(s, existing.TypeParams)
 				existing.Members = append(existing.Members, s.Members...)
 				// Extends is concatenated without structural dedup. In
 				// practice, TS lib augmentation files add members, not
-				// extends clauses (only the initial declaration carries
-				// the inheritance chain), so duplicates don't arise from
-				// the pinned corpus. If that ever changes, dedup here on
-				// a printed form of the TypeAnn.
+				// extends clauses, so duplicates do not arise from the
+				// pinned corpus. If that ever changes, dedup here on a
+				// printed form of the TypeAnn.
 				existing.Extends = append(existing.Extends, s.Extends...)
 				continue
 			}

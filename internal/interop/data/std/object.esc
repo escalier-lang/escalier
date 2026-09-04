@@ -39,7 +39,7 @@ export declare class Object {
      * Determines whether a specified property is enumerable.
      * @param v A property name.
      */
-    propertyIsEnumerable(mut self, v: PropertyKey) -> boolean,
+    propertyIsEnumerable(self, v: PropertyKey) -> boolean,
     /**
      * Copy the values of all of the enumerable own properties from one or more source objects to a
      * target object. Returns the target object.

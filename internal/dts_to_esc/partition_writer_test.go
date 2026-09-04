@@ -853,3 +853,60 @@ func keysOf(mods map[string]*StandaloneModule) []string {
 	}
 	return out
 }
+
+// TestMergeDecls_RenamesTypeParamsToTheRetainedDecl covers the case the
+// merge's own comment assumed away. Merged declarations of one interface
+// may name their parameters differently, and mergeDecls keeps the first
+// declaration's. `lib.es2015.iterable.d.ts` declares `Iterator<T, TReturn
+// = any, TNext = any>` while `lib.esnext.iterator.d.ts` declares
+// `Iterator<T, TResult, TNext>` with a heritage clause naming TResult, so
+// appending that clause unchanged leaves TResult naming nothing.
+func TestMergeDecls_RenamesTypeParamsToTheRetainedDecl(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{
+		parseLib(t, "lib.es2015.iterable.d.ts", `
+interface Iterator<T, TReturn = any, TNext = any> {
+    next(value?: TNext): TReturn;
+}
+`),
+		parseLib(t, "lib.esnext.iterator.d.ts", `
+interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> {
+    take(limit: number): TResult;
+}
+`),
+	})
+	require.NoError(t, err)
+
+	var iter *dts_parser.InterfaceDecl
+	for _, stmt := range res.Buckets["std:iterator"] {
+		if id, ok := stmt.(*dts_parser.InterfaceDecl); ok && id.Name.Name == "Iterator" {
+			iter = id
+		}
+	}
+	require.NotNil(t, iter)
+
+	// The retained parameters are the first declaration's.
+	names := make([]string, 0, len(iter.TypeParams))
+	for _, tp := range iter.TypeParams {
+		names = append(names, tp.Name.Name)
+	}
+	require.Equal(t, []string{"T", "TReturn", "TNext"}, names)
+
+	// Every reference the second declaration contributed reads against
+	// them, in its heritage and in its members alike.
+	var refs []string
+	collect := func(t dts_parser.TypeAnn) {
+		walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
+			refs = append(refs, typeRefName(ref))
+		})
+	}
+	for _, ext := range iter.Extends {
+		collect(ext)
+	}
+	for _, m := range iter.Members {
+		walkInterfaceMemberTypes(m, collect)
+	}
+	require.NotContains(t, refs, "TResult",
+		"the merged declaration has no TResult parameter to bind")
+	require.Contains(t, refs, "TReturn")
+}
