@@ -563,12 +563,12 @@ func TestClassifyMethodByName(t *testing.T) {
 	}
 }
 
-// TestClassifyMethodOn_ImmutableOwner covers the owner-wide tier. Every
+// TestReceiverMutates_ImmutableOwner covers the owner-wide tier. Every
 // instance method on a primitive wrapper leaves the receiver alone, and
 // the name-only tiers cannot say so: `strike` and `italics` match no
 // heuristic prefix, so they reach the mutating default. Naming the owner
 // is what answers them.
-func TestClassifyMethodOn_ImmutableOwner(t *testing.T) {
+func TestReceiverMutates_ImmutableOwner(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		owner, method string
@@ -597,22 +597,22 @@ func TestClassifyMethodOn_ImmutableOwner(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.owner+"."+tc.method, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.wantMut, ClassifyMethodOn(tc.owner, tc.method))
+			require.Equal(t, tc.wantMut, ReceiverMutates(tc.owner, tc.method))
 		})
 	}
 }
 
-// TestClassifyMethodOn_ReadsNonMutatingOverrides covers the tier between
+// TestReceiverMutates_ReadsNonMutatingOverrides covers the tier between
 // the owner-wide rule and the name-only heuristics. `propertyIsEnumerable`
 // matches no prefix, so the heuristics leave it to the mutating default,
 // and nonMutatingOverrides records the answer for it under Object.
-func TestClassifyMethodOn_ReadsNonMutatingOverrides(t *testing.T) {
+func TestReceiverMutates_ReadsNonMutatingOverrides(t *testing.T) {
 	t.Parallel()
 	_, ok := ClassifyMethodByName("propertyIsEnumerable")
 	require.False(t, ok, "the name-only tiers should miss this name")
 	require.True(t, NonMutatingOverrides("Object").Contains("propertyIsEnumerable"))
 
-	require.False(t, ClassifyMethodOn("Object", "propertyIsEnumerable"))
+	require.False(t, ReceiverMutates("Object", "propertyIsEnumerable"))
 	// An owner with no entry keeps the name-only answer.
-	require.True(t, ClassifyMethodOn("Widget", "propertyIsEnumerable"))
+	require.True(t, ReceiverMutates("Widget", "propertyIsEnumerable"))
 }

@@ -180,24 +180,29 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 	return false, false
 }
 
-// ClassifyMethodOn reports whether a method's receiver mutates, given the
-// name of the class declaring it. It is the entry point for a caller
-// holding an owner and a bare method name rather than a
-// dts_parser.ClassMember, which is what the trio fusion in
-// interfaceMemberToClassElem holds.
+// ReceiverMutates reports whether calling method on owner mutates the
+// receiver, which is what decides between `self` and `mut self` on the
+// emitted class. It is the entry point for a caller holding an owner
+// name and a bare method name rather than a dts_parser.ClassMember,
+// which is what the trio fusion in interfaceMemberToClassElem holds.
 //
 // It runs the owner-wide tiers first, then the name-only ones, and falls
-// back to Classify's tier-7 default of mutating so a synthesised
+// back to Classify's tier-7 default of mutating, so a synthesised
 // receiver matches what classifyMember produces for a real MethodDecl
 // reaching no tier.
-func ClassifyMethodOn(owner, name string) bool {
+//
+// Unlike Classify and ClassifyMethodByName it always answers. Those two
+// report whether any tier matched and leave the default to their caller;
+// this one applies the default itself, which is why it returns a bare
+// bool rather than a result and an ok.
+func ReceiverMutates(owner, method string) bool {
 	if ImmutableOwners.Contains(owner) {
 		return false
 	}
-	if NonMutatingOverrides(owner).Contains(name) {
+	if NonMutatingOverrides(owner).Contains(method) {
 		return false
 	}
-	if mut, ok := ClassifyMethodByName(name); ok {
+	if mut, ok := ClassifyMethodByName(method); ok {
 		return mut
 	}
 	return true
@@ -243,7 +248,7 @@ var ImmutableOwners = set.FromSlice([]string{
 // for any method with no entry.
 //
 // Two readers consult it: `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types, and `ClassifyMethodOn`,
+// `mut self` from the `.d.ts`-loaded lib types, and `ReceiverMutates`,
 // which the converter's trio fusion calls. `Classify` does not — its tier 4
 // reads the override store of `internal/interop`, whose built-in subtree is
 // still empty.

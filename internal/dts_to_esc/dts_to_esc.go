@@ -1050,7 +1050,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 // representation (CallSignature, IndexSignature).
 //
 // owner is the name of the class being fused, which the receiver
-// classification reads for the owner-wide tiers. See ClassifyMethodOn.
+// classification reads for the owner-wide tiers. See ReceiverMutates.
 func interfaceMemberToClassElem(
 	member dts_parser.InterfaceMember,
 	owner string,
@@ -1083,7 +1083,7 @@ func interfaceMemberToClassElem(
 		var receiver *ast.MethodReceiver
 		if !static {
 			receiver = &ast.MethodReceiver{
-				Mut:   ClassifyMethodOn(owner, propertyKeyName(m.Name)),
+				Mut:   ReceiverMutates(owner, propertyKeyName(m.Name)),
 				Span_: span,
 			}
 		}
