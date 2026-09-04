@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,6 +14,34 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/stretchr/testify/require"
 )
+
+// committedDropsDeclaredIn narrows the committed overlay's root drop
+// file to the names `inputs` declare, and returns an overlay holding
+// just those.
+//
+// The staleness check holds every root drop entry to a name some input
+// declares, which is what catches an entry TypeScript has removed. A
+// test that routes one lib file out of the pinned set therefore cannot
+// pass the committed overlay whole. It would trip on the entries the
+// rest of the set declares.
+func committedDropsDeclaredIn(t *testing.T, inputs []LibInput) *Overlay {
+	t.Helper()
+	declared := set.NewSet[string]()
+	for _, in := range inputs {
+		for _, stmt := range in.Module.Statements {
+			declared.Add(topLevelName(stmt))
+		}
+	}
+	var file strings.Builder
+	for _, name := range sortedNames(committedOverlay(t).GlobalDrops()) {
+		if declared.Contains(name) {
+			fmt.Fprintf(&file, "export declare val %s\n", name)
+		}
+	}
+	overlay, err := LoadOverlay(seedOverlay(t, map[string]string{RootDropFile: file.String()}))
+	require.NoError(t, err)
+	return overlay
+}
 
 // TestPartitionLib_LibES5_EndToEnd runs the round-trip gate over lib.es5.d.ts
 // alone. Every `.esc` file the pipeline emits from it must parse with Escalier's
@@ -34,7 +63,8 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	inputs, err := ParseLibFiles(libDir, []string{"lib.es5.d.ts"})
 	require.NoError(t, err)
 
-	res, err := PartitionLib(inputs)
+	overlay := committedDropsDeclaredIn(t, inputs)
+	res, err := PartitionLibWithOverlay(inputs, overlay)
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Buckets, "lib.es5 must produce at least one bucket")
 
@@ -65,7 +95,7 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	// the same lib + one extra decl that no partition entry covers
 	// must error rather than silently land in some catch-all bucket.
 	bogus := parseLib(t, "lib.es99.fake.d.ts", `declare var __TotallyUnknown__: number;`)
-	_, err = PartitionLib(append(inputs, bogus))
+	_, err = PartitionLibWithOverlay(append(inputs, bogus), overlay)
 	require.Error(t, err)
 	require.EqualError(t, err, UnmappedError("__TotallyUnknown__", "lib.es99.fake.d.ts").Error())
 }
@@ -97,7 +127,7 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 	inputs, err := ParseLibFiles(libDir, basenames)
 	require.NoError(t, err)
 
-	res, err := PartitionLib(inputs)
+	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
 	require.NoError(t, err)
 
 	// Every package the routing pass knows about must be reachable
@@ -185,7 +215,7 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 	inputs, err := ParseLibFiles(libDir, basenames)
 	require.NoError(t, err)
 
-	res, err := PartitionLib(inputs)
+	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
 	require.NoError(t, err)
 
 	mods, err := ConvertBuckets(res)

@@ -28,11 +28,10 @@ type Package struct {
 //
 // Lookup order at the routing site (see Route below):
 //
-//  0. The overlay's root drop file, applied by PartitionLibWithOverlay
+//  1. The overlay's root drop file, applied by PartitionLibWithOverlay
 //     ahead of Route. A whole-symbol drop belongs to no package, so it
-//     is settled before a package is assigned.
-//  1. ExplicitDrops — symbols intentionally dropped (`globalThis`,
-//     `eval`). The routing site logs and skips emission.
+//     is settled before a package is assigned. The routing site logs
+//     the name and skips emission.
 //  2. Partition (this map) — the hand-maintained, full enumeration of
 //     std:* and web:* siblings.
 //  3. DOMResidual — a `.d.ts` source-file allowlist. lib.dom.d.ts and
@@ -212,12 +211,12 @@ var stdPackages = []struct {
 		// The context objects a TC39 decorator receives as its second
 		// argument, plus the metadata types keyed off `Symbol.metadata`.
 		// These describe an ECMAScript runtime shape, so they get a
-		// package rather than joining ExplicitDrops. Escalier has no
-		// decorator syntax for user code today. Its `@js(...)`
-		// decorator is a declaration annotation the converter emits,
-		// unrelated to these types. TypeScript's own legacy
-		// `experimentalDecorators` aliases are dropped instead — see
-		// ExplicitDrops.
+		// package rather than a drop entry. Escalier has no decorator
+		// syntax for user code today. Its `@js(...)` decorator is a
+		// declaration annotation the converter emits, unrelated to
+		// these types. TypeScript's own legacy `experimentalDecorators`
+		// aliases are dropped instead — see
+		// internal/interop/overlay/drop.esc.
 		"DecoratorContext", "DecoratorMetadata", "DecoratorMetadataObject",
 		"ClassDecoratorContext", "ClassMemberDecoratorContext",
 		"ClassFieldDecoratorContext", "ClassMethodDecoratorContext",
@@ -691,63 +690,6 @@ var webPackages = []struct {
 	}},
 }
 
-// ExplicitDrops names top-level TS-lib declarations the converter
-// skips emission for, with a logged note. Per §6.1: `globalThis` has
-// no ambient union to take now that there is no ambient tier, and
-// `eval` has no good use case. The FR13 intrinsics are listed by name
-// below rather than detected structurally — `intrinsic` is a type
-// annotation Escalier prints back out, so a converted alias would
-// otherwise reach the committed tree.
-//
-// This is the single copy of the drop list. The §6.4 `check` pass
-// takes its exemptions from Route rather than restating the names, so
-// the two cannot disagree.
-var ExplicitDrops = set.FromSlice([]string{
-	// Per §6.1 — `globalThis` had no ambient union to take, `eval` has
-	// no good use case.
-	"globalThis",
-	"eval",
-
-	// FR13 intrinsics: checker-resident handlers with no source-level
-	// declaration. The TS-lib file declares them as `type X<T> = intrinsic`
-	// markers; the partitioner skips emission and the checker resolves
-	// them directly.
-	"Uppercase",
-	"Lowercase",
-	"Capitalize",
-	"Uncapitalize",
-	"NoInfer",
-
-	// EvalError: per §FR1, dropped because `eval` is dropped — no
-	// modern engine throws it from language semantics.
-	"EvalError",
-	"EvalErrorConstructor",
-
-	// Legacy URI-encoding cousins. The §6.1 partition explicitly
-	// enumerates encodeURI/decodeURI/encodeURIComponent/decodeURIComponent
-	// in std:url and intentionally omits these two (deprecated since
-	// ES1; superseded by encodeURIComponent).
-	"escape",
-	"unescape",
-
-	// TS-side import-machinery types (`import.meta`, `import(...)`
-	// option bags). These shape the TS module loader's surface, not
-	// the language runtime; Escalier handles imports differently.
-	"ImportMeta",
-	"ImportAssertions",
-	"ImportAttributes",
-	"ImportCallOptions",
-
-	// TypeScript's legacy `experimentalDecorators` signatures. They
-	// type the decorator calling convention `tsc` emitted before TC39
-	// decorators, so they describe a compiler output shape rather than
-	// a runtime one. The TC39 context types route to std:decorators.
-	"ClassDecorator",
-	"PropertyDecorator",
-	"MethodDecorator",
-	"ParameterDecorator",
-})
-
 // SingletonMember identifies one member of a flattened singleton by
 // the singleton's dotted runtime path, such as "Math", and the key it
 // is declared under, such as "Symbol.toStringTag".
@@ -845,20 +787,20 @@ func init() {
 // source file is in DOMResidualSources.
 var WebDOM = Package{URI: "web:dom", File: "web/dom.esc"}
 
-// RouteResult records the outcome of a Route call. Exactly one of Pkg,
-// Drop, Unmapped is meaningful per result.
+// RouteResult records the outcome of a Route call. Exactly one of Pkg
+// and Unmapped is meaningful per result.
+//
+// There is no drop outcome. A drop names a whole symbol that belongs to
+// no package, so PartitionLibWithOverlay settles it from the overlay's
+// root drop file before Route is reached.
 type RouteResult struct {
-	// Pkg is set when the name routes to a known package (explicit map
-	// or DOM residual).
+	// Pkg is set when the name routes to a known package, whether from
+	// the explicit map or the DOM residual.
 	Pkg Package
 
-	// Drop is true when the name is in ExplicitDrops. The caller should
-	// skip emission and log.
-	Drop bool
-
-	// Unmapped is true when the name is neither in the partition, the
-	// DOM-residual source list, nor the drop list. The caller fails per
-	// §6.1's unmapped-symbol fail-safe.
+	// Unmapped is true when the name is in neither the partition nor
+	// the DOM-residual source list. The caller fails per §6.1's
+	// unmapped-symbol fail-safe.
 	Unmapped bool
 }
 
@@ -868,12 +810,10 @@ type RouteResult struct {
 // is consulted — the absolute path is not portable across `tsc` install
 // layouts.
 //
-// Lookup order is as documented on Partition: explicit drops → explicit
-// partition → DOM residual → unmapped fail-safe.
+// Lookup order is the tail of the one documented on Partition:
+// explicit partition → DOM residual → unmapped fail-safe. The overlay's
+// root drop file is consulted by the caller, ahead of this.
 func Route(name, sourceFile string) RouteResult {
-	if ExplicitDrops.Contains(name) {
-		return RouteResult{Drop: true}
-	}
 	if pkg, ok := Partition[name]; ok {
 		return RouteResult{Pkg: pkg}
 	}
@@ -893,16 +833,17 @@ func Route(name, sourceFile string) RouteResult {
 	return RouteResult{Unmapped: true}
 }
 
-// UnmappedError formats the fail-safe message per §6.1: name the
-// symbol, its source `.d.ts` file, and point at the partition table
-// file the contributor must edit.
+// UnmappedError formats the fail-safe message per §6.1. It names the
+// symbol and its source `.d.ts` file, then points at both inputs the
+// contributor can edit: the partition table to route the symbol, and
+// the overlay's root drop file to drop it.
 func UnmappedError(name, sourceFile string) error {
 	return fmt.Errorf(
 		"converter: unmapped top-level declaration %q from %s; "+
 			"add it to internal/dts_to_esc/partition.go "+
 			"(see planning/builtins/implementation_plan.md §6.1) "+
-			"or to ExplicitDrops if intentional",
-		name, sourceFile)
+			"or to internal/interop/overlay/%s if intentional",
+		name, sourceFile, RootDropFile)
 }
 
 // PackageList returns the full list of known std/web package URIs in
