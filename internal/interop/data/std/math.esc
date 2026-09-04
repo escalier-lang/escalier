@@ -106,7 +106,7 @@ export declare fn atanh(x: number) -> number
  *     If all arguments are either +0 or −0, the result is +0.
  */
 @js("Math.hypot")
-export declare fn hypot(...values: Array<number>) -> number
+export declare fn hypot(...values: mut Array<number>) -> number
 
 /**
  * Returns the integral part of the a numeric expression, x, removing any fractional digits.
@@ -239,14 +239,14 @@ export declare fn log(x: number) -> number
  * @param values Numeric expressions to be evaluated.
  */
 @js("Math.max")
-export declare fn max(...values: Array<number>) -> number
+export declare fn max(...values: mut Array<number>) -> number
 
 /**
  * Returns the smaller of a set of supplied numeric expressions.
  * @param values Numeric expressions to be evaluated.
  */
 @js("Math.min")
-export declare fn min(...values: Array<number>) -> number
+export declare fn min(...values: mut Array<number>) -> number
 
 /**
  * Returns the value of a base expression taken to a specified power.

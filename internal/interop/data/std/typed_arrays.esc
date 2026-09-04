@@ -4,7 +4,7 @@
 
 @js("Int8Array")
 export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -313,7 +313,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Int8Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -330,7 +330,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint8Array")
 export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -639,7 +639,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Uint8Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -656,7 +656,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint8ClampedArray")
 export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -965,7 +965,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -982,7 +982,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
 
 @js("Int16Array")
 export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1291,7 +1291,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Int16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -1308,7 +1308,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint16Array")
 export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1617,7 +1617,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Uint16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -1634,7 +1634,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Int32Array")
 export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1943,7 +1943,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Int32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -1960,7 +1960,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint32Array")
 export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -2269,7 +2269,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Uint32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -2286,7 +2286,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Float32Array")
 export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -2595,7 +2595,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Float32Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -2612,7 +2612,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Float64Array")
 export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     [Symbol.iterator](mut self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -2921,7 +2921,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Float64Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -3614,7 +3614,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     subarray(mut self, begin?: number, end?: number) -> BigInt64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
@@ -3684,7 +3684,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<bigint>) -> BigInt64Array<ArrayBuffer>,
+    static of(...items: mut Array<bigint>) -> BigInt64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -3910,7 +3910,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     subarray(mut self, begin?: number, end?: number) -> BigUint64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
@@ -3980,7 +3980,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<bigint>) -> BigUint64Array<ArrayBuffer>,
+    static of(...items: mut Array<bigint>) -> BigUint64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.
@@ -4266,7 +4266,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
     /**
      * Converts a number to a string by using the current locale.
      */
-    toLocaleString(self, locales?: string | Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */
@@ -4322,7 +4322,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
      */
-    static of(...items: Array<number>) -> Float16Array<ArrayBuffer>,
+    static of(...items: mut Array<number>) -> Float16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param arrayLike An array-like object to convert to an array.

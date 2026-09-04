@@ -16,7 +16,7 @@ export declare interface AudioDataInit {
     numberOfFrames: number,
     sampleRate: number,
     timestamp: number,
-    transfer?: Array<ArrayBuffer>
+    transfer?: mut Array<ArrayBuffer>
 }
 
 export declare interface AudioDecoderConfig {
@@ -63,7 +63,7 @@ export declare interface EncodedAudioChunkInit {
     data: AllowSharedBufferSource,
     duration?: number,
     timestamp: number,
-    transfer?: Array<ArrayBuffer>,
+    transfer?: mut Array<ArrayBuffer>,
     type: EncodedAudioChunkType
 }
 
@@ -98,7 +98,7 @@ export declare interface ImageDecoderInit {
     desiredHeight?: number,
     desiredWidth?: number,
     preferAnimation?: boolean,
-    transfer?: Array<ArrayBuffer>,
+    transfer?: mut Array<ArrayBuffer>,
     type: string
 }
 
@@ -189,7 +189,7 @@ export declare interface VideoFrameBufferInit {
     displayWidth?: number,
     duration?: number,
     format: VideoPixelFormat,
-    layout?: Array<PlaneLayout>,
+    layout?: mut Array<PlaneLayout>,
     timestamp: number,
     visibleRect?: DOMRectInit
 }
@@ -197,7 +197,7 @@ export declare interface VideoFrameBufferInit {
 export declare interface VideoFrameCopyToOptions {
     colorSpace?: PredefinedColorSpace,
     format?: VideoPixelFormat,
-    layout?: Array<PlaneLayout>,
+    layout?: mut Array<PlaneLayout>,
     rect?: DOMRectInit
 }
 
@@ -556,7 +556,7 @@ export declare interface VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/close) */
     close() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
-    copyTo(destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<Array<PlaneLayout>>
+    copyTo(destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>
 }
 
 @js("VideoFrame")

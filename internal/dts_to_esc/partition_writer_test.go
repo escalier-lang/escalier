@@ -435,10 +435,11 @@ declare var Map: MapConstructor;
 	rootNS, ok := mod.Module.Namespaces.Get("")
 	require.True(t, ok)
 
-	// ReadonlyMap must not survive as an interface — it should
-	// have been replaced by a `type ReadonlyMap<K, V> = Map<K, V>`.
+	// ReadonlyMap leaves the output entirely. Escalier spells the
+	// immutable view `Map<K, V>` and the mutable one `mut Map<K, V>`,
+	// so the readonly name has nothing left to denote once every
+	// reference to it is respelled.
 	var mapClass *ast.ClassDecl
-	var readonlyAlias *ast.TypeDecl
 	for _, decl := range rootNS.Decls {
 		switch d := decl.(type) {
 		case *ast.ClassDecl:
@@ -449,13 +450,11 @@ declare var Map: MapConstructor;
 			require.NotEqual(t, "ReadonlyMap", d.Name.Name,
 				"ReadonlyMap must be dropped, not emitted as an interface")
 		case *ast.TypeDecl:
-			if d.Name.Name == "ReadonlyMap" {
-				readonlyAlias = d
-			}
+			require.NotEqual(t, "ReadonlyMap", d.Name.Name,
+				"ReadonlyMap must be dropped, not aliased to Map")
 		}
 	}
 	require.NotNil(t, mapClass, "Map should be trio-fused into a class")
-	require.NotNil(t, readonlyAlias, "ReadonlyMap should be emitted as a type alias")
 
 	// Receivers: methods on the readonly twin are `self`; others `mut self`.
 	wantReceiver := map[string]bool{ // method name → want mut?
@@ -486,11 +485,6 @@ declare var Map: MapConstructor;
 		require.True(t, seen.Contains(name), "method %s should be present on Map", name)
 	}
 
-	// Alias's RHS is Map<K, V>.
-	rhs, ok := readonlyAlias.TypeAnn.(*ast.TypeRefTypeAnn)
-	require.True(t, ok)
-	require.Equal(t, "Map", ast.QualIdentToString(rhs.Name))
-	require.Len(t, rhs.TypeArgs, 2)
 }
 
 func TestConvertBucket_ReadonlyTwinAppendsUniqueMembers(t *testing.T) {
@@ -598,20 +592,67 @@ export declare class Array<T> {
     static readonly prototype: mut Array<any>
 }`))
 
-	// The synthesised `type ReadonlyArray<T> = Array<T>` alias's RHS
-	// must remain a bare TypeRef — the rewrite pass runs before
-	// appendReadonlyAliases, so the alias is appended after the
-	// wrapping pass and its `Array<T>` reference stays unwrapped.
-	var alias *ast.TypeDecl
+	// No `ReadonlyArray` survives in any form. The rewrite above
+	// respelled every reference, so an alias would name a type nothing
+	// refers to and would offer a second spelling for `Array<T>`.
 	for _, decl := range rootNS.Decls {
-		if td, ok := decl.(*ast.TypeDecl); ok && td.Name.Name == "ReadonlyArray" {
-			alias = td
+		td, ok := decl.(*ast.TypeDecl)
+		if !ok {
+			continue
+		}
+		require.NotEqual(t, "ReadonlyArray", td.Name.Name,
+			"ReadonlyArray must be dropped, not aliased to Array")
+	}
+}
+
+// TestConvertBuckets_RewritesTwinRefsAcrossPackages covers the scope the
+// rewrite runs at. `Array` and `ReadonlyArray` are declared in std:array,
+// and std:string references both without declaring either. A rewrite
+// reading only its own bucket's twins leaves those two references
+// spelled the TypeScript way, so `mut` goes missing from the mutable one
+// and the readonly one names a type the tree does not declare.
+func TestConvertBuckets_RewritesTwinRefsAcrossPackages(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{
+		parseLib(t, "lib.es5.d.ts", `
+interface ReadonlyArray<T> {
+    readonly length: number;
+}
+interface Array<T> {
+    length: number;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+}
+declare var Array: ArrayConstructor;
+interface String {
+    split(sep: string): string[];
+    join(parts: ReadonlyArray<string>): string;
+}
+`),
+	})
+	require.NoError(t, err)
+
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+	require.Contains(t, mods, "std:string")
+
+	rootNS, ok := mods["std:string"].Module.Namespaces.Get("")
+	require.True(t, ok)
+	var str *ast.InterfaceDecl
+	for _, decl := range rootNS.Decls {
+		if id, ok := decl.(*ast.InterfaceDecl); ok && id.Name.Name == "String" {
+			str = id
 		}
 	}
-	require.NotNil(t, alias)
-	rhs, ok := alias.TypeAnn.(*ast.TypeRefTypeAnn)
-	require.True(t, ok, "ReadonlyArray alias RHS should be a bare TypeRef, got %T", alias.TypeAnn)
-	require.Equal(t, "Array", ast.QualIdentToString(rhs.Name))
+	require.NotNil(t, str)
+
+	printed, err := printer.Print(str, printer.DefaultOptions())
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface String {
+    split(sep: string) -> mut Array<string>,
+    join(parts: Array<string>) -> string
+}`))
 }
 
 // TestReportPartition_NamesDropsWithoutRoutedCounts pins both halves of

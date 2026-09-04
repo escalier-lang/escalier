@@ -49,9 +49,9 @@ export declare interface PublicKeyCredentialCreationOptions {
     attestation?: AttestationConveyancePreference,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
     challenge: BufferSource,
-    excludeCredentials?: Array<PublicKeyCredentialDescriptor>,
+    excludeCredentials?: mut Array<PublicKeyCredentialDescriptor>,
     extensions?: AuthenticationExtensionsClientInputs,
-    pubKeyCredParams: Array<PublicKeyCredentialParameters>,
+    pubKeyCredParams: mut Array<PublicKeyCredentialParameters>,
     rp: PublicKeyCredentialRpEntity,
     timeout?: number,
     user: PublicKeyCredentialUserEntity
@@ -61,10 +61,10 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
     attestation?: string,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
     challenge: Base64URLString,
-    excludeCredentials?: Array<PublicKeyCredentialDescriptorJSON>,
+    excludeCredentials?: mut Array<PublicKeyCredentialDescriptorJSON>,
     extensions?: AuthenticationExtensionsClientInputsJSON,
-    hints?: Array<string>,
-    pubKeyCredParams: Array<PublicKeyCredentialParameters>,
+    hints?: mut Array<string>,
+    pubKeyCredParams: mut Array<PublicKeyCredentialParameters>,
     rp: PublicKeyCredentialRpEntity,
     timeout?: number,
     user: PublicKeyCredentialUserEntityJSON
@@ -72,13 +72,13 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
 
 export declare interface PublicKeyCredentialDescriptor {
     id: BufferSource,
-    transports?: Array<AuthenticatorTransport>,
+    transports?: mut Array<AuthenticatorTransport>,
     type: PublicKeyCredentialType
 }
 
 export declare interface PublicKeyCredentialDescriptorJSON {
     id: Base64URLString,
-    transports?: Array<string>,
+    transports?: mut Array<string>,
     type: string
 }
 
@@ -92,7 +92,7 @@ export declare interface PublicKeyCredentialParameters {
 }
 
 export declare interface PublicKeyCredentialRequestOptions {
-    allowCredentials?: Array<PublicKeyCredentialDescriptor>,
+    allowCredentials?: mut Array<PublicKeyCredentialDescriptor>,
     challenge: BufferSource,
     extensions?: AuthenticationExtensionsClientInputs,
     rpId?: string,
@@ -101,10 +101,10 @@ export declare interface PublicKeyCredentialRequestOptions {
 }
 
 export declare interface PublicKeyCredentialRequestOptionsJSON {
-    allowCredentials?: Array<PublicKeyCredentialDescriptorJSON>,
+    allowCredentials?: mut Array<PublicKeyCredentialDescriptorJSON>,
     challenge: Base64URLString,
     extensions?: AuthenticationExtensionsClientInputsJSON,
-    hints?: Array<string>,
+    hints?: mut Array<string>,
     rpId?: string,
     timeout?: number,
     userVerification?: string
@@ -160,7 +160,7 @@ export declare interface AuthenticatorAttestationResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKeyAlgorithm) */
     getPublicKeyAlgorithm() -> COSEAlgorithmIdentifier,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
-    getTransports() -> Array<string>
+    getTransports() -> mut Array<string>
 }
 
 @js("AuthenticatorAttestationResponse")

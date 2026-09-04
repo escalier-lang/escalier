@@ -50,7 +50,7 @@ export declare interface Worker {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(message: any, transfer: Array<Transferable>) -> unknown,
+    postMessage(message: any, transfer: mut Array<Transferable>) -> unknown,
     postMessage(message: any, options?: StructuredSerializeOptions) -> unknown,
     /**
      * Aborts worker's associated global environment.

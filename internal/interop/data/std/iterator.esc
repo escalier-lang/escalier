@@ -10,8 +10,8 @@ export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = 
 }
 
 export declare interface GeneratorFunction {
-    new (...args: Array<any>) -> Generator,
-    fn (...args: Array<any>) -> Generator,
+    new (...args: mut Array<any>) -> Generator,
+    fn (...args: mut Array<any>) -> Generator,
     /**
      * The length of the arguments.
      */
@@ -28,8 +28,8 @@ export declare interface GeneratorFunction {
 }
 
 export declare interface GeneratorFunctionConstructor {
-    new (...args: Array<string>) -> GeneratorFunction,
-    fn (...args: Array<string>) -> GeneratorFunction,
+    new (...args: mut Array<string>) -> GeneratorFunction,
+    fn (...args: mut Array<string>) -> GeneratorFunction,
     /**
      * The length of the arguments.
      */

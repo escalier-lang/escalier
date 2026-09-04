@@ -49,7 +49,7 @@ export declare interface AudioTimestamp {
 export declare interface AudioWorkletNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
-    outputChannelCount?: Array<number>,
+    outputChannelCount?: mut Array<number>,
     parameterData?: Record<string, number>,
     processorOptions?: any
 }
@@ -97,8 +97,8 @@ export declare interface GainOptions {
 }
 
 export declare interface IIRFilterOptions {
-    feedback: Array<number>,
-    feedforward: Array<number>
+    feedback: mut Array<number>,
+    feedforward: mut Array<number>
 }
 
 export declare interface MediaElementAudioSourceOptions {
@@ -148,8 +148,8 @@ export declare interface PeriodicWaveConstraints {
 }
 
 export declare interface PeriodicWaveOptions {
-    imag?: Array<number> | Float32Array,
-    real?: Array<number> | Float32Array
+    imag?: mut Array<number> | Float32Array,
+    real?: mut Array<number> | Float32Array
 }
 
 export declare interface StereoPannerOptions {
@@ -157,7 +157,7 @@ export declare interface StereoPannerOptions {
 }
 
 export declare interface WaveShaperOptions {
-    curve?: Array<number> | Float32Array,
+    curve?: mut Array<number> | Float32Array,
     oversample?: OverSampleType
 }
 
@@ -414,7 +414,7 @@ export declare interface AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueAtTime) */
     setValueAtTime(value: number, startTime: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
-    setValueCurveAtTime(values: Array<number> | Float32Array, startTime: number, duration: number) -> AudioParam,
+    setValueCurveAtTime(values: mut Array<number> | Float32Array, startTime: number, duration: number) -> AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
     setValueCurveAtTime(values: Iterable<number>, startTime: number, duration: number) -> AudioParam
 }
@@ -582,13 +582,13 @@ export declare interface BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createGain) */
     createGain() -> GainNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createIIRFilter) */
-    createIIRFilter(feedforward: Array<number>, feedback: Array<number>) -> IIRFilterNode,
+    createIIRFilter(feedforward: mut Array<number>, feedback: mut Array<number>) -> IIRFilterNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createOscillator) */
     createOscillator() -> OscillatorNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPanner) */
     createPanner() -> PannerNode,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
-    createPeriodicWave(real: Array<number> | Float32Array, imag: Array<number> | Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
+    createPeriodicWave(real: mut Array<number> | Float32Array, imag: mut Array<number> | Float32Array, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
     /**
      * @deprecated
      *

@@ -7,13 +7,13 @@ export declare interface ProxyHandler<T: {}> {
      * A trap method for a function call.
      * @param target The original callable object which is being proxied.
      */
-    apply(target: T, thisArg: any, argArray: Array<any>) -> any,
+    apply(target: T, thisArg: any, argArray: mut Array<any>) -> any,
     /**
      * A trap for the `new` operator.
      * @param target The original object which is being proxied.
      * @param newTarget The constructor that was originally called.
      */
-    construct(target: T, argArray: Array<any>, newTarget: Function) -> {},
+    construct(target: T, argArray: mut Array<any>, newTarget: Function) -> {},
     /**
      * A trap for `Object.defineProperty()`.
      * @param target The original object which is being proxied.

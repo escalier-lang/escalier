@@ -19,7 +19,7 @@ export declare interface FileSystemDirectoryHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/removeEntry) */
     removeEntry(name: string, options?: FileSystemRemoveOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryHandle/resolve) */
-    resolve(possibleDescendant: FileSystemHandle) -> Promise<Array<string> | null>
+    resolve(possibleDescendant: FileSystemHandle) -> Promise<mut Array<string> | null>
 }
 
 export declare interface AddEventListenerOptions {
@@ -85,7 +85,7 @@ export declare interface CanvasRenderingContext2DSettings {
 }
 
 export declare interface CaretPositionFromPointOptions {
-    shadowRoots?: Array<ShadowRoot>
+    shadowRoots?: mut Array<ShadowRoot>
 }
 
 export declare interface CheckVisibilityOptions {
@@ -130,8 +130,8 @@ export declare interface ConstrainBooleanParameters {
 }
 
 export declare interface ConstrainDOMStringParameters {
-    exact?: string | Array<string>,
-    ideal?: string | Array<string>
+    exact?: string | mut Array<string>,
+    ideal?: string | mut Array<string>
 }
 
 export declare interface ConstrainDoubleRange {
@@ -358,7 +358,7 @@ export declare interface FontFaceDescriptors {
 }
 
 export declare interface FontFaceSetLoadEventInit {
-    fontfaces?: Array<FontFace>
+    fontfaces?: mut Array<FontFace>
 }
 
 export declare interface FormDataEventInit {
@@ -388,7 +388,7 @@ export declare interface GetAnimationsOptions {
 
 export declare interface GetHTMLOptions {
     serializableShadowRoots?: boolean,
-    shadowRoots?: Array<ShadowRoot>
+    shadowRoots?: mut Array<ShadowRoot>
 }
 
 export declare interface GetRootNodeOptions {
@@ -431,13 +431,13 @@ export declare interface InputEventInit {
     dataTransfer?: DataTransfer | null,
     inputType?: string,
     isComposing?: boolean,
-    targetRanges?: Array<StaticRange>
+    targetRanges?: mut Array<StaticRange>
 }
 
 export declare interface IntersectionObserverInit {
     root?: Element | Document | null,
     rootMargin?: string,
-    threshold?: number | Array<number>
+    threshold?: number | mut Array<number>
 }
 
 export declare interface KeyboardEventInit {
@@ -476,8 +476,8 @@ export declare interface LockInfo {
 }
 
 export declare interface LockManagerSnapshot {
-    held?: Array<LockInfo>,
-    pending?: Array<LockInfo>
+    held?: mut Array<LockInfo>,
+    pending?: mut Array<LockInfo>
 }
 
 export declare interface LockOptions {
@@ -544,13 +544,13 @@ export declare interface MediaKeyMessageEventInit {
 }
 
 export declare interface MediaKeySystemConfiguration {
-    audioCapabilities?: Array<MediaKeySystemMediaCapability>,
+    audioCapabilities?: mut Array<MediaKeySystemMediaCapability>,
     distinctiveIdentifier?: MediaKeysRequirement,
-    initDataTypes?: Array<string>,
+    initDataTypes?: mut Array<string>,
     label?: string,
     persistentState?: MediaKeysRequirement,
-    sessionTypes?: Array<string>,
-    videoCapabilities?: Array<MediaKeySystemMediaCapability>
+    sessionTypes?: mut Array<string>,
+    videoCapabilities?: mut Array<MediaKeySystemMediaCapability>
 }
 
 export declare interface MediaKeySystemMediaCapability {
@@ -566,7 +566,7 @@ export declare interface MediaKeysPolicy {
 export declare interface MediaMetadataInit {
     album?: string,
     artist?: string,
-    artwork?: Array<MediaImage>,
+    artwork?: mut Array<MediaImage>,
     title?: string
 }
 
@@ -608,17 +608,17 @@ export declare interface MediaStreamTrackEventInit {
 
 export declare interface MediaTrackCapabilities {
     aspectRatio?: DoubleRange,
-    autoGainControl?: Array<boolean>,
-    backgroundBlur?: Array<boolean>,
+    autoGainControl?: mut Array<boolean>,
+    backgroundBlur?: mut Array<boolean>,
     channelCount?: ULongRange,
     deviceId?: string,
     displaySurface?: string,
-    echoCancellation?: Array<boolean>,
-    facingMode?: Array<string>,
+    echoCancellation?: mut Array<boolean>,
+    facingMode?: mut Array<string>,
     frameRate?: DoubleRange,
     groupId?: string,
     height?: ULongRange,
-    noiseSuppression?: Array<boolean>,
+    noiseSuppression?: mut Array<boolean>,
     sampleRate?: ULongRange,
     sampleSize?: ULongRange,
     width?: ULongRange
@@ -643,7 +643,7 @@ export declare interface MediaTrackConstraintSet {
 }
 
 export declare interface MediaTrackConstraints {
-    advanced?: Array<MediaTrackConstraintSet>
+    advanced?: mut Array<MediaTrackConstraintSet>
 }
 
 export declare interface MediaTrackSettings {
@@ -686,7 +686,7 @@ export declare interface MessageEventInit<T = any> {
     data?: T,
     lastEventId?: string,
     origin?: string,
-    ports?: Array<MessagePort>,
+    ports?: mut Array<MessagePort>,
     source?: MessageEventSource | null
 }
 
@@ -704,7 +704,7 @@ export declare interface MouseEventInit {
 
 export declare interface MutationObserverInit {
     /** Set to a list of attribute local names (without namespace) if not all attribute mutations need to be observed and attributes is true or omitted. */
-    attributeFilter?: Array<string>,
+    attributeFilter?: mut Array<string>,
     /** Set to true if attributes is true or omitted and target's attribute value before the mutation needs to be recorded. */
     attributeOldValue?: boolean,
     /** Set to true if mutations to target's attributes are to be observed. Can be omitted if attributeOldValue or attributeFilter is specified. */
@@ -769,12 +769,12 @@ export declare interface PictureInPictureEventInit {
 export declare interface PointerEventInit {
     altitudeAngle?: number,
     azimuthAngle?: number,
-    coalescedEvents?: Array<PointerEvent>,
+    coalescedEvents?: mut Array<PointerEvent>,
     height?: number,
     isPrimary?: boolean,
     pointerId?: number,
     pointerType?: string,
-    predictedEvents?: Array<PointerEvent>,
+    predictedEvents?: mut Array<PointerEvent>,
     pressure?: number,
     tangentialPressure?: number,
     tiltX?: number,
@@ -816,9 +816,9 @@ export declare interface PropertyDefinition {
 }
 
 export declare interface PropertyIndexedKeyframes {
-    composite?: CompositeOperationOrAuto | Array<CompositeOperationOrAuto>,
-    easing?: string | Array<string>,
-    offset?: number | Array<number | null>
+    composite?: CompositeOperationOrAuto | mut Array<CompositeOperationOrAuto>,
+    easing?: string | mut Array<string>,
+    offset?: number | mut Array<number | null>
 }
 
 export declare interface RTCDTMFToneChangeEventInit {
@@ -827,7 +827,7 @@ export declare interface RTCDTMFToneChangeEventInit {
 
 export declare interface ReportingObserverOptions {
     buffered?: boolean,
-    types?: Array<string>
+    types?: mut Array<string>
 }
 
 export declare interface ResizeObserverOptions {
@@ -878,7 +878,7 @@ export declare interface ShadowRootInit {
 }
 
 export declare interface ShareData {
-    files?: Array<File>,
+    files?: mut Array<File>,
     text?: string,
     title?: string,
     url?: string
@@ -909,7 +909,7 @@ export declare interface StorageEstimate {
 }
 
 export declare interface StructuredSerializeOptions {
-    transfer?: Array<Transferable>
+    transfer?: mut Array<Transferable>
 }
 
 export declare interface SubmitEventInit {
@@ -922,9 +922,9 @@ export declare interface ToggleEventInit {
 }
 
 export declare interface TouchEventInit {
-    changedTouches?: Array<Touch>,
-    targetTouches?: Array<Touch>,
-    touches?: Array<Touch>
+    changedTouches?: mut Array<Touch>,
+    targetTouches?: mut Array<Touch>,
+    touches?: mut Array<Touch>
 }
 
 export declare interface TouchInit {
@@ -1025,7 +1025,7 @@ export declare interface WebTransportOptions {
     allowPooling?: boolean,
     congestionControl?: WebTransportCongestionControl,
     requireUnreliable?: boolean,
-    serverCertificateHashes?: Array<WebTransportHash>
+    serverCertificateHashes?: mut Array<WebTransportHash>
 }
 
 export declare interface WebTransportSendStreamOptions {
@@ -1232,7 +1232,7 @@ export declare var AbortSignal: {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/abort_static) */
     abort(reason?: any) -> AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/any_static) */
-    any(signals: Array<AbortSignal>) -> AbortSignal,
+    any(signals: mut Array<AbortSignal>) -> AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/timeout_static) */
     timeout(milliseconds: number) -> AbortSignal
 }
@@ -1283,9 +1283,9 @@ export declare interface AbstractWorkerEventMap {
 
 export declare interface Animatable {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/animate) */
-    animate(keyframes: Array<Keyframe> | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) -> Animation,
+    animate(keyframes: mut Array<Keyframe> | PropertyIndexedKeyframes | null, options?: number | KeyframeAnimationOptions) -> Animation,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAnimations) */
-    getAnimations(options?: GetAnimationsOptions) -> Array<Animation>
+    getAnimations(options?: GetAnimationsOptions) -> mut Array<Animation>
 }
 
 export declare interface AnimationEventMap {
@@ -1798,7 +1798,7 @@ export declare var CSSLayerBlockRule: {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule) */
 export declare interface CSSLayerStatementRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule/nameList) */
-    readonly nameList: ReadonlyArray<string>
+    readonly nameList: Array<string>
 }
 
 @js("CSSLayerStatementRule")
@@ -1840,7 +1840,7 @@ export declare interface CSSMathMax {
 @js("CSSMathMax")
 export declare var CSSMathMax: {
     prototype: CSSMathMax,
-    new (...args: Array<CSSNumberish>) -> CSSMathMax
+    new (...args: mut Array<CSSNumberish>) -> CSSMathMax
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMin) */
@@ -1852,7 +1852,7 @@ export declare interface CSSMathMin {
 @js("CSSMathMin")
 export declare var CSSMathMin: {
     prototype: CSSMathMin,
-    new (...args: Array<CSSNumberish>) -> CSSMathMin
+    new (...args: mut Array<CSSNumberish>) -> CSSMathMin
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathNegate) */
@@ -1876,7 +1876,7 @@ export declare interface CSSMathProduct {
 @js("CSSMathProduct")
 export declare var CSSMathProduct: {
     prototype: CSSMathProduct,
-    new (...args: Array<CSSNumberish>) -> CSSMathProduct
+    new (...args: mut Array<CSSNumberish>) -> CSSMathProduct
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathSum) */
@@ -1888,7 +1888,7 @@ export declare interface CSSMathSum {
 @js("CSSMathSum")
 export declare var CSSMathSum: {
     prototype: CSSMathSum,
-    new (...args: Array<CSSNumberish>) -> CSSMathSum
+    new (...args: mut Array<CSSNumberish>) -> CSSMathSum
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue) */
@@ -1983,23 +1983,23 @@ export declare var CSSNumericArray: {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue) */
 export declare interface CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/add) */
-    add(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    add(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/div) */
-    div(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    div(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/equals) */
-    equals(...value: Array<CSSNumberish>) -> boolean,
+    equals(...value: mut Array<CSSNumberish>) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/max) */
-    max(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    max(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/min) */
-    min(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    min(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/mul) */
-    mul(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    mul(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/sub) */
-    sub(...values: Array<CSSNumberish>) -> CSSNumericValue,
+    sub(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/to) */
     to(unit: string) -> CSSUnitValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/toSum) */
-    toSum(...units: Array<string>) -> CSSMathSum,
+    toSum(...units: mut Array<string>) -> CSSMathSum,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/type) */
     type() -> CSSNumericType
 }
@@ -3618,7 +3618,7 @@ export declare var CSSStyleValue: {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parse_static) */
     parse(property: string, cssText: string) -> CSSStyleValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleValue/parseAll_static) */
-    parseAll(property: string, cssText: string) -> Array<CSSStyleValue>
+    parseAll(property: string, cssText: string) -> mut Array<CSSStyleValue>
 }
 
 /**
@@ -3667,7 +3667,7 @@ export declare interface CSSTransformValue {
 @js("CSSTransformValue")
 export declare var CSSTransformValue: {
     prototype: CSSTransformValue,
-    new (transforms: Array<CSSTransformComponent>) -> CSSTransformValue
+    new (transforms: mut Array<CSSTransformComponent>) -> CSSTransformValue
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransition) */
@@ -3730,7 +3730,7 @@ export declare interface CSSUnparsedValue {
 @js("CSSUnparsedValue")
 export declare var CSSUnparsedValue: {
     prototype: CSSUnparsedValue,
-    new (members: Array<CSSUnparsedSegment>) -> CSSUnparsedValue
+    new (members: mut Array<CSSUnparsedSegment>) -> CSSUnparsedValue
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSVariableReferenceValue) */
@@ -3749,7 +3749,7 @@ export declare var CSSVariableReferenceValue: {
 
 export declare interface CSSViewTransitionRule {
     readonly navigation: string,
-    readonly types: ReadonlyArray<string>
+    readonly types: Array<string>
 }
 
 @js("CSSViewTransitionRule")
@@ -3890,7 +3890,7 @@ export declare interface CanvasPath {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/rect) */
     rect(x: number, y: number, w: number, h: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/roundRect) */
-    roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | Array<number | DOMPointInit>) -> unknown,
+    roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | mut Array<number | DOMPointInit>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/roundRect) */
     roundRect(x: number, y: number, w: number, h: number, radii?: number | DOMPointInit | Iterable<number | DOMPointInit>) -> unknown
 }
@@ -3907,9 +3907,9 @@ export declare interface CanvasPathDrawingStyles {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/miterLimit) */
     miterLimit: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/getLineDash) */
-    getLineDash() -> Array<number>,
+    getLineDash() -> mut Array<number>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/setLineDash) */
-    setLineDash(segments: Array<number>) -> unknown,
+    setLineDash(segments: mut Array<number>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/setLineDash) */
     setLineDash(segments: Iterable<number>) -> unknown
 }
@@ -4092,7 +4092,7 @@ export declare interface ChildNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/after)
      */
-    after(...nodes: Array<Node | string>) -> unknown,
+    after(...nodes: mut Array<Node | string>) -> unknown,
     /**
      * Inserts nodes just before node, while replacing strings in nodes with equivalent Text nodes.
      *
@@ -4100,7 +4100,7 @@ export declare interface ChildNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/before)
      */
-    before(...nodes: Array<Node | string>) -> unknown,
+    before(...nodes: mut Array<Node | string>) -> unknown,
     /**
      * Removes node.
      *
@@ -4114,7 +4114,7 @@ export declare interface ChildNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/replaceWith)
      */
-    replaceWith(...nodes: Array<Node | string>) -> unknown
+    replaceWith(...nodes: mut Array<Node | string>) -> unknown
 }
 
 /** @deprecated */
@@ -4167,7 +4167,7 @@ export declare interface ClipboardItem {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/presentationStyle) */
     readonly presentationStyle: PresentationStyle,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/types) */
-    readonly types: ReadonlyArray<string>,
+    readonly types: Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/getType) */
     getType(type: string) -> Promise<Blob>
 }
@@ -4411,7 +4411,7 @@ export declare interface DOMImplementation {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMImplementation/hasFeature)
      */
-    hasFeature(...args: Array<any>) -> true
+    hasFeature(...args: mut Array<any>) -> true
 }
 
 @js("DOMImplementation")
@@ -4491,7 +4491,7 @@ export declare interface DOMMatrix {
 @js("DOMMatrix")
 export declare var DOMMatrix: {
     prototype: DOMMatrix,
-    new (init?: string | Array<number>) -> DOMMatrix,
+    new (init?: string | mut Array<number>) -> DOMMatrix,
     fromFloat32Array(array32: Float32Array) -> DOMMatrix,
     fromFloat64Array(array64: Float64Array) -> DOMMatrix,
     fromMatrix(other?: DOMMatrixInit) -> DOMMatrix
@@ -4591,7 +4591,7 @@ export declare interface DOMMatrixReadOnly {
 @js("DOMMatrixReadOnly")
 export declare var DOMMatrixReadOnly: {
     prototype: DOMMatrixReadOnly,
-    new (init?: string | Array<number>) -> DOMMatrixReadOnly,
+    new (init?: string | mut Array<number>) -> DOMMatrixReadOnly,
     fromFloat32Array(array32: Float32Array) -> DOMMatrixReadOnly,
     fromFloat64Array(array64: Float64Array) -> DOMMatrixReadOnly,
     fromMatrix(other?: DOMMatrixInit) -> DOMMatrixReadOnly
@@ -4842,7 +4842,7 @@ export declare interface DOMTokenList {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMTokenList/add)
      */
-    add(...tokens: Array<string>) -> unknown,
+    add(...tokens: mut Array<string>) -> unknown,
     /**
      * Returns true if token is present, and false otherwise.
      *
@@ -4864,7 +4864,7 @@ export declare interface DOMTokenList {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMTokenList/remove)
      */
-    remove(...tokens: Array<string>) -> unknown,
+    remove(...tokens: mut Array<string>) -> unknown,
     /**
      * Replaces token with newToken.
      *
@@ -4953,7 +4953,7 @@ export declare interface DataTransfer {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransfer/types)
      */
-    readonly types: ReadonlyArray<string>,
+    readonly types: Array<string>,
     /**
      * Removes the data of the specified formats. Removes all data if the argument is omitted.
      *
@@ -5786,14 +5786,14 @@ export declare interface Document {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/write)
      */
-    write(...text: Array<string>) -> unknown,
+    write(...text: mut Array<string>) -> unknown,
     /**
      * Writes one or more HTML expressions, followed by a carriage return, to a document in the specified window.
      * @param content The text and HTML tags to write.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/writeln)
      */
-    writeln(...text: Array<string>) -> unknown,
+    writeln(...text: mut Array<string>) -> unknown,
     addEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: Document, ev: DocumentEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: Document, ev: DocumentEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -5836,7 +5836,7 @@ export declare interface DocumentOrShadowRoot {
      */
     readonly activeElement: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/adoptedStyleSheets) */
-    adoptedStyleSheets: Array<CSSStyleSheet>,
+    adoptedStyleSheets: mut Array<CSSStyleSheet>,
     /**
      * Returns document's fullscreen element.
      *
@@ -5859,9 +5859,9 @@ export declare interface DocumentOrShadowRoot {
      * @param y The y-offset
      */
     elementFromPoint(x: number, y: number) -> Element | null,
-    elementsFromPoint(x: number, y: number) -> Array<Element>,
+    elementsFromPoint(x: number, y: number) -> mut Array<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/getAnimations) */
-    getAnimations() -> Array<Animation>
+    getAnimations() -> mut Array<Animation>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentTimeline) */
@@ -6048,7 +6048,7 @@ export declare interface Element {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNames)
      */
-    getAttributeNames() -> Array<string>,
+    getAttributeNames() -> mut Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNode) */
     getAttributeNode(qualifiedName: string) -> Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/getAttributeNodeNS) */
@@ -6398,7 +6398,7 @@ export declare interface Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Event/composedPath)
      */
-    composedPath() -> Array<EventTarget>,
+    composedPath() -> mut Array<EventTarget>,
     /**
      * @deprecated
      *
@@ -6789,7 +6789,7 @@ export declare interface FontFaceSet {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/check) */
     check(font: string, text?: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/load) */
-    load(font: string, text?: string) -> Promise<Array<FontFace>>,
+    load(font: string, text?: string) -> Promise<mut Array<FontFace>>,
     forEach(callbackfn: fn (value: FontFace, key: FontFace, parent: FontFaceSet) -> unknown, thisArg?: any) -> unknown,
     addEventListener<K: keyof FontFaceSetEventMap>(type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -6806,7 +6806,7 @@ export declare var FontFaceSet: {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent) */
 export declare interface FontFaceSetLoadEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent/fontfaces) */
-    readonly fontfaces: ReadonlyArray<FontFace>
+    readonly fontfaces: Array<FontFace>
 }
 
 @js("FontFaceSetLoadEvent")
@@ -6835,7 +6835,7 @@ export declare interface FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
     get(name: string) -> FormDataEntryValue | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/getAll) */
-    getAll(name: string) -> Array<FormDataEntryValue>,
+    getAll(name: string) -> mut Array<FormDataEntryValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
     has(name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
@@ -6900,9 +6900,9 @@ export declare interface GPUError {
  */
 export declare interface Gamepad {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Gamepad/axes) */
-    readonly axes: ReadonlyArray<number>,
+    readonly axes: Array<number>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Gamepad/buttons) */
-    readonly buttons: ReadonlyArray<GamepadButton>,
+    readonly buttons: Array<GamepadButton>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Gamepad/connected) */
     readonly connected: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Gamepad/id) */
@@ -9398,7 +9398,7 @@ export declare interface HTMLInputElement {
      */
     valueAsNumber: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement/webkitEntries) */
-    readonly webkitEntries: ReadonlyArray<FileSystemEntry>,
+    readonly webkitEntries: Array<FileSystemEntry>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement/webkitdirectory) */
     webkitdirectory: boolean,
     /**
@@ -10855,11 +10855,11 @@ export declare interface HTMLSlotElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/name) */
     name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assign) */
-    assign(...nodes: Array<Element | Text>) -> unknown,
+    assign(...nodes: mut Array<Element | Text>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedElements) */
-    assignedElements(options?: AssignedNodesOptions) -> Array<Element>,
+    assignedElements(options?: AssignedNodesOptions) -> mut Array<Element>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assignedNodes) */
-    assignedNodes(options?: AssignedNodesOptions) -> Array<Node>,
+    assignedNodes(options?: AssignedNodesOptions) -> mut Array<Node>,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLSlotElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -11919,7 +11919,7 @@ export declare interface Highlight {
 @js("Highlight")
 export declare var Highlight: {
     prototype: Highlight,
-    new (...initialRanges: Array<AbstractRange>) -> Highlight
+    new (...initialRanges: mut Array<AbstractRange>) -> Highlight
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HighlightRegistry) */
@@ -12089,7 +12089,7 @@ export declare interface InputEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/isComposing) */
     readonly isComposing: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/getTargetRanges) */
-    getTargetRanges() -> Array<StaticRange>
+    getTargetRanges() -> mut Array<StaticRange>
 }
 
 @js("InputEvent")
@@ -12109,13 +12109,13 @@ export declare interface IntersectionObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/rootMargin) */
     readonly rootMargin: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/thresholds) */
-    readonly thresholds: ReadonlyArray<number>,
+    readonly thresholds: Array<number>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/disconnect) */
     disconnect() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/observe) */
     observe(target: Element) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/takeRecords) */
-    takeRecords() -> Array<IntersectionObserverEntry>,
+    takeRecords() -> mut Array<IntersectionObserverEntry>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IntersectionObserver/unobserve) */
     unobserve(target: Element) -> unknown
 }
@@ -12225,15 +12225,15 @@ export declare interface KeyframeEffect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/target) */
     target: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/getKeyframes) */
-    getKeyframes() -> Array<ComputedKeyframe>,
+    getKeyframes() -> mut Array<ComputedKeyframe>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/setKeyframes) */
-    setKeyframes(keyframes: Array<Keyframe> | PropertyIndexedKeyframes | null) -> unknown
+    setKeyframes(keyframes: mut Array<Keyframe> | PropertyIndexedKeyframes | null) -> unknown
 }
 
 @js("KeyframeEffect")
 export declare var KeyframeEffect: {
     prototype: KeyframeEffect,
-    new (target: Element | null, keyframes: Array<Keyframe> | PropertyIndexedKeyframes | null, options?: number | KeyframeEffectOptions) -> KeyframeEffect,
+    new (target: Element | null, keyframes: mut Array<Keyframe> | PropertyIndexedKeyframes | null, options?: number | KeyframeEffectOptions) -> KeyframeEffect,
     new (source: KeyframeEffect) -> KeyframeEffect
 }
 
@@ -12520,7 +12520,7 @@ export declare var MIDIMessageEvent: {
  */
 export declare interface MIDIOutput {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput/send) */
-    send(data: Array<number>, timestamp?: DOMHighResTimeStamp) -> unknown,
+    send(data: mut Array<number>, timestamp?: DOMHighResTimeStamp) -> unknown,
     addEventListener<K: keyof MIDIPortEventMap>(type: K, listener: fn (this: MIDIOutput, ev: MIDIPortEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof MIDIPortEventMap>(type: K, listener: fn (this: MIDIOutput, ev: MIDIPortEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -12661,7 +12661,7 @@ export declare interface MediaDevices {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/devicechange_event) */
     ondevicechange: (fn (this: MediaDevices, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/enumerateDevices) */
-    enumerateDevices() -> Promise<Array<MediaDeviceInfo>>,
+    enumerateDevices() -> Promise<mut Array<MediaDeviceInfo>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/getDisplayMedia) */
     getDisplayMedia(options?: DisplayMediaStreamOptions) -> Promise<MediaStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/getSupportedConstraints) */
@@ -12882,7 +12882,7 @@ export declare interface MediaMetadata {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaMetadata/artist) */
     artist: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaMetadata/artwork) */
-    artwork: ReadonlyArray<MediaImage>,
+    artwork: Array<MediaImage>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaMetadata/title) */
     title: string
 }
@@ -13104,13 +13104,13 @@ export declare interface MediaStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/clone) */
     clone() -> MediaStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getAudioTracks) */
-    getAudioTracks() -> Array<MediaStreamTrack>,
+    getAudioTracks() -> mut Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getTrackById) */
     getTrackById(trackId: string) -> MediaStreamTrack | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getTracks) */
-    getTracks() -> Array<MediaStreamTrack>,
+    getTracks() -> mut Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/getVideoTracks) */
-    getVideoTracks() -> Array<MediaStreamTrack>,
+    getVideoTracks() -> mut Array<MediaStreamTrack>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/removeTrack) */
     removeTrack(track: MediaStreamTrack) -> unknown,
     addEventListener<K: keyof MediaStreamEventMap>(type: K, listener: fn (this: MediaStream, ev: MediaStreamEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -13124,7 +13124,7 @@ export declare var MediaStream: {
     prototype: MediaStream,
     new () -> MediaStream,
     new (stream: MediaStream) -> MediaStream,
-    new (tracks: Array<MediaStreamTrack>) -> MediaStream
+    new (tracks: mut Array<MediaStreamTrack>) -> MediaStream
 }
 
 export declare interface MediaStreamTrackEventMap {
@@ -13254,7 +13254,7 @@ export declare interface MessageEvent<T = any> {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent/ports)
      */
-    readonly ports: ReadonlyArray<MessagePort>,
+    readonly ports: Array<MessagePort>,
     /**
      * Returns the WindowProxy of the source window, for cross-document messaging, and the MessagePort being attached, in the connect event fired at SharedWorkerGlobalScope objects.
      *
@@ -13262,7 +13262,7 @@ export declare interface MessageEvent<T = any> {
      */
     readonly source: MessageEventSource | null,
     /** @deprecated */
-    initMessageEvent(type: string, bubbles?: boolean, cancelable?: boolean, data?: any, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: Array<MessagePort>) -> unknown,
+    initMessageEvent(type: string, bubbles?: boolean, cancelable?: boolean, data?: any, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: mut Array<MessagePort>) -> unknown,
     /** @deprecated */
     initMessageEvent(type: string, bubbles?: boolean, cancelable?: boolean, data?: any, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: Iterable<MessagePort>) -> unknown
 }
@@ -13313,7 +13313,7 @@ export declare interface MessagePort {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort/postMessage)
      */
-    postMessage(message: any, transfer: Array<Transferable>) -> unknown,
+    postMessage(message: any, transfer: mut Array<Transferable>) -> unknown,
     postMessage(message: any, options?: StructuredSerializeOptions) -> unknown,
     /**
      * Begins dispatching messages received on the port.
@@ -13481,7 +13481,7 @@ export declare interface MutationObserver {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MutationObserver/takeRecords)
      */
-    takeRecords() -> Array<MutationRecord>
+    takeRecords() -> mut Array<MutationRecord>
 }
 
 @js("MutationObserver")
@@ -13689,7 +13689,7 @@ export declare interface Navigator {
      */
     canShare(data?: ShareData) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/getGamepads) */
-    getGamepads() -> Array<Gamepad | null>,
+    getGamepads() -> mut Array<Gamepad | null>,
     /**
      * Available only in secure contexts.
      *
@@ -13701,7 +13701,7 @@ export declare interface Navigator {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/requestMediaKeySystemAccess)
      */
-    requestMediaKeySystemAccess(keySystem: string, supportedConfigurations: Array<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
+    requestMediaKeySystemAccess(keySystem: string, supportedConfigurations: mut Array<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/sendBeacon) */
     sendBeacon(url: string | URL, data?: BodyInit | null) -> boolean,
     /**
@@ -13817,7 +13817,7 @@ export declare interface NavigatorLanguage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/language) */
     readonly language: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/languages) */
-    readonly languages: ReadonlyArray<string>
+    readonly languages: Array<string>
 }
 
 /** Available only in secure contexts. */
@@ -14417,7 +14417,7 @@ export declare interface ParentNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/append)
      */
-    append(...nodes: Array<Node | string>) -> unknown,
+    append(...nodes: mut Array<Node | string>) -> unknown,
     /**
      * Inserts nodes before the first child of node, while replacing strings in nodes with equivalent Text nodes.
      *
@@ -14425,7 +14425,7 @@ export declare interface ParentNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/prepend)
      */
-    prepend(...nodes: Array<Node | string>) -> unknown,
+    prepend(...nodes: mut Array<Node | string>) -> unknown,
     /**
      * Returns the first element that is a descendant of node that matches selectors.
      *
@@ -14455,7 +14455,7 @@ export declare interface ParentNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/replaceChildren)
      */
-    replaceChildren(...nodes: Array<Node | string>) -> unknown
+    replaceChildren(...nodes: mut Array<Node | string>) -> unknown
 }
 
 /**
@@ -14481,7 +14481,7 @@ export declare var Path2D: {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress) */
 export declare interface PaymentAddress {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/addressLine) */
-    readonly addressLine: ReadonlyArray<string>,
+    readonly addressLine: Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/city) */
     readonly city: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContactAddress/country) */
@@ -14723,9 +14723,9 @@ export declare interface PointerEvent {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/getCoalescedEvents)
      */
-    getCoalescedEvents() -> Array<PointerEvent>,
+    getCoalescedEvents() -> mut Array<PointerEvent>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/getPredictedEvents) */
-    getPredictedEvents() -> Array<PointerEvent>
+    getPredictedEvents() -> mut Array<PointerEvent>
 }
 
 @js("PointerEvent")
@@ -15050,13 +15050,13 @@ export declare var ResizeObserver: {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry) */
 export declare interface ResizeObserverEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/borderBoxSize) */
-    readonly borderBoxSize: ReadonlyArray<ResizeObserverSize>,
+    readonly borderBoxSize: Array<ResizeObserverSize>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/contentBoxSize) */
-    readonly contentBoxSize: ReadonlyArray<ResizeObserverSize>,
+    readonly contentBoxSize: Array<ResizeObserverSize>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/contentRect) */
     readonly contentRect: DOMRectReadOnly,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/devicePixelContentBoxSize) */
-    readonly devicePixelContentBoxSize: ReadonlyArray<ResizeObserverSize>,
+    readonly devicePixelContentBoxSize: Array<ResizeObserverSize>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ResizeObserverEntry/target) */
     readonly target: Element
 }
@@ -17834,7 +17834,7 @@ export declare interface SpeechSynthesis {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/cancel) */
     cancel() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/getVoices) */
-    getVoices() -> Array<SpeechSynthesisVoice>,
+    getVoices() -> mut Array<SpeechSynthesisVoice>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/pause) */
     pause() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/resume) */
@@ -18007,13 +18007,13 @@ export declare interface StyleMedia {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap) */
 export declare interface StylePropertyMap {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/append) */
-    append(property: string, ...values: Array<CSSStyleValue | string>) -> unknown,
+    append(property: string, ...values: mut Array<CSSStyleValue | string>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/clear) */
     clear() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/delete) */
     delete(property: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/set) */
-    set(property: string, ...values: Array<CSSStyleValue | string>) -> unknown
+    set(property: string, ...values: mut Array<CSSStyleValue | string>) -> unknown
 }
 
 @js("StylePropertyMap")
@@ -18029,10 +18029,10 @@ export declare interface StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/get) */
     get(property: string) -> undefined | CSSStyleValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/getAll) */
-    getAll(property: string) -> Array<CSSStyleValue>,
+    getAll(property: string) -> mut Array<CSSStyleValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/has) */
     has(property: string) -> boolean,
-    forEach(callbackfn: fn (value: Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: any) -> unknown,
+    forEach(callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: any) -> unknown,
     [Symbol.iterator]() -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     entries() -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     keys() -> StylePropertyMapReadOnlyIterator<string>,
@@ -19307,7 +19307,7 @@ export declare interface Window {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
      */
-    postMessage(message: any, targetOrigin: string, transfer?: Array<Transferable>) -> unknown,
+    postMessage(message: any, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown,
     postMessage(message: any, options?: WindowPostMessageOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/print) */
     print() -> unknown,
@@ -19468,9 +19468,9 @@ export declare interface WindowOrWorkerGlobalScope {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
     reportError(e: any) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setInterval) */
-    setInterval(handler: TimerHandler, timeout?: number, ...arguments: Array<any>) -> number,
+    setInterval(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setTimeout) */
-    setTimeout(handler: TimerHandler, timeout?: number, ...arguments: Array<any>) -> number,
+    setTimeout(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/structuredClone) */
     structuredClone<T = any>(value: T, options?: StructuredSerializeOptions) -> T
 }
@@ -20124,7 +20124,7 @@ export declare interface BlobCallback {
 }
 
 export declare interface CustomElementConstructor {
-    new (...params: Array<any>) -> HTMLElement
+    new (...params: mut Array<any>) -> HTMLElement
 }
 
 export declare interface ErrorCallback {
@@ -20136,7 +20136,7 @@ export declare interface FileCallback {
 }
 
 export declare interface FileSystemEntriesCallback {
-    fn (entries: Array<FileSystemEntry>) -> unknown
+    fn (entries: mut Array<FileSystemEntry>) -> unknown
 }
 
 export declare interface FileSystemEntryCallback {
@@ -20156,7 +20156,7 @@ export declare interface IdleRequestCallback {
 }
 
 export declare interface IntersectionObserverCallback {
-    fn (entries: Array<IntersectionObserverEntry>, observer: IntersectionObserver) -> unknown
+    fn (entries: mut Array<IntersectionObserverEntry>, observer: IntersectionObserver) -> unknown
 }
 
 export declare interface LockGrantedCallback {
@@ -20168,7 +20168,7 @@ export declare interface MediaSessionActionHandler {
 }
 
 export declare interface MutationCallback {
-    fn (mutations: Array<MutationRecord>, observer: MutationObserver) -> unknown
+    fn (mutations: mut Array<MutationRecord>, observer: MutationObserver) -> unknown
 }
 
 export declare interface NotificationPermissionCallback {
@@ -20196,11 +20196,11 @@ export declare interface RemotePlaybackAvailabilityCallback {
 }
 
 export declare interface ReportingObserverCallback {
-    fn (reports: Array<Report>, observer: ReportingObserver) -> unknown
+    fn (reports: mut Array<Report>, observer: ReportingObserver) -> unknown
 }
 
 export declare interface ResizeObserverCallback {
-    fn (entries: Array<ResizeObserverEntry>, observer: ResizeObserver) -> unknown
+    fn (entries: mut Array<ResizeObserverEntry>, observer: ResizeObserver) -> unknown
 }
 
 export declare interface VideoFrameRequestCallback {
@@ -20819,7 +20819,7 @@ export declare fn open(url?: string | URL, target?: string, features?: string) -
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
  */
 @js("postMessage")
-export declare fn postMessage(message: any, targetOrigin: string, transfer?: Array<Transferable>) -> unknown
+export declare fn postMessage(message: any, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown
 
 @js("postMessage")
 export declare fn postMessage(message: any, options?: WindowPostMessageOptions) -> unknown
@@ -21679,11 +21679,11 @@ export declare fn reportError(e: any) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setInterval) */
 @js("setInterval")
-export declare fn setInterval(handler: TimerHandler, timeout?: number, ...arguments: Array<any>) -> number
+export declare fn setInterval(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setTimeout) */
 @js("setTimeout")
-export declare fn setTimeout(handler: TimerHandler, timeout?: number, ...arguments: Array<any>) -> number
+export declare fn setTimeout(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/structuredClone) */
 @js("structuredClone")
@@ -21727,11 +21727,11 @@ export declare type CanvasImageSource = HTMLOrSVGImageElement | HTMLVideoElement
 
 export declare type ClipboardItemData = Promise<string | Blob>
 
-export declare type ClipboardItems = Array<ClipboardItem>
+export declare type ClipboardItems = mut Array<ClipboardItem>
 
 export declare type ConstrainBoolean = boolean | ConstrainBooleanParameters
 
-export declare type ConstrainDOMString = string | Array<string> | ConstrainDOMStringParameters
+export declare type ConstrainDOMString = string | mut Array<string> | ConstrainDOMStringParameters
 
 export declare type ConstrainDouble = number | ConstrainDoubleRange
 
@@ -21773,13 +21773,13 @@ export declare type OptionalPrefixToken<T: string> = ` ${T}` | ""
 
 export declare type RenderingContext = CanvasRenderingContext2D | ImageBitmapRenderingContext | WebGLRenderingContext | WebGL2RenderingContext
 
-export declare type ReportList = Array<Report>
+export declare type ReportList = mut Array<Report>
 
 export declare type TimerHandler = string | Function
 
 export declare type Transferable = OffscreenCanvas | ImageBitmap | MessagePort | MediaSourceHandle | ReadableStream | WritableStream | TransformStream | AudioData | VideoFrame | RTCDataChannel | ArrayBuffer
 
-export declare type VibratePattern = number | Array<number>
+export declare type VibratePattern = number | mut Array<number>
 
 export declare type WindowProxy = Window
 

@@ -10,7 +10,7 @@
  * @param argumentsList An array of argument values to be passed to the function.
  */
 @js("Reflect.apply")
-export declare fn apply<T, A: ReadonlyArray<any>, R>(target: fn (this: T, ...args: A) -> R, thisArgument: T, argumentsList: Readonly<A>) -> R
+export declare fn apply<T, A: Array<any>, R>(target: fn (this: T, ...args: A) -> R, thisArgument: T, argumentsList: Readonly<A>) -> R
 
 @js("Reflect.apply")
 export declare fn apply(target: Function, thisArgument: any, argumentsList: ArrayLike<any>) -> any
@@ -23,7 +23,7 @@ export declare fn apply(target: Function, thisArgument: any, argumentsList: Arra
  * @param newTarget The constructor to be used as the `new.target` object.
  */
 @js("Reflect.construct")
-export declare fn construct<A: ReadonlyArray<any>, R>(target: fn (...args: A) -> R, argumentsList: Readonly<A>, newTarget?: fn (...args: any) -> any) -> R
+export declare fn construct<A: Array<any>, R>(target: fn (...args: A) -> R, argumentsList: Readonly<A>, newTarget?: fn (...args: any) -> any) -> R
 
 @js("Reflect.construct")
 export declare fn construct(target: Function, argumentsList: ArrayLike<any>, newTarget?: Function) -> any
@@ -94,7 +94,7 @@ export declare fn isExtensible(target: {}) -> boolean
  * @param target Object that contains the own properties.
  */
 @js("Reflect.ownKeys")
-export declare fn ownKeys(target: {}) -> Array<string | symbol>
+export declare fn ownKeys(target: {}) -> mut Array<string | symbol>
 
 /**
  * Prevents the addition of new properties to an object.

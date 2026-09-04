@@ -46,7 +46,7 @@ export declare class Map<K, V> {
     values(self) -> MapIterator<V>,
     readonly [Symbol.toStringTag]: string,
     constructor(mut self),
-    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null),
+    constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: mut Map<any, any>,
     constructor(mut self),
     constructor(mut self, iterable?: Iterable<[K, V]> | null),
@@ -56,7 +56,7 @@ export declare class Map<K, V> {
      * @param items An iterable.
      * @param keySelector A callback which will be invoked for each item in items.
      */
-    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> mut Map<K, Array<T>>
+    static groupBy<K, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> mut Map<K, mut Array<T>>
 }
 
 @js("WeakMap")
@@ -80,7 +80,7 @@ export declare class WeakMap<K: WeakKey, V> {
      */
     set(mut self, key: K, value: V) -> Self,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null),
+    constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: WeakMap<WeakKey, any>,
     constructor(mut self, iterable: Iterable<[K, V]>)
 }
@@ -88,5 +88,3 @@ export declare class WeakMap<K: WeakKey, V> {
 export declare interface MapIterator<T> {
     [Symbol.iterator]() -> MapIterator<T>
 }
-
-export declare type ReadonlyMap<K, V> = Map<K, V>

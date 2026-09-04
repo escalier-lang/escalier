@@ -69,7 +69,7 @@ export declare class Set<T> {
      * @returns a boolean indicating whether this Set has no elements in common with the argument.
      */
     isDisjointFrom(self, other: ReadonlySetLike<unknown>) -> boolean,
-    constructor(mut self, values?: ReadonlyArray<T> | null),
+    constructor(mut self, values?: Array<T> | null),
     static readonly prototype: mut Set<any>,
     constructor(mut self, iterable?: Iterable<T> | null),
     static readonly [Symbol.species]: SetConstructor
@@ -91,7 +91,7 @@ export declare class WeakSet<T: WeakKey> {
      */
     has(self, value: T) -> boolean,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self, values?: ReadonlyArray<T> | null),
+    constructor(mut self, values?: Array<T> | null),
     static readonly prototype: WeakSet<WeakKey>,
     constructor(mut self, iterable: Iterable<T>)
 }
@@ -114,5 +114,3 @@ export declare interface ReadonlySetLike<T> {
      */
     readonly size: number
 }
-
-export declare type ReadonlySet<T> = Set<T>

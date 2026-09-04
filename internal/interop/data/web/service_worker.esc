@@ -62,7 +62,7 @@ export declare interface ServiceWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
     readonly state: ServiceWorkerState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
-    postMessage(message: any, transfer: Array<Transferable>) -> unknown,
+    postMessage(message: any, transfer: mut Array<Transferable>) -> unknown,
     postMessage(message: any, options?: StructuredSerializeOptions) -> unknown,
     addEventListener<K: keyof ServiceWorkerEventMap>(type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -102,7 +102,7 @@ export declare interface ServiceWorkerContainer {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistration) */
     getRegistration(clientURL?: string | URL) -> Promise<ServiceWorkerRegistration | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistrations) */
-    getRegistrations() -> Promise<ReadonlyArray<ServiceWorkerRegistration>>,
+    getRegistrations() -> Promise<Array<ServiceWorkerRegistration>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/register) */
     register(scriptURL: string | URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
@@ -147,7 +147,7 @@ export declare interface ServiceWorkerRegistration {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/waiting) */
     readonly waiting: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/getNotifications) */
-    getNotifications(filter?: GetNotificationOptions) -> Promise<Array<Notification>>,
+    getNotifications(filter?: GetNotificationOptions) -> Promise<mut Array<Notification>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/showNotification) */
     showNotification(title: string, options?: NotificationOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/unregister) */

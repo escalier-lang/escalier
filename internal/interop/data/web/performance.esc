@@ -16,7 +16,7 @@ export declare interface PerformanceMeasureOptions {
 
 export declare interface PerformanceObserverInit {
     buffered?: boolean,
-    entryTypes?: Array<string>,
+    entryTypes?: mut Array<string>,
     type?: string
 }
 
@@ -231,7 +231,7 @@ export declare var PerformanceObserver: {
     prototype: PerformanceObserver,
     new (callback: PerformanceObserverCallback) -> PerformanceObserver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/supportedEntryTypes_static) */
-    readonly supportedEntryTypes: ReadonlyArray<string>
+    readonly supportedEntryTypes: Array<string>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList) */
@@ -298,7 +298,7 @@ export declare interface PerformanceResourceTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/secureConnectionStart) */
     readonly secureConnectionStart: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/serverTiming) */
-    readonly serverTiming: ReadonlyArray<PerformanceServerTiming>,
+    readonly serverTiming: Array<PerformanceServerTiming>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/transferSize) */
     readonly transferSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/workerStart) */
@@ -487,6 +487,6 @@ export declare interface PerformanceObserverCallback {
 @js("performance")
 export declare var performance: Performance
 
-export declare type PerformanceEntryList = Array<PerformanceEntry>
+export declare type PerformanceEntryList = mut Array<PerformanceEntry>
 
 export declare type NavigationTimingType = "back_forward" | "navigate" | "prerender" | "reload"

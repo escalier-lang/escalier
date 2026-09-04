@@ -31,7 +31,7 @@ export declare class Promise<T> {
      * @param values An iterable of Promises.
      * @returns A new Promise.
      */
-    static all<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Array<Awaited<T>>>,
+    static all<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<Awaited<T>>>,
     /**
      * Creates a Promise that is resolved or rejected when any of the provided Promises are resolved
      * or rejected.
@@ -56,7 +56,7 @@ export declare class Promise<T> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static all<T: ReadonlyArray<unknown> | []>(values: T) -> Promise<{
+    static all<T: Array<unknown> | []>(values: T) -> Promise<{
         -readonly [P]: Awaited<T[P]> for P in keyof T
     }>,
     /**
@@ -65,7 +65,7 @@ export declare class Promise<T> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static race<T: ReadonlyArray<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    static race<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
     /**
      * Creates a new rejected promise for the provided reason.
      * @param reason The reason the promise was rejected.
@@ -96,7 +96,7 @@ export declare class Promise<T> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static allSettled<T: ReadonlyArray<unknown> | []>(values: T) -> Promise<{
+    static allSettled<T: Array<unknown> | []>(values: T) -> Promise<{
         -readonly [P]: PromiseSettledResult<Awaited<T[P]>> for P in keyof T
     }>,
     /**
@@ -105,13 +105,13 @@ export declare class Promise<T> {
      * @param values An array of Promises.
      * @returns A new Promise.
      */
-    static allSettled<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Array<PromiseSettledResult<Awaited<T>>>>,
+    static allSettled<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<PromiseSettledResult<Awaited<T>>>>,
     /**
      * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
      * @param values An array or iterable of Promises.
      * @returns A new Promise.
      */
-    static any<T: ReadonlyArray<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    static any<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
     /**
      * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
      * @param values An array or iterable of Promises.
@@ -140,7 +140,7 @@ export declare class Promise<T> {
      * - Already rejected, if the callback synchronously throws an error.
      * - Asynchronously fulfilled or rejected, if the callback returns a promise.
      */
-    static try<T, U: Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
+    static try<T, U: mut Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
 }
 
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> {
@@ -151,8 +151,8 @@ export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any,
 }
 
 export declare interface AsyncGeneratorFunction {
-    new (...args: Array<any>) -> AsyncGenerator,
-    fn (...args: Array<any>) -> AsyncGenerator,
+    new (...args: mut Array<any>) -> AsyncGenerator,
+    fn (...args: mut Array<any>) -> AsyncGenerator,
     /**
      * The length of the arguments.
      */
@@ -168,8 +168,8 @@ export declare interface AsyncGeneratorFunction {
 }
 
 export declare interface AsyncGeneratorFunctionConstructor {
-    new (...args: Array<string>) -> AsyncGeneratorFunction,
-    fn (...args: Array<string>) -> AsyncGeneratorFunction,
+    new (...args: mut Array<string>) -> AsyncGeneratorFunction,
+    fn (...args: mut Array<string>) -> AsyncGeneratorFunction,
     /**
      * The length of the arguments.
      */
@@ -222,7 +222,7 @@ export declare type PromiseSettledResult<T> = PromiseFulfilledResult<T> | Promis
 
 @js("AggregateError")
 export declare class AggregateError extends Error {
-    errors: Array<any>,
+    errors: mut Array<any>,
     constructor(mut self, errors: Iterable<any>, message?: string),
     static readonly prototype: AggregateError,
     constructor(mut self, errors: Iterable<any>, message?: string, options?: ErrorOptions)

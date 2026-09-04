@@ -27,4 +27,4 @@ export declare fn stringify(value: any, replacer?: fn (this: any, key: string, v
  * @param space Adds indentation, white space, and line break characters to the return-value JSON text to make it easier to read.
  */
 @js("JSON.stringify")
-export declare fn stringify(value: any, replacer?: Array<number | string> | null, space?: string | number) -> string
+export declare fn stringify(value: any, replacer?: mut Array<number | string> | null, space?: string | number) -> string

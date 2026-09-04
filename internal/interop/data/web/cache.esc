@@ -22,15 +22,15 @@ export declare interface Cache {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/add) */
     add(request: RequestInfo | URL) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
-    addAll(requests: Array<RequestInfo>) -> Promise<undefined>,
+    addAll(requests: mut Array<RequestInfo>) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/delete) */
     delete(request: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/keys) */
-    keys(request?: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<ReadonlyArray<Request>>,
+    keys(request?: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<Array<Request>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/match) */
     match(request: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<Response | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/matchAll) */
-    matchAll(request?: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<ReadonlyArray<Response>>,
+    matchAll(request?: RequestInfo | URL, options?: CacheQueryOptions) -> Promise<Array<Response>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/put) */
     put(request: RequestInfo | URL, response: Response) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Cache/addAll) */
@@ -55,7 +55,7 @@ export declare interface CacheStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/has) */
     has(cacheName: string) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/keys) */
-    keys() -> Promise<Array<string>>,
+    keys() -> Promise<mut Array<string>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/match) */
     match(request: RequestInfo | URL, options?: MultiCacheQueryOptions) -> Promise<Response | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CacheStorage/open) */

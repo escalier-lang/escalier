@@ -36,7 +36,7 @@ export declare interface Blob {
 @js("Blob")
 export declare var Blob: {
     prototype: Blob,
-    new (blobParts?: Array<BlobPart>, options?: BlobPropertyBag) -> Blob
+    new (blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag) -> Blob
 }
 
 /**
@@ -56,7 +56,7 @@ export declare interface File {
 @js("File")
 export declare var File: {
     prototype: File,
-    new (fileBits: Array<BlobPart>, fileName: string, options?: FilePropertyBag) -> File
+    new (fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag) -> File
 }
 
 /**

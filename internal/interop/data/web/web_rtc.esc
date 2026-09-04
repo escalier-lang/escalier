@@ -10,9 +10,9 @@ export declare interface RTCCertificateExpiration {
 
 export declare interface RTCConfiguration {
     bundlePolicy?: RTCBundlePolicy,
-    certificates?: Array<RTCCertificate>,
+    certificates?: mut Array<RTCCertificate>,
     iceCandidatePoolSize?: number,
-    iceServers?: Array<RTCIceServer>,
+    iceServers?: mut Array<RTCIceServer>,
     iceTransportPolicy?: RTCIceTransportPolicy,
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
@@ -36,15 +36,15 @@ export declare interface RTCDtlsFingerprint {
 }
 
 export declare interface RTCEncodedAudioFrameMetadata {
-    contributingSources?: Array<number>,
+    contributingSources?: mut Array<number>,
     payloadType?: number,
     sequenceNumber?: number,
     synchronizationSource?: number
 }
 
 export declare interface RTCEncodedVideoFrameMetadata {
-    contributingSources?: Array<number>,
-    dependencies?: Array<number>,
+    contributingSources?: mut Array<number>,
+    dependencies?: mut Array<number>,
     frameId?: number,
     height?: number,
     payloadType?: number,
@@ -102,7 +102,7 @@ export declare interface RTCIceCandidatePairStats {
 
 export declare interface RTCIceServer {
     credential?: string,
-    urls: string | Array<string>,
+    urls: string | mut Array<string>,
     username?: string
 }
 
@@ -230,8 +230,8 @@ export declare interface RTCRtcpParameters {
 }
 
 export declare interface RTCRtpCapabilities {
-    codecs: Array<RTCRtpCodec>,
-    headerExtensions: Array<RTCRtpHeaderExtensionCapability>
+    codecs: mut Array<RTCRtpCodec>,
+    headerExtensions: mut Array<RTCRtpHeaderExtensionCapability>
 }
 
 export declare interface RTCRtpCodec {
@@ -276,8 +276,8 @@ export declare interface RTCRtpHeaderExtensionParameters {
 }
 
 export declare interface RTCRtpParameters {
-    codecs: Array<RTCRtpCodecParameters>,
-    headerExtensions: Array<RTCRtpHeaderExtensionParameters>,
+    codecs: mut Array<RTCRtpCodecParameters>,
+    headerExtensions: mut Array<RTCRtpHeaderExtensionParameters>,
     rtcp: RTCRtcpParameters
 }
 
@@ -285,7 +285,7 @@ export declare interface RTCRtpReceiveParameters {}
 
 export declare interface RTCRtpSendParameters {
     degradationPreference?: RTCDegradationPreference,
-    encodings: Array<RTCRtpEncodingParameters>,
+    encodings: mut Array<RTCRtpEncodingParameters>,
     transactionId: string
 }
 
@@ -300,8 +300,8 @@ export declare interface RTCRtpSynchronizationSource {}
 
 export declare interface RTCRtpTransceiverInit {
     direction?: RTCRtpTransceiverDirection,
-    sendEncodings?: Array<RTCRtpEncodingParameters>,
-    streams?: Array<MediaStream>
+    sendEncodings?: mut Array<RTCRtpEncodingParameters>,
+    streams?: mut Array<MediaStream>
 }
 
 export declare interface RTCSentRtpStreamStats {
@@ -324,7 +324,7 @@ export declare interface RTCStats {
 
 export declare interface RTCTrackEventInit {
     receiver: RTCRtpReceiver,
-    streams?: Array<MediaStream>,
+    streams?: mut Array<MediaStream>,
     track: MediaStreamTrack,
     transceiver: RTCRtpTransceiver
 }
@@ -353,7 +353,7 @@ export declare interface RTCCertificate {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/expires) */
     readonly expires: EpochTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCCertificate/getFingerprints) */
-    getFingerprints() -> Array<RTCDtlsFingerprint>
+    getFingerprints() -> mut Array<RTCDtlsFingerprint>
 }
 
 @js("RTCCertificate")
@@ -452,7 +452,7 @@ export declare interface RTCDtlsTransport {
     onstatechange: (fn (this: RTCDtlsTransport, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/state) */
     readonly state: RTCDtlsTransportState,
-    getRemoteCertificates() -> Array<ArrayBuffer>,
+    getRemoteCertificates() -> mut Array<ArrayBuffer>,
     addEventListener<K: keyof RTCDtlsTransportEventMap>(type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof RTCDtlsTransportEventMap>(type: K, listener: fn (this: RTCDtlsTransport, ev: RTCDtlsTransportEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -681,7 +681,7 @@ export declare interface RTCPeerConnection {
     /** @deprecated */
     addIceCandidate(candidate: RTCIceCandidateInit | null, successCallback: VoidFunction, failureCallback: RTCPeerConnectionErrorCallback) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTrack) */
-    addTrack(track: MediaStreamTrack, ...streams: Array<MediaStream>) -> RTCRtpSender,
+    addTrack(track: MediaStreamTrack, ...streams: mut Array<MediaStream>) -> RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/addTransceiver) */
     addTransceiver(trackOrKind: MediaStreamTrack | string, init?: RTCRtpTransceiverInit) -> RTCRtpTransceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/close) */
@@ -699,13 +699,13 @@ export declare interface RTCPeerConnection {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getConfiguration) */
     getConfiguration() -> RTCConfiguration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getReceivers) */
-    getReceivers() -> Array<RTCRtpReceiver>,
+    getReceivers() -> mut Array<RTCRtpReceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getSenders) */
-    getSenders() -> Array<RTCRtpSender>,
+    getSenders() -> mut Array<RTCRtpSender>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getStats) */
     getStats(selector?: MediaStreamTrack | null) -> Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/getTransceivers) */
-    getTransceivers() -> Array<RTCRtpTransceiver>,
+    getTransceivers() -> mut Array<RTCRtpTransceiver>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/removeTrack) */
     removeTrack(sender: RTCRtpSender) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/restartIce) */
@@ -781,13 +781,13 @@ export declare interface RTCRtpReceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/transport) */
     readonly transport: RTCDtlsTransport | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getContributingSources) */
-    getContributingSources() -> Array<RTCRtpContributingSource>,
+    getContributingSources() -> mut Array<RTCRtpContributingSource>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getParameters) */
     getParameters() -> RTCRtpReceiveParameters,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getStats) */
     getStats() -> Promise<RTCStatsReport>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpReceiver/getSynchronizationSources) */
-    getSynchronizationSources() -> Array<RTCRtpSynchronizationSource>
+    getSynchronizationSources() -> mut Array<RTCRtpSynchronizationSource>
 }
 
 @js("RTCRtpReceiver")
@@ -804,7 +804,7 @@ export declare interface RTCRtpScriptTransform {}
 @js("RTCRtpScriptTransform")
 export declare var RTCRtpScriptTransform: {
     prototype: RTCRtpScriptTransform,
-    new (worker: Worker, options?: any, transfer?: Array<any>) -> RTCRtpScriptTransform
+    new (worker: Worker, options?: any, transfer?: mut Array<any>) -> RTCRtpScriptTransform
 }
 
 /**
@@ -830,7 +830,7 @@ export declare interface RTCRtpSender {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setParameters) */
     setParameters(parameters: RTCRtpSendParameters, setParameterOptions?: RTCSetParameterOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpSender/setStreams) */
-    setStreams(...streams: Array<MediaStream>) -> unknown
+    setStreams(...streams: mut Array<MediaStream>) -> unknown
 }
 
 @js("RTCRtpSender")
@@ -854,7 +854,7 @@ export declare interface RTCRtpTransceiver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/sender) */
     readonly sender: RTCRtpSender,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */
-    setCodecPreferences(codecs: Array<RTCRtpCodec>) -> unknown,
+    setCodecPreferences(codecs: mut Array<RTCRtpCodec>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/stop) */
     stop() -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCRtpTransceiver/setCodecPreferences) */
@@ -931,7 +931,7 @@ export declare interface RTCTrackEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/receiver) */
     readonly receiver: RTCRtpReceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/streams) */
-    readonly streams: ReadonlyArray<MediaStream>,
+    readonly streams: Array<MediaStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/track) */
     readonly track: MediaStreamTrack,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/transceiver) */

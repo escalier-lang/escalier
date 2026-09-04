@@ -1774,10 +1774,12 @@ not mutate; the new converter does the same at emission time:
 2. Append any `ReadonlyFoo` member not already present on `Foo`
    to `Foo.Members` so the fused class carries the readonly
    surface too.
-3. Drop the `ReadonlyFoo` declaration from the bucket and emit
-   `type ReadonlyFoo<…> = Foo<…>` in its place — keeps the
-   readonly name resolvable in user code (no runtime referent;
-   the type alias has no `@js(...)`).
+3. Drop the `ReadonlyFoo` declaration from the bucket, with
+   nothing standing in for it. Escalier spells the immutable view
+   `Foo<…>` and the mutable one `mut Foo<…>`, so once the rewrite
+   below respells every reference the readonly name has nothing
+   left to denote, and an alias would only offer a second spelling
+   for a type that already has one.
 4. After trio fusion produces `class Foo`, post-process each
    instance `MethodElem`: if the method name appears on the
    readonly twin's member set, set `Receiver.Mut = false`;
@@ -1798,23 +1800,28 @@ between the two over the pinned lib set, so the twin adds nothing
 the facts do not already settle. §7 recorded the decision and
 [#1408](https://github.com/escalier-lang/escalier/issues/1408)
 carries the removal. Steps 1 through 3 stay: the twin's members
-still reach the fused class, and the alias still keeps the
-readonly name resolvable.
+still reach the fused class, and `ReadonlyFoo` still leaves the
+bucket.
 
-**Known gap: the alias in step 3 keeps no readonly restriction.**
-`type ReadonlyArray<T> = Array<T>` makes the two names one type, so
-a `ReadonlyArray<T>` value accepts `push` and every other
-mutable-only member. The name is load-bearing — 49 references
-across 15 committed packages, because upstream signatures use it
-for arguments that must not be mutated, as
-`Intl.getCanonicalLocales(locale?: string | ReadonlyArray<string>)`
-does. Retiring step 4 does not reach this: receiver mutability and
-the readonly name's own surface are separate questions, and this
-is the one the committed tree currently answers wrongly. Tracked
-with the retirement in #1408. Fixtures for whichever route is
-picked must cover a mutable-only member on both `ReadonlyArray`
-and `ReadonlyMap` — `push` and `set` are the obvious ones — and
-assert it is rejected through the readonly name.
+**The reference rewrite runs over every bucket at once.** A twin's
+declarations and the references to them sit in different packages.
+`Array` and `ReadonlyArray` are declared in `std:array`, and 35
+other packages reference them without declaring either — `web:dom`
+alone writes 119. Rewriting a bucket against only the twins it
+declares leaves every other package spelled the TypeScript way: a
+bare `Array<T>` where Escalier means `mut Array<T>`, and a
+`ReadonlyArray<T>` naming nothing the tree declares. So
+`ConvertBuckets` fuses every bucket before converting any of them
+and passes the whole twin set to the rewrite. Receiver flips stay
+bucket-local, since only the declaring bucket holds both member
+lists.
+
+A heritage slot keeps the mutable name as written. `mut` qualifies
+a binding rather than a declaration's supertype, so `interface
+RegExpMatchArray extends Array<string>` already says what Escalier
+means: the interface inherits `Array`'s members, and whether an
+instance may be mutated is settled where it is bound. Eight
+declarations in the pinned lib set take this shape.
 
 ### 6.2 Registry routing
 
@@ -2437,16 +2444,17 @@ Depends on §6 PR E. Before that lands this phase reads as
    re-export, and package-private invisibility.
 
 **Decision made.** The readonly-twin gap from §6 PR A: neither
-route is taken for receiver mutability. The twins existed to say
-whether a method mutates its receiver, and the ECMA-262 derived
-facts answer that directly, with zero disagreements between the
-two over the pinned lib set. The twins are retired as a
-determination source, which leaves what `ReadonlyArray<T>` means
-to a user as its own question, since the alias admits `push`
-today.
+route is taken, and the twin names leave the output entirely. The
+twins existed to say whether a method mutates its receiver, and
+the ECMA-262 derived facts answer that directly, with zero
+disagreements between the two over the pinned lib set. Dropping
+the name costs nothing, because Escalier already spells the
+immutable view `Array<T>` and the mutable one `mut Array<T>`.
+`ReadonlyArray<T> = Array<T>` was a second spelling for a type
+that already had one, and TS `ReadonlyArray<T>` now converts
+straight to `Array<T>` at every reference site.
 [#1408](https://github.com/escalier-lang/escalier/issues/1408)
-carries both halves and the `ReadonlyArray` / `ReadonlyMap`
-fixtures.
+records the decision.
 
 **Gate.** Humans review the committed files; every emitted file
 parses and round-trips through the printer per §1; regenerating

@@ -66,11 +66,11 @@ export declare var Module: {
     prototype: Module,
     new (bytes: BufferSource) -> Module,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    customSections(moduleObject: Module, sectionName: string) -> Array<ArrayBuffer>,
+    customSections(moduleObject: Module, sectionName: string) -> mut Array<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    exports(moduleObject: Module) -> Array<ModuleExportDescriptor>,
+    exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    imports(moduleObject: Module) -> Array<ModuleImportDescriptor>
+    imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
 }
 
 export declare interface RuntimeError {}

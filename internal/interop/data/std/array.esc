@@ -403,5 +403,3 @@ export declare interface ConcatArray<T> {
 export declare interface ArrayLike<T> {
     readonly length: number
 }
-
-export declare type ReadonlyArray<T> = Array<T>

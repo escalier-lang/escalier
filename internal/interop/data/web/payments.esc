@@ -27,9 +27,9 @@ export declare interface PaymentCurrencyAmount {
 }
 
 export declare interface PaymentDetailsBase {
-    displayItems?: Array<PaymentItem>,
-    modifiers?: Array<PaymentDetailsModifier>,
-    shippingOptions?: Array<PaymentShippingOption>
+    displayItems?: mut Array<PaymentItem>,
+    modifiers?: mut Array<PaymentDetailsModifier>,
+    shippingOptions?: mut Array<PaymentShippingOption>
 }
 
 export declare interface PaymentDetailsInit {
@@ -38,7 +38,7 @@ export declare interface PaymentDetailsInit {
 }
 
 export declare interface PaymentDetailsModifier {
-    additionalDisplayItems?: Array<PaymentItem>,
+    additionalDisplayItems?: mut Array<PaymentItem>,
     data?: any,
     supportedMethods: string,
     total?: PaymentItem
@@ -168,7 +168,7 @@ export declare interface PaymentRequest {
 @js("PaymentRequest")
 export declare var PaymentRequest: {
     prototype: PaymentRequest,
-    new (methodData: Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions) -> PaymentRequest
+    new (methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions) -> PaymentRequest
 }
 
 export declare interface PaymentResponseEventMap {

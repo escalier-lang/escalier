@@ -126,7 +126,7 @@ export declare interface WebSocket {
 @js("WebSocket")
 export declare var WebSocket: {
     prototype: WebSocket,
-    new (url: string | URL, protocols?: string | Array<string>) -> WebSocket,
+    new (url: string | URL, protocols?: string | mut Array<string>) -> WebSocket,
     readonly CONNECTING: 0,
     readonly OPEN: 1,
     readonly CLOSING: 2,

@@ -33,7 +33,7 @@ export declare var PushManager: {
     prototype: PushManager,
     new () -> PushManager,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PushManager/supportedContentEncodings_static) */
-    readonly supportedContentEncodings: ReadonlyArray<string>
+    readonly supportedContentEncodings: Array<string>
 }
 
 /**

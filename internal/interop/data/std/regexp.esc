@@ -47,7 +47,7 @@ export declare class RegExp {
      *               this regular expression will be replaced
      * @param replacer A function that returns the replacement text.
      */
-    [Symbol.replace](mut self, string: string, replacer: fn (substring: string, ...args: Array<any>) -> string) -> string,
+    [Symbol.replace](mut self, string: string, replacer: fn (substring: string, ...args: mut Array<any>) -> string) -> string,
     /**
      * Finds the position beginning first substring match in a regular expression search
      * using this regular expression.
@@ -67,7 +67,7 @@ export declare class RegExp {
      * @param limit if not undefined, the output array is truncated so that it contains no more
      * than 'limit' elements.
      */
-    [Symbol.split](mut self, string: string, limit?: number) -> Array<string>,
+    [Symbol.split](mut self, string: string, limit?: number) -> mut Array<string>,
     /**
      * Returns a Boolean value indicating the state of the dotAll flag (s) used with a regular expression.
      * Default is false. Read-only.

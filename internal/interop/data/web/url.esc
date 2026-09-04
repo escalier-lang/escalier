@@ -78,7 +78,7 @@ export declare interface URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/getAll)
      */
-    getAll(name: string) -> Array<string>,
+    getAll(name: string) -> mut Array<string>,
     /**
      * Returns a Boolean indicating if such a search parameter exists.
      *
@@ -108,7 +108,7 @@ export declare interface URLSearchParams {
 @js("URLSearchParams")
 export declare var URLSearchParams: {
     prototype: URLSearchParams,
-    new (init?: Array<Array<string>> | Record<string, string> | string | URLSearchParams) -> URLSearchParams
+    new (init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams) -> URLSearchParams
 }
 
 export declare interface URLSearchParamsIterator<T> {

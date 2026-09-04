@@ -278,9 +278,10 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // [internal/checker/prelude.go](../../internal/checker/prelude.go)
 // established for the legacy prelude path).
 //
-// `ReadonlyFoo` itself is dropped from emission; a `type ReadonlyFoo<…>
-// = Foo<…>` alias is synthesised in its place so user code that names
-// the readonly variant in a type position still resolves.
+// `ReadonlyFoo` itself is dropped from emission, and no alias stands in
+// for it. Escalier spells the immutable view `Foo<…>`, so once the
+// rewrite below has respelled every reference there is nothing left for
+// the readonly name to denote.
 //
 // After conversion, rewriteReadonlyTwinRefs walks every TypeAnn slot
 // in the emitted module and rewrites references to the twin names so
@@ -291,13 +292,30 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `ReadonlyArray<T>` for the same reason.
 func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
+	return convertFusedBucket(stmts, twins, twins)
+}
+
+// convertFusedBucket converts one already-fused bucket. `own` are the
+// twins this bucket declares and `all` are every twin in the tree.
+//
+// The two differ because a twin's declarations and the references to
+// them sit in different packages. `Array` and `ReadonlyArray` are both
+// declared in std:array, so only that bucket can merge their members
+// and flip a receiver. Every other package references the names without
+// declaring them: web:dom alone writes 119 of them. Rewriting against
+// `own` leaves those spelled the TypeScript way — a bare `Array<T>`
+// where Escalier means `mut Array<T>`, and a `ReadonlyArray<T>` that
+// names nothing the tree declares.
+func convertFusedBucket(
+	stmts []dts_parser.Statement,
+	own, all []readonlyTwin,
+) (*StandaloneModule, error) {
 	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts})
 	if err != nil {
 		return nil, err
 	}
-	applyReadonlyTwinReceivers(mod, twins)
-	rewriteReadonlyTwinRefs(mod, twins)
-	appendReadonlyAliases(mod, twins)
+	applyReadonlyTwinReceivers(mod, own)
+	rewriteReadonlyTwinRefs(mod, all)
 	return mod, nil
 }
 
@@ -310,7 +328,6 @@ func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 type readonlyTwin struct {
 	mutableName      string
 	readonlyName     string
-	typeParams       []*dts_parser.TypeParam
 	nonMutatingNames set.Set[string]
 }
 
@@ -390,7 +407,6 @@ func fuseReadonlyTwins(stmts []dts_parser.Statement) ([]dts_parser.Statement, []
 		twins = append(twins, readonlyTwin{
 			mutableName:      mutableName,
 			readonlyName:     name,
-			typeParams:       iface.TypeParams,
 			nonMutatingNames: nonMutatingNames,
 		})
 		dropReadonly.Add(name)
@@ -580,67 +596,33 @@ func astExprDottedName(e ast.Expr) string {
 	return ""
 }
 
-// appendReadonlyAliases adds `type ReadonlyFoo<…> = Foo<…>` to the
-// module's root namespace for each twin. The alias carries the same
-// type-parameter signature as the original readonly interface so user
-// code that wrote `ReadonlyArray<number>` still type-checks. No
-// `@js("...")` decorator: the readonly name has no runtime referent
-// (it is a type-only alias for the mutable class).
-//
-// TODO(#668): once reference sites are rewritten, decide whether to keep
-// this alias as a TS-migration aid or drop it (no converter-emitted code
-// would reference the readonly name anymore).
-func appendReadonlyAliases(mod *StandaloneModule, twins []readonlyTwin) {
-	if len(twins) == 0 {
-		return
-	}
-	root, ok := mod.Module.Namespaces.Get("")
-	if !ok {
-		return
-	}
-	for _, twin := range twins {
-		typeParams, err := convertTypeParams(twin.typeParams)
-		if err != nil {
-			// Intentional silent drop. In Escalier's mutability model
-			// `Array<T>` corresponds to TS's `ReadonlyArray<T>` and
-			// `mut Array<T>` corresponds to TS's `Array<T>` — the
-			// `ReadonlyFoo` alias only exists as a migration aid for
-			// users coming from TS source. Keeping `ReadonlyFoo`
-			// resolvable when we can synthesise it is helpful; failing
-			// to synthesise it is fine because the canonical Escalier
-			// spelling is `Foo` (immutable) anyway. Better the readonly
-			// name go missing than the whole bucket fail to emit.
-			continue
-		}
-		// Build `Foo<T, …>` reference using the same param names.
-		args := make([]ast.TypeAnn, 0, len(typeParams))
-		for _, tp := range typeParams {
-			args = append(args, ast.NewRefTypeAnn(
-				ast.NewIdentifier(tp.Name, ast.Span{}),
-				nil, ast.Span{}))
-		}
-		alias := ast.NewTypeDecl(
-			ast.NewIdentifier(twin.readonlyName, ast.Span{}),
-			typeParams,
-			ast.NewRefTypeAnn(
-				ast.NewIdentifier(twin.mutableName, ast.Span{}),
-				args, ast.Span{}),
-			true, // export
-			true, // declare
-			ast.Span{},
-		)
-		root.Decls = append(root.Decls, alias)
-	}
-}
-
 // ConvertBuckets converts every bucket in result, keyed by package URI.
 // Callers that need the converted modules for something other than writing
 // them — the ECMA-262 join reads them for the members each package declares —
 // go through this instead of converting a second time.
 func ConvertBuckets(result *PartitionResult) (map[string]*StandaloneModule, error) {
+	// Fuse every bucket before converting any of it, so the reference
+	// rewrite below knows every twin name the tree declares and not
+	// just the ones its own bucket does. See convertFusedBucket.
+	uris := make([]string, 0, len(result.Buckets))
+	for uri := range result.Buckets {
+		uris = append(uris, uri)
+	}
+	sort.Strings(uris)
+
+	fused := make(map[string][]dts_parser.Statement, len(result.Buckets))
+	own := make(map[string][]readonlyTwin, len(result.Buckets))
+	var all []readonlyTwin
+	for _, uri := range uris {
+		stmts, twins := fuseReadonlyTwins(result.Buckets[uri])
+		fused[uri] = stmts
+		own[uri] = twins
+		all = append(all, twins...)
+	}
+
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
-	for uri, stmts := range result.Buckets {
-		mod, err := ConvertBucket(stmts)
+	for _, uri := range uris {
+		mod, err := convertFusedBucket(fused[uri], own[uri], all)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}

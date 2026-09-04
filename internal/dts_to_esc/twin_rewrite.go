@@ -168,11 +168,15 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 // `MutableTypeAnn` because the slot is typed `*TypeRefTypeAnn`. The
 // TypeArgs are still walked recursively so nested refs are rewritten.
 //
-// If a mutable twin name *does* show up in one of these slots we panic
-// rather than emit silently-wrong output: the pinned TS lib corpus
-// never has a class extending or implementing `Array<T>` / `Map<K,V>` /
-// `Set<T>` directly, so the canary fires only on a real corpus change
-// that this rewrite cannot honour in place.
+// A mutable twin name in one of these slots is left alone. `mut`
+// qualifies a binding, not a declaration's supertype, so
+// `interface RegExpMatchArray extends Array<string>` is already what
+// Escalier means: the interface inherits `Array`'s members, and whether
+// an instance of it may be mutated is settled where that instance is
+// bound. Eight declarations in the pinned lib set take this shape,
+// `RegExpMatchArray`, `RegExpExecArray`, `RegExpIndicesArray`,
+// `FontFaceSet`, `CustomStateSet`, `Highlight`, `ViewTransitionTypeSet`,
+// and `HighlightRegistry`.
 func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
@@ -184,9 +188,6 @@ func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 		id.Name = mutableName
 		return
-	}
-	if r.mutable.Contains(id.Name) {
-		panic(fmt.Sprintf("twinRewriter.renameTypeRefInPlace: mutable twin %q appears in an Extends/Implements slot, which cannot carry a `mut` wrapper — the readonly-twin rewrite assumed no class or interface in the pinned TS lib extends a mutable twin directly", id.Name))
 	}
 }
 
