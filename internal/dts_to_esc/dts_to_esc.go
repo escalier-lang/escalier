@@ -57,6 +57,8 @@ type StandaloneModule struct {
 //     constructor from `FooConstructor`).
 //   - Flattens `declare namespace Foo { ... }` blocks: each member becomes
 //     a top-level declaration carrying `@js("Foo.member")`.
+//   - Lifts `declare global { ... }` blocks, converting what they hold
+//     as if it had been written beside the block. See liftGlobals.
 //   - Attaches an `@js("...")` decorator to every emitted top-level decl
 //     per planning/builtins/implementation_plan.md §3.3.
 //   - Forces `export` on every emitted decl.
@@ -71,12 +73,13 @@ type StandaloneModule struct {
 //     key has no plain-name form (see StandaloneModule.KeyDrops).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
-	trios := detectTrios(dtsModule.Statements)
-	singletons := detectSingletons(dtsModule.Statements, trios)
+	stmts := liftGlobals(dtsModule.Statements)
+	trios := detectTrios(stmts)
+	singletons := detectSingletons(stmts, trios)
 	paths := make(map[ast.Decl]string)
 
 	var decls []ast.Decl
-	for _, stmt := range dtsModule.Statements {
+	for _, stmt := range stmts {
 		emitted, err := convertStandaloneStmt(cctx, stmt, trios, singletons, "")
 		if err != nil {
 			return nil, err
@@ -224,6 +227,13 @@ type trioTable struct {
 //
 // This matches tryFuseTrio in internal/interop/class_shapes.go, which
 // has never gated on a construct signature.
+//
+// A name that a `declare class` already declares is left alone. That
+// is a backstop, not the right answer: TypeScript merges an interface
+// into a same-named class, and mergeDecls cannot, so the pair stays
+// split whatever this does. Declining keeps the converter from adding
+// a second class beside the one the source spells out. #1430 covers
+// the merge.
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
@@ -233,16 +243,25 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 
 	interfaces := make(map[string]*dts_parser.InterfaceDecl)
 	vars := make(map[string]*dts_parser.VarDecl)
+	classes := set.NewSet[string]()
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *dts_parser.InterfaceDecl:
 			interfaces[s.Name.Name] = s
 		case *dts_parser.VarDecl:
 			vars[s.Name.Name] = s
+		case *dts_parser.ClassDecl:
+			classes.Add(s.Name.Name)
 		}
 	}
 
 	for name, inst := range interfaces {
+		// A `declare class Foo` already declares the name as a class.
+		// Fusing would emit a second one beside it. See #1430 for why
+		// the pair stays split either way.
+		if classes.Contains(name) {
+			continue
+		}
 		ctorName := name + "Constructor"
 		ctor, hasCtor := interfaces[ctorName]
 		if !hasCtor {
@@ -964,7 +983,7 @@ func convertStandaloneStmt(
 	case *dts_parser.EnumDecl, *dts_parser.ImportDecl,
 		*dts_parser.NamedExportStmt, *dts_parser.ExportAllStmt,
 		*dts_parser.ExportAsNamespaceStmt, *dts_parser.ExportAssignmentStmt,
-		*dts_parser.ModuleDecl, *dts_parser.GlobalDecl:
+		*dts_parser.ModuleDecl:
 		// Skip MVP-out-of-scope statements silently. §6 will tighten
 		// the unmapped-symbol fail-safe; for the MVP we just drop.
 		return nil, nil

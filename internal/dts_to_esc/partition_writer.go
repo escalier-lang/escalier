@@ -114,7 +114,7 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
 		dropped := DroppedSources.Contains(in.SourceFile)
-		for _, stmt := range in.Module.Statements {
+		for _, stmt := range liftGlobals(in.Module.Statements) {
 			name := topLevelName(stmt)
 			if name == "" {
 				// Statement carries no addressable top-level name
@@ -221,6 +221,43 @@ func topLevelName(stmt dts_parser.Statement) string {
 		return s.Name.Name
 	}
 	return ""
+}
+
+// liftGlobals replaces each `declare global { ... }` block with the
+// statements it holds, leaving every other statement where it is. A
+// block has no addressable name, so topLevelName returns "" for it and
+// routing drops everything inside. What it holds is global
+// declarations, which is what the surrounding list already holds, so
+// lifting is the whole conversion. A block may hold another, and the
+// walk recurses through them.
+//
+// It does not reach into `declare module "x" { declare global { ... } }`.
+// convertStandaloneStmt skips ModuleDecl outright, so an ambient
+// module's contents are dropped whether or not a block sits inside one.
+// No file in the pinned lib set writes a block that way.
+func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
+	// Most inputs carry no block at all, so return the original slice
+	// rather than copying every statement into a new one.
+	hasGlobal := false
+	for _, stmt := range stmts {
+		if _, ok := stmt.(*dts_parser.GlobalDecl); ok {
+			hasGlobal = true
+			break
+		}
+	}
+	if !hasGlobal {
+		return stmts
+	}
+
+	out := make([]dts_parser.Statement, 0, len(stmts))
+	for _, stmt := range stmts {
+		if g, ok := stmt.(*dts_parser.GlobalDecl); ok {
+			out = append(out, liftGlobals(g.Statements)...)
+			continue
+		}
+		out = append(out, stmt)
+	}
+	return out
 }
 
 // mergeDecls performs TS-style declaration merging within a routed

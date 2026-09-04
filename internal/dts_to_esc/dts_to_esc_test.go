@@ -1180,3 +1180,102 @@ declare var Symbol: SymbolConstructor;
 	require.Empty(t, parseErrs, "printed output parses")
 	require.NotEmpty(t, parsedDecls)
 }
+
+// A `lib.*.d.ts` file carrying `export {}` is a module, so what it adds
+// to the global scope has to be written inside `declare global { ... }`.
+// liftGlobals converts that block's contents as if they had been
+// written beside it, which is what puts them in reach of declaration
+// merging and trio detection. `lib.esnext.iterator.d.ts` is the one file
+// in the pinned set that needs this.
+//
+// The snapshot carries what the counts and substring checks used to
+// assert separately: each member kind converts, the JSDoc inside the
+// block survives, and a lifted decl is addressed by its bare name with
+// no block prefix.
+func TestStandalone_DeclareGlobalIsLifted(t *testing.T) {
+	const slice = `
+export {};
+
+declare global {
+    /** A global interface. */
+    interface Widget {
+        spin(): void;
+    }
+
+    var widgetCount: number;
+
+    function makeWidget(): Widget;
+}
+`
+	_, printed := convertSlice(t, slice)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`/** A global interface. */
+export declare interface Widget {
+    spin() -> unknown
+}
+
+@js("widgetCount")
+export declare var widgetCount: number
+
+@js("makeWidget")
+export declare fn makeWidget() -> Widget
+`))
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.Len(t, parsedDecls, 3)
+}
+
+// A trio whose instance name is already declared by a `declare class`
+// is left alone, so the converter does not add a second class beside
+// the one the source spells out. `lib.esnext.iterator.d.ts` writes
+// `Iterator` that way: an abstract class at module scope, and
+// `IteratorConstructor` plus the binding inside its `declare global`
+// block.
+//
+// The snapshot pins current behaviour, not the right answer. TypeScript
+// merges `interface Foo` into `class Foo`, so what this input means is
+// one class carrying `next` and `peek` as instance members and `from`
+// as a static. mergeDecls folds an interface into an interface and not
+// into a class, so the pair stays split whether or not the trio fuses,
+// and declining only keeps the split from getting wider. #1430 covers
+// the merge and takes this guard out with it.
+func TestStandalone_TrioDeclinedWhenNameIsAlreadyAClass(t *testing.T) {
+	const slice = `
+declare abstract class Foo {
+    next(): string;
+}
+
+interface Foo {
+    peek(): string;
+}
+
+interface FooConstructor {
+    from(s: string): Foo;
+}
+
+declare var Foo: FooConstructor;
+`
+	_, printed := convertSlice(t, slice)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
+export declare class Foo {
+    next(mut self) -> string
+}
+
+export declare interface Foo {
+    peek() -> string
+}
+
+export declare interface FooConstructor {
+    from(s: string) -> Foo
+}
+
+@js("Foo")
+export declare var Foo: FooConstructor
+`))
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.Len(t, parsedDecls, 4)
+}
