@@ -36,7 +36,6 @@ func TestRoute_ExplicitPartition(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := Route(tc.name, "")
-			require.False(t, got.Drop)
 			require.False(t, got.Unmapped)
 			require.Equal(t, tc.wantURI, got.Pkg.URI)
 		})
@@ -61,22 +60,9 @@ func TestRoute_DOMResidual(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := Route(tc.name, tc.sourceFile)
-			require.False(t, got.Drop)
 			require.False(t, got.Unmapped)
 			require.Equal(t, "web:dom", got.Pkg.URI)
 			require.Equal(t, "web/dom.esc", got.Pkg.File)
-		})
-	}
-}
-
-func TestRoute_ExplicitDrops(t *testing.T) {
-	t.Parallel()
-	for _, name := range []string{"globalThis", "eval"} {
-		t.Run(name, func(t *testing.T) {
-			t.Parallel()
-			got := Route(name, "lib.es5.d.ts")
-			require.True(t, got.Drop)
-			require.False(t, got.Unmapped)
 		})
 	}
 }
@@ -87,14 +73,16 @@ func TestRoute_Unmapped(t *testing.T) {
 	// fail-safe case — the caller is expected to surface UnmappedError.
 	got := Route("TotallyMadeUpSymbol", "lib.es2099.weirdness.d.ts")
 	require.True(t, got.Unmapped)
-	require.False(t, got.Drop)
 	require.Equal(t, Package{}, got.Pkg)
 }
 
+// TestUnmappedError_MentionsSymbolSourceAndTable pins the fail-safe
+// message. It names both inputs a contributor can edit, since the drop
+// list is an overlay file rather than a table in this package.
 func TestUnmappedError_MentionsSymbolSourceAndTable(t *testing.T) {
 	t.Parallel()
 	err := UnmappedError("FooBar", "lib.es5.d.ts")
-	require.EqualError(t, err, `converter: unmapped top-level declaration "FooBar" from lib.es5.d.ts; add it to internal/dts_to_esc/partition.go (see planning/builtins/implementation_plan.md §6.1) or to ExplicitDrops if intentional`)
+	require.EqualError(t, err, `converter: unmapped top-level declaration "FooBar" from lib.es5.d.ts; add it to internal/dts_to_esc/partition.go (see planning/builtins/implementation_plan.md §6.1) or to internal/interop/overlay/drop.esc if intentional`)
 }
 
 func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {
@@ -152,26 +140,31 @@ func TestRoute_LibSetGaps(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			got := Route(tc.name, tc.sourceFile)
-			require.False(t, got.Drop)
 			require.False(t, got.Unmapped)
 			require.Equal(t, tc.wantURI, got.Pkg.URI)
 		})
 	}
 }
 
-func TestRoute_LegacyDecoratorDrops(t *testing.T) {
+// TestRoute_DoesNotResolveDrops holds the routing pass to the two
+// outcomes it has left. A dropped name reaches Route as unmapped,
+// because PartitionLibWithOverlay settles the overlay's root drop file
+// first and never calls Route for what it dropped.
+//
+// TypeScript's `experimentalDecorators` signatures stand in for the
+// drop list here. They type the decorator calling convention `tsc`
+// emitted, not a runtime shape, and the TC39 context types route to
+// std:decorators instead.
+func TestRoute_DoesNotResolveDrops(t *testing.T) {
 	t.Parallel()
-	// TypeScript's `experimentalDecorators` signatures type the
-	// decorator calling convention `tsc` emitted, not a runtime shape.
-	// The TC39 context types route to std:decorators instead.
 	for _, name := range []string{
 		"ClassDecorator", "PropertyDecorator", "MethodDecorator", "ParameterDecorator",
 	} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			got := Route(name, "lib.decorators.legacy.d.ts")
-			require.True(t, got.Drop)
-			require.False(t, got.Unmapped)
+			require.True(t, got.Unmapped)
+			require.Equal(t, Package{}, got.Pkg)
 		})
 	}
 }

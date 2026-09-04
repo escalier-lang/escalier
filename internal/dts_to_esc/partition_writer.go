@@ -54,8 +54,9 @@ type PartitionResult struct {
 	Buckets map[string][]dts_parser.Statement
 
 	// Drops records (name, source-file basename) pairs for every
-	// top-level declaration routed through ExplicitDrops. Callers may
-	// surface these as informational warnings — they are intentional,
+	// top-level declaration the run skipped, whether the overlay's root
+	// drop file named it or a DroppedSources file declared it. Callers
+	// may surface these as informational warnings. They are intentional,
 	// not errors.
 	Drops []DropNote
 }
@@ -70,16 +71,22 @@ type DropNote struct {
 // PartitionLib routes every top-level declaration across the inputs
 // into its target package per Route, with no overlay. Returns an error
 // on the first unmapped symbol (§6.1 fail-safe).
+//
+// With no overlay nothing is dropped by name, so the pinned lib set
+// does not route through this entry point. Every name the committed
+// root drop file holds would trip the fail-safe instead. This suits a
+// synthetic input whose names all route. A file in DroppedSources
+// still contributes nothing and still reaches Drops, which needs no
+// overlay. Generate calls PartitionLibWithOverlay.
 func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 	return PartitionLibWithOverlay(inputs, nil)
 }
 
 // PartitionLibWithOverlay routes every top-level declaration across the
-// inputs into its target package per Route, and drops the names the
-// overlay's root drop file holds alongside the ones ExplicitDrops holds.
-// A whole-symbol drop resolves here rather than in Route because it
-// belongs to no package, so it has to be settled before the partition
-// lookup assigns one.
+// inputs into its target package per Route, skipping the names the
+// overlay's root drop file holds. A whole-symbol drop resolves here
+// rather than in Route because it belongs to no package, so it has to
+// be settled before the partition lookup assigns one.
 //
 // A drop naming a symbol the lib set does not declare fails the run.
 // That is the TypeScript-side-removal signal for the overlay: the tree
@@ -129,11 +136,7 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 				continue
 			}
 			res := Route(name, in.SourceFile)
-			switch {
-			case res.Drop:
-				out.Drops = append(out.Drops, DropNote{Name: name, SourceFile: in.SourceFile})
-				continue
-			case res.Unmapped:
+			if res.Unmapped {
 				return nil, UnmappedError(name, in.SourceFile)
 			}
 			out.Buckets[res.Pkg.URI] = append(out.Buckets[res.Pkg.URI], stmt)
@@ -788,11 +791,11 @@ func ReportPartition(result *PartitionResult, w io.Writer) error {
 	// error plumbing and the caller's writer is touched a single time.
 	var b strings.Builder
 
-	// Split the drop list by cause. A name in ExplicitDrops is worth
-	// naming; a whole dropped source file is worth a count, and naming
-	// its declarations would misread — lib.scripthost.d.ts augments
-	// `Date`, so "Date" in a flat name list would suggest std:date lost
-	// its class.
+	// Split the drop list by cause. A name the overlay's root drop file
+	// holds is worth naming. A whole dropped source file is worth a
+	// count instead, since naming its declarations would misread.
+	// lib.scripthost.d.ts augments `Date`, so "Date" in a flat name
+	// list would suggest std:date lost its class.
 	var dropped []string
 	seen := set.NewSet[string]()
 	sourceCounts := btree.Map[string, int]{}

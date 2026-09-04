@@ -178,7 +178,7 @@ and a run rejects an entry carrying more:
 ```
 // overlay/drop.esc — whole symbols, package-less
 export declare val eval
-export declare val globalThis
+export declare val escape
 
 // overlay/std/date.drop.esc — members of a package's declarations
 export declare interface Date {
@@ -199,8 +199,14 @@ form. And a declaration the converter emits as a class, `Array` and
 like any other.
 
 `drop.esc` sits at the overlay root because a whole-symbol drop resolves
-during routing, before a package is assigned — `eval` and `globalThis`
-belong to none.
+during routing, before a package is assigned. `eval` and `escape` belong
+to none.
+
+An entry has to name something a `lib.*.d.ts` file declares, which is
+what makes a stale drop visible after a TypeScript bump. `globalThis` is
+the one §6.1 drop with no entry for that reason. TypeScript synthesizes
+it rather than declaring it, so there is nothing for the generator to
+skip.
 
 ## What a run rejects
 
