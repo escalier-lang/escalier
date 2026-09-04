@@ -43,7 +43,7 @@ the `std/`, `web/`, and `node/` subtrees.
 | Command                                          | Writes  | Use                                        |
 | ------------------------------------------------ | ------- | ------------------------------------------ |
 | `dts_to_esc <path-to-d.ts>`                      | stdout  | Convert one file, for trying things out.   |
-| `dts_to_esc generate [--cfg …] [--overlay …] <lib-dir> <esc-dir>` | tree | Write the whole tree from its inputs. |
+| `dts_to_esc generate [--cfg …] [--overlay …] [--update-digests] <lib-dir> <esc-dir>` | tree | Write the whole tree from its inputs. |
 | `dts_to_esc check <lib-dir> <esc-dir>`           | nothing | Verify the committed tree.                 |
 | `dts_to_esc regenerate <lib-dir> <esc-dir>`      | tree    | Fold upstream additions into that tree.    |
 | `dts_to_esc bootstrap [--cfg …] <lib-dir> <out>` | tree    | Seed a tree from scratch.                  |
@@ -71,6 +71,12 @@ The overlay defaults to the `overlay` directory beside `<esc-dir>`, so
 `internal/interop/overlay`. `--overlay` names another one.
 `internal/interop/overlay/README.md` covers what each operation does and
 how a file's name carries it.
+
+`--update-digests` rewrites the digest sidecar beside each `replace`
+overlay file instead of checking it, and writes nothing else differently.
+A `replace` records the converted form it stands in for so a later run
+fails when that form moves, and this is the flag that records it. Run it
+after writing a new `replace`, and again to accept a form that has moved.
 
 `check`, `regenerate`, and `bootstrap` are the additive re-run model
 `generate` replaces. They are removed in
@@ -119,7 +125,11 @@ against the hand-written mutability sources. See §5, §6, and §9.2 of
 An overlay `replace` or `drop` naming a declaration or member the
 upstream source no longer has fails the run and names it. That is the
 removal signal for the one input the diff cannot show, since the overlay
-wins by construction wherever it applies.
+wins by construction wherever it applies. A `replace` whose converted
+counterpart has been retyped rather than removed fails the same way, off
+the digest recorded beside it. Read the new upstream form, decide whether
+the overlay still says what it should, then re-run with
+`--update-digests` and commit the sidecar with the rest of the bump.
 
 ## The additive re-run workflow
 

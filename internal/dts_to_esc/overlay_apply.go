@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
@@ -24,6 +25,13 @@ import (
 // TypeScript side reaches a contributor, keyed on the overlay rather
 // than on the tree the run overwrites.
 func ApplyOverlay(mods map[string]*StandaloneModule, o *Overlay) error {
+	if o == nil {
+		return nil
+	}
+	digests := newDigestPass(o.RecordDigests)
+	if unpaired := o.unpairedSidecars(); len(unpaired) > 0 && !o.RecordDigests {
+		return unpairedSidecarError(unpaired[0])
+	}
 	for _, uri := range o.PackageURIs() {
 		files := o.FilesFor(uri)
 		mod, ok := mods[uri]
@@ -36,12 +44,21 @@ func ApplyOverlay(mods map[string]*StandaloneModule, o *Overlay) error {
 			mods[uri] = mod
 		}
 		for _, f := range files {
-			if err := applyOverlayFile(mod, f); err != nil {
+			if err := applyOverlayFile(mod, f, digests); err != nil {
+				return err
+			}
+			if f.Op != OverlayReplace {
+				continue
+			}
+			if err := digests.finish(f); err != nil {
 				return err
 			}
 		}
 	}
-	return nil
+	if !o.RecordDigests {
+		return nil
+	}
+	return digests.write(o)
 }
 
 // emptyModuleFor builds the module an overlay-only package starts from.
@@ -65,7 +82,7 @@ func emptyModuleFor(uri string, files []OverlayFile) (*StandaloneModule, error) 
 
 // applyOverlayFile applies one file's declarations to the module of the
 // package it targets.
-func applyOverlayFile(mod *StandaloneModule, f OverlayFile) error {
+func applyOverlayFile(mod *StandaloneModule, f OverlayFile, digests *digestPass) error {
 	ns, ok := mod.Module.Namespaces.Get("")
 	if !ok {
 		return fmt.Errorf("overlay: %s targets %s, whose converted module has no root namespace",
@@ -75,7 +92,7 @@ func applyOverlayFile(mod *StandaloneModule, f OverlayFile) error {
 		return applyDropFile(ns, f)
 	}
 	for _, ovDecl := range f.Decls {
-		if err := applyOverlayDecl(mod, ns, f, ovDecl); err != nil {
+		if err := applyOverlayDecl(mod, ns, f, ovDecl, digests); err != nil {
 			return err
 		}
 	}
@@ -184,6 +201,7 @@ func applyOverlayDecl(
 	ns *ast.Namespace,
 	f OverlayFile,
 	ovDecl ast.Decl,
+	digests *digestPass,
 ) error {
 	name := escDeclName(ovDecl)
 	idx := findDeclIndex(ns.Decls, name)
@@ -205,7 +223,7 @@ func applyOverlayDecl(
 				return err
 			}
 			body, err := mergeMembers(
-				f, name, hostDecl.Body, ovClass.Body, classElemSlot)
+				f, name, hostDecl.Body, ovClass.Body, classMemberOps, digests)
 			if err != nil {
 				return err
 			}
@@ -221,7 +239,7 @@ func applyOverlayDecl(
 				return err
 			}
 			elems, err := mergeMembers(
-				f, name, hostDecl.TypeAnn.Elems, ovIface.TypeAnn.Elems, objElemSlot)
+				f, name, hostDecl.TypeAnn.Elems, ovIface.TypeAnn.Elems, objMemberOps, digests)
 			if err != nil {
 				return err
 			}
@@ -235,6 +253,13 @@ func applyOverlayDecl(
 			"overlay: %s adds the %s %s, which %s already declares; correct an "+
 				"existing declaration with a replace overlay",
 			f.Path, escDeclKind(host), name, f.PkgURI)
+	}
+	form, err := printer.Print(host, digestOptions())
+	if err != nil {
+		return err
+	}
+	if err := digests.compute(f, digestKey{Decl: name}, []string{form}); err != nil {
+		return err
 	}
 	ns.Decls[idx] = ovDecl
 	carryDeclMetadata(mod, host, ovDecl)
@@ -354,12 +379,13 @@ func mergeMembers[E any](
 	f OverlayFile,
 	owner string,
 	host, overlay []E,
-	slotOf func(E) (memberSlot, bool),
+	ops memberOps[E],
+	digests *digestPass,
 ) ([]E, error) {
 	if f.Op == OverlayAdd {
-		return addMembers(f, owner, host, overlay, slotOf)
+		return addMembers(f, owner, host, overlay, ops)
 	}
-	return replaceMembers(f, owner, host, overlay, slotOf)
+	return replaceMembers(f, owner, host, overlay, ops, digests)
 }
 
 // addMembers appends every overlay member, failing on a member the
@@ -372,14 +398,14 @@ func addMembers[E any](
 	f OverlayFile,
 	owner string,
 	host, overlay []E,
-	slotOf func(E) (memberSlot, bool),
+	ops memberOps[E],
 ) ([]E, error) {
-	converted, hostKinds := groupMembers(host, slotOf)
+	converted, hostKinds := groupMembers(host, ops.slot)
 	added := map[memberSlot][]memberKind{}
 	out := make([]E, 0, len(host)+len(overlay))
 	out = append(out, host...)
 	for _, m := range overlay {
-		slot, ok := slotOf(m)
+		slot, ok := ops.slot(m)
 		if !ok {
 			out = append(out, m)
 			continue
@@ -467,13 +493,14 @@ func replaceMembers[E any](
 	f OverlayFile,
 	owner string,
 	host, overlay []E,
-	slotOf func(E) (memberSlot, bool),
+	ops memberOps[E],
+	digests *digestPass,
 ) ([]E, error) {
-	hostGroups, hostKinds := groupMembers(host, slotOf)
+	hostGroups, hostKinds := groupMembers(host, ops.slot)
 	groups := map[memberSlot][]E{}
 	var order []memberSlot
 	for _, m := range overlay {
-		slot, ok := slotOf(m)
+		slot, ok := ops.slot(m)
 		if !ok {
 			return nil, fmt.Errorf(
 				"overlay: %s replaces a member of %s whose key has no textual name; "+
@@ -501,13 +528,20 @@ func replaceMembers[E any](
 					"restates the whole overload set, since a name is what addresses it",
 				f.Path, len(groups[slot]), len(converted), memberLabel(owner, slot))
 		}
+		forms, err := printMembers(converted, ops)
+		if err != nil {
+			return nil, err
+		}
+		if err := digests.compute(f, keyForSlot(owner, slot), forms); err != nil {
+			return nil, err
+		}
 		carryMemberDocs(converted, groups[slot])
 	}
 
 	substituted := set.NewSet[memberSlot]()
 	out := make([]E, 0, len(host)+len(overlay))
 	for _, m := range host {
-		slot, ok := slotOf(m)
+		slot, ok := ops.slot(m)
 		if !ok {
 			out = append(out, m)
 			continue
@@ -628,6 +662,20 @@ func joinKinds(kinds []memberKind) string {
 		return names[0]
 	}
 	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
+}
+
+// printMembers renders the converted members one overlay entry stands in
+// for, in the order the converted declaration lists them.
+func printMembers[E any](members []E, ops memberOps[E]) ([]string, error) {
+	forms := make([]string, len(members))
+	for i, m := range members {
+		form, err := ops.form(m)
+		if err != nil {
+			return nil, err
+		}
+		forms[i] = form
+	}
+	return forms, nil
 }
 
 // findDecl returns the declaration addressed by name, or nil.

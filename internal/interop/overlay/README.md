@@ -99,10 +99,44 @@ retyping the member under cover of replacing it. Changing a member's
 kind is a `drop` and an `add`, and supplying the missing half of an
 accessor is an `add` on its own.
 
-The converted member's doc comment carries onto the overlay member
-replacing it, unless the overlay wrote one of its own. Upstream
-documentation therefore reaches the generated tree whether or not an
-overlay stands in for the member it describes.
+## Digest sidecars
+
+A `replace` forks its target. The overlay wins by construction, so
+TypeScript can retype the member it stands in for and the generated tree
+would not move. The sidecar beside each `replace` file is what turns
+that silence into a failed run:
+
+```
+overlay/std/array.replace.esc
+overlay/std/array.replace.digests.json
+```
+
+The sidecar records the printed Escalier form of every converted
+declaration and member the file stands in for, one entry each. A run
+recomputes those digests and fails when one no longer matches, naming
+the member and the file.
+
+Recording is a separate run, so writing a new `replace` is two steps:
+
+1. Write the overlay file.
+2. Run `dts_to_esc generate --update-digests <lib-dir> <esc-dir>`, which
+   rewrites the sidecars from what the overlay currently replaces.
+
+Commit both files. The same two steps accept a member that moved
+upstream, after checking the overlay still says what it should about the
+new upstream form.
+
+A digest covers the converted form, not the overlay's own text, so
+editing the overlay alone needs no re-record. The converted form is
+what the generator makes of the `.d.ts` declaration, so the digest
+moves when the upstream type moves and when a derived fact the
+generator applies to that member moves. Doc comments are left out
+of the form, so the prose churn of a version bump moves no digest. Such
+an edit still reaches the output, since the converted member's comment
+carries onto the overlay member replacing it wherever that member wrote
+none of its own. Any change to the printer's output does invalidate
+every entry at once. The comparison that replaces this reads both sides
+through the solver's `constrain` and waits on SimpleSub M7.5.
 
 Write the overlay in the shape the generated file has. The generator
 converts the `.d.ts` first and matches the overlay against the result,
@@ -123,6 +157,11 @@ being dropped in silence. This holds for `add` as well as `replace`.
 A whole-declaration replacement is the other case, and it does read all
 of that. The overlay stands in for the declaration entire, so what it
 writes around its members is what the generated file gets.
+
+The converted member's doc comment carries onto the overlay member
+replacing it, unless the overlay wrote one of its own. Upstream
+documentation therefore reaches the generated tree whether or not an
+overlay stands in for the member it describes.
 
 A declaration the converter gets structurally wrong is replaced whole
 rather than member by member. That happens when the overlay declaration
@@ -170,6 +209,10 @@ belong to none.
 - A `replace` or a `drop` naming a declaration or member the upstream
   source no longer has. That is the TypeScript-side-removal signal,
   keyed on the overlay rather than on the tree the run overwrites.
+- A `replace` whose converted counterpart has moved since its digest was
+  recorded, or that has no recorded digest at all.
+- A sidecar entry the overlay file beside it no longer replaces, and a
+  sidecar with no `replace` file beside it.
 - An `add` naming a declaration or member the upstream source already
   has.
 - A drop entry carrying a type annotation, a signature, or an

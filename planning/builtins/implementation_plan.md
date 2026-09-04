@@ -1970,10 +1970,28 @@ name, and an overlay adds the missing half of one.
 Granularity shrinks the staleness hazard rather than removing it. A
 replaced member is still forked from upstream, but a change to any
 other member of the same declaration still flows through, which
-declaration-granular replacement swallows.
-[#1356](https://github.com/escalier-lang/escalier/issues/1356) carries
-both the granularity and the check that fails a run when a replaced
-member's upstream counterpart has moved.
+declaration-granular replacement swallows. What stays forked is pinned
+by a digest. Beside each `replace` file sits a `.digests.json` sidecar
+recording the printed Escalier form of every converted declaration and
+member that file stands in for, and a run whose converted form no
+longer matches the recorded one fails and names the member.
+`dts_to_esc generate --update-digests` rewrites the sidecars, which is
+how a contributor records a new entry or accepts a moved one.
+
+The digest is taken over the printed member with its doc comment left
+out, so the prose churn of a version bump moves nothing. A printer
+formatting change does invalidate every entry at once.
+
+Taking it over the converted form rather than over any one input is
+what lets it widen on its own. It covers the `.d.ts` shape, the trio
+fusion, and every derived determination the generator has wired in, so
+a fact that starts shaping a declaration starts moving its digest with
+no change here. §6.8 keeps that true by applying each determination
+before the overlay. The eventual answer is the comparison this section defers to
+SimpleSub M7.5: infer both sides and ask the solver's `constrain`
+whether the overlay member is still compatible with the converted one.
+That is robust to formatting, and it is the one check §6.4 still wants
+`constrain` for.
 
 **`drop` names what the generator must not emit.** A drop file's
 declarations are read for their **names alone** — every type
@@ -2043,9 +2061,11 @@ signature drift, and incompatible property-type drift. Checks 2 and
 `constrain`, which needs the solver to ingest a declaration module —
 SimpleSub M7.5. Regenerating and diffing catches all three at once
 and needs no checker, so drift detection comes off M7.5's critical
-path. One check still wants `constrain`: comparing an overlay
+path. One check still wants `constrain`, comparing an overlay
 `replace` against the upstream declaration it stands in for. Until
-M7.5 lands, an overlay `replace` is reviewed by hand.
+M7.5 lands, the digest sidecars above stand in for it: they catch a
+converted form that moved, at the cost of reporting a printer
+formatting change as movement too.
 
 **Declarations the generator drops on purpose** are the overlay's
 `drop` files above — `globalThis`, `eval`, and the `intrinsic`-typed
@@ -2260,6 +2280,22 @@ As of the pinned lib set the generated tree carries 394 `mut self`
 receivers, all of them from the name-tier classifier in
 [mutability.go](../../internal/dts_to_esc/mutability.go), and zero
 `throws` clauses, zero parameter `mut`, and zero `&` borrows.
+
+**Where the application runs.** Each determination is applied to the
+converted declarations before `ApplyOverlay` folds the overlay in. The
+digest §6.4 records for an overlay `replace` is taken over the printed
+converted member, so a determination applied at that point lands inside
+it. A `throws` set that widens or a parameter that becomes `mut` moves
+the digest, and the `replace` standing in for that member fails until a
+contributor re-records it.
+
+Applying a determination after the overlay would annotate the overlay's
+own member instead. The digest would have been taken from an
+un-annotated form, so the fact would reach no check for exactly the
+members an overlay forks. Receiver mutability already runs in the right
+place: `ConvertBuckets` decides it and `ApplyOverlay` follows, so a
+reclassified receiver already moves the digest of a member an overlay
+replaces.
 
 **Known fusion gaps.** A determination can only land on a fused
 class, since an `interface` member has no receiver to annotate.
