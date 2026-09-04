@@ -44,25 +44,6 @@ func (c *Comment) IsDoc() bool {
 	return c.Kind == BlockCommentKind && lexer_util.IsJSDoc(c.Text)
 }
 
-// CommentsInRange returns the comments that lie entirely within the byte
-// range [start, end) of the source file the comments came from. The input
-// must be sorted by start offset, which is the order the lexer produces and
-// the order every parse entry point stores.
-//
-// The range is a byte range rather than a Span because the callers that need
-// it are splicing source text. Such a caller holds an offset and has no line
-// and column to build a Span from.
-func CommentsInRange(comments []*Comment, start, end int) []*Comment {
-	lo := sort.Search(len(comments), func(i int) bool {
-		return comments[i].span.Start.Offset >= start
-	})
-	hi := lo
-	for hi < len(comments) && comments[hi].span.End.Offset <= end {
-		hi++
-	}
-	return comments[lo:hi]
-}
-
 // CommentMap associates each comment with the innermost node whose span
 // encloses it.
 //

@@ -58,8 +58,8 @@ cannot answer them:
 | Answered by the facts alone | 48 | Neither hand-written source answers. Each of these falls through to the `&mut self` default today. |
 | Override with no fact | 37 | An override entry no fact answers. §7 keeps it. |
 
-The run prints these counts. `dts_to_esc bootstrap --cfg <cfg.json> <lib-dir>
-<out-dir>` writes them to stderr beside the curation and join reports.
+The run prints these counts. `dts_to_esc generate --cfg <cfg.json> <lib-dir>
+<esc-dir>` writes them to stderr beside the curation and join reports.
 
 ## Disposition of each disagreement
 
