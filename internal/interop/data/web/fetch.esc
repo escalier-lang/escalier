@@ -62,33 +62,30 @@ export declare interface Body {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers)
  */
-export declare interface Headers {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/append) */
-    append(name: string, value: string) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/delete) */
-    delete(name: string) -> unknown,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
-    get(name: string) -> string | null,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
-    getSetCookie() -> mut Array<string>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
-    has(name: string) -> boolean,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
-    set(name: string, value: string) -> unknown,
-    forEach(callbackfn: fn (value: string, key: string, parent: Headers) -> unknown, thisArg?: any) -> unknown,
-    [Symbol.iterator]() -> HeadersIterator<[string, string]>,
-    /** Returns an iterator allowing to go through all key/value pairs contained in this object. */
-    entries() -> HeadersIterator<[string, string]>,
-    /** Returns an iterator allowing to go through all keys of the key/value pairs contained in this object. */
-    keys() -> HeadersIterator<string>,
-    /** Returns an iterator allowing to go through all values of the key/value pairs contained in this object. */
-    values() -> HeadersIterator<string>
-}
-
 @js("Headers")
-export declare var Headers: {
-    prototype: Headers,
-    new (init?: HeadersInit) -> Headers
+export declare class Headers {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/append) */
+    append(mut self, name: string, value: string) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/delete) */
+    delete(mut self, name: string) -> unknown,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/get) */
+    get(self, name: string) -> string | null,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/getSetCookie) */
+    getSetCookie(self) -> mut Array<string>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/has) */
+    has(self, name: string) -> boolean,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Headers/set) */
+    set(mut self, name: string, value: string) -> unknown,
+    forEach(self, callbackfn: fn (value: string, key: string, parent: Headers) -> unknown, thisArg?: any) -> unknown,
+    [Symbol.iterator](mut self) -> HeadersIterator<[string, string]>,
+    /** Returns an iterator allowing to go through all key/value pairs contained in this object. */
+    entries(self) -> HeadersIterator<[string, string]>,
+    /** Returns an iterator allowing to go through all keys of the key/value pairs contained in this object. */
+    keys(self) -> HeadersIterator<string>,
+    /** Returns an iterator allowing to go through all values of the key/value pairs contained in this object. */
+    values(self) -> HeadersIterator<string>,
+    static prototype: Headers,
+    constructor(mut self, init?: HeadersInit)
 }
 
 /**
@@ -96,7 +93,8 @@ export declare var Headers: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request)
  */
-export declare interface Request extends Body {
+@js("Request")
+export declare class Request extends Body {
     /**
      * Returns the cache mode associated with request, which is a string indicating how the request will interact with the browser's cache when fetching.
      *
@@ -176,13 +174,9 @@ export declare interface Request extends Body {
      */
     readonly url: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/clone) */
-    clone() -> Request
-}
-
-@js("Request")
-export declare var Request: {
-    prototype: Request,
-    new (input: RequestInfo | URL, init?: RequestInit) -> Request
+    clone(self) -> Request,
+    static prototype: Request,
+    constructor(mut self, input: RequestInfo | URL, init?: RequestInit)
 }
 
 /**
@@ -190,7 +184,8 @@ export declare var Request: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response)
  */
-export declare interface Response extends Body {
+@js("Response")
+export declare class Response extends Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/headers) */
     readonly headers: Headers,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/ok) */
@@ -206,19 +201,15 @@ export declare interface Response extends Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/url) */
     readonly url: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/clone) */
-    clone() -> Response
-}
-
-@js("Response")
-export declare var Response: {
-    prototype: Response,
-    new (body?: BodyInit | null, init?: ResponseInit) -> Response,
+    clone(self) -> Response,
+    static prototype: Response,
+    constructor(mut self, body?: BodyInit | null, init?: ResponseInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/error_static) */
-    error() -> Response,
+    static error() -> Response,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/json_static) */
-    json(data: any, init?: ResponseInit) -> Response,
+    static json(data: any, init?: ResponseInit) -> Response,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/redirect_static) */
-    redirect(url: string | URL, status?: number) -> Response
+    static redirect(url: string | URL, status?: number) -> Response
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch) */

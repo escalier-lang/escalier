@@ -130,19 +130,16 @@ export declare interface PublicKeyCredentialUserEntityJSON {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse)
  */
-export declare interface AuthenticatorAssertionResponse extends AuthenticatorResponse {
+@js("AuthenticatorAssertionResponse")
+export declare class AuthenticatorAssertionResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/authenticatorData) */
     readonly authenticatorData: ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/signature) */
     readonly signature: ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
-    readonly userHandle: ArrayBuffer | null
-}
-
-@js("AuthenticatorAssertionResponse")
-export declare var AuthenticatorAssertionResponse: {
-    prototype: AuthenticatorAssertionResponse,
-    new () -> AuthenticatorAssertionResponse
+    readonly userHandle: ArrayBuffer | null,
+    static prototype: AuthenticatorAssertionResponse,
+    constructor(mut self)
 }
 
 /**
@@ -150,23 +147,20 @@ export declare var AuthenticatorAssertionResponse: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse)
  */
-export declare interface AuthenticatorAttestationResponse extends AuthenticatorResponse {
+@js("AuthenticatorAttestationResponse")
+export declare class AuthenticatorAttestationResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/attestationObject) */
     readonly attestationObject: ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getAuthenticatorData) */
-    getAuthenticatorData() -> ArrayBuffer,
+    getAuthenticatorData(self) -> ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKey) */
-    getPublicKey() -> ArrayBuffer | null,
+    getPublicKey(self) -> ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKeyAlgorithm) */
-    getPublicKeyAlgorithm() -> COSEAlgorithmIdentifier,
+    getPublicKeyAlgorithm(self) -> COSEAlgorithmIdentifier,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
-    getTransports() -> mut Array<string>
-}
-
-@js("AuthenticatorAttestationResponse")
-export declare var AuthenticatorAttestationResponse: {
-    prototype: AuthenticatorAttestationResponse,
-    new () -> AuthenticatorAttestationResponse
+    getTransports(self) -> mut Array<string>,
+    static prototype: AuthenticatorAttestationResponse,
+    constructor(mut self)
 }
 
 /**
@@ -174,15 +168,12 @@ export declare var AuthenticatorAttestationResponse: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse)
  */
-export declare interface AuthenticatorResponse {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
-    readonly clientDataJSON: ArrayBuffer
-}
-
 @js("AuthenticatorResponse")
-export declare var AuthenticatorResponse: {
-    prototype: AuthenticatorResponse,
-    new () -> AuthenticatorResponse
+export declare class AuthenticatorResponse {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
+    readonly clientDataJSON: ArrayBuffer,
+    static prototype: AuthenticatorResponse,
+    constructor(mut self)
 }
 
 /**
@@ -190,7 +181,8 @@ export declare var AuthenticatorResponse: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential)
  */
-export declare interface PublicKeyCredential extends Credential {
+@js("PublicKeyCredential")
+export declare class PublicKeyCredential extends Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/authenticatorAttachment) */
     readonly authenticatorAttachment: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/rawId) */
@@ -198,24 +190,20 @@ export declare interface PublicKeyCredential extends Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/response) */
     readonly response: AuthenticatorResponse,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/getClientExtensionResults) */
-    getClientExtensionResults() -> AuthenticationExtensionsClientOutputs,
+    getClientExtensionResults(self) -> AuthenticationExtensionsClientOutputs,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/toJSON) */
-    toJSON() -> PublicKeyCredentialJSON
-}
-
-@js("PublicKeyCredential")
-export declare var PublicKeyCredential: {
-    prototype: PublicKeyCredential,
-    new () -> PublicKeyCredential,
-    getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
+    toJSON(self) -> PublicKeyCredentialJSON,
+    static prototype: PublicKeyCredential,
+    constructor(mut self),
+    static getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isConditionalMediationAvailable_static) */
-    isConditionalMediationAvailable() -> Promise<boolean>,
+    static isConditionalMediationAvailable() -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isUserVerifyingPlatformAuthenticatorAvailable_static) */
-    isUserVerifyingPlatformAuthenticatorAvailable() -> Promise<boolean>,
+    static isUserVerifyingPlatformAuthenticatorAvailable() -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseCreationOptionsFromJSON_static) */
-    parseCreationOptionsFromJSON(options: PublicKeyCredentialCreationOptionsJSON) -> PublicKeyCredentialCreationOptions,
+    static parseCreationOptionsFromJSON(options: PublicKeyCredentialCreationOptionsJSON) -> PublicKeyCredentialCreationOptions,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/parseRequestOptionsFromJSON_static) */
-    parseRequestOptionsFromJSON(options: PublicKeyCredentialRequestOptionsJSON) -> PublicKeyCredentialRequestOptions
+    static parseRequestOptionsFromJSON(options: PublicKeyCredentialRequestOptionsJSON) -> PublicKeyCredentialRequestOptions
 }
 
 export declare type Base64URLString = string

@@ -3,27 +3,21 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompressionStream) */
-export declare interface CompressionStream extends GenericTransformStream {
-    readonly readable: ReadableStream<Uint8Array>,
-    readonly writable: WritableStream<BufferSource>
-}
-
 @js("CompressionStream")
-export declare var CompressionStream: {
-    prototype: CompressionStream,
-    new (format: CompressionFormat) -> CompressionStream
+export declare class CompressionStream extends GenericTransformStream {
+    readonly readable: ReadableStream<Uint8Array>,
+    readonly writable: WritableStream<BufferSource>,
+    static prototype: CompressionStream,
+    constructor(mut self, format: CompressionFormat)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DecompressionStream) */
-export declare interface DecompressionStream extends GenericTransformStream {
-    readonly readable: ReadableStream<Uint8Array>,
-    readonly writable: WritableStream<BufferSource>
-}
-
 @js("DecompressionStream")
-export declare var DecompressionStream: {
-    prototype: DecompressionStream,
-    new (format: CompressionFormat) -> DecompressionStream
+export declare class DecompressionStream extends GenericTransformStream {
+    readonly readable: ReadableStream<Uint8Array>,
+    readonly writable: WritableStream<BufferSource>,
+    static prototype: DecompressionStream,
+    constructor(mut self, format: CompressionFormat)
 }
 
 export declare type CompressionFormat = "deflate" | "deflate-raw" | "gzip"

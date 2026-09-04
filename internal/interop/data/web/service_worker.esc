@@ -27,21 +27,18 @@ export declare interface RegistrationOptions {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager)
  */
-export declare interface NavigationPreloadManager {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/disable) */
-    disable() -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/enable) */
-    enable() -> Promise<undefined>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/getState) */
-    getState() -> Promise<NavigationPreloadState>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/setHeaderValue) */
-    setHeaderValue(value: string) -> Promise<undefined>
-}
-
 @js("NavigationPreloadManager")
-export declare var NavigationPreloadManager: {
-    prototype: NavigationPreloadManager,
-    new () -> NavigationPreloadManager
+export declare class NavigationPreloadManager {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/disable) */
+    disable(mut self) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/enable) */
+    enable(mut self) -> Promise<undefined>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/getState) */
+    getState(self) -> Promise<NavigationPreloadState>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/setHeaderValue) */
+    setHeaderValue(mut self, value: string) -> Promise<undefined>,
+    static prototype: NavigationPreloadManager,
+    constructor(mut self)
 }
 
 export declare interface ServiceWorkerEventMap extends AbstractWorkerEventMap {
@@ -54,7 +51,8 @@ export declare interface ServiceWorkerEventMap extends AbstractWorkerEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker)
  */
-export declare interface ServiceWorker extends EventTarget, AbstractWorker {
+@js("ServiceWorker")
+export declare class ServiceWorker extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/statechange_event) */
     onstatechange: (fn (this: ServiceWorker, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/scriptURL) */
@@ -62,18 +60,14 @@ export declare interface ServiceWorker extends EventTarget, AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
     readonly state: ServiceWorkerState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
-    postMessage(message: any, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(message: any, options?: StructuredSerializeOptions) -> unknown,
-    addEventListener<K: keyof ServiceWorkerEventMap>(type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerEventMap>(type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("ServiceWorker")
-export declare var ServiceWorker: {
-    prototype: ServiceWorker,
-    new () -> ServiceWorker
+    postMessage(mut self, message: any, transfer: mut Array<Transferable>) -> unknown,
+    postMessage(mut self, message: any, options?: StructuredSerializeOptions) -> unknown,
+    addEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: ServiceWorker,
+    constructor(mut self)
 }
 
 export declare interface ServiceWorkerContainerEventMap {
@@ -88,7 +82,8 @@ export declare interface ServiceWorkerContainerEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer)
  */
-export declare interface ServiceWorkerContainer extends EventTarget {
+@js("ServiceWorkerContainer")
+export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controller) */
     readonly controller: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controllerchange_event) */
@@ -100,23 +95,19 @@ export declare interface ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/ready) */
     readonly ready: Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistration) */
-    getRegistration(clientURL?: string | URL) -> Promise<ServiceWorkerRegistration | undefined>,
+    getRegistration(self, clientURL?: string | URL) -> Promise<ServiceWorkerRegistration | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistrations) */
-    getRegistrations() -> Promise<Array<ServiceWorkerRegistration>>,
+    getRegistrations(self) -> Promise<Array<ServiceWorkerRegistration>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/register) */
-    register(scriptURL: string | URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
+    register(mut self, scriptURL: string | URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
-    startMessages() -> unknown,
-    addEventListener<K: keyof ServiceWorkerContainerEventMap>(type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerContainerEventMap>(type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("ServiceWorkerContainer")
-export declare var ServiceWorkerContainer: {
-    prototype: ServiceWorkerContainer,
-    new () -> ServiceWorkerContainer
+    startMessages(mut self) -> unknown,
+    addEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: ServiceWorkerContainer,
+    constructor(mut self)
 }
 
 export declare interface ServiceWorkerRegistrationEventMap {
@@ -129,7 +120,8 @@ export declare interface ServiceWorkerRegistrationEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration)
  */
-export declare interface ServiceWorkerRegistration extends EventTarget {
+@js("ServiceWorkerRegistration")
+export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/active) */
     readonly active: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/installing) */
@@ -147,23 +139,19 @@ export declare interface ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/waiting) */
     readonly waiting: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/getNotifications) */
-    getNotifications(filter?: GetNotificationOptions) -> Promise<mut Array<Notification>>,
+    getNotifications(self, filter?: GetNotificationOptions) -> Promise<mut Array<Notification>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/showNotification) */
-    showNotification(title: string, options?: NotificationOptions) -> Promise<undefined>,
+    showNotification(mut self, title: string, options?: NotificationOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/unregister) */
-    unregister() -> Promise<boolean>,
+    unregister(mut self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/update) */
-    update() -> Promise<undefined>,
-    addEventListener<K: keyof ServiceWorkerRegistrationEventMap>(type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("ServiceWorkerRegistration")
-export declare var ServiceWorkerRegistration: {
-    prototype: ServiceWorkerRegistration,
-    new () -> ServiceWorkerRegistration
+    update(mut self) -> Promise<undefined>,
+    addEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: ServiceWorkerRegistration,
+    constructor(mut self)
 }
 
 export declare type ClientTypes = "all" | "sharedworker" | "window" | "worker"

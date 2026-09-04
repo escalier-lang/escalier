@@ -6,25 +6,32 @@ export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObj
     [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
 }
 
-export declare interface ReadableStream<R = any> {
-    [Symbol.asyncIterator](options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
-    values(options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+@js("ReadableStream")
+export declare class ReadableStream<R = any> {
+    [Symbol.asyncIterator](mut self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
+    values(self, options?: ReadableStreamIteratorOptions) -> ReadableStreamAsyncIterator<R>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
-    cancel(reason?: any) -> Promise<undefined>,
+    cancel(mut self, reason?: any) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
-    getReader(options: {
+    getReader(self, options: {
         mode: "byob"
     }) -> ReadableStreamBYOBReader,
-    getReader() -> ReadableStreamDefaultReader<R>,
-    getReader(options?: ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
+    getReader(self) -> ReadableStreamDefaultReader<R>,
+    getReader(self, options?: ReadableStreamGetReaderOptions) -> ReadableStreamReader<R>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeThrough) */
-    pipeThrough<T>(transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
+    pipeThrough<T>(mut self, transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeTo) */
-    pipeTo(destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
+    pipeTo(mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/tee) */
-    tee() -> [ReadableStream<R>, ReadableStream<R>]
+    tee(mut self) -> [ReadableStream<R>, ReadableStream<R>],
+    static prototype: ReadableStream,
+    constructor(mut self, underlyingSource: UnderlyingByteSource, strategy?: {
+        highWaterMark?: number
+    }),
+    constructor(mut self, underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>),
+    constructor(mut self, underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>)
 }
 
 export declare interface QueuingStrategy<T = any> {
@@ -149,17 +156,14 @@ export declare interface UnderlyingSource<R = any> {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy)
  */
-export declare interface ByteLengthQueuingStrategy extends QueuingStrategy<ArrayBufferView> {
+@js("ByteLengthQueuingStrategy")
+export declare class ByteLengthQueuingStrategy extends QueuingStrategy<ArrayBufferView> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/size) */
-    readonly size: QueuingStrategySize<ArrayBufferView>
-}
-
-@js("ByteLengthQueuingStrategy")
-export declare var ByteLengthQueuingStrategy: {
-    prototype: ByteLengthQueuingStrategy,
-    new (init: QueuingStrategyInit) -> ByteLengthQueuingStrategy
+    readonly size: QueuingStrategySize<ArrayBufferView>,
+    static prototype: ByteLengthQueuingStrategy,
+    constructor(mut self, init: QueuingStrategyInit)
 }
 
 /**
@@ -167,17 +171,14 @@ export declare var ByteLengthQueuingStrategy: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy)
  */
-export declare interface CountQueuingStrategy extends QueuingStrategy {
+@js("CountQueuingStrategy")
+export declare class CountQueuingStrategy extends QueuingStrategy {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/size) */
-    readonly size: QueuingStrategySize
-}
-
-@js("CountQueuingStrategy")
-export declare var CountQueuingStrategy: {
-    prototype: CountQueuingStrategy,
-    new (init: QueuingStrategyInit) -> CountQueuingStrategy
+    readonly size: QueuingStrategySize,
+    static prototype: CountQueuingStrategy,
+    constructor(mut self, init: QueuingStrategyInit)
 }
 
 export declare interface GenericTransformStream {
@@ -188,95 +189,70 @@ export declare interface GenericTransformStream {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController) */
-export declare interface ReadableByteStreamController {
+@js("ReadableByteStreamController")
+export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/byobRequest) */
     readonly byobRequest: ReadableStreamBYOBRequest | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue) */
-    enqueue(chunk: ArrayBufferView) -> unknown,
+    enqueue(mut self, chunk: ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
-    error(e?: any) -> unknown
-}
-
-@js("ReadableByteStreamController")
-export declare var ReadableByteStreamController: {
-    prototype: ReadableByteStreamController,
-    new () -> ReadableByteStreamController
-}
-
-@js("ReadableStream")
-export declare var ReadableStream: {
-    prototype: ReadableStream,
-    new (underlyingSource: UnderlyingByteSource, strategy?: {
-        highWaterMark?: number
-    }) -> ReadableStream<Uint8Array>,
-    new<R = any> (underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>) -> ReadableStream<R>,
-    new<R = any> (underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>) -> ReadableStream<R>
+    error(mut self, e?: any) -> unknown,
+    static prototype: ReadableByteStreamController,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader) */
-export declare interface ReadableStreamBYOBReader extends ReadableStreamGenericReader {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
-    read<T: ArrayBufferView>(view: T) -> Promise<ReadableStreamReadResult<T>>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
-    releaseLock() -> unknown
-}
-
 @js("ReadableStreamBYOBReader")
-export declare var ReadableStreamBYOBReader: {
-    prototype: ReadableStreamBYOBReader,
-    new (stream: ReadableStream<Uint8Array>) -> ReadableStreamBYOBReader
+export declare class ReadableStreamBYOBReader extends ReadableStreamGenericReader {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
+    read<T: ArrayBufferView>(mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
+    releaseLock(mut self) -> unknown,
+    static prototype: ReadableStreamBYOBReader,
+    constructor(mut self, stream: ReadableStream<Uint8Array>)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest) */
-export declare interface ReadableStreamBYOBRequest {
+@js("ReadableStreamBYOBRequest")
+export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/view) */
     readonly view: ArrayBufferView | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respond) */
-    respond(bytesWritten: number) -> unknown,
+    respond(mut self, bytesWritten: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
-    respondWithNewView(view: ArrayBufferView) -> unknown
-}
-
-@js("ReadableStreamBYOBRequest")
-export declare var ReadableStreamBYOBRequest: {
-    prototype: ReadableStreamBYOBRequest,
-    new () -> ReadableStreamBYOBRequest
+    respondWithNewView(mut self, view: ArrayBufferView) -> unknown,
+    static prototype: ReadableStreamBYOBRequest,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController) */
-export declare interface ReadableStreamDefaultController<R = any> {
+@js("ReadableStreamDefaultController")
+export declare class ReadableStreamDefaultController<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/enqueue) */
-    enqueue(chunk?: R) -> unknown,
+    enqueue(mut self, chunk?: R) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/error) */
-    error(e?: any) -> unknown
-}
-
-@js("ReadableStreamDefaultController")
-export declare var ReadableStreamDefaultController: {
-    prototype: ReadableStreamDefaultController,
-    new () -> ReadableStreamDefaultController
+    error(mut self, e?: any) -> unknown,
+    static prototype: ReadableStreamDefaultController,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader) */
-export declare interface ReadableStreamDefaultReader<R = any> extends ReadableStreamGenericReader {
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
-    read() -> Promise<ReadableStreamReadResult<R>>,
-    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
-    releaseLock() -> unknown
-}
-
 @js("ReadableStreamDefaultReader")
-export declare var ReadableStreamDefaultReader: {
-    prototype: ReadableStreamDefaultReader,
-    new<R = any> (stream: ReadableStream<R>) -> ReadableStreamDefaultReader<R>
+export declare class ReadableStreamDefaultReader<R = any> extends ReadableStreamGenericReader {
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
+    read(mut self) -> Promise<ReadableStreamReadResult<R>>,
+    /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
+    releaseLock(mut self) -> unknown,
+    static prototype: ReadableStreamDefaultReader,
+    constructor(mut self, stream: ReadableStream<R>)
 }
 
 export declare interface ReadableStreamGenericReader {
@@ -287,35 +263,29 @@ export declare interface ReadableStreamGenericReader {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream) */
-export declare interface TransformStream<I = any, O = any> {
+@js("TransformStream")
+export declare class TransformStream<I = any, O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream/readable) */
     readonly readable: ReadableStream<O>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream/writable) */
-    readonly writable: WritableStream<I>
-}
-
-@js("TransformStream")
-export declare var TransformStream: {
-    prototype: TransformStream,
-    new<I = any, O = any> (transformer?: Transformer<I, O>, writableStrategy?: QueuingStrategy<I>, readableStrategy?: QueuingStrategy<O>) -> TransformStream<I, O>
+    readonly writable: WritableStream<I>,
+    static prototype: TransformStream,
+    constructor(mut self, transformer?: Transformer<I, O>, writableStrategy?: QueuingStrategy<I>, readableStrategy?: QueuingStrategy<O>)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController) */
-export declare interface TransformStreamDefaultController<O = any> {
+@js("TransformStreamDefaultController")
+export declare class TransformStreamDefaultController<O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/enqueue) */
-    enqueue(chunk?: O) -> unknown,
+    enqueue(mut self, chunk?: O) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/error) */
-    error(reason?: any) -> unknown,
+    error(mut self, reason?: any) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/terminate) */
-    terminate() -> unknown
-}
-
-@js("TransformStreamDefaultController")
-export declare var TransformStreamDefaultController: {
-    prototype: TransformStreamDefaultController,
-    new () -> TransformStreamDefaultController
+    terminate(mut self) -> unknown,
+    static prototype: TransformStreamDefaultController,
+    constructor(mut self)
 }
 
 /**
@@ -323,21 +293,18 @@ export declare var TransformStreamDefaultController: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream)
  */
-export declare interface WritableStream<W = any> {
+@js("WritableStream")
+export declare class WritableStream<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/abort) */
-    abort(reason?: any) -> Promise<undefined>,
+    abort(mut self, reason?: any) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/close) */
-    close() -> Promise<undefined>,
+    close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/getWriter) */
-    getWriter() -> WritableStreamDefaultWriter<W>
-}
-
-@js("WritableStream")
-export declare var WritableStream: {
-    prototype: WritableStream,
-    new<W = any> (underlyingSink?: UnderlyingSink<W>, strategy?: QueuingStrategy<W>) -> WritableStream<W>
+    getWriter(self) -> WritableStreamDefaultWriter<W>,
+    static prototype: WritableStream,
+    constructor(mut self, underlyingSink?: UnderlyingSink<W>, strategy?: QueuingStrategy<W>)
 }
 
 /**
@@ -345,17 +312,14 @@ export declare var WritableStream: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController)
  */
-export declare interface WritableStreamDefaultController {
+@js("WritableStreamDefaultController")
+export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/signal) */
     readonly signal: AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
-    error(e?: any) -> unknown
-}
-
-@js("WritableStreamDefaultController")
-export declare var WritableStreamDefaultController: {
-    prototype: WritableStreamDefaultController,
-    new () -> WritableStreamDefaultController
+    error(mut self, e?: any) -> unknown,
+    static prototype: WritableStreamDefaultController,
+    constructor(mut self)
 }
 
 /**
@@ -363,7 +327,8 @@ export declare var WritableStreamDefaultController: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter)
  */
-export declare interface WritableStreamDefaultWriter<W = any> {
+@js("WritableStreamDefaultWriter")
+export declare class WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/closed) */
     readonly closed: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/desiredSize) */
@@ -371,19 +336,15 @@ export declare interface WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/ready) */
     readonly ready: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/abort) */
-    abort(reason?: any) -> Promise<undefined>,
+    abort(mut self, reason?: any) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/close) */
-    close() -> Promise<undefined>,
+    close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/releaseLock) */
-    releaseLock() -> unknown,
+    releaseLock(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/write) */
-    write(chunk?: W) -> Promise<undefined>
-}
-
-@js("WritableStreamDefaultWriter")
-export declare var WritableStreamDefaultWriter: {
-    prototype: WritableStreamDefaultWriter,
-    new<W = any> (stream: WritableStream<W>) -> WritableStreamDefaultWriter<W>
+    write(mut self, chunk?: W) -> Promise<undefined>,
+    static prototype: WritableStreamDefaultWriter,
+    constructor(mut self, stream: WritableStream<W>)
 }
 
 export declare interface QueuingStrategySize<T = any> {

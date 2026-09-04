@@ -183,7 +183,7 @@ func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
     "decl": "Array",
     "member": "size",
     "kind": "setter",
-    "digest": "59a6dc0bffd1defa"
+    "digest": "6386e2949f3a0df2"
   }
 ]
 `))

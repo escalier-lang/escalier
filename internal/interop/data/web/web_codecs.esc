@@ -211,7 +211,8 @@ export declare interface VideoFrameInit {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData) */
-export declare interface AudioData {
+@js("AudioData")
+export declare class AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/duration) */
     readonly duration: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/format) */
@@ -225,19 +226,15 @@ export declare interface AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/allocationSize) */
-    allocationSize(options: AudioDataCopyToOptions) -> number,
+    allocationSize(mut self, options: AudioDataCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/clone) */
-    clone() -> AudioData,
+    clone(self) -> AudioData,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/copyTo) */
-    copyTo(destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> unknown
-}
-
-@js("AudioData")
-export declare var AudioData: {
-    prototype: AudioData,
-    new (init: AudioDataInit) -> AudioData
+    copyTo(self, destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> unknown,
+    static prototype: AudioData,
+    constructor(mut self, init: AudioDataInit)
 }
 
 export declare interface AudioDecoderEventMap {
@@ -249,7 +246,8 @@ export declare interface AudioDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder)
  */
-export declare interface AudioDecoder extends EventTarget {
+@js("AudioDecoder")
+export declare class AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decodeQueueSize) */
     readonly decodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/dequeue_event) */
@@ -257,27 +255,23 @@ export declare interface AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/configure) */
-    configure(config: AudioDecoderConfig) -> unknown,
+    configure(mut self, config: AudioDecoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decode) */
-    decode(chunk: EncodedAudioChunk) -> unknown,
+    decode(mut self, chunk: EncodedAudioChunk) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/flush) */
-    flush() -> Promise<undefined>,
+    flush(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/reset) */
-    reset() -> unknown,
-    addEventListener<K: keyof AudioDecoderEventMap>(type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioDecoderEventMap>(type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("AudioDecoder")
-export declare var AudioDecoder: {
-    prototype: AudioDecoder,
-    new (init: AudioDecoderInit) -> AudioDecoder,
+    reset(mut self) -> unknown,
+    addEventListener<K: keyof AudioDecoderEventMap>(mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AudioDecoderEventMap>(mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: AudioDecoder,
+    constructor(mut self, init: AudioDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/isConfigSupported_static) */
-    isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
+    static isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
 }
 
 export declare interface AudioEncoderEventMap {
@@ -289,7 +283,8 @@ export declare interface AudioEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder)
  */
-export declare interface AudioEncoder extends EventTarget {
+@js("AudioEncoder")
+export declare class AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encodeQueueSize) */
     readonly encodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/dequeue_event) */
@@ -297,31 +292,28 @@ export declare interface AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/configure) */
-    configure(config: AudioEncoderConfig) -> unknown,
+    configure(mut self, config: AudioEncoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encode) */
-    encode(data: AudioData) -> unknown,
+    encode(mut self, data: AudioData) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/flush) */
-    flush() -> Promise<undefined>,
+    flush(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/reset) */
-    reset() -> unknown,
-    addEventListener<K: keyof AudioEncoderEventMap>(type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AudioEncoderEventMap>(type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("AudioEncoder")
-export declare var AudioEncoder: {
-    prototype: AudioEncoder,
-    new (init: AudioEncoderInit) -> AudioEncoder,
+    reset(mut self) -> unknown,
+    addEventListener<K: keyof AudioEncoderEventMap>(mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AudioEncoderEventMap>(mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: AudioEncoder,
+    constructor(mut self, init: AudioEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/isConfigSupported_static) */
-    isConfigSupported(config: AudioEncoderConfig) -> Promise<AudioEncoderSupport>
+    static isConfigSupported(config: AudioEncoderConfig) -> Promise<AudioEncoderSupport>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk) */
-export declare interface EncodedAudioChunk {
+@js("EncodedAudioChunk")
+export declare class EncodedAudioChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/byteLength) */
     readonly byteLength: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/duration) */
@@ -331,17 +323,14 @@ export declare interface EncodedAudioChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/type) */
     readonly type: EncodedAudioChunkType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/copyTo) */
-    copyTo(destination: AllowSharedBufferSource) -> unknown
-}
-
-@js("EncodedAudioChunk")
-export declare var EncodedAudioChunk: {
-    prototype: EncodedAudioChunk,
-    new (init: EncodedAudioChunkInit) -> EncodedAudioChunk
+    copyTo(self, destination: AllowSharedBufferSource) -> unknown,
+    static prototype: EncodedAudioChunk,
+    constructor(mut self, init: EncodedAudioChunkInit)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk) */
-export declare interface EncodedVideoChunk {
+@js("EncodedVideoChunk")
+export declare class EncodedVideoChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/byteLength) */
     readonly byteLength: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/duration) */
@@ -351,13 +340,9 @@ export declare interface EncodedVideoChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/type) */
     readonly type: EncodedVideoChunkType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/copyTo) */
-    copyTo(destination: AllowSharedBufferSource) -> unknown
-}
-
-@js("EncodedVideoChunk")
-export declare var EncodedVideoChunk: {
-    prototype: EncodedVideoChunk,
-    new (init: EncodedVideoChunkInit) -> EncodedVideoChunk
+    copyTo(self, destination: AllowSharedBufferSource) -> unknown,
+    static prototype: EncodedVideoChunk,
+    constructor(mut self, init: EncodedVideoChunkInit)
 }
 
 /**
@@ -365,7 +350,8 @@ export declare var EncodedVideoChunk: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder)
  */
-export declare interface ImageDecoder {
+@js("ImageDecoder")
+export declare class ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/complete) */
     readonly complete: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/completed) */
@@ -375,23 +361,20 @@ export declare interface ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/type) */
     readonly type: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/decode) */
-    decode(options?: ImageDecodeOptions) -> Promise<ImageDecodeResult>,
+    decode(mut self, options?: ImageDecodeOptions) -> Promise<ImageDecodeResult>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/reset) */
-    reset() -> unknown
-}
-
-@js("ImageDecoder")
-export declare var ImageDecoder: {
-    prototype: ImageDecoder,
-    new (init: ImageDecoderInit) -> ImageDecoder,
+    reset(mut self) -> unknown,
+    static prototype: ImageDecoder,
+    constructor(mut self, init: ImageDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/isTypeSupported_static) */
-    isTypeSupported(type: string) -> Promise<boolean>
+    static isTypeSupported(type: string) -> Promise<boolean>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack) */
-export declare interface ImageTrack {
+@js("ImageTrack")
+export declare class ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/animated) */
     readonly animated: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/frameCount) */
@@ -399,17 +382,14 @@ export declare interface ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/repetitionCount) */
     readonly repetitionCount: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/selected) */
-    selected: boolean
-}
-
-@js("ImageTrack")
-export declare var ImageTrack: {
-    prototype: ImageTrack,
-    new () -> ImageTrack
+    selected: boolean,
+    static prototype: ImageTrack,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList) */
-export declare interface ImageTrackList {
+@js("ImageTrackList")
+export declare class ImageTrackList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/length) */
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/ready) */
@@ -418,17 +398,14 @@ export declare interface ImageTrackList {
     readonly selectedIndex: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/selectedTrack) */
     readonly selectedTrack: ImageTrack | null,
-    [Symbol.iterator]() -> ArrayIterator<ImageTrack>
-}
-
-@js("ImageTrackList")
-export declare var ImageTrackList: {
-    prototype: ImageTrackList,
-    new () -> ImageTrackList
+    [Symbol.iterator](mut self) -> ArrayIterator<ImageTrack>,
+    static prototype: ImageTrackList,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace) */
-export declare interface VideoColorSpace {
+@js("VideoColorSpace")
+export declare class VideoColorSpace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/fullRange) */
     readonly fullRange: boolean | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/matrix) */
@@ -438,13 +415,9 @@ export declare interface VideoColorSpace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/transfer) */
     readonly transfer: VideoTransferCharacteristics | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/toJSON) */
-    toJSON() -> VideoColorSpaceInit
-}
-
-@js("VideoColorSpace")
-export declare var VideoColorSpace: {
-    prototype: VideoColorSpace,
-    new (init?: VideoColorSpaceInit) -> VideoColorSpace
+    toJSON(self) -> VideoColorSpaceInit,
+    static prototype: VideoColorSpace,
+    constructor(mut self, init?: VideoColorSpaceInit)
 }
 
 export declare interface VideoDecoderEventMap {
@@ -456,7 +429,8 @@ export declare interface VideoDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder)
  */
-export declare interface VideoDecoder extends EventTarget {
+@js("VideoDecoder")
+export declare class VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decodeQueueSize) */
     readonly decodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/dequeue_event) */
@@ -464,27 +438,23 @@ export declare interface VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/configure) */
-    configure(config: VideoDecoderConfig) -> unknown,
+    configure(mut self, config: VideoDecoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decode) */
-    decode(chunk: EncodedVideoChunk) -> unknown,
+    decode(mut self, chunk: EncodedVideoChunk) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/flush) */
-    flush() -> Promise<undefined>,
+    flush(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/reset) */
-    reset() -> unknown,
-    addEventListener<K: keyof VideoDecoderEventMap>(type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof VideoDecoderEventMap>(type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("VideoDecoder")
-export declare var VideoDecoder: {
-    prototype: VideoDecoder,
-    new (init: VideoDecoderInit) -> VideoDecoder,
+    reset(mut self) -> unknown,
+    addEventListener<K: keyof VideoDecoderEventMap>(mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof VideoDecoderEventMap>(mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: VideoDecoder,
+    constructor(mut self, init: VideoDecoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/isConfigSupported_static) */
-    isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
+    static isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
 }
 
 export declare interface VideoEncoderEventMap {
@@ -496,7 +466,8 @@ export declare interface VideoEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder)
  */
-export declare interface VideoEncoder extends EventTarget {
+@js("VideoEncoder")
+export declare class VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encodeQueueSize) */
     readonly encodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/dequeue_event) */
@@ -504,31 +475,28 @@ export declare interface VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/state) */
     readonly state: CodecState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/configure) */
-    configure(config: VideoEncoderConfig) -> unknown,
+    configure(mut self, config: VideoEncoderConfig) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encode) */
-    encode(frame: VideoFrame, options?: VideoEncoderEncodeOptions) -> unknown,
+    encode(mut self, frame: VideoFrame, options?: VideoEncoderEncodeOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/flush) */
-    flush() -> Promise<undefined>,
+    flush(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/reset) */
-    reset() -> unknown,
-    addEventListener<K: keyof VideoEncoderEventMap>(type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof VideoEncoderEventMap>(type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("VideoEncoder")
-export declare var VideoEncoder: {
-    prototype: VideoEncoder,
-    new (init: VideoEncoderInit) -> VideoEncoder,
+    reset(mut self) -> unknown,
+    addEventListener<K: keyof VideoEncoderEventMap>(mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof VideoEncoderEventMap>(mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: VideoEncoder,
+    constructor(mut self, init: VideoEncoderInit),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/isConfigSupported_static) */
-    isConfigSupported(config: VideoEncoderConfig) -> Promise<VideoEncoderSupport>
+    static isConfigSupported(config: VideoEncoderConfig) -> Promise<VideoEncoderSupport>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame) */
-export declare interface VideoFrame {
+@js("VideoFrame")
+export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedHeight) */
     readonly codedHeight: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedRect) */
@@ -550,20 +518,16 @@ export declare interface VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/visibleRect) */
     readonly visibleRect: DOMRectReadOnly | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/allocationSize) */
-    allocationSize(options?: VideoFrameCopyToOptions) -> number,
+    allocationSize(mut self, options?: VideoFrameCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/clone) */
-    clone() -> VideoFrame,
+    clone(self) -> VideoFrame,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/close) */
-    close() -> unknown,
+    close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
-    copyTo(destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>
-}
-
-@js("VideoFrame")
-export declare var VideoFrame: {
-    prototype: VideoFrame,
-    new (image: CanvasImageSource, init?: VideoFrameInit) -> VideoFrame,
-    new (data: AllowSharedBufferSource, init: VideoFrameBufferInit) -> VideoFrame
+    copyTo(self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
+    static prototype: VideoFrame,
+    constructor(mut self, image: CanvasImageSource, init?: VideoFrameInit),
+    constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
 }
 
 export declare interface AudioDataOutputCallback {

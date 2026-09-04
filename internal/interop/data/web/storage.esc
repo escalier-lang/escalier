@@ -15,7 +15,8 @@ export declare interface StorageEventInit extends EventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage)
  */
-export declare interface Storage {
+@js("Storage")
+export declare class Storage {
     /**
      * Returns the number of key/value pairs.
      *
@@ -29,19 +30,19 @@ export declare interface Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/clear)
      */
-    clear() -> unknown,
+    clear(mut self) -> unknown,
     /**
      * Returns the current value associated with the given key, or null if the given key does not exist.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/getItem)
      */
-    getItem(key: string) -> string | null,
+    getItem(self, key: string) -> string | null,
     /**
      * Returns the name of the nth key, or null if n is greater than or equal to the number of key/value pairs.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/key)
      */
-    key(index: number) -> string | null,
+    key(mut self, index: number) -> string | null,
     /**
      * Removes the key/value pair with the given key, if a key/value pair with the given key exists.
      *
@@ -49,7 +50,7 @@ export declare interface Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/removeItem)
      */
-    removeItem(key: string) -> unknown,
+    removeItem(mut self, key: string) -> unknown,
     /**
      * Sets the value of the pair identified by key to value, creating a new key/value pair if none existed for key previously.
      *
@@ -59,13 +60,9 @@ export declare interface Storage {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Storage/setItem)
      */
-    setItem(key: string, value: string) -> unknown
-}
-
-@js("Storage")
-export declare var Storage: {
-    prototype: Storage,
-    new () -> Storage
+    setItem(mut self, key: string, value: string) -> unknown,
+    static prototype: Storage,
+    constructor(mut self)
 }
 
 /**
@@ -73,7 +70,8 @@ export declare var Storage: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent)
  */
-export declare interface StorageEvent extends Event {
+@js("StorageEvent")
+export declare class StorageEvent extends Event {
     /**
      * Returns the key of the storage item being changed.
      *
@@ -109,11 +107,7 @@ export declare interface StorageEvent extends Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent/initStorageEvent)
      */
-    initStorageEvent(type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | URL, storageArea?: Storage | null) -> unknown
-}
-
-@js("StorageEvent")
-export declare var StorageEvent: {
-    prototype: StorageEvent,
-    new (type: string, eventInitDict?: StorageEventInit) -> StorageEvent
+    initStorageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | URL, storageArea?: Storage | null) -> unknown,
+    static prototype: StorageEvent,
+    constructor(mut self, type: string, eventInitDict?: StorageEventInit)
 }

@@ -418,7 +418,7 @@ func TestApplyOverlay_KeysAMemberOnItsKind(t *testing.T) {
 	require.Equal(t, `@js("Array")
 export declare class Array<T> {
     get size(self) -> number | undefined,
-    set size(mut self, v: number) -> undefined,
+    set size(mut self, v: number),
     get first(self) -> T,
     find(self, x: number) -> T,
     find(self, x: string) -> T,
@@ -491,7 +491,7 @@ func TestApplyOverlay_ReplaceRestatesTheWholeOverloadSet(t *testing.T) {
 		require.Equal(t, `@js("Array")
 export declare class Array<T> {
     get size(self) -> number,
-    set size(mut self, v: number) -> undefined,
+    set size(mut self, v: number),
     get first(self) -> T,
     find(self, x: number) -> T | undefined,
     find(self, x: string) -> T | undefined,
@@ -562,7 +562,7 @@ func TestApplyOverlay_AddsTheOtherHalfOfAnAccessor(t *testing.T) {
 	require.Equal(t, `@js("Array")
 export declare class Array<T> {
     get size(self) -> number,
-    set size(mut self, v: number) -> undefined,
+    set size(mut self, v: number),
     get first(self) -> T,
     find(self, x: number) -> T,
     find(self, x: string) -> T,

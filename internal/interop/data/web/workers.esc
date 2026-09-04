@@ -18,23 +18,20 @@ export declare interface AbstractWorker {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker) */
-export declare interface SharedWorker extends EventTarget, AbstractWorker {
+@js("SharedWorker")
+export declare class SharedWorker extends EventTarget {
     /**
      * Returns sharedWorker's MessagePort object which can be used to communicate with the global environment.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker/port)
      */
     readonly port: MessagePort,
-    addEventListener<K: keyof AbstractWorkerEventMap>(type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbstractWorkerEventMap>(type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("SharedWorker")
-export declare var SharedWorker: {
-    prototype: SharedWorker,
-    new (scriptURL: string | URL, options?: string | WorkerOptions) -> SharedWorker
+    addEventListener<K: keyof AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: SharedWorker,
+    constructor(mut self, scriptURL: string | URL, options?: string | WorkerOptions)
 }
 
 export declare interface WorkerEventMap extends AbstractWorkerEventMap, MessageEventTargetEventMap {}
@@ -44,30 +41,27 @@ export declare interface WorkerEventMap extends AbstractWorkerEventMap, MessageE
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker)
  */
-export declare interface Worker extends EventTarget, AbstractWorker, MessageEventTarget<Worker> {
+@js("Worker")
+export declare class Worker extends EventTarget {
     /**
      * Clones message and transmits it to worker's global environment. transfer can be passed as a list of objects that are to be transferred rather than cloned.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(message: any, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(message: any, options?: StructuredSerializeOptions) -> unknown,
+    postMessage(mut self, message: any, transfer: mut Array<Transferable>) -> unknown,
+    postMessage(mut self, message: any, options?: StructuredSerializeOptions) -> unknown,
     /**
      * Aborts worker's associated global environment.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/terminate)
      */
-    terminate() -> unknown,
-    addEventListener<K: keyof WorkerEventMap>(type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof WorkerEventMap>(type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("Worker")
-export declare var Worker: {
-    prototype: Worker,
-    new (scriptURL: string | URL, options?: WorkerOptions) -> Worker
+    terminate(mut self) -> unknown,
+    addEventListener<K: keyof WorkerEventMap>(mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof WorkerEventMap>(mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: Worker,
+    constructor(mut self, scriptURL: string | URL, options?: WorkerOptions)
 }
 
 export declare type WorkerType = "classic" | "module"

@@ -2,102 +2,79 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface CompileError extends Error {}
-
 @js("WebAssembly.CompileError")
-export declare var CompileError: {
-    prototype: CompileError,
-    new (message?: string) -> CompileError,
-    fn (message?: string) -> CompileError
+export declare class CompileError extends Error {
+    static prototype: CompileError,
+    constructor(mut self, message?: string)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Global) */
-export declare interface Global<T: ValueType = ValueType> {
-    value: ValueTypeMap[T],
-    valueOf() -> ValueTypeMap[T]
-}
-
 @js("WebAssembly.Global")
-export declare var Global: {
-    prototype: Global,
-    new<T: ValueType = ValueType> (descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T]) -> Global<T>
+export declare class Global<T: ValueType = ValueType> {
+    value: ValueTypeMap[T],
+    valueOf(self) -> ValueTypeMap[T],
+    static prototype: Global,
+    constructor(mut self, descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T])
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance) */
-export declare interface Instance {
-    /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance/exports) */
-    readonly exports: Exports
-}
-
 @js("WebAssembly.Instance")
-export declare var Instance: {
-    prototype: Instance,
-    new (module: Module, importObject?: Imports) -> Instance
+export declare class Instance {
+    /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance/exports) */
+    readonly exports: Exports,
+    static prototype: Instance,
+    constructor(mut self, module: Module, importObject?: Imports)
 }
-
-export declare interface LinkError extends Error {}
 
 @js("WebAssembly.LinkError")
-export declare var LinkError: {
-    prototype: LinkError,
-    new (message?: string) -> LinkError,
-    fn (message?: string) -> LinkError
+export declare class LinkError extends Error {
+    static prototype: LinkError,
+    constructor(mut self, message?: string)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory) */
-export declare interface Memory {
+@js("WebAssembly.Memory")
+export declare class Memory {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/buffer) */
     readonly buffer: ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/grow) */
-    grow(delta: number) -> number
-}
-
-@js("WebAssembly.Memory")
-export declare var Memory: {
-    prototype: Memory,
-    new (descriptor: MemoryDescriptor) -> Memory
+    grow(mut self, delta: number) -> number,
+    static prototype: Memory,
+    constructor(mut self, descriptor: MemoryDescriptor)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module) */
-export declare interface Module {}
-
 @js("WebAssembly.Module")
-export declare var Module: {
-    prototype: Module,
-    new (bytes: BufferSource) -> Module,
+export declare class Module {
+    static prototype: Module,
+    constructor(mut self, bytes: BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    customSections(moduleObject: Module, sectionName: string) -> mut Array<ArrayBuffer>,
+    static customSections(moduleObject: Module, sectionName: string) -> mut Array<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
+    static exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
+    static imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
 }
 
-export declare interface RuntimeError extends Error {}
-
 @js("WebAssembly.RuntimeError")
-export declare var RuntimeError: {
-    prototype: RuntimeError,
-    new (message?: string) -> RuntimeError,
-    fn (message?: string) -> RuntimeError
+export declare class RuntimeError extends Error {
+    static prototype: RuntimeError,
+    constructor(mut self, message?: string)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table) */
-export declare interface Table {
+@js("WebAssembly.Table")
+export declare class Table {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/length) */
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/get) */
-    get(index: number) -> any,
+    get(self, index: number) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/grow) */
-    grow(delta: number, value?: any) -> number,
+    grow(mut self, delta: number, value?: any) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/set) */
-    set(index: number, value?: any) -> unknown
-}
-
-@js("WebAssembly.Table")
-export declare var Table: {
-    prototype: Table,
-    new (descriptor: TableDescriptor, value?: any) -> Table
+    set(mut self, index: number, value?: any) -> unknown,
+    static prototype: Table,
+    constructor(mut self, descriptor: TableDescriptor, value?: any)
 }
 
 export declare interface GlobalDescriptor<T: ValueType = ValueType> {
