@@ -32,7 +32,7 @@ export declare interface PaymentDetailsBase {
     shippingOptions?: mut Array<PaymentShippingOption>
 }
 
-export declare interface PaymentDetailsInit {
+export declare interface PaymentDetailsInit extends PaymentDetailsBase {
     id?: string,
     total: PaymentItem
 }
@@ -44,7 +44,7 @@ export declare interface PaymentDetailsModifier {
     total?: PaymentItem
 }
 
-export declare interface PaymentDetailsUpdate {
+export declare interface PaymentDetailsUpdate extends PaymentDetailsBase {
     error?: string,
     paymentMethodErrors?: any,
     shippingAddressErrors?: AddressErrors,
@@ -57,7 +57,7 @@ export declare interface PaymentItem {
     pending?: boolean
 }
 
-export declare interface PaymentMethodChangeEventInit {
+export declare interface PaymentMethodChangeEventInit extends PaymentRequestUpdateEventInit {
     methodDetails?: any,
     methodName?: string
 }
@@ -93,7 +93,7 @@ export declare interface PaymentValidationErrors {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent)
  */
-export declare interface PaymentMethodChangeEvent {
+export declare interface PaymentMethodChangeEvent extends PaymentRequestUpdateEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodDetails) */
     readonly methodDetails: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodName) */
@@ -118,7 +118,7 @@ export declare interface PaymentRequestEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest)
  */
-export declare interface PaymentRequest {
+export declare interface PaymentRequest extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/id) */
     readonly id: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/paymentmethodchange_event) */
@@ -181,7 +181,7 @@ export declare interface PaymentResponseEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse)
  */
-export declare interface PaymentResponse {
+export declare interface PaymentResponse extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/details) */
     readonly details: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/methodName) */

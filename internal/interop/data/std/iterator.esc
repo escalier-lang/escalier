@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> {
+export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
     next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
     return(value: TReturn) -> IteratorResult<T, TReturn>,
     throw(e: any) -> IteratorResult<T, TReturn>,
@@ -56,7 +56,7 @@ export declare interface IteratorReturnResult<TReturn> {
 
 export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
 
-export declare interface Iterator<T, TReturn = any, TNext = any> {
+export declare interface Iterator<T, TReturn = any, TNext = any> extends globalThis.IteratorObject<T, TResult, TNext> {
     next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
     return(value?: TReturn) -> IteratorResult<T, TReturn>,
     throw(e?: any) -> IteratorResult<T, TReturn>
@@ -69,14 +69,14 @@ export declare interface Iterable<T, TReturn = any, TNext = any> {
 /**
  * Describes a user-defined {@link Iterator} that is also iterable.
  */
-export declare interface IterableIterator<T, TReturn = any, TNext = any> {
+export declare interface IterableIterator<T, TReturn = any, TNext = any> extends Iterator<T, TReturn, TNext> {
     [Symbol.iterator]() -> IterableIterator<T, TReturn, TNext>
 }
 
 /**
  * Describes an {@link Iterator} produced by the runtime that inherits from the intrinsic `Iterator.prototype`.
  */
-export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> {
+export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> extends Iterator<T, TReturn, TNext>, Disposable {
     [Symbol.iterator]() -> IteratorObject<T, TReturn, TNext>
 }
 

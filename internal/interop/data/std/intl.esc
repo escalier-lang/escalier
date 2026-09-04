@@ -437,7 +437,7 @@ export declare interface LocaleOptions {
     script?: string
 }
 
-export declare interface Locale {
+export declare interface Locale extends LocaleOptions {
     /** A string containing the language, and the script and region if available. */
     baseName: string,
     /** The primary language subtag associated with the locale. */
@@ -545,7 +545,7 @@ export declare val DisplayNames: {
     }) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
-export declare interface DateTimeRangeFormatPart {
+export declare interface DateTimeRangeFormatPart extends DateTimeFormatPart {
     source: "startRange" | "endRange" | "shared"
 }
 
@@ -703,7 +703,7 @@ export declare interface ResolvedSegmenterOptions {
     granularity: "grapheme" | "word" | "sentence"
 }
 
-export declare interface SegmentIterator<T> {
+export declare interface SegmentIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> SegmentIterator<T>
 }
 
@@ -767,7 +767,7 @@ export declare interface NumberFormatOptionsUseGroupingRegistry {
     always: never
 }
 
-export declare interface NumberRangeFormatPart {
+export declare interface NumberRangeFormatPart extends NumberFormatPart {
     source: "startRange" | "endRange" | "shared"
 }
 

@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface CompileError {}
+export declare interface CompileError extends Error {}
 
 @js("WebAssembly.CompileError")
 export declare var CompileError: {
@@ -35,7 +35,7 @@ export declare var Instance: {
     new (module: Module, importObject?: Imports) -> Instance
 }
 
-export declare interface LinkError {}
+export declare interface LinkError extends Error {}
 
 @js("WebAssembly.LinkError")
 export declare var LinkError: {
@@ -73,7 +73,7 @@ export declare var Module: {
     imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
 }
 
-export declare interface RuntimeError {}
+export declare interface RuntimeError extends Error {}
 
 @js("WebAssembly.RuntimeError")
 export declare var RuntimeError: {

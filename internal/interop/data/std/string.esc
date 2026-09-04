@@ -370,10 +370,10 @@ export declare class String {
     static fromCharCode(...codes: mut Array<number>) -> string
 }
 
-export declare interface StringIterator<T> {
+export declare interface StringIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> StringIterator<T>
 }
 
-export declare interface TemplateStringsArray {
+export declare interface TemplateStringsArray extends Array<string> {
     readonly raw: Array<string>
 }

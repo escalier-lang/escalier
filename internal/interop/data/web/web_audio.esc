@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface AnalyserOptions {
+export declare interface AnalyserOptions extends AudioNodeOptions {
     fftSize?: number,
     maxDecibels?: number,
     minDecibels?: number,
@@ -35,7 +35,7 @@ export declare interface AudioNodeOptions {
     channelInterpretation?: ChannelInterpretation
 }
 
-export declare interface AudioProcessingEventInit {
+export declare interface AudioProcessingEventInit extends EventInit {
     inputBuffer: AudioBuffer,
     outputBuffer: AudioBuffer,
     playbackTime: number
@@ -46,7 +46,7 @@ export declare interface AudioTimestamp {
     performanceTime?: DOMHighResTimeStamp
 }
 
-export declare interface AudioWorkletNodeOptions {
+export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
     outputChannelCount?: mut Array<number>,
@@ -54,7 +54,7 @@ export declare interface AudioWorkletNodeOptions {
     processorOptions?: any
 }
 
-export declare interface BiquadFilterOptions {
+export declare interface BiquadFilterOptions extends AudioNodeOptions {
     Q?: number,
     detune?: number,
     frequency?: number,
@@ -62,11 +62,11 @@ export declare interface BiquadFilterOptions {
     type?: BiquadFilterType
 }
 
-export declare interface ChannelMergerOptions {
+export declare interface ChannelMergerOptions extends AudioNodeOptions {
     numberOfInputs?: number
 }
 
-export declare interface ChannelSplitterOptions {
+export declare interface ChannelSplitterOptions extends AudioNodeOptions {
     numberOfOutputs?: number
 }
 
@@ -74,17 +74,17 @@ export declare interface ConstantSourceOptions {
     offset?: number
 }
 
-export declare interface ConvolverOptions {
+export declare interface ConvolverOptions extends AudioNodeOptions {
     buffer?: AudioBuffer | null,
     disableNormalization?: boolean
 }
 
-export declare interface DelayOptions {
+export declare interface DelayOptions extends AudioNodeOptions {
     delayTime?: number,
     maxDelayTime?: number
 }
 
-export declare interface DynamicsCompressorOptions {
+export declare interface DynamicsCompressorOptions extends AudioNodeOptions {
     attack?: number,
     knee?: number,
     ratio?: number,
@@ -92,11 +92,11 @@ export declare interface DynamicsCompressorOptions {
     threshold?: number
 }
 
-export declare interface GainOptions {
+export declare interface GainOptions extends AudioNodeOptions {
     gain?: number
 }
 
-export declare interface IIRFilterOptions {
+export declare interface IIRFilterOptions extends AudioNodeOptions {
     feedback: mut Array<number>,
     feedforward: mut Array<number>
 }
@@ -109,7 +109,7 @@ export declare interface MediaStreamAudioSourceOptions {
     mediaStream: MediaStream
 }
 
-export declare interface OfflineAudioCompletionEventInit {
+export declare interface OfflineAudioCompletionEventInit extends EventInit {
     renderedBuffer: AudioBuffer
 }
 
@@ -119,14 +119,14 @@ export declare interface OfflineAudioContextOptions {
     sampleRate: number
 }
 
-export declare interface OscillatorOptions {
+export declare interface OscillatorOptions extends AudioNodeOptions {
     detune?: number,
     frequency?: number,
     periodicWave?: PeriodicWave,
     type?: OscillatorType
 }
 
-export declare interface PannerOptions {
+export declare interface PannerOptions extends AudioNodeOptions {
     coneInnerAngle?: number,
     coneOuterAngle?: number,
     coneOuterGain?: number,
@@ -147,16 +147,16 @@ export declare interface PeriodicWaveConstraints {
     disableNormalization?: boolean
 }
 
-export declare interface PeriodicWaveOptions {
+export declare interface PeriodicWaveOptions extends PeriodicWaveConstraints {
     imag?: mut Array<number> | Float32Array,
     real?: mut Array<number> | Float32Array
 }
 
-export declare interface StereoPannerOptions {
+export declare interface StereoPannerOptions extends AudioNodeOptions {
     pan?: number
 }
 
-export declare interface WaveShaperOptions {
+export declare interface WaveShaperOptions extends AudioNodeOptions {
     curve?: mut Array<number> | Float32Array,
     oversample?: OverSampleType
 }
@@ -166,7 +166,7 @@ export declare interface WaveShaperOptions {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode)
  */
-export declare interface AnalyserNode {
+export declare interface AnalyserNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/fftSize) */
     fftSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/frequencyBinCount) */
@@ -226,7 +226,7 @@ export declare var AudioBuffer: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode)
  */
-export declare interface AudioBufferSourceNode {
+export declare interface AudioBufferSourceNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode/buffer) */
     buffer: AudioBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBufferSourceNode/detune) */
@@ -258,7 +258,7 @@ export declare var AudioBufferSourceNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext)
  */
-export declare interface AudioContext {
+export declare interface AudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/baseLatency) */
     readonly baseLatency: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioContext/outputLatency) */
@@ -294,7 +294,7 @@ export declare var AudioContext: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode)
  */
-export declare interface AudioDestinationNode {
+export declare interface AudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode/maxChannelCount) */
     readonly maxChannelCount: number
 }
@@ -354,7 +354,7 @@ export declare var AudioListener: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode)
  */
-export declare interface AudioNode {
+export declare interface AudioNode extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/channelCount) */
     channelCount: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioNode/channelCountMode) */
@@ -426,7 +426,7 @@ export declare var AudioParam: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParamMap) */
-export declare interface AudioParamMap {
+export declare interface AudioParamMap extends Map<string, AudioParam> {
     forEach(callbackfn: fn (value: AudioParam, key: string, parent: AudioParamMap) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -442,7 +442,7 @@ export declare var AudioParamMap: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioProcessingEvent)
  */
-export declare interface AudioProcessingEvent {
+export declare interface AudioProcessingEvent extends Event {
     /**
      * @deprecated
      *
@@ -475,7 +475,7 @@ export declare interface AudioScheduledSourceNodeEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode) */
-export declare interface AudioScheduledSourceNode {
+export declare interface AudioScheduledSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode/ended_event) */
     onended: (fn (this: AudioScheduledSourceNode, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioScheduledSourceNode/start) */
@@ -499,7 +499,7 @@ export declare var AudioScheduledSourceNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorklet)
  */
-export declare interface AudioWorklet {}
+export declare interface AudioWorklet extends Worklet {}
 
 @js("AudioWorklet")
 export declare var AudioWorklet: {
@@ -516,7 +516,7 @@ export declare interface AudioWorkletNodeEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode)
  */
-export declare interface AudioWorkletNode {
+export declare interface AudioWorkletNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode/processorerror_event) */
     onprocessorerror: (fn (this: AudioWorkletNode, ev: ErrorEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioWorkletNode/parameters) */
@@ -540,7 +540,7 @@ export declare interface BaseAudioContextEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext) */
-export declare interface BaseAudioContext {
+export declare interface BaseAudioContext extends EventTarget {
     /**
      * Available only in secure contexts.
      *
@@ -622,7 +622,7 @@ export declare var BaseAudioContext: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode)
  */
-export declare interface BiquadFilterNode {
+export declare interface BiquadFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/Q) */
     readonly Q: AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/detune) */
@@ -648,7 +648,7 @@ export declare var BiquadFilterNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ChannelMergerNode)
  */
-export declare interface ChannelMergerNode {}
+export declare interface ChannelMergerNode extends AudioNode {}
 
 @js("ChannelMergerNode")
 export declare var ChannelMergerNode: {
@@ -661,7 +661,7 @@ export declare var ChannelMergerNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ChannelSplitterNode)
  */
-export declare interface ChannelSplitterNode {}
+export declare interface ChannelSplitterNode extends AudioNode {}
 
 @js("ChannelSplitterNode")
 export declare var ChannelSplitterNode: {
@@ -670,7 +670,7 @@ export declare var ChannelSplitterNode: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode) */
-export declare interface ConstantSourceNode {
+export declare interface ConstantSourceNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode/offset) */
     readonly offset: AudioParam,
     addEventListener<K: keyof AudioScheduledSourceNodeEventMap>(type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -690,7 +690,7 @@ export declare var ConstantSourceNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode)
  */
-export declare interface ConvolverNode {
+export declare interface ConvolverNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode/buffer) */
     buffer: AudioBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode/normalize) */
@@ -708,7 +708,7 @@ export declare var ConvolverNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DelayNode)
  */
-export declare interface DelayNode {
+export declare interface DelayNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DelayNode/delayTime) */
     readonly delayTime: AudioParam
 }
@@ -724,7 +724,7 @@ export declare var DelayNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode)
  */
-export declare interface DynamicsCompressorNode {
+export declare interface DynamicsCompressorNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode/attack) */
     readonly attack: AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode/knee) */
@@ -750,7 +750,7 @@ export declare var DynamicsCompressorNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/GainNode)
  */
-export declare interface GainNode {
+export declare interface GainNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GainNode/gain) */
     readonly gain: AudioParam
 }
@@ -766,7 +766,7 @@ export declare var GainNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode)
  */
-export declare interface IIRFilterNode {
+export declare interface IIRFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode/getFrequencyResponse) */
     getFrequencyResponse(frequencyHz: Float32Array, magResponse: Float32Array, phaseResponse: Float32Array) -> unknown
 }
@@ -782,7 +782,7 @@ export declare var IIRFilterNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaElementAudioSourceNode)
  */
-export declare interface MediaElementAudioSourceNode {
+export declare interface MediaElementAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaElementAudioSourceNode/mediaElement) */
     readonly mediaElement: HTMLMediaElement
 }
@@ -794,7 +794,7 @@ export declare var MediaElementAudioSourceNode: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode) */
-export declare interface MediaStreamAudioDestinationNode {
+export declare interface MediaStreamAudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode/stream) */
     readonly stream: MediaStream
 }
@@ -810,7 +810,7 @@ export declare var MediaStreamAudioDestinationNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioSourceNode)
  */
-export declare interface MediaStreamAudioSourceNode {
+export declare interface MediaStreamAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioSourceNode/mediaStream) */
     readonly mediaStream: MediaStream
 }
@@ -826,7 +826,7 @@ export declare var MediaStreamAudioSourceNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioCompletionEvent)
  */
-export declare interface OfflineAudioCompletionEvent {
+export declare interface OfflineAudioCompletionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioCompletionEvent/renderedBuffer) */
     readonly renderedBuffer: AudioBuffer
 }
@@ -837,7 +837,7 @@ export declare var OfflineAudioCompletionEvent: {
     new (type: string, eventInitDict: OfflineAudioCompletionEventInit) -> OfflineAudioCompletionEvent
 }
 
-export declare interface OfflineAudioContextEventMap {
+export declare interface OfflineAudioContextEventMap extends BaseAudioContextEventMap {
     "complete": OfflineAudioCompletionEvent
 }
 
@@ -846,7 +846,7 @@ export declare interface OfflineAudioContextEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext)
  */
-export declare interface OfflineAudioContext {
+export declare interface OfflineAudioContext extends BaseAudioContext {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/length) */
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioContext/complete_event) */
@@ -875,7 +875,7 @@ export declare var OfflineAudioContext: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode)
  */
-export declare interface OscillatorNode {
+export declare interface OscillatorNode extends AudioScheduledSourceNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/detune) */
     readonly detune: AudioParam,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OscillatorNode/frequency) */
@@ -901,7 +901,7 @@ export declare var OscillatorNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PannerNode)
  */
-export declare interface PannerNode {
+export declare interface PannerNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PannerNode/coneInnerAngle) */
     coneInnerAngle: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PannerNode/coneOuterAngle) */
@@ -968,7 +968,7 @@ export declare var PeriodicWave: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StereoPannerNode)
  */
-export declare interface StereoPannerNode {
+export declare interface StereoPannerNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StereoPannerNode/pan) */
     readonly pan: AudioParam
 }
@@ -984,7 +984,7 @@ export declare var StereoPannerNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode)
  */
-export declare interface WaveShaperNode {
+export declare interface WaveShaperNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode/curve) */
     curve: Float32Array | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode/oversample) */

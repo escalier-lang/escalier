@@ -2,30 +2,30 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface AesCbcParams {
+export declare interface AesCbcParams extends Algorithm {
     iv: BufferSource
 }
 
-export declare interface AesCtrParams {
+export declare interface AesCtrParams extends Algorithm {
     counter: BufferSource,
     length: number
 }
 
-export declare interface AesDerivedKeyParams {
+export declare interface AesDerivedKeyParams extends Algorithm {
     length: number
 }
 
-export declare interface AesGcmParams {
+export declare interface AesGcmParams extends Algorithm {
     additionalData?: BufferSource,
     iv: BufferSource,
     tagLength?: number
 }
 
-export declare interface AesKeyAlgorithm {
+export declare interface AesKeyAlgorithm extends KeyAlgorithm {
     length: number
 }
 
-export declare interface AesKeyGenParams {
+export declare interface AesKeyGenParams extends Algorithm {
     length: number
 }
 
@@ -38,43 +38,43 @@ export declare interface CryptoKeyPair {
     publicKey: CryptoKey
 }
 
-export declare interface EcKeyAlgorithm {
+export declare interface EcKeyAlgorithm extends KeyAlgorithm {
     namedCurve: NamedCurve
 }
 
-export declare interface EcKeyGenParams {
+export declare interface EcKeyGenParams extends Algorithm {
     namedCurve: NamedCurve
 }
 
-export declare interface EcKeyImportParams {
+export declare interface EcKeyImportParams extends Algorithm {
     namedCurve: NamedCurve
 }
 
-export declare interface EcdhKeyDeriveParams {
+export declare interface EcdhKeyDeriveParams extends Algorithm {
     public: CryptoKey
 }
 
-export declare interface EcdsaParams {
+export declare interface EcdsaParams extends Algorithm {
     hash: HashAlgorithmIdentifier
 }
 
-export declare interface HkdfParams {
+export declare interface HkdfParams extends Algorithm {
     hash: HashAlgorithmIdentifier,
     info: BufferSource,
     salt: BufferSource
 }
 
-export declare interface HmacImportParams {
+export declare interface HmacImportParams extends Algorithm {
     hash: HashAlgorithmIdentifier,
     length?: number
 }
 
-export declare interface HmacKeyAlgorithm {
+export declare interface HmacKeyAlgorithm extends KeyAlgorithm {
     hash: KeyAlgorithm,
     length: number
 }
 
-export declare interface HmacKeyGenParams {
+export declare interface HmacKeyGenParams extends Algorithm {
     hash: HashAlgorithmIdentifier,
     length?: number
 }
@@ -104,35 +104,35 @@ export declare interface KeyAlgorithm {
     name: string
 }
 
-export declare interface Pbkdf2Params {
+export declare interface Pbkdf2Params extends Algorithm {
     hash: HashAlgorithmIdentifier,
     iterations: number,
     salt: BufferSource
 }
 
-export declare interface RsaHashedImportParams {
+export declare interface RsaHashedImportParams extends Algorithm {
     hash: HashAlgorithmIdentifier
 }
 
-export declare interface RsaHashedKeyAlgorithm {
+export declare interface RsaHashedKeyAlgorithm extends RsaKeyAlgorithm {
     hash: KeyAlgorithm
 }
 
-export declare interface RsaHashedKeyGenParams {
+export declare interface RsaHashedKeyGenParams extends RsaKeyGenParams {
     hash: HashAlgorithmIdentifier
 }
 
-export declare interface RsaKeyAlgorithm {
+export declare interface RsaKeyAlgorithm extends KeyAlgorithm {
     modulusLength: number,
     publicExponent: BigInteger
 }
 
-export declare interface RsaKeyGenParams {
+export declare interface RsaKeyGenParams extends Algorithm {
     modulusLength: number,
     publicExponent: BigInteger
 }
 
-export declare interface RsaOaepParams {
+export declare interface RsaOaepParams extends Algorithm {
     label?: BufferSource
 }
 
@@ -142,7 +142,7 @@ export declare interface RsaOtherPrimesInfo {
     t?: string
 }
 
-export declare interface RsaPssParams {
+export declare interface RsaPssParams extends Algorithm {
     saltLength: number
 }
 

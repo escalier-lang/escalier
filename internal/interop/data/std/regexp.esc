@@ -155,7 +155,7 @@ export declare class RegExp {
     static "$'": string
 }
 
-export declare interface RegExpMatchArray {
+export declare interface RegExpMatchArray extends Array<string> {
     groups?: {},
     indices?: RegExpIndicesArray,
     /**
@@ -172,7 +172,7 @@ export declare interface RegExpMatchArray {
     0: string
 }
 
-export declare interface RegExpExecArray {
+export declare interface RegExpExecArray extends Array<string> {
     groups?: {},
     indices?: RegExpIndicesArray,
     /**
@@ -189,10 +189,10 @@ export declare interface RegExpExecArray {
     0: string
 }
 
-export declare interface RegExpStringIterator<T> {
+export declare interface RegExpStringIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> RegExpStringIterator<T>
 }
 
-export declare interface RegExpIndicesArray {
+export declare interface RegExpIndicesArray extends Array<[number, number]> {
     groups?: {}
 }

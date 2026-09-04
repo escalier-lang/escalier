@@ -96,7 +96,7 @@ export declare class WeakSet<T: WeakKey> {
     constructor(mut self, iterable: Iterable<T>)
 }
 
-export declare interface SetIterator<T> {
+export declare interface SetIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> SetIterator<T>
 }
 

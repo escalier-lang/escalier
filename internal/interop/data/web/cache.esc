@@ -8,7 +8,7 @@ export declare interface CacheQueryOptions {
     ignoreVary?: boolean
 }
 
-export declare interface MultiCacheQueryOptions {
+export declare interface MultiCacheQueryOptions extends CacheQueryOptions {
     cacheName?: string
 }
 

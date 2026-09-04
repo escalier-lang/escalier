@@ -29,7 +29,7 @@ export declare interface PerformanceEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance)
  */
-export declare interface Performance {
+export declare interface Performance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/eventCounts) */
     readonly eventCounts: EventCounts,
     /**
@@ -111,7 +111,7 @@ export declare var PerformanceEntry: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMark)
  */
-export declare interface PerformanceMark {
+export declare interface PerformanceMark extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMark/detail) */
     readonly detail: any
 }
@@ -127,7 +127,7 @@ export declare var PerformanceMark: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMeasure)
  */
-export declare interface PerformanceMeasure {
+export declare interface PerformanceMeasure extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMeasure/detail) */
     readonly detail: any
 }
@@ -185,7 +185,7 @@ export declare var PerformanceNavigation: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming)
  */
-export declare interface PerformanceNavigationTiming {
+export declare interface PerformanceNavigationTiming extends PerformanceResourceTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domComplete) */
     readonly domComplete: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/domContentLoadedEventEnd) */
@@ -251,7 +251,7 @@ export declare var PerformanceObserverEntryList: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformancePaintTiming) */
-export declare interface PerformancePaintTiming {}
+export declare interface PerformancePaintTiming extends PerformanceEntry {}
 
 @js("PerformancePaintTiming")
 export declare var PerformancePaintTiming: {
@@ -264,7 +264,7 @@ export declare var PerformancePaintTiming: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming)
  */
-export declare interface PerformanceResourceTiming {
+export declare interface PerformanceResourceTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/connectEnd) */
     readonly connectEnd: DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/connectStart) */

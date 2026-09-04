@@ -7,7 +7,7 @@ export declare interface BlobPropertyBag {
     type?: string
 }
 
-export declare interface FilePropertyBag {
+export declare interface FilePropertyBag extends BlobPropertyBag {
     lastModified?: number
 }
 
@@ -44,7 +44,7 @@ export declare var Blob: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/File)
  */
-export declare interface File {
+export declare interface File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/lastModified) */
     readonly lastModified: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/name) */
@@ -92,7 +92,7 @@ export declare interface FileReaderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader)
  */
-export declare interface FileReader {
+export declare interface FileReader extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/error) */
     readonly error: DOMException | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileReader/abort_event) */

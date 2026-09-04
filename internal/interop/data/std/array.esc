@@ -385,7 +385,7 @@ export declare class Array<T> {
     static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: any) -> Promise<mut Array<Awaited<U>>>
 }
 
-export declare interface ArrayIterator<T> {
+export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> ArrayIterator<T>
 }
 

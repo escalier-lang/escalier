@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface CloseEventInit {
+export declare interface CloseEventInit extends EventInit {
     code?: number,
     reason?: string,
     wasClean?: boolean
@@ -13,7 +13,7 @@ export declare interface CloseEventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CloseEvent)
  */
-export declare interface CloseEvent {
+export declare interface CloseEvent extends Event {
     /**
      * Returns the WebSocket connection close code provided by the server.
      *
@@ -52,7 +52,7 @@ export declare interface WebSocketEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket)
  */
-export declare interface WebSocket {
+export declare interface WebSocket extends EventTarget {
     /**
      * Returns a string that indicates how binary data from the WebSocket object is exposed to scripts:
      *

@@ -111,6 +111,6 @@ export declare var URLSearchParams: {
     new (init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams) -> URLSearchParams
 }
 
-export declare interface URLSearchParamsIterator<T> {
+export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> URLSearchParamsIterator<T>
 }

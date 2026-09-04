@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface ReadableStreamAsyncIterator<T> {
+export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
 }
 
@@ -149,7 +149,7 @@ export declare interface UnderlyingSource<R = any> {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy)
  */
-export declare interface ByteLengthQueuingStrategy {
+export declare interface ByteLengthQueuingStrategy extends QueuingStrategy<ArrayBufferView> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/size) */
@@ -167,7 +167,7 @@ export declare var ByteLengthQueuingStrategy: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy)
  */
-export declare interface CountQueuingStrategy {
+export declare interface CountQueuingStrategy extends QueuingStrategy {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/size) */
@@ -218,7 +218,7 @@ export declare var ReadableStream: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader) */
-export declare interface ReadableStreamBYOBReader {
+export declare interface ReadableStreamBYOBReader extends ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
     read<T: ArrayBufferView>(view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
@@ -266,7 +266,7 @@ export declare var ReadableStreamDefaultController: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader) */
-export declare interface ReadableStreamDefaultReader<R = any> {
+export declare interface ReadableStreamDefaultReader<R = any> extends ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
     read() -> Promise<ReadableStreamReadResult<R>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */

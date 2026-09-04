@@ -2,11 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface FileSystemDirectoryHandleAsyncIterator<T> {
+export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<T>
 }
 
-export declare interface FileSystemDirectoryHandle {
+export declare interface FileSystemDirectoryHandle extends FileSystemHandle {
     [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     entries() -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     keys() -> FileSystemDirectoryHandleAsyncIterator<string>,
@@ -22,19 +22,19 @@ export declare interface FileSystemDirectoryHandle {
     resolve(possibleDescendant: FileSystemHandle) -> Promise<mut Array<string> | null>
 }
 
-export declare interface AddEventListenerOptions {
+export declare interface AddEventListenerOptions extends EventListenerOptions {
     once?: boolean,
     passive?: boolean,
     signal?: AbortSignal
 }
 
-export declare interface AnimationEventInit {
+export declare interface AnimationEventInit extends EventInit {
     animationName?: string,
     elapsedTime?: number,
     pseudoElement?: string
 }
 
-export declare interface AnimationPlaybackEventInit {
+export declare interface AnimationPlaybackEventInit extends EventInit {
     currentTime?: CSSNumberish | null,
     timelineTime?: CSSNumberish | null
 }
@@ -96,7 +96,7 @@ export declare interface CheckVisibilityOptions {
     visibilityProperty?: boolean
 }
 
-export declare interface ClipboardEventInit {
+export declare interface ClipboardEventInit extends EventInit {
     clipboardData?: DataTransfer | null
 }
 
@@ -104,11 +104,11 @@ export declare interface ClipboardItemOptions {
     presentationStyle?: PresentationStyle
 }
 
-export declare interface CompositionEventInit {
+export declare interface CompositionEventInit extends UIEventInit {
     data?: string
 }
 
-export declare interface ComputedEffectTiming {
+export declare interface ComputedEffectTiming extends EffectTiming {
     activeDuration?: CSSNumberish,
     currentIteration?: number | null,
     endTime?: CSSNumberish,
@@ -134,17 +134,17 @@ export declare interface ConstrainDOMStringParameters {
     ideal?: string | mut Array<string>
 }
 
-export declare interface ConstrainDoubleRange {
+export declare interface ConstrainDoubleRange extends DoubleRange {
     exact?: number,
     ideal?: number
 }
 
-export declare interface ConstrainULongRange {
+export declare interface ConstrainULongRange extends ULongRange {
     exact?: number,
     ideal?: number
 }
 
-export declare interface ContentVisibilityAutoStateChangeEventInit {
+export declare interface ContentVisibilityAutoStateChangeEventInit extends EventInit {
     skipped?: boolean
 }
 
@@ -159,7 +159,7 @@ export declare interface CredentialRequestOptions {
     signal?: AbortSignal
 }
 
-export declare interface CustomEventInit<T = any> {
+export declare interface CustomEventInit<T = any> extends EventInit {
     detail?: T
 }
 
@@ -178,7 +178,7 @@ export declare interface DOMMatrix2DInit {
     m42?: number
 }
 
-export declare interface DOMMatrixInit {
+export declare interface DOMMatrixInit extends DOMMatrix2DInit {
     is2D?: boolean,
     m13?: number,
     m14?: number,
@@ -219,7 +219,7 @@ export declare interface DeviceMotionEventAccelerationInit {
     z?: number | null
 }
 
-export declare interface DeviceMotionEventInit {
+export declare interface DeviceMotionEventInit extends EventInit {
     acceleration?: DeviceMotionEventAccelerationInit,
     accelerationIncludingGravity?: DeviceMotionEventAccelerationInit,
     interval?: number,
@@ -232,7 +232,7 @@ export declare interface DeviceMotionEventRotationRateInit {
     gamma?: number | null
 }
 
-export declare interface DeviceOrientationEventInit {
+export declare interface DeviceOrientationEventInit extends EventInit {
     absolute?: boolean,
     alpha?: number | null,
     beta?: number | null,
@@ -253,7 +253,7 @@ export declare interface DoubleRange {
     min?: number
 }
 
-export declare interface DragEventInit {
+export declare interface DragEventInit extends MouseEventInit {
     dataTransfer?: DataTransfer | null
 }
 
@@ -277,7 +277,7 @@ export declare interface ElementDefinitionOptions {
     extends?: string
 }
 
-export declare interface ErrorEventInit {
+export declare interface ErrorEventInit extends EventInit {
     colno?: number,
     error?: any,
     filename?: string,
@@ -295,7 +295,7 @@ export declare interface EventListenerOptions {
     capture?: boolean
 }
 
-export declare interface EventModifierInit {
+export declare interface EventModifierInit extends UIEventInit {
     altKey?: boolean,
     ctrlKey?: boolean,
     metaKey?: boolean,
@@ -337,7 +337,7 @@ export declare interface FileSystemRemoveOptions {
     recursive?: boolean
 }
 
-export declare interface FocusEventInit {
+export declare interface FocusEventInit extends UIEventInit {
     relatedTarget?: EventTarget | null
 }
 
@@ -357,11 +357,11 @@ export declare interface FontFaceDescriptors {
     weight?: string
 }
 
-export declare interface FontFaceSetLoadEventInit {
+export declare interface FontFaceSetLoadEventInit extends EventInit {
     fontfaces?: mut Array<FontFace>
 }
 
-export declare interface FormDataEventInit {
+export declare interface FormDataEventInit extends EventInit {
     formData: FormData
 }
 
@@ -378,7 +378,7 @@ export declare interface GamepadEffectParameters {
     weakMagnitude?: number
 }
 
-export declare interface GamepadEventInit {
+export declare interface GamepadEventInit extends EventInit {
     gamepad: Gamepad
 }
 
@@ -395,7 +395,7 @@ export declare interface GetRootNodeOptions {
     composed?: boolean
 }
 
-export declare interface HashChangeEventInit {
+export declare interface HashChangeEventInit extends EventInit {
     newURL?: string,
     oldURL?: string
 }
@@ -426,7 +426,7 @@ export declare interface ImageEncodeOptions {
     type?: string
 }
 
-export declare interface InputEventInit {
+export declare interface InputEventInit extends UIEventInit {
     data?: string | null,
     dataTransfer?: DataTransfer | null,
     inputType?: string,
@@ -440,7 +440,7 @@ export declare interface IntersectionObserverInit {
     threshold?: number | mut Array<number>
 }
 
-export declare interface KeyboardEventInit {
+export declare interface KeyboardEventInit extends EventModifierInit {
     /** @deprecated */
     charCode?: number,
     code?: string,
@@ -458,12 +458,12 @@ export declare interface Keyframe {
     offset?: number | null
 }
 
-export declare interface KeyframeAnimationOptions {
+export declare interface KeyframeAnimationOptions extends KeyframeEffectOptions {
     id?: string,
     timeline?: AnimationTimeline | null
 }
 
-export declare interface KeyframeEffectOptions {
+export declare interface KeyframeEffectOptions extends EffectTiming {
     composite?: CompositeOperation,
     iterationComposite?: IterationCompositeOperation,
     pseudoElement?: string | null
@@ -487,11 +487,11 @@ export declare interface LockOptions {
     steal?: boolean
 }
 
-export declare interface MIDIConnectionEventInit {
+export declare interface MIDIConnectionEventInit extends EventInit {
     port?: MIDIPort
 }
 
-export declare interface MIDIMessageEventInit {
+export declare interface MIDIMessageEventInit extends EventInit {
     data?: Uint8Array
 }
 
@@ -500,11 +500,11 @@ export declare interface MIDIOptions {
     sysex?: boolean
 }
 
-export declare interface MediaCapabilitiesDecodingInfo {
+export declare interface MediaCapabilitiesDecodingInfo extends MediaCapabilitiesInfo {
     configuration?: MediaDecodingConfiguration
 }
 
-export declare interface MediaCapabilitiesEncodingInfo {
+export declare interface MediaCapabilitiesEncodingInfo extends MediaCapabilitiesInfo {
     configuration?: MediaEncodingConfiguration
 }
 
@@ -519,15 +519,15 @@ export declare interface MediaConfiguration {
     video?: VideoConfiguration
 }
 
-export declare interface MediaDecodingConfiguration {
+export declare interface MediaDecodingConfiguration extends MediaConfiguration {
     type: MediaDecodingType
 }
 
-export declare interface MediaEncodingConfiguration {
+export declare interface MediaEncodingConfiguration extends MediaConfiguration {
     type: MediaEncodingType
 }
 
-export declare interface MediaEncryptedEventInit {
+export declare interface MediaEncryptedEventInit extends EventInit {
     initData?: ArrayBuffer | null,
     initDataType?: string
 }
@@ -538,7 +538,7 @@ export declare interface MediaImage {
     type?: string
 }
 
-export declare interface MediaKeyMessageEventInit {
+export declare interface MediaKeyMessageEventInit extends EventInit {
     message: ArrayBuffer,
     messageType: MediaKeyMessageType
 }
@@ -576,7 +576,7 @@ export declare interface MediaPositionState {
     position?: number
 }
 
-export declare interface MediaQueryListEventInit {
+export declare interface MediaQueryListEventInit extends EventInit {
     matches?: boolean,
     media?: string
 }
@@ -602,7 +602,7 @@ export declare interface MediaStreamConstraints {
     video?: boolean | MediaTrackConstraints
 }
 
-export declare interface MediaStreamTrackEventInit {
+export declare interface MediaStreamTrackEventInit extends EventInit {
     track: MediaStreamTrack
 }
 
@@ -642,7 +642,7 @@ export declare interface MediaTrackConstraintSet {
     width?: ConstrainULong
 }
 
-export declare interface MediaTrackConstraints {
+export declare interface MediaTrackConstraints extends MediaTrackConstraintSet {
     advanced?: mut Array<MediaTrackConstraintSet>
 }
 
@@ -682,7 +682,7 @@ export declare interface MediaTrackSupportedConstraints {
     width?: boolean
 }
 
-export declare interface MessageEventInit<T = any> {
+export declare interface MessageEventInit<T = any> extends EventInit {
     data?: T,
     lastEventId?: string,
     origin?: string,
@@ -690,7 +690,7 @@ export declare interface MessageEventInit<T = any> {
     source?: MessageEventSource | null
 }
 
-export declare interface MouseEventInit {
+export declare interface MouseEventInit extends EventModifierInit {
     button?: number,
     buttons?: number,
     clientX?: number,
@@ -743,30 +743,30 @@ export declare interface OptionalEffectTiming {
     playbackRate?: number
 }
 
-export declare interface PageRevealEventInit {
+export declare interface PageRevealEventInit extends EventInit {
     viewTransition?: ViewTransition | null
 }
 
-export declare interface PageSwapEventInit {
+export declare interface PageSwapEventInit extends EventInit {
     activation?: NavigationActivation | null,
     viewTransition?: ViewTransition | null
 }
 
-export declare interface PageTransitionEventInit {
+export declare interface PageTransitionEventInit extends EventInit {
     persisted?: boolean
 }
 
-export declare interface PaymentRequestUpdateEventInit {}
+export declare interface PaymentRequestUpdateEventInit extends EventInit {}
 
 export declare interface PermissionDescriptor {
     name: PermissionName
 }
 
-export declare interface PictureInPictureEventInit {
+export declare interface PictureInPictureEventInit extends EventInit {
     pictureInPictureWindow: PictureInPictureWindow
 }
 
-export declare interface PointerEventInit {
+export declare interface PointerEventInit extends MouseEventInit {
     altitudeAngle?: number,
     azimuthAngle?: number,
     coalescedEvents?: mut Array<PointerEvent>,
@@ -787,7 +787,7 @@ export declare interface PointerLockOptions {
     unadjustedMovement?: boolean
 }
 
-export declare interface PopStateEventInit {
+export declare interface PopStateEventInit extends EventInit {
     state?: any
 }
 
@@ -797,13 +797,13 @@ export declare interface PositionOptions {
     timeout?: number
 }
 
-export declare interface ProgressEventInit {
+export declare interface ProgressEventInit extends EventInit {
     lengthComputable?: boolean,
     loaded?: number,
     total?: number
 }
 
-export declare interface PromiseRejectionEventInit {
+export declare interface PromiseRejectionEventInit extends EventInit {
     promise: Promise<any>,
     reason?: any
 }
@@ -821,7 +821,7 @@ export declare interface PropertyIndexedKeyframes {
     offset?: number | mut Array<number | null>
 }
 
-export declare interface RTCDTMFToneChangeEventInit {
+export declare interface RTCDTMFToneChangeEventInit extends EventInit {
     tone?: string
 }
 
@@ -841,7 +841,7 @@ export declare interface SVGBoundingBoxOptions {
     stroke?: boolean
 }
 
-export declare interface ScrollIntoViewOptions {
+export declare interface ScrollIntoViewOptions extends ScrollOptions {
     block?: ScrollLogicalPosition,
     inline?: ScrollLogicalPosition
 }
@@ -850,12 +850,12 @@ export declare interface ScrollOptions {
     behavior?: ScrollBehavior
 }
 
-export declare interface ScrollToOptions {
+export declare interface ScrollToOptions extends ScrollOptions {
     left?: number,
     top?: number
 }
 
-export declare interface SecurityPolicyViolationEventInit {
+export declare interface SecurityPolicyViolationEventInit extends EventInit {
     blockedURI?: string,
     columnNumber?: number,
     disposition?: SecurityPolicyViolationEventDisposition,
@@ -884,11 +884,11 @@ export declare interface ShareData {
     url?: string
 }
 
-export declare interface SpeechSynthesisErrorEventInit {
+export declare interface SpeechSynthesisErrorEventInit extends SpeechSynthesisEventInit {
     error: SpeechSynthesisErrorCode
 }
 
-export declare interface SpeechSynthesisEventInit {
+export declare interface SpeechSynthesisEventInit extends EventInit {
     charIndex?: number,
     charLength?: number,
     elapsedTime?: number,
@@ -912,16 +912,16 @@ export declare interface StructuredSerializeOptions {
     transfer?: mut Array<Transferable>
 }
 
-export declare interface SubmitEventInit {
+export declare interface SubmitEventInit extends EventInit {
     submitter?: HTMLElement | null
 }
 
-export declare interface ToggleEventInit {
+export declare interface ToggleEventInit extends EventInit {
     newState?: string,
     oldState?: string
 }
 
-export declare interface TouchEventInit {
+export declare interface TouchEventInit extends EventModifierInit {
     changedTouches?: mut Array<Touch>,
     targetTouches?: mut Array<Touch>,
     touches?: mut Array<Touch>
@@ -945,17 +945,17 @@ export declare interface TouchInit {
     touchType?: TouchType
 }
 
-export declare interface TrackEventInit {
+export declare interface TrackEventInit extends EventInit {
     track?: TextTrack | null
 }
 
-export declare interface TransitionEventInit {
+export declare interface TransitionEventInit extends EventInit {
     elapsedTime?: number,
     propertyName?: string,
     pseudoElement?: string
 }
 
-export declare interface UIEventInit {
+export declare interface UIEventInit extends EventInit {
     detail?: number,
     view?: Window | null,
     /** @deprecated */
@@ -1032,14 +1032,14 @@ export declare interface WebTransportSendStreamOptions {
     sendOrder?: number
 }
 
-export declare interface WheelEventInit {
+export declare interface WheelEventInit extends MouseEventInit {
     deltaMode?: number,
     deltaX?: number,
     deltaY?: number,
     deltaZ?: number
 }
 
-export declare interface WindowPostMessageOptions {
+export declare interface WindowPostMessageOptions extends StructuredSerializeOptions {
     targetOrigin?: string
 }
 
@@ -1206,7 +1206,7 @@ export declare interface AbortSignalEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal)
  */
-export declare interface AbortSignal {
+export declare interface AbortSignal extends EventTarget {
     /**
      * Returns true if this AbortSignal's AbortController has signaled to abort, and false otherwise.
      *
@@ -1295,7 +1295,7 @@ export declare interface AnimationEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Animation) */
-export declare interface Animation {
+export declare interface Animation extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Animation/currentTime) */
     currentTime: CSSNumberish | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Animation/effect) */
@@ -1373,7 +1373,7 @@ export declare var AnimationEffect: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEvent)
  */
-export declare interface AnimationEvent {
+export declare interface AnimationEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEvent/animationName) */
     readonly animationName: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationEvent/elapsedTime) */
@@ -1396,7 +1396,7 @@ export declare interface AnimationFrameProvider {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationPlaybackEvent) */
-export declare interface AnimationPlaybackEvent {
+export declare interface AnimationPlaybackEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationPlaybackEvent/currentTime) */
     readonly currentTime: CSSNumberish | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnimationPlaybackEvent/timelineTime) */
@@ -1426,7 +1426,7 @@ export declare var AnimationTimeline: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Attr)
  */
-export declare interface Attr {
+export declare interface Attr extends Node {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Attr/localName) */
     readonly localName: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Attr/name) */
@@ -1471,7 +1471,7 @@ export declare var BarProp: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/BeforeUnloadEvent)
  */
-export declare interface BeforeUnloadEvent {
+export declare interface BeforeUnloadEvent extends Event {
     /**
      * @deprecated
      *
@@ -1487,7 +1487,7 @@ export declare var BeforeUnloadEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent) */
-export declare interface BlobEvent {
+export declare interface BlobEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent/data) */
     readonly data: Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent/timecode) */
@@ -1506,7 +1506,7 @@ export declare interface BroadcastChannelEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BroadcastChannel) */
-export declare interface BroadcastChannel {
+export declare interface BroadcastChannel extends EventTarget {
     /**
      * Returns the channel name (as passed to the constructor).
      *
@@ -1546,7 +1546,7 @@ export declare var BroadcastChannel: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CDATASection)
  */
-export declare interface CDATASection {}
+export declare interface CDATASection extends Text {}
 
 @js("CDATASection")
 export declare var CDATASection: {
@@ -1555,7 +1555,7 @@ export declare var CDATASection: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSAnimation) */
-export declare interface CSSAnimation {
+export declare interface CSSAnimation extends Animation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSAnimation/animationName) */
     readonly animationName: string,
     addEventListener<K: keyof AnimationEventMap>(type: K, listener: fn (this: CSSAnimation, ev: AnimationEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -1575,7 +1575,7 @@ export declare var CSSAnimation: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSConditionRule)
  */
-export declare interface CSSConditionRule {
+export declare interface CSSConditionRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSConditionRule/conditionText) */
     readonly conditionText: string
 }
@@ -1587,7 +1587,7 @@ export declare var CSSConditionRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSContainerRule) */
-export declare interface CSSContainerRule {
+export declare interface CSSContainerRule extends CSSConditionRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSContainerRule/containerName) */
     readonly containerName: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSContainerRule/containerQuery) */
@@ -1601,7 +1601,7 @@ export declare var CSSContainerRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSCounterStyleRule) */
-export declare interface CSSCounterStyleRule {
+export declare interface CSSCounterStyleRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSCounterStyleRule/additiveSymbols) */
     additiveSymbols: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSCounterStyleRule/fallback) */
@@ -1633,7 +1633,7 @@ export declare var CSSCounterStyleRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFaceRule) */
-export declare interface CSSFontFaceRule {
+export declare interface CSSFontFaceRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFaceRule/style) */
     get style(self) -> CSSStyleDeclaration,
     set style(mut self, cssText: string) -> undefined
@@ -1646,7 +1646,7 @@ export declare var CSSFontFaceRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFeatureValuesRule) */
-export declare interface CSSFontFeatureValuesRule {
+export declare interface CSSFontFeatureValuesRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontFeatureValuesRule/fontFamily) */
     fontFamily: string
 }
@@ -1658,7 +1658,7 @@ export declare var CSSFontFeatureValuesRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontPaletteValuesRule) */
-export declare interface CSSFontPaletteValuesRule {
+export declare interface CSSFontPaletteValuesRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontPaletteValuesRule/basePalette) */
     readonly basePalette: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSFontPaletteValuesRule/fontFamily) */
@@ -1680,7 +1680,7 @@ export declare var CSSFontPaletteValuesRule: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSGroupingRule)
  */
-export declare interface CSSGroupingRule {
+export declare interface CSSGroupingRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSGroupingRule/cssRules) */
     readonly cssRules: CSSRuleList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSGroupingRule/deleteRule) */
@@ -1696,7 +1696,7 @@ export declare var CSSGroupingRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImageValue) */
-export declare interface CSSImageValue {}
+export declare interface CSSImageValue extends CSSStyleValue {}
 
 @js("CSSImageValue")
 export declare var CSSImageValue: {
@@ -1705,7 +1705,7 @@ export declare var CSSImageValue: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImportRule) */
-export declare interface CSSImportRule {
+export declare interface CSSImportRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImportRule/href) */
     readonly href: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSImportRule/layerName) */
@@ -1730,7 +1730,7 @@ export declare var CSSImportRule: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframeRule)
  */
-export declare interface CSSKeyframeRule {
+export declare interface CSSKeyframeRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframeRule/keyText) */
     keyText: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframeRule/style) */
@@ -1749,7 +1749,7 @@ export declare var CSSKeyframeRule: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframesRule)
  */
-export declare interface CSSKeyframesRule {
+export declare interface CSSKeyframesRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframesRule/cssRules) */
     readonly cssRules: CSSRuleList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframesRule/length) */
@@ -1772,7 +1772,7 @@ export declare var CSSKeyframesRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeywordValue) */
-export declare interface CSSKeywordValue {
+export declare interface CSSKeywordValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeywordValue/value) */
     value: string
 }
@@ -1784,7 +1784,7 @@ export declare var CSSKeywordValue: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerBlockRule) */
-export declare interface CSSLayerBlockRule {
+export declare interface CSSLayerBlockRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerBlockRule/name) */
     readonly name: string
 }
@@ -1796,7 +1796,7 @@ export declare var CSSLayerBlockRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule) */
-export declare interface CSSLayerStatementRule {
+export declare interface CSSLayerStatementRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSLayerStatementRule/nameList) */
     readonly nameList: Array<string>
 }
@@ -1807,7 +1807,7 @@ export declare var CSSLayerStatementRule: {
     new () -> CSSLayerStatementRule
 }
 
-export declare interface CSSMathClamp {
+export declare interface CSSMathClamp extends CSSMathValue {
     readonly lower: CSSNumericValue,
     readonly upper: CSSNumericValue,
     readonly value: CSSNumericValue
@@ -1820,7 +1820,7 @@ export declare var CSSMathClamp: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathInvert) */
-export declare interface CSSMathInvert {
+export declare interface CSSMathInvert extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathInvert/value) */
     readonly value: CSSNumericValue
 }
@@ -1832,7 +1832,7 @@ export declare var CSSMathInvert: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMax) */
-export declare interface CSSMathMax {
+export declare interface CSSMathMax extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMax/values) */
     readonly values: CSSNumericArray
 }
@@ -1844,7 +1844,7 @@ export declare var CSSMathMax: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMin) */
-export declare interface CSSMathMin {
+export declare interface CSSMathMin extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathMin/values) */
     readonly values: CSSNumericArray
 }
@@ -1856,7 +1856,7 @@ export declare var CSSMathMin: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathNegate) */
-export declare interface CSSMathNegate {
+export declare interface CSSMathNegate extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathNegate/value) */
     readonly value: CSSNumericValue
 }
@@ -1868,7 +1868,7 @@ export declare var CSSMathNegate: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathProduct) */
-export declare interface CSSMathProduct {
+export declare interface CSSMathProduct extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathProduct/values) */
     readonly values: CSSNumericArray
 }
@@ -1880,7 +1880,7 @@ export declare var CSSMathProduct: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathSum) */
-export declare interface CSSMathSum {
+export declare interface CSSMathSum extends CSSMathValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathSum/values) */
     readonly values: CSSNumericArray
 }
@@ -1892,7 +1892,7 @@ export declare var CSSMathSum: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue) */
-export declare interface CSSMathValue {
+export declare interface CSSMathValue extends CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMathValue/operator) */
     readonly operator: CSSMathOperator
 }
@@ -1904,7 +1904,7 @@ export declare var CSSMathValue: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMatrixComponent) */
-export declare interface CSSMatrixComponent {
+export declare interface CSSMatrixComponent extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMatrixComponent/matrix) */
     matrix: DOMMatrix
 }
@@ -1920,7 +1920,7 @@ export declare var CSSMatrixComponent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMediaRule)
  */
-export declare interface CSSMediaRule {
+export declare interface CSSMediaRule extends CSSConditionRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSMediaRule/media) */
     get media(self) -> MediaList,
     set media(mut self, mediaText: string) -> undefined
@@ -1937,7 +1937,7 @@ export declare var CSSMediaRule: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNamespaceRule)
  */
-export declare interface CSSNamespaceRule {
+export declare interface CSSNamespaceRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNamespaceRule/namespaceURI) */
     readonly namespaceURI: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNamespaceRule/prefix) */
@@ -1951,7 +1951,7 @@ export declare var CSSNamespaceRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNestedDeclarations) */
-export declare interface CSSNestedDeclarations {
+export declare interface CSSNestedDeclarations extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNestedDeclarations/style) */
     get style(self) -> CSSStyleDeclaration,
     set style(mut self, cssText: string) -> undefined
@@ -1981,7 +1981,7 @@ export declare var CSSNumericArray: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue) */
-export declare interface CSSNumericValue {
+export declare interface CSSNumericValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/add) */
     add(...values: mut Array<CSSNumberish>) -> CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericValue/div) */
@@ -2017,7 +2017,7 @@ export declare var CSSNumericValue: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPageRule)
  */
-export declare interface CSSPageRule {
+export declare interface CSSPageRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPageRule/selectorText) */
     selectorText: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPageRule/style) */
@@ -2032,7 +2032,7 @@ export declare var CSSPageRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPerspective) */
-export declare interface CSSPerspective {
+export declare interface CSSPerspective extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPerspective/length) */
     length: CSSPerspectiveValue
 }
@@ -2044,7 +2044,7 @@ export declare var CSSPerspective: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPropertyRule) */
-export declare interface CSSPropertyRule {
+export declare interface CSSPropertyRule extends CSSRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPropertyRule/inherits) */
     readonly inherits: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSPropertyRule/initialValue) */
@@ -2062,7 +2062,7 @@ export declare var CSSPropertyRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate) */
-export declare interface CSSRotate {
+export declare interface CSSRotate extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate/angle) */
     angle: CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRotate/x) */
@@ -2150,7 +2150,7 @@ export declare var CSSRuleList: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale) */
-export declare interface CSSScale {
+export declare interface CSSScale extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale/x) */
     x: CSSNumberish,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScale/y) */
@@ -2166,7 +2166,7 @@ export declare var CSSScale: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScopeRule) */
-export declare interface CSSScopeRule {
+export declare interface CSSScopeRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScopeRule/end) */
     readonly end: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSScopeRule/start) */
@@ -2180,7 +2180,7 @@ export declare var CSSScopeRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew) */
-export declare interface CSSSkew {
+export declare interface CSSSkew extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew/ax) */
     ax: CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkew/ay) */
@@ -2194,7 +2194,7 @@ export declare var CSSSkew: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewX) */
-export declare interface CSSSkewX {
+export declare interface CSSSkewX extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewX/ax) */
     ax: CSSNumericValue
 }
@@ -2206,7 +2206,7 @@ export declare var CSSSkewX: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewY) */
-export declare interface CSSSkewY {
+export declare interface CSSSkewY extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSkewY/ay) */
     ay: CSSNumericValue
 }
@@ -2218,7 +2218,7 @@ export declare var CSSSkewY: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStartingStyleRule) */
-export declare interface CSSStartingStyleRule {}
+export declare interface CSSStartingStyleRule extends CSSGroupingRule {}
 
 @js("CSSStartingStyleRule")
 export declare var CSSStartingStyleRule: {
@@ -3546,7 +3546,7 @@ export declare var CSSStyleDeclaration: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleRule)
  */
-export declare interface CSSStyleRule {
+export declare interface CSSStyleRule extends CSSGroupingRule {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleRule/selectorText) */
     selectorText: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleRule/style) */
@@ -3567,7 +3567,7 @@ export declare var CSSStyleRule: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleSheet)
  */
-export declare interface CSSStyleSheet {
+export declare interface CSSStyleSheet extends StyleSheet {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleSheet/cssRules) */
     readonly cssRules: CSSRuleList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleSheet/ownerRule) */
@@ -3626,7 +3626,7 @@ export declare var CSSStyleValue: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSSupportsRule)
  */
-export declare interface CSSSupportsRule {}
+export declare interface CSSSupportsRule extends CSSConditionRule {}
 
 @js("CSSSupportsRule")
 export declare var CSSSupportsRule: {
@@ -3650,7 +3650,7 @@ export declare var CSSTransformComponent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue) */
-export declare interface CSSTransformValue {
+export declare interface CSSTransformValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/is2D) */
     readonly is2D: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/length) */
@@ -3671,7 +3671,7 @@ export declare var CSSTransformValue: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransition) */
-export declare interface CSSTransition {
+export declare interface CSSTransition extends Animation {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransition/transitionProperty) */
     readonly transitionProperty: string,
     addEventListener<K: keyof AnimationEventMap>(type: K, listener: fn (this: CSSTransition, ev: AnimationEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -3687,7 +3687,7 @@ export declare var CSSTransition: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate) */
-export declare interface CSSTranslate {
+export declare interface CSSTranslate extends CSSTransformComponent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate/x) */
     x: CSSNumericValue,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTranslate/y) */
@@ -3703,7 +3703,7 @@ export declare var CSSTranslate: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnitValue) */
-export declare interface CSSUnitValue {
+export declare interface CSSUnitValue extends CSSNumericValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnitValue/unit) */
     readonly unit: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnitValue/value) */
@@ -3717,7 +3717,7 @@ export declare var CSSUnitValue: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue) */
-export declare interface CSSUnparsedValue {
+export declare interface CSSUnparsedValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue/length) */
     readonly length: number,
     forEach(callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: CSSUnparsedValue) -> unknown, thisArg?: any) -> unknown,
@@ -3747,7 +3747,7 @@ export declare var CSSVariableReferenceValue: {
     new (variable: string, fallback?: CSSUnparsedValue | null) -> CSSVariableReferenceValue
 }
 
-export declare interface CSSViewTransitionRule {
+export declare interface CSSViewTransitionRule extends CSSRule {
     readonly navigation: string,
     readonly types: Array<string>
 }
@@ -3759,7 +3759,7 @@ export declare var CSSViewTransitionRule: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasCaptureMediaStreamTrack) */
-export declare interface CanvasCaptureMediaStreamTrack {
+export declare interface CanvasCaptureMediaStreamTrack extends MediaStreamTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasCaptureMediaStreamTrack/canvas) */
     readonly canvas: HTMLCanvasElement,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasCaptureMediaStreamTrack/requestFrame) */
@@ -3948,7 +3948,7 @@ export declare interface CanvasRect {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D)
  */
-export declare interface CanvasRenderingContext2D {
+export declare interface CanvasRenderingContext2D extends CanvasCompositing, CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasSettings, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform, CanvasUserInterface {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: HTMLCanvasElement
 }
@@ -4060,7 +4060,7 @@ export declare var CaretPosition: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData)
  */
-export declare interface CharacterData {
+export declare interface CharacterData extends Node, ChildNode, NonDocumentTypeChildNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/data) */
     data: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CharacterData/length) */
@@ -4084,7 +4084,7 @@ export declare var CharacterData: {
     new () -> CharacterData
 }
 
-export declare interface ChildNode {
+export declare interface ChildNode extends Node {
     /**
      * Inserts nodes just after node, while replacing strings in nodes with equivalent Text nodes.
      *
@@ -4118,14 +4118,14 @@ export declare interface ChildNode {
 }
 
 /** @deprecated */
-export declare interface ClientRect {}
+export declare interface ClientRect extends DOMRect {}
 
 /**
  * Available only in secure contexts.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard)
  */
-export declare interface Clipboard {
+export declare interface Clipboard extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/read) */
     read() -> Promise<ClipboardItems>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Clipboard/readText) */
@@ -4147,7 +4147,7 @@ export declare var Clipboard: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardEvent)
  */
-export declare interface ClipboardEvent {
+export declare interface ClipboardEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardEvent/clipboardData) */
     readonly clipboardData: DataTransfer | null
 }
@@ -4185,7 +4185,7 @@ export declare var ClipboardItem: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Comment)
  */
-export declare interface Comment {}
+export declare interface Comment extends CharacterData {}
 
 @js("Comment")
 export declare var Comment: {
@@ -4198,7 +4198,7 @@ export declare var Comment: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompositionEvent)
  */
-export declare interface CompositionEvent {
+export declare interface CompositionEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CompositionEvent/data) */
     readonly data: string,
     /**
@@ -4216,7 +4216,7 @@ export declare var CompositionEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContentVisibilityAutoStateChangeEvent) */
-export declare interface ContentVisibilityAutoStateChangeEvent {
+export declare interface ContentVisibilityAutoStateChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ContentVisibilityAutoStateChangeEvent/skipped) */
     readonly skipped: boolean
 }
@@ -4288,7 +4288,7 @@ export declare var CustomElementRegistry: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomEvent) */
-export declare interface CustomEvent<T = any> {
+export declare interface CustomEvent<T = any> extends Event {
     /**
      * Returns any custom data event was created with. Typically used for synthetic events.
      *
@@ -4310,7 +4310,7 @@ export declare var CustomEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomStateSet) */
-export declare interface CustomStateSet {
+export declare interface CustomStateSet extends Set<string> {
     forEach(callbackfn: fn (value: string, key: string, parent: CustomStateSet) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -4325,7 +4325,7 @@ export declare var CustomStateSet: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMException)
  */
-export declare interface DOMException {
+export declare interface DOMException extends Error {
     /**
      * @deprecated
      *
@@ -4421,7 +4421,7 @@ export declare var DOMImplementation: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix) */
-export declare interface DOMMatrix {
+export declare interface DOMMatrix extends DOMMatrixReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix#instance_properties) */
     a: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrix#instance_properties) */
@@ -4624,7 +4624,7 @@ export declare var DOMParser: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint) */
-export declare interface DOMPoint {
+export declare interface DOMPoint extends DOMPointReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint/w) */
     w: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMPoint/x) */
@@ -4697,7 +4697,7 @@ export declare var DOMQuad: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect) */
-export declare interface DOMRect {
+export declare interface DOMRect extends DOMRectReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect/height) */
     height: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRect/width) */
@@ -5072,7 +5072,7 @@ export declare var DataTransferItemList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent)
  */
-export declare interface DeviceMotionEvent {
+export declare interface DeviceMotionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/acceleration) */
     readonly acceleration: DeviceMotionEventAcceleration | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceMotionEvent/accelerationIncludingGravity) */
@@ -5123,7 +5123,7 @@ export declare interface DeviceMotionEventRotationRate {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceOrientationEvent)
  */
-export declare interface DeviceOrientationEvent {
+export declare interface DeviceOrientationEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceOrientationEvent/absolute) */
     readonly absolute: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DeviceOrientationEvent/alpha) */
@@ -5140,7 +5140,7 @@ export declare var DeviceOrientationEvent: {
     new (type: string, eventInitDict?: DeviceOrientationEventInit) -> DeviceOrientationEvent
 }
 
-export declare interface DocumentEventMap {
+export declare interface DocumentEventMap extends GlobalEventHandlersEventMap {
     "DOMContentLoaded": Event,
     "fullscreenchange": Event,
     "fullscreenerror": Event,
@@ -5155,7 +5155,7 @@ export declare interface DocumentEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document)
  */
-export declare interface Document {
+export declare interface Document extends Node, DocumentOrShadowRoot, FontFaceSource, GlobalEventHandlers, NonElementParentNode, ParentNode, XPathEvaluatorBase {
     /**
      * Sets or gets the URL for the current document.
      *
@@ -5813,7 +5813,7 @@ export declare var Document: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentFragment)
  */
-export declare interface DocumentFragment {
+export declare interface DocumentFragment extends Node, NonElementParentNode, ParentNode {
     readonly ownerDocument: Document,
     getElementById(elementId: string) -> HTMLElement | null
 }
@@ -5865,7 +5865,7 @@ export declare interface DocumentOrShadowRoot {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentTimeline) */
-export declare interface DocumentTimeline {}
+export declare interface DocumentTimeline extends AnimationTimeline {}
 
 @js("DocumentTimeline")
 export declare var DocumentTimeline: {
@@ -5878,7 +5878,7 @@ export declare var DocumentTimeline: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentType)
  */
-export declare interface DocumentType {
+export declare interface DocumentType extends Node, ChildNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DocumentType/name) */
     readonly name: string,
     readonly ownerDocument: Document,
@@ -5899,7 +5899,7 @@ export declare var DocumentType: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DragEvent)
  */
-export declare interface DragEvent {
+export declare interface DragEvent extends MouseEvent {
     /**
      * Returns the DataTransfer object for the event.
      *
@@ -5924,7 +5924,7 @@ export declare interface ElementEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element)
  */
-export declare interface Element {
+export declare interface Element extends Node, ARIAMixin, Animatable, ChildNode, NonDocumentTypeChildNode, ParentNode, Slottable {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/attributes) */
     readonly attributes: NamedNodeMap,
     /**
@@ -6212,7 +6212,7 @@ export declare interface ElementContentEditable {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ElementInternals) */
-export declare interface ElementInternals {
+export declare interface ElementInternals extends ARIAMixin {
     /**
      * Returns the form owner of internals's target element.
      *
@@ -6290,7 +6290,7 @@ export declare var ElementInternals: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ErrorEvent)
  */
-export declare interface ErrorEvent {
+export declare interface ErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ErrorEvent/colno) */
     readonly colno: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ErrorEvent/error) */
@@ -6440,7 +6440,7 @@ export declare var Event: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
-export declare interface EventCounts {
+export declare interface EventCounts extends Map<string, number> {
     forEach(callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -6465,7 +6465,7 @@ export declare interface EventSourceEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventSource) */
-export declare interface EventSource {
+export declare interface EventSource extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventSource/error_event) */
     onerror: (fn (this: EventSource, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventSource/message_event) */
@@ -6590,7 +6590,7 @@ export declare var FileSystem: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry) */
-export declare interface FileSystemDirectoryEntry {
+export declare interface FileSystemDirectoryEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/createReader) */
     createReader() -> FileSystemDirectoryReader,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemDirectoryEntry/getDirectory) */
@@ -6646,7 +6646,7 @@ export declare var FileSystemEntry: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileEntry) */
-export declare interface FileSystemFileEntry {
+export declare interface FileSystemFileEntry extends FileSystemEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileEntry/file) */
     file(successCallback: FileCallback, errorCallback?: ErrorCallback) -> unknown
 }
@@ -6662,7 +6662,7 @@ export declare var FileSystemFileEntry: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle)
  */
-export declare interface FileSystemFileHandle {
+export declare interface FileSystemFileHandle extends FileSystemHandle {
     readonly kind: "file",
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/createWritable) */
     createWritable(options?: FileSystemCreateWritableOptions) -> Promise<FileSystemWritableFileStream>,
@@ -6701,7 +6701,7 @@ export declare var FileSystemHandle: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream)
  */
-export declare interface FileSystemWritableFileStream {
+export declare interface FileSystemWritableFileStream extends WritableStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/seek) */
     seek(position: number) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/truncate) */
@@ -6721,7 +6721,7 @@ export declare var FileSystemWritableFileStream: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FocusEvent)
  */
-export declare interface FocusEvent {
+export declare interface FocusEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FocusEvent/relatedTarget) */
     readonly relatedTarget: EventTarget | null
 }
@@ -6775,7 +6775,7 @@ export declare interface FontFaceSetEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet) */
-export declare interface FontFaceSet {
+export declare interface FontFaceSet extends EventTarget, Set<FontFace> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/loading_event) */
     onloading: (fn (this: FontFaceSet, ev: FontFaceSetLoadEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/loadingdone_event) */
@@ -6804,7 +6804,7 @@ export declare var FontFaceSet: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent) */
-export declare interface FontFaceSetLoadEvent {
+export declare interface FontFaceSetLoadEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSetLoadEvent/fontfaces) */
     readonly fontfaces: Array<FontFace>
 }
@@ -6859,7 +6859,7 @@ export declare var FormData: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormDataEvent) */
-export declare interface FormDataEvent {
+export declare interface FormDataEvent extends Event {
     /**
      * Returns a FormData object representing names and values of elements associated to the target form. Operations on the FormData object will affect form data to be submitted.
      *
@@ -6948,7 +6948,7 @@ export declare var GamepadButton: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadEvent)
  */
-export declare interface GamepadEvent {
+export declare interface GamepadEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GamepadEvent/gamepad) */
     readonly gamepad: Gamepad
 }
@@ -7656,7 +7656,7 @@ export declare var HTMLAllCollection: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAnchorElement)
  */
-export declare interface HTMLAnchorElement {
+export declare interface HTMLAnchorElement extends HTMLElement, HTMLHyperlinkElementUtils {
     /**
      * Sets or retrieves the character set used to encode the object.
      * @deprecated
@@ -7734,7 +7734,7 @@ export declare var HTMLAnchorElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAreaElement)
  */
-export declare interface HTMLAreaElement {
+export declare interface HTMLAreaElement extends HTMLElement, HTMLHyperlinkElementUtils {
     /**
      * Sets or retrieves a text alternative to the graphic.
      *
@@ -7792,7 +7792,7 @@ export declare var HTMLAreaElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAudioElement)
  */
-export declare interface HTMLAudioElement {
+export declare interface HTMLAudioElement extends HTMLMediaElement {
     addEventListener<K: keyof HTMLMediaElementEventMap>(type: K, listener: fn (this: HTMLAudioElement, ev: HTMLMediaElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLMediaElementEventMap>(type: K, listener: fn (this: HTMLAudioElement, ev: HTMLMediaElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -7810,7 +7810,7 @@ export declare var HTMLAudioElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLBRElement)
  */
-export declare interface HTMLBRElement {
+export declare interface HTMLBRElement extends HTMLElement {
     /**
      * Sets or retrieves the side on which floating objects are not to be positioned when any IHTMLBlockElement is inserted into the document.
      * @deprecated
@@ -7833,7 +7833,7 @@ export declare var HTMLBRElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLBaseElement)
  */
-export declare interface HTMLBaseElement {
+export declare interface HTMLBaseElement extends HTMLElement {
     /**
      * Gets or sets the baseline URL on which relative links are based.
      *
@@ -7858,14 +7858,14 @@ export declare var HTMLBaseElement: {
     new () -> HTMLBaseElement
 }
 
-export declare interface HTMLBodyElementEventMap {}
+export declare interface HTMLBodyElementEventMap extends HTMLElementEventMap, WindowEventHandlersEventMap {}
 
 /**
  * Provides special properties (beyond those inherited from the regular HTMLElement interface) for manipulating <body> elements.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLBodyElement)
  */
-export declare interface HTMLBodyElement {
+export declare interface HTMLBodyElement extends HTMLElement, WindowEventHandlers {
     /** @deprecated */
     aLink: string,
     /** @deprecated */
@@ -7895,7 +7895,7 @@ export declare var HTMLBodyElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLButtonElement)
  */
-export declare interface HTMLButtonElement {
+export declare interface HTMLButtonElement extends HTMLElement, PopoverInvokerElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLButtonElement/disabled) */
     disabled: boolean,
     /**
@@ -8004,7 +8004,7 @@ export declare var HTMLButtonElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLCanvasElement)
  */
-export declare interface HTMLCanvasElement {
+export declare interface HTMLCanvasElement extends HTMLElement {
     /**
      * Gets or sets the height of a canvas element on a document.
      *
@@ -8074,7 +8074,7 @@ export declare interface HTMLCollectionBase {
     [Symbol.iterator]() -> ArrayIterator<Element>
 }
 
-export declare interface HTMLCollection {
+export declare interface HTMLCollection extends HTMLCollectionBase {
     /**
      * Retrieves a select object or an object from an options collection.
      *
@@ -8089,7 +8089,7 @@ export declare var HTMLCollection: {
     new () -> HTMLCollection
 }
 
-export declare interface HTMLCollectionOf<T: Element> {
+export declare interface HTMLCollectionOf<T: Element> extends HTMLCollectionBase {
     item(index: number) -> T | null,
     namedItem(name: string) -> T | null,
     [Symbol.iterator]() -> ArrayIterator<T>
@@ -8100,7 +8100,7 @@ export declare interface HTMLCollectionOf<T: Element> {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDListElement)
  */
-export declare interface HTMLDListElement {
+export declare interface HTMLDListElement extends HTMLElement {
     /** @deprecated */
     compact: boolean,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLDListElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -8120,7 +8120,7 @@ export declare var HTMLDListElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDataElement)
  */
-export declare interface HTMLDataElement {
+export declare interface HTMLDataElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDataElement/value) */
     value: string,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLDataElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -8140,7 +8140,7 @@ export declare var HTMLDataElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDataListElement)
  */
-export declare interface HTMLDataListElement {
+export declare interface HTMLDataListElement extends HTMLElement {
     /**
      * Returns an HTMLCollection of the option elements of the datalist element.
      *
@@ -8160,7 +8160,7 @@ export declare var HTMLDataListElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDetailsElement) */
-export declare interface HTMLDetailsElement {
+export declare interface HTMLDetailsElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDetailsElement/name) */
     name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDetailsElement/open) */
@@ -8178,7 +8178,7 @@ export declare var HTMLDetailsElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDialogElement) */
-export declare interface HTMLDialogElement {
+export declare interface HTMLDialogElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDialogElement/open) */
     open: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDialogElement/returnValue) */
@@ -8212,7 +8212,7 @@ export declare var HTMLDialogElement: {
 }
 
 /** @deprecated */
-export declare interface HTMLDirectoryElement {
+export declare interface HTMLDirectoryElement extends HTMLElement {
     /** @deprecated */
     compact: boolean,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLDirectoryElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -8233,7 +8233,7 @@ export declare var HTMLDirectoryElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLDivElement)
  */
-export declare interface HTMLDivElement {
+export declare interface HTMLDivElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -8252,7 +8252,7 @@ export declare var HTMLDivElement: {
 }
 
 /** @deprecated use Document */
-export declare interface HTMLDocument {
+export declare interface HTMLDocument extends Document {
     addEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: HTMLDocument, ev: DocumentEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: HTMLDocument, ev: DocumentEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -8266,14 +8266,14 @@ export declare var HTMLDocument: {
     new () -> HTMLDocument
 }
 
-export declare interface HTMLElementEventMap {}
+export declare interface HTMLElementEventMap extends ElementEventMap, GlobalEventHandlersEventMap {}
 
 /**
  * Any HTML element. Some elements directly implement this interface, while others implement it via an interface that inherits it.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement)
  */
-export declare interface HTMLElement {
+export declare interface HTMLElement extends Element, ElementCSSInlineStyle, ElementContentEditable, GlobalEventHandlers, HTMLOrSVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement/accessKey) */
     accessKey: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLElement/accessKeyLabel) */
@@ -8341,7 +8341,7 @@ export declare var HTMLElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLEmbedElement)
  */
-export declare interface HTMLEmbedElement {
+export declare interface HTMLEmbedElement extends HTMLElement {
     /** @deprecated */
     align: string,
     /**
@@ -8388,7 +8388,7 @@ export declare var HTMLEmbedElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFieldSetElement)
  */
-export declare interface HTMLFieldSetElement {
+export declare interface HTMLFieldSetElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFieldSetElement/disabled) */
     disabled: boolean,
     /**
@@ -8462,7 +8462,7 @@ export declare var HTMLFieldSetElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFontElement)
  */
-export declare interface HTMLFontElement {
+export declare interface HTMLFontElement extends HTMLElement {
     /**
      * @deprecated
      *
@@ -8500,7 +8500,7 @@ export declare var HTMLFontElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFormControlsCollection)
  */
-export declare interface HTMLFormControlsCollection {
+export declare interface HTMLFormControlsCollection extends HTMLCollectionBase {
     /**
      * Returns the item with ID or name name from the collection.
      *
@@ -8522,7 +8522,7 @@ export declare var HTMLFormControlsCollection: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFormElement)
  */
-export declare interface HTMLFormElement {
+export declare interface HTMLFormElement extends HTMLElement {
     /**
      * Sets or retrieves a list of character encodings for input data that must be accepted by the server processing the form.
      *
@@ -8628,7 +8628,7 @@ export declare var HTMLFormElement: {
 }
 
 /** @deprecated */
-export declare interface HTMLFrameElement {
+export declare interface HTMLFrameElement extends HTMLElement {
     /**
      * Retrieves the document object of the page or frame.
      * @deprecated
@@ -8692,7 +8692,7 @@ export declare var HTMLFrameElement: {
     new () -> HTMLFrameElement
 }
 
-export declare interface HTMLFrameSetElementEventMap {}
+export declare interface HTMLFrameSetElementEventMap extends HTMLElementEventMap, WindowEventHandlersEventMap {}
 
 /**
  * Provides special properties (beyond those of the regular HTMLElement interface they also inherit) for manipulating <frameset> elements.
@@ -8700,7 +8700,7 @@ export declare interface HTMLFrameSetElementEventMap {}
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLFrameSetElement)
  */
-export declare interface HTMLFrameSetElement {
+export declare interface HTMLFrameSetElement extends HTMLElement, WindowEventHandlers {
     /**
      * Sets or retrieves the frame widths of the object.
      * @deprecated
@@ -8729,7 +8729,7 @@ export declare var HTMLFrameSetElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLHRElement)
  */
-export declare interface HTMLHRElement {
+export declare interface HTMLHRElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -8766,7 +8766,7 @@ export declare var HTMLHRElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLHeadElement)
  */
-export declare interface HTMLHeadElement {
+export declare interface HTMLHeadElement extends HTMLElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLHeadElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLHeadElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -8784,7 +8784,7 @@ export declare var HTMLHeadElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLHeadingElement)
  */
-export declare interface HTMLHeadingElement {
+export declare interface HTMLHeadingElement extends HTMLElement {
     /**
      * Sets or retrieves a value that indicates the table alignment.
      * @deprecated
@@ -8807,7 +8807,7 @@ export declare var HTMLHeadingElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLHtmlElement)
  */
-export declare interface HTMLHtmlElement {
+export declare interface HTMLHtmlElement extends HTMLElement {
     /**
      * Sets or retrieves the DTD version that governs the current document.
      * @deprecated
@@ -8922,7 +8922,7 @@ export declare interface HTMLHyperlinkElementUtils {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLIFrameElement)
  */
-export declare interface HTMLIFrameElement {
+export declare interface HTMLIFrameElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -9025,7 +9025,7 @@ export declare var HTMLIFrameElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLImageElement)
  */
-export declare interface HTMLImageElement {
+export declare interface HTMLImageElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -9167,7 +9167,7 @@ export declare var HTMLImageElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement)
  */
-export declare interface HTMLInputElement {
+export declare interface HTMLInputElement extends HTMLElement, PopoverInvokerElement {
     /**
      * Sets or retrieves a comma-separated list of content types.
      *
@@ -9479,7 +9479,7 @@ export declare var HTMLInputElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLIElement)
  */
-export declare interface HTMLLIElement {
+export declare interface HTMLLIElement extends HTMLElement {
     /** @deprecated */
     type: string,
     /**
@@ -9505,7 +9505,7 @@ export declare var HTMLLIElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLabelElement)
  */
-export declare interface HTMLLabelElement {
+export declare interface HTMLLabelElement extends HTMLElement {
     /**
      * Returns the form control that is associated with this element.
      *
@@ -9541,7 +9541,7 @@ export declare var HTMLLabelElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLegendElement)
  */
-export declare interface HTMLLegendElement {
+export declare interface HTMLLegendElement extends HTMLElement {
     /** @deprecated */
     align: string,
     /**
@@ -9567,7 +9567,7 @@ export declare var HTMLLegendElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement)
  */
-export declare interface HTMLLinkElement {
+export declare interface HTMLLinkElement extends HTMLElement, LinkStyle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement/as) */
     as: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLLinkElement/blocking) */
@@ -9653,7 +9653,7 @@ export declare var HTMLLinkElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMapElement)
  */
-export declare interface HTMLMapElement {
+export declare interface HTMLMapElement extends HTMLElement {
     /**
      * Retrieves a collection of the area objects defined for the given map object.
      *
@@ -9684,7 +9684,7 @@ export declare var HTMLMapElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMarqueeElement)
  */
-export declare interface HTMLMarqueeElement {
+export declare interface HTMLMarqueeElement extends HTMLElement {
     /** @deprecated */
     behavior: string,
     /** @deprecated */
@@ -9724,7 +9724,7 @@ export declare var HTMLMarqueeElement: {
     new () -> HTMLMarqueeElement
 }
 
-export declare interface HTMLMediaElementEventMap {
+export declare interface HTMLMediaElementEventMap extends HTMLElementEventMap {
     "encrypted": MediaEncryptedEvent,
     "waitingforkey": Event
 }
@@ -9734,7 +9734,7 @@ export declare interface HTMLMediaElementEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMediaElement)
  */
-export declare interface HTMLMediaElement {
+export declare interface HTMLMediaElement extends HTMLElement {
     /**
      * Gets or sets a value that indicates whether to start playing the media automatically.
      *
@@ -9958,7 +9958,7 @@ export declare var HTMLMediaElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMenuElement) */
-export declare interface HTMLMenuElement {
+export declare interface HTMLMenuElement extends HTMLElement {
     /** @deprecated */
     compact: boolean,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLMenuElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -9978,7 +9978,7 @@ export declare var HTMLMenuElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMetaElement)
  */
-export declare interface HTMLMetaElement {
+export declare interface HTMLMetaElement extends HTMLElement {
     /**
      * Gets or sets meta-information to associate with httpEquiv or name.
      *
@@ -10023,7 +10023,7 @@ export declare var HTMLMetaElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMeterElement)
  */
-export declare interface HTMLMeterElement {
+export declare interface HTMLMeterElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMeterElement/high) */
     high: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLMeterElement/labels) */
@@ -10055,7 +10055,7 @@ export declare var HTMLMeterElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLModElement)
  */
-export declare interface HTMLModElement {
+export declare interface HTMLModElement extends HTMLElement {
     /**
      * Sets or retrieves reference information about the object.
      *
@@ -10085,7 +10085,7 @@ export declare var HTMLModElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOListElement)
  */
-export declare interface HTMLOListElement {
+export declare interface HTMLOListElement extends HTMLElement {
     /** @deprecated */
     compact: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOListElement/reversed) */
@@ -10115,7 +10115,7 @@ export declare var HTMLOListElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLObjectElement)
  */
-export declare interface HTMLObjectElement {
+export declare interface HTMLObjectElement extends HTMLElement {
     /** @deprecated */
     align: string,
     /**
@@ -10254,7 +10254,7 @@ export declare var HTMLObjectElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOptGroupElement)
  */
-export declare interface HTMLOptGroupElement {
+export declare interface HTMLOptGroupElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOptGroupElement/disabled) */
     disabled: boolean,
     /**
@@ -10280,7 +10280,7 @@ export declare var HTMLOptGroupElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOptionElement)
  */
-export declare interface HTMLOptionElement {
+export declare interface HTMLOptionElement extends HTMLElement {
     /**
      * Sets or retrieves the status of an option.
      *
@@ -10342,7 +10342,7 @@ export declare var HTMLOptionElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOptionsCollection)
  */
-export declare interface HTMLOptionsCollection {
+export declare interface HTMLOptionsCollection extends HTMLCollectionOf<HTMLOptionElement> {
     /**
      * Returns the number of elements in the collection.
      *
@@ -10407,7 +10407,7 @@ export declare interface HTMLOrSVGElement {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOutputElement)
  */
-export declare interface HTMLOutputElement {
+export declare interface HTMLOutputElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOutputElement/defaultValue) */
     defaultValue: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLOutputElement/form) */
@@ -10462,7 +10462,7 @@ export declare var HTMLOutputElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLParagraphElement)
  */
-export declare interface HTMLParagraphElement {
+export declare interface HTMLParagraphElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -10486,7 +10486,7 @@ export declare var HTMLParagraphElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLParamElement)
  */
-export declare interface HTMLParamElement {
+export declare interface HTMLParamElement extends HTMLElement {
     /**
      * Sets or retrieves the name of an input parameter for an element.
      * @deprecated
@@ -10525,7 +10525,7 @@ export declare var HTMLParamElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLPictureElement)
  */
-export declare interface HTMLPictureElement {
+export declare interface HTMLPictureElement extends HTMLElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLPictureElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLPictureElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -10543,7 +10543,7 @@ export declare var HTMLPictureElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLPreElement)
  */
-export declare interface HTMLPreElement {
+export declare interface HTMLPreElement extends HTMLElement {
     /**
      * Sets or gets a value that you can use to implement your own width functionality for the object.
      * @deprecated
@@ -10566,7 +10566,7 @@ export declare var HTMLPreElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLProgressElement)
  */
-export declare interface HTMLProgressElement {
+export declare interface HTMLProgressElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLProgressElement/labels) */
     readonly labels: NodeListOf<HTMLLabelElement>,
     /**
@@ -10604,7 +10604,7 @@ export declare var HTMLProgressElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLQuoteElement)
  */
-export declare interface HTMLQuoteElement {
+export declare interface HTMLQuoteElement extends HTMLElement {
     /**
      * Sets or retrieves reference information about the object.
      *
@@ -10628,7 +10628,7 @@ export declare var HTMLQuoteElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLScriptElement)
  */
-export declare interface HTMLScriptElement {
+export declare interface HTMLScriptElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLScriptElement/async) */
     async: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLScriptElement/blocking) */
@@ -10702,7 +10702,7 @@ export declare var HTMLScriptElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSelectElement)
  */
-export declare interface HTMLSelectElement {
+export declare interface HTMLSelectElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSelectElement/autocomplete) */
     autocomplete: AutoFill,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSelectElement/disabled) */
@@ -10851,7 +10851,7 @@ export declare var HTMLSelectElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement) */
-export declare interface HTMLSlotElement {
+export declare interface HTMLSlotElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/name) */
     name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSlotElement/assign) */
@@ -10877,7 +10877,7 @@ export declare var HTMLSlotElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSourceElement)
  */
-export declare interface HTMLSourceElement {
+export declare interface HTMLSourceElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSourceElement/height) */
     height: number,
     /**
@@ -10921,7 +10921,7 @@ export declare var HTMLSourceElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLSpanElement)
  */
-export declare interface HTMLSpanElement {
+export declare interface HTMLSpanElement extends HTMLElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLSpanElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLSpanElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -10939,7 +10939,7 @@ export declare var HTMLSpanElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLStyleElement)
  */
-export declare interface HTMLStyleElement {
+export declare interface HTMLStyleElement extends HTMLElement, LinkStyle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLStyleElement/blocking) */
     get blocking(self) -> DOMTokenList,
     set blocking(mut self, value: string) -> undefined,
@@ -10979,7 +10979,7 @@ export declare var HTMLStyleElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableCaptionElement)
  */
-export declare interface HTMLTableCaptionElement {
+export declare interface HTMLTableCaptionElement extends HTMLElement {
     /**
      * Sets or retrieves the alignment of the caption or legend.
      * @deprecated
@@ -11004,7 +11004,7 @@ export declare var HTMLTableCaptionElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableCellElement)
  */
-export declare interface HTMLTableCellElement {
+export declare interface HTMLTableCellElement extends HTMLElement {
     /**
      * Sets or retrieves abbreviated text for the object.
      *
@@ -11111,7 +11111,7 @@ export declare var HTMLTableCellElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableColElement)
  */
-export declare interface HTMLTableColElement {
+export declare interface HTMLTableColElement extends HTMLElement {
     /**
      * Sets or retrieves the alignment of the object relative to the display or table.
      * @deprecated
@@ -11161,7 +11161,7 @@ export declare var HTMLTableColElement: {
 }
 
 /** @deprecated prefer HTMLTableCellElement */
-export declare interface HTMLTableDataCellElement {
+export declare interface HTMLTableDataCellElement extends HTMLTableCellElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLTableDataCellElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLTableDataCellElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -11173,7 +11173,7 @@ export declare interface HTMLTableDataCellElement {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableElement)
  */
-export declare interface HTMLTableElement {
+export declare interface HTMLTableElement extends HTMLElement {
     /**
      * Sets or retrieves a value that indicates the table alignment.
      * @deprecated
@@ -11335,7 +11335,7 @@ export declare var HTMLTableElement: {
 }
 
 /** @deprecated prefer HTMLTableCellElement */
-export declare interface HTMLTableHeaderCellElement {
+export declare interface HTMLTableHeaderCellElement extends HTMLTableCellElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLTableHeaderCellElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLTableHeaderCellElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -11347,7 +11347,7 @@ export declare interface HTMLTableHeaderCellElement {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableRowElement)
  */
-export declare interface HTMLTableRowElement {
+export declare interface HTMLTableRowElement extends HTMLElement {
     /**
      * Sets or retrieves how the object is aligned with adjacent text.
      * @deprecated
@@ -11428,7 +11428,7 @@ export declare var HTMLTableRowElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTableSectionElement)
  */
-export declare interface HTMLTableSectionElement {
+export declare interface HTMLTableSectionElement extends HTMLElement {
     /**
      * Sets or retrieves a value that indicates the table alignment.
      * @deprecated
@@ -11491,7 +11491,7 @@ export declare var HTMLTableSectionElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTemplateElement)
  */
-export declare interface HTMLTemplateElement {
+export declare interface HTMLTemplateElement extends HTMLElement {
     /**
      * Returns the template contents (a DocumentFragment).
      *
@@ -11523,7 +11523,7 @@ export declare var HTMLTemplateElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTextAreaElement)
  */
-export declare interface HTMLTextAreaElement {
+export declare interface HTMLTextAreaElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTextAreaElement/autocomplete) */
     autocomplete: AutoFill,
     /**
@@ -11689,7 +11689,7 @@ export declare var HTMLTextAreaElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTimeElement)
  */
-export declare interface HTMLTimeElement {
+export declare interface HTMLTimeElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTimeElement/dateTime) */
     dateTime: string,
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLTimeElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -11709,7 +11709,7 @@ export declare var HTMLTimeElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTitleElement)
  */
-export declare interface HTMLTitleElement {
+export declare interface HTMLTitleElement extends HTMLElement {
     /**
      * Retrieves or sets the text of the object as a string.
      *
@@ -11733,7 +11733,7 @@ export declare var HTMLTitleElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTrackElement)
  */
-export declare interface HTMLTrackElement {
+export declare interface HTMLTrackElement extends HTMLElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTrackElement/default) */
     default: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLTrackElement/kind) */
@@ -11777,7 +11777,7 @@ export declare var HTMLTrackElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLUListElement)
  */
-export declare interface HTMLUListElement {
+export declare interface HTMLUListElement extends HTMLElement {
     /** @deprecated */
     compact: boolean,
     /** @deprecated */
@@ -11799,7 +11799,7 @@ export declare var HTMLUListElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLUnknownElement)
  */
-export declare interface HTMLUnknownElement {
+export declare interface HTMLUnknownElement extends HTMLElement {
     addEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLUnknownElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(type: K, listener: fn (this: HTMLUnknownElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -11812,7 +11812,7 @@ export declare var HTMLUnknownElement: {
     new () -> HTMLUnknownElement
 }
 
-export declare interface HTMLVideoElementEventMap {
+export declare interface HTMLVideoElementEventMap extends HTMLMediaElementEventMap {
     "enterpictureinpicture": PictureInPictureEvent,
     "leavepictureinpicture": PictureInPictureEvent
 }
@@ -11822,7 +11822,7 @@ export declare interface HTMLVideoElementEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLVideoElement)
  */
-export declare interface HTMLVideoElement {
+export declare interface HTMLVideoElement extends HTMLMediaElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLVideoElement/disablePictureInPicture) */
     disablePictureInPicture: boolean,
     /**
@@ -11886,7 +11886,7 @@ export declare var HTMLVideoElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HashChangeEvent)
  */
-export declare interface HashChangeEvent {
+export declare interface HashChangeEvent extends Event {
     /**
      * Returns the URL of the session history entry that is now current.
      *
@@ -11908,7 +11908,7 @@ export declare var HashChangeEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight) */
-export declare interface Highlight {
+export declare interface Highlight extends Set<AbstractRange> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/priority) */
     priority: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/type) */
@@ -11923,7 +11923,7 @@ export declare var Highlight: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HighlightRegistry) */
-export declare interface HighlightRegistry {
+export declare interface HighlightRegistry extends Map<string, Highlight> {
     forEach(callbackfn: fn (value: Highlight, key: string, parent: HighlightRegistry) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -12067,7 +12067,7 @@ export declare var ImageData: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputDeviceInfo)
  */
-export declare interface InputDeviceInfo {
+export declare interface InputDeviceInfo extends MediaDeviceInfo {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputDeviceInfo/getCapabilities) */
     getCapabilities() -> MediaTrackCapabilities
 }
@@ -12079,7 +12079,7 @@ export declare var InputDeviceInfo: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent) */
-export declare interface InputEvent {
+export declare interface InputEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/data) */
     readonly data: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/InputEvent/dataTransfer) */
@@ -12159,7 +12159,7 @@ export declare var IntersectionObserverEntry: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyboardEvent)
  */
-export declare interface KeyboardEvent {
+export declare interface KeyboardEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyboardEvent/altKey) */
     readonly altKey: boolean,
     /**
@@ -12215,7 +12215,7 @@ export declare var KeyboardEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect) */
-export declare interface KeyframeEffect {
+export declare interface KeyframeEffect extends AnimationEffect {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/composite) */
     composite: CompositeOperation,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/KeyframeEffect/iterationComposite) */
@@ -12238,7 +12238,7 @@ export declare var KeyframeEffect: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint) */
-export declare interface LargestContentfulPaint {
+export declare interface LargestContentfulPaint extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint/element) */
     readonly element: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint/id) */
@@ -12421,7 +12421,7 @@ export declare interface MIDIAccessEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIAccess)
  */
-export declare interface MIDIAccess {
+export declare interface MIDIAccess extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIAccess/inputs) */
     readonly inputs: MIDIInputMap,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIAccess/statechange_event) */
@@ -12447,7 +12447,7 @@ export declare var MIDIAccess: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIConnectionEvent)
  */
-export declare interface MIDIConnectionEvent {
+export declare interface MIDIConnectionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIConnectionEvent/port) */
     readonly port: MIDIPort | null
 }
@@ -12458,7 +12458,7 @@ export declare var MIDIConnectionEvent: {
     new (type: string, eventInitDict?: MIDIConnectionEventInit) -> MIDIConnectionEvent
 }
 
-export declare interface MIDIInputEventMap {
+export declare interface MIDIInputEventMap extends MIDIPortEventMap {
     "midimessage": MIDIMessageEvent
 }
 
@@ -12467,7 +12467,7 @@ export declare interface MIDIInputEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIInput)
  */
-export declare interface MIDIInput {
+export declare interface MIDIInput extends MIDIPort {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIInput/midimessage_event) */
     onmidimessage: (fn (this: MIDIInput, ev: MIDIMessageEvent) -> any) | null,
     addEventListener<K: keyof MIDIInputEventMap>(type: K, listener: fn (this: MIDIInput, ev: MIDIInputEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -12487,7 +12487,7 @@ export declare var MIDIInput: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIInputMap)
  */
-export declare interface MIDIInputMap {
+export declare interface MIDIInputMap extends Map<string, MIDIInput> {
     forEach(callbackfn: fn (value: MIDIInput, key: string, parent: MIDIInputMap) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -12502,7 +12502,7 @@ export declare var MIDIInputMap: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIMessageEvent)
  */
-export declare interface MIDIMessageEvent {
+export declare interface MIDIMessageEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIMessageEvent/data) */
     readonly data: Uint8Array | null
 }
@@ -12518,7 +12518,7 @@ export declare var MIDIMessageEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput)
  */
-export declare interface MIDIOutput {
+export declare interface MIDIOutput extends MIDIPort {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutput/send) */
     send(data: mut Array<number>, timestamp?: DOMHighResTimeStamp) -> unknown,
     addEventListener<K: keyof MIDIPortEventMap>(type: K, listener: fn (this: MIDIOutput, ev: MIDIPortEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -12540,7 +12540,7 @@ export declare var MIDIOutput: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutputMap)
  */
-export declare interface MIDIOutputMap {
+export declare interface MIDIOutputMap extends Map<string, MIDIOutput> {
     forEach(callbackfn: fn (value: MIDIOutput, key: string, parent: MIDIOutputMap) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -12559,7 +12559,7 @@ export declare interface MIDIPortEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIPort)
  */
-export declare interface MIDIPort {
+export declare interface MIDIPort extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIPort/connection) */
     readonly connection: MIDIPortConnectionState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIPort/id) */
@@ -12592,10 +12592,10 @@ export declare var MIDIPort: {
     new () -> MIDIPort
 }
 
-export declare interface MathMLElementEventMap {}
+export declare interface MathMLElementEventMap extends ElementEventMap, GlobalEventHandlersEventMap {}
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MathMLElement) */
-export declare interface MathMLElement {
+export declare interface MathMLElement extends Element, ElementCSSInlineStyle, GlobalEventHandlers, HTMLOrSVGElement {
     addEventListener<K: keyof MathMLElementEventMap>(type: K, listener: fn (this: MathMLElement, ev: MathMLElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof MathMLElementEventMap>(type: K, listener: fn (this: MathMLElement, ev: MathMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -12657,7 +12657,7 @@ export declare interface MediaDevicesEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices)
  */
-export declare interface MediaDevices {
+export declare interface MediaDevices extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/devicechange_event) */
     ondevicechange: (fn (this: MediaDevices, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaDevices/enumerateDevices) */
@@ -12681,7 +12681,7 @@ export declare var MediaDevices: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent) */
-export declare interface MediaEncryptedEvent {
+export declare interface MediaEncryptedEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent/initData) */
     readonly initData: ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent/initDataType) */
@@ -12726,7 +12726,7 @@ export declare var MediaError: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyMessageEvent)
  */
-export declare interface MediaKeyMessageEvent {
+export declare interface MediaKeyMessageEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyMessageEvent/message) */
     readonly message: ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyMessageEvent/messageType) */
@@ -12750,7 +12750,7 @@ export declare interface MediaKeySessionEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeySession)
  */
-export declare interface MediaKeySession {
+export declare interface MediaKeySession extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeySession/closed) */
     readonly closed: Promise<MediaKeySessionClosedReason>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeySession/expiration) */
@@ -12902,7 +12902,7 @@ export declare interface MediaQueryListEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryList)
  */
-export declare interface MediaQueryList {
+export declare interface MediaQueryList extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryList/matches) */
     readonly matches: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryList/media) */
@@ -12934,7 +12934,7 @@ export declare var MediaQueryList: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryListEvent) */
-export declare interface MediaQueryListEvent {
+export declare interface MediaQueryListEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryListEvent/matches) */
     readonly matches: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaQueryListEvent/media) */
@@ -12957,7 +12957,7 @@ export declare interface MediaRecorderEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaRecorder) */
-export declare interface MediaRecorder {
+export declare interface MediaRecorder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaRecorder/audioBitsPerSecond) */
     readonly audioBitsPerSecond: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaRecorder/mimeType) */
@@ -13033,7 +13033,7 @@ export declare interface MediaSourceEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource)
  */
-export declare interface MediaSource {
+export declare interface MediaSource extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource/activeSourceBuffers) */
     readonly activeSourceBuffers: SourceBufferList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaSource/duration) */
@@ -13090,7 +13090,7 @@ export declare interface MediaStreamEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream)
  */
-export declare interface MediaStream {
+export declare interface MediaStream extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/active) */
     readonly active: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStream/id) */
@@ -13138,7 +13138,7 @@ export declare interface MediaStreamTrackEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack)
  */
-export declare interface MediaStreamTrack {
+export declare interface MediaStreamTrack extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/contentHint) */
     contentHint: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrack/enabled) */
@@ -13188,7 +13188,7 @@ export declare var MediaStreamTrack: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackEvent)
  */
-export declare interface MediaStreamTrackEvent {
+export declare interface MediaStreamTrackEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamTrackEvent/track) */
     readonly track: MediaStreamTrack
 }
@@ -13230,7 +13230,7 @@ export declare var MessageChannel: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessageEvent)
  */
-export declare interface MessageEvent<T = any> {
+export declare interface MessageEvent<T = any> extends Event {
     /**
      * Returns the data of the message.
      *
@@ -13289,7 +13289,7 @@ export declare interface MessageEventTarget<T> {
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
 }
 
-export declare interface MessagePortEventMap {
+export declare interface MessagePortEventMap extends MessageEventTargetEventMap {
     "message": MessageEvent,
     "messageerror": MessageEvent
 }
@@ -13299,7 +13299,7 @@ export declare interface MessagePortEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort)
  */
-export declare interface MessagePort {
+export declare interface MessagePort extends EventTarget, MessageEventTarget<MessagePort> {
     /**
      * Disconnects the port, so that it is no longer active.
      *
@@ -13397,7 +13397,7 @@ export declare var MimeTypeArray: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MouseEvent)
  */
-export declare interface MouseEvent {
+export declare interface MouseEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MouseEvent/altKey) */
     readonly altKey: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MouseEvent/button) */
@@ -13610,7 +13610,7 @@ export declare interface NavigationHistoryEntryEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationHistoryEntry) */
-export declare interface NavigationHistoryEntry {
+export declare interface NavigationHistoryEntry extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationHistoryEntry/id) */
     readonly id: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationHistoryEntry/index) */
@@ -13642,7 +13642,7 @@ export declare var NavigationHistoryEntry: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator)
  */
-export declare interface Navigator {
+export declare interface Navigator extends NavigatorAutomationInformation, NavigatorBadge, NavigatorConcurrentHardware, NavigatorContentUtils, NavigatorCookies, NavigatorID, NavigatorLanguage, NavigatorLocks, NavigatorOnLine, NavigatorPlugins, NavigatorStorage {
     /**
      * Available only in secure contexts.
      *
@@ -13865,7 +13865,7 @@ export declare interface NavigatorStorage {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Node)
  */
-export declare interface Node {
+export declare interface Node extends EventTarget {
     /**
      * Returns node's node document's document base URL.
      *
@@ -14143,7 +14143,7 @@ export declare var NodeList: {
     new () -> NodeList
 }
 
-export declare interface NodeListOf<TNode: Node> {
+export declare interface NodeListOf<TNode: Node> extends NodeList {
     item(index: number) -> TNode,
     /**
      * Performs the specified action for each node in an list.
@@ -14196,7 +14196,7 @@ export declare interface NotificationEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Notification)
  */
-export declare interface Notification {
+export declare interface Notification extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Notification/badge) */
     readonly badge: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Notification/body) */
@@ -14249,7 +14249,7 @@ export declare interface OffscreenCanvasEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvas) */
-export declare interface OffscreenCanvas {
+export declare interface OffscreenCanvas extends EventTarget {
     /**
      * These attributes return the dimensions of the OffscreenCanvas object's bitmap.
      *
@@ -14311,7 +14311,7 @@ export declare var OffscreenCanvas: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvasRenderingContext2D) */
-export declare interface OffscreenCanvasRenderingContext2D {
+export declare interface OffscreenCanvasRenderingContext2D extends CanvasCompositing, CanvasDrawImage, CanvasDrawPath, CanvasFillStrokeStyles, CanvasFilters, CanvasImageData, CanvasImageSmoothing, CanvasPath, CanvasPathDrawingStyles, CanvasRect, CanvasShadowStyles, CanvasState, CanvasText, CanvasTextDrawingStyles, CanvasTransform {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CanvasRenderingContext2D/canvas) */
     readonly canvas: OffscreenCanvas
 }
@@ -14323,7 +14323,7 @@ export declare var OffscreenCanvasRenderingContext2D: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OverconstrainedError) */
-export declare interface OverconstrainedError {
+export declare interface OverconstrainedError extends DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OverconstrainedError/constraint) */
     readonly constraint: string
 }
@@ -14335,7 +14335,7 @@ export declare var OverconstrainedError: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageRevealEvent) */
-export declare interface PageRevealEvent {
+export declare interface PageRevealEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageRevealEvent/viewTransition) */
     readonly viewTransition: ViewTransition | null
 }
@@ -14347,7 +14347,7 @@ export declare var PageRevealEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageSwapEvent) */
-export declare interface PageSwapEvent {
+export declare interface PageSwapEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageSwapEvent/activation) */
     readonly activation: NavigationActivation | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageSwapEvent/viewTransition) */
@@ -14365,7 +14365,7 @@ export declare var PageSwapEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PageTransitionEvent)
  */
-export declare interface PageTransitionEvent {
+export declare interface PageTransitionEvent extends Event {
     /**
      * For the pageshow event, returns false if the page is newly being loaded (and the load event will fire). Otherwise, returns true.
      *
@@ -14389,7 +14389,7 @@ export declare var PageTransitionEvent: {
     new (type: string, eventInitDict?: PageTransitionEventInit) -> PageTransitionEvent
 }
 
-export declare interface ParentNode {
+export declare interface ParentNode extends Node {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/childElementCount) */
     readonly childElementCount: number,
     /**
@@ -14463,7 +14463,7 @@ export declare interface ParentNode {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Path2D)
  */
-export declare interface Path2D {
+export declare interface Path2D extends CanvasPath {
     /**
      * Adds to the path the path given by the argument.
      *
@@ -14516,7 +14516,7 @@ export declare var PaymentAddress: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent)
  */
-export declare interface PaymentRequestUpdateEvent {
+export declare interface PaymentRequestUpdateEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent/updateWith) */
     updateWith(detailsPromise: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> unknown
 }
@@ -14528,7 +14528,7 @@ export declare var PaymentRequestUpdateEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming) */
-export declare interface PerformanceEventTiming {
+export declare interface PerformanceEventTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming/cancelable) */
     readonly cancelable: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming/processingEnd) */
@@ -14552,7 +14552,7 @@ export declare interface PermissionStatusEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PermissionStatus) */
-export declare interface PermissionStatus {
+export declare interface PermissionStatus extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PermissionStatus/name) */
     readonly name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PermissionStatus/change_event) */
@@ -14584,7 +14584,7 @@ export declare var Permissions: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureEvent) */
-export declare interface PictureInPictureEvent {
+export declare interface PictureInPictureEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureEvent/pictureInPictureWindow) */
     readonly pictureInPictureWindow: PictureInPictureWindow
 }
@@ -14600,7 +14600,7 @@ export declare interface PictureInPictureWindowEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureWindow) */
-export declare interface PictureInPictureWindow {
+export declare interface PictureInPictureWindow extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureWindow/height) */
     readonly height: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PictureInPictureWindow/resize_event) */
@@ -14693,7 +14693,7 @@ export declare var PluginArray: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent)
  */
-export declare interface PointerEvent {
+export declare interface PointerEvent extends MouseEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/altitudeAngle) */
     readonly altitudeAngle: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PointerEvent/azimuthAngle) */
@@ -14739,7 +14739,7 @@ export declare var PointerEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PopStateEvent)
  */
-export declare interface PopStateEvent {
+export declare interface PopStateEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PopStateEvent/hasUAVisualTransition) */
     readonly hasUAVisualTransition: boolean,
     /**
@@ -14768,7 +14768,7 @@ export declare interface PopoverInvokerElement {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProcessingInstruction)
  */
-export declare interface ProcessingInstruction {
+export declare interface ProcessingInstruction extends CharacterData, LinkStyle {
     readonly ownerDocument: Document,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProcessingInstruction/target) */
     readonly target: string
@@ -14785,7 +14785,7 @@ export declare var ProcessingInstruction: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProgressEvent)
  */
-export declare interface ProgressEvent<T: EventTarget = EventTarget> {
+export declare interface ProgressEvent<T: EventTarget = EventTarget> extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProgressEvent/lengthComputable) */
     readonly lengthComputable: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ProgressEvent/loaded) */
@@ -14802,7 +14802,7 @@ export declare var ProgressEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PromiseRejectionEvent) */
-export declare interface PromiseRejectionEvent {
+export declare interface PromiseRejectionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PromiseRejectionEvent/promise) */
     readonly promise: Promise<any>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PromiseRejectionEvent/reason) */
@@ -14820,7 +14820,7 @@ export declare interface RTCDTMFSenderEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender) */
-export declare interface RTCDTMFSender {
+export declare interface RTCDTMFSender extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/canInsertDTMF) */
     readonly canInsertDTMF: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFSender/tonechange_event) */
@@ -14846,7 +14846,7 @@ export declare var RTCDTMFSender: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent)
  */
-export declare interface RTCDTMFToneChangeEvent {
+export declare interface RTCDTMFToneChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDTMFToneChangeEvent/tone) */
     readonly tone: string
 }
@@ -14858,7 +14858,7 @@ export declare var RTCDTMFToneChangeEvent: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RadioNodeList) */
-export declare interface RadioNodeList {
+export declare interface RadioNodeList extends NodeList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RadioNodeList/value) */
     value: string
 }
@@ -14874,7 +14874,7 @@ export declare var RadioNodeList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Range)
  */
-export declare interface Range {
+export declare interface Range extends AbstractRange {
     /**
      * Returns the node, furthest away from the document, that is an ancestor of both range's start node and end node.
      *
@@ -14959,7 +14959,7 @@ export declare interface RemotePlaybackEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RemotePlayback) */
-export declare interface RemotePlayback {
+export declare interface RemotePlayback extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RemotePlayback/connect_event) */
     onconnect: (fn (this: RemotePlayback, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RemotePlayback/connecting_event) */
@@ -15086,7 +15086,7 @@ export declare var ResizeObserverSize: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAElement)
  */
-export declare interface SVGAElement {
+export declare interface SVGAElement extends SVGGraphicsElement, SVGURIReference {
     rel: string,
     get relList(self) -> DOMTokenList,
     set relList(mut self, value: string) -> undefined,
@@ -15141,7 +15141,7 @@ export declare var SVGAngle: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateElement) */
-export declare interface SVGAnimateElement {
+export declare interface SVGAnimateElement extends SVGAnimationElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15155,7 +15155,7 @@ export declare var SVGAnimateElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateMotionElement) */
-export declare interface SVGAnimateMotionElement {
+export declare interface SVGAnimateMotionElement extends SVGAnimationElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateMotionElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateMotionElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15169,7 +15169,7 @@ export declare var SVGAnimateMotionElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimateTransformElement) */
-export declare interface SVGAnimateTransformElement {
+export declare interface SVGAnimateTransformElement extends SVGAnimationElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateTransformElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGAnimateTransformElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15406,7 +15406,7 @@ export declare var SVGAnimatedTransformList: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement) */
-export declare interface SVGAnimationElement {
+export declare interface SVGAnimationElement extends SVGElement, SVGTests {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement/targetElement) */
     readonly targetElement: SVGElement | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGAnimationElement/beginElement) */
@@ -15440,7 +15440,7 @@ export declare var SVGAnimationElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGCircleElement)
  */
-export declare interface SVGCircleElement {
+export declare interface SVGCircleElement extends SVGGeometryElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGCircleElement/cx) */
     readonly cx: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGCircleElement/cy) */
@@ -15464,7 +15464,7 @@ export declare var SVGCircleElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGClipPathElement)
  */
-export declare interface SVGClipPathElement {
+export declare interface SVGClipPathElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGClipPathElement/clipPathUnits) */
     readonly clipPathUnits: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGClipPathElement/transform) */
@@ -15486,7 +15486,7 @@ export declare var SVGClipPathElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGComponentTransferFunctionElement)
  */
-export declare interface SVGComponentTransferFunctionElement {
+export declare interface SVGComponentTransferFunctionElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGComponentTransferFunctionElement/amplitude) */
     readonly amplitude: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGComponentTransferFunctionElement/exponent) */
@@ -15530,7 +15530,7 @@ export declare var SVGComponentTransferFunctionElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGDefsElement)
  */
-export declare interface SVGDefsElement {
+export declare interface SVGDefsElement extends SVGGraphicsElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGDefsElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGDefsElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15548,7 +15548,7 @@ export declare var SVGDefsElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGDescElement)
  */
-export declare interface SVGDescElement {
+export declare interface SVGDescElement extends SVGElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGDescElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGDescElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15561,14 +15561,14 @@ export declare var SVGDescElement: {
     new () -> SVGDescElement
 }
 
-export declare interface SVGElementEventMap {}
+export declare interface SVGElementEventMap extends ElementEventMap, GlobalEventHandlersEventMap {}
 
 /**
  * All of the SVG DOM interfaces that correspond directly to elements in the SVG language derive from the SVGElement interface.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGElement)
  */
-export declare interface SVGElement {
+export declare interface SVGElement extends Element, ElementCSSInlineStyle, GlobalEventHandlers, HTMLOrSVGElement {
     /** @deprecated */
     readonly className: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGElement/ownerSVGElement) */
@@ -15592,7 +15592,7 @@ export declare var SVGElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGEllipseElement)
  */
-export declare interface SVGEllipseElement {
+export declare interface SVGEllipseElement extends SVGGeometryElement {
     readonly cx: SVGAnimatedLength,
     readonly cy: SVGAnimatedLength,
     readonly rx: SVGAnimatedLength,
@@ -15614,7 +15614,7 @@ export declare var SVGEllipseElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEBlendElement)
  */
-export declare interface SVGFEBlendElement {
+export declare interface SVGFEBlendElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly mode: SVGAnimatedEnumeration,
@@ -15669,7 +15669,7 @@ export declare var SVGFEBlendElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement)
  */
-export declare interface SVGFEColorMatrixElement {
+export declare interface SVGFEColorMatrixElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEColorMatrixElement/type) */
@@ -15703,7 +15703,7 @@ export declare var SVGFEColorMatrixElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEComponentTransferElement)
  */
-export declare interface SVGFEComponentTransferElement {
+export declare interface SVGFEComponentTransferElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEComponentTransferElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -15722,7 +15722,7 @@ export declare var SVGFEComponentTransferElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFECompositeElement)
  */
-export declare interface SVGFECompositeElement {
+export declare interface SVGFECompositeElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly k1: SVGAnimatedNumber,
@@ -15761,7 +15761,7 @@ export declare var SVGFECompositeElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEConvolveMatrixElement)
  */
-export declare interface SVGFEConvolveMatrixElement {
+export declare interface SVGFEConvolveMatrixElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly bias: SVGAnimatedNumber,
     readonly divisor: SVGAnimatedNumber,
     readonly edgeMode: SVGAnimatedEnumeration,
@@ -15799,7 +15799,7 @@ export declare var SVGFEConvolveMatrixElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement)
  */
-export declare interface SVGFEDiffuseLightingElement {
+export declare interface SVGFEDiffuseLightingElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement/diffuseConstant) */
     readonly diffuseConstant: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDiffuseLightingElement/in1) */
@@ -15827,7 +15827,7 @@ export declare var SVGFEDiffuseLightingElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDisplacementMapElement)
  */
-export declare interface SVGFEDisplacementMapElement {
+export declare interface SVGFEDisplacementMapElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     readonly in2: SVGAnimatedString,
     readonly scale: SVGAnimatedNumber,
@@ -15860,7 +15860,7 @@ export declare var SVGFEDisplacementMapElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDistantLightElement)
  */
-export declare interface SVGFEDistantLightElement {
+export declare interface SVGFEDistantLightElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDistantLightElement/azimuth) */
     readonly azimuth: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDistantLightElement/elevation) */
@@ -15878,7 +15878,7 @@ export declare var SVGFEDistantLightElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEDropShadowElement) */
-export declare interface SVGFEDropShadowElement {
+export declare interface SVGFEDropShadowElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly dx: SVGAnimatedNumber,
     readonly dy: SVGAnimatedNumber,
     readonly in1: SVGAnimatedString,
@@ -15902,7 +15902,7 @@ export declare var SVGFEDropShadowElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFloodElement)
  */
-export declare interface SVGFEFloodElement {
+export declare interface SVGFEFloodElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFloodElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFloodElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15920,7 +15920,7 @@ export declare var SVGFEFloodElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFuncAElement)
  */
-export declare interface SVGFEFuncAElement {
+export declare interface SVGFEFuncAElement extends SVGComponentTransferFunctionElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncAElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncAElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15938,7 +15938,7 @@ export declare var SVGFEFuncAElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFuncBElement)
  */
-export declare interface SVGFEFuncBElement {
+export declare interface SVGFEFuncBElement extends SVGComponentTransferFunctionElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncBElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncBElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15956,7 +15956,7 @@ export declare var SVGFEFuncBElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFuncGElement)
  */
-export declare interface SVGFEFuncGElement {
+export declare interface SVGFEFuncGElement extends SVGComponentTransferFunctionElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15974,7 +15974,7 @@ export declare var SVGFEFuncGElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEFuncRElement)
  */
-export declare interface SVGFEFuncRElement {
+export declare interface SVGFEFuncRElement extends SVGComponentTransferFunctionElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncRElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEFuncRElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -15992,7 +15992,7 @@ export declare var SVGFEFuncRElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement)
  */
-export declare interface SVGFEGaussianBlurElement {
+export declare interface SVGFEGaussianBlurElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEGaussianBlurElement/stdDeviationX) */
@@ -16018,7 +16018,7 @@ export declare var SVGFEGaussianBlurElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEImageElement)
  */
-export declare interface SVGFEImageElement {
+export declare interface SVGFEImageElement extends SVGElement, SVGFilterPrimitiveStandardAttributes, SVGURIReference {
     readonly preserveAspectRatio: SVGAnimatedPreserveAspectRatio,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEImageElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -16037,7 +16037,7 @@ export declare var SVGFEImageElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMergeElement)
  */
-export declare interface SVGFEMergeElement {
+export declare interface SVGFEMergeElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEMergeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEMergeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16055,7 +16055,7 @@ export declare var SVGFEMergeElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMergeNodeElement)
  */
-export declare interface SVGFEMergeNodeElement {
+export declare interface SVGFEMergeNodeElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMergeNodeElement/in1) */
     readonly in1: SVGAnimatedString,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFEMergeNodeElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -16075,7 +16075,7 @@ export declare var SVGFEMergeNodeElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement)
  */
-export declare interface SVGFEMorphologyElement {
+export declare interface SVGFEMorphologyElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement/in1) */
     readonly in1: SVGAnimatedString,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEMorphologyElement/operator) */
@@ -16107,7 +16107,7 @@ export declare var SVGFEMorphologyElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEOffsetElement)
  */
-export declare interface SVGFEOffsetElement {
+export declare interface SVGFEOffsetElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly dx: SVGAnimatedNumber,
     readonly dy: SVGAnimatedNumber,
     readonly in1: SVGAnimatedString,
@@ -16128,7 +16128,7 @@ export declare var SVGFEOffsetElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEPointLightElement)
  */
-export declare interface SVGFEPointLightElement {
+export declare interface SVGFEPointLightElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEPointLightElement/x) */
     readonly x: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFEPointLightElement/y) */
@@ -16152,7 +16152,7 @@ export declare var SVGFEPointLightElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFESpecularLightingElement)
  */
-export declare interface SVGFESpecularLightingElement {
+export declare interface SVGFESpecularLightingElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFESpecularLightingElement/in1) */
     readonly in1: SVGAnimatedString,
     readonly kernelUnitLengthX: SVGAnimatedNumber,
@@ -16180,7 +16180,7 @@ export declare var SVGFESpecularLightingElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFESpotLightElement)
  */
-export declare interface SVGFESpotLightElement {
+export declare interface SVGFESpotLightElement extends SVGElement {
     readonly limitingConeAngle: SVGAnimatedNumber,
     readonly pointsAtX: SVGAnimatedNumber,
     readonly pointsAtY: SVGAnimatedNumber,
@@ -16209,7 +16209,7 @@ export declare var SVGFESpotLightElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFETileElement)
  */
-export declare interface SVGFETileElement {
+export declare interface SVGFETileElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly in1: SVGAnimatedString,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGFETileElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -16228,7 +16228,7 @@ export declare var SVGFETileElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFETurbulenceElement)
  */
-export declare interface SVGFETurbulenceElement {
+export declare interface SVGFETurbulenceElement extends SVGElement, SVGFilterPrimitiveStandardAttributes {
     readonly baseFrequencyX: SVGAnimatedNumber,
     readonly baseFrequencyY: SVGAnimatedNumber,
     readonly numOctaves: SVGAnimatedInteger,
@@ -16264,7 +16264,7 @@ export declare var SVGFETurbulenceElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement)
  */
-export declare interface SVGFilterElement {
+export declare interface SVGFilterElement extends SVGElement, SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement/filterUnits) */
     readonly filterUnits: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGFilterElement/height) */
@@ -16309,7 +16309,7 @@ export declare interface SVGFitToViewBox {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGForeignObjectElement)
  */
-export declare interface SVGForeignObjectElement {
+export declare interface SVGForeignObjectElement extends SVGGraphicsElement {
     readonly height: SVGAnimatedLength,
     readonly width: SVGAnimatedLength,
     readonly x: SVGAnimatedLength,
@@ -16331,7 +16331,7 @@ export declare var SVGForeignObjectElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGElement)
  */
-export declare interface SVGGElement {
+export declare interface SVGGElement extends SVGGraphicsElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGGElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16345,7 +16345,7 @@ export declare var SVGGElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement) */
-export declare interface SVGGeometryElement {
+export declare interface SVGGeometryElement extends SVGGraphicsElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement/pathLength) */
     readonly pathLength: SVGAnimatedNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGeometryElement/getPointAtLength) */
@@ -16373,7 +16373,7 @@ export declare var SVGGeometryElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement)
  */
-export declare interface SVGGradientElement {
+export declare interface SVGGradientElement extends SVGElement, SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement/gradientTransform) */
     readonly gradientTransform: SVGAnimatedTransformList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGradientElement/gradientUnits) */
@@ -16405,7 +16405,7 @@ export declare var SVGGradientElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGraphicsElement)
  */
-export declare interface SVGGraphicsElement {
+export declare interface SVGGraphicsElement extends SVGElement, SVGTests {
     readonly transform: SVGAnimatedTransformList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGGraphicsElement/getBBox) */
     getBBox(options?: SVGBoundingBoxOptions) -> DOMRect,
@@ -16428,7 +16428,7 @@ export declare var SVGGraphicsElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGImageElement)
  */
-export declare interface SVGImageElement {
+export declare interface SVGImageElement extends SVGGraphicsElement, SVGURIReference {
     crossOrigin: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGImageElement/height) */
     readonly height: SVGAnimatedLength,
@@ -16532,7 +16532,7 @@ export declare var SVGLengthList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLineElement)
  */
-export declare interface SVGLineElement {
+export declare interface SVGLineElement extends SVGGeometryElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLineElement/x1) */
     readonly x1: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLineElement/x2) */
@@ -16558,7 +16558,7 @@ export declare var SVGLineElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLinearGradientElement)
  */
-export declare interface SVGLinearGradientElement {
+export declare interface SVGLinearGradientElement extends SVGGradientElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLinearGradientElement/x1) */
     readonly x1: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLinearGradientElement/x2) */
@@ -16580,7 +16580,7 @@ export declare var SVGLinearGradientElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMPathElement) */
-export declare interface SVGMPathElement {
+export declare interface SVGMPathElement extends SVGElement, SVGURIReference {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGMPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGMPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16594,7 +16594,7 @@ export declare var SVGMPathElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement) */
-export declare interface SVGMarkerElement {
+export declare interface SVGMarkerElement extends SVGElement, SVGFitToViewBox {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/markerHeight) */
     readonly markerHeight: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMarkerElement/markerUnits) */
@@ -16642,7 +16642,7 @@ export declare var SVGMarkerElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMaskElement)
  */
-export declare interface SVGMaskElement {
+export declare interface SVGMaskElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMaskElement/height) */
     readonly height: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMaskElement/maskContentUnits) */
@@ -16672,7 +16672,7 @@ export declare var SVGMaskElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGMetadataElement)
  */
-export declare interface SVGMetadataElement {
+export declare interface SVGMetadataElement extends SVGElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGMetadataElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGMetadataElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16738,7 +16738,7 @@ export declare var SVGNumberList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPathElement)
  */
-export declare interface SVGPathElement {
+export declare interface SVGPathElement extends SVGGeometryElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPathElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16756,7 +16756,7 @@ export declare var SVGPathElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPatternElement)
  */
-export declare interface SVGPatternElement {
+export declare interface SVGPatternElement extends SVGElement, SVGFitToViewBox, SVGURIReference {
     readonly height: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPatternElement/patternContentUnits) */
     readonly patternContentUnits: SVGAnimatedEnumeration,
@@ -16813,7 +16813,7 @@ export declare var SVGPointList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPolygonElement)
  */
-export declare interface SVGPolygonElement {
+export declare interface SVGPolygonElement extends SVGGeometryElement, SVGAnimatedPoints {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPolygonElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPolygonElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16831,7 +16831,7 @@ export declare var SVGPolygonElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPolylineElement)
  */
-export declare interface SVGPolylineElement {
+export declare interface SVGPolylineElement extends SVGGeometryElement, SVGAnimatedPoints {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPolylineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGPolylineElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -16893,7 +16893,7 @@ export declare var SVGPreserveAspectRatio: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRadialGradientElement)
  */
-export declare interface SVGRadialGradientElement {
+export declare interface SVGRadialGradientElement extends SVGGradientElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRadialGradientElement/cx) */
     readonly cx: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRadialGradientElement/cy) */
@@ -16922,7 +16922,7 @@ export declare var SVGRadialGradientElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRectElement)
  */
-export declare interface SVGRectElement {
+export declare interface SVGRectElement extends SVGGeometryElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRectElement/height) */
     readonly height: SVGAnimatedLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGRectElement/rx) */
@@ -16947,14 +16947,14 @@ export declare var SVGRectElement: {
     new () -> SVGRectElement
 }
 
-export declare interface SVGSVGElementEventMap {}
+export declare interface SVGSVGElementEventMap extends SVGElementEventMap, WindowEventHandlersEventMap {}
 
 /**
  * Provides access to the properties of <svg> elements, as well as methods to manipulate them. This interface contains also various miscellaneous commonly-used utility methods, such as matrix operations and the ability to control the time of redraw on visual rendering devices.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSVGElement)
  */
-export declare interface SVGSVGElement {
+export declare interface SVGSVGElement extends SVGGraphicsElement, SVGFitToViewBox, WindowEventHandlers {
     currentScale: number,
     readonly currentTranslate: DOMPointReadOnly,
     readonly height: SVGAnimatedLength,
@@ -17005,7 +17005,7 @@ export declare var SVGSVGElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGScriptElement)
  */
-export declare interface SVGScriptElement {
+export declare interface SVGScriptElement extends SVGElement, SVGURIReference {
     type: string,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGScriptElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -17020,7 +17020,7 @@ export declare var SVGScriptElement: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSetElement) */
-export declare interface SVGSetElement {
+export declare interface SVGSetElement extends SVGAnimationElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSetElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSetElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17038,7 +17038,7 @@ export declare var SVGSetElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStopElement)
  */
-export declare interface SVGStopElement {
+export declare interface SVGStopElement extends SVGElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStopElement/offset) */
     readonly offset: SVGAnimatedNumber,
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGStopElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
@@ -17082,7 +17082,7 @@ export declare var SVGStringList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStyleElement)
  */
-export declare interface SVGStyleElement {
+export declare interface SVGStyleElement extends SVGElement, LinkStyle {
     disabled: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGStyleElement/media) */
     media: string,
@@ -17111,7 +17111,7 @@ export declare var SVGStyleElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSwitchElement)
  */
-export declare interface SVGSwitchElement {
+export declare interface SVGSwitchElement extends SVGGraphicsElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSwitchElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSwitchElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17129,7 +17129,7 @@ export declare var SVGSwitchElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGSymbolElement)
  */
-export declare interface SVGSymbolElement {
+export declare interface SVGSymbolElement extends SVGElement, SVGFitToViewBox {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSymbolElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGSymbolElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17147,7 +17147,7 @@ export declare var SVGSymbolElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTSpanElement)
  */
-export declare interface SVGTSpanElement {
+export declare interface SVGTSpanElement extends SVGTextPositioningElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTSpanElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTSpanElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17172,7 +17172,7 @@ export declare interface SVGTests {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement)
  */
-export declare interface SVGTextContentElement {
+export declare interface SVGTextContentElement extends SVGGraphicsElement {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/lengthAdjust) */
     readonly lengthAdjust: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextContentElement/textLength) */
@@ -17218,7 +17218,7 @@ export declare var SVGTextContentElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextElement)
  */
-export declare interface SVGTextElement {
+export declare interface SVGTextElement extends SVGTextPositioningElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTextElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTextElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17236,7 +17236,7 @@ export declare var SVGTextElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement)
  */
-export declare interface SVGTextPathElement {
+export declare interface SVGTextPathElement extends SVGTextContentElement, SVGURIReference {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement/method) */
     readonly method: SVGAnimatedEnumeration,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPathElement/spacing) */
@@ -17272,7 +17272,7 @@ export declare var SVGTextPathElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTextPositioningElement)
  */
-export declare interface SVGTextPositioningElement {
+export declare interface SVGTextPositioningElement extends SVGTextContentElement {
     readonly dx: SVGAnimatedLengthList,
     readonly dy: SVGAnimatedLengthList,
     readonly rotate: SVGAnimatedNumberList,
@@ -17295,7 +17295,7 @@ export declare var SVGTextPositioningElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTitleElement)
  */
-export declare interface SVGTitleElement {
+export declare interface SVGTitleElement extends SVGElement {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTitleElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGTitleElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17421,7 +17421,7 @@ export declare var SVGUnitTypes: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGUseElement)
  */
-export declare interface SVGUseElement {
+export declare interface SVGUseElement extends SVGGraphicsElement, SVGURIReference {
     readonly height: SVGAnimatedLength,
     readonly width: SVGAnimatedLength,
     readonly x: SVGAnimatedLength,
@@ -17443,7 +17443,7 @@ export declare var SVGUseElement: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGViewElement)
  */
-export declare interface SVGViewElement {
+export declare interface SVGViewElement extends SVGElement, SVGFitToViewBox {
     addEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGViewElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SVGElementEventMap>(type: K, listener: fn (this: SVGViewElement, ev: SVGElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17489,7 +17489,7 @@ export declare interface ScreenOrientationEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScreenOrientation) */
-export declare interface ScreenOrientation {
+export declare interface ScreenOrientation extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScreenOrientation/angle) */
     readonly angle: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScreenOrientation/change_event) */
@@ -17520,7 +17520,7 @@ export declare interface ScriptProcessorNodeEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode)
  */
-export declare interface ScriptProcessorNode {
+export declare interface ScriptProcessorNode extends AudioNode {
     /**
      * @deprecated
      *
@@ -17551,7 +17551,7 @@ export declare var ScriptProcessorNode: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SecurityPolicyViolationEvent)
  */
-export declare interface SecurityPolicyViolationEvent {
+export declare interface SecurityPolicyViolationEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SecurityPolicyViolationEvent/blockedURI) */
     readonly blockedURI: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SecurityPolicyViolationEvent/columnNumber) */
@@ -17650,7 +17650,7 @@ export declare interface ShadowRootEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot) */
-export declare interface ShadowRoot {
+export declare interface ShadowRoot extends DocumentFragment, DocumentOrShadowRoot {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/clonable) */
     readonly clonable: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ShadowRoot/delegatesFocus) */
@@ -17701,7 +17701,7 @@ export declare interface SourceBufferEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SourceBuffer)
  */
-export declare interface SourceBuffer {
+export declare interface SourceBuffer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SourceBuffer/appendWindowEnd) */
     appendWindowEnd: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SourceBuffer/appendWindowStart) */
@@ -17749,7 +17749,7 @@ export declare interface SourceBufferListEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SourceBufferList)
  */
-export declare interface SourceBufferList {
+export declare interface SourceBufferList extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SourceBufferList/length) */
     readonly length: number,
     onaddsourcebuffer: (fn (this: SourceBufferList, ev: Event) -> any) | null,
@@ -17822,7 +17822,7 @@ export declare interface SpeechSynthesisEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis)
  */
-export declare interface SpeechSynthesis {
+export declare interface SpeechSynthesis extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/voiceschanged_event) */
     onvoiceschanged: (fn (this: SpeechSynthesis, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesis/paused) */
@@ -17854,7 +17854,7 @@ export declare var SpeechSynthesis: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisErrorEvent) */
-export declare interface SpeechSynthesisErrorEvent {
+export declare interface SpeechSynthesisErrorEvent extends SpeechSynthesisEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisErrorEvent/error) */
     readonly error: SpeechSynthesisErrorCode
 }
@@ -17870,7 +17870,7 @@ export declare var SpeechSynthesisErrorEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisEvent)
  */
-export declare interface SpeechSynthesisEvent {
+export declare interface SpeechSynthesisEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisEvent/charIndex) */
     readonly charIndex: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisEvent/charLength) */
@@ -17904,7 +17904,7 @@ export declare interface SpeechSynthesisUtteranceEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisUtterance)
  */
-export declare interface SpeechSynthesisUtterance {
+export declare interface SpeechSynthesisUtterance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisUtterance/lang) */
     lang: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechSynthesisUtterance/boundary_event) */
@@ -17968,7 +17968,7 @@ export declare var SpeechSynthesisVoice: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StaticRange) */
-export declare interface StaticRange {}
+export declare interface StaticRange extends AbstractRange {}
 
 @js("StaticRange")
 export declare var StaticRange: {
@@ -18005,7 +18005,7 @@ export declare interface StyleMedia {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap) */
-export declare interface StylePropertyMap {
+export declare interface StylePropertyMap extends StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/append) */
     append(property: string, ...values: mut Array<CSSStyleValue | string>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMap/clear) */
@@ -18094,7 +18094,7 @@ export declare var StyleSheetList: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubmitEvent) */
-export declare interface SubmitEvent {
+export declare interface SubmitEvent extends Event {
     /**
      * Returns the element representing the submit button that triggered the form submission, or null if the submission was not triggered by a button.
      *
@@ -18114,7 +18114,7 @@ export declare var SubmitEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Text)
  */
-export declare interface Text {
+export declare interface Text extends CharacterData, Slottable {
     /**
      * Returns the combined data of all direct Text node siblings.
      *
@@ -18140,7 +18140,7 @@ export declare var Text: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEvent)
  */
-export declare interface TextEvent {
+export declare interface TextEvent extends UIEvent {
     /**
      * @deprecated
      *
@@ -18257,7 +18257,7 @@ export declare interface TextTrackEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrack)
  */
-export declare interface TextTrack {
+export declare interface TextTrack extends EventTarget {
     /**
      * Returns the text track cues from the text track list of cues that are currently active (i.e. that start before the current playback position and end after it), as a TextTrackCueList object.
      *
@@ -18348,7 +18348,7 @@ export declare interface TextTrackCueEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackCue)
  */
-export declare interface TextTrackCue {
+export declare interface TextTrackCue extends EventTarget {
     /**
      * Returns the text track cue end time, in seconds.
      *
@@ -18435,7 +18435,7 @@ export declare interface TextTrackListEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackList) */
-export declare interface TextTrackList {
+export declare interface TextTrackList extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackList/length) */
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackList/addtrack_event) */
@@ -18496,7 +18496,7 @@ export declare var TimeRanges: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ToggleEvent) */
-export declare interface ToggleEvent {
+export declare interface ToggleEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ToggleEvent/newState) */
     readonly newState: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ToggleEvent/oldState) */
@@ -18552,7 +18552,7 @@ export declare var Touch: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TouchEvent)
  */
-export declare interface TouchEvent {
+export declare interface TouchEvent extends UIEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TouchEvent/altKey) */
     readonly altKey: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TouchEvent/changedTouches) */
@@ -18599,7 +18599,7 @@ export declare var TouchList: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TrackEvent)
  */
-export declare interface TrackEvent {
+export declare interface TrackEvent extends Event {
     /**
      * Returns the track object (TextTrack, AudioTrack, or VideoTrack) to which the event relates.
      *
@@ -18619,7 +18619,7 @@ export declare var TrackEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransitionEvent)
  */
-export declare interface TransitionEvent {
+export declare interface TransitionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransitionEvent/elapsedTime) */
     readonly elapsedTime: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransitionEvent/propertyName) */
@@ -18675,7 +18675,7 @@ export declare var TreeWalker: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/UIEvent)
  */
-export declare interface UIEvent {
+export declare interface UIEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/UIEvent/detail) */
     readonly detail: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/UIEvent/view) */
@@ -18720,7 +18720,7 @@ export declare var UserActivation: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VTTCue) */
-export declare interface VTTCue {
+export declare interface VTTCue extends TextTrackCue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VTTCue/align) */
     align: AlignSetting,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VTTCue/line) */
@@ -18854,7 +18854,7 @@ export declare var ViewTransition: {
     new () -> ViewTransition
 }
 
-export declare interface ViewTransitionTypeSet {
+export declare interface ViewTransitionTypeSet extends Set<string> {
     forEach(callbackfn: fn (value: string, key: string, parent: ViewTransitionTypeSet) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -18870,7 +18870,7 @@ export declare interface VisualViewportEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VisualViewport) */
-export declare interface VisualViewport {
+export declare interface VisualViewport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VisualViewport/height) */
     readonly height: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VisualViewport/offsetLeft) */
@@ -18926,7 +18926,7 @@ export declare interface WakeLockSentinelEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WakeLockSentinel)
  */
-export declare interface WakeLockSentinel {
+export declare interface WakeLockSentinel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WakeLockSentinel/release_event) */
     onrelease: (fn (this: WakeLockSentinel, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WakeLockSentinel/released) */
@@ -19028,7 +19028,7 @@ export declare var WebTransportDatagramDuplexStream: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportError)
  */
-export declare interface WebTransportError {
+export declare interface WebTransportError extends DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportError/source) */
     readonly source: WebTransportErrorSource,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportError/streamErrorCode) */
@@ -19046,7 +19046,7 @@ export declare var WebTransportError: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WheelEvent)
  */
-export declare interface WheelEvent {
+export declare interface WheelEvent extends MouseEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WheelEvent/deltaMode) */
     readonly deltaMode: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WheelEvent/deltaX) */
@@ -19069,7 +19069,7 @@ export declare var WheelEvent: {
     readonly DOM_DELTA_PAGE: 2
 }
 
-export declare interface WindowEventMap {
+export declare interface WindowEventMap extends GlobalEventHandlersEventMap, WindowEventHandlersEventMap {
     "DOMContentLoaded": Event,
     "devicemotion": DeviceMotionEvent,
     "deviceorientation": DeviceOrientationEvent,
@@ -19084,7 +19084,7 @@ export declare interface WindowEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window)
  */
-export declare interface Window {
+export declare interface Window extends EventTarget, AnimationFrameProvider, GlobalEventHandlers, WindowEventHandlers, WindowLocalStorage, WindowOrWorkerGlobalScope, WindowSessionStorage {
     /**
      * @deprecated This is a legacy alias of `navigator`.
      *
@@ -19509,7 +19509,7 @@ export declare var Worklet: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLDocument)
  */
-export declare interface XMLDocument {
+export declare interface XMLDocument extends Document {
     addEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: XMLDocument, ev: DocumentEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof DocumentEventMap>(type: K, listener: fn (this: XMLDocument, ev: DocumentEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -19522,7 +19522,7 @@ export declare var XMLDocument: {
     new () -> XMLDocument
 }
 
-export declare interface XMLHttpRequestEventMap {
+export declare interface XMLHttpRequestEventMap extends XMLHttpRequestEventTargetEventMap {
     "readystatechange": Event
 }
 
@@ -19531,7 +19531,7 @@ export declare interface XMLHttpRequestEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequest)
  */
-export declare interface XMLHttpRequest {
+export declare interface XMLHttpRequest extends XMLHttpRequestEventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequest/readystatechange_event) */
     onreadystatechange: (fn (this: XMLHttpRequest, ev: Event) -> any) | null,
     /**
@@ -19686,7 +19686,7 @@ export declare interface XMLHttpRequestEventTargetEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequestEventTarget) */
-export declare interface XMLHttpRequestEventTarget {
+export declare interface XMLHttpRequestEventTarget extends EventTarget {
     onabort: (fn (this: XMLHttpRequest, ev: ProgressEvent) -> any) | null,
     onerror: (fn (this: XMLHttpRequest, ev: ProgressEvent) -> any) | null,
     onload: (fn (this: XMLHttpRequest, ev: ProgressEvent) -> any) | null,
@@ -19707,7 +19707,7 @@ export declare var XMLHttpRequestEventTarget: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequestUpload) */
-export declare interface XMLHttpRequestUpload {
+export declare interface XMLHttpRequestUpload extends XMLHttpRequestEventTarget {
     addEventListener<K: keyof XMLHttpRequestEventTargetEventMap>(type: K, listener: fn (this: XMLHttpRequestUpload, ev: XMLHttpRequestEventTargetEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof XMLHttpRequestEventTargetEventMap>(type: K, listener: fn (this: XMLHttpRequestUpload, ev: XMLHttpRequestEventTargetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -19741,7 +19741,7 @@ export declare var XMLSerializer: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XPathEvaluator)
  */
-export declare interface XPathEvaluator {}
+export declare interface XPathEvaluator extends XPathEvaluatorBase {}
 
 @js("XPathEvaluator")
 export declare var XPathEvaluator: {
@@ -21993,14 +21993,14 @@ export declare type WriteCommandType = "seek" | "truncate" | "write"
 
 export declare type XMLHttpRequestResponseType = "" | "arraybuffer" | "blob" | "document" | "json" | "text"
 
-export declare interface FormDataIterator<T> {
+export declare interface FormDataIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> FormDataIterator<T>
 }
 
-export declare interface MediaKeyStatusMapIterator<T> {
+export declare interface MediaKeyStatusMapIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> MediaKeyStatusMapIterator<T>
 }
 
-export declare interface StylePropertyMapReadOnlyIterator<T> {
+export declare interface StylePropertyMapReadOnlyIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> StylePropertyMapReadOnlyIterator<T>
 }

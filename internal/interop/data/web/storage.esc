@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface StorageEventInit {
+export declare interface StorageEventInit extends EventInit {
     key?: string | null,
     newValue?: string | null,
     oldValue?: string | null,
@@ -73,7 +73,7 @@ export declare var Storage: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/StorageEvent)
  */
-export declare interface StorageEvent {
+export declare interface StorageEvent extends Event {
     /**
      * Returns the key of the storage item being changed.
      *

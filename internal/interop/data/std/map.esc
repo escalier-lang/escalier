@@ -85,6 +85,6 @@ export declare class WeakMap<K: WeakKey, V> {
     constructor(mut self, iterable: Iterable<[K, V]>)
 }
 
-export declare interface MapIterator<T> {
+export declare interface MapIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> MapIterator<T>
 }

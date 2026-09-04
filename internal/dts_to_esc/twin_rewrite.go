@@ -168,12 +168,22 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 // `MutableTypeAnn` because the slot is typed `*TypeRefTypeAnn`. The
 // TypeArgs are still walked recursively so nested refs are rewritten.
 //
-// A mutable twin name in one of these slots is left alone. `mut`
-// qualifies a binding, not a declaration's supertype, so
-// `interface RegExpMatchArray extends Array<string>` is already what
-// Escalier means: the interface inherits `Array`'s members, and whether
-// an instance of it may be mutated is settled where that instance is
-// bound. Eight declarations in the pinned lib set take this shape,
+// A mutable twin name in one of these slots is left alone, and it names
+// the whole definition rather than the immutable view of it. A
+// definition holds both `self` and `mut self` methods, and extending it
+// inherits all of them, so `interface RegExpMatchArray extends
+// Array<string>` gives `RegExpMatchArray` every `Array` member
+// including `push`. Whether a particular instance may call `push` is
+// then settled where that instance is bound, because `push` takes
+// `mut self`. Reading the bare name as the immutable view instead would
+// silently drop the mutating half of the inherited surface.
+//
+// `mut` cannot be written here in any case: an Extends/Implements slot
+// is typed `*ast.TypeRefTypeAnn`, which carries no wrapper. That the
+// syntax has no room for a view is the same fact stated from the
+// grammar's side.
+//
+// Eight declarations in the pinned lib set take this shape:
 // `RegExpMatchArray`, `RegExpExecArray`, `RegExpIndicesArray`,
 // `FontFaceSet`, `CustomStateSet`, `Highlight`, `ViewTransitionTypeSet`,
 // and `HighlightRegistry`.

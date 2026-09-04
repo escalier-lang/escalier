@@ -67,7 +67,7 @@ export declare type ThisParameterType<T> = if T : fn (this: infer U, ...args: ne
  */
 export declare type OmitThisParameter<T> = if unknown : ThisParameterType<T> { T } else { if T : fn (...args: infer A) -> infer R { fn (...args: A) -> R } else { T } }
 
-export declare interface CallableFunction {
+export declare interface CallableFunction extends Function {
     /**
      * Calls the function with the specified object as the this value and the elements of specified array as the arguments.
      * @param thisArg The object to be used as the this object.
@@ -100,7 +100,7 @@ export declare interface CallableFunction {
     bind<T, A: mut Array<any>, B: mut Array<any>, R>(this: fn (this: T, ...args: [...A, ...B]) -> R, thisArg: T, ...args: A) -> fn (...args: B) -> R
 }
 
-export declare interface NewableFunction {
+export declare interface NewableFunction extends Function {
     /**
      * Calls the function with the specified object as the this value and the elements of specified array as the arguments.
      * @param thisArg The object to be used as the this object.

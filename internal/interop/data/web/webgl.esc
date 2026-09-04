@@ -14,7 +14,7 @@ export declare interface WebGLContextAttributes {
     stencil?: boolean
 }
 
-export declare interface WebGLContextEventInit {
+export declare interface WebGLContextEventInit extends EventInit {
     statusMessage?: string
 }
 
@@ -388,7 +388,7 @@ export declare interface WEBGL_multi_draw {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext) */
-export declare interface WebGL2RenderingContext {}
+export declare interface WebGL2RenderingContext extends WebGL2RenderingContextBase, WebGL2RenderingContextOverloads, WebGLRenderingContextBase {}
 
 @js("WebGL2RenderingContext")
 export declare var WebGL2RenderingContext: {
@@ -1559,7 +1559,7 @@ export declare var WebGLBuffer: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent)
  */
-export declare interface WebGLContextEvent {
+export declare interface WebGLContextEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent/statusMessage) */
     readonly statusMessage: string
 }
@@ -1623,7 +1623,7 @@ export declare var WebGLRenderbuffer: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext)
  */
-export declare interface WebGLRenderingContext {}
+export declare interface WebGLRenderingContext extends WebGLRenderingContextBase, WebGLRenderingContextOverloads {}
 
 @js("WebGLRenderingContext")
 export declare var WebGLRenderingContext: {

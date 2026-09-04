@@ -44,7 +44,7 @@ export declare var NavigationPreloadManager: {
     new () -> NavigationPreloadManager
 }
 
-export declare interface ServiceWorkerEventMap {
+export declare interface ServiceWorkerEventMap extends AbstractWorkerEventMap {
     "statechange": Event
 }
 
@@ -54,7 +54,7 @@ export declare interface ServiceWorkerEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker)
  */
-export declare interface ServiceWorker {
+export declare interface ServiceWorker extends EventTarget, AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/statechange_event) */
     onstatechange: (fn (this: ServiceWorker, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/scriptURL) */
@@ -88,7 +88,7 @@ export declare interface ServiceWorkerContainerEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer)
  */
-export declare interface ServiceWorkerContainer {
+export declare interface ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controller) */
     readonly controller: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controllerchange_event) */
@@ -129,7 +129,7 @@ export declare interface ServiceWorkerRegistrationEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration)
  */
-export declare interface ServiceWorkerRegistration {
+export declare interface ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/active) */
     readonly active: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/installing) */

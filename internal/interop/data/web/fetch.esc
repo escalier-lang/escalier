@@ -96,7 +96,7 @@ export declare var Headers: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request)
  */
-export declare interface Request {
+export declare interface Request extends Body {
     /**
      * Returns the cache mode associated with request, which is a string indicating how the request will interact with the browser's cache when fetching.
      *
@@ -190,7 +190,7 @@ export declare var Request: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response)
  */
-export declare interface Response {
+export declare interface Response extends Body {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/headers) */
     readonly headers: Headers,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Response/ok) */
@@ -247,6 +247,6 @@ export declare type RequestRedirect = "error" | "follow" | "manual"
 
 export declare type ResponseType = "basic" | "cors" | "default" | "error" | "opaque" | "opaqueredirect"
 
-export declare interface HeadersIterator<T> {
+export declare interface HeadersIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> HeadersIterator<T>
 }

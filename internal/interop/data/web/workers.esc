@@ -18,7 +18,7 @@ export declare interface AbstractWorker {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker) */
-export declare interface SharedWorker {
+export declare interface SharedWorker extends EventTarget, AbstractWorker {
     /**
      * Returns sharedWorker's MessagePort object which can be used to communicate with the global environment.
      *
@@ -37,14 +37,14 @@ export declare var SharedWorker: {
     new (scriptURL: string | URL, options?: string | WorkerOptions) -> SharedWorker
 }
 
-export declare interface WorkerEventMap {}
+export declare interface WorkerEventMap extends AbstractWorkerEventMap, MessageEventTargetEventMap {}
 
 /**
  * This Web Workers API interface represents a background task that can be easily created and can send messages back to its creator. Creating a worker is as simple as calling the Worker() constructor and specifying a script to be run in the worker thread.
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker)
  */
-export declare interface Worker {
+export declare interface Worker extends EventTarget, AbstractWorker, MessageEventTarget<Worker> {
     /**
      * Clones message and transmits it to worker's global environment. transfer can be passed as a list of objects that are to be transferred rather than cloned.
      *

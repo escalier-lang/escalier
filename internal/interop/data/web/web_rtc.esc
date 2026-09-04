@@ -2,7 +2,7 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface RTCAnswerOptions {}
+export declare interface RTCAnswerOptions extends RTCOfferAnswerOptions {}
 
 export declare interface RTCCertificateExpiration {
     expires?: number
@@ -17,7 +17,7 @@ export declare interface RTCConfiguration {
     rtcpMuxPolicy?: RTCRtcpMuxPolicy
 }
 
-export declare interface RTCDataChannelEventInit {
+export declare interface RTCDataChannelEventInit extends EventInit {
     channel: RTCDataChannel
 }
 
@@ -55,7 +55,7 @@ export declare interface RTCEncodedVideoFrameMetadata {
     width?: number
 }
 
-export declare interface RTCErrorEventInit {
+export declare interface RTCErrorEventInit extends EventInit {
     error: RTCError
 }
 
@@ -75,7 +75,7 @@ export declare interface RTCIceCandidateInit {
     usernameFragment?: string | null
 }
 
-export declare interface RTCIceCandidatePairStats {
+export declare interface RTCIceCandidatePairStats extends RTCStats {
     availableIncomingBitrate?: number,
     availableOutgoingBitrate?: number,
     bytesDiscardedOnSend?: number,
@@ -106,7 +106,7 @@ export declare interface RTCIceServer {
     username?: string
 }
 
-export declare interface RTCInboundRtpStreamStats {
+export declare interface RTCInboundRtpStreamStats extends RTCReceivedRtpStreamStats {
     audioLevel?: number,
     bytesReceived?: number,
     concealedSamples?: number,
@@ -168,13 +168,13 @@ export declare interface RTCLocalSessionDescriptionInit {
 
 export declare interface RTCOfferAnswerOptions {}
 
-export declare interface RTCOfferOptions {
+export declare interface RTCOfferOptions extends RTCOfferAnswerOptions {
     iceRestart?: boolean,
     offerToReceiveAudio?: boolean,
     offerToReceiveVideo?: boolean
 }
 
-export declare interface RTCOutboundRtpStreamStats {
+export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats {
     active?: boolean,
     firCount?: number,
     frameHeight?: number,
@@ -205,7 +205,7 @@ export declare interface RTCOutboundRtpStreamStats {
     totalPacketSendDelay?: number
 }
 
-export declare interface RTCPeerConnectionIceErrorEventInit {
+export declare interface RTCPeerConnectionIceErrorEventInit extends EventInit {
     address?: string | null,
     errorCode: number,
     errorText?: string,
@@ -213,12 +213,12 @@ export declare interface RTCPeerConnectionIceErrorEventInit {
     url?: string
 }
 
-export declare interface RTCPeerConnectionIceEventInit {
+export declare interface RTCPeerConnectionIceEventInit extends EventInit {
     candidate?: RTCIceCandidate | null,
     url?: string | null
 }
 
-export declare interface RTCReceivedRtpStreamStats {
+export declare interface RTCReceivedRtpStreamStats extends RTCRtpStreamStats {
     jitter?: number,
     packetsLost?: number,
     packetsReceived?: number
@@ -241,7 +241,7 @@ export declare interface RTCRtpCodec {
     sdpFmtpLine?: string
 }
 
-export declare interface RTCRtpCodecParameters {
+export declare interface RTCRtpCodecParameters extends RTCRtpCodec {
     payloadType: number
 }
 
@@ -256,7 +256,7 @@ export declare interface RTCRtpContributingSource {
     timestamp: DOMHighResTimeStamp
 }
 
-export declare interface RTCRtpEncodingParameters {
+export declare interface RTCRtpEncodingParameters extends RTCRtpCodingParameters {
     active?: boolean,
     maxBitrate?: number,
     maxFramerate?: number,
@@ -281,22 +281,22 @@ export declare interface RTCRtpParameters {
     rtcp: RTCRtcpParameters
 }
 
-export declare interface RTCRtpReceiveParameters {}
+export declare interface RTCRtpReceiveParameters extends RTCRtpParameters {}
 
-export declare interface RTCRtpSendParameters {
+export declare interface RTCRtpSendParameters extends RTCRtpParameters {
     degradationPreference?: RTCDegradationPreference,
     encodings: mut Array<RTCRtpEncodingParameters>,
     transactionId: string
 }
 
-export declare interface RTCRtpStreamStats {
+export declare interface RTCRtpStreamStats extends RTCStats {
     codecId?: string,
     kind: string,
     ssrc: number,
     transportId?: string
 }
 
-export declare interface RTCRtpSynchronizationSource {}
+export declare interface RTCRtpSynchronizationSource extends RTCRtpContributingSource {}
 
 export declare interface RTCRtpTransceiverInit {
     direction?: RTCRtpTransceiverDirection,
@@ -304,7 +304,7 @@ export declare interface RTCRtpTransceiverInit {
     streams?: mut Array<MediaStream>
 }
 
-export declare interface RTCSentRtpStreamStats {
+export declare interface RTCSentRtpStreamStats extends RTCRtpStreamStats {
     bytesSent?: number,
     packetsSent?: number
 }
@@ -322,14 +322,14 @@ export declare interface RTCStats {
     type: RTCStatsType
 }
 
-export declare interface RTCTrackEventInit {
+export declare interface RTCTrackEventInit extends EventInit {
     receiver: RTCRtpReceiver,
     streams?: mut Array<MediaStream>,
     track: MediaStreamTrack,
     transceiver: RTCRtpTransceiver
 }
 
-export declare interface RTCTransportStats {
+export declare interface RTCTransportStats extends RTCStats {
     bytesReceived?: number,
     bytesSent?: number,
     dtlsCipher?: string,
@@ -372,7 +372,7 @@ export declare interface RTCDataChannelEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel) */
-export declare interface RTCDataChannel {
+export declare interface RTCDataChannel extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/binaryType) */
     binaryType: BinaryType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannel/bufferedAmount) */
@@ -427,7 +427,7 @@ export declare var RTCDataChannel: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent) */
-export declare interface RTCDataChannelEvent {
+export declare interface RTCDataChannelEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDataChannelEvent/channel) */
     readonly channel: RTCDataChannel
 }
@@ -444,7 +444,7 @@ export declare interface RTCDtlsTransportEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport) */
-export declare interface RTCDtlsTransport {
+export declare interface RTCDtlsTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/iceTransport) */
     readonly iceTransport: RTCIceTransport,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCDtlsTransport/error_event) */
@@ -500,7 +500,7 @@ export declare var RTCEncodedVideoFrame: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError) */
-export declare interface RTCError {
+export declare interface RTCError extends DOMException {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError/errorDetail) */
     readonly errorDetail: RTCErrorDetailType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCError/receivedAlert) */
@@ -520,7 +520,7 @@ export declare var RTCError: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent) */
-export declare interface RTCErrorEvent {
+export declare interface RTCErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCErrorEvent/error) */
     readonly error: RTCError
 }
@@ -591,7 +591,7 @@ export declare interface RTCIceTransportEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport)
  */
-export declare interface RTCIceTransport {
+export declare interface RTCIceTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/gatheringState) */
     readonly gatheringState: RTCIceGathererState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCIceTransport/gatheringstatechange_event) */
@@ -633,7 +633,7 @@ export declare interface RTCPeerConnectionEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection)
  */
-export declare interface RTCPeerConnection {
+export declare interface RTCPeerConnection extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/canTrickleIceCandidates) */
     readonly canTrickleIceCandidates: boolean | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnection/connectionState) */
@@ -735,7 +735,7 @@ export declare var RTCPeerConnection: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent) */
-export declare interface RTCPeerConnectionIceErrorEvent {
+export declare interface RTCPeerConnectionIceErrorEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceErrorEvent/address) */
     readonly address: string | null,
     readonly errorCode: number,
@@ -755,7 +755,7 @@ export declare var RTCPeerConnectionIceErrorEvent: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent)
  */
-export declare interface RTCPeerConnectionIceEvent {
+export declare interface RTCPeerConnectionIceEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCPeerConnectionIceEvent/candidate) */
     readonly candidate: RTCIceCandidate | null
 }
@@ -872,7 +872,7 @@ export declare interface RTCSctpTransportEventMap {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport) */
-export declare interface RTCSctpTransport {
+export declare interface RTCSctpTransport extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/maxChannels) */
     readonly maxChannels: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCSctpTransport/maxMessageSize) */
@@ -916,7 +916,7 @@ export declare var RTCSessionDescription: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
-export declare interface RTCStatsReport {
+export declare interface RTCStatsReport extends Map<string, any> {
     forEach(callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: any) -> unknown
 }
 
@@ -927,7 +927,7 @@ export declare var RTCStatsReport: {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent) */
-export declare interface RTCTrackEvent {
+export declare interface RTCTrackEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/receiver) */
     readonly receiver: RTCRtpReceiver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCTrackEvent/streams) */

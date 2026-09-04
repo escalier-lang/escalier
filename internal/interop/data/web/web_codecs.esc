@@ -249,7 +249,7 @@ export declare interface AudioDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder)
  */
-export declare interface AudioDecoder {
+export declare interface AudioDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/decodeQueueSize) */
     readonly decodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/dequeue_event) */
@@ -289,7 +289,7 @@ export declare interface AudioEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder)
  */
-export declare interface AudioEncoder {
+export declare interface AudioEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/encodeQueueSize) */
     readonly encodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/dequeue_event) */
@@ -456,7 +456,7 @@ export declare interface VideoDecoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder)
  */
-export declare interface VideoDecoder {
+export declare interface VideoDecoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/decodeQueueSize) */
     readonly decodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/dequeue_event) */
@@ -496,7 +496,7 @@ export declare interface VideoEncoderEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder)
  */
-export declare interface VideoEncoder {
+export declare interface VideoEncoder extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/encodeQueueSize) */
     readonly encodeQueueSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/dequeue_event) */
