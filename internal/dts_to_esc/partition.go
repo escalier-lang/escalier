@@ -788,21 +788,76 @@ var AllowedSingletonKeyDrops = set.FromSlice([]SingletonMember{
 // `wscript` are the host it belongs to, and Escalier targets browsers
 // and Node.
 //
-// The lib.webworker.*.d.ts files are the Web Worker host lib.
-// TypeScript ships it and lib.dom as alternatives that a
-// `tsconfig.json` picks between, so the two restate every shared global
-// and differ only in the surface each host has. The partition covers
-// the browser, so a name only a worker declares belongs to no package
-// it emits — `ServiceWorkerGlobalScope` and `importScripts` name
-// nothing a document can reach. Serving a worker means its own set of
-// pseudo-packages, the same question Node raises, and §6.1 defers both.
-var DroppedSources = set.FromSlice([]string{
-	"lib.scripthost.d.ts",
+// The partition covers the browser, so a name only the worker host lib
+// declares belongs to no package it emits. `ServiceWorkerGlobalScope`
+// and `importScripts` name nothing a document can reach. Serving a
+// worker means its own set of pseudo-packages, the same question Node
+// raises, and §6.1 defers both.
+var DroppedSources = WorkerHostSources.Union(
+	set.FromSlice([]string{ScriptHostSource}))
+
+// WorkerHostSources is the set of `.d.ts` source-file basenames that
+// declare the Web Worker host surface. DroppedSources holds them, so
+// the partition emits nothing from them.
+//
+// They still say which names a worker has. TypeScript ships the worker
+// host lib and lib.dom as alternatives a `tsconfig.json` picks between,
+// so the two restate every global both hosts share and differ only
+// where the hosts do. A name lib.dom.d.ts declares and no file here
+// restates is one a worker does not have, which is what
+// AnalyzeHostAvailability reads them for.
+var WorkerHostSources = set.FromSlice([]string{
 	"lib.webworker.d.ts",
 	"lib.webworker.iterable.d.ts",
 	"lib.webworker.asynciterable.d.ts",
 	"lib.webworker.importscripts.d.ts",
 })
+
+// ScriptHostSource is the `.d.ts` basename declaring the Windows Script
+// Host surface. It is a third host beside the window and the worker.
+// Escalier targets neither `cscript` nor `wscript`, so a name it
+// declares says nothing about where a package is available.
+const ScriptHostSource = "lib.scripthost.d.ts"
+
+// MixedHostPackages records the packages that hold both names a Web
+// Worker has and names it does not, and why each is left that way for
+// MVP. ReportHostAvailability marks a mixed package this does not name
+// as needing a decision, which is the §6.1 gate on the host axis: a
+// TypeScript bump that makes a clean package mixed says so instead of
+// passing quietly.
+//
+// A reason here records that the state is known, not that it is
+// settled. §7 review decides the splits and the moves.
+var MixedHostPackages = map[string]string{
+	// WebCrypto is available in workers in full. The worker host lib
+	// restates CryptoKey and SubtleCrypto identically, typing
+	// `CryptoKey.algorithm` as `KeyAlgorithm` in both. It never
+	// restates the four narrower algorithm interfaces —
+	// EcKeyAlgorithm, HmacKeyAlgorithm, RsaHashedKeyAlgorithm,
+	// RsaKeyAlgorithm — and references none of them, which reads as an
+	// upstream omission rather than a platform boundary.
+	"web:crypto": "an upstream omission rather than a platform boundary",
+
+	// Navigation and paint timing describe a document, so the boundary
+	// is real and splitting the package is a §7 decision.
+	"web:performance": "a real platform boundary, §7 decides the split",
+
+	// WebRTC is window-side apart from the encoded-frame transforms,
+	// which a worker runs. Splitting those out is a §7 decision.
+	"web:web_rtc": "a real platform boundary, §7 decides the split",
+
+	// `SharedWorker` is the one name here a worker cannot construct.
+	// Moving it is a §7 decision.
+	"web:workers": "SharedWorker alone, §7 decides the move",
+
+	// The shared web-platform core. Hundreds of `web:dom` names are
+	// available in workers, `AbortController`, `AbortSignal`,
+	// `EventTarget`, and the CSS typed-OM tree among them, so a worker
+	// that needs `AbortSignal` imports the whole DOM to get it. Whether
+	// they deserve a package is a §4.2 layout question rather than a
+	// split of this one.
+	"web:dom": "the shared web-platform core, its own §4.2 layout question",
+}
 
 // UnreferencedDOMTypes names the type-only `web:dom` declarations that
 // nothing in the pinned lib set references and that belong in `web:dom`

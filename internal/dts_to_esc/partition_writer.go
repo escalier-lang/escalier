@@ -59,6 +59,17 @@ type PartitionResult struct {
 	// may surface these as informational warnings. They are intentional,
 	// not errors.
 	Drops []DropNote
+
+	// DeclaringSources maps each top-level name the inputs declare to
+	// the `.d.ts` basenames declaring it. A name reaches it whether or
+	// not it routed, so a DroppedSources file's declarations are
+	// recorded too.
+	//
+	// The files declaring a name say which hosts have it, so
+	// AnalyzeHostAvailability reads this. Routing alone cannot answer
+	// that. A bucket holds the merged declaration, and the merge has
+	// already discarded which lib file each half came from.
+	DeclaringSources map[string]set.Set[string]
 }
 
 // DropNote is one (name, source-file basename) pair in
@@ -104,7 +115,8 @@ func PartitionLib(inputs []LibInput) (*PartitionResult, error) {
 // single unit to std:intl regardless of which lib file declared it.
 func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionResult, error) {
 	out := &PartitionResult{
-		Buckets: make(map[string][]dts_parser.Statement),
+		Buckets:          make(map[string][]dts_parser.Statement),
+		DeclaringSources: map[string]set.Set[string]{},
 	}
 	overlayDrops := overlay.GlobalDrops()
 	matched := set.NewSet[string]()
@@ -123,6 +135,10 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 				// unroutable statements into a bucket.
 				continue
 			}
+			if _, ok := out.DeclaringSources[name]; !ok {
+				out.DeclaringSources[name] = set.NewSet[string]()
+			}
+			out.DeclaringSources[name].Add(in.SourceFile)
 			// A name declared in a DroppedSources file counts as
 			// matched even though the file contributes nothing, so an
 			// overlay drop of it is not reported as stale.

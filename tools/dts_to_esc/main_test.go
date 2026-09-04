@@ -72,7 +72,8 @@ func TestRun_GenerateWithCFGPrintsEveryReport(t *testing.T) {
 		"generate", "--cfg", committedCFG, "--overlay", t.TempDir(), libDir, t.TempDir(),
 	}, io.Discard, &stderr))
 
-	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
+	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  host availability: 1 worker-clean, 0 window-only, 0 mixed
+  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
   coercion filter: 4882 TypeError sites adjudicated, 362 dropped
   receivers: 194 confirmed by a heuristic, 24 redundant overrides, 0 disagreements, 48 answered by the facts alone, 37 overrides no fact answers
   join: 1 matched (1 with a receiver claim), 0 declarations without a fact, 436 facts without a declaration, 0 unkeyed declarations, 64 unjoinable facts
@@ -222,6 +223,7 @@ func TestRun_GenerateWritesTheTree(t *testing.T) {
 		report, strings.Join(treeOf(t, escDir), "\n"), contents), snaps.Inline(`--- stderr ---
 discovered 1 lib files
 wrote 1 packages under <esc-dir>
+  host availability: 1 worker-clean, 0 window-only, 0 mixed
 --- tree ---
 node/README.md
 std/array.esc

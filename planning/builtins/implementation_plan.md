@@ -1718,8 +1718,24 @@ a page constructs and the events it gets back. The scope a
 worker runs inside is declared only by the ignored lib, so no
 entry for it would match.
 
-See `DroppedSources` in
-[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go).
+The worker lib is read once more after that, as the answer to
+which host each package is available in. Because the two libs
+restate every global both hosts share, a name only `lib.dom`
+declares is one only a document has, and that needs no
+hand-maintained table to stay current across a TypeScript
+bump. `generate` reports each package as worker-clean,
+window-only, or mixed, and a mixed package is one holding both
+kinds — a worker importing it binds names that do not exist at
+runtime. The mixed ones are recorded in `MixedHostPackages`
+with why each is left that way for MVP, so a bump that makes a
+clean package mixed reads as needing a decision rather than
+passing quietly. §7 review decides the splits and the moves.
+
+See `DroppedSources`, `WorkerHostSources`, and
+`MixedHostPackages` in
+[internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go),
+and the analysis in
+[internal/dts_to_esc/host.go](../../internal/dts_to_esc/host.go).
 
 **Unmapped-symbol fail-safe.** Per FR10 step 4: any top-level
 TS-lib declaration name absent from both this partition table
