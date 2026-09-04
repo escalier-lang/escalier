@@ -55,13 +55,9 @@ type UnreferencedDecl struct {
 	DeclaredIn string
 }
 
-// TypeOnlyRouting is what one pass over the routed buckets found: the
-// type-only declarations whose referrers disagree with where the
-// partition put them, and the ones no referrer speaks for at all.
-//
-// A type-only declaration two or more packages reference is shared
-// vocabulary and belongs in `web:dom`. `BufferSource` is the canonical
-// one. Neither field holds those.
+// TypeOnlyRouting holds the type-only declarations whose referrers
+// disagree with where the partition put them, and the ones nothing
+// references. A declaration two or more packages share is in neither.
 type TypeOnlyRouting struct {
 	// SoleReferrer is sorted by declaring package, then referrer, then
 	// name.
@@ -209,21 +205,11 @@ func referrersOf(
 	return referrers
 }
 
-// ReportTypeOnlyRouting prints what landed in `web:dom` that the
-// referrers disagree with: one line per sibling that is the sole
-// referrer of some of its type-only declarations, then one line for
-// the ones nothing references. Nothing is written when both are empty.
-//
-// Only `web:dom` is reported. It is the one package a name reaches
-// without anyone listing it, through the DOM residual rule, so it is
-// the one place a routing mistake is a side effect rather than a
-// decision. A sole referrer elsewhere is weaker evidence: `std:async`
-// declares `AsyncIterable` and only `std:array` references it, and the
-// protocol type still belongs where the partition puts it.
-//
-// The `generate` subcommand calls this alongside the drop counts, so a
-// TypeScript bump that adds a type-only companion surfaces it instead
-// of absorbing it into `web:dom`.
+// ReportTypeOnlyRouting prints the `web:dom` type-only declarations a
+// single sibling is the sole referrer of, then the ones nothing
+// references, and nothing at all when both are empty. Only `web:dom`
+// is reported, because the DOM residual rule puts a name there with
+// nobody deciding to, which is what makes a sole referrer evidence.
 func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 	routing := AnalyzeTypeOnlyRouting(result).forPackage(WebDOM.URI)
 
