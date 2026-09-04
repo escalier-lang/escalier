@@ -531,6 +531,15 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 		}
 	case *dts_parser.ClassDecl:
 		walkTypeParamTypes(s.TypeParams, visit)
+		// A superclass and an implemented interface are references the
+		// members repeat only by accident. `declare class Foo extends
+		// Base implements Iface` names both nowhere else.
+		if s.Extends != nil {
+			visit(s.Extends)
+		}
+		for _, impl := range s.Implements {
+			visit(impl)
+		}
 		for _, m := range s.Members {
 			walkClassMemberTypes(m, visit)
 		}
@@ -707,6 +716,11 @@ func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 			if sub, ok := part.(*dts_parser.TemplateType); ok {
 				walkTypeRefs(sub.Type, visit)
 			}
+		}
+	case *dts_parser.InferType:
+		// `infer U extends Bound` names Bound only in the constraint.
+		if n.TypeParam != nil {
+			walkTypeRefs(n.TypeParam.Constraint, visit)
 		}
 	case *dts_parser.KeyOfType:
 		walkTypeRefs(n.Type, visit)

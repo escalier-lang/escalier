@@ -233,3 +233,40 @@ interface QueuingStrategySize { size: number; }
 		{Name: "QueuingStrategySize", DeclaredIn: "web:streams", ReferencedBy: "web:fetch"},
 	}, routing.SoleReferrer)
 }
+
+// TestAnalyzeTypeOnlyRouting_ReadsClassHeritage covers a class's
+// superclass and the interfaces it implements. Both name a type the
+// members repeat only by accident, so a walk that reads members alone
+// reports the two heritage types as referenced by nothing.
+func TestAnalyzeTypeOnlyRouting_ReadsClassHeritage(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
+declare class Holder extends BaseOpts implements IfaceOpts { x: number; }
+interface BaseOpts { b: number; }
+interface IfaceOpts { i: number; }
+`)})
+	require.NoError(t, err)
+
+	require.Empty(t, AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI).Unreferenced)
+}
+
+// TestAnalyzeTypeOnlyRouting_ReadsInferConstraint covers the bound on
+// an `infer`. `T extends Promise<infer U extends Bound>` names Bound
+// only there, so a walk that stops at the infer reports it as
+// referenced by nothing.
+func TestAnalyzeTypeOnlyRouting_ReadsInferConstraint(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
+interface Request { u: Unwrap<Promise<string>>; }
+type Unwrap<T> = T extends Promise<infer U extends Bound> ? U : never;
+type Bound = string;
+`)})
+	require.NoError(t, err)
+
+	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
+
+	require.Empty(t, routing.Unreferenced)
+	require.Equal(t, []SoleReferrer{
+		{Name: "Unwrap", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+	}, routing.SoleReferrer)
+}
