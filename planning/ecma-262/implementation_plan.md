@@ -2004,7 +2004,7 @@ the type check the receiver's type cannot reach, and 120 below a
 branches in one method: its whole receiver coercion goes, `RequireObjectCoercible`
 and every step of `ToString` alike, and the same operations applied to
 `pos` are all kept. The dropped type-guard throws are listed in the review report, which
-`dts_to_esc generate` prints beside the curation and join reports.
+`dts_to_esc generate --cfg` prints beside the curation and join reports.
 
 ### §9.3. Synchronous throws versus asynchronous rejections (FR13)
 
