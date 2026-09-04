@@ -2141,6 +2141,15 @@ needs coverage for each, since only the modified case is the one a
 naive check gets right.
 [#1344](https://github.com/escalier-lang/escalier/issues/1344).
 
+The check is
+[.github/scripts/check-generated-tree.sh](../../.github/scripts/check-generated-tree.sh),
+and the `check_generated_tree` job runs it. The tree that job
+reads is one it seeds, since `internal/interop/data` holds the
+§2-era stubs rather than generated packages, so what it gates is
+generator idempotence over the pinned lib set. Pointing the check
+at the committed tree gates that tree against its inputs and lands
+with §7, [#1393](https://github.com/escalier-lang/escalier/issues/1393).
+
 **Review ergonomics.** `web/dom.esc` is roughly 22.5k lines, so a
 generator change rewrites it wholesale and the diff dominates
 review. Mark the generated tree `linguist-generated` in

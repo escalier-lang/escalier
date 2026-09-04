@@ -115,3 +115,41 @@ counterpart has been retyped rather than removed fails the same way, off
 the digest recorded beside it. Read the new upstream form, decide whether
 the overlay still says what it should, then re-run with
 `--update-digests` and commit the sidecar with the rest of the bump.
+
+## The CI check
+
+A generated tree is out of date when it no longer matches what a run
+writes into it. `.github/scripts/check-generated-tree.sh` is the check
+for that:
+
+```
+.github/scripts/check-generated-tree.sh <tree-dir> -- <generator> [args...]
+```
+
+It runs the generator, stages `<tree-dir>`, and diffs the index. Staging
+is what makes it total. `git diff --exit-code` compares tracked files
+only, so a run that emits a package the tree does not carry leaves that
+package untracked and the check passes. Diffing the index reports that
+case, a package whose contents changed, and a package the run no longer
+emits. The staging is forced, so an ignore rule matching a generated
+path cannot keep that file out of the index and hide a mismatch. The
+tests in [check_generated_tree_test.go](check_generated_tree_test.go)
+cover all four outcomes against a scratch repository, and the ignored
+path with them.
+
+The `check_generated_tree` job in
+[.github/workflows/ci.yaml](../../.github/workflows/ci.yaml) runs it.
+The tree it reads is one the job seeds, because
+`internal/interop/data/std/` holds the two §2-era stubs rather than
+generated packages. What the job gates is therefore idempotence over the
+pinned lib set: a second run leaves the seeded tree byte-identical.
+Pointing the check at `internal/interop/data`, which gates that tree
+against its inputs, is
+[#1393](https://github.com/escalier-lang/escalier/issues/1393) and waits
+on the §7 bootstrap committing it.
+
+Two things to know before running the check by hand. It reads the index
+against `HEAD`, so anything staged under `<tree-dir>` beforehand reads as
+a mismatch. And it leaves what the run wrote staged. Both are fine on the
+fresh checkout CI gives it. To review a bump locally, run `generate` and
+read `git diff` instead.
