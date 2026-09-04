@@ -488,9 +488,6 @@ func countTypeRefs(stmts []dts_parser.Statement, name string) int {
 // reports both as referenced by nothing.
 func walkTypeParamTypes(params []*dts_parser.TypeParam, visit func(dts_parser.TypeAnn)) {
 	for _, tp := range params {
-		if tp == nil {
-			continue
-		}
 		if tp.Constraint != nil {
 			visit(tp.Constraint)
 		}

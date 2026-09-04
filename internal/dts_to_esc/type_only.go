@@ -245,9 +245,9 @@ func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 		for _, e := range routing.SoleReferrer[i:j] {
 			names = append(names, e.Name)
 		}
-		fmt.Fprintf(&b, "  %s: %d type-only decls only %s references (%s)\n",
-			WebDOM.URI, len(names), routing.SoleReferrer[i].ReferencedBy,
-			strings.Join(names, ", "))
+		fmt.Fprintf(&b, "  %s: %d type-only decl%s only %s references (%s)\n",
+			WebDOM.URI, len(names), plural(len(names)),
+			routing.SoleReferrer[i].ReferencedBy, strings.Join(names, ", "))
 		i = j
 	}
 
@@ -259,10 +259,18 @@ func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 		names = append(names, e.Name)
 	}
 	if len(names) > 0 {
-		fmt.Fprintf(&b, "  %s: %d type-only decls nothing references (%s)\n",
-			WebDOM.URI, len(names), strings.Join(names, ", "))
+		fmt.Fprintf(&b, "  %s: %d type-only decl%s nothing references (%s)\n",
+			WebDOM.URI, len(names), plural(len(names)), strings.Join(names, ", "))
 	}
 
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// plural returns the suffix that makes a count noun agree with n.
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }

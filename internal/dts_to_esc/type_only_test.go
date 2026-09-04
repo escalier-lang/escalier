@@ -168,3 +168,68 @@ interface Deflt { size: number; }
 		{Name: "Deflt", DeclaredIn: "web:dom", ReferencedBy: "web:streams"},
 	}, routing.SoleReferrer)
 }
+
+// TestReportTypeOnlyRouting_Renders pins the report's text. The other
+// report tests assert an empty one, which says nothing about what a
+// finding looks like when there is one.
+//
+// FnOpts also covers the type parameters a function type carries.
+// BoundOpts is named only by `<T extends BoundOpts>`, so a walk that
+// misses that slot puts it on the unreferenced line.
+func TestReportTypeOnlyRouting_Renders(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
+interface Request { a: AlphaOpts; b: BetaOpts; f: FnOpts; }
+type AlphaOpts = string;
+type BetaOpts = string;
+type FnOpts = <T extends BoundOpts>(x: T) => void;
+type BoundOpts = string;
+type Orphan = string;
+`)})
+	require.NoError(t, err)
+
+	var b strings.Builder
+	require.NoError(t, ReportTypeOnlyRouting(res, &b))
+
+	require.Equal(t,
+		"  web:dom: 3 type-only decls only web:fetch references"+
+			" (AlphaOpts, BetaOpts, FnOpts)\n"+
+			"  web:dom: 1 type-only decl nothing references (Orphan)\n",
+		b.String())
+}
+
+// TestAnalyzeTypeOnlyRouting_ReadsEveryTypeShape covers the type
+// annotation shapes the other tests leave out: a constructor type's
+// type parameters, a tuple's rest element, and its optional element.
+// A name reachable only through one of those reads as referenced by
+// nothing if the walk skips that shape.
+//
+// QueuingStrategySize routes to web:streams by the §6.1 partition, so
+// the sole referrers span two declaring packages and the analysis has
+// to order them by that first.
+func TestAnalyzeTypeOnlyRouting_ReadsEveryTypeShape(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
+interface Request { c: CtorOpts; t: TupOpts; q: QueuingStrategySize; }
+type CtorOpts = new <T extends CtorBound>(x: T) => void;
+type CtorBound = string;
+type TupOpts = [...RestOpts[], OptOpts?];
+type RestOpts = string;
+type OptOpts = string;
+interface QueuingStrategySize { size: number; }
+`)})
+	require.NoError(t, err)
+
+	routing := AnalyzeTypeOnlyRouting(res)
+
+	// CtorBound, RestOpts, and OptOpts each reach web:dom only through
+	// the shape under test, so an empty list is what proves the walk
+	// found them. The filter drops Request, which this lib declares
+	// without a `declare var` and nothing references.
+	require.Empty(t, routing.forPackage(WebDOM.URI).Unreferenced)
+	require.Equal(t, []SoleReferrer{
+		{Name: "CtorOpts", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+		{Name: "TupOpts", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+		{Name: "QueuingStrategySize", DeclaredIn: "web:streams", ReferencedBy: "web:fetch"},
+	}, routing.SoleReferrer)
+}
