@@ -201,6 +201,9 @@ func applyOverlayDecl(
 	switch hostDecl := host.(type) {
 	case *ast.ClassDecl:
 		if ovClass, ok := ovDecl.(*ast.ClassDecl); ok {
+			if err := checkMergeDecl(f, name, hostDecl.TypeParams, ovClass); err != nil {
+				return err
+			}
 			body, err := mergeMembers(
 				f, name, hostDecl.Body, ovClass.Body, classElemSlot)
 			if err != nil {
@@ -213,6 +216,9 @@ func applyOverlayDecl(
 		if ovIface, ok := ovDecl.(*ast.InterfaceDecl); ok {
 			if hostDecl.TypeAnn == nil || ovIface.TypeAnn == nil {
 				break
+			}
+			if err := checkMergeDecl(f, name, hostDecl.TypeParams, ovIface); err != nil {
+				return err
 			}
 			elems, err := mergeMembers(
 				f, name, hostDecl.TypeAnn.Elems, ovIface.TypeAnn.Elems, objElemSlot)
@@ -233,6 +239,89 @@ func applyOverlayDecl(
 	ns.Decls[idx] = ovDecl
 	carryDeclMetadata(mod, host, ovDecl)
 	return nil
+}
+
+// checkMergeDecl holds an overlay's member operation to what a merge
+// reads: the members, and the type parameters they are read under. The
+// type parameters have to agree, since an overlay binding `<U>` would
+// leave its members referring to a name the generated declaration does
+// not bind. Everything else the overlay writes around its members goes
+// unread, so writing any of it fails rather than being dropped in
+// silence.
+func checkMergeDecl(f OverlayFile, name string, host []*ast.TypeParam, overlay ast.Decl) error {
+	if typeParamNames(host) != typeParamNames(overlayTypeParams(overlay)) {
+		return fmt.Errorf(
+			"overlay: %s writes %s%s, which the converted declaration binds as %s%s; "+
+				"a member operation keeps the converted declaration's type parameters, "+
+				"so the overlay restates them as they are",
+			f.Path, name, typeParamNames(overlayTypeParams(overlay)), name,
+			typeParamNames(host))
+	}
+	if part := unreadDeclPart(overlay); part != "" {
+		return fmt.Errorf(
+			"overlay: %s writes %s on %s, which a member operation does not read; "+
+				"it contributes members alone, so drop it from the overlay",
+			f.Path, part, name)
+	}
+	return nil
+}
+
+// overlayTypeParams returns the type parameters of the one declaration
+// kind a member operation merges into, and nothing for any other.
+func overlayTypeParams(decl ast.Decl) []*ast.TypeParam {
+	switch d := decl.(type) {
+	case *ast.ClassDecl:
+		return d.TypeParams
+	case *ast.InterfaceDecl:
+		return d.TypeParams
+	}
+	return nil
+}
+
+// unreadDeclPart names the first thing an overlay declaration writes
+// around its members that a member operation would drop, or "" when it
+// writes none. A decorator, a `final` modifier, an `extends` or
+// `implements` clause, and a lifetime parameter all belong to the
+// converted declaration alone.
+func unreadDeclPart(decl ast.Decl) string {
+	switch d := decl.(type) {
+	case *ast.ClassDecl:
+		switch {
+		case len(d.Decorators) > 0:
+			return "a decorator"
+		case d.Final():
+			return "a final modifier"
+		case d.Extends != nil:
+			return "an extends clause"
+		case len(d.Implements) > 0:
+			return "an implements clause"
+		case len(d.LifetimeParams) > 0:
+			return "a lifetime parameter"
+		}
+	case *ast.InterfaceDecl:
+		switch {
+		case len(d.Extends) > 0:
+			return "an extends clause"
+		case len(d.LifetimeParams) > 0:
+			return "a lifetime parameter"
+		}
+	}
+	return ""
+}
+
+// typeParamNames renders a type parameter list by name alone, as `<T>`.
+// Constraints and defaults are the converted declaration's to state, so
+// they take no part in the comparison. An empty list renders as "", so a
+// declaration with no parameters reads as its own name.
+func typeParamNames(params []*ast.TypeParam) string {
+	if len(params) == 0 {
+		return ""
+	}
+	names := make([]string, len(params))
+	for i, param := range params {
+		names[i] = param.Name
+	}
+	return "<" + strings.Join(names, ", ") + ">"
 }
 
 // carryDeclMetadata moves the converted declaration's JSDoc and dotted

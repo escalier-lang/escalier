@@ -110,6 +110,20 @@ so a declaration TypeScript spells as the `interface Foo` +
 `interface FooConstructor` + `declare var Foo` trio is addressed as the
 single `class Foo` the generated file holds.
 
+A member operation contributes members alone, so the overlay writes the
+name and the type parameters and nothing else. The type parameters have
+to agree, since the members are read under them: writing
+`class Array<U>` where the generated file holds `class Array<T>` fails
+the run rather than emitting members that refer to a name nothing binds.
+Everything else written around the members goes unread, so an `extends`
+clause, an `implements` clause, a lifetime parameter, a `final`
+modifier, or a decorator on the overlay declaration fails rather than
+being dropped in silence. This holds for `add` as well as `replace`.
+
+A whole-declaration replacement is the other case, and it does read all
+of that. The overlay stands in for the declaration entire, so what it
+writes around its members is what the generated file gets.
+
 A declaration the converter gets structurally wrong is replaced whole
 rather than member by member. That happens when the overlay declaration
 and the converted one disagree on declaration kind, or when the kind
@@ -161,3 +175,5 @@ belong to none.
 - A drop entry carrying a type annotation, a signature, or an
   initializer, so that "the rest is ignored" does not become a trap for
   whoever writes a real signature and expects it to matter.
+- A member operation writing anything around its members that a merge
+  does not read, so the same trap does not open there.

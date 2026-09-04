@@ -702,3 +702,143 @@ func TestApplyOverlay_ReportsWhichSideAMemberIsMissingFrom(t *testing.T) {
 		"overlay: std/array.replace.esc replaces static Array.at, which the "+
 			"converted declaration does not have")
 }
+
+// TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters
+// covers the one part of the declaration a merge does read besides the
+// members. The converted declaration keeps its own, so an overlay
+// binding other names would leave its members referring to nothing.
+func TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "replace binding another name",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare class Array<U> {\n" +
+					"    at(self, index: number) -> U,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes Array<U>, which the converted " +
+				"declaration binds as Array<T>; a member operation keeps the converted " +
+				"declaration's type parameters, so the overlay restates them as they are",
+		},
+		{
+			name: "add binding none at all",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike {\n" +
+					"    readonly first: unknown,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes ArrayLike, which the converted " +
+				"declaration binds as ArrayLike<T>; a member operation keeps the " +
+				"converted declaration's type parameters, so the overlay restates " +
+				"them as they are",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_RejectsWhatAMemberOperationDoesNotRead covers what an
+// overlay writes around its members. A merge contributes members alone,
+// so a clause it would not read is a report rather than a silent
+// omission.
+func TestApplyOverlay_RejectsWhatAMemberOperationDoesNotRead(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		overlay map[string]string
+		want    string
+	}{
+		{
+			name: "an extends clause on an interface",
+			overlay: map[string]string{
+				"std/array.add.esc": "export declare interface ArrayLike<T> " +
+					"extends Iterable<T> {\n    readonly first: T,\n}\n",
+			},
+			want: "overlay: std/array.add.esc writes an extends clause on ArrayLike, " +
+				"which a member operation does not read; it contributes members " +
+				"alone, so drop it from the overlay",
+		},
+		{
+			name: "a final modifier on a class",
+			overlay: map[string]string{
+				"std/array.replace.esc": "export declare final class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes a final modifier on Array, " +
+				"which a member operation does not read; it contributes members " +
+				"alone, so drop it from the overlay",
+		},
+		{
+			name: "a decorator on a class",
+			overlay: map[string]string{
+				"std/array.replace.esc": "@js(\"Array\")\n" +
+					"export declare class Array<T> {\n" +
+					"    at(self, index: number) -> T,\n}\n",
+			},
+			want: "overlay: std/array.replace.esc writes a decorator on Array, which " +
+				"a member operation does not read; it contributes members alone, " +
+				"so drop it from the overlay",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, overlayError(t, tt.overlay))
+		})
+	}
+}
+
+// TestApplyOverlay_ComparesTypeParametersByNameAlone covers what the
+// merge asks of the one part of the declaration it reads besides the
+// members. The names have to line up, since the members are read under
+// them, and a constraint the overlay writes is the converted
+// declaration's to state, so it takes no part and reaches no output.
+func TestApplyOverlay_ComparesTypeParametersByNameAlone(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`, renderPackage(t, overlayModules(t, map[string]string{
+		"std/array.replace.esc": "export declare class Array<T: unknown> {\n" +
+			"    at(self, index: number) -> T,\n}\n",
+	}), "std:array"))
+}
+
+// TestApplyOverlay_WholeDeclarationReplacementReadsWhatAMergeDoesNot is
+// the other side of the rule. Here the overlay writes a class where the
+// converted declaration is an interface, so the two disagree on kind and
+// the overlay stands in for the declaration entire. What it writes
+// around its members reaches the output, `extends` included.
+func TestApplyOverlay_WholeDeclarationReplacementReadsWhatAMergeDoesNot(t *testing.T) {
+	t.Parallel()
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare class ArrayLike<T> extends Array<T> {
+    readonly length: number
+}
+`, renderPackage(t, overlayModules(t, map[string]string{
+		"std/array.replace.esc": "export declare class ArrayLike<T> extends Array<T> {\n" +
+			"    readonly length: number,\n}\n",
+	}), "std:array"))
+}
