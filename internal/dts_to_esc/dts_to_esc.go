@@ -604,86 +604,85 @@ func walkClassMemberTypes(m dts_parser.ClassMember, visit func(dts_parser.TypeAn
 	}
 }
 
-// countTypeRefsInTypeAnn recursively walks a TypeAnn and returns the
-// number of TypeReference nodes whose bare name equals `name`.
-func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
+// walkTypeRefs invokes visit on every TypeReference reachable from t,
+// including the references inside a reference's own type arguments.
+//
+// Coverage is best-effort, on the same terms as walkClassMemberTypes
+// above. A node shape the switch misses makes a caller see fewer
+// references than the source holds, never more.
+func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 	if t == nil {
-		return 0
+		return
 	}
 	switch n := t.(type) {
 	case *dts_parser.TypeReference:
-		count := 0
-		if typeRefName(n) == name {
-			count++
-		}
+		visit(n)
 		for _, arg := range n.TypeArgs {
-			count += countTypeRefsInTypeAnn(arg, name)
+			walkTypeRefs(arg, visit)
 		}
-		return count
 	case *dts_parser.ArrayType:
-		return countTypeRefsInTypeAnn(n.ElementType, name)
+		walkTypeRefs(n.ElementType, visit)
 	case *dts_parser.TupleType:
-		count := 0
 		for _, e := range n.Elements {
-			count += countTypeRefsInTypeAnn(e.Type, name)
+			walkTypeRefs(e.Type, visit)
 		}
-		return count
 	case *dts_parser.UnionType:
-		count := 0
 		for _, sub := range n.Types {
-			count += countTypeRefsInTypeAnn(sub, name)
+			walkTypeRefs(sub, visit)
 		}
-		return count
 	case *dts_parser.IntersectionType:
-		count := 0
 		for _, sub := range n.Types {
-			count += countTypeRefsInTypeAnn(sub, name)
+			walkTypeRefs(sub, visit)
 		}
-		return count
 	case *dts_parser.FunctionType:
-		count := 0
 		for _, p := range n.Params {
-			count += countTypeRefsInTypeAnn(p.Type, name)
+			walkTypeRefs(p.Type, visit)
 		}
-		count += countTypeRefsInTypeAnn(n.ReturnType, name)
-		return count
+		walkTypeRefs(n.ReturnType, visit)
 	case *dts_parser.ConstructorType:
-		count := 0
 		for _, p := range n.Params {
-			count += countTypeRefsInTypeAnn(p.Type, name)
+			walkTypeRefs(p.Type, visit)
 		}
-		count += countTypeRefsInTypeAnn(n.ReturnType, name)
-		return count
+		walkTypeRefs(n.ReturnType, visit)
 	case *dts_parser.ObjectType:
-		count := 0
 		for _, m := range n.Members {
 			walkInterfaceMemberTypes(m, func(sub dts_parser.TypeAnn) {
-				count += countTypeRefsInTypeAnn(sub, name)
+				walkTypeRefs(sub, visit)
 			})
 		}
-		return count
 	case *dts_parser.ParenthesizedType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.IndexedAccessType:
-		return countTypeRefsInTypeAnn(n.ObjectType, name) +
-			countTypeRefsInTypeAnn(n.IndexType, name)
+		walkTypeRefs(n.ObjectType, visit)
+		walkTypeRefs(n.IndexType, visit)
 	case *dts_parser.ConditionalType:
-		return countTypeRefsInTypeAnn(n.CheckType, name) +
-			countTypeRefsInTypeAnn(n.ExtendsType, name) +
-			countTypeRefsInTypeAnn(n.TrueType, name) +
-			countTypeRefsInTypeAnn(n.FalseType, name)
+		walkTypeRefs(n.CheckType, visit)
+		walkTypeRefs(n.ExtendsType, visit)
+		walkTypeRefs(n.TrueType, visit)
+		walkTypeRefs(n.FalseType, visit)
 	case *dts_parser.MappedType:
-		return countTypeRefsInTypeAnn(n.ValueType, name)
+		walkTypeRefs(n.ValueType, visit)
 	case *dts_parser.KeyOfType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.TypePredicate:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.RestType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.OptionalType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	}
-	return 0
+}
+
+// countTypeRefsInTypeAnn returns how many TypeReference nodes under t
+// carry the bare name `name`.
+func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
+	count := 0
+	walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
+		if typeRefName(ref) == name {
+			count++
+		}
+	})
+	return count
 }
 
 // typeRefName returns the bare identifier of a TypeReference's name, or
