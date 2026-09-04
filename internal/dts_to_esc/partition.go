@@ -439,9 +439,13 @@ var webPackages = []struct {
 		"GLushort", "GLuint64EXT", "GLint64EXT",
 		"TexImageSource",
 		"Float32List", "Int32List", "Uint32List",
-		// The extension objects getExtension returns. MDN documents
-		// each one under the WebGL API, and the contexts that hand them
-		// back are already here.
+		// The WebGL extension interfaces. `getExtension` returns 34
+		// of them. `EXT_texture_norm16` and
+		// `OES_draw_buffers_indexed` have no overload returning them,
+		// and `WebGLVertexArrayObjectOES` is the handle
+		// `OES_vertex_array_object` hands out rather than an
+		// extension object. MDN documents all of these under the
+		// WebGL API.
 		"ANGLE_instanced_arrays",
 		"EXT_blend_minmax", "EXT_color_buffer_float",
 		"EXT_color_buffer_half_float", "EXT_float_blend",
@@ -805,16 +809,17 @@ var DroppedSources = set.FromSlice([]string{
 // regardless. ReportTypeOnlyRouting leaves them out, so every name it
 // prints is one that still needs a decision.
 //
-// A name earns a place here by one of two readings. Either it is a
-// deprecated alias of a type `web:dom` already holds, so nothing refers
-// to it and nothing new should. Or its family has no package of its
-// own, and §4.2 keeps the small one-off web APIs in `web:dom` for MVP.
+// A name earns a place here by one of three readings. It is deprecated,
+// so nothing refers to it and nothing new should. Or its family has no
+// package of its own, and §4.2 keeps the small one-off web APIs in
+// `web:dom` for MVP. Or the lib set declares it and never uses it.
 //
 // A TypeScript bump that stops declaring one of these leaves a stale
 // entry here rather than failing the run. The entry costs a line and
 // the report stays correct either way.
 var UnreferencedDOMTypes = set.FromSlice([]string{
-	// Deprecated aliases of types web:dom already holds.
+	// Deprecated. The inline note names the type to reach for
+	// instead, where the lib set has one.
 	"ClientRect",                 // DOMRect
 	"ElementTagNameMap",          // HTMLElementTagNameMap + SVGElementTagNameMap
 	"HTMLTableDataCellElement",   // HTMLTableCellElement
@@ -829,8 +834,12 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 	"ClipboardItemData",
 	"DisplayCaptureSurfaceType",
 	"GPUError",
-	"OnBeforeUnloadEventHandler",
 	"VideoFacingModeEnum",
+
+	// Declared and never used. lib.dom.d.ts names
+	// OnBeforeUnloadEventHandler nowhere else, and both
+	// `onbeforeunload` declarations spell the signature out instead.
+	"OnBeforeUnloadEventHandler",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose

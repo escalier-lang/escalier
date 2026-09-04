@@ -21,7 +21,7 @@ import (
 // and hand-enumeration reaches for the names that have constructors. A
 // type-only companion left off a sibling's member list falls through to
 // `web:dom` under the DOM residual rule, and the sibling's own methods
-// then return a type the caller did not import. The 36 WebGL extension
+// then return a type the caller did not import. The 34 WebGL extension
 // interfaces `getExtension` returns are the largest such family, and
 // the partition names every one of them in `web:webgl`.
 //
