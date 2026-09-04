@@ -1790,21 +1790,31 @@ See `fuseReadonlyTwins` / `applyReadonlyTwinReceivers` /
 `appendReadonlyAliases` in
 [internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go).
 
+**Step 4 is retired.** The twins were a proxy for receiver
+mutability: presence on `ReadonlyFoo` said the method does not
+mutate. The ECMA-262 derived facts answer that from the
+specification instead, and `generate` reports zero disagreements
+between the two over the pinned lib set, so the twin adds nothing
+the facts do not already settle. §7 recorded the decision and
+[#1408](https://github.com/escalier-lang/escalier/issues/1408)
+carries the removal. Steps 1 through 3 stay: the twin's members
+still reach the fused class, and the alias still keeps the
+readonly name resolvable.
+
 **Known gap: the alias in step 3 keeps no readonly restriction.**
 `type ReadonlyArray<T> = Array<T>` makes the two names one type, so
 a `ReadonlyArray<T>` value accepts `push` and every other
-mutable-only member. Step 4's receiver flip is narrower than it
-looks: it decides whether a method on the fused `Foo` takes
-`self` or `mut self`, which stops a mutation through an immutable
-binding, but it does not remove a member from the readonly name's
-surface. Resolving this needs one of two things, and the §7 review
-is where the choice gets made and recorded: emit `ReadonlyFoo` as
-its own declaration carrying only the twin's members, or keep the
-alias and restrict it at the type level once the operator
-machinery exists. Fixtures for whichever route is picked must
-cover a mutable-only member on both `ReadonlyArray` and
-`ReadonlyMap` — `push` and `set` are the obvious ones — and assert
-it is rejected through the readonly name.
+mutable-only member. The name is load-bearing — 49 references
+across 15 committed packages, because upstream signatures use it
+for arguments that must not be mutated, as
+`Intl.getCanonicalLocales(locale?: string | ReadonlyArray<string>)`
+does. Retiring step 4 does not reach this: receiver mutability and
+the readonly name's own surface are separate questions, and this
+is the one the committed tree currently answers wrongly. Tracked
+with the retirement in #1408. Fixtures for whichever route is
+picked must cover a mutable-only member on both `ReadonlyArray`
+and `ReadonlyMap` — `push` and `set` are the obvious ones — and
+assert it is rejected through the readonly name.
 
 ### 6.2 Registry routing
 
@@ -2344,6 +2354,16 @@ truth for every consumer that reads a `std:*` or `web:*` package;
 the §6.4 inputs are the source of truth for the tree. Tracked as
 [#1232](https://github.com/escalier-lang/escalier/issues/1232).
 
+Work items 1 and 5 are done: the tree is committed at 49 packages
+and 40,312 lines, byte-identical on a re-run. Item 2's mechanical
+half is clean — every exported value-level declaration carries an
+`@js` decorator and no unexported declaration leaks — and its
+judgment half is open. Item 3 needs no overlay entry after all: the
+converter emits `Awaited` faithfully from `lib.es5.d.ts`, so only
+verification is left. Nothing type-checks the tree yet, per
+[#1402](https://github.com/escalier-lang/escalier/issues/1402) and
+[#1403](https://github.com/escalier-lang/escalier/issues/1403).
+
 Depends on §6 PR E. Before that lands this phase reads as
 "hand-edit the generated files", which it no longer is.
 
@@ -2388,7 +2408,9 @@ Depends on §6 PR E. Before that lands this phase reads as
    M9. On a concrete blocker, fall back to a solver-resident
    intrinsic and document the specific failure.
 4. **FR5 finalization — non-class package exports as namespace
-   members.** §2's single-class shortcut binds the class itself when
+   members**
+   ([#1406](https://github.com/escalier-lang/escalier/issues/1406))**.**
+   §2's single-class shortcut binds the class itself when
    activated; FR5 also calls for other package exports to stay
    reachable as namespace members on the same binding, with static
    methods winning a name collision. §2 left this a TODO in
@@ -2408,15 +2430,22 @@ Depends on §6 PR E. Before that lands this phase reads as
    an ongoing edit goes to one of those inputs and never to a
    generated file. The §6.6 CI job is what keeps that true, and it
    is also what catches an input left uncommitted.
-6. **§3.5 codegen fixtures deferred from §3**, now that
-   `std:number` and `std:iterator` exist as committed packages:
-   hoisted global `parseInt`, the `Symbol.iterator` re-export, and
-   package-private invisibility.
+6. **§3.5 codegen fixtures deferred from §3**
+   ([#1407](https://github.com/escalier-lang/escalier/issues/1407)),
+   now that `std:number` and `std:iterator` exist as committed
+   packages: hoisted global `parseInt`, the `Symbol.iterator`
+   re-export, and package-private invisibility.
 
-**Decision owed here.** The readonly-twin gap from §6 PR A: either
-emit `ReadonlyFoo` as its own declaration carrying only the twin's
-members, or keep the alias and restrict it at the type level.
-Record the choice and add the `ReadonlyArray` / `ReadonlyMap`
+**Decision made.** The readonly-twin gap from §6 PR A: neither
+route is taken for receiver mutability. The twins existed to say
+whether a method mutates its receiver, and the ECMA-262 derived
+facts answer that directly, with zero disagreements between the
+two over the pinned lib set. The twins are retired as a
+determination source, which leaves what `ReadonlyArray<T>` means
+to a user as its own question, since the alias admits `push`
+today.
+[#1408](https://github.com/escalier-lang/escalier/issues/1408)
+carries both halves and the `ReadonlyArray` / `ReadonlyMap`
 fixtures.
 
 **Gate.** Humans review the committed files; every emitted file
