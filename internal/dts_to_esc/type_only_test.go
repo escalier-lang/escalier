@@ -3,10 +3,10 @@ package dts_to_esc
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
-	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
 
@@ -70,12 +70,15 @@ type SharedOpts = string;
 	require.Empty(t, b.String())
 }
 
-// TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the real
-// input: every web:dom type-only declaration is referenced by web:dom
-// itself or by two or more packages. The snapshot holds what the
-// partition has yet to place, so a TypeScript bump that adds a
-// type-only companion moves this test rather than absorbing the name
-// into web:dom unnoticed.
+// TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the
+// real input: every web:dom type-only declaration is referenced by
+// web:dom itself or by two or more packages. An empty report is what
+// passing looks like, so the test states the gate twice — once as the
+// report, and once as the orphan set the report suppresses.
+//
+// The second assertion is what keeps the suppression honest. A name
+// UnreferencedDOMTypes no longer covers fails here as a new orphan, and
+// an entry the lib set stopped declaring fails as a stale one.
 func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	t.Parallel()
 	libDir := filepath.Join("..", "..", "node_modules", "typescript", "lib")
@@ -91,20 +94,17 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 
 	var b strings.Builder
 	require.NoError(t, ReportTypeOnlyRouting(res, &b))
-	snaps.MatchInlineSnapshot(t, b.String(), snaps.Inline(`  web:dom: 1 type-only decls only web:compression references (CompressionFormat)
-  web:dom: 2 type-only decls only web:fetch references (HeadersIterator, RequestPriority)
-  web:dom: 1 type-only decls only web:payments references (PaymentOptions)
-  web:dom: 1 type-only decls only web:performance references (NavigationTimingType)
-  web:dom: 1 type-only decls only web:service_worker references (GetNotificationOptions)
-  web:dom: 6 type-only decls only web:streams references (ReadableStreamAsyncIterator, ReadableStreamController, ReadableStreamGetReaderOptions, ReadableStreamIteratorOptions, ReadableStreamReader, ReadableStreamType)
-  web:dom: 1 type-only decls only web:url references (URLSearchParamsIterator)
-  web:dom: 1 type-only decls only web:web_audio references (AudioTimestamp)
-  web:dom: 11 type-only decls only web:web_codecs references (AudioDataOutputCallback, AudioDecoderEventMap, AudioEncoderEventMap, AvcEncoderConfig, EncodedAudioChunkOutputCallback, EncodedVideoChunkOutputCallback, ImageBufferSource, OpusEncoderConfig, VideoDecoderEventMap, VideoEncoderEventMap, VideoFrameOutputCallback)
-  web:dom: 3 type-only decls only web:web_rtc references (RTCDtlsRole, RTCLocalSessionDescriptionInit, RTCQualityLimitationReason)
-  web:dom: 5 type-only decls only web:webauthn references (AuthenticationExtensionsClientInputs, AuthenticationExtensionsClientOutputs, PublicKeyCredentialClientCapabilities, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON)
-  web:dom: 34 type-only decls only web:webgl references (ANGLE_instanced_arrays, EXT_blend_minmax, EXT_color_buffer_float, EXT_color_buffer_half_float, EXT_float_blend, EXT_frag_depth, EXT_sRGB, EXT_shader_texture_lod, EXT_texture_compression_bptc, EXT_texture_compression_rgtc, EXT_texture_filter_anisotropic, KHR_parallel_shader_compile, OES_element_index_uint, OES_fbo_render_mipmap, OES_standard_derivatives, OES_texture_float, OES_texture_float_linear, OES_texture_half_float, OES_texture_half_float_linear, OES_vertex_array_object, OVR_multiview2, WEBGL_color_buffer_float, WEBGL_compressed_texture_astc, WEBGL_compressed_texture_etc, WEBGL_compressed_texture_etc1, WEBGL_compressed_texture_pvrtc, WEBGL_compressed_texture_s3tc, WEBGL_compressed_texture_s3tc_srgb, WEBGL_debug_renderer_info, WEBGL_debug_shaders, WEBGL_depth_texture, WEBGL_draw_buffers, WEBGL_lose_context, WEBGL_multi_draw)
-  web:dom: 14 type-only decls nothing references (ClientQueryOptions, ClientRect, ClipboardItemData, DisplayCaptureSurfaceType, EXT_texture_norm16, ElementTagNameMap, GPUError, HTMLTableDataCellElement, HTMLTableHeaderCellElement, OES_draw_buffers_indexed, OnBeforeUnloadEventHandler, RTCCertificateExpiration, StyleMedia, VideoFacingModeEnum)
-`))
+	require.Empty(t, b.String())
+
+	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
+	require.Empty(t, routing.SoleReferrer)
+	orphans := make([]string, 0, len(routing.Unreferenced))
+	for _, e := range routing.Unreferenced {
+		orphans = append(orphans, e.Name)
+	}
+	acknowledged := UnreferencedDOMTypes.ToSlice()
+	sort.Strings(acknowledged)
+	require.Equal(t, acknowledged, orphans)
 }
 
 // TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations pins

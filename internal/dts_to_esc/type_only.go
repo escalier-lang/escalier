@@ -251,11 +251,14 @@ func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 		i = j
 	}
 
-	if len(routing.Unreferenced) > 0 {
-		names := make([]string, 0, len(routing.Unreferenced))
-		for _, e := range routing.Unreferenced {
-			names = append(names, e.Name)
+	var names []string
+	for _, e := range routing.Unreferenced {
+		if UnreferencedDOMTypes.Contains(e.Name) {
+			continue
 		}
+		names = append(names, e.Name)
+	}
+	if len(names) > 0 {
 		fmt.Fprintf(&b, "  %s: %d type-only decls nothing references (%s)\n",
 			WebDOM.URI, len(names), strings.Join(names, ", "))
 	}
