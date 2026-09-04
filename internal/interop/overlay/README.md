@@ -76,6 +76,11 @@ export declare interface Array<T> {
 A name addresses a whole overload set, so an overlay that replaces
 `Array.find` restates every signature under that name.
 
+The converted member's doc comment carries onto the overlay member
+replacing it, unless the overlay wrote one of its own. Upstream
+documentation therefore reaches the generated tree whether or not an
+overlay stands in for the member it describes.
+
 Write the overlay in the shape the generated file has. The generator
 converts the `.d.ts` first and matches the overlay against the result,
 so a declaration TypeScript spells as the `interface Foo` +

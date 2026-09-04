@@ -19,17 +19,38 @@ interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
 `
 
-// convertWithOverlay routes overlayLib, converts every bucket, and folds
-// the given overlay files in. It runs the three steps a generation runs
-// before it writes anything to disk.
+// overlayDocLib is overlayLib with a doc comment above the member the
+// overlay tests replace. Prose is the bulk of what a TypeScript version
+// bump moves, so what happens to it under a `replace` is worth pinning.
+const overlayDocLib = `
+interface Array<T> { length: number; /** Reads one element. */ at(index: number): T | undefined; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+declare var Array: ArrayConstructor;
+interface ArrayLike<T> { readonly length: number; }
+`
+
+// convertWithOverlay folds an overlay tree into the converted
+// overlayLib.
 func convertWithOverlay(t *testing.T, files map[string]string) (map[string]*StandaloneModule, error) {
+	t.Helper()
+	return convertLibWithOverlay(t, overlayLib, files)
+}
+
+// convertLibWithOverlay routes one `.d.ts` input, converts every bucket,
+// and folds the given overlay files in. It runs the three steps a
+// generation runs before it writes anything to disk.
+func convertLibWithOverlay(
+	t *testing.T,
+	lib string,
+	files map[string]string,
+) (map[string]*StandaloneModule, error) {
 	t.Helper()
 	overlay, err := LoadOverlay(seedOverlay(t, files))
 	if err != nil {
 		return nil, err
 	}
 	res, err := PartitionLibWithOverlay(
-		[]LibInput{parseLib(t, "lib.es5.d.ts", overlayLib)}, overlay)
+		[]LibInput{parseLib(t, "lib.es5.d.ts", lib)}, overlay)
 	if err != nil {
 		return nil, err
 	}
@@ -324,4 +345,30 @@ func TestApplyOverlay_AddCreatesAPackageNothingRoutesTo(t *testing.T) {
 	require.Equal(t, `@js("Date.now")
 export declare fn now() -> number
 `, renderPackage(t, mods, "std:date"))
+}
+
+// TestApplyOverlay_ReplaceKeepsTheConvertedMemberDoc covers the prose a
+// member operation would otherwise drop. The overlay states the shape
+// and the upstream documentation of that member still reaches the
+// output, so a doc edit upstream lands even under a `replace`.
+func TestApplyOverlay_ReplaceKeepsTheConvertedMemberDoc(t *testing.T) {
+	t.Parallel()
+	mods, err := convertLibWithOverlay(t, overlayDocLib, map[string]string{
+		"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"    at(self, index: number) -> T,\n}\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, `@js("Array")
+export declare class Array<T> {
+    length: number,
+    /** Reads one element. */
+    at(self, index: number) -> T,
+    constructor(mut self),
+    static isArray(arg: any) -> boolean
+}
+
+export declare interface ArrayLike<T> {
+    readonly length: number
+}
+`, renderPackage(t, mods, "std:array"))
 }

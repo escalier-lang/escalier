@@ -304,7 +304,8 @@ func addMembers[E any](
 
 // replaceMembers substitutes each overlay member for the converted
 // member sharing its key, in place, and fails on a key the converted
-// declaration does not have.
+// declaration does not have. The converted member's doc comment carries
+// onto the overlay member standing in for it.
 func replaceMembers[E any](
 	f OverlayFile,
 	owner string,
@@ -324,6 +325,11 @@ func replaceMembers[E any](
 			order = append(order, slot)
 		}
 		groups[slot] = append(groups[slot], m)
+	}
+
+	hostGroups := groupMembers(host, slotOf)
+	for _, slot := range order {
+		carryMemberDocs(hostGroups[slot], groups[slot])
 	}
 
 	substituted := set.NewSet[memberSlot]()
@@ -354,6 +360,44 @@ func replaceMembers[E any](
 		}
 	}
 	return out, nil
+}
+
+// groupMembers collects a declaration's members by the slot each fills,
+// keeping each slot's members in the order the declaration lists them.
+func groupMembers[E any](members []E, slotOf func(E) (memberSlot, bool)) map[memberSlot][]E {
+	groups := map[memberSlot][]E{}
+	for _, m := range members {
+		if slot, ok := slotOf(m); ok {
+			groups[slot] = append(groups[slot], m)
+		}
+	}
+	return groups
+}
+
+// docHolder is a member carrying a JSDoc comment. Both ast.ClassElem and
+// ast.ObjTypeAnnElem declare the pair.
+type docHolder interface {
+	Doc() string
+	SetDoc(string)
+}
+
+// carryMemberDocs moves the converted members' JSDoc onto the overlay
+// members standing in for them, pairing the two lists by position. It is
+// the member-level counterpart of carryDeclMetadata, and fills in only
+// where the overlay member wrote no doc of its own.
+func carryMemberDocs[E any](converted, overlay []E) {
+	for i, m := range overlay {
+		if i >= len(converted) {
+			return
+		}
+		member, ok := any(m).(docHolder)
+		if !ok || member.Doc() != "" {
+			continue
+		}
+		if host, ok := any(converted[i]).(docHolder); ok {
+			member.SetDoc(host.Doc())
+		}
+	}
 }
 
 // findDecl returns the declaration addressed by name, or nil.
