@@ -599,6 +599,11 @@ func memberHost(committed []ast.Decl, converted ast.Decl) ast.Decl {
 //
 // Only classes and interfaces have members, and memberHost has already
 // paired the two sides by shape, so anything else yields nothing.
+//
+// A member is matched on name and side of the class, leaving its kind
+// out of the pairing. A committed `get x()` fills the name a converted
+// `readonly x: T` would take, and splicing the second one in beside it
+// would leave two members under one name.
 func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, error) {
 	opts := printer.DefaultOptions()
 
@@ -611,16 +616,16 @@ func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, er
 		filled := set.NewSet[memberSlot]()
 		for _, elem := range host.Body {
 			if slot, ok := classElemSlot(elem); ok {
-				filled.Add(slot)
+				filled.Add(slot.nameAndSide())
 			}
 		}
 		var out []NewMember
 		for _, elem := range conv.Body {
 			slot, ok := classElemSlot(elem)
-			if !ok || filled.Contains(slot) {
+			if !ok || filled.Contains(slot.nameAndSide()) {
 				continue
 			}
-			filled.Add(slot)
+			filled.Add(slot.nameAndSide())
 			text, err := printer.PrintClassElem(elem, opts)
 			if err != nil {
 				return nil, err
@@ -639,16 +644,16 @@ func missingMembers(name string, committed, converted ast.Decl) ([]NewMember, er
 		filled := set.NewSet[memberSlot]()
 		for _, elem := range host.TypeAnn.Elems {
 			if slot, ok := objElemSlot(elem); ok {
-				filled.Add(slot)
+				filled.Add(slot.nameAndSide())
 			}
 		}
 		var out []NewMember
 		for _, elem := range conv.TypeAnn.Elems {
 			slot, ok := objElemSlot(elem)
-			if !ok || filled.Contains(slot) {
+			if !ok || filled.Contains(slot.nameAndSide()) {
 				continue
 			}
-			filled.Add(slot)
+			filled.Add(slot.nameAndSide())
 			text, err := printer.PrintObjTypeAnnElem(elem, opts)
 			if err != nil {
 				return nil, err

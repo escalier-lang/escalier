@@ -2,6 +2,7 @@ package dts_to_esc
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/set"
@@ -178,7 +179,12 @@ func dropByName[E any](
 // members. Every other pair is a whole-declaration replacement, which is
 // how a shape the converter gets structurally wrong is corrected — an
 // `interface` the runtime exposes as a class, say.
-func applyOverlayDecl(mod *StandaloneModule, ns *ast.Namespace, f OverlayFile, ovDecl ast.Decl) error {
+func applyOverlayDecl(
+	mod *StandaloneModule,
+	ns *ast.Namespace,
+	f OverlayFile,
+	ovDecl ast.Decl,
+) error {
 	name := escDeclName(ovDecl)
 	idx := findDeclIndex(ns.Decls, name)
 	if idx < 0 {
@@ -195,7 +201,8 @@ func applyOverlayDecl(mod *StandaloneModule, ns *ast.Namespace, f OverlayFile, o
 	switch hostDecl := host.(type) {
 	case *ast.ClassDecl:
 		if ovClass, ok := ovDecl.(*ast.ClassDecl); ok {
-			body, err := mergeMembers(f, name, hostDecl.Body, ovClass.Body, classElemSlot)
+			body, err := mergeMembers(
+				f, name, hostDecl.Body, ovClass.Body, classElemSlot)
 			if err != nil {
 				return err
 			}
@@ -207,7 +214,8 @@ func applyOverlayDecl(mod *StandaloneModule, ns *ast.Namespace, f OverlayFile, o
 			if hostDecl.TypeAnn == nil || ovIface.TypeAnn == nil {
 				break
 			}
-			elems, err := mergeMembers(f, name, hostDecl.TypeAnn.Elems, ovIface.TypeAnn.Elems, objElemSlot)
+			elems, err := mergeMembers(
+				f, name, hostDecl.TypeAnn.Elems, ovIface.TypeAnn.Elems, objElemSlot)
 			if err != nil {
 				return err
 			}
@@ -253,11 +261,6 @@ func carryDeclMetadata(mod *StandaloneModule, host, replacement ast.Decl) {
 // that member's position, and a key the converted declaration does not
 // have fails the run. Substituting in place rather than appending is
 // what keeps a second run byte-identical.
-//
-// A key addresses a whole overload set, since memberSlot returns `find`
-// for both of `Array.find`'s signatures. So a `replace` restates every
-// signature under the name it replaces, and the converted signatures
-// under that name all give way to the overlay's.
 func mergeMembers[E any](
 	f OverlayFile,
 	owner string,
@@ -270,48 +273,114 @@ func mergeMembers[E any](
 	return replaceMembers(f, owner, host, overlay, slotOf)
 }
 
-// addMembers appends every overlay member, failing on a key the
-// converted declaration already fills.
+// addMembers appends every overlay member, failing on a member the
+// converted declaration already holds. A taken slot is a correction, so
+// the report points at `replace`. A name taken under another kind is a
+// kind change, so it points at a `drop` and an `add` instead. One file
+// may add several signatures under one name, and may add the `set x()`
+// beside a converted `get x()`.
 func addMembers[E any](
 	f OverlayFile,
 	owner string,
 	host, overlay []E,
 	slotOf func(E) (memberSlot, bool),
 ) ([]E, error) {
-	filled := set.NewSet[memberSlot]()
-	for _, m := range host {
-		if slot, ok := slotOf(m); ok {
-			filled.Add(slot)
-		}
-	}
+	converted, hostKinds := groupMembers(host, slotOf)
+	added := map[memberSlot][]memberKind{}
 	out := make([]E, 0, len(host)+len(overlay))
 	out = append(out, host...)
 	for _, m := range overlay {
 		slot, ok := slotOf(m)
-		if ok && filled.Contains(slot) {
-			return nil, fmt.Errorf(
-				"overlay: %s adds %s.%s, which the converted declaration already "+
-					"has; correct it with a replace overlay instead",
-				f.Path, owner, slot.Name)
+		if !ok {
+			out = append(out, m)
+			continue
 		}
-		if ok {
-			filled.Add(slot)
+		if _, taken := converted[slot]; taken {
+			return nil, fmt.Errorf(
+				"overlay: %s adds %s, which the converted declaration already "+
+					"has; correct it with a replace overlay instead",
+				f.Path, memberLabel(owner, slot))
+		}
+		if clash := unpairedKinds(hostKinds[slot.nameAndSide()], slot.Kind); len(clash) > 0 {
+			return nil, fmt.Errorf(
+				"overlay: %s adds %s as a %s, which the converted declaration "+
+					"declares as %s; drop the member and add the new form to change "+
+					"its kind", f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
+		}
+		held := added[slot.nameAndSide()]
+		if err := checkAddedKinds(f, owner, slot, held); err != nil {
+			return nil, err
+		}
+		if !containsKind(held, slot.Kind) {
+			added[slot.nameAndSide()] = append(held, slot.Kind)
 		}
 		out = append(out, m)
 	}
 	return out, nil
 }
 
+// checkAddedKinds pairs one overlay member against what the same file
+// already adds under that name. Signatures of one method overload and a
+// getter pairs with a setter; every other repeat is two members under
+// one name, which no declaration can hold.
+func checkAddedKinds(f OverlayFile, owner string, slot memberSlot, held []memberKind) error {
+	if containsKind(held, slot.Kind) {
+		if slot.Kind == kindMethod {
+			return nil
+		}
+		return fmt.Errorf(
+			"overlay: %s adds %s twice as a %s; only signatures overload",
+			f.Path, memberLabel(owner, slot), slot.Kind)
+	}
+	if clash := unpairedKinds(held, slot.Kind); len(clash) > 0 {
+		return fmt.Errorf(
+			"overlay: %s adds %s as a %s beside %s it adds under the same name; "+
+				"one name holds one member, or a getter and a setter",
+			f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
+	}
+	return nil
+}
+
+// unpairedKinds returns the kinds under one name that cannot stand
+// beside kind. Empty means the name is free, or holds only the other
+// half of kind's accessor.
+func unpairedKinds(held []memberKind, kind memberKind) []memberKind {
+	var clash []memberKind
+	for _, h := range held {
+		if !accessorPartner(h, kind) {
+			clash = append(clash, h)
+		}
+	}
+	return clash
+}
+
+// containsKind reports whether kind is among held.
+func containsKind(held []memberKind, kind memberKind) bool {
+	for _, h := range held {
+		if h == kind {
+			return true
+		}
+	}
+	return false
+}
+
 // replaceMembers substitutes each overlay member for the converted
 // member sharing its key, in place, and fails on a key the converted
-// declaration does not have. The converted member's doc comment carries
-// onto the overlay member standing in for it.
+// declaration does not have.
+//
+// The key carries the member's kind, so a `readonly x: T` and a
+// `get x()` do not occupy one slot and no substitution crosses kinds. It
+// addresses a whole overload set, since a name alone cannot pick one of
+// `Array.find`'s two signatures apart, so a `replace` restates every
+// signature under the name. Restating fewer fails, and so does a second
+// field or accessor under one name.
 func replaceMembers[E any](
 	f OverlayFile,
 	owner string,
 	host, overlay []E,
 	slotOf func(E) (memberSlot, bool),
 ) ([]E, error) {
+	hostGroups, hostKinds := groupMembers(host, slotOf)
 	groups := map[memberSlot][]E{}
 	var order []memberSlot
 	for _, m := range overlay {
@@ -327,9 +396,23 @@ func replaceMembers[E any](
 		groups[slot] = append(groups[slot], m)
 	}
 
-	hostGroups := groupMembers(host, slotOf)
 	for _, slot := range order {
-		carryMemberDocs(hostGroups[slot], groups[slot])
+		converted, ok := hostGroups[slot]
+		if !ok {
+			return nil, missingSlotError(f, owner, slot, hostKinds)
+		}
+		if len(groups[slot]) > 1 && slot.Kind != kindMethod {
+			return nil, fmt.Errorf(
+				"overlay: %s replaces %s twice as a %s; only signatures overload",
+				f.Path, memberLabel(owner, slot), slot.Kind)
+		}
+		if len(groups[slot]) < len(converted) {
+			return nil, fmt.Errorf(
+				"overlay: %s replaces %d of the %d signatures of %s; a replace "+
+					"restates the whole overload set, since a name is what addresses it",
+				f.Path, len(groups[slot]), len(converted), memberLabel(owner, slot))
+		}
+		carryMemberDocs(converted, groups[slot])
 	}
 
 	substituted := set.NewSet[memberSlot]()
@@ -345,33 +428,14 @@ func replaceMembers[E any](
 			out = append(out, m)
 			continue
 		}
-		// The first converted member under this name takes the overlay's
+		// The first converted member under this key takes the overlay's
 		// whole overload set; the rest of the converted set gives way.
 		if !substituted.Contains(slot) {
 			substituted.Add(slot)
 			out = append(out, group...)
 		}
 	}
-	for _, slot := range order {
-		if !substituted.Contains(slot) {
-			return nil, fmt.Errorf(
-				"overlay: %s replaces %s.%s, which the converted declaration does "+
-					"not have", f.Path, owner, slot.Name)
-		}
-	}
 	return out, nil
-}
-
-// groupMembers collects a declaration's members by the slot each fills,
-// keeping each slot's members in the order the declaration lists them.
-func groupMembers[E any](members []E, slotOf func(E) (memberSlot, bool)) map[memberSlot][]E {
-	groups := map[memberSlot][]E{}
-	for _, m := range members {
-		if slot, ok := slotOf(m); ok {
-			groups[slot] = append(groups[slot], m)
-		}
-	}
-	return groups
 }
 
 // docHolder is a member carrying a JSDoc comment. Both ast.ClassElem and
@@ -398,6 +462,83 @@ func carryMemberDocs[E any](converted, overlay []E) {
 			member.SetDoc(host.Doc())
 		}
 	}
+}
+
+// groupMembers collects a declaration's members by the slot each fills,
+// and records which kinds every name is declared under. The kinds are
+// what tells a member the declaration does not have from one the overlay
+// wrote under the wrong kind.
+func groupMembers[E any](
+	members []E,
+	slotOf func(E) (memberSlot, bool),
+) (map[memberSlot][]E, map[memberSlot][]memberKind) {
+	groups := map[memberSlot][]E{}
+	kinds := map[memberSlot][]memberKind{}
+	for _, m := range members {
+		slot, ok := slotOf(m)
+		if !ok {
+			continue
+		}
+		if _, seen := groups[slot]; !seen {
+			kinds[slot.nameAndSide()] = append(kinds[slot.nameAndSide()], slot.Kind)
+		}
+		groups[slot] = append(groups[slot], m)
+	}
+	return groups, kinds
+}
+
+// missingSlotError reports an overlay member the converted declaration
+// cannot be paired with. A name held under another kind gets a narrower
+// message, since the overlay found its target and wrote it in the wrong
+// form. The missing half of an accessor is an addition; every other
+// mismatch is a kind change, so a `drop` and an `add`.
+func missingSlotError(
+	f OverlayFile,
+	owner string,
+	slot memberSlot,
+	hostKinds map[memberSlot][]memberKind,
+) error {
+	held := hostKinds[slot.nameAndSide()]
+	if len(held) == 0 {
+		return fmt.Errorf(
+			"overlay: %s replaces %s, which the converted declaration does "+
+				"not have", f.Path, memberLabel(owner, slot))
+	}
+	clash := unpairedKinds(held, slot.Kind)
+	if len(clash) == 0 {
+		return fmt.Errorf(
+			"overlay: %s replaces %s as a %s, which the converted declaration "+
+				"declares only as %s; contribute the %s with an add overlay instead",
+			f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(held), slot.Kind)
+	}
+	return fmt.Errorf(
+		"overlay: %s replaces %s as a %s, which the converted declaration "+
+			"declares as %s; drop the member and add the new form to change its kind",
+		f.Path, memberLabel(owner, slot), slot.Kind, joinKinds(clash))
+}
+
+// memberLabel names a member the way an overlay report does. A static
+// member is marked, since one name reaches both sides of a class and
+// `Array.of` alone would read as the instance member of a declaration
+// that has both.
+func memberLabel(owner string, slot memberSlot) string {
+	if slot.Static {
+		return "static " + owner + "." + slot.Name
+	}
+	return owner + "." + slot.Name
+}
+
+// joinKinds names the kinds one member name is declared under, as `a
+// getter and a setter`.
+func joinKinds(kinds []memberKind) string {
+	names := make([]string, len(kinds))
+	for i, kind := range kinds {
+		names[i] = "a " + string(kind)
+	}
+	if len(names) == 1 {
+		return names[0]
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1]
 }
 
 // findDecl returns the declaration addressed by name, or nil.

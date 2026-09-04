@@ -59,6 +59,15 @@ export declare val iteratorKey: unique symbol
 Adding a member the converted declaration already has fails the run.
 Correcting one is `replace`.
 
+One file may add several signatures under one name, which is how it
+contributes an overload set the converted declaration has no signature
+of.
+
+A name holds one member, with one exception: a `get x()` and a
+`set x()` are two halves of one accessor and share a name. So an overlay
+may add the setter beside a converted getter, and adding any other form
+of a name the converted declaration holds fails.
+
 ## `replace`
 
 Takes the same file shape as `add` and differs only in what happens on a
@@ -73,8 +82,22 @@ export declare interface Array<T> {
 }
 ```
 
+A member is addressed by its name, which side of the class it lives on,
+and its kind. Two rules follow.
+
 A name addresses a whole overload set, so an overlay that replaces
-`Array.find` restates every signature under that name.
+`Array.find` restates both of its signatures. Restating fewer than the
+converted declaration holds fails the run and names the member, since a
+name is what addresses the set and there is no way to point at one
+signature in it. Only signatures overload, so writing one name as two
+fields or two accessors fails as well.
+
+The kind is part of the key, so a `readonly x: T` and a `get x()` are
+two members rather than one. An overlay that writes a name under a kind
+the converted declaration does not hold it under fails, rather than
+retyping the member under cover of replacing it. Changing a member's
+kind is a `drop` and an `add`, and supplying the missing half of an
+accessor is an `add` on its own.
 
 The converted member's doc comment carries onto the overlay member
 replacing it, unless the overlay wrote one of its own. Upstream
