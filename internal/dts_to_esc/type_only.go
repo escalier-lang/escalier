@@ -12,7 +12,7 @@ import (
 
 // A declaration is type-only when the lib set binds no value of its
 // name. An `interface` with no companion `declare var`, and a `type`
-// alias, are both type-only. The static half of a trio is not:
+// alias, are both type-only. The static half of a trio is not.
 // TypeScript spells a class as `interface Foo`, `interface
 // FooConstructor`, and `declare var Foo`, and that binding gives all
 // three a runtime referent.

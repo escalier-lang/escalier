@@ -72,13 +72,13 @@ type SharedOpts = string;
 
 // TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the
 // real input: every web:dom type-only declaration is referenced by
-// web:dom itself or by two or more packages. An empty report is what
-// passing looks like, so the test states the gate twice — once as the
-// report, and once as the orphan set the report suppresses.
+// web:dom itself or by two or more packages. Passing looks like an
+// empty report, so the test states the gate a second way. It asserts
+// the set of unreferenced declarations the report suppresses.
 //
-// The second assertion is what keeps the suppression honest. A name
-// UnreferencedDOMTypes no longer covers fails here as a new orphan, and
-// an entry the lib set stopped declaring fails as a stale one.
+// That second assertion is what keeps the suppression honest. A
+// declaration UnreferencedDOMTypes does not cover fails here, and so
+// does an entry the lib set has stopped declaring.
 func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	t.Parallel()
 	libDir := filepath.Join("..", "..", "node_modules", "typescript", "lib")
