@@ -181,20 +181,14 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 }
 
 // ReceiverMutates reports whether calling method on owner mutates the
-// receiver, which is what decides between `self` and `mut self` on the
-// emitted class. It is the entry point for a caller holding an owner
-// name and a bare method name rather than a dts_parser.ClassMember,
-// which is what the trio fusion in interfaceMemberToClassElem holds.
+// receiver, deciding between `self` and `mut self` on the emitted class.
+// It serves a caller holding two names rather than a
+// dts_parser.ClassMember, which is what trio fusion holds.
 //
-// It runs the owner-wide tiers first, then the name-only ones, and falls
-// back to Classify's tier-7 default of mutating, so a synthesised
-// receiver matches what classifyMember produces for a real MethodDecl
-// reaching no tier.
-//
-// Unlike Classify and ClassifyMethodByName it always answers. Those two
-// report whether any tier matched and leave the default to their caller;
-// this one applies the default itself, which is why it returns a bare
-// bool rather than a result and an ok.
+// It runs the owner-wide tiers, then the name-only ones, then Classify's
+// tier-7 default of mutating. Applying that default itself is why it
+// returns a bare bool where Classify and ClassifyMethodByName also
+// report whether a tier matched.
 func ReceiverMutates(owner, method string) bool {
 	if ImmutableOwners.Contains(owner) {
 		return false
@@ -214,21 +208,14 @@ func ReceiverMutates(owner, method string) bool {
 // `mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
 
-// ImmutableOwners names the types no instance method of which can mutate
-// its receiver, so none of their methods takes `mut self`.
+// ImmutableOwners names the types whose instance methods never take
+// `mut self`. Each wraps a JavaScript primitive, and a primitive is
+// immutable at the language level.
 //
-// Each wraps a JavaScript primitive, and a primitive is immutable at the
-// language level. `String.prototype.toUpperCase` returns a new string
-// and leaves the old one alone; there is no operation anywhere on
-// `String.prototype` that does otherwise, and the same holds for the
-// rest.
-//
-// The rule names the owner rather than its methods because the fact is
-// about the type. A per-method list only covers the names someone
-// thought of: `strike`, `italics`, `blink`, and the other Annex B
-// wrappers matched no heuristic prefix, fell through to tier 7, and
-// took `mut self` by default. Naming the owner answers those and
-// whatever a future TypeScript bump adds beside them.
+// Naming the owner rather than its methods is what makes the rule hold
+// as TypeScript grows. A per-method list covers only the names someone
+// thought of, and `strike`, `italics`, and the other Annex B wrappers
+// match no heuristic prefix, so they reach the mutating default.
 var ImmutableOwners = set.FromSlice([]string{
 	"String",
 	"Number",
