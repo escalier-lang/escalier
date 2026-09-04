@@ -2236,7 +2236,7 @@ D. **Free the converter of `internal/type_system`.** ✅ The
    Removing the runtime override store itself is the third-party
    workstream's call.
 
-E. **Generate the tree instead of merging into it** (6.4, 6.6) ⬜.
+E. **Generate the tree instead of merging into it** (6.4, 6.6) ✅.
    [#1341](https://github.com/escalier-lang/escalier/issues/1341).
    Makes a generated `.esc` a build output: one `generate`
    subcommand writes the tree from the three inputs of §6.4 and
@@ -2251,10 +2251,12 @@ E. **Generate the tree instead of merging into it** (6.4, 6.6) ⬜.
    diff subsumes B's outstanding checks 2 and 3 without waiting on
    SimpleSub M7.5.
 
-   Now is the cheapest moment for it. §7 has not started, so
-   `internal/interop/data/` holds two hand-written stubs and
-   nothing else — there are no hand-edits to preserve, and the
-   additive machinery has never done the job it was built for.
+   The gate's last clause, CI failing when the committed tree
+   does not match its inputs, needs a committed tree to read.
+   The job #1344 landed runs against a tree it seeds, which
+   gates generator idempotence over the pinned lib set.
+   [#1393](https://github.com/escalier-lang/escalier/issues/1393)
+   points it at `internal/interop/data` alongside §7.
 
 6.5 (`throws`) is scope and policy rather than code — fold into
 whichever PR is convenient. §6.8 sequences the fact application,
