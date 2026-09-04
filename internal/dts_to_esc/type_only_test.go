@@ -70,17 +70,13 @@ type SharedOpts = string;
 	require.Empty(t, b.String())
 }
 
-// TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the
-// real input: every web:dom type-only declaration is referenced by
-// web:dom itself or by two or more packages. Passing looks like an
-// empty report, so the test states the gate a second way. It asserts
-// the set of unreferenced declarations the report suppresses.
-//
-// That second assertion is what keeps the suppression honest. A
-// declaration UnreferencedDOMTypes does not cover fails here, and so
-// does an entry the lib set has stopped declaring.
-func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
-	t.Parallel()
+// pinnedRouting routes the pinned lib set through the committed
+// overlay, which is the input generate reports on. The overlay's root
+// drop file settles `eval` and the other whole-symbol drops before
+// routing, so a run without it fails the fail-safe on the first
+// dropped name.
+func pinnedRouting(t *testing.T) *PartitionResult {
+	t.Helper()
 	libDir := filepath.Join("..", "..", "node_modules", "typescript", "lib")
 	if _, err := os.Stat(libDir); err != nil {
 		t.Skipf("TypeScript lib dir not present at %s; run `pnpm install`: %v", libDir, err)
@@ -89,22 +85,44 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	require.NoError(t, err)
 	inputs, err := ParseLibFiles(libDir, basenames)
 	require.NoError(t, err)
-
-	// The committed overlay, which is the input generate reports on.
-	// Its root drop file settles `eval` and the other whole-symbol
-	// drops before routing, so a run without it fails the fail-safe on
-	// the first dropped name.
 	overlay, err := LoadOverlay(filepath.Join("..", "interop", "overlay"))
 	require.NoError(t, err)
 	res, err := PartitionLibWithOverlay(inputs, overlay)
 	require.NoError(t, err)
+	return res
+}
+
+// TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the real
+// input: every web:dom type-only declaration is referenced by web:dom
+// itself or by two or more packages. The report prints only what still
+// needs a decision, so passing looks like an empty one.
+//
+// The second assertion states the misplacement half structurally. It
+// still fails if the report's grouping ever swallows a finding.
+func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
+	t.Parallel()
+	res := pinnedRouting(t)
 
 	var b strings.Builder
 	require.NoError(t, ReportTypeOnlyRouting(res, &b))
 	require.Empty(t, b.String())
 
-	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
-	require.Empty(t, routing.SoleReferrer)
+	require.Empty(t, AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI).SoleReferrer)
+}
+
+// TestUnreferencedDOMTypes_MatchesThePinnedLibSet keeps the gate above
+// honest. That report hides whatever UnreferencedDOMTypes covers, so an
+// empty report cannot on its own tell a clean tree from one whose new
+// orphan the list happens to hide.
+//
+// Comparing the two sets catches both directions. A declaration the
+// list does not cover is a new one needing a decision, and an entry
+// that no longer appears is stale because TypeScript stopped declaring
+// the name.
+func TestUnreferencedDOMTypes_MatchesThePinnedLibSet(t *testing.T) {
+	t.Parallel()
+	routing := AnalyzeTypeOnlyRouting(pinnedRouting(t)).forPackage(WebDOM.URI)
+
 	orphans := make([]string, 0, len(routing.Unreferenced))
 	for _, e := range routing.Unreferenced {
 		orphans = append(orphans, e.Name)
