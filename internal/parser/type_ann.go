@@ -663,7 +663,7 @@ func simpleTypeRefName(t ast.TypeAnn) (string, bool) {
 // A decline leaves no trace of the modifier, so a caller that needs it has to hold onto
 // it across the call. objTypeAnnElemInner does that for `readonly`, the one spelling a
 // computed-key property can carry.
-func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
+func (p *Parser) tryParseMappedType(start ast.Location) *ast.MappedTypeAnn {
 	// Parse readonly modifiers: readonly, +readonly, or -readonly
 	var readonly *ast.MappedModifier
 	token := p.lexer.peek()
@@ -844,19 +844,17 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 			mappedName = name
 		}
 
-		return &ast.MappedTypeAnn{
-			TypeParam: &ast.IndexParamTypeAnn{
-				Name:       key,
-				Constraint: constraint,
-			},
-			Name:      mappedName,
-			Value:     value,
-			Optional:  optional,
-			ReadOnly:  readonly,
-			Check:     check,
-			Extends:   extends,
-			Shorthand: shorthand,
-		}
+		return ast.NewMappedTypeAnn(
+			&ast.IndexParamTypeAnn{Name: key, Constraint: constraint},
+			mappedName,
+			value,
+			optional,
+			readonly,
+			check,
+			extends,
+			shorthand,
+			p.elemSpanFrom(start),
+		)
 	}
 
 	return nil
@@ -869,7 +867,6 @@ func (p *Parser) tryParseMappedType() *ast.MappedTypeAnn {
 // shape of parseClassElem — see #663.
 func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	doc := p.consumeLeadingDoc()
-	start := p.lexer.peek().Span.Start
 	// After consuming a leading JSDoc, if we're sitting on the object
 	// type's closing brace, there's no elem to attach the doc to.
 	// Surface that to the user as a parse error AND return nil so
@@ -883,22 +880,25 @@ func (p *Parser) objTypeAnnElem() ast.ObjTypeAnnElem {
 	}
 	elem := p.objTypeAnnElemInner()
 	attachDoc(elem, doc)
-	if elem != nil {
-		// The member runs from its first modifier or name through the last code
-		// token the inner read. Recording it here covers every variant at once,
-		// and it is what lets ast.AttachComments tell a comment written before a
-		// member from one written after it.
-		elem.SetSpan(ast.Span{
-			Start:    start,
-			End:      p.lexer.lastCodeLoc(),
-			SourceID: p.lexer.source.ID,
-		})
-	}
 	return elem
+}
+
+// elemSpanFrom closes an object type annotation member's range at the last code
+// token read. A member runs from its first modifier or name through its type,
+// and closing at the last code token rather than at the lexer's position keeps
+// a comment the type annotation parser consumed on its way to the comma outside
+// the member: in `{a: number /* m */, b: string}` the first member spans
+// `a: number`. ast.AttachComments reads that range to tell a comment written
+// before a member from one written after it.
+func (p *Parser) elemSpanFrom(start ast.Location) ast.Span {
+	return ast.Span{Start: start, End: p.lexer.lastCodeLoc(), SourceID: p.lexer.source.ID}
 }
 
 func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	token := p.lexer.peek()
+	// The member opens here, at its first modifier or name. Every branch below
+	// closes its range with elemSpanFrom.
+	start := token.Span.Start
 
 	// Handle rest spread syntax: ...T
 	if token.Type == DotDotDot {
@@ -908,8 +908,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 			p.reportError(token.Span, "expected type annotation after '...'")
 			return nil
 		}
-		span := ast.MergeSpans(token.Span, value.Span())
-		return ast.NewRestSpreadTypeAnn(value, span)
+		return ast.NewRestSpreadTypeAnn(value, p.elemSpanFrom(start))
 	}
 
 	// A `new (x: number) -> T` construct signature and a `fn (x: number) -> T` call
@@ -926,10 +925,11 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	// them type parameters, an inexact marker, and a `throws` clause for free.
 	if (token.Type == New || token.Type == Fn) && startsASignature(p.lexer.peek2().Type) {
 		p.lexer.consume() // consume 'new' or 'fn'
+		fn := p.funcTypeAnnTail(token)
 		if token.Type == New {
-			return &ast.ConstructorTypeAnn{Fn: p.funcTypeAnnTail(token)}
+			return ast.NewConstructorTypeAnn(fn, p.elemSpanFrom(start))
 		}
-		return &ast.CallableTypeAnn{Fn: p.funcTypeAnnTail(token)}
+		return ast.NewCallableTypeAnn(fn, p.elemSpanFrom(start))
 	}
 
 	mod := ""
@@ -977,7 +977,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		}
 	}
 
-	mappedElem := p.tryParseMappedType()
+	mappedElem := p.tryParseMappedType(start)
 	if mappedElem != nil {
 		return mappedElem
 	}
@@ -1038,54 +1038,27 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	case CloseBrace:
 		p.reportError(token.Span, "expected type annotation")
 
-		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
-			Name:     objKey,
-			Optional: false,
-			Readonly: readonly,
-			Value:    recoveryNever(token.Span),
-		}
-		return property
+		return ast.NewPropertyTypeAnn(objKey, false, readonly, recoveryNever(token.Span), p.elemSpanFrom(start))
 	case Comma:
 		p.reportError(token.Span, "expected type annotation")
 
-		var property ast.ObjTypeAnnElem = &ast.PropertyTypeAnn{
-			Name:     objKey,
-			Optional: false,
-			Readonly: readonly,
-			Value:    recoveryNever(token.Span),
-		}
-		return property
+		return ast.NewPropertyTypeAnn(objKey, false, readonly, recoveryNever(token.Span), p.elemSpanFrom(start))
 	case Colon:
 		p.lexer.consume() // consume ':'
-
-		property := &ast.PropertyTypeAnn{
-			Name:     objKey,
-			Optional: false,
-			Readonly: readonly,
-			Value:    nil,
-		}
 
 		token = p.lexer.peek()
 		if token.Type == Comma {
 			p.reportError(token.Span, "expected type annotation")
-			property.Value = recoveryNever(token.Span)
-			return property
+			return ast.NewPropertyTypeAnn(objKey, false, readonly, recoveryNever(token.Span), p.elemSpanFrom(start))
 		}
 
 		value := p.typeAnnRequired()
-		property.Value = value
-
-		return property
+		return ast.NewPropertyTypeAnn(objKey, false, readonly, value, p.elemSpanFrom(start))
 	case Question:
 		p.lexer.consume() // consume '?'
 		p.expect(Colon, ConsumeOnMatch)
 		value := p.typeAnnRequired()
-		return &ast.PropertyTypeAnn{
-			Name:     objKey,
-			Optional: true,
-			Readonly: readonly,
-			Value:    value,
-		}
+		return ast.NewPropertyTypeAnn(objKey, true, readonly, value, p.elemSpanFrom(start))
 	case OpenParen:
 		p.lexer.consume() // consume '('
 
@@ -1138,23 +1111,11 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		// nolint: exhaustive
 		switch mod {
 		case "get":
-			return &ast.GetterTypeAnn{
-				Name:     objKey,
-				Fn:       fnTypeAnn,
-				Receiver: receiver,
-			}
+			return ast.NewGetterTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
 		case "set":
-			return &ast.SetterTypeAnn{
-				Name:     objKey,
-				Fn:       fnTypeAnn,
-				Receiver: receiver,
-			}
+			return ast.NewSetterTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
 		default:
-			return &ast.MethodTypeAnn{
-				Name:     objKey,
-				Fn:       fnTypeAnn,
-				Receiver: receiver,
-			}
+			return ast.NewMethodTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
 		}
 	default:
 		// Report error for invalid property syntax instead of panicking
