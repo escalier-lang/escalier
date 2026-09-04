@@ -157,6 +157,9 @@ func runGenerate(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.ReportPartition(res.Partition, stderr); err != nil {
 		return err
 	}
+	if err := dts_to_esc.ReportTypeOnlyRouting(res.Partition, stderr); err != nil {
+		return err
+	}
 	if err := dts_to_esc.ReportSingletonKeyDrops(res.Modules, stderr); err != nil {
 		return err
 	}

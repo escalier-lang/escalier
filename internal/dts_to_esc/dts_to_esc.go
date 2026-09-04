@@ -482,6 +482,21 @@ func countTypeRefs(stmts []dts_parser.Statement, name string) int {
 	return count
 }
 
+// walkTypeParamTypes invokes visit on the constraint and default of
+// each type parameter. `interface Foo<T extends Bar = Baz>` mentions
+// Bar and Baz nowhere else, so a walk that skips these two slots
+// reports both as referenced by nothing.
+func walkTypeParamTypes(params []*dts_parser.TypeParam, visit func(dts_parser.TypeAnn)) {
+	for _, tp := range params {
+		if tp.Constraint != nil {
+			visit(tp.Constraint)
+		}
+		if tp.Default != nil {
+			visit(tp.Default)
+		}
+	}
+}
+
 // walkStatementTypes invokes visit on every top-level TypeAnn carried
 // by stmt. For composite statements (InterfaceDecl, ClassDecl,
 // NamespaceDecl) it descends into member type annotations too.
@@ -492,10 +507,12 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			visit(s.TypeAnn)
 		}
 	case *dts_parser.TypeDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		if s.TypeAnn != nil {
 			visit(s.TypeAnn)
 		}
 	case *dts_parser.FuncDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		for _, p := range s.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -505,6 +522,7 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			visit(s.ReturnType)
 		}
 	case *dts_parser.InterfaceDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		for _, ext := range s.Extends {
 			visit(ext)
 		}
@@ -512,6 +530,16 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			walkInterfaceMemberTypes(m, visit)
 		}
 	case *dts_parser.ClassDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
+		// A superclass and an implemented interface are references the
+		// members repeat only by accident. `declare class Foo extends
+		// Base implements Iface` names both nowhere else.
+		if s.Extends != nil {
+			visit(s.Extends)
+		}
+		for _, impl := range s.Implements {
+			visit(impl)
+		}
 		for _, m := range s.Members {
 			walkClassMemberTypes(m, visit)
 		}
@@ -531,6 +559,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.TypeAnn)
 		}
 	case *dts_parser.MethodSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -548,6 +577,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.Param.Type)
 		}
 	case *dts_parser.CallSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -557,6 +587,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.ReturnType)
 		}
 	case *dts_parser.ConstructSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -587,6 +618,7 @@ func walkClassMemberTypes(m dts_parser.ClassMember, visit func(dts_parser.TypeAn
 			visit(member.TypeAnn)
 		}
 	case *dts_parser.MethodDecl:
+		walkTypeParamTypes(member.TypeParams, visit)
 		for _, p := range member.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -604,86 +636,113 @@ func walkClassMemberTypes(m dts_parser.ClassMember, visit func(dts_parser.TypeAn
 	}
 }
 
-// countTypeRefsInTypeAnn recursively walks a TypeAnn and returns the
-// number of TypeReference nodes whose bare name equals `name`.
-func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
+// walkTypeRefs invokes visit on every TypeReference reachable from t,
+// including the references inside a reference's own type arguments.
+//
+// Coverage is best-effort, on the same terms as walkClassMemberTypes
+// above. A node shape the switch misses makes a caller see fewer
+// references than the source holds, never more.
+func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 	if t == nil {
-		return 0
+		return
 	}
 	switch n := t.(type) {
 	case *dts_parser.TypeReference:
-		count := 0
-		if typeRefName(n) == name {
-			count++
-		}
+		visit(n)
 		for _, arg := range n.TypeArgs {
-			count += countTypeRefsInTypeAnn(arg, name)
+			walkTypeRefs(arg, visit)
 		}
-		return count
 	case *dts_parser.ArrayType:
-		return countTypeRefsInTypeAnn(n.ElementType, name)
+		walkTypeRefs(n.ElementType, visit)
 	case *dts_parser.TupleType:
-		count := 0
 		for _, e := range n.Elements {
-			count += countTypeRefsInTypeAnn(e.Type, name)
+			walkTypeRefs(e.Type, visit)
 		}
-		return count
 	case *dts_parser.UnionType:
-		count := 0
 		for _, sub := range n.Types {
-			count += countTypeRefsInTypeAnn(sub, name)
+			walkTypeRefs(sub, visit)
 		}
-		return count
 	case *dts_parser.IntersectionType:
-		count := 0
 		for _, sub := range n.Types {
-			count += countTypeRefsInTypeAnn(sub, name)
+			walkTypeRefs(sub, visit)
 		}
-		return count
 	case *dts_parser.FunctionType:
-		count := 0
+		walkTypeParamTypes(n.TypeParams, func(sub dts_parser.TypeAnn) {
+			walkTypeRefs(sub, visit)
+		})
 		for _, p := range n.Params {
-			count += countTypeRefsInTypeAnn(p.Type, name)
+			walkTypeRefs(p.Type, visit)
 		}
-		count += countTypeRefsInTypeAnn(n.ReturnType, name)
-		return count
+		walkTypeRefs(n.ReturnType, visit)
 	case *dts_parser.ConstructorType:
-		count := 0
+		walkTypeParamTypes(n.TypeParams, func(sub dts_parser.TypeAnn) {
+			walkTypeRefs(sub, visit)
+		})
 		for _, p := range n.Params {
-			count += countTypeRefsInTypeAnn(p.Type, name)
+			walkTypeRefs(p.Type, visit)
 		}
-		count += countTypeRefsInTypeAnn(n.ReturnType, name)
-		return count
+		walkTypeRefs(n.ReturnType, visit)
 	case *dts_parser.ObjectType:
-		count := 0
 		for _, m := range n.Members {
 			walkInterfaceMemberTypes(m, func(sub dts_parser.TypeAnn) {
-				count += countTypeRefsInTypeAnn(sub, name)
+				walkTypeRefs(sub, visit)
 			})
 		}
-		return count
 	case *dts_parser.ParenthesizedType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.IndexedAccessType:
-		return countTypeRefsInTypeAnn(n.ObjectType, name) +
-			countTypeRefsInTypeAnn(n.IndexType, name)
+		walkTypeRefs(n.ObjectType, visit)
+		walkTypeRefs(n.IndexType, visit)
 	case *dts_parser.ConditionalType:
-		return countTypeRefsInTypeAnn(n.CheckType, name) +
-			countTypeRefsInTypeAnn(n.ExtendsType, name) +
-			countTypeRefsInTypeAnn(n.TrueType, name) +
-			countTypeRefsInTypeAnn(n.FalseType, name)
+		walkTypeRefs(n.CheckType, visit)
+		walkTypeRefs(n.ExtendsType, visit)
+		walkTypeRefs(n.TrueType, visit)
+		walkTypeRefs(n.FalseType, visit)
 	case *dts_parser.MappedType:
-		return countTypeRefsInTypeAnn(n.ValueType, name)
+		// The key source and the `as` remapping name types the value
+		// slot does not. `{ [K in keyof Bag as Name<K>]: V }` mentions
+		// Bag and Name only here.
+		if n.TypeParam != nil {
+			walkTypeRefs(n.TypeParam.Constraint, visit)
+		}
+		walkTypeRefs(n.AsClause, visit)
+		walkTypeRefs(n.ValueType, visit)
+	case *dts_parser.TemplateLiteralType:
+		// A template literal's interpolations are the only place some
+		// names appear. `type AutoFill = ...
+		// ${OptionalPrefixToken<AutoFillSection>}...` in lib.dom.d.ts is
+		// every reference AutoFillSection gets.
+		for _, part := range n.Parts {
+			if sub, ok := part.(*dts_parser.TemplateType); ok {
+				walkTypeRefs(sub.Type, visit)
+			}
+		}
+	case *dts_parser.InferType:
+		// `infer U extends Bound` names Bound only in the constraint.
+		if n.TypeParam != nil {
+			walkTypeRefs(n.TypeParam.Constraint, visit)
+		}
 	case *dts_parser.KeyOfType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.TypePredicate:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.RestType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	case *dts_parser.OptionalType:
-		return countTypeRefsInTypeAnn(n.Type, name)
+		walkTypeRefs(n.Type, visit)
 	}
-	return 0
+}
+
+// countTypeRefsInTypeAnn returns how many TypeReference nodes under t
+// carry the bare name `name`.
+func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
+	count := 0
+	walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
+		if typeRefName(ref) == name {
+			count++
+		}
+	})
+	return count
 }
 
 // typeRefName returns the bare identifier of a TypeReference's name, or

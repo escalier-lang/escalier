@@ -342,6 +342,7 @@ var webPackages = []struct {
 		"ReferrerPolicy",
 		"RequestCache", "RequestCredentials", "RequestDestination",
 		"RequestMode", "RequestRedirect",
+		"HeadersIterator", "RequestPriority",
 		// FormData / FormDataEntryValue intentionally not listed:
 		// MDN classifies them under the XMLHttpRequest API, not
 		// Fetch. They are declared in lib.dom.d.ts so they route to
@@ -371,11 +372,16 @@ var webPackages = []struct {
 		"TransformerStartCallback", "TransformerTransformCallback",
 		"TransformerCancelCallback",
 		"GenericTransformStream",
+		"ReadableStreamAsyncIterator", "ReadableStreamController",
+		"ReadableStreamGetReaderOptions", "ReadableStreamIteratorOptions",
+		"ReadableStreamReader", "ReadableStreamType",
+		"ReadableStreamReaderMode",
 	}},
 	{"web:compression", "web/compression.esc", []string{
 		// MDN documents the Compression Streams API as its own API
 		// distinct from Streams: https://developer.mozilla.org/en-US/docs/Web/API/Compression_Streams_API
 		"CompressionStream", "DecompressionStream",
+		"CompressionFormat",
 	}},
 	{"web:crypto", "web/crypto.esc", []string{
 		"crypto", "Crypto", "SubtleCrypto", "CryptoKey", "CryptoKeyPair",
@@ -433,6 +439,33 @@ var webPackages = []struct {
 		"GLushort", "GLuint64EXT", "GLint64EXT",
 		"TexImageSource",
 		"Float32List", "Int32List", "Uint32List",
+		// The WebGL extension interfaces. `getExtension` returns 34
+		// of them. `EXT_texture_norm16` and
+		// `OES_draw_buffers_indexed` have no overload returning them,
+		// and `WebGLVertexArrayObjectOES` is the handle
+		// `OES_vertex_array_object` hands out rather than an
+		// extension object. MDN documents all of these under the
+		// WebGL API.
+		"ANGLE_instanced_arrays",
+		"EXT_blend_minmax", "EXT_color_buffer_float",
+		"EXT_color_buffer_half_float", "EXT_float_blend",
+		"EXT_frag_depth", "EXT_sRGB", "EXT_shader_texture_lod",
+		"EXT_texture_compression_bptc", "EXT_texture_compression_rgtc",
+		"EXT_texture_filter_anisotropic", "EXT_texture_norm16",
+		"KHR_parallel_shader_compile",
+		"OES_draw_buffers_indexed", "OES_element_index_uint",
+		"OES_fbo_render_mipmap", "OES_standard_derivatives",
+		"OES_texture_float", "OES_texture_float_linear",
+		"OES_texture_half_float", "OES_texture_half_float_linear",
+		"OES_vertex_array_object",
+		"OVR_multiview2",
+		"WEBGL_color_buffer_float", "WEBGL_compressed_texture_astc",
+		"WEBGL_compressed_texture_etc", "WEBGL_compressed_texture_etc1",
+		"WEBGL_compressed_texture_pvrtc", "WEBGL_compressed_texture_s3tc",
+		"WEBGL_compressed_texture_s3tc_srgb", "WEBGL_debug_renderer_info",
+		"WEBGL_debug_shaders", "WEBGL_depth_texture", "WEBGL_draw_buffers",
+		"WEBGL_lose_context", "WEBGL_multi_draw",
+		"WebGLVertexArrayObjectOES",
 	}},
 	{"web:web_audio", "web/web_audio.esc", []string{
 		// Symbols MDN documents under Web Audio that are absent from
@@ -478,6 +511,7 @@ var webPackages = []struct {
 		"WaveShaperNode", "WaveShaperOptions", "OverSampleType",
 		"AutomationRate",
 		"DecodeErrorCallback", "DecodeSuccessCallback",
+		"AudioTimestamp",
 	}},
 	{"web:web_rtc", "web/web_rtc.esc", []string{
 		// Symbols MDN documents under WebRTC that are absent from the
@@ -536,6 +570,8 @@ var webPackages = []struct {
 		"RTCTransportStats",
 		"RTCPeerConnectionErrorCallback",
 		"RTCSessionDescriptionCallback",
+		"RTCCertificateExpiration", "RTCDtlsRole",
+		"RTCLocalSessionDescriptionInit", "RTCQualityLimitationReason",
 	}},
 	{"web:web_codecs", "web/web_codecs.esc", []string{
 		"AudioData", "AudioDataInit", "AudioDataCopyToOptions",
@@ -567,6 +603,14 @@ var webPackages = []struct {
 		"AlphaOption", "LatencyMode", "AvcBitstreamFormat",
 		"CodecState",
 		"BitrateMode",
+		"AudioDataOutputCallback", "AudioDecoderEventMap",
+		"AudioEncoderEventMap", "AvcEncoderConfig",
+		"EncodedAudioChunkOutputCallback",
+		"EncodedVideoChunkOutputCallback",
+		"ImageBufferSource", "OpusEncoderConfig",
+		"VideoDecoderEventMap", "VideoEncoderEventMap",
+		"VideoFrameOutputCallback",
+		"OpusBitstreamFormat",
 	}},
 	{"web:indexeddb", "web/indexeddb.esc", []string{
 		"IDBFactory", "IDBOpenDBRequest", "IDBOpenDBRequestEventMap",
@@ -599,6 +643,8 @@ var webPackages = []struct {
 		"RegistrationOptions",
 		"NavigationPreloadManager", "NavigationPreloadState",
 		"FrameType", "ClientType",
+		"ClientQueryOptions", "GetNotificationOptions",
+		"ClientTypes",
 	}},
 	{"web:push", "web/push.esc", []string{
 		// MDN documents Push as a separate API:
@@ -623,6 +669,7 @@ var webPackages = []struct {
 	}},
 	{"web:url", "web/url.esc", []string{
 		"URL", "URLSearchParams",
+		"URLSearchParamsIterator",
 	}},
 	{"web:encoding", "web/encoding.esc", []string{
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
@@ -655,6 +702,7 @@ var webPackages = []struct {
 		"PerformancePaintTiming", "PerformanceResourceTiming",
 		"PerformanceServerTiming", "PerformanceTiming",
 		"performance",
+		"NavigationTimingType",
 	}},
 	{"web:webauthn", "web/webauthn.esc", []string{
 		"AuthenticatorAssertionResponse", "AuthenticatorAttestationResponse",
@@ -669,6 +717,18 @@ var webPackages = []struct {
 		"AttestationConveyancePreference",
 		"UserVerificationRequirement", "ResidentKeyRequirement",
 		"COSEAlgorithmIdentifier",
+		"AuthenticationExtensionsClientInputs",
+		"AuthenticationExtensionsClientOutputs",
+		"PublicKeyCredentialClientCapabilities",
+		"PublicKeyCredentialCreationOptionsJSON",
+		"PublicKeyCredentialRequestOptionsJSON",
+		"AuthenticationExtensionsClientInputsJSON",
+		"AuthenticationExtensionsPRFInputs",
+		"AuthenticationExtensionsPRFOutputs",
+		"CredentialPropertiesOutput",
+		"PublicKeyCredentialDescriptorJSON",
+		"PublicKeyCredentialUserEntityJSON",
+		"AuthenticationExtensionsPRFValues", "Base64URLString",
 	}},
 	{"web:payments", "web/payments.esc", []string{
 		// Symbols MDN documents under the Payment Request API that
@@ -687,6 +747,7 @@ var webPackages = []struct {
 		"PaymentValidationErrors",
 		"AddressErrors", "PayerErrors",
 		"ContactAddress",
+		"PaymentOptions",
 	}},
 }
 
@@ -741,6 +802,44 @@ var DroppedSources = set.FromSlice([]string{
 	"lib.webworker.iterable.d.ts",
 	"lib.webworker.asynciterable.d.ts",
 	"lib.webworker.importscripts.d.ts",
+})
+
+// UnreferencedDOMTypes names the type-only `web:dom` declarations that
+// nothing in the pinned lib set references and that belong in `web:dom`
+// regardless. ReportTypeOnlyRouting leaves them out, so every name it
+// prints is one that still needs a decision.
+//
+// A name earns a place here by one of three readings. It is deprecated,
+// so nothing refers to it and nothing new should. Or its family has no
+// package of its own, and §4.2 keeps the small one-off web APIs in
+// `web:dom` for MVP. Or the lib set declares it and never uses it.
+//
+// A TypeScript bump that stops declaring one of these leaves a stale
+// entry here rather than failing the run. The entry costs a line and
+// the report stays correct either way.
+var UnreferencedDOMTypes = set.FromSlice([]string{
+	// Deprecated. The inline note names the type to reach for
+	// instead, where the lib set has one.
+	"ClientRect",                 // DOMRect
+	"ElementTagNameMap",          // HTMLElementTagNameMap + SVGElementTagNameMap
+	"HTMLTableDataCellElement",   // HTMLTableCellElement
+	"HTMLTableHeaderCellElement", // HTMLTableCellElement
+	"StyleMedia",                 // dropped from the CSSOM spec
+
+	// Families with no package of their own. Clipboard, screen
+	// capture, and media-capture constraints are the §4.2 one-offs
+	// web:dom carries for MVP. GPUError is the one WebGPU name the
+	// pinned lib set declares, which is too little to route anywhere
+	// else.
+	"ClipboardItemData",
+	"DisplayCaptureSurfaceType",
+	"GPUError",
+	"VideoFacingModeEnum",
+
+	// Declared and never used. lib.dom.d.ts names
+	// OnBeforeUnloadEventHandler nowhere else, and both
+	// `onbeforeunload` declarations spell the signature out instead.
+	"OnBeforeUnloadEventHandler",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose
