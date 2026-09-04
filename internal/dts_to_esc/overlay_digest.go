@@ -68,36 +68,38 @@ type OverlayDigest struct {
 // that silence into a failed run. It pins the converted form the
 // overlay was written against, and a run compares the two.
 //
-// Under record the pass takes each digest as the current answer instead
-// of comparing, and ApplyOverlay then writes the sidecars.
+// A recording run keeps each digest as the current answer instead of
+// comparing, and ApplyOverlay then writes the sidecars.
 // `dts_to_esc generate --update-digests` is how a contributor records
 // what a new or revised overlay entry stands in for.
 type digestPass struct {
-	record bool
+	recording bool
 
-	// observed holds the digests this run computed, keyed by the
-	// overlay file's path relative to the overlay root.
-	observed map[string][]OverlayDigest
+	// computed holds the digests this run computed, keyed by the overlay
+	// file's path relative to the overlay root. They are what a recording
+	// run writes to the sidecars, and what a checking run reads the
+	// recorded ones against.
+	computed map[string][]OverlayDigest
 }
 
-func newDigestPass(record bool) *digestPass {
-	return &digestPass{record: record, observed: map[string][]OverlayDigest{}}
+func newDigestPass(recording bool) *digestPass {
+	return &digestPass{recording: recording, computed: map[string][]OverlayDigest{}}
 }
 
-// visit takes the digest of the converted forms one `replace` entry
-// replaces, given their printed Escalier source. Outside record mode it
+// compute hashes the printed Escalier source of the converted forms one
+// `replace` entry replaces, and keeps the result. A checking run also
 // fails when the sidecar has no entry for the key or records a
 // different form.
-func (dp *digestPass) visit(f OverlayFile, key digestKey, forms []string) error {
-	found := digestOf(forms)
-	dp.observed[f.Path] = append(dp.observed[f.Path], OverlayDigest{
+func (dp *digestPass) compute(f OverlayFile, key digestKey, forms []string) error {
+	digest := digestOf(forms)
+	dp.computed[f.Path] = append(dp.computed[f.Path], OverlayDigest{
 		Decl:   key.Decl,
 		Member: key.Member,
 		Kind:   key.Kind,
 		Static: key.Static,
-		Digest: found,
+		Digest: digest,
 	})
-	if dp.record {
+	if dp.recording {
 		return nil
 	}
 	recorded, ok := f.Digests[key]
@@ -107,7 +109,7 @@ func (dp *digestPass) visit(f OverlayFile, key digestKey, forms []string) error 
 				"`dts_to_esc generate --update-digests` to record what the overlay "+
 				"stands in for", f.Path, key.label(), digestPathFor(f.Path))
 	}
-	if recorded != found {
+	if recorded != digest {
 		return fmt.Errorf(
 			"overlay: %s replaces %s, whose converted form has changed since %s "+
 				"recorded it; check the overlay against the upstream declaration, "+
@@ -119,14 +121,14 @@ func (dp *digestPass) visit(f OverlayFile, key digestKey, forms []string) error 
 
 // finish closes the pass over one overlay file, reporting a recorded
 // entry the file no longer replaces. Such an entry pins a form nothing
-// reads. Record mode rewrites the sidecar from what the file replaces
-// now, so it has nothing to report.
+// reads. A recording run rewrites the sidecar from what the file
+// replaces now, so it has nothing to report.
 func (dp *digestPass) finish(f OverlayFile) error {
-	if dp.record {
+	if dp.recording {
 		return nil
 	}
 	replaced := map[digestKey]bool{}
-	for _, e := range dp.observed[f.Path] {
+	for _, e := range dp.computed[f.Path] {
 		replaced[keyOf(e)] = true
 	}
 	for _, key := range sortedDigestKeys(f.Digests) {
@@ -154,7 +156,7 @@ func (dp *digestPass) write(o *Overlay) error {
 			continue
 		}
 		path := filepath.Join(o.Dir, filepath.FromSlash(digestPathFor(f.Path)))
-		if err := writeOverlayDigests(path, dp.observed[f.Path]); err != nil {
+		if err := writeOverlayDigests(path, dp.computed[f.Path]); err != nil {
 			return err
 		}
 	}

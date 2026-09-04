@@ -258,7 +258,7 @@ func applyOverlayDecl(
 	if err != nil {
 		return err
 	}
-	if err := digests.visit(f, digestKey{Decl: name}, []string{form}); err != nil {
+	if err := digests.compute(f, digestKey{Decl: name}, []string{form}); err != nil {
 		return err
 	}
 	ns.Decls[idx] = ovDecl
@@ -532,7 +532,7 @@ func replaceMembers[E any](
 		if err != nil {
 			return nil, err
 		}
-		if err := digests.visit(f, keyForSlot(owner, slot), forms); err != nil {
+		if err := digests.compute(f, keyForSlot(owner, slot), forms); err != nil {
 			return nil, err
 		}
 		carryMemberDocs(converted, groups[slot])
