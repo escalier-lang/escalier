@@ -89,7 +89,14 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	require.NoError(t, err)
 	inputs, err := ParseLibFiles(libDir, basenames)
 	require.NoError(t, err)
-	res, err := PartitionLib(inputs)
+
+	// The committed overlay, which is the input generate reports on.
+	// Its root drop file settles `eval` and the other whole-symbol
+	// drops before routing, so a run without it fails the fail-safe on
+	// the first dropped name.
+	overlay, err := LoadOverlay(filepath.Join("..", "interop", "overlay"))
+	require.NoError(t, err)
+	res, err := PartitionLibWithOverlay(inputs, overlay)
 	require.NoError(t, err)
 
 	var b strings.Builder
