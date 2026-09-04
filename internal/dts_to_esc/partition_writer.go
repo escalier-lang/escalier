@@ -114,7 +114,7 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 			return nil, fmt.Errorf("partition: nil module for %s", in.SourceFile)
 		}
 		dropped := DroppedSources.Contains(in.SourceFile)
-		for _, stmt := range liftGlobals(in.Module.Statements) {
+		for _, stmt := range globalStatements(in.Module.Statements) {
 			name := topLevelName(stmt)
 			if name == "" {
 				// Statement carries no addressable top-level name
@@ -223,13 +223,85 @@ func topLevelName(stmt dts_parser.Statement) string {
 	return ""
 }
 
+// globalStatements returns the declarations a lib file contributes to
+// the global scope.
+//
+// Which those are depends on whether the file is a script or a module.
+// A file with no import or export statement is a script, and everything
+// it declares is global, so a `declare global` block inside one adds
+// nothing and is simply lifted. A file carrying `export {}` or any
+// other import or export form is a module: its top-level declarations
+// are scoped to the module and are not global at all, so only what its
+// `declare global` blocks hold reaches the global scope.
+//
+// `lib.esnext.iterator.d.ts` is the one module in the pinned set, and
+// the distinction is what keeps its `Iterator` apart from the global one:
+//
+//	export {};
+//
+//	declare abstract class Iterator<T, TResult = undefined, TNext = unknown> { ... }
+//	interface Iterator<T, TResult, TNext> extends globalThis.IteratorObject<T, TResult, TNext> {}
+//	type IteratorObjectConstructor = typeof Iterator;
+//
+//	declare global {
+//	    interface IteratorObject<T, TReturn, TNext> { ... }
+//	    interface IteratorConstructor extends IteratorObjectConstructor { ... }
+//	    var Iterator: IteratorConstructor;
+//	}
+//
+// Those three module-scope declarations are a different `Iterator` from
+// the `interface Iterator<T, TReturn, TNext>` that `lib.es2015.iterable.d.ts`
+// declares globally. Routing them alongside it put two declarations
+// under one name in `std/iterator.esc` and gave mergeDecls a pair whose
+// type parameters TypeScript would never have merged, one written
+// `TResult` and the other `TReturn`.
+//
+// A block may legally name something from the module's own scope, and
+// dropping that scope leaves such a reference pointing at nothing. Here
+// `IteratorConstructor extends IteratorObjectConstructor` is the one
+// case, and trio fusion consumes that interface before anything reads
+// its bases, so no dangling name reaches the output. A module that
+// leaned harder on its own scope would need those declarations carried
+// over under generated names instead.
+func globalStatements(stmts []dts_parser.Statement) []dts_parser.Statement {
+	if !isModule(stmts) {
+		return liftGlobals(stmts)
+	}
+	var out []dts_parser.Statement
+	for _, stmt := range stmts {
+		if g, ok := stmt.(*dts_parser.GlobalDecl); ok {
+			out = append(out, liftGlobals(g.Statements)...)
+		}
+	}
+	return out
+}
+
+// isModule reports whether a statement list carries an import or export
+// form, which is what makes a `.d.ts` file a module rather than a script.
+// Both spellings count: a standalone statement such as `export {}` or
+// `import ...`, and an `export` modifier on a declaration. This mirrors
+// isTopLevelExport in internal/dts_parser/classifier.go.
+func isModule(stmts []dts_parser.Statement) bool {
+	for _, stmt := range stmts {
+		switch stmt.(type) {
+		case *dts_parser.ImportDecl, *dts_parser.NamedExportStmt,
+			*dts_parser.ExportAllStmt, *dts_parser.ExportAssignmentStmt,
+			*dts_parser.ExportAsNamespaceStmt:
+			return true
+		}
+		if decl, ok := stmt.(dts_parser.Decl); ok && decl.Export() {
+			return true
+		}
+	}
+	return false
+}
+
 // liftGlobals replaces each `declare global { ... }` block with the
-// statements it holds, leaving every other statement where it is. A
-// block has no addressable name, so topLevelName returns "" for it and
-// routing drops everything inside. What it holds is global
-// declarations, which is what the surrounding list already holds, so
-// lifting is the whole conversion. A block may hold another, and the
-// walk recurses through them.
+// statements it holds, leaving every other statement where it is.
+// globalStatements calls it for a script, where the surrounding
+// declarations are global too, and for the blocks of a module, where
+// they are the only global declarations the file has. A block may hold
+// another, and the walk recurses through them.
 //
 // It does not reach into `declare module "x" { declare global { ... } }`.
 // convertStandaloneStmt skips ModuleDecl outright, so an ambient

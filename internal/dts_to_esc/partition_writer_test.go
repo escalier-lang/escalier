@@ -1033,3 +1033,73 @@ func TestDedupeMembers_UnprintableMember(t *testing.T) {
 		require.EqualError(t, err, "cannot print a nil object type member")
 	})
 }
+
+// What a lib file contributes to the global scope depends on whether it
+// is a script or a module. A module's `declare global` block completes a
+// trio whose instance interface another file declares globally, while
+// the module's own top-level declarations stay out of the global scope.
+// `lib.esnext.iterator.d.ts` is the one module in the pinned set, and
+// this is what keeps its `Iterator` apart from the global `Iterator`
+// that `lib.es2015.iterable.d.ts` declares.
+//
+// The snapshot is the assertion. One declaration named `Iterator` reaches
+// the bucket, carrying the script's `TReturn` parameter and its `next`,
+// with `prototype` from the block's constructor interface as a static.
+// The module's own `Iterator` class and its `IteratorObjectConstructor`
+// alias are absent, which is what routing only the block achieves.
+func TestPartitionLib_ModuleContributesOnlyItsGlobalBlock(t *testing.T) {
+	t.Parallel()
+	script := parseLib(t, "lib.es2015.iterable.d.ts", `
+interface Iterator<T, TReturn = any> { next(): T; }
+`)
+	module_ := parseLib(t, "lib.esnext.iterator.d.ts", `
+export {};
+
+declare abstract class Iterator<T, TResult = undefined> { abstract next(): T; }
+type IteratorObjectConstructor = typeof Iterator;
+
+declare global {
+    interface IteratorConstructor { readonly prototype: Iterator<any>; }
+    var Iterator: IteratorConstructor;
+}
+`)
+
+	res, err := PartitionLib([]LibInput{script, module_})
+	require.NoError(t, err)
+
+	mod, err := ConvertBucket(res.Buckets["std:iterator"])
+	require.NoError(t, err)
+	printed, err := RenderStandaloneModule(mod)
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Iterator")
+export declare class Iterator<T, TReturn = any> {
+    next(mut self) -> T,
+    static readonly prototype: Iterator<any>
+}
+`))
+}
+
+// A script's `declare global` block adds nothing to what is already
+// global, so lifting it leaves every declaration routable.
+func TestPartitionLib_ScriptKeepsItsOwnDeclarations(t *testing.T) {
+	t.Parallel()
+	lib := parseLib(t, "lib.es5.d.ts", `
+interface Boolean { valueOf(): boolean; }
+
+declare global {
+    interface Number { toFixed(digits?: number): string; }
+}
+`)
+
+	res, err := PartitionLib([]LibInput{lib})
+	require.NoError(t, err)
+
+	var names []string
+	for _, stmts := range res.Buckets {
+		for _, stmt := range stmts {
+			names = append(names, topLevelName(stmt))
+		}
+	}
+	require.ElementsMatch(t, []string{"Boolean", "Number"}, names,
+		"the block is lifted and the script's own declaration is kept")
+}

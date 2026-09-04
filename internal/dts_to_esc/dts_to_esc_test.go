@@ -1181,20 +1181,25 @@ declare var Symbol: SymbolConstructor;
 	require.NotEmpty(t, parsedDecls)
 }
 
-// A `lib.*.d.ts` file carrying `export {}` is a module, so what it adds
-// to the global scope has to be written inside `declare global { ... }`.
-// liftGlobals converts that block's contents as if they had been
-// written beside it, which is what puts them in reach of declaration
-// merging and trio detection. `lib.esnext.iterator.d.ts` is the one file
-// in the pinned set that needs this.
+// ConvertToStandaloneModule converts every declaration a file holds,
+// with each `declare global { ... }` block lifted so its contents are
+// converted as if written beside it. Whether those declarations are
+// actually global is a question only the global tree asks, and
+// PartitionLibWithOverlay answers it through globalStatements. Most
+// real `.d.ts` files are modules, so a single-file conversion that
+// emitted only their blocks would emit almost nothing.
 //
 // The snapshot carries what the counts and substring checks used to
-// assert separately: each member kind converts, the JSDoc inside the
-// block survives, and a lifted decl is addressed by its bare name with
-// no block prefix.
+// assert separately: the file's own interface converts alongside the
+// block's, the JSDoc inside the block survives, and a lifted decl is
+// addressed by its bare name with no block prefix.
 func TestStandalone_DeclareGlobalIsLifted(t *testing.T) {
 	const slice = `
 export {};
+
+interface Gadget {
+    tick(): void;
+}
 
 declare global {
     /** A global interface. */
@@ -1203,21 +1208,20 @@ declare global {
     }
 
     var widgetCount: number;
-
-    function makeWidget(): Widget;
 }
 `
 	_, printed := convertSlice(t, slice)
-	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`/** A global interface. */
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface Gadget {
+    tick() -> unknown
+}
+
+/** A global interface. */
 export declare interface Widget {
     spin() -> unknown
 }
 
 @js("widgetCount")
 export declare var widgetCount: number
-
-@js("makeWidget")
-export declare fn makeWidget() -> Widget
 `))
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),

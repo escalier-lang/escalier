@@ -56,10 +56,17 @@ export declare interface IteratorReturnResult<TReturn> {
 
 export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
 
-export declare interface Iterator<T, TReturn = any, TNext = any> extends globalThis.IteratorObject<T, TReturn, TNext> {
-    next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
-    return?: fn (value?: TReturn) -> IteratorResult<T, TReturn>,
-    throw?: fn (e?: any) -> IteratorResult<T, TReturn>
+@js("Iterator")
+export declare class Iterator<T, TReturn = any, TNext = any> {
+    next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
+    throw(mut self, e?: any) -> IteratorResult<T, TReturn>,
+    /**
+     * Creates a native iterator from an iterator or iterable object.
+     * Returns its input if the input already inherits from the built-in Iterator class.
+     * @param value An iterator or iterable object to convert a native iterator.
+     */
+    static from<T>(value: Iterator<T, unknown, undefined> | Iterable<T, unknown, undefined>) -> IteratorObject<T, undefined, unknown>
 }
 
 export declare interface Iterable<T, TReturn = any, TNext = any> {
@@ -165,22 +172,3 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
  * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
  */
 export declare type BuiltinIteratorReturn = intrinsic
-
-@js("Iterator")
-export declare class Iterator<T, TResult = undefined, TNext = unknown> {
-    next(mut self, value?: TNext) -> IteratorResult<T, TResult>
-}
-
-export declare type IteratorObjectConstructor = typeof Iterator
-
-export declare interface IteratorConstructor extends IteratorObjectConstructor {
-    /**
-     * Creates a native iterator from an iterator or iterable object.
-     * Returns its input if the input already inherits from the built-in Iterator class.
-     * @param value An iterator or iterable object to convert a native iterator.
-     */
-    from<T>(value: Iterator<T, unknown, undefined> | Iterable<T, unknown, undefined>) -> IteratorObject<T, undefined, unknown>
-}
-
-@js("Iterator")
-export declare var Iterator: IteratorConstructor
