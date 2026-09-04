@@ -662,6 +662,16 @@ func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 		walkTypeRefs(n.FalseType, visit)
 	case *dts_parser.MappedType:
 		walkTypeRefs(n.ValueType, visit)
+	case *dts_parser.TemplateLiteralType:
+		// A template literal's interpolations are the only place some
+		// names appear. `type AutoFill = ...
+		// ${OptionalPrefixToken<AutoFillSection>}...` in lib.dom.d.ts is
+		// every reference AutoFillSection gets.
+		for _, part := range n.Parts {
+			if sub, ok := part.(*dts_parser.TemplateType); ok {
+				walkTypeRefs(sub.Type, visit)
+			}
+		}
 	case *dts_parser.KeyOfType:
 		walkTypeRefs(n.Type, visit)
 	case *dts_parser.TypePredicate:

@@ -103,6 +103,33 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
   web:dom: 3 type-only decls only web:web_rtc references (RTCDtlsRole, RTCLocalSessionDescriptionInit, RTCQualityLimitationReason)
   web:dom: 5 type-only decls only web:webauthn references (AuthenticationExtensionsClientInputs, AuthenticationExtensionsClientOutputs, PublicKeyCredentialClientCapabilities, PublicKeyCredentialCreationOptionsJSON, PublicKeyCredentialRequestOptionsJSON)
   web:dom: 34 type-only decls only web:webgl references (ANGLE_instanced_arrays, EXT_blend_minmax, EXT_color_buffer_float, EXT_color_buffer_half_float, EXT_float_blend, EXT_frag_depth, EXT_sRGB, EXT_shader_texture_lod, EXT_texture_compression_bptc, EXT_texture_compression_rgtc, EXT_texture_filter_anisotropic, KHR_parallel_shader_compile, OES_element_index_uint, OES_fbo_render_mipmap, OES_standard_derivatives, OES_texture_float, OES_texture_float_linear, OES_texture_half_float, OES_texture_half_float_linear, OES_vertex_array_object, OVR_multiview2, WEBGL_color_buffer_float, WEBGL_compressed_texture_astc, WEBGL_compressed_texture_etc, WEBGL_compressed_texture_etc1, WEBGL_compressed_texture_pvrtc, WEBGL_compressed_texture_s3tc, WEBGL_compressed_texture_s3tc_srgb, WEBGL_debug_renderer_info, WEBGL_debug_shaders, WEBGL_depth_texture, WEBGL_draw_buffers, WEBGL_lose_context, WEBGL_multi_draw)
-  web:dom: 22 type-only decls nothing references (AutoFillAddressKind, AutoFillContactField, AutoFillContactKind, AutoFillCredentialField, AutoFillField, AutoFillSection, ClientQueryOptions, ClientRect, ClipboardItemData, DisplayCaptureSurfaceType, EXT_texture_norm16, ElementTagNameMap, GPUError, HTMLTableDataCellElement, HTMLTableHeaderCellElement, OES_draw_buffers_indexed, OnBeforeUnloadEventHandler, OptionalPostfixToken, OptionalPrefixToken, RTCCertificateExpiration, StyleMedia, VideoFacingModeEnum)
+  web:dom: 14 type-only decls nothing references (ClientQueryOptions, ClientRect, ClipboardItemData, DisplayCaptureSurfaceType, EXT_texture_norm16, ElementTagNameMap, GPUError, HTMLTableDataCellElement, HTMLTableHeaderCellElement, OES_draw_buffers_indexed, OnBeforeUnloadEventHandler, RTCCertificateExpiration, StyleMedia, VideoFacingModeEnum)
 `))
+}
+
+// TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations pins
+// the one place a reference hides from a walk that stops at the type
+// annotation's surface. lib.dom.d.ts writes every reference to
+// `AutoFillSection` inside an interpolation:
+//
+//	type AutoFill = AutoFillBase | `${OptionalPrefixToken<AutoFillSection>}…`
+//
+// A walk that skips template literals reports such a name as
+// referenced by nothing, which reads as a drop candidate.
+func TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts",
+		"interface Request { section: Section; }\n"+
+			"type Section = `section-${Kind}`;\n"+
+			"type Kind = \"shipping\" | \"billing\";\n")})
+	require.NoError(t, err)
+
+	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
+
+	// Kind reaches web:dom only through Section's interpolation, so it
+	// is shared vocabulary rather than an orphan.
+	require.Empty(t, routing.Unreferenced)
+	require.Equal(t, []SoleReferrer{
+		{Name: "Section", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+	}, routing.SoleReferrer)
 }
