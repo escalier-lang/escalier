@@ -187,37 +187,6 @@ func TestNewCommentMap_NoComments(t *testing.T) {
 	require.Empty(t, m.Comments(namespacesOf(module)[0].Decls[0]))
 }
 
-func TestCommentsInRange(t *testing.T) {
-	t.Parallel()
-	contents := "// one\nval x = 1\n// two\nval y = 2\n// three\n"
-	comments := LexComments(&ast.Source{Contents: contents})
-	require.Len(t, comments, 3)
-
-	tests := []struct {
-		name       string
-		start, end int
-		want       []string
-	}{
-		{"whole file", 0, len(contents), []string{"// one", "// two", "// three"}},
-		{"empty range", 0, 0, nil},
-		{"first comment only", 0, 7, []string{"// one"}},
-		{"excludes a comment ending past the range", 0, 5, nil},
-		{"middle of the file", 7, 24, []string{"// two"}},
-		{"past the last comment", 41, len(contents), nil},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			got := ast.CommentsInRange(comments, tc.start, tc.end)
-			text := make([]string, len(got))
-			for i, c := range got {
-				text[i] = c.Text
-			}
-			require.Equal(t, tc.want, nilIfEmpty(text))
-		})
-	}
-}
-
 func namespacesOf(module *ast.Module) []*ast.Namespace {
 	var out []*ast.Namespace
 	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {

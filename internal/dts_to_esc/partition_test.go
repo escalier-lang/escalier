@@ -129,8 +129,8 @@ func TestRoute_StandalonePackageWinsOverDOMResidual(t *testing.T) {
 func TestRoute_LibSetGaps(t *testing.T) {
 	t.Parallel()
 	// Names the pinned lib set declares outside lib.es5.d.ts and
-	// lib.dom.d.ts. Each one aborted the bootstrap run before it had a
-	// partition entry.
+	// lib.dom.d.ts. Each one aborted a run over the whole lib set before
+	// it had a partition entry.
 	cases := []struct {
 		name       string
 		sourceFile string

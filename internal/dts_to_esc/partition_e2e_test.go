@@ -38,8 +38,11 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Buckets, "lib.es5 must produce at least one bucket")
 
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+
 	outDir := t.TempDir()
-	written, err := WritePartitionedTree(res, outDir)
+	written, err := WriteConvertedTree(mods, outDir)
 	require.NoError(t, err)
 	require.NotEmpty(t, written)
 
@@ -67,18 +70,17 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	require.EqualError(t, err, UnmappedError("__TotallyUnknown__", "lib.es99.fake.d.ts").Error())
 }
 
-// TestPartitionLib_PinnedLibSet_Bootstraps gates the whole pinned
-// TypeScript lib set. Routing it must complete and write a tree rather
-// than abort on the §6.1 unmapped-symbol fail-safe, and every file the
-// run emits must parse with Escalier's own parser. The test runs the
-// three steps `dts_to_esc bootstrap` runs — route, convert, write —
-// against node_modules/typescript/lib.
+// TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites gates the whole
+// pinned TypeScript lib set. Routing it must complete and write a tree
+// rather than abort on the §6.1 unmapped-symbol fail-safe, and every
+// file the run emits must parse with Escalier's own parser. The test
+// runs route, convert, and write against node_modules/typescript/lib,
+// with no overlay, so what it holds is the converter's own output.
 //
-// The parse assertion is the §6 gate `check` and `regenerate` depend on,
-// since both re-read every file in the tree before diffing it. A file
-// they cannot re-read makes the tree unusable, so the printer must never
+// The parse assertion is the §6 gate the committed tree depends on. A
+// package file is what the checker ingests, so the printer must never
 // emit a construct the parser rejects.
-func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
+func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 	t.Parallel()
 
 	repoRoot, err := findRepoRoot()
@@ -166,7 +168,7 @@ func TestPartitionLib_PinnedLibSet_Bootstraps(t *testing.T) {
 // entry in the list is a drop that actually happens.
 //
 // A TypeScript bump that adds, say, `[Symbol.dispose]` to `Atomics`
-// fails here, and `bootstrap` names it in the same run via
+// fails here, and `generate` names it in the same run via
 // ReportSingletonKeyDrops.
 func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 	t.Parallel()
@@ -201,7 +203,7 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 			"the pinned lib set drops")
 
 	// The report is the operator-facing half of the gate: with the
-	// allow-list matching, a bootstrap run prints nothing about
+	// allow-list matching, a `generate` run prints nothing about
 	// singleton keys.
 	var sb strings.Builder
 	require.NoError(t, ReportSingletonKeyDrops(mods, &sb))
