@@ -731,3 +731,130 @@ func declName(decl ast.Decl) string {
 	}
 	return ""
 }
+
+// An interface carrying `new (...)` describes the constructor side of
+// a class: the object you call `new` on, not the instances it builds.
+// Recognising a class needs a separate instance interface too, which is
+// what the trio idiom supplies through `interface Foo` beside
+// `interface FooConstructor`. On its own such an interface is preserved
+// as written, never flattened and never fused.
+//
+// The flattening half is the one that used to go wrong. flattenSingleton
+// gives each member its own top-level decl and has no such form for a
+// `new`, so it dropped the construct signature and, for an interface
+// whose only member is a `new`, emitted nothing at all.
+func TestStandalone_InterfaceWithConstructSignatureIsPreserved(t *testing.T) {
+	tests := []struct {
+		name       string
+		input      string
+		interfaces int
+		vars       int
+		contains   []string
+	}{
+		{
+			// Verbatim from lib.scripthost.d.ts. It is the only
+			// interface in TypeScript's shipped lib files that carries
+			// a construct signature alongside a `declare var` of the
+			// same name. Its sole member is the `new`, so before
+			// construct signatures excluded an interface from singleton
+			// detection both declarations vanished.
+			name: "ActiveXObject",
+			input: `
+interface ActiveXObject {
+    new (s: string): any;
+}
+declare var ActiveXObject: ActiveXObject;
+`,
+			interfaces: 1,
+			vars:       1,
+			contains: []string{
+				"new (s: string) -> any",
+				"export declare var ActiveXObject: ActiveXObject",
+			},
+		},
+		{
+			// Verbatim from lib.dom.d.ts. Other declarations reference
+			// it structurally, and it has no `declare var`, so it is a
+			// constructor-shaped type rather than a class.
+			name: "CustomElementConstructor",
+			input: `
+interface CustomElementConstructor {
+    new (...params: any[]): HTMLElement;
+}
+`,
+			interfaces: 1,
+			contains:   []string{"new (...params: Array<any>) -> HTMLElement"},
+		},
+		{
+			// A `new` returning the interface's own name says either
+			// that constructing yields the constructor object again or
+			// that it yields an instance which is itself constructible.
+			// Neither describes a class, so this is preserved like any
+			// other constructor-side interface.
+			name: "construct signature returning the interface itself",
+			input: `
+interface Foo {
+    new (s: string): Foo;
+    bar(): void;
+}
+declare var Foo: Foo;
+`,
+			interfaces: 1,
+			vars:       1,
+			contains:   []string{"new (s: string) -> Foo", "bar() -> unknown"},
+		},
+		{
+			// TypeScript merges the two declarations. Reading only the
+			// last one would hide the construct signature and flatten
+			// `bar` to a top-level decl.
+			name: "construct signature on a merged declaration",
+			input: `
+interface Foo {
+    bar(): void;
+}
+interface Foo {
+    new (s: string): Foo;
+}
+declare var Foo: Foo;
+`,
+			interfaces: 2,
+			vars:       1,
+			contains:   []string{"new (s: string) -> Foo"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			astModule, printed := convertSlice(t, test.input)
+			rootNS, ok := astModule.Module.Namespaces.Get("")
+			require.True(t, ok, "root namespace exists")
+
+			var classes, interfaces, vars, funcs int
+			for _, d := range rootNS.Decls {
+				switch d.(type) {
+				case *ast.ClassDecl:
+					classes++
+				case *ast.InterfaceDecl:
+					interfaces++
+				case *ast.VarDecl:
+					vars++
+				case *ast.FuncDecl:
+					funcs++
+				}
+			}
+			require.Equal(t, 0, classes, "no class is synthesized")
+			require.Equal(t, 0, funcs, "no member is flattened to a top-level decl")
+			require.Equal(t, test.interfaces, interfaces, "InterfaceDecl count")
+			require.Equal(t, test.vars, vars, "VarDecl count")
+
+			for _, want := range test.contains {
+				require.Contains(t, printed, want)
+			}
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
