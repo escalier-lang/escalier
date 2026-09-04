@@ -44,8 +44,8 @@ const (
 
 // RootDropFile is the one overlay file that sits at the overlay root
 // rather than under a package directory. Its entries are whole symbols
-// that belong to no package — `eval` and `globalThis` — so they resolve
-// during routing, before a package is assigned.
+// that belong to no package, `eval` and `escape` among them, so they
+// resolve during routing, before a package is assigned.
 const RootDropFile = "drop.esc"
 
 // OverlayFile is one parsed overlay fragment.

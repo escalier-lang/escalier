@@ -169,7 +169,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			return nil, fmt.Errorf("converting call signature return type: %w", err)
 		}
 		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, m.Span())
-		return &ast.CallableTypeAnn{Fn: fn}, nil
+		return ast.NewCallableTypeAnn(fn, m.Span()), nil
 	case *dts_parser.ConstructSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
 		for i, tp := range m.TypeParams {
@@ -192,7 +192,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 			return nil, fmt.Errorf("converting construct signature return type: %w", err)
 		}
 		fn := ast.NewFuncTypeAnn(nil, typeParams, params, returnType, nil, m.Span())
-		return &ast.ConstructorTypeAnn{Fn: fn}, nil
+		return ast.NewConstructorTypeAnn(fn, m.Span()), nil
 	case *dts_parser.MethodSignature:
 		typeParams := make([]*ast.TypeParam, len(m.TypeParams))
 		for i, tp := range m.TypeParams {
@@ -219,10 +219,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
 		}
-		elem := &ast.MethodTypeAnn{
-			Name: name,
-			Fn:   fn,
-		}
+		elem := ast.NewMethodTypeAnn(name, fn, nil, m.Span())
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.PropertySignature:
@@ -234,12 +231,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting property name: %w", err)
 		}
-		elem := &ast.PropertyTypeAnn{
-			Name:     name,
-			Optional: m.Optional,
-			Readonly: m.Readonly,
-			Value:    typeAnn,
-		}
+		elem := ast.NewPropertyTypeAnn(name, m.Optional, m.Readonly, typeAnn, m.Span())
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.GetterSignature:
@@ -253,10 +245,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting getter name: %w", err)
 		}
-		elem := &ast.GetterTypeAnn{
-			Name: name,
-			Fn:   fn,
-		}
+		elem := ast.NewGetterTypeAnn(name, fn, nil, m.Span())
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.SetterSignature:
@@ -271,10 +260,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting setter name: %w", err)
 		}
-		elem := &ast.SetterTypeAnn{
-			Name: name,
-			Fn:   fn,
-		}
+		elem := ast.NewSetterTypeAnn(name, fn, nil, m.Span())
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.IndexSignature:
@@ -573,15 +559,11 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		}
 
 		// MappedTypeAnn is an ObjTypeAnnElem, so wrap it in an ObjectTypeAnn
-		mappedElem := &ast.MappedTypeAnn{
-			TypeParam: indexParam,
-			Name:      asClause,
-			Value:     valueType,
-			Optional:  optional,
-			ReadOnly:  readonly,
-			Check:     nil, // dts_parser doesn't have Check field
-			Extends:   nil, // dts_parser doesn't have Extends field
-		}
+		// dts_parser has no Check or Extends field, so a converted mapped member
+		// carries neither.
+		mappedElem := ast.NewMappedTypeAnn(
+			indexParam, asClause, valueType, optional, readonly, nil, nil, false, t.Span(),
+		)
 		return ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{mappedElem}, t.Span()), nil
 	case *dts_parser.TemplateLiteralType:
 		quasis := []*ast.Quasi{}

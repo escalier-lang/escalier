@@ -133,7 +133,10 @@ declare var Request: RequestConstructor;
 	require.Len(t, res.Buckets["web:fetch"], 3)
 }
 
-func TestPartitionLib_ExplicitDropsAreRecorded(t *testing.T) {
+// TestPartitionLib_RootDropsAreRecorded covers what the overlay's root
+// drop file does to a routing pass: the named declarations reach Drops
+// instead of a bucket, and the rest of the lib file routes as usual.
+func TestPartitionLib_RootDropsAreRecorded(t *testing.T) {
 	t.Parallel()
 	lib := parseLib(t, "lib.es5.d.ts", `
 declare var globalThis: any;
@@ -142,7 +145,12 @@ declare var Array: ArrayConstructor;
 interface ArrayConstructor { new(): any; readonly prototype: any; }
 interface Array<T> { length: number; }
 `)
-	res, err := PartitionLib([]LibInput{lib})
+	overlay, err := LoadOverlay(seedOverlay(t, map[string]string{
+		"drop.esc": "export declare val eval\nexport declare val globalThis\n",
+	}))
+	require.NoError(t, err)
+
+	res, err := PartitionLibWithOverlay([]LibInput{lib}, overlay)
 	require.NoError(t, err)
 
 	require.Len(t, res.Drops, 2)
@@ -630,8 +638,8 @@ func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 
 func TestReportPartition_SeparatesDropCauses(t *testing.T) {
 	t.Parallel()
-	// A name in ExplicitDrops is named; a source file dropped whole
-	// gets a count. Listing the file's declarations would name `Date`,
+	// A name the overlay's root drop file holds is named; a source file
+	// dropped whole gets a count. Listing the file's declarations would name `Date`,
 	// which lib.scripthost.d.ts only augments, and read as though
 	// std:date had lost its class.
 	res := &PartitionResult{

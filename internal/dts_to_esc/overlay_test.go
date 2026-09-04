@@ -21,6 +21,44 @@ func seedOverlay(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+// committedOverlay loads internal/interop/overlay, the overlay a real
+// run reads. A test that routes a committed lib set needs it, because
+// the unmapped fail-safe trips on every name its root drop file holds.
+func committedOverlay(t *testing.T) *Overlay {
+	t.Helper()
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err)
+	overlay, err := LoadOverlay(filepath.Join(repoRoot, "internal", "interop", "overlay"))
+	require.NoError(t, err)
+	return overlay
+}
+
+// TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop pins the
+// contents of internal/interop/overlay/drop.esc. The four groups below
+// are the whole-symbol drops §6.1 calls for, and none of them is a
+// per-package content decision.
+//
+// The file is the only place these names live, so deleting an entry
+// puts that declaration back into the generated tree with nothing else
+// to catch it. `globalThis` is absent on purpose. §6.1 lists it as
+// dropped, but TypeScript synthesizes it rather than declaring it, so
+// an entry for it would name a symbol no lib.*.d.ts file has.
+func TestCommittedRootDropFile_NamesEveryLanguagePolicyDrop(t *testing.T) {
+	t.Parallel()
+	// Grouped as the drop file groups them, so ElementsMatch rather
+	// than Equal does the comparison.
+	require.ElementsMatch(t, []string{
+		// Language policy.
+		"eval", "EvalError", "EvalErrorConstructor", "escape", "unescape",
+		// FR13 intrinsics, which the checker resolves directly.
+		"Uppercase", "Lowercase", "Capitalize", "Uncapitalize", "NoInfer",
+		// TypeScript module-loader machinery.
+		"ImportMeta", "ImportAssertions", "ImportAttributes", "ImportCallOptions",
+		// Legacy `tsc` decorator signatures.
+		"ClassDecorator", "PropertyDecorator", "MethodDecorator", "ParameterDecorator",
+	}, committedOverlay(t).GlobalDrops().ToSlice())
+}
+
 // TestLoadOverlay_ReadsOperationAndPackageFromTheFilename covers the
 // naming rule the overlay rests on: the operation and the target package
 // are both read off the path, and the file itself is ordinary `.esc`.

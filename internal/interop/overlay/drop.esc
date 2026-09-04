@@ -1,0 +1,55 @@
+// Whole symbols the generator must not emit. They belong to no package,
+// so they resolve during routing, ahead of the partition lookup.
+//
+// An entry is read for its name alone, and `export declare val <name>`
+// is the shortest form that parses. The keyword makes no claim about
+// what the upstream declaration is. `export declare type <name>` needs
+// an `= ...` to parse, so a dropped type alias is named with `val` too.
+//
+// `globalThis` has no entry here. §6.1 lists it as dropped because
+// there is no ambient tier for it to take a union over, but TypeScript
+// synthesizes it rather than declaring it, so no lib.*.d.ts file
+// carries a declaration for the generator to skip.
+
+// `eval` has no good use case, per §6.1.
+export declare val eval
+
+// EvalError follows `eval` out, per §FR1. No modern engine throws it
+// from language semantics.
+export declare val EvalError
+export declare val EvalErrorConstructor
+
+// The legacy URI-encoding cousins, deprecated since ES1 and superseded
+// by encodeURIComponent. The §6.1 partition enumerates encodeURI,
+// decodeURI, encodeURIComponent, and decodeURIComponent in std:url and
+// omits these two.
+export declare val escape
+export declare val unescape
+
+// The FR13 intrinsics. The checker resolves each one directly and no
+// source declares it. TypeScript writes them as `type X<S> = intrinsic`
+// markers, and they are named one by one here rather than recognized by
+// that shape. `intrinsic` is a type annotation Escalier prints back out,
+// so a converted alias would reach the committed tree.
+export declare val Uppercase
+export declare val Lowercase
+export declare val Capitalize
+export declare val Uncapitalize
+export declare val NoInfer
+
+// The TypeScript module loader's own surface: `import.meta` and the
+// option bags `import(...)` takes. These shape a loader rather than the
+// language runtime, and Escalier resolves imports its own way.
+export declare val ImportMeta
+export declare val ImportAssertions
+export declare val ImportAttributes
+export declare val ImportCallOptions
+
+// TypeScript's legacy `experimentalDecorators` signatures. They type the
+// decorator calling convention `tsc` emitted before TC39 decorators, so
+// they describe a compiler output shape rather than a runtime one. The
+// TC39 context types route to std:decorators.
+export declare val ClassDecorator
+export declare val PropertyDecorator
+export declare val MethodDecorator
+export declare val ParameterDecorator

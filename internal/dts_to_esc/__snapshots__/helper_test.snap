@@ -474,6 +474,9 @@
                     Value: &ast.StringTypeAnn{
                         span: 4-10,
                     },
+                    elemSpan: ast.elemSpan{
+                        span: 1-10,
+                    },
                 },
             },
             span: 0-11,
@@ -487,6 +490,9 @@
                     },
                     Value: &ast.NumberTypeAnn{
                         span: 18-24,
+                    },
+                    elemSpan: ast.elemSpan{
+                        span: 15-24,
                     },
                 },
             },
@@ -746,6 +752,9 @@
             Value: &ast.StringTypeAnn{
                 span: 7-13,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-13,
+            },
         },
     },
     span: 0-14,
@@ -763,6 +772,9 @@
             Value: &ast.StringTypeAnn{
                 span: 7-13,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-13,
+            },
         },
         &ast.PropertyTypeAnn{
             Name: &ast.IdentExpr{
@@ -771,6 +783,9 @@
             },
             Value: &ast.NumberTypeAnn{
                 span: 20-26,
+            },
+            elemSpan: ast.elemSpan{
+                span: 15-26,
             },
         },
     },
@@ -790,6 +805,9 @@
             Value: &ast.StringTypeAnn{
                 span: 8-14,
             },
+            elemSpan: ast.elemSpan{
+                span: 1-14,
+            },
         },
     },
     span: 0-15,
@@ -807,6 +825,9 @@
             Readonly: true,
             Value: &ast.NumberTypeAnn{
                 span: 14-20,
+            },
+            elemSpan: ast.elemSpan{
+                span: 10-20,
             },
         },
     },
@@ -1180,6 +1201,9 @@
                 Value: &ast.StringTypeAnn{
                     span: 10-16,
                 },
+                elemSpan: ast.elemSpan{
+                    span: 7-16,
+                },
             },
             &ast.PropertyTypeAnn{
                 Name: &ast.IdentExpr{
@@ -1188,6 +1212,9 @@
                 },
                 Value: &ast.NumberTypeAnn{
                     span: 21-27,
+                },
+                elemSpan: ast.elemSpan{
+                    span: 18-27,
                 },
             },
         },
@@ -1561,6 +1588,9 @@
                 },
                 span: 11-12,
             },
+            elemSpan: ast.elemSpan{
+                span: 0-13,
+            },
         },
     },
     span: 0-13,
@@ -1589,6 +1619,9 @@
                 span: 20-21,
             },
             ReadOnly: &"add",
+            elemSpan: ast.elemSpan{
+                span: 0-22,
+            },
         },
     },
     span: 0-22,
@@ -1617,6 +1650,9 @@
                 span: 12-13,
             },
             Optional: &"add",
+            elemSpan: ast.elemSpan{
+                span: 0-14,
+            },
         },
     },
     span: 0-14,
@@ -1646,6 +1682,9 @@
             },
             Optional: &"add",
             ReadOnly: &"add",
+            elemSpan: ast.elemSpan{
+                span: 0-23,
+            },
         },
     },
     span: 0-23,
@@ -1674,6 +1713,9 @@
                 span: 21-22,
             },
             ReadOnly: &"remove",
+            elemSpan: ast.elemSpan{
+                span: 0-23,
+            },
         },
     },
     span: 0-23,
@@ -1702,6 +1744,9 @@
                 span: 13-14,
             },
             Optional: &"remove",
+            elemSpan: ast.elemSpan{
+                span: 0-15,
+            },
         },
     },
     span: 0-15,
@@ -1746,6 +1791,9 @@
                     span: 24-25,
                 },
                 span: 24-25,
+            },
+            elemSpan: ast.elemSpan{
+                span: 0-26,
             },
         },
     },
@@ -2218,6 +2266,9 @@
                     span: 5-9,
                 },
                 span: 5-9,
+            },
+            elemSpan: ast.elemSpan{
+                span: 2-9,
             },
         },
     },

@@ -187,11 +187,16 @@ func (t *NeverTypeAnn) Accept(v Visitor) {
 type ObjTypeAnnElem interface {
 	isObjTypeAnnElem()
 	Accept(v Visitor)
-	Span() Span
-	// SetSpan records the range the parser read the member from. A member a
+	// Span reports the range the member was read from, covering the whole
+	// member from its first modifier or name through its type. A member a
 	// converter synthesizes from a `.d.ts` file has no Escalier source to point
-	// at and keeps the zero Span, which ast.AttachComments skips.
-	SetSpan(Span)
+	// at and carries the zero Span, which ast.AttachComments skips.
+	Span() Span
+	// Key returns the key the member is addressed by, or nil for a member that
+	// declares none. A call signature, a construct signature, a mapped member,
+	// and a rest spread are the four without one. A diagnostic about a member's
+	// name underlines the key rather than the member's whole range.
+	Key() ObjKey
 	Commented
 	// Doc returns the leading JSDoc retained on the elem, verbatim
 	// with `/** ... */` delimiters, or "" if absent. Variants that
@@ -211,17 +216,25 @@ func (*PropertyTypeAnn) isObjTypeAnnElem()    {}
 func (*MappedTypeAnn) isObjTypeAnnElem()      {}
 func (*RestSpreadTypeAnn) isObjTypeAnnElem()  {}
 
-// elemSpan carries the range of one object type annotation member, covering
-// the whole member from its first modifier or name through its type. Seven of
+// elemSpan carries the range of one object type annotation member. Seven of
 // the eight ObjTypeAnnElem variants embed it, so the interface can require a
-// span without each variant repeating the field and its two accessors.
-// RestSpreadTypeAnn keeps its own span field, which it needs as a TypeAnn too.
+// span without each variant repeating the field and its accessor. Each
+// variant's constructor takes the range, so a member's position is fixed once
+// it is built. RestSpreadTypeAnn keeps its own span field, which it needs as a
+// TypeAnn too.
 type elemSpan struct {
 	span Span
 }
 
-func (e *elemSpan) Span() Span        { return e.span }
-func (e *elemSpan) SetSpan(span Span) { e.span = span }
+func (e *elemSpan) Span() Span { return e.span }
+
+// Key answers for the four variants that declare no member key. A mapped
+// member has a `Name` field, but it names the type a key is rewritten to
+// rather than the key the member is addressed by.
+func (*CallableTypeAnn) Key() ObjKey    { return nil }
+func (*ConstructorTypeAnn) Key() ObjKey { return nil }
+func (*MappedTypeAnn) Key() ObjKey      { return nil }
+func (*RestSpreadTypeAnn) Key() ObjKey  { return nil }
 
 // No-op Doc/SetDoc impls for the variants that don't carry a JSDoc.
 func (*CallableTypeAnn) Doc() string      { return "" }
@@ -236,11 +249,21 @@ type CallableTypeAnn struct {
 	elemSpan
 	commentSlots
 }
+
+func NewCallableTypeAnn(fn *FuncTypeAnn, span Span) *CallableTypeAnn {
+	return &CallableTypeAnn{Fn: fn, elemSpan: elemSpan{span: span}, commentSlots: commentSlots{}}
+}
+
 type ConstructorTypeAnn struct {
 	Fn *FuncTypeAnn
 	elemSpan
 	commentSlots
 }
+
+func NewConstructorTypeAnn(fn *FuncTypeAnn, span Span) *ConstructorTypeAnn {
+	return &ConstructorTypeAnn{Fn: fn, elemSpan: elemSpan{span: span}, commentSlots: commentSlots{}}
+}
+
 type MethodTypeAnn struct {
 	declDoc
 	Name     ObjKey
@@ -249,6 +272,19 @@ type MethodTypeAnn struct {
 	elemSpan
 	commentSlots
 }
+
+func NewMethodTypeAnn(name ObjKey, fn *FuncTypeAnn, receiver *MethodReceiver, span Span) *MethodTypeAnn {
+	return &MethodTypeAnn{
+		declDoc:      declDoc{},
+		Name:         name,
+		Fn:           fn,
+		Receiver:     receiver,
+		elemSpan:     elemSpan{span: span},
+		commentSlots: commentSlots{},
+	}
+}
+
+func (m *MethodTypeAnn) Key() ObjKey { return m.Name }
 
 type GetterTypeAnn struct {
 	declDoc
@@ -259,6 +295,19 @@ type GetterTypeAnn struct {
 	commentSlots
 }
 
+func NewGetterTypeAnn(name ObjKey, fn *FuncTypeAnn, receiver *MethodReceiver, span Span) *GetterTypeAnn {
+	return &GetterTypeAnn{
+		declDoc:      declDoc{},
+		Name:         name,
+		Fn:           fn,
+		Receiver:     receiver,
+		elemSpan:     elemSpan{span: span},
+		commentSlots: commentSlots{},
+	}
+}
+
+func (g *GetterTypeAnn) Key() ObjKey { return g.Name }
+
 type SetterTypeAnn struct {
 	declDoc
 	Name     ObjKey
@@ -267,6 +316,19 @@ type SetterTypeAnn struct {
 	elemSpan
 	commentSlots
 }
+
+func NewSetterTypeAnn(name ObjKey, fn *FuncTypeAnn, receiver *MethodReceiver, span Span) *SetterTypeAnn {
+	return &SetterTypeAnn{
+		declDoc:      declDoc{},
+		Name:         name,
+		Fn:           fn,
+		Receiver:     receiver,
+		elemSpan:     elemSpan{span: span},
+		commentSlots: commentSlots{},
+	}
+}
+
+func (s *SetterTypeAnn) Key() ObjKey { return s.Name }
 
 type MappedModifier string
 
@@ -285,6 +347,20 @@ type PropertyTypeAnn struct {
 	commentSlots
 }
 
+func NewPropertyTypeAnn(name ObjKey, optional, readonly bool, value TypeAnn, span Span) *PropertyTypeAnn {
+	return &PropertyTypeAnn{
+		declDoc:      declDoc{},
+		Name:         name,
+		Optional:     optional,
+		Readonly:     readonly,
+		Value:        value,
+		elemSpan:     elemSpan{span: span},
+		commentSlots: commentSlots{},
+	}
+}
+
+func (p *PropertyTypeAnn) Key() ObjKey { return p.Name }
+
 type MappedTypeAnn struct {
 	TypeParam *IndexParamTypeAnn
 	// Name is used to rename keys in the mapped type
@@ -302,6 +378,30 @@ type MappedTypeAnn struct {
 	elemSpan
 	commentSlots
 }
+
+func NewMappedTypeAnn(
+	typeParam *IndexParamTypeAnn,
+	name TypeAnn,
+	value TypeAnn,
+	optional, readOnly *MappedModifier,
+	check, extends TypeAnn,
+	shorthand bool,
+	span Span,
+) *MappedTypeAnn {
+	return &MappedTypeAnn{
+		TypeParam:    typeParam,
+		Name:         name,
+		Value:        value,
+		Optional:     optional,
+		ReadOnly:     readOnly,
+		Check:        check,
+		Extends:      extends,
+		Shorthand:    shorthand,
+		elemSpan:     elemSpan{span: span},
+		commentSlots: commentSlots{},
+	}
+}
+
 type IndexParamTypeAnn struct {
 	Name       string
 	Constraint TypeAnn
@@ -328,11 +428,6 @@ func (t *RestSpreadTypeAnn) Accept(v Visitor) {
 	}
 	v.ExitTypeAnn(t)
 }
-
-// SetSpan records the member's range the way elemSpan does for the other seven
-// variants. RestSpreadTypeAnn is a TypeAnn as well as a member, so one span
-// field serves both roles and it embeds no elemSpan.
-func (t *RestSpreadTypeAnn) SetSpan(span Span) { t.span = span }
 
 type ObjectTypeAnn struct {
 	Elems        []ObjTypeAnnElem
