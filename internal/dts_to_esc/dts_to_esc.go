@@ -765,15 +765,28 @@ func hasCtorReturning(ctor *dts_parser.InterfaceDecl, instanceName string) bool 
 		if !ok {
 			continue
 		}
-		ref, ok := cs.ReturnType.(*dts_parser.TypeReference)
-		if !ok {
-			continue
-		}
-		if typeRefName(ref) == instanceName {
+		if ctorReturnNames(cs.ReturnType) == instanceName {
 			return true
 		}
 	}
 	return false
+}
+
+// ctorReturnNames is the instance name a `new` signature's return type
+// names, or "" for a shape that names none. `T[]` is `Array<T>` written
+// in shorthand, so ArrayConstructor's `new (): any[]` constructs an
+// Array even though no TypeReference says so.
+func ctorReturnNames(t dts_parser.TypeAnn) string {
+	switch r := t.(type) {
+	case *dts_parser.TypeReference:
+		return typeRefName(r)
+	case *dts_parser.ArrayType:
+		if r.Readonly {
+			return "ReadonlyArray"
+		}
+		return "Array"
+	}
+	return ""
 }
 
 // convertStandaloneStmt converts a single top-level statement, handling

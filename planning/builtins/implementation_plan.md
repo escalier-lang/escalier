@@ -2307,8 +2307,12 @@ replaces.
 
 **Known fusion gaps.** A determination can only land on a fused
 class, since an `interface` member has no receiver to annotate.
-Three shapes do not fuse today, measured over the pinned lib set
-with the Web Worker and Windows Script Host libs excluded:
+Two shapes do not fuse today, measured over the pinned lib set
+with the Web Worker and Windows Script Host libs excluded.
+`Array` was a third: its `ArrayConstructor` returns `T[]`, which
+is `Array<T>` in shorthand rather than a type reference, and
+`ctorReturnNames` now reads both forms
+([#1350](https://github.com/escalier-lang/escalier/issues/1350)).
 
 - **625 `interface Foo` + `declare var Foo: { prototype: Foo, new (…): Foo }`
   pairs**, of which 472 land in `web:dom`. `detectTrios` requires a
@@ -2319,12 +2323,6 @@ with the Web Worker and Windows Script Host libs excluded:
   `web:*` is generated now as a check on the converter's ability to
   read `lib.dom.d.ts` and not yet as an annotated surface.
   [#1351](https://github.com/escalier-lang/escalier/issues/1351).
-- **`Array`**, whose `ArrayConstructor` declares
-  `new <T>(arrayLength: number): T[]`. `hasCtorReturning` looks for
-  a construct signature returning a type reference named `Array`
-  and an array type is not one, so the single most consequential
-  `std:*` type stays an interface.
-  [#1350](https://github.com/escalier-lang/escalier/issues/1350).
 - **`Symbol` and `BigInt`**, whose constructor interfaces carry no
   construct signature at all, because the specification forbids
   `new` on them. [#1309](https://github.com/escalier-lang/escalier/issues/1309).

@@ -731,3 +731,82 @@ func declName(decl ast.Decl) string {
 	}
 	return ""
 }
+
+// arrayShorthandTrio is ArrayConstructor's shape: `new` signatures that
+// return `T[]` rather than a TypeReference naming the instance. `T[]` is
+// `Array<T>` written in shorthand, so the trio is a trio.
+const arrayShorthandTrio = `
+interface Array<T> {
+    length: number;
+}
+interface ArrayConstructor {
+    new (arrayLength?: number): any[];
+    new <T>(...items: T[]): T[];
+    isArray(arg: any): boolean;
+}
+declare var Array: ArrayConstructor;
+`
+
+// TestStandalone_ArrayShorthandTrio covers the return shape that keeps a
+// trio from fusing. `Array`, `BigInt`, and `Symbol` are the three the
+// pinned lib set writes without a `new (): Foo` signature, and `Array`
+// is the one that is still constructible: `ArrayConstructor` returns
+// `any[]` and `T[]`. Reading only a TypeReference leaves the three
+// halves unfused, so `std:array` emits an interface, a constructor
+// interface, and a var where a class belongs.
+func TestStandalone_ArrayShorthandTrio(t *testing.T) {
+	astModule, _ := convertSlice(t, arrayShorthandTrio)
+
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok, "root namespace exists")
+
+	var classes []*ast.ClassDecl
+	var varCount, interfaceCount int
+	for _, d := range rootNS.Decls {
+		switch decl := d.(type) {
+		case *ast.ClassDecl:
+			classes = append(classes, decl)
+		case *ast.VarDecl:
+			varCount++
+		case *ast.InterfaceDecl:
+			interfaceCount++
+		}
+	}
+	require.Len(t, classes, 1, "exactly one fused ClassDecl")
+	require.Equal(t, "Array", classes[0].Name.Name)
+	require.Equal(t, 0, varCount, "trio var consumed")
+	require.Equal(t, 0, interfaceCount, "trio interfaces consumed")
+}
+
+// TestCtorReturnNames covers the return shapes trio detection reads.
+// A readonly array is `ReadonlyArray<T>`, which names a different
+// instance than `Array<T>` and so must not fuse an Array trio.
+func TestCtorReturnNames(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{"a type reference names its instance", "interface C { new (): Foo; }", "Foo"},
+		{"an array shorthand names Array", "interface C { new (): Foo[]; }", "Array"},
+		{"a readonly array names ReadonlyArray",
+			"interface C { new (): readonly Foo[]; }", "ReadonlyArray"},
+		{"a primitive names nothing", "interface C { new (): string; }", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{Path: "test.d.ts", Contents: tc.input, ID: 0}
+			mod, errs := dts_parser.NewDtsParser(source).ParseModule()
+			require.Empty(t, errs, "dts parse errors")
+
+			iface, ok := mod.Statements[0].(*dts_parser.InterfaceDecl)
+			require.True(t, ok)
+			cs, ok := iface.Members[0].(*dts_parser.ConstructSignature)
+			require.True(t, ok)
+
+			require.Equal(t, tc.want, ctorReturnNames(cs.ReturnType))
+		})
+	}
+}
