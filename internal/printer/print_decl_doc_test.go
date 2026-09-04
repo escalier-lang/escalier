@@ -67,3 +67,28 @@ func TestPrintDeclDoc_CompactModeOmitsTheDoc(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "val x = 42", out)
 }
+
+// TestPrintDeclDoc_OmitDocCommentsLeavesTheDocOut covers the option a
+// caller sets to compare two renderings for a difference in shape. The
+// declaration and its members print in full, and every doc comment is
+// left out, so an edit to the prose does not read as a change to the
+// thing described.
+func TestPrintDeclDoc_OmitDocCommentsLeavesTheDocOut(t *testing.T) {
+	t.Parallel()
+	opts := DefaultOptions()
+	opts.OmitDocComments = true
+
+	decl := parseOneDecl(t, "/** a point */\ndeclare class Point {\n"+
+		"    /** the abscissa */\n    x: number,\n"+
+		"    /** moves it */\n    move(mut self, dx: number) -> undefined\n}")
+	out, err := Print(decl, opts)
+	require.NoError(t, err)
+	require.Equal(t, "declare class Point {\n    x: number,\n"+
+		"    move(mut self, dx: number) -> undefined\n}", out)
+
+	iface := parseOneDecl(t, "/** a point */\ninterface Point {\n"+
+		"    /** the abscissa */\n    x: number\n}")
+	out, err = Print(iface, opts)
+	require.NoError(t, err)
+	require.Equal(t, "interface Point {\n    x: number\n}", out)
+}
