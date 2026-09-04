@@ -850,6 +850,14 @@ var AllowedSingletonKeyDrops = set.FromSlice([]SingletonMember{
 // it emits — `ServiceWorkerGlobalScope` and `importScripts` name
 // nothing a document can reach. Serving a worker means its own set of
 // pseudo-packages, the same question Node raises, and §6.1 defers both.
+var DroppedSources = set.FromSlice([]string{
+	"lib.scripthost.d.ts",
+	"lib.webworker.d.ts",
+	"lib.webworker.iterable.d.ts",
+	"lib.webworker.asynciterable.d.ts",
+	"lib.webworker.importscripts.d.ts",
+})
+
 // UnreferencedDOMTypes names the type-only `web:dom` declarations that
 // nothing in the pinned lib set references and that belong in `web:dom`
 // regardless. ReportTypeOnlyRouting leaves them out, so every name it
@@ -881,14 +889,6 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 	"GPUError",
 	"OnBeforeUnloadEventHandler",
 	"VideoFacingModeEnum",
-})
-
-var DroppedSources = set.FromSlice([]string{
-	"lib.scripthost.d.ts",
-	"lib.webworker.d.ts",
-	"lib.webworker.iterable.d.ts",
-	"lib.webworker.asynciterable.d.ts",
-	"lib.webworker.importscripts.d.ts",
 })
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose

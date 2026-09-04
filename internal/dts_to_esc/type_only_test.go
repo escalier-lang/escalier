@@ -126,10 +126,38 @@ func TestAnalyzeTypeOnlyRouting_ReadsTemplateLiteralInterpolations(t *testing.T)
 
 	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
 
-	// Kind reaches web:dom only through Section's interpolation, so it
-	// is shared vocabulary rather than an orphan.
+	// Kind reaches web:dom only through Section's interpolation. Its
+	// one referrer is the package that declares it, which is the
+	// verdict a walk stopping at the template literal would miss.
 	require.Empty(t, routing.Unreferenced)
 	require.Equal(t, []SoleReferrer{
 		{Name: "Section", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+	}, routing.SoleReferrer)
+}
+
+// TestAnalyzeTypeOnlyRouting_ReadsTypeParameterBounds covers the other
+// two slots a reference hides in. A type parameter's constraint and its
+// default each name a type nothing else in the declaration mentions:
+//
+//	interface Request { pick<K extends Bag>(k: K): void }
+//	interface ReadableStream<T = Deflt> { value: T }
+//
+// Skipping either slot reports Bag and Deflt as referenced by nothing.
+func TestAnalyzeTypeOnlyRouting_ReadsTypeParameterBounds(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
+interface Request { pick<K extends Bag>(k: K): void; }
+interface ReadableStream<T = Deflt> { value: T; }
+interface Bag { size: number; }
+interface Deflt { size: number; }
+`)})
+	require.NoError(t, err)
+
+	routing := AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI)
+
+	require.Empty(t, routing.Unreferenced)
+	require.Equal(t, []SoleReferrer{
+		{Name: "Bag", DeclaredIn: "web:dom", ReferencedBy: "web:fetch"},
+		{Name: "Deflt", DeclaredIn: "web:dom", ReferencedBy: "web:streams"},
 	}, routing.SoleReferrer)
 }

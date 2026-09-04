@@ -482,6 +482,24 @@ func countTypeRefs(stmts []dts_parser.Statement, name string) int {
 	return count
 }
 
+// walkTypeParamTypes invokes visit on the constraint and default of
+// each type parameter. `interface Foo<T extends Bar = Baz>` mentions
+// Bar and Baz nowhere else, so a walk that skips these two slots
+// reports both as referenced by nothing.
+func walkTypeParamTypes(params []*dts_parser.TypeParam, visit func(dts_parser.TypeAnn)) {
+	for _, tp := range params {
+		if tp == nil {
+			continue
+		}
+		if tp.Constraint != nil {
+			visit(tp.Constraint)
+		}
+		if tp.Default != nil {
+			visit(tp.Default)
+		}
+	}
+}
+
 // walkStatementTypes invokes visit on every top-level TypeAnn carried
 // by stmt. For composite statements (InterfaceDecl, ClassDecl,
 // NamespaceDecl) it descends into member type annotations too.
@@ -492,10 +510,12 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			visit(s.TypeAnn)
 		}
 	case *dts_parser.TypeDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		if s.TypeAnn != nil {
 			visit(s.TypeAnn)
 		}
 	case *dts_parser.FuncDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		for _, p := range s.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -505,6 +525,7 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			visit(s.ReturnType)
 		}
 	case *dts_parser.InterfaceDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		for _, ext := range s.Extends {
 			visit(ext)
 		}
@@ -512,6 +533,7 @@ func walkStatementTypes(stmt dts_parser.Statement, visit func(dts_parser.TypeAnn
 			walkInterfaceMemberTypes(m, visit)
 		}
 	case *dts_parser.ClassDecl:
+		walkTypeParamTypes(s.TypeParams, visit)
 		for _, m := range s.Members {
 			walkClassMemberTypes(m, visit)
 		}
@@ -531,6 +553,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.TypeAnn)
 		}
 	case *dts_parser.MethodSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -548,6 +571,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.Param.Type)
 		}
 	case *dts_parser.CallSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -557,6 +581,7 @@ func walkInterfaceMemberTypes(m dts_parser.InterfaceMember, visit func(dts_parse
 			visit(sig.ReturnType)
 		}
 	case *dts_parser.ConstructSignature:
+		walkTypeParamTypes(sig.TypeParams, visit)
 		for _, p := range sig.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -587,6 +612,7 @@ func walkClassMemberTypes(m dts_parser.ClassMember, visit func(dts_parser.TypeAn
 			visit(member.TypeAnn)
 		}
 	case *dts_parser.MethodDecl:
+		walkTypeParamTypes(member.TypeParams, visit)
 		for _, p := range member.Params {
 			if p.Type != nil {
 				visit(p.Type)
@@ -635,11 +661,17 @@ func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 			walkTypeRefs(sub, visit)
 		}
 	case *dts_parser.FunctionType:
+		walkTypeParamTypes(n.TypeParams, func(sub dts_parser.TypeAnn) {
+			walkTypeRefs(sub, visit)
+		})
 		for _, p := range n.Params {
 			walkTypeRefs(p.Type, visit)
 		}
 		walkTypeRefs(n.ReturnType, visit)
 	case *dts_parser.ConstructorType:
+		walkTypeParamTypes(n.TypeParams, func(sub dts_parser.TypeAnn) {
+			walkTypeRefs(sub, visit)
+		})
 		for _, p := range n.Params {
 			walkTypeRefs(p.Type, visit)
 		}
@@ -661,6 +693,13 @@ func walkTypeRefs(t dts_parser.TypeAnn, visit func(*dts_parser.TypeReference)) {
 		walkTypeRefs(n.TrueType, visit)
 		walkTypeRefs(n.FalseType, visit)
 	case *dts_parser.MappedType:
+		// The key source and the `as` remapping name types the value
+		// slot does not. `{ [K in keyof Bag as Name<K>]: V }` mentions
+		// Bag and Name only here.
+		if n.TypeParam != nil {
+			walkTypeRefs(n.TypeParam.Constraint, visit)
+		}
+		walkTypeRefs(n.AsClause, visit)
 		walkTypeRefs(n.ValueType, visit)
 	case *dts_parser.TemplateLiteralType:
 		// A template literal's interpolations are the only place some
