@@ -31,35 +31,6 @@ interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; re
 declare var Array: ArrayConstructor;
 `
 
-// TestRun_CheckFailsOnAnEmptyTree runs `check` against a committed
-// `.esc` tree with nothing in it. The two directories play opposite
-// roles: `libDir` holds the `.d.ts` inputs and is seeded, while
-// `escDir` is the tree being verified and stays empty. Every
-// declaration the converter produces is therefore missing, which is
-// what a first run against an unseeded tree looks like.
-func TestRun_CheckFailsOnAnEmptyTree(t *testing.T) {
-	t.Parallel()
-	libDir := seedLib(t, arrayLib)
-	escDir := t.TempDir()
-
-	var stdout strings.Builder
-	err := run([]string{"check", libDir, escDir}, &stdout, io.Discard)
-	require.ErrorIs(t, err, errCheckFailed)
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- /dev/null
-+++ b/std/array.esc
-@@ -0,0 +1,7 @@
-+@js("Array")
-+export declare class Array<T> {
-+    length: number,
-+    constructor(mut self),
-+    static isArray(arg: any) -> boolean,
-+    static readonly prototype: Array<any>
-+}
-check: 1 missing declarations, 0 missing members, 0 extra declarations
-note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
-`))
-}
-
 // TestRun_SingleFileWritesEscToStdout covers the §5 single-file mode:
 // one `.d.ts` in, Escalier source out on stdout, nothing written to
 // disk. The snapshot is the whole emitted module, so it also pins the
@@ -93,11 +64,13 @@ const committedCFG = "../spec-extract/cfg.json"
 //
 // The counts move when curated.json or cfg.json changes, which is the point:
 // the diff shows what a data change did to the reports an operator reads.
-func TestRun_BootstrapWithCFGPrintsEveryReport(t *testing.T) {
+func TestRun_GenerateWithCFGPrintsEveryReport(t *testing.T) {
 	libDir := seedLib(t, arrayLib)
 
 	var stderr strings.Builder
-	require.NoError(t, run([]string{"bootstrap", "--cfg", committedCFG, libDir, t.TempDir()}, io.Discard, &stderr))
+	require.NoError(t, run([]string{
+		"generate", "--cfg", committedCFG, "--overlay", t.TempDir(), libDir, t.TempDir(),
+	}, io.Discard, &stderr))
 
 	snaps.MatchInlineSnapshot(t, reportSummaries(stderr.String()), snaps.Inline(`  curation: 27 fill-ins, 0 corrections, 0 redundant, 0 stale, 0 unmatched, 0 refused
   coercion filter: 4882 TypeError sites adjudicated, 362 dropped
@@ -124,7 +97,7 @@ func reportSummaries(stderr string) string {
 // layer answered fails the run rather than writing a hole. The committed graph
 // has none, so the case is built here: one method whose only step is prose the
 // serializer could not lower, which withholds its receiver.
-func TestRun_BootstrapRejectsAnUnansweredDetermination(t *testing.T) {
+func TestRun_GenerateRejectsAnUnansweredDetermination(t *testing.T) {
 	t.Parallel()
 	cfgPath := filepath.Join(t.TempDir(), "cfg.json")
 	require.NoError(t, os.WriteFile(cfgPath, []byte(
@@ -133,7 +106,9 @@ func TestRun_BootstrapRejectsAnUnansweredDetermination(t *testing.T) {
 			`{"kind":"opaque","text":["Let _x_ be whatever the host decides."]}]}]}`), 0o644))
 	outDir := t.TempDir()
 
-	err := run([]string{"bootstrap", "--cfg", cfgPath, seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+	err := run([]string{
+		"generate", "--cfg", cfgPath, "--overlay", t.TempDir(), seedLib(t, arrayLib), outDir,
+	}, io.Discard, io.Discard)
 
 	require.EqualError(t, err, cfgPath+" leaves determinations unanswered:\n"+
 		"  Demo.prototype.opaque: no receiver determination")
@@ -142,11 +117,13 @@ func TestRun_BootstrapRejectsAnUnansweredDetermination(t *testing.T) {
 
 // A --cfg path that does not resolve fails the run before anything is written,
 // so a mistyped flag leaves no half-joined tree behind.
-func TestRun_BootstrapRejectsABadCFGPath(t *testing.T) {
+func TestRun_GenerateRejectsABadCFGPath(t *testing.T) {
 	t.Parallel()
 	outDir := t.TempDir()
 
-	err := run([]string{"bootstrap", "--cfg", "no/such/cfg.json", seedLib(t, arrayLib), outDir}, io.Discard, io.Discard)
+	err := run([]string{
+		"generate", "--cfg", "no/such/cfg.json", "--overlay", t.TempDir(), seedLib(t, arrayLib), outDir,
+	}, io.Discard, io.Discard)
 
 	require.EqualError(t, err,
 		"loading no/such/cfg.json: reading no/such/cfg.json: open no/such/cfg.json: no such file or directory")
@@ -188,108 +165,20 @@ func readGenerated(t *testing.T, path string) string {
 	return body
 }
 
-// TestRun_BootstrapWritesTheTree covers the seeding mode. The snapshot
-// holds the operator-facing report, the tree the run laid down, and the
-// one package file it emitted, so a change to any of the three shows up
-// in the diff rather than behind a Contains check.
-//
-// The out-dir is a fresh temp path on every run, so the report has it
-// replaced by a placeholder before the comparison.
-func TestRun_BootstrapWritesTheTree(t *testing.T) {
-	t.Parallel()
-	libDir := seedLib(t, arrayLib)
-	outDir := t.TempDir()
-
-	var stderr strings.Builder
-	require.NoError(t, run([]string{"bootstrap", libDir, outDir}, io.Discard, &stderr))
-
-	contents := readGenerated(t, filepath.Join(outDir, "std", "array.esc"))
-
-	report := strings.ReplaceAll(stderr.String(), outDir, "<out-dir>")
-	snaps.MatchInlineSnapshot(t, fmt.Sprintf(
-		"--- stderr ---\n%s--- tree ---\n%s\n--- std/array.esc ---\n%s",
-		report, strings.Join(treeOf(t, outDir), "\n"), contents), snaps.Inline(`--- stderr ---
-discovered 1 lib files
-wrote 1 packages under <out-dir>
---- tree ---
-node/README.md
-std/array.esc
---- std/array.esc ---
-@js("Array")
-export declare class Array<T> {
-    length: number,
-    constructor(mut self),
-    static isArray(arg: any) -> boolean,
-    static readonly prototype: Array<any>
-}
-`))
-}
-
-// TestRun_CheckPassesOnASeededTree is the happy path for `check`: seed
-// the `.esc` tree with the converter's own output, then verify it. The
-// two modes have to agree about what a package holds, so nothing comes
-// back missing and the run exits zero.
-func TestRun_CheckPassesOnASeededTree(t *testing.T) {
-	t.Parallel()
-	libDir := seedLib(t, arrayLib)
-	escDir := t.TempDir()
-
-	require.NoError(t, run([]string{"bootstrap", libDir, escDir}, io.Discard, io.Discard))
-
-	var stdout strings.Builder
-	require.NoError(t, run([]string{"check", libDir, escDir}, &stdout, io.Discard))
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`check: 0 missing declarations, 0 missing members, 0 extra declarations
-note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
-`))
-}
-
-// TestRun_CheckPassesAfterRegenerate is the same happy path seeded by
-// the write mode instead of by `bootstrap`. The two entry points share
-// one diff, so what `regenerate` writes is exactly what `check` then
-// finds nothing missing in.
-func TestRun_CheckPassesAfterRegenerate(t *testing.T) {
-	t.Parallel()
-	libDir := seedLib(t, arrayLib)
-	escDir := t.TempDir()
-
-	var regenOut strings.Builder
-	require.NoError(t, run([]string{"regenerate", libDir, escDir}, &regenOut, io.Discard))
-	require.Contains(t, regenOut.String(), "created std:array (std/array.esc)")
-
-	var checkOut strings.Builder
-	require.NoError(t, run([]string{"check", libDir, escDir}, &checkOut, io.Discard))
-	require.Contains(t, checkOut.String(),
-		"check: 0 missing declarations, 0 missing members, 0 extra declarations")
-}
-
-// TestRun_RegenerateIsIdempotent pins the re-run contract at the CLI
-// level: a second pass over a tree the first pass just wrote finds
-// nothing to add and reports zero on both counts.
-func TestRun_RegenerateIsIdempotent(t *testing.T) {
-	t.Parallel()
-	libDir := seedLib(t, arrayLib)
-	escDir := t.TempDir()
-
-	require.NoError(t, run([]string{"regenerate", libDir, escDir}, io.Discard, io.Discard))
-
-	var second strings.Builder
-	require.NoError(t, run([]string{"regenerate", libDir, escDir}, &second, io.Discard))
-	require.Contains(t, second.String(), "regenerate: +0 declarations, +0 members")
-}
-
-func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
+// Every invocation the tool cannot serve ends with the full usage, since
+// `generate` is the one subcommand and anything else is read as the path
+// to a `.d.ts` file.
+func TestRun_RejectsBadInvocations(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name    string
 		args    []string
 		message string
 	}{
-		{"bootstrap without out dir", []string{"bootstrap", "lib"},
-			"usage: dts_to_esc bootstrap [--cfg <cfg.json>] <lib-dir> <out-dir>"},
-		{"check without esc dir", []string{"check", "lib"},
-			"usage: dts_to_esc check <lib-dir> <esc-dir>"},
-		{"regenerate without esc dir", []string{"regenerate", "lib"},
-			"usage: dts_to_esc regenerate <lib-dir> <esc-dir>"},
+		{"generate without esc dir", []string{"generate", "lib"}, generateUsage},
+		{"a retired subcommand and its arguments", []string{"check", "lib", "esc"}, usage},
+		{"a retired subcommand on its own", []string{"check"},
+			"reading check: open check: no such file or directory\n" + usage},
 		{"no subcommand", nil, usage},
 	}
 	for _, tc := range cases {
@@ -299,56 +188,6 @@ func TestRun_RejectsWrongArgumentCounts(t *testing.T) {
 			require.EqualError(t, err, tc.message)
 		})
 	}
-}
-
-// bumpedArrayLib is arrayLib one TypeScript version on: `Array` gained
-// a member and a new interface joined the same bucket.
-const bumpedArrayLib = `
-interface Array<T> { length: number; at(index: number): T | undefined; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
-declare var Array: ArrayConstructor;
-interface ArrayLike<T> { readonly length: number; }
-`
-
-// TestRun_CheckDiffsACommittedFile is the §6.6 bump case: the committed
-// tree is a TypeScript version behind, so `check` prints the patch a
-// `regenerate` run would apply. The hand-written comment the test
-// splices into the committed file stands in for the §7 edits a bump has
-// to preserve, and appears in the diff as context rather than as a
-// change.
-func TestRun_CheckDiffsACommittedFile(t *testing.T) {
-	t.Parallel()
-	escDir := t.TempDir()
-	require.NoError(t, run(
-		[]string{"bootstrap", seedLib(t, arrayLib), escDir}, io.Discard, io.Discard))
-
-	dest := filepath.Join(escDir, "std", "array.esc")
-	committed, err := os.ReadFile(dest)
-	require.NoError(t, err)
-	require.NoError(t, os.WriteFile(dest, []byte(strings.Replace(string(committed),
-		"    static readonly prototype",
-		"    // Hand-written note.\n    static readonly prototype", 1)), 0o644))
-
-	var stdout strings.Builder
-	err = run([]string{"check", seedLib(t, bumpedArrayLib), escDir}, &stdout, io.Discard)
-	require.ErrorIs(t, err, errCheckFailed)
-	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`--- a/std/array.esc
-+++ b/std/array.esc
-@@ -8,5 +8,10 @@
-     constructor(mut self),
-     static isArray(arg: any) -> boolean,
-     // Hand-written note.
--    static readonly prototype: Array<any>
-+    static readonly prototype: Array<any>,
-+    at(self, index: number) -> T | undefined,
- }
-+
-+export declare interface ArrayLike<T> {
-+    readonly length: number
-+}
-check: 1 missing declarations, 1 missing members, 0 extra declarations
-note: signature and property-type drift are not checked yet; those compare both sides through the solver's constrain (SimpleSub M7.5)
-`))
 }
 
 // TestRun_GenerateWritesTheTree covers the generating subcommand end to

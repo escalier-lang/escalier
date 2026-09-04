@@ -1,6 +1,7 @@
 package dts_to_esc
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -214,7 +215,7 @@ declare namespace Math {
 	require.Len(t, ns.Statements, 2)
 }
 
-func TestWritePartitionedTree_WritesToExpectedPaths(t *testing.T) {
+func TestWriteConvertedTree_WritesToExpectedPaths(t *testing.T) {
 	t.Parallel()
 	es5 := parseLib(t, "lib.es5.d.ts", `
 interface Array<T> { length: number; }
@@ -228,10 +229,14 @@ declare namespace Math {
 	res, err := PartitionLib([]LibInput{es5})
 	require.NoError(t, err)
 
-	outDir := t.TempDir()
-	written, err := WritePartitionedTree(res, outDir)
+	mods, err := ConvertBuckets(res)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"std:array", "std:math"}, written)
+	require.ElementsMatch(t, []string{"std:array", "std:math"}, keysOf(mods))
+
+	outDir := t.TempDir()
+	written, err := WriteConvertedTree(mods, outDir)
+	require.NoError(t, err)
+	require.Equal(t, []string{"std:array", "std:math"}, written)
 
 	arrayPath := filepath.Join(outDir, "std", "array.esc")
 	mathPath := filepath.Join(outDir, "std", "math.esc")
@@ -690,49 +695,106 @@ func TestReportSingletonKeyDrops_SilentWhenAllAllowListed(t *testing.T) {
 	require.Empty(t, sb.String())
 }
 
-func TestConvertBucketsAndWriteConvertedTree(t *testing.T) {
+// A bucket the converter rejects names the package it was routed to, so
+// an operator reads which package failed rather than only what the
+// converter said. The rejected shape here is `class Array extends
+// number`. A supertype has to be a type reference, and the converter
+// refuses a primitive rather than lowering it to something else.
+func TestConvertBuckets_NamesThePackageAFailedBucketBelongsTo(t *testing.T) {
+	t.Parallel()
+	_, err := ConvertBuckets(&PartitionResult{
+		Buckets: map[string][]dts_parser.Statement{
+			"std:array": {&dts_parser.ClassDecl{
+				Name:    dts_parser.NewIdent("Array", ast.Span{}),
+				Extends: &dts_parser.PrimitiveType{Kind: dts_parser.PrimNumber},
+			}},
+		},
+	})
+	require.EqualError(t, err,
+		"converting bucket std:array: extends type for class Array isn't a type ref")
+
+	var convErr *BucketConvertError
+	require.ErrorAs(t, err, &convErr)
+	require.Equal(t, "std:array", convErr.Pkg())
+}
+
+// Every way WriteConvertedTree can fail names the package it was working
+// on, so an operator reads which package went wrong rather than only what
+// the filesystem said. Each case below blocks the write at a different
+// step. An unknown URI has no path to write to. A file sitting where
+// std/ belongs stops the directory from being created. A directory
+// sitting where the package file belongs stops the file from being
+// opened.
+func TestWriteConvertedTree_Failures(t *testing.T) {
 	t.Parallel()
 	es5 := parseLib(t, "lib.es5.d.ts", `
 interface Array<T> { length: number; }
 interface ArrayConstructor { new <T>(): Array<T>; readonly prototype: Array<any>; }
 declare var Array: ArrayConstructor;
-declare namespace Math {
-    function abs(x: number): number;
-}
 `)
 	res, err := PartitionLib([]LibInput{es5})
 	require.NoError(t, err)
-
 	mods, err := ConvertBuckets(res)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"std:array", "std:math"}, keysOf(mods))
 
-	split := t.TempDir()
-	written, err := WriteConvertedTree(mods, split)
-	require.NoError(t, err)
-	require.Equal(t, []string{"std:array", "std:math"}, written)
-
-	whole := t.TempDir()
-	_, err = WritePartitionedTree(res, whole)
-	require.NoError(t, err)
-
-	for _, rel := range []string{"std/array.esc", "std/math.esc"} {
-		fromSplit, err := os.ReadFile(filepath.Join(split, filepath.FromSlash(rel)))
-		require.NoError(t, err)
-		fromWhole, err := os.ReadFile(filepath.Join(whole, filepath.FromSlash(rel)))
-		require.NoError(t, err)
-		require.Equal(t, string(fromWhole), string(fromSplit), "%s", rel)
+	cases := []struct {
+		name string
+		// seed prepares the output directory and returns the modules to
+		// write into it.
+		seed    func(t *testing.T, outDir string) map[string]*StandaloneModule
+		message func(outDir string) string
+		// pkg is the package URI the failure must name.
+		pkg string
+	}{
+		{
+			name: "a URI no partition entry names",
+			seed: func(t *testing.T, outDir string) map[string]*StandaloneModule {
+				return map[string]*StandaloneModule{"std:nope": nil}
+			},
+			message: func(outDir string) string {
+				return `unknown package URI "std:nope"; every bucket should come from ` +
+					"Route, which only returns URIs in PackageList"
+			},
+			pkg: "std:nope",
+		},
+		{
+			name: "a file where the package directory belongs",
+			seed: func(t *testing.T, outDir string) map[string]*StandaloneModule {
+				require.NoError(t, os.WriteFile(filepath.Join(outDir, "std"), nil, 0o644))
+				return mods
+			},
+			message: func(outDir string) string {
+				dir := filepath.Join(outDir, "std")
+				return fmt.Sprintf("creating package dir %s for std:array: mkdir %s: not a directory", dir, dir)
+			},
+			pkg: "std:array",
+		},
+		{
+			name: "a directory where the package file belongs",
+			seed: func(t *testing.T, outDir string) map[string]*StandaloneModule {
+				require.NoError(t, os.MkdirAll(filepath.Join(outDir, "std", "array.esc"), 0o755))
+				return mods
+			},
+			message: func(outDir string) string {
+				dest := filepath.Join(outDir, "std", "array.esc")
+				return fmt.Sprintf("writing %s: open %s: is a directory", dest, dest)
+			},
+			pkg: "std:array",
+		},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outDir := t.TempDir()
+			_, err := WriteConvertedTree(tc.seed(t, outDir), outDir)
+			require.EqualError(t, err, tc.message(outDir))
 
-// WriteConvertedTree only knows the package URIs Route produces, so a URI
-// from anywhere else is a caller bug rather than a package it should invent
-// a path for.
-func TestWriteConvertedTreeRejectsUnknownURI(t *testing.T) {
-	t.Parallel()
-	_, err := WriteConvertedTree(map[string]*StandaloneModule{"std:nope": nil}, t.TempDir())
-	require.Error(t, err)
-	require.Contains(t, err.Error(), `unknown package URI "std:nope"`)
+			var pkgErr Error
+			require.ErrorAs(t, err, &pkgErr)
+			require.Equal(t, tc.pkg, pkgErr.Pkg(),
+				"the failure names the package it happened under")
+		})
+	}
 }
 
 func keysOf(mods map[string]*StandaloneModule) []string {
