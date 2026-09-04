@@ -45,6 +45,48 @@ jobs:
           verbose: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  check_generated_tree:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: pnpm/action-setup@v4
+        with:
+          run_install: false
+
+      - name: Install JavaScript dependencies
+        run: pnpm install
+
+      - name: Build dts_to_esc
+        run: go build -o ./bin/dts_to_esc ./tools/dts_to_esc
+
+      # internal/interop/data holds hand-written stubs rather than
+      # generated packages, so the tree the check reads is one this job
+      # seeds. What that gates is generator idempotence over the pinned
+      # lib set. Pointing the check at the committed tree gates that
+      # tree against its inputs, and waits on §7 committing one. See
+      # #1393.
+      - name: Seed a scratch tree
+        run: |
+          ./bin/dts_to_esc generate --overlay internal/interop/overlay \
+            node_modules/typescript/lib tmp/esc-tree
+          git add --all -- tmp/esc-tree
+          git -c user.email=ci@escalier.invalid -c user.name=CI \
+            commit -q -m 'seed the scratch tree'
+
+      - name: Check the tree against its inputs
+        run: |
+          .github/scripts/check-generated-tree.sh tmp/esc-tree -- \
+            ./bin/dts_to_esc generate --overlay internal/interop/overlay \
+            node_modules/typescript/lib tmp/esc-tree
+
   check_ts:
     runs-on: ubuntu-latest
     steps:
