@@ -986,7 +986,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 	var body []ast.ClassElem
 
 	for _, m := range info.instance.Members {
-		elem, err := interfaceMemberToClassElem(m, false /*static*/)
+		elem, err := interfaceMemberToClassElem(m, className, false /*static*/)
 		if err != nil {
 			return nil, err
 		}
@@ -1004,7 +1004,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 			body = append(body, ctor)
 			continue
 		}
-		elem, err := interfaceMemberToClassElem(m, true /*static*/)
+		elem, err := interfaceMemberToClassElem(m, className, true /*static*/)
 		if err != nil {
 			return nil, err
 		}
@@ -1048,8 +1048,12 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 // keying the static flag off the caller (instance side vs constructor side
 // of the trio). Returns (nil, nil) for member kinds with no class-elem
 // representation (CallSignature, IndexSignature).
+//
+// owner is the name of the class being fused, which the receiver
+// classification reads for the owner-wide tiers. See ClassifyMethodOn.
 func interfaceMemberToClassElem(
 	member dts_parser.InterfaceMember,
+	owner string,
 	static bool,
 ) (ast.ClassElem, error) {
 	doc := member.Doc()
@@ -1078,15 +1082,10 @@ func interfaceMemberToClassElem(
 		}
 		var receiver *ast.MethodReceiver
 		if !static {
-			mut, ok := ClassifyMethodByName(propertyKeyName(m.Name))
-			if !ok {
-				// Tier 7 default in Classify is mutating; mirror that
-				// so the synthesised receiver matches what classifyMember
-				// would have produced for a real MethodDecl that hit no
-				// name-based tier.
-				mut = true
+			receiver = &ast.MethodReceiver{
+				Mut:   ClassifyMethodOn(owner, propertyKeyName(m.Name)),
+				Span_: span,
 			}
-			receiver = &ast.MethodReceiver{Mut: mut, Span_: span}
 		}
 		elem := &ast.MethodElem{
 			Name:     name,

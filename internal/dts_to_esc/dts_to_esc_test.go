@@ -810,3 +810,61 @@ func TestCtorReturnNames(t *testing.T) {
 		})
 	}
 }
+
+// immutableOwnerTrio is a String-shaped trio carrying the two member
+// kinds the owner rule has to separate: instance methods, which cannot
+// mutate a primitive, and a constructor, which initializes the object it
+// builds.
+const immutableOwnerTrio = `
+interface String {
+    strike(): string;
+    normalize(form?: string): string;
+    readonly length: number;
+}
+interface StringConstructor {
+    new (value?: any): String;
+    fromCharCode(...codes: number[]): string;
+}
+declare var String: StringConstructor;
+`
+
+// TestStandalone_ImmutableOwnerReceivers pins the receivers on a
+// primitive wrapper. `strike` matches no heuristic prefix and `normalize`
+// matches a mutating one, so both reach `mut self` on the name-only
+// tiers. Neither can mutate a string. The constructor keeps `mut self`
+// because it initializes the object it builds, and it reaches the class
+// through constructSignatureToCtorElem rather than the method path.
+func TestStandalone_ImmutableOwnerReceivers(t *testing.T) {
+	astModule, printed := convertSlice(t, immutableOwnerTrio)
+	require.NotEmpty(t, printed)
+
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok)
+	var cls *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == "String" {
+			cls = cd
+		}
+	}
+	require.NotNil(t, cls, "String should be trio-fused into a class")
+
+	got := map[string]bool{} // member name → receiver is mut
+	for _, elem := range cls.Body {
+		switch e := elem.(type) {
+		case *ast.MethodElem:
+			if e.Static || e.Receiver == nil {
+				continue
+			}
+			got[classElemName(e.Name)] = e.Receiver.Mut
+		case *ast.ConstructorElem:
+			require.NotNil(t, e.Receiver)
+			got["constructor"] = e.Receiver.Mut
+		}
+	}
+
+	require.Equal(t, map[string]bool{
+		"strike":      false,
+		"normalize":   false,
+		"constructor": true,
+	}, got)
+}

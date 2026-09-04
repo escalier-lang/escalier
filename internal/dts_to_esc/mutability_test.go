@@ -562,3 +562,42 @@ func TestClassifyMethodByName(t *testing.T) {
 		})
 	}
 }
+
+// TestClassifyMethodOn_ImmutableOwner covers the owner-wide tier. Every
+// instance method on a primitive wrapper leaves the receiver alone, and
+// the name-only tiers cannot say so: `strike` and `italics` match no
+// heuristic prefix, so they reach the mutating default. Naming the owner
+// is what answers them.
+func TestClassifyMethodOn_ImmutableOwner(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		owner, method string
+		wantMut       bool
+	}{
+		// Annex B string wrappers: no prefix matches, so the name-only
+		// tiers default to mutating.
+		{"String", "strike", false},
+		{"String", "italics", false},
+		{"String", "repeat", false},
+		// `normalize` reads as mutating by prefix, and does not mutate
+		// a string.
+		{"String", "normalize", false},
+		{"Number", "toFixed", false},
+		{"Boolean", "valueOf", false},
+		{"Symbol", "toString", false},
+		{"BigInt", "toLocaleString", false},
+		// A mutable owner keeps the name-only answer.
+		{"Array", "push", true},
+		{"Array", "slice", false},
+		{"Map", "set", true},
+		// An owner with no rule and a name no tier matches falls to the
+		// mutating default.
+		{"Widget", "frobnicate", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.owner+"."+tc.method, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.wantMut, ClassifyMethodOn(tc.owner, tc.method))
+		})
+	}
+}

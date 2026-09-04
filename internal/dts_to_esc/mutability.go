@@ -108,6 +108,13 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return *override
 	}
 
+	// Tier 4 (owner-wide): a type wrapping an immutable primitive has
+	// no mutating method to find, so the heuristics below have nothing
+	// to decide. See ImmutableOwners.
+	if ImmutableOwners.Contains(ctx.ClassName) {
+		return ClassifyResult{Mut: false, Source: TierBuiltinOverride}
+	}
+
 	// Tier 5: get* prefix rule.
 	if result, ok := classifyGetPrefix(ctx); ok {
 		return result
@@ -173,11 +180,54 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 	return false, false
 }
 
+// ClassifyMethodOn reports whether a method's receiver mutates, given the
+// name of the class declaring it. It is the entry point for a caller
+// holding an owner and a bare method name rather than a
+// dts_parser.ClassMember, which is what the trio fusion in
+// interfaceMemberToClassElem holds.
+//
+// It runs the owner-wide tiers first, then the name-only ones, and falls
+// back to Classify's tier-7 default of mutating so a synthesised
+// receiver matches what classifyMember produces for a real MethodDecl
+// reaching no tier.
+func ClassifyMethodOn(owner, name string) bool {
+	if ImmutableOwners.Contains(owner) {
+		return false
+	}
+	if mut, ok := ClassifyMethodByName(name); ok {
+		return mut
+	}
+	return true
+}
+
 // MethodNames names the methods of one owner whose receiver an override marks
 // non-mutating. Membership means "strip `mut self`". There is no counterpart
 // set for marking a method mutating, because a `.d.ts` method carries
 // `mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
+
+// ImmutableOwners names the types no instance method of which can mutate
+// its receiver, so none of their methods takes `mut self`.
+//
+// Each wraps a JavaScript primitive, and a primitive is immutable at the
+// language level. `String.prototype.toUpperCase` returns a new string
+// and leaves the old one alone; there is no operation anywhere on
+// `String.prototype` that does otherwise, and the same holds for the
+// rest.
+//
+// The rule names the owner rather than its methods because the fact is
+// about the type. A per-method list only covers the names someone
+// thought of: `strike`, `italics`, `blink`, and the other Annex B
+// wrappers matched no heuristic prefix, fell through to tier 7, and
+// took `mut self` by default. Naming the owner answers those and
+// whatever a future TypeScript bump adds beside them.
+var ImmutableOwners = set.FromSlice([]string{
+	"String",
+	"Number",
+	"Boolean",
+	"Symbol",
+	"BigInt",
+})
 
 // nonMutatingOverrides names, per owner, the methods whose receiver the
 // name-only tiers get wrong.
