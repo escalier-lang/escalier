@@ -779,39 +779,6 @@ func TestStandalone_ArrayShorthandTrio(t *testing.T) {
 	require.Equal(t, 0, interfaceCount, "trio interfaces consumed")
 }
 
-// TestCtorReturnNames covers the return shapes trio detection reads.
-// A readonly array is `ReadonlyArray<T>`, which names a different
-// instance than `Array<T>` and so must not fuse an Array trio.
-func TestCtorReturnNames(t *testing.T) {
-	t.Parallel()
-	cases := []struct {
-		name  string
-		input string
-		want  string
-	}{
-		{"a type reference names its instance", "interface C { new (): Foo; }", "Foo"},
-		{"an array shorthand names Array", "interface C { new (): Foo[]; }", "Array"},
-		{"a readonly array names ReadonlyArray",
-			"interface C { new (): readonly Foo[]; }", "ReadonlyArray"},
-		{"a primitive names nothing", "interface C { new (): string; }", ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			source := &ast.Source{Path: "test.d.ts", Contents: tc.input, ID: 0}
-			mod, errs := dts_parser.NewDtsParser(source).ParseModule()
-			require.Empty(t, errs, "dts parse errors")
-
-			iface, ok := mod.Statements[0].(*dts_parser.InterfaceDecl)
-			require.True(t, ok)
-			cs, ok := iface.Members[0].(*dts_parser.ConstructSignature)
-			require.True(t, ok)
-
-			require.Equal(t, tc.want, ctorReturnNames(cs.ReturnType))
-		})
-	}
-}
-
 // immutableOwnerTrio is a String-shaped trio carrying the two member
 // kinds the owner rule has to separate: instance methods, which cannot
 // mutate a primitive, and a constructor, which initializes the object it
@@ -1049,4 +1016,167 @@ declare var Foo: Foo;
 			require.NotEmpty(t, parsedDecls)
 		})
 	}
+}
+
+// Recognition of the trio idiom reads the three names and the var's
+// type annotation, never the constructor interface's members. These are
+// the two pinned-lib shapes that depend on it: a `FooConstructor` with
+// no `new` at all, and one whose `new` returns an array type rather
+// than a reference to the instance name.
+func TestStandalone_TrioFusesWhateverTheConstructorDeclares(t *testing.T) {
+	tests := []struct {
+		name string
+		// input is the trio, trimmed from the pinned lib file named in
+		// each case's comment.
+		input string
+		// ctors is the number of ConstructorElem members the fused
+		// class should carry.
+		ctors    int
+		statics  []string
+		instance []string
+	}{
+		{
+			// lib.esnext.iterator.d.ts gives IteratorConstructor
+			// statics and no `new`. A class with no constructor is what
+			// makes constructing it unrepresentable rather than merely
+			// discouraged.
+			name: "constructor interface with no new",
+			input: `
+interface Iterator<T> {
+    next(): T;
+}
+
+interface IteratorConstructor {
+    readonly prototype: Iterator<any>;
+    from<T>(value: T): Iterator<T>;
+}
+
+declare var Iterator: IteratorConstructor;
+`,
+			ctors:    0,
+			statics:  []string{"static readonly prototype: Iterator<any>", "static from<T>(value: T) -> Iterator<T>"},
+			instance: []string{"next(mut self) -> T"},
+		},
+		{
+			// lib.es5.d.ts. `any[]` and `T[]` parse as an array type,
+			// not as a TypeReference named `Array`, so a rule reading
+			// the return type rejects the one name the
+			// planning/interop_mutability/ workstream is about.
+			name: "construct signatures returning an array type",
+			input: `
+interface Array<T> {
+    push(...items: T[]): number;
+    readonly length: number;
+}
+
+interface ArrayConstructor {
+    new (arrayLength?: number): any[];
+    new <T>(arrayLength: number): T[];
+    isArray(arg: any): boolean;
+    readonly prototype: any[];
+}
+
+declare var Array: ArrayConstructor;
+`,
+			ctors:    2,
+			statics:  []string{"static isArray(arg: any) -> boolean"},
+			instance: []string{"push(mut self, ...items: Array<T>) -> number"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			astModule, printed := convertSlice(t, test.input)
+			rootNS, ok := astModule.Module.Namespaces.Get("")
+			require.True(t, ok, "root namespace exists")
+
+			var classes []*ast.ClassDecl
+			var interfaces, vars int
+			for _, d := range rootNS.Decls {
+				switch dd := d.(type) {
+				case *ast.ClassDecl:
+					classes = append(classes, dd)
+				case *ast.InterfaceDecl:
+					interfaces++
+				case *ast.VarDecl:
+					vars++
+				}
+			}
+			require.Len(t, classes, 1, "the trio fused into one ClassDecl")
+			require.Equal(t, 0, interfaces, "both trio interfaces consumed")
+			require.Equal(t, 0, vars, "the trio var consumed")
+
+			ctors := 0
+			for _, elem := range classes[0].Body {
+				if _, ok := elem.(*ast.ConstructorElem); ok {
+					ctors++
+				}
+			}
+			require.Equal(t, test.ctors, ctors, "ConstructorElem count")
+
+			for _, want := range test.statics {
+				require.Contains(t, printed, want)
+			}
+			for _, want := range test.instance {
+				require.Contains(t, printed, want)
+			}
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A constructor interface with a call signature and no `new` describes
+// something callable and not constructible. fuseTrio has no class elem
+// for a call signature, so the fused class could be neither called nor
+// constructed. The trio passes through instead, keeping the call
+// signature on the interface, until #1412 gives a class somewhere to
+// hold one.
+//
+// `SymbolConstructor` below is verbatim from lib.es2015.symbol.d.ts.
+// `BigIntConstructor` is the same shape and the only other one in the
+// pinned lib set.
+func TestStandalone_TrioNotFusedWhenTheConstructorIsOnlyCallable(t *testing.T) {
+	const slice = `
+interface Symbol {
+    toString(): string;
+}
+
+interface SymbolConstructor {
+    readonly prototype: Symbol;
+    (description?: string | number): symbol;
+    for(key: string): symbol;
+}
+
+declare var Symbol: SymbolConstructor;
+`
+	astModule, printed := convertSlice(t, slice)
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok, "root namespace exists")
+
+	var classes, interfaces, vars int
+	for _, d := range rootNS.Decls {
+		switch d.(type) {
+		case *ast.ClassDecl:
+			classes++
+		case *ast.InterfaceDecl:
+			interfaces++
+		case *ast.VarDecl:
+			vars++
+		}
+	}
+	require.Equal(t, 0, classes, "no class synthesized")
+	require.Equal(t, 2, interfaces, "both interfaces survive")
+	require.Equal(t, 1, vars, "the binding survives")
+
+	require.Contains(t, printed, "fn (description?: string | number) -> symbol",
+		"the call signature survives, which is the whole point of holding back")
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.NotEmpty(t, parsedDecls)
 }

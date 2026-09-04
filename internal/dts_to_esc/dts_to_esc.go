@@ -186,11 +186,44 @@ type trioTable struct {
 
 // detectTrios scans a module's top-level statements for the
 // `interface Foo` + `interface FooConstructor` + `declare var Foo: FooConstructor`
-// pattern. Recognition mirrors tryFuseTrio in internal/interop at the
-// dts layer:
-// the var's TypeAnn must be a TypeReference to FooConstructor, and the
-// constructor interface's `new (...)` signature(s) must return Foo.
-// Trios that fail any check pass through unchanged.
+// pattern. The three names and the var's type annotation are the whole
+// rule: `Foo` and `FooConstructor` must both be declared, and the var
+// named `Foo` must be a TypeReference to `FooConstructor`. Trios that
+// fail any check pass through unchanged.
+//
+// What the constructor interface declares does not enter recognition.
+// Its `new (...)` signatures become the class's constructors when it has
+// any, and the class has none when it does not. Two shapes in the
+// pinned lib set depend on that:
+//
+//   - `SymbolConstructor` and `BigIntConstructor` declare no `new` at
+//     all, because the specification forbids constructing them.
+//     `new Symbol()` throws a TypeError. A class with no constructor
+//     is the shape that makes it unrepresentable rather than merely
+//     discouraged.
+//   - `ArrayConstructor` declares `new (arrayLength?: number): any[]`
+//     and two more that return `T[]`. Shorthand is not a
+//     TypeReference, so a rule reading the return type has to know
+//     that `T[]` spells `Array<T>` before it can match the one name
+//     whose mutation story the planning/interop_mutability/ workstream
+//     is about. Reading the names spares it that.
+//
+// The shorthand itself needs no special handling past this point.
+// convertTypeAnn turns `T[]` into `Array<T>` and `readonly T[]` into
+// `ReadonlyArray<T>`, so every param and member type reaches the class
+// already written the long way. Recognition was the only place the two
+// spellings had to be told apart.
+//
+// One shape is held back, and for a reason that is about the class
+// form rather than about recognition. A constructor interface with a
+// call signature and no `new` describes something callable and not
+// constructible, and fuseTrio has no class elem for a call signature,
+// so the fused class could be neither called nor constructed.
+// `SymbolConstructor` and `BigIntConstructor` are the two, and the
+// guard comes out when #1412 gives a class somewhere to hold one.
+//
+// This matches tryFuseTrio in internal/interop/class_shapes.go, which
+// has never gated on a construct signature.
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
@@ -227,11 +260,14 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		if typeRefName(ref) != ctorName {
 			continue
 		}
-		// Constructor interface must carry at least one `new (...)` signature
-		// whose return type is the instance name. (We allow other members
-		// alongside it; bare-call signatures and prototype properties pass
-		// through into static members or are skipped.)
-		if !hasCtorReturning(ctor, name) {
+		// A constructor interface whose only callable form is a call
+		// signature would lose it: fuseTrio has no class elem to put
+		// one on, so the fused class could be neither called nor
+		// constructed. `SymbolConstructor` and `BigIntConstructor` are
+		// the two, and the specification forbids `new` on both, so the
+		// call signature is the only way to make one. They stay
+		// interfaces until #1412 gives a class somewhere to hold it.
+		if hasCallSignature(ctor) && !hasConstructSignature(ctor) {
 			continue
 		}
 
@@ -245,6 +281,18 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	}
 
 	return t
+}
+
+// hasCallSignature reports whether iface declares at least one bare
+// `(...)` member, the form that makes `Symbol("x")` a call rather than
+// a construction.
+func hasCallSignature(iface *dts_parser.InterfaceDecl) bool {
+	for _, m := range iface.Members {
+		if _, ok := m.(*dts_parser.CallSignature); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hasConstructSignature reports whether iface declares at least one
@@ -794,38 +842,6 @@ func countTypeRefsInTypeAnn(t dts_parser.TypeAnn, name string) int {
 func typeRefName(ref *dts_parser.TypeReference) string {
 	if id, ok := ref.Name.(*dts_parser.Ident); ok {
 		return id.Name
-	}
-	return ""
-}
-
-// hasCtorReturning reports whether ctor has at least one ConstructSignature
-// whose return type names instanceName.
-func hasCtorReturning(ctor *dts_parser.InterfaceDecl, instanceName string) bool {
-	for _, m := range ctor.Members {
-		cs, ok := m.(*dts_parser.ConstructSignature)
-		if !ok {
-			continue
-		}
-		if ctorReturnNames(cs.ReturnType) == instanceName {
-			return true
-		}
-	}
-	return false
-}
-
-// ctorReturnNames is the instance name a `new` signature's return type
-// names, or "" for a shape that names none. `T[]` is `Array<T>` written
-// in shorthand, so ArrayConstructor's `new (): any[]` constructs an
-// Array even though no TypeReference says so.
-func ctorReturnNames(t dts_parser.TypeAnn) string {
-	switch r := t.(type) {
-	case *dts_parser.TypeReference:
-		return typeRefName(r)
-	case *dts_parser.ArrayType:
-		if r.Readonly {
-			return "ReadonlyArray"
-		}
-		return "Array"
 	}
 	return ""
 }
