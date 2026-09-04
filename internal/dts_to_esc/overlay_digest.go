@@ -85,8 +85,8 @@ func newDigestPass(record bool) *digestPass {
 }
 
 // visit takes the digest of the converted forms one `replace` entry
-// substitutes, given their printed Escalier source. Outside record mode
-// it fails when the sidecar has no entry for the key or records a
+// replaces, given their printed Escalier source. Outside record mode it
+// fails when the sidecar has no entry for the key or records a
 // different form.
 func (dp *digestPass) visit(f OverlayFile, key digestKey, forms []string) error {
 	found := digestOf(forms)
