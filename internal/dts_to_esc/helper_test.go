@@ -972,3 +972,52 @@ func TestConvertComputedKeySimpleIdent(t *testing.T) {
 		t.Errorf("Expected identifier name %q, got %q", "key", identExpr.Name)
 	}
 }
+
+// TestConvertTemplateLiteralType_RestoresEmptyQuasis covers the
+// alternation the printer needs. It walks the quasis and emits the
+// interpolation after each, so a template needs one more quasi than
+// type. The dts parser omits an empty quasi rather than recording it, so
+// a template starting, ending, or joining two interpolations arrives
+// short and the conversion has to put the empties back.
+//
+// Every row here was wrong before: a template that is all interpolation
+// printed as an empty one, `${T} ` and ` ${T}` printed alike, and
+// `Crypto.randomUUID` lost its first interpolation and gained a leading
+// hyphen.
+func TestConvertTemplateLiteralType_RestoresEmptyQuasis(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{"leading and trailing quasi", "`a${string}b`"},
+		{"nothing but an interpolation", "`${number}`"},
+		{"leading interpolation", "`${T} `"},
+		{"trailing interpolation", "` ${T}`"},
+		{"adjacent interpolations", "`${A}${B}`"},
+		{"interpolations either side of a separator",
+			"`${string}-${string}-${string}-${string}-${string}`"},
+		{"no interpolation at all", "`section-`"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dtsTypeAnn := dts_parser.NewDtsParser(&ast.Source{
+				Path: "test.d.ts", Contents: tc.input,
+			}).ParseTypeAnn()
+			require.NotNil(t, dtsTypeAnn, "parse %s", tc.input)
+
+			converted, err := convertTypeAnn(dtsTypeAnn)
+			require.NoError(t, err)
+
+			lit, ok := converted.(*ast.TemplateLitTypeAnn)
+			require.True(t, ok, "want a TemplateLitTypeAnn, got %T", converted)
+			require.Len(t, lit.Quasis, len(lit.TypeAnns)+1,
+				"the printer emits one interpolation per quasi and needs one quasi left over")
+
+			printed, err := printer.Print(converted, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tc.input, printed)
+		})
+	}
+}

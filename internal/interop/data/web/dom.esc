@@ -21707,9 +21707,9 @@ export declare fn removeEventListener(type: string, listener: EventListenerOrEve
 
 export declare type AllowSharedBufferSource = ArrayBuffer | ArrayBufferView
 
-export declare type AutoFill = AutoFillBase | ``
+export declare type AutoFill = AutoFillBase | `${OptionalPrefixToken<AutoFillSection>}${OptionalPrefixToken<AutoFillAddressKind>}${AutoFillField}${OptionalPostfixToken<AutoFillCredentialField>}`
 
-export declare type AutoFillField = AutoFillNormalField | ``
+export declare type AutoFillField = AutoFillNormalField | `${OptionalPrefixToken<AutoFillContactKind>}${AutoFillContactField}`
 
 export declare type AutoFillSection = `section-${string}`
 
@@ -21769,7 +21769,7 @@ export declare type OnErrorEventHandler = OnErrorEventHandlerNonNull | null
 
 export declare type OptionalPostfixToken<T: string> = ` ${T}` | ""
 
-export declare type OptionalPrefixToken<T: string> = ` ${T}` | ""
+export declare type OptionalPrefixToken<T: string> = `${T} ` | ""
 
 export declare type RenderingContext = CanvasRenderingContext2D | ImageBitmapRenderingContext | WebGLRenderingContext | WebGL2RenderingContext
 

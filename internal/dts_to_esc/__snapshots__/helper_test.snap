@@ -1146,6 +1146,9 @@
             Value: "hello ",
             Span: 1-7,
         },
+        &ast.Quasi{
+            Span: 0-17,
+        },
     },
     TypeAnns: []ast.TypeAnn{
         &ast.StringTypeAnn{
@@ -1160,8 +1163,14 @@
 &ast.TemplateLitTypeAnn{
     Quasis: []*ast.Quasi{
         &ast.Quasi{
+            Span: 1-10,
+        },
+        &ast.Quasi{
             Value: "-",
             Span: 10-11,
+        },
+        &ast.Quasi{
+            Span: 0-21,
         },
     },
     TypeAnns: []ast.TypeAnn{
@@ -1772,6 +1781,9 @@
                     &ast.Quasi{
                         Value: "get",
                         Span: 13-16,
+                    },
+                    &ast.Quasi{
+                        Span: 12-21,
                     },
                 },
                 TypeAnns: []ast.TypeAnn{
