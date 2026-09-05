@@ -877,7 +877,7 @@ func TestStandalone_RaiseParamOnAFusedClass(t *testing.T) {
 	require.NoError(t, err)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Promise")
 export declare class Promise<T, E = never> {
-    then<R>(mut self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
+    then<R>(self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
     constructor(mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown),
     static readonly prototype: Promise<any>,
     static resolve<T>(value: T) -> Promise<T>

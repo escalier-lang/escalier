@@ -9,7 +9,7 @@
     "decl": "Promise",
     "member": "catch",
     "kind": "method",
-    "digest": "498391d6534d65da"
+    "digest": "3763268b9467176f"
   },
   {
     "decl": "Promise",
@@ -21,13 +21,13 @@
     "decl": "Promise",
     "member": "finally",
     "kind": "method",
-    "digest": "1c3039dbc5a1621e"
+    "digest": "2cef3bf8da94b7fc"
   },
   {
     "decl": "Promise",
     "member": "then",
     "kind": "method",
-    "digest": "8894daa091d8b71b"
+    "digest": "bcbaab6e20298969"
   },
   {
     "decl": "Promise",

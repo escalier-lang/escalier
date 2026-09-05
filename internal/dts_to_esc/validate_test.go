@@ -188,6 +188,9 @@ func TestCommittedGraphRedundantOverrides(t *testing.T) {
 Function.bind
 Function.call
 Object.propertyIsEnumerable
+Promise.catch
+Promise.finally
+Promise.then
 String.charAt
 String.charCodeAt
 String.codePointAt
@@ -276,7 +279,7 @@ func TestWriteValidationReport(t *testing.T) {
 	// override entry lands in the third list. The lines below are the head of
 	// it, and the assertion after them covers the rest.
 	require.True(t, strings.HasPrefix(out.String(),
-		`  receivers: 1 confirmed by a heuristic, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 59 overrides no fact answers
+		`  receivers: 1 confirmed by a heuristic, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 62 overrides no fact answers
     disagreement: String.prototype.trim: fact mutBorrow, override borrow
     redundant override: String.charAt
     override with no fact: Body.arrayBuffer

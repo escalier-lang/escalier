@@ -25,6 +25,11 @@
 // promise contributes that promise's rejection type rather than this
 // one's. Each callback carries its own raise variable for both.
 //
+// The receiver is `self`. Attaching a handler appends to the promise's
+// reaction lists, a write no reader can observe, and `mut self` would
+// demand unique mutable access to attach one at all. See the `Promise`
+// entry in mutability.go.
+//
 // **A handler is required.** TypeScript types every one of them
 // `| undefined | null`, so `p.finally()` is a promise that settles the
 // way `p` did and nothing else — a no-op that allocates. Requiring the
@@ -34,10 +39,10 @@
 // parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
-    finally<F = never>(mut self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
-    then<TResult1 = T, F = never>(mut self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(mut self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
-    catch<TResult = never, G = never>(mut self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
+    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    catch<TResult = never, G = never>(self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
     constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
 }
 
