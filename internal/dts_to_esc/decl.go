@@ -361,6 +361,49 @@ func addRaiseParam(typeParams []*ast.TypeParam, body ast.Node, declSpan ast.Span
 	return append(typeParams, &param)
 }
 
+// addRaiseParamToClass is addRaiseParam for a fused class, threading the
+// raise through the instance members alone.
+//
+// A static has no binding for the class's own type parameters, so
+// `static all<T>(…) -> Promise<Array<Awaited<T>>>` must keep its raise
+// argument omitted rather than name an `E` nothing brought into scope.
+// The solver reads an omitted argument as `never`, which is what a
+// freshly constructed promise raises.
+func addRaiseParamToClass(
+	typeParams []*ast.TypeParam,
+	body []ast.ClassElem,
+	declSpan ast.Span,
+) []*ast.TypeParam {
+	v := &raiseParamVisitor{}
+	for _, elem := range body {
+		if classElemIsStatic(elem) {
+			continue
+		}
+		elem.Accept(v)
+	}
+	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
+	return append(typeParams, &param)
+}
+
+// classElemIsStatic reports whether elem belongs to the class rather
+// than to an instance of it. A constructor is neither: it runs before
+// there is an instance, and it binds no instance type parameter.
+func classElemIsStatic(elem ast.ClassElem) bool {
+	switch e := elem.(type) {
+	case *ast.FieldElem:
+		return e.Static
+	case *ast.MethodElem:
+		return e.Static
+	case *ast.GetterElem:
+		return e.Static
+	case *ast.SetterElem:
+		return e.Static
+	case *ast.ConstructorElem:
+		return true
+	}
+	return false
+}
+
 // synthSpan is the span a node the converter invents carries. Nothing in
 // the `.d.ts` source corresponds to it, so there is no position to point
 // a diagnostic at.

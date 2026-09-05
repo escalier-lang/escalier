@@ -8,6 +8,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/require"
 )
@@ -867,4 +868,51 @@ func TestStandalone_ImmutableOwnerReceivers(t *testing.T) {
 		"normalize":   false,
 		"constructor": true,
 	}, got)
+}
+
+// raiseParamTrio is Promise's shape: a trio whose instance members
+// return the type being declared, alongside a static that returns it
+// too.
+const raiseParamTrio = `
+interface Promise<T> {
+    then<R>(onfulfilled?: (value: T) => R): Promise<R>;
+}
+interface PromiseConstructor {
+    new <T>(executor: (resolve: (value: T) => void) => void): Promise<T>;
+    readonly prototype: Promise<any>;
+    resolve<T>(value: T): Promise<T>;
+}
+declare var Promise: PromiseConstructor;
+`
+
+// TestStandalone_RaiseParamOnAFusedClass covers where the raise
+// parameter lands. Escalier's `Promise` takes one where the TypeScript
+// declaration has no slot for it, and a trio fuses into a class, so the
+// TypeDecl and InterfaceDecl paths in decl.go never see it.
+//
+// It threads through the instance members and stops at the statics and
+// the prototype: a static has no binding for the class's own type
+// parameters, so naming `E` there would reference nothing.
+func TestStandalone_RaiseParamOnAFusedClass(t *testing.T) {
+	astModule, _ := convertSlice(t, raiseParamTrio)
+
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok)
+	var cls *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == "Promise" {
+			cls = cd
+		}
+	}
+	require.NotNil(t, cls)
+
+	printed, err := printer.Print(cls, printer.DefaultOptions())
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Promise")
+export declare class Promise<T, E = never> {
+    then<R>(mut self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
+    constructor(mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown),
+    static readonly prototype: Promise<any>,
+    static resolve<T>(value: T) -> Promise<T>
+}`))
 }
