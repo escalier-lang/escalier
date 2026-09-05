@@ -508,7 +508,21 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 				elems = append(elems, elem)
 			}
 		}
-		return ast.NewObjectTypeAnn(elems, t.Span()), nil
+		obj := ast.NewObjectTypeAnn(elems, t.Span())
+		// TypeScript's `{}` is any value except `null` and `undefined`,
+		// so `Object.keys(o: {})` takes an object with any properties.
+		// Escalier's `{}` is the exact empty object and `{...}` is the
+		// inexact one that reads the way the source means. `{...}` stays
+		// narrower in one direction, since TypeScript's `{}` also admits
+		// a primitive.
+		//
+		// The count is read on the source rather than on `elems`, which
+		// leaves an index-signature-only type exact. That one wants its
+		// key and value types back instead (#1417).
+		if len(t.Members) == 0 {
+			obj.Inexact = true
+		}
+		return obj, nil
 	case *dts_parser.ParenthesizedType:
 		return convertTypeAnn(t.Type)
 	case *dts_parser.IndexedAccessType:
