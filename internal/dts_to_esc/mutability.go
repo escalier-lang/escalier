@@ -126,7 +126,7 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 	}
 
 	// Tier 5: ECMA-262 facts — planning/ecma-262/requirements.md FR8.
-	if result, ok := classifyFact(ctx); ok {
+	if result, ok := classifyReceiverFact(ctx); ok {
 		return result
 	}
 
@@ -158,17 +158,25 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 	return ClassifyResult{Mut: true, Source: TierDefault}
 }
 
-// classifyFact implements tier 5: the receiver mutability the ECMA-262
+// classifyReceiverFact implements tier 5: the receiver mutability the ECMA-262
 // analysis published for this member.
+//
+// It reads one determination of the several a fact carries. The parameter
+// dispositions, the return-borrow seed, `throws` and `rejects` are
+// curation-grade, so they reach the `.esc` through the overlay rather than
+// through this cascade. See planning/ecma-262/implementation_plan.md §7.
 //
 // The lookup is by the member's dotted runtime path, so it fires only for a
 // class the global scope declares. A module path names an imported package,
 // whose `String` is its own class rather than the builtin the spec keys, so
 // nothing there resolves.
 //
-// Only a method resolves. A getter and a setter are settled by tier 3 above,
-// and a data property has no spec algorithm to carry a fact.
-func classifyFact(ctx ClassifyContext) (ClassifyResult, bool) {
+// Only an instance method resolves. A getter and a setter are settled by tier
+// 3 above, and a data property has no spec algorithm to carry a fact. A static
+// is refused here rather than left unanswered: its fact carries the receiver
+// kind `none`, which says the builtin takes no receiver at all, so there is
+// nothing for this tier to write.
+func classifyReceiverFact(ctx ClassifyContext) (ClassifyResult, bool) {
 	if ctx.Facts == nil || ctx.ModulePath != "" {
 		return ClassifyResult{}, false
 	}
