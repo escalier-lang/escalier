@@ -2172,12 +2172,13 @@ naive check gets right.
 
 The check is
 [.github/scripts/check-generated-tree.sh](../../.github/scripts/check-generated-tree.sh),
-and the `check_generated_tree` job runs it. The tree that job
-reads is one it seeds, since `internal/interop/data` holds the
-§2-era stubs rather than generated packages, so what it gates is
-generator idempotence over the pinned lib set. Pointing the check
-at the committed tree gates that tree against its inputs and lands
-with §7, [#1393](https://github.com/escalier-lang/escalier/issues/1393).
+and the `check_generated_tree` job runs it over
+`internal/interop/data`. It regenerates the tree from the §6.4
+inputs and diffs the result against what the checkout carries, so
+a hand-edited generated file, a TypeScript pin bump with no
+regenerated tree, and a converter change nobody re-ran all fail
+there
+([#1393](https://github.com/escalier-lang/escalier/issues/1393)).
 
 **Review ergonomics.** `web/dom.esc` is roughly 22.5k lines, so a
 generator change rewrites it wholesale and the diff dominates
@@ -2281,11 +2282,10 @@ E. **Generate the tree instead of merging into it** (6.4, 6.6) ✅.
    SimpleSub M7.5.
 
    The gate's last clause, CI failing when the committed tree
-   does not match its inputs, needs a committed tree to read.
-   The job #1344 landed runs against a tree it seeds, which
-   gates generator idempotence over the pinned lib set.
+   does not match its inputs, needed a committed tree to read.
+   §7 committed one and
    [#1393](https://github.com/escalier-lang/escalier/issues/1393)
-   points it at `internal/interop/data` alongside §7.
+   pointed the job at it.
 
 6.5 (`throws`) is scope and policy rather than code — fold into
 whichever PR is convenient. §6.8 sequences the fact application,
