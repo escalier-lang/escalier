@@ -19,6 +19,12 @@
   },
   {
     "decl": "Promise",
+    "member": "finally",
+    "kind": "method",
+    "digest": "1c3039dbc5a1621e"
+  },
+  {
+    "decl": "Promise",
     "member": "then",
     "kind": "method",
     "digest": "8894daa091d8b71b"

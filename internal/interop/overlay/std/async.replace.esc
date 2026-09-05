@@ -10,29 +10,42 @@
 // which is why the converter threads the raise parameter through
 // instance members alone.
 //
-// `then`, `catch`, and the constructor's `reject` callback all name the
-// rejection reason, and `E` is what this promise rejects with, so that
-// is the type each of them carries. TypeScript writes `any` at all
-// three, which says nothing.
+// The rest of the block settles what `then`, `catch`, and `finally`
+// yield. TypeScript writes `any` for every reason and threads the
+// original rejection type through unchanged, so three separate facts go
+// unsaid.
 //
-// `E` beats `unknown` in both directions. A handler body gets a usable
-// type instead of having to narrow, and a handler declaring a narrower
-// parameter still checks: parameters are contravariant, and `E`
-// defaults to `never`, which every parameter type accepts. Constraining
-// the `reject` callback is the same rule as `AsyncGenerator.throw`
-// below — a reject that took any value would let one escape past what
-// `E` claims.
+// **A handler discharges the rejection.** After `p.catch(h)` the promise
+// cannot reject with `E` any more; that is the whole point of the call.
+// The same holds for the two-handler `then`. `E` survives only where
+// nothing handles it.
+//
+// **A handler raises on its own account.** A callback that throws `F`
+// makes the result reject with `F`, and a callback returning a different
+// promise contributes that promise's rejection type rather than this
+// one's. Each callback carries its own raise variable for both.
+//
+// **A handler is required.** TypeScript types every one of them
+// `| undefined | null`, so `p.finally()` is a promise that settles the
+// way `p` did and nothing else — a no-op that allocates. Requiring the
+// callback costs no real call and is what lets `then` state the
+// discharge rule: one overload leaves `E` alone because nothing handles
+// it, the other replaces it because something does. An optional
+// parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
-    then<TResult1 = T, TResult2 = never>(mut self, onfulfilled?: (fn (value: T) -> TResult1 | PromiseLike<TResult1, E>) | undefined | null, onrejected?: (fn (reason: E) -> TResult2 | PromiseLike<TResult2, E>) | undefined | null) -> Promise<TResult1 | TResult2, E>,
-    catch<TResult = never>(mut self, onrejected?: (fn (reason: E) -> TResult | PromiseLike<TResult, E>) | undefined | null) -> Promise<T | TResult, E>,
+    finally<F = never>(mut self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
+    then<TResult1 = T, F = never>(mut self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(mut self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    catch<TResult = never, G = never>(mut self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
     constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
 }
 
-// `PromiseLike.then` names the same reason its `Promise` counterpart
+// `PromiseLike.then` states the same two rules its `Promise` counterpart
 // does.
 export declare interface PromiseLike<T, E = never> {
-    then<TResult1 = T, TResult2 = never>(onfulfilled?: (fn (value: T) -> TResult1 | PromiseLike<TResult1, E>) | undefined | null, onrejected?: (fn (reason: E) -> TResult2 | PromiseLike<TResult2, E>) | undefined | null) -> PromiseLike<TResult1 | TResult2, E>,
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
 }
 
 // `throw` injects an exception at the generator's suspended yield. A
