@@ -749,3 +749,35 @@ func TestRaiseParam(t *testing.T) {
 		})
 	}
 }
+
+// TestClassElemIsStatic covers every class member kind the raise-param
+// walk sorts, since only a method reaches it from the converter today.
+func TestClassElemIsStatic(t *testing.T) {
+	t.Parallel()
+	span := synthSpan()
+	name := ast.NewIdent("x", span)
+
+	tests := []struct {
+		name string
+		elem ast.ClassElem
+		want bool
+	}{
+		{"instance field", &ast.FieldElem{Name: name, Static: false}, false},
+		{"static field", &ast.FieldElem{Name: name, Static: true}, true},
+		{"instance method", &ast.MethodElem{Name: name, Static: false}, false},
+		{"static method", &ast.MethodElem{Name: name, Static: true}, true},
+		{"instance getter", &ast.GetterElem{Name: name, Static: false}, false},
+		{"static getter", &ast.GetterElem{Name: name, Static: true}, true},
+		{"instance setter", &ast.SetterElem{Name: name, Static: false}, false},
+		{"static setter", &ast.SetterElem{Name: name, Static: true}, true},
+		// A constructor runs before there is an instance and binds no
+		// instance type parameter, so the walk skips it either way.
+		{"constructor", &ast.ConstructorElem{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tt.want, classElemIsStatic(tt.elem))
+		})
+	}
+}
