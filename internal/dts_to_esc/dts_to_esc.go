@@ -247,6 +247,40 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	return t
 }
 
+// hasConstructSignature reports whether iface declares at least one
+// `new (...)` member.
+func hasConstructSignature(iface *dts_parser.InterfaceDecl) bool {
+	for _, m := range iface.Members {
+		if _, ok := m.(*dts_parser.ConstructSignature); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// namesWithConstructSignature returns every interface name that some
+// top-level declaration gives a `new (...)` member. TypeScript merges
+// repeated `interface Foo` declarations, so reading a single statement
+// per name would miss a construct signature written on the second one.
+//
+// A signature inherited through `extends` is not counted. A heritage
+// clause can name a type alias, as `IteratorConstructor` does, so
+// following one takes name resolution this layer does not do. No
+// interface the singleton path can reach carries one today.
+func namesWithConstructSignature(stmts []dts_parser.Statement) set.Set[string] {
+	names := set.NewSet[string]()
+	for _, stmt := range stmts {
+		iface, ok := stmt.(*dts_parser.InterfaceDecl)
+		if !ok {
+			continue
+		}
+		if hasConstructSignature(iface) {
+			names.Add(iface.Name.Name)
+		}
+	}
+	return names
+}
+
 // singletonInfo records an interface+var-singleton pair recognized at
 // the module level: `interface Foo { ... }` + `declare var Foo: Foo`,
 // where the interface name is not referenced as a type anywhere else
@@ -275,7 +309,10 @@ type singletonTable struct {
 //   - A `declare var Foo: Foo` whose type annotation is a bare
 //     TypeReference to the same name as the var.
 //   - A matching top-level `interface Foo` declaration that is not
-//     already consumed by trio detection.
+//     already consumed by trio detection and that declares no
+//     `new (...)` member. Flattening turns each member into its own
+//     top-level decl, and a construct signature has no such form, so
+//     flattening one would drop it without a trace.
 //   - No other TypeReference to `Foo` anywhere else in the module
 //     (the candidate var's own type contributes the only legal
 //     reference). Self-references inside the interface body, references
@@ -301,9 +338,13 @@ func detectSingletons(stmts []dts_parser.Statement, trios *trioTable) *singleton
 			vars[s.Name.Name] = s
 		}
 	}
+	constructible := namesWithConstructSignature(stmts)
 
 	for name, iface := range interfaces {
 		if trios.byName[name] != nil || trios.consumedCtor.Contains(name) || trios.consumedVar.Contains(name) {
+			continue
+		}
+		if constructible.Contains(name) {
 			continue
 		}
 		v, hasVar := vars[name]
