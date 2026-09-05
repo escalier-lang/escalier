@@ -914,3 +914,122 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 		"the merged declaration has no TResult parameter to bind")
 	require.Contains(t, refs, "TReturn")
 }
+
+// TestConvertBucket_DedupesRepeatedMembers covers what a lib file that
+// adds an overload does to a merged declaration. It restates the
+// signatures it is adding to, so `Map` arrives with two bare
+// constructors and two identical `get`s, while the overloads each file
+// genuinely adds have to survive.
+func TestConvertBucket_DedupesRepeatedMembers(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{
+		parseLib(t, "lib.es2015.collection.d.ts", `
+interface Map<K, V> {
+    get(key: K): V | undefined;
+}
+interface MapConstructor {
+    new (): Map<any, any>;
+    new <K, V>(entries?: readonly (readonly [K, V])[] | null): Map<K, V>;
+}
+declare var Map: MapConstructor;
+`),
+		parseLib(t, "lib.es2015.iterable.d.ts", `
+interface Map<K, V> {
+    get(key: K): V | undefined;
+    keys(): IterableIterator<K>;
+}
+interface MapConstructor {
+    new (): Map<any, any>;
+    new <K, V>(iterable?: Iterable<readonly [K, V]> | null): Map<K, V>;
+}
+`),
+	})
+	require.NoError(t, err)
+
+	mod, err := ConvertBucket(res.Buckets["std:map"])
+	require.NoError(t, err)
+	rootNS, ok := mod.Module.Namespaces.Get("")
+	require.True(t, ok)
+	var cls *ast.ClassDecl
+	for _, d := range rootNS.Decls {
+		if cd, ok := d.(*ast.ClassDecl); ok && cd.Name.Name == "Map" {
+			cls = cd
+		}
+	}
+	require.NotNil(t, cls)
+
+	printed, err := printer.Print(cls, printer.DefaultOptions())
+	require.NoError(t, err)
+
+	// One `get` where two were declared and one bare constructor where
+	// two were, with every genuinely distinct overload kept.
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Map")
+export declare class Map<K, V> {
+    get(self, key: K) -> V | undefined,
+    keys(self) -> IterableIterator<K>,
+    constructor(mut self),
+    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null),
+    constructor(mut self, iterable?: Iterable<[K, V]> | null)
+}`))
+}
+
+// TestDedupeBy_KeepsTheFirstOfEachKey pins the ordering contract.
+// Members keep their declared order, and the survivor of a repeat is
+// the one that appeared first, so the doc the earlier lib file carried
+// is the one that reaches the output.
+func TestDedupeBy_KeepsTheFirstOfEachKey(t *testing.T) {
+	t.Parallel()
+	got, err := dedupeBy([]string{"a1", "b", "a2", "c", "b"},
+		func(s string) (string, error) { return s[:1], nil })
+	require.NoError(t, err)
+	require.Equal(t, []string{"a1", "b", "c"}, got)
+}
+
+// modWithDecls builds the smallest StandaloneModule dedupeMembers reads:
+// one root namespace holding the given declarations.
+func modWithDecls(decls ...ast.Decl) *StandaloneModule {
+	mod := &ast.Module{}
+	mod.Namespaces.Set("", &ast.Namespace{Decls: decls})
+	return &StandaloneModule{Module: mod}
+}
+
+// TestDedupeMembers_InterfaceWithoutBody covers a declaration the walk
+// has to step over rather than read. An InterfaceDecl the converter
+// builds always carries an ObjectTypeAnn, so nothing in the pinned lib
+// set reaches this.
+func TestDedupeMembers_InterfaceWithoutBody(t *testing.T) {
+	t.Parallel()
+	decl := &ast.InterfaceDecl{Name: ast.NewIdentifier("Foo", synthSpan())}
+	require.NoError(t, dedupeMembers(modWithDecls(decl)))
+	require.Nil(t, decl.TypeAnn)
+}
+
+// TestDedupeMembers_UnprintableMember covers what happens when the key
+// cannot be computed. The key is the member's printed form, so a member
+// the printer refuses fails the run rather than being treated as
+// distinct from every other member.
+func TestDedupeMembers_UnprintableMember(t *testing.T) {
+	t.Parallel()
+	span := synthSpan()
+
+	t.Run("class", func(t *testing.T) {
+		t.Parallel()
+		cls := &ast.ClassDecl{
+			Name: ast.NewIdentifier("Foo", span),
+			Body: []ast.ClassElem{(*ast.MethodElem)(nil)},
+		}
+		err := dedupeMembers(modWithDecls(cls))
+		require.EqualError(t, err, "cannot print a nil class member")
+	})
+
+	t.Run("interface", func(t *testing.T) {
+		t.Parallel()
+		iface := &ast.InterfaceDecl{
+			Name: ast.NewIdentifier("Foo", span),
+			TypeAnn: ast.NewObjectTypeAnn(
+				[]ast.ObjTypeAnnElem{(*ast.MethodTypeAnn)(nil)}, span),
+		}
+		err := dedupeMembers(modWithDecls(iface))
+		require.EqualError(t, err, "cannot print a nil object type member")
+	})
+}
