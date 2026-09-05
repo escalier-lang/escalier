@@ -58,7 +58,10 @@ type StandaloneModule struct {
 //   - Flattens `declare namespace Foo { ... }` blocks: each member becomes
 //     a top-level declaration carrying `@js("Foo.member")`.
 //   - Lifts `declare global { ... }` blocks, converting what they hold
-//     as if it had been written beside the block. See liftGlobals.
+//     as if it had been written beside the block. Every other
+//     declaration is converted too, whatever the file's scope. Only the
+//     global tree cares which of them are actually global, and
+//     PartitionLibWithOverlay decides that through globalStatements.
 //   - Attaches an `@js("...")` decorator to every emitted top-level decl
 //     per planning/builtins/implementation_plan.md §3.3.
 //   - Forces `export` on every emitted decl.
@@ -229,11 +232,11 @@ type trioTable struct {
 // has never gated on a construct signature.
 //
 // A name that a `declare class` already declares is left alone. That
-// is a backstop, not the right answer: TypeScript merges an interface
-// into a same-named class, and mergeDecls cannot, so the pair stays
-// split whatever this does. Declining keeps the converter from adding
-// a second class beside the one the source spells out. #1430 covers
-// the merge.
+// is a backstop rather than the right answer. TypeScript merges an
+// interface into a same-named class and mergeDecls cannot, so the pair
+// stays split whatever this does. Declining only keeps the converter
+// from adding a second class beside the one the source spells out.
+// #1430 covers the merge.
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
