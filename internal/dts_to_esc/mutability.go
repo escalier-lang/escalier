@@ -118,11 +118,21 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return *override
 	}
 
-	// Tier 4 (owner-wide): a type wrapping an immutable primitive has
-	// no mutating method to find, so the heuristics below have nothing
-	// to decide. See ImmutableOwners.
-	if ImmutableOwners.Contains(ctx.ClassName) {
-		return ClassifyResult{Mut: false, Source: TierBuiltinOverride}
+	// Tier 4 (hand-written, keyed by owner): a type wrapping an immutable
+	// primitive has no mutating method to find, and nonMutatingOverrides
+	// names the methods of other owners that the tiers below answer wrongly.
+	// See ImmutableOwners and NonMutatingOverrides.
+	//
+	// Both tables are keyed by a builtin's own name, so a module path leaves
+	// them alone. An imported package's `String` is its own class rather than
+	// the one the tables describe.
+	if ctx.ModulePath == "" {
+		if ImmutableOwners.Contains(ctx.ClassName) {
+			return ClassifyResult{Mut: false, Source: TierBuiltinOverride}
+		}
+		if NonMutatingOverrides(ctx.ClassName).Contains(memberName(ctx.Member)) {
+			return ClassifyResult{Mut: false, Source: TierBuiltinOverride}
+		}
 	}
 
 	// Tier 5: ECMA-262 facts — planning/ecma-262/requirements.md FR8.
@@ -223,9 +233,9 @@ func memberKeyOf(key dts_parser.PropertyKey) (ecma262.MemberKey, bool) {
 // method name and returns the resulting receiver-mutability classification.
 // It covers the well-known non-mutating method allow-list (from tier 3),
 // the tier-6 `get*` prefix rule, and the tier-7 name-based heuristics —
-// i.e. every tier whose decision depends only on the method's name. The fact
-// tier is not among them: a fact addresses a member of a named owner, and this
-// entry point holds no owner. ReceiverMutates is the one that does.
+// i.e. every tier whose decision depends only on the method's name. The tiers
+// keyed by an owner are not among them, the ECMA-262 facts included, because
+// this entry point holds no owner. `Classify` is the one that does.
 //
 // Used by the checker prelude pass on .d.ts-loaded lib types, where the
 // caller has a type_system.MethodElem and a string name but no
@@ -256,61 +266,6 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 		return false, true
 	}
 	return false, false
-}
-
-// ReceiverMutates reports whether calling the member named by key on owner
-// mutates the receiver, deciding between `self` and `mut self` on the emitted
-// class. It serves a caller holding an owner and a member key rather than a
-// dts_parser.ClassMember, which is what trio fusion holds.
-//
-// It runs the owner-wide tiers, then the ECMA-262 fact for the member, then
-// the name-only tiers, then Classify's default of mutating. Applying that
-// default itself is why it returns a bare bool where Classify and
-// ClassifyMethodByName also report whether a tier matched.
-//
-// `facts` is the fact source, and nil leaves the fact tier with nothing to
-// answer from. A symbol-keyed member reaches only the two tiers that address a
-// member rather than read a name, which are the well-known symbols of tier 3
-// and the fact of tier 5.
-func ReceiverMutates(facts *ReceiverFacts, owner string, key ecma262.MemberKey) bool {
-	// Tier 3 (name-only subset): the members that are non-mutating by
-	// convention regardless of the containing type, which are the well-known
-	// method names and the well-known symbols.
-	if wellKnownMember(key) {
-		return false
-	}
-	if key.Kind == ecma262.StrKey {
-		// Tier 4, owner-wide and then per-method.
-		if ImmutableOwners.Contains(owner) {
-			return false
-		}
-		if NonMutatingOverrides(owner).Contains(key.Name) {
-			return false
-		}
-	}
-	// Tier 5: the receiver the spec analysis published for this member.
-	if mut, ok := facts.Instance(owner, key); ok {
-		return mut
-	}
-	if key.Kind != ecma262.StrKey {
-		return true
-	}
-	if mut, ok := ClassifyMethodByName(key.Name); ok {
-		return mut
-	}
-	return true
-}
-
-// wellKnownMember reports whether a member address is one of the tier-3
-// conventions, which are the well-known non-mutating method names and the
-// well-known symbols. It is the MemberKey counterpart of isWellKnownMethod, so
-// a class fused from interface signatures reaches the same answer as one
-// converted from a `.d.ts` class declaration.
-func wellKnownMember(key ecma262.MemberKey) bool {
-	if key.Kind == ecma262.SymKey {
-		return wellKnownSymbols.Contains(key.Name)
-	}
-	return wellKnownNonMutatingMethods.Contains(key.Name)
 }
 
 // MethodNames names the methods of one owner whose receiver an override marks
@@ -345,11 +300,12 @@ var ImmutableOwners = set.FromSlice([]string{
 // does not belong here. The reader applies the heuristics as a fall-through
 // for any method with no entry.
 //
-// Two readers consult it: `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types, and `ReceiverMutates`,
-// which the converter's trio fusion calls. `Classify` does not — its tier 4
-// reads the override store of `internal/interop`, whose built-in subtree is
-// still empty.
+// Two readers consult it. `Classify` reads it at tier 4, beside the override
+// store of `internal/interop`, whose built-in subtree is still empty.
+// `checker.UpdateMethodMutability` reads it to strip `mut self` from the
+// `.d.ts`-loaded lib types. That second reader is why the entries a published
+// fact answers are still here: the prelude reads no fact, so an entry is what
+// carries the claim there. See planning/ecma-262/validation_diff.md.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //

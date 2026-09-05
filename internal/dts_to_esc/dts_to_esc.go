@@ -975,7 +975,7 @@ func convertStandaloneStmt(
 			return nil, nil
 		}
 		if info, ok := trios.byName[s.Name.Name]; ok {
-			classDecl, err := fuseTrio(info, jsName(nsPath, s.Name.Name), cctx.facts)
+			classDecl, err := fuseTrio(info, nsPath, cctx.facts)
 			if err != nil {
 				return nil, fmt.Errorf("fusing trio for %s: %w", s.Name.Name, err)
 			}
@@ -1124,7 +1124,7 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //     IndexSignature are skipped for the MVP — they have no direct class-
 //     elem mapping. §6 may revisit (e.g. lower the bare-call form into a
 //     static factory).
-func fuseTrio(info *trioInfo, owner string, facts *ReceiverFacts) (*ast.ClassDecl, error) {
+func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDecl, error) {
 	className := info.instance.Name.Name
 	typeParams, err := convertTypeParams(info.instance.TypeParams)
 	if err != nil {
@@ -1134,7 +1134,7 @@ func fuseTrio(info *trioInfo, owner string, facts *ReceiverFacts) (*ast.ClassDec
 	var body []ast.ClassElem
 
 	for _, m := range info.instance.Members {
-		elem, err := interfaceMemberToClassElem(m, owner, facts, false /*static*/)
+		elem, err := interfaceMemberToClassElem(m, nsPath, className, facts, false /*static*/)
 		if err != nil {
 			return nil, err
 		}
@@ -1152,7 +1152,7 @@ func fuseTrio(info *trioInfo, owner string, facts *ReceiverFacts) (*ast.ClassDec
 			body = append(body, ctor)
 			continue
 		}
-		elem, err := interfaceMemberToClassElem(m, owner, facts, true /*static*/)
+		elem, err := interfaceMemberToClassElem(m, nsPath, className, facts, true /*static*/)
 		if err != nil {
 			return nil, err
 		}
@@ -1207,13 +1207,14 @@ func fuseTrio(info *trioInfo, owner string, facts *ReceiverFacts) (*ast.ClassDec
 // of the trio). Returns (nil, nil) for member kinds with no class-elem
 // representation (CallSignature, IndexSignature).
 //
-// owner is the dotted runtime path of the class being fused, which the
-// receiver classification reads for the owner-wide tiers and for the ECMA-262
-// fact addressing each member. `facts` is that fact source, and nil leaves
-// every receiver to the tiers around it. See ReceiverMutates.
+// nsPath and className address the class being fused. The receiver
+// classification reads them for the tiers keyed by an owner, which are the
+// hand-written tables and the ECMA-262 fact addressing each member. `facts` is
+// that fact source, and nil leaves every receiver to the tiers around it. See
+// Classify.
 func interfaceMemberToClassElem(
 	member dts_parser.InterfaceMember,
-	owner string,
+	nsPath, className string,
 	facts *ReceiverFacts,
 	static bool,
 ) (ast.ClassElem, error) {
@@ -1243,18 +1244,15 @@ func interfaceMemberToClassElem(
 		}
 		var receiver *ast.MethodReceiver
 		if !static {
-			// Tier 3: a `this: Readonly<T>` parameter is the author saying
-			// the method does not mutate, which outranks every tier below.
-			// ReceiverMutates reads an owner and a member key, and cannot
-			// see it.
-			mut := true
-			switch key, keyed := memberKeyOf(m.Name); {
-			case hasReadonlyThisParam(m.Params):
-				mut = false
-			case keyed:
-				mut = ReceiverMutates(facts, owner, key)
+			receiver = &ast.MethodReceiver{
+				Mut: Classify(ClassifyContext{
+					Member:        methodDeclOf(m),
+					ClassName:     className,
+					NamespacePath: nsPath,
+					Facts:         facts,
+				}).Mut,
+				Span_: span,
 			}
-			receiver = &ast.MethodReceiver{Mut: mut, Span_: span}
 		}
 		elem := &ast.MethodElem{
 			Name:     name,
@@ -1350,6 +1348,22 @@ func interfaceMemberToClassElem(
 // constructSignatureToCtorElem builds a ConstructorElem from the trio's
 // `new (...)` signature. The synthesised `mut self` matches the receiver
 // shape that convertClassDecl produces for a real ConstructorDecl.
+// methodDeclOf reads an interface method signature as the class member it
+// becomes. The two shapes differ only by the modifiers a signature cannot
+// spell, which is what lets a class fused from interface signatures reach the
+// same classification cascade a `declare class` member does. The explicit
+// author signals of tier 3 come with it, since those read the declaration
+// rather than its name.
+func methodDeclOf(m *dts_parser.MethodSignature) *dts_parser.MethodDecl {
+	return &dts_parser.MethodDecl{
+		Name:       m.Name,
+		TypeParams: m.TypeParams,
+		Params:     m.Params,
+		ReturnType: m.ReturnType,
+		Optional:   m.Optional,
+	}
+}
+
 func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.ConstructorElem, error) {
 	params, err := convertParams(cs.Params)
 	if err != nil {

@@ -258,7 +258,7 @@ func handAnswer(owner, member string) (mut bool, source ReceiverSource, answered
 	if NonMutatingOverrides(owner).Contains(member) {
 		return false, SourceOverride, true
 	}
-	if wellKnownMember(ecma262.StrMember(member)) {
+	if wellKnownNonMutatingMethods.Contains(member) {
 		return false, SourceWellKnown, true
 	}
 	if mut, ok := ClassifyMethodByName(member); ok {
