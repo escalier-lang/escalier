@@ -29,14 +29,16 @@ lazy val specExtract = project
 
     // ESMeta resolves every resource path, spec.html included, from
     // ESMETA_HOME. Point it at the vendored checkout so the runbook is a bare
-    // `mise run serialize-cfg`.
-    Compile / run / fork := true,
-    Compile / run / envVars +=
+    // `mise run serialize-cfg`. These are scoped to the whole configuration
+    // rather than to `run`, so `runMain` gets the same environment. The
+    // ECMA-402 spike copies a second main class in and launches it that way.
+    Compile / fork := true,
+    Compile / envVars +=
       "ESMETA_HOME" -> (baseDirectory.value / "esmeta").getAbsolutePath,
 
     // The metalanguage parser recurses deeply over spec.html, so the forked JVM
     // needs a larger stack and heap than the defaults. ESMeta's own launcher
     // sets -Xss4m; extraction plus CFG construction in one process needs more.
-    Compile / run / javaOptions ++= Seq("-Xms1g", "-Xmx6g", "-Xss64m"),
+    Compile / javaOptions ++= Seq("-Xms1g", "-Xmx6g", "-Xss64m"),
     Compile / mainClass := Some("escalier.specextract.Main"),
   )
