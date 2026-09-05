@@ -146,7 +146,7 @@ export declare class Promise<T, E = never> {
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> extends AsyncIteratorObject<T, TReturn, TNext> {
     next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>, E>,
     return(value: TReturn | PromiseLike<TReturn, E>) -> Promise<IteratorResult<T, TReturn>, E>,
-    throw(e: any) -> Promise<IteratorResult<T, TReturn>, E>,
+    throw(e: unknown) -> Promise<IteratorResult<T, TReturn>, E>,
     [Symbol.asyncIterator]() -> AsyncGenerator<T, TReturn, TNext, E>
 }
 

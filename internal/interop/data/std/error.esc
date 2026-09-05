@@ -49,6 +49,6 @@ export declare class TypeError extends Error {
 export declare class SuppressedError extends Error {
     error: any,
     suppressed: any,
-    constructor(mut self, error: any, suppressed: any, message?: string),
+    constructor(mut self, error: unknown, suppressed: unknown, message?: string),
     static readonly prototype: SuppressedError
 }

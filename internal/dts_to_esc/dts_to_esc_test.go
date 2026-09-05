@@ -743,7 +743,7 @@ interface Array<T> {
 interface ArrayConstructor {
     new (arrayLength?: number): any[];
     new <T>(...items: T[]): T[];
-    isArray(arg: any): boolean;
+    isArray(arg: unknown): boolean;
 }
 declare var Array: ArrayConstructor;
 `
@@ -1072,14 +1072,14 @@ interface Array<T> {
 interface ArrayConstructor {
     new (arrayLength?: number): any[];
     new <T>(arrayLength: number): T[];
-    isArray(arg: any): boolean;
+    isArray(arg: unknown): boolean;
     readonly prototype: any[];
 }
 
 declare var Array: ArrayConstructor;
 `,
 			ctors:    2,
-			statics:  []string{"static isArray(arg: any) -> boolean"},
+			statics:  []string{"static isArray(arg: unknown) -> boolean"},
 			instance: []string{"push(mut self, ...items: Array<T>) -> number"},
 		},
 	}
@@ -1315,7 +1315,7 @@ declare var AbortController: {
 			want: `@js("AbortController")
 export declare class AbortController {
     readonly signal: AbortSignal,
-    abort(mut self, reason?: any) -> unknown,
+    abort(mut self, reason?: unknown) -> unknown,
     static prototype: AbortController,
     constructor(mut self)
 }

@@ -704,7 +704,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 			`,
 			expectedVars: map[string]string{
 				// TODO: look into why `argArray?: any` isn't `...argArray?: Array<any>`
-				"apply": "fn (this: Function, thisArg: any, argArray?: any) -> any",
+				"apply": "fn (this: Function, thisArg: unknown, argArray?: unknown) -> any",
 			},
 			wantErr: false,
 		},
@@ -728,7 +728,7 @@ func TestIntersectionMemberAccess(t *testing.T) {
 			`,
 			expectedVars: map[string]string{
 				"tag":  "string",
-				"call": "fn (this: Function, thisArg: any, ...argArray: Array<any>) -> any",
+				"call": "fn (this: Function, thisArg: unknown, ...argArray: Array<any>) -> any",
 			},
 			wantErr: false,
 		},

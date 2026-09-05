@@ -13,8 +13,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    find<S: T>(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> boolean, thisArg?: any) -> S | undefined,
-    find(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: any) -> T | undefined,
+    find<S: T>(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
+    find(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the first element in the array where predicate is true, and -1
      * otherwise.
@@ -24,7 +24,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findIndex(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: any) -> number,
+    findIndex(self, predicate: fn (value: T, index: number, obj: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
     /**
      * Changes all array elements from `start` to `end` index to a static `value` and returns the modified array
      * @param value value to fill array section with
@@ -104,8 +104,8 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLast<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: any) -> S | undefined,
-    findLast(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> T | undefined,
+    findLast<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> S | undefined,
+    findLast(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> T | undefined,
     /**
      * Returns the index of the last element in the array where predicate is true, and -1
      * otherwise.
@@ -115,7 +115,7 @@ export declare class Array<T> {
      * @param thisArg If provided, it will be used as the this value for each invocation of
      * predicate. If it is not provided, undefined is used instead.
      */
-    findLastIndex(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> number,
+    findLastIndex(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> number,
     /**
      * Returns a copy of an array with its elements reversed.
      */
@@ -265,7 +265,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: any) -> boolean,
+    every<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> boolean,
     /**
      * Determines whether all the members of an array satisfy the specified test.
      * @param predicate A function that accepts up to three arguments. The every method calls
@@ -274,7 +274,7 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    every(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> boolean,
+    every(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Determines whether the specified callback function returns true for any element of an array.
      * @param predicate A function that accepts up to three arguments. The some method calls
@@ -283,31 +283,31 @@ export declare class Array<T> {
      * @param thisArg An object to which the this keyword can refer in the predicate function.
      * If thisArg is omitted, undefined is used as the this value.
      */
-    some(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> boolean,
+    some(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> boolean,
     /**
      * Performs the specified action for each element in an array.
      * @param callbackfn A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * Calls a defined callback function on each element of an array, and returns an array that contains the results.
      * @param callbackfn A function that accepts up to three arguments. The map method calls the callbackfn function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    map<U>(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: any) -> mut Array<U>,
+    map<U>(self, callbackfn: fn (value: T, index: number, array: mut Array<T>) -> U, thisArg?: unknown) -> mut Array<U>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: any) -> mut Array<S>,
+    filter<S: T>(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> boolean, thisArg?: unknown) -> mut Array<S>,
     /**
      * Returns the elements of an array that meet the condition specified in a callback function.
      * @param predicate A function that accepts up to three arguments. The filter method calls the predicate function one time for each element in the array.
      * @param thisArg An object to which the this keyword can refer in the predicate function. If thisArg is omitted, undefined is used as the this value.
      */
-    filter(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: any) -> mut Array<T>,
+    filter(self, predicate: fn (value: T, index: number, array: mut Array<T>) -> unknown, thisArg?: unknown) -> mut Array<T>,
     /**
      * Calls the specified callback function for all the elements in an array. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
      * @param callbackfn A function that accepts up to four arguments. The reduce method calls the callbackfn function one time for each element in the array.
@@ -345,7 +345,7 @@ export declare class Array<T> {
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: any) -> mut Array<U>,
+    static from<T, U>(arrayLike: ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
     /**
      * Returns a new array from a set of elements.
      * @param items A set of elements to include in the new array object.
@@ -362,12 +362,12 @@ export declare class Array<T> {
      * @param mapfn A mapping function to call on every element of the array.
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
-    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: any) -> mut Array<U>,
+    static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
     static readonly [Symbol.species]: ArrayConstructor,
     constructor(mut self, arrayLength?: number),
     constructor(mut self, arrayLength: number),
     constructor(mut self, ...items: mut Array<T>),
-    static isArray(arg: any) -> boolean,
+    static isArray(arg: unknown) -> boolean,
     static readonly prototype: mut Array<any>,
     /**
      * Creates an array from an async iterator or iterable object.
@@ -382,7 +382,7 @@ export declare class Array<T> {
      *      Each return value is awaited before being added to result array.
      * @param thisArg Value of 'this' used when executing mapfn.
      */
-    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: any) -> Promise<mut Array<Awaited<U>>>
+    static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<mut Array<Awaited<U>>>
 }
 
 export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

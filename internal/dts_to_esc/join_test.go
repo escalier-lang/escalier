@@ -75,7 +75,7 @@ interface Array<T> {
 }
 interface ArrayConstructor {
     new <T>(arrayLength: number): T[];
-    isArray(arg: any): arg is any[];
+    isArray(arg: unknown): arg is any[];
 }
 declare var Array: ArrayConstructor;
 `)
@@ -447,7 +447,7 @@ interface Array<T> {
 }
 interface ArrayConstructor {
     new <T>(arrayLength: number): T[];
-    isArray(arg: any): arg is any[];
+    isArray(arg: unknown): arg is any[];
 }
 declare var Array: ArrayConstructor;
 interface Math {

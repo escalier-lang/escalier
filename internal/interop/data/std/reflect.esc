@@ -13,7 +13,7 @@
 export declare fn apply<T, A: Array<any>, R>(target: fn (this: T, ...args: A) -> R, thisArgument: T, argumentsList: Readonly<A>) -> R
 
 @js("Reflect.apply")
-export declare fn apply(target: Function, thisArgument: any, argumentsList: ArrayLike<any>) -> any
+export declare fn apply(target: Function, thisArgument: unknown, argumentsList: ArrayLike<any>) -> any
 
 /**
  * Constructs the target with the elements of specified array as the arguments
@@ -112,10 +112,10 @@ export declare fn preventExtensions(target: {...}) -> boolean
  *        if `target[propertyKey]` is an accessor property.
  */
 @js("Reflect.set")
-export declare fn set<T: {...}, P: PropertyKey>(target: T, propertyKey: P, value: if P : keyof T { T[P] } else { any }, receiver?: any) -> boolean
+export declare fn set<T: {...}, P: PropertyKey>(target: T, propertyKey: P, value: if P : keyof T { T[P] } else { any }, receiver?: unknown) -> boolean
 
 @js("Reflect.set")
-export declare fn set(target: {...}, propertyKey: PropertyKey, value: any, receiver?: any) -> boolean
+export declare fn set(target: {...}, propertyKey: PropertyKey, value: unknown, receiver?: unknown) -> boolean
 
 /**
  * Sets the prototype of a specified object o to object proto or null.

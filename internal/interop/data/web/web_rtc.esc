@@ -760,7 +760,7 @@ export declare class RTCRtpReceiver {
 @js("RTCRtpScriptTransform")
 export declare class RTCRtpScriptTransform {
     static prototype: RTCRtpScriptTransform,
-    constructor(mut self, worker: Worker, options?: any, transfer?: mut Array<any>)
+    constructor(mut self, worker: Worker, options?: unknown, transfer?: mut Array<any>)
 }
 
 /**
@@ -862,7 +862,7 @@ export declare class RTCSessionDescription {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/RTCStatsReport) */
 @js("RTCStatsReport")
 export declare class RTCStatsReport extends Map<string, any> {
-    forEach(self, callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: any, key: string, parent: RTCStatsReport) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: RTCStatsReport,
     constructor(mut self)
 }

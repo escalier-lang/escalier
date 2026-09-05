@@ -13,7 +13,7 @@ import (
 // produces two packages rather than one.
 const overlayLib = `
 interface Array<T> { length: number; at(index: number): T | undefined; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
 interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
@@ -118,7 +118,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean,
+    static isArray(arg: unknown) -> boolean,
     static of<T>(...items: Array<T>) -> Array<T>
 }
 
@@ -138,7 +138,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -158,7 +158,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -180,7 +180,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -198,7 +198,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare type ArrayLike<T> = {
@@ -216,7 +216,7 @@ export declare type ArrayLike<T> = {
 export declare class Array<T> {
     length: number,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -234,7 +234,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 `,
 		},
@@ -372,7 +372,7 @@ export declare class Array<T> {
     /** Reads one element. */
     at(self, index: number) -> T,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -538,7 +538,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean,
+    static isArray(arg: unknown) -> boolean,
     indexOf(self, item: T) -> number,
     indexOf(self, item: T, from: number) -> number
 }
@@ -815,7 +815,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {
@@ -839,7 +839,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare class ArrayLike<T> extends Array<T> {

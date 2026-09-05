@@ -27,7 +27,7 @@ func seedLib(t *testing.T, contents string) string {
 
 const arrayLib = `
 interface Array<T> { length: number; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; readonly prototype: Array<any>; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; readonly prototype: Array<any>; }
 declare var Array: ArrayConstructor;
 `
 
@@ -47,7 +47,7 @@ func TestRun_SingleFileWritesEscToStdout(t *testing.T) {
 export declare class Array<T> {
     length: number,
     constructor(mut self),
-    static isArray(arg: any) -> boolean,
+    static isArray(arg: unknown) -> boolean,
     static readonly prototype: Array<any>
 }
 `))
@@ -230,7 +230,7 @@ std/array.esc
 export declare class Array<T> {
     length: number,
     constructor(mut self),
-    static isArray(arg: any) -> boolean,
+    static isArray(arg: unknown) -> boolean,
     static readonly prototype: Array<any>
 }
 

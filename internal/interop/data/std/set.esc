@@ -17,7 +17,7 @@ export declare class Set<T> {
     /**
      * Executes a provided function once per each value in the Set object, in insertion order.
      */
-    forEach(self, callbackfn: fn (value: T, value2: T, set: mut Set<T>) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: T, value2: T, set: mut Set<T>) -> unknown, thisArg?: unknown) -> unknown,
     /**
      * @returns a boolean indicating whether an element with the specified value exists in the Set or not.
      */
