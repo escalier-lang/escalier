@@ -592,9 +592,9 @@ export declare class Array<T> {
     static readonly prototype: mut Array<any>
 }`))
 
-	// No `ReadonlyArray` survives in any form. The rewrite above
-	// respelled every reference, so an alias would name a type nothing
-	// refers to and would offer a second spelling for `Array<T>`.
+	// No `ReadonlyArray` survives in any form. The rewrite above put
+	// every reference into Escalier's vocabulary, and an alias would
+	// put the TypeScript spelling back as a second name for `Array<T>`.
 	for _, decl := range rootNS.Decls {
 		td, ok := decl.(*ast.TypeDecl)
 		if !ok {
@@ -606,11 +606,15 @@ export declare class Array<T> {
 }
 
 // TestConvertBuckets_RewritesTwinRefsAcrossPackages covers the scope the
-// rewrite runs at. `Array` and `ReadonlyArray` are declared in std:array,
-// and std:string references both without declaring either. A rewrite
-// reading only its own bucket's twins leaves those two references
-// spelled the TypeScript way, so `mut` goes missing from the mutable one
-// and the readonly one names a type the tree does not declare.
+// rewrite runs at. TypeScript spells one type two ways, `Array<T>` and
+// `ReadonlyArray<T>`; Escalier spells it once and qualifies the use site
+// with `mut`. The rewrite translates between the two vocabularies.
+//
+// The declarations it keys off sit in one bucket while the references
+// sit in many. std:array declares both names below and std:string
+// references both without declaring either, so a rewrite reading only
+// its own bucket's twins leaves every other package spelled the
+// TypeScript way.
 func TestConvertBuckets_RewritesTwinRefsAcrossPackages(t *testing.T) {
 	t.Parallel()
 	res, err := PartitionLib([]LibInput{
