@@ -47,7 +47,7 @@ jobs:
 
   check_generated_tree:
     runs-on: ubuntu-latest
-    # The job reads the repository and commits its scratch tree to a
+    # The job reads the repository and stages what it regenerates into a
     # local index. Neither needs a writable token, and no step needs the
     # credentials the checkout would otherwise leave in .git/config.
     permissions:
@@ -74,25 +74,15 @@ jobs:
       - name: Build dts_to_esc
         run: go build -o ./bin/dts_to_esc ./tools/dts_to_esc
 
-      # internal/interop/data holds hand-written stubs rather than
-      # generated packages, so the tree the check reads is one this job
-      # seeds. What that gates is generator idempotence over the pinned
-      # lib set. Pointing the check at the committed tree gates that
-      # tree against its inputs, and waits on §7 committing one. See
-      # #1393.
-      - name: Seed a scratch tree
-        run: |
-          ./bin/dts_to_esc generate --overlay internal/interop/overlay \
-            node_modules/typescript/lib tmp/esc-tree
-          git add --all -- tmp/esc-tree
-          git -c user.email=ci@escalier.invalid -c user.name=CI \
-            commit -q -m 'seed the scratch tree'
-
+      # The check regenerates internal/interop/data in place and diffs
+      # the result against what the checkout carries. A hand-edited
+      # generated file, a TypeScript pin bump with no regenerated tree,
+      # and a converter change nobody re-ran all fail here.
       - name: Check the tree against its inputs
         run: |
-          .github/scripts/check-generated-tree.sh tmp/esc-tree -- \
+          .github/scripts/check-generated-tree.sh internal/interop/data -- \
             ./bin/dts_to_esc generate --overlay internal/interop/overlay \
-            node_modules/typescript/lib tmp/esc-tree
+            node_modules/typescript/lib internal/interop/data
 
   check_ts:
     runs-on: ubuntu-latest
