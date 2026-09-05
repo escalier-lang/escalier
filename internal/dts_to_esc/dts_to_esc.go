@@ -264,8 +264,23 @@ type trioTable struct {
 // already written the long way. Recognition was the only place the two
 // spellings had to be told apart.
 //
-// This matches tryFuseTrio in internal/interop/class_shapes.go, which
-// has never gated on a construct signature.
+// # The same rule at the type level
+//
+// internal/interop/class_shapes.go recognises the idiom a second time, over
+// inferred types rather than `.d.ts` statements, because the prelude reaches the
+// lib files through ConvertModule instead of this converter. The two now state
+// one rule, checked against each other name by name:
+//
+//   - The named constructor side is tryFuseTrio: `Types[Foo]`,
+//     `Types[FooConstructor]`, and `Values[Foo]` a reference resolving to that
+//     same alias. It reads what the constructor side declares no more than this
+//     does.
+//   - The constructor side written inline on the binding is tryFuseEscalierClass:
+//     `Values[Foo]` an object type carrying a construct signature, with
+//     `Types[Foo]` as the instance side. That matches constructorSide's
+//     requirement that an inline object type carry a `new` returning the
+//     instance.
+//
 //
 // # A `declare class` on the instance side
 //
