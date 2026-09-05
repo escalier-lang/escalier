@@ -226,12 +226,7 @@ export declare class Object {
      * Returns a value that indicates whether new properties can be added to an object.
      * @param o Object to test.
      */
-    static isExtensible(o: any) -> boolean,
-    /**
-     * Returns the names of the enumerable string properties and methods of an object.
-     * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
-     */
-    static keys(o: {}) -> mut Array<string>
+    static isExtensible(o: any) -> boolean
 }
 
 export declare interface TypedPropertyDescriptor<T> {
