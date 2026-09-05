@@ -355,7 +355,11 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			return nil, true
 		}
 		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
-		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}, true
+		return &soltype.MethodElem{
+			Name:       name,
+			Signatures: []*soltype.FuncType{sig},
+			Optional:   elem.Optional,
+		}, true
 	case *ast.GetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
 		if !ok {

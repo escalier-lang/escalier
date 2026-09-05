@@ -456,8 +456,15 @@ func printFuncType(t *FuncType, pt func(Type) string) string {
 	return printFuncSig("fn ", t, false, pt)
 }
 
-func printMethodSig(name ObjTypeKey, fn *FuncType, pt func(Type) string) string {
-	return printFuncSig(name.String(), fn, true, pt)
+// printMethodSig prints one arm of a method member. The `?` of an
+// optional method sits between the name and the parameter list, where
+// the parser reads it back from.
+func printMethodSig(name ObjTypeKey, optional bool, fn *FuncType, pt func(Type) string) string {
+	label := name.String()
+	if optional {
+		label += "?"
+	}
+	return printFuncSig(label, fn, true, pt)
 }
 
 func printObjectType(t *ObjectType, pt func(Type) string) string {
@@ -488,7 +495,7 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 					if armIdx > 0 {
 						result += armSep
 					}
-					result += printMethodSig(elem.Name, fn, pt)
+					result += printMethodSig(elem.Name, elem.Optional, fn, pt)
 				}
 			case *GetterElem:
 				result += "get " + elem.Name.String() + "(" + printSelfReceiver(elem.Fn) + ") -> " + pt(elem.Fn.Return)

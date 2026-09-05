@@ -9,8 +9,8 @@ export declare interface PropertyDescriptor {
     enumerable?: boolean,
     value?: any,
     writable?: boolean,
-    get?: fn () -> any,
-    set?: fn (v: any) -> unknown
+    get?() -> any,
+    set?(v: any) -> unknown
 }
 
 export declare interface PropertyDescriptorMap {}

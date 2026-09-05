@@ -1982,6 +1982,11 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 	}
 	subElem, ok := lookup(sub, name)
 	if !ok {
+		// An optional method need not be there, so a source that omits it
+		// still satisfies the target. Same rule as an optional property.
+		if sm, isMethod := superElem.(*soltype.MethodElem); isMethod && sm.Optional {
+			return nil
+		}
 		return []SolverError{&MissingPropertyError{Sub: sub, Super: sup, Name: name}}
 	}
 	switch se := superElem.(type) {
@@ -1989,6 +1994,12 @@ func (c *Context) constrainObjMember(superElem soltype.ObjTypeElem, sub, sup *so
 		sm, ok := subElem.(*soltype.MethodElem)
 		if !ok || len(sm.Signatures) == 0 || len(se.Signatures) == 0 {
 			break
+		}
+		// A source that may omit the method cannot fill a target that
+		// requires one, the method counterpart of the optional-property
+		// check in constrainObj.
+		if sm.Optional && !se.Optional {
+			return []SolverError{&OptionalPropertyError{Sub: sub, Super: sup, Name: name}}
 		}
 		// Compares only the first arm of each overload set; full overload-set
 		// reconciliation is escalier-lang/escalier#865.

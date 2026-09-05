@@ -356,6 +356,10 @@ type MethodElem struct {
 	Name       string
 	Signatures []*FuncType // len 1 = ordinary; >1 = overload set (most-specific-first)
 	Static     bool
+	// Optional records the `?` in `m?(x: T) -> T`. An object type with an
+	// optional method is a supertype of one that omits the member, the
+	// same rule PropertyElem.Optional carries.
+	Optional bool
 }
 
 // GetterElem is a computed read property `get x(self) -> T`. Type is the value the

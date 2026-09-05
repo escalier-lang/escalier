@@ -1066,10 +1066,14 @@ func TestConvertTypeAnn_ObjectLowersToInexact(t *testing.T) {
 }
 
 // TestConvertInterfaceMember_KeepsWhatTheGrammarHasRoomFor covers the
-// optional method, which the converter used to drop because Escalier
-// has no `foo?(): T` syntax. An optional property holding a function
-// type says the same thing and does parse. Dropping the marker made
-// every ProxyHandler trap required.
+// optional method. Escalier writes one as `foo?(): T`, so the marker
+// carries over rather than being dropped or traded for a property. A
+// dropped marker made every ProxyHandler trap required.
+//
+// An optional method keeps an `any` parameter. The implementer supplies
+// the body, so widening it to `unknown` would make every trap narrow
+// before touching the value.
+//
 // The index signature is the other half of #1417 and is still dropped,
 // held back by the checker rather than by the grammar. See the
 // IndexSignature case in convertInterfaceMember.
@@ -1079,9 +1083,9 @@ func TestConvertInterfaceMember_KeepsWhatTheGrammarHasRoomFor(t *testing.T) {
 		name, input, want string
 	}{
 		{
-			"optional method becomes an optional function property",
+			"an optional method keeps its marker",
 			"interface F { apply?(target: T, thisArg: any): any; }",
-			"apply?: fn (target: T, thisArg: any) -> any",
+			"apply?(target: T, thisArg: any) -> any",
 		},
 		{
 			"a required method stays a method",

@@ -428,7 +428,9 @@ func (c *Checker) inferObjectTypeAnn(
 			errors = slices.Concat(errors, recvErrs)
 			fn, fnErrors := c.inferFuncTypeAnn(ctx, elem.Fn, recv)
 			errors = slices.Concat(errors, fnErrors)
-			elems[i] = type_system.NewMethodElem(*key, fn)
+			method := type_system.NewMethodElem(*key, fn)
+			method.Optional = elem.Optional
+			elems[i] = method
 		case *ast.GetterTypeAnn:
 			key, keyErrors := c.astKeyToTypeKey(ctx, elem.Name)
 			errors = slices.Concat(errors, keyErrors)

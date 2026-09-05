@@ -585,6 +585,9 @@ func (p *Printer) printObjTypeAnnElem(elem ObjTypeAnnElem) {
 		p.PrintTypeAnn(elem.Fn.Return)
 	case *MethodTypeAnn:
 		p.printObjKey(elem.Name)
+		if elem.Optional {
+			p.print("?")
+		}
 		// Print type parameters if present
 		if len(elem.Fn.TypeParams) > 0 {
 			p.print("<")
