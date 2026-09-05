@@ -36,7 +36,7 @@ export declare fn construct(target: Function, argumentsList: ArrayLike<any>, new
  * @param attributes Descriptor for the property. It can be for a data property or an accessor property.
  */
 @js("Reflect.defineProperty")
-export declare fn defineProperty(target: {}, propertyKey: PropertyKey, attributes: PropertyDescriptor & ThisType<any>) -> boolean
+export declare fn defineProperty(target: {...}, propertyKey: PropertyKey, attributes: PropertyDescriptor & ThisType<any>) -> boolean
 
 /**
  * Removes a property from an object, equivalent to `delete target[propertyKey]`,
@@ -45,7 +45,7 @@ export declare fn defineProperty(target: {}, propertyKey: PropertyKey, attribute
  * @param propertyKey The property name.
  */
 @js("Reflect.deleteProperty")
-export declare fn deleteProperty(target: {}, propertyKey: PropertyKey) -> boolean
+export declare fn deleteProperty(target: {...}, propertyKey: PropertyKey) -> boolean
 
 /**
  * Gets the property of target, equivalent to `target[propertyKey]` when `receiver === target`.
@@ -55,7 +55,7 @@ export declare fn deleteProperty(target: {}, propertyKey: PropertyKey) -> boolea
  *        if `target[propertyKey]` is an accessor property.
  */
 @js("Reflect.get")
-export declare fn get<T: {}, P: PropertyKey>(target: T, propertyKey: P, receiver?: unknown) -> if P : keyof T { T[P] } else { any }
+export declare fn get<T: {...}, P: PropertyKey>(target: T, propertyKey: P, receiver?: unknown) -> if P : keyof T { T[P] } else { any }
 
 /**
  * Gets the own property descriptor of the specified object.
@@ -64,14 +64,14 @@ export declare fn get<T: {}, P: PropertyKey>(target: T, propertyKey: P, receiver
  * @param propertyKey The property name.
  */
 @js("Reflect.getOwnPropertyDescriptor")
-export declare fn getOwnPropertyDescriptor<T: {}, P: PropertyKey>(target: T, propertyKey: P) -> TypedPropertyDescriptor<if P : keyof T { T[P] } else { any }> | undefined
+export declare fn getOwnPropertyDescriptor<T: {...}, P: PropertyKey>(target: T, propertyKey: P) -> TypedPropertyDescriptor<if P : keyof T { T[P] } else { any }> | undefined
 
 /**
  * Returns the prototype of an object.
  * @param target The object that references the prototype.
  */
 @js("Reflect.getPrototypeOf")
-export declare fn getPrototypeOf(target: {}) -> {} | null
+export declare fn getPrototypeOf(target: {...}) -> {...} | null
 
 /**
  * Equivalent to `propertyKey in target`.
@@ -79,14 +79,14 @@ export declare fn getPrototypeOf(target: {}) -> {} | null
  * @param propertyKey Name of the property.
  */
 @js("Reflect.has")
-export declare fn has(target: {}, propertyKey: PropertyKey) -> boolean
+export declare fn has(target: {...}, propertyKey: PropertyKey) -> boolean
 
 /**
  * Returns a value that indicates whether new properties can be added to an object.
  * @param target Object to test.
  */
 @js("Reflect.isExtensible")
-export declare fn isExtensible(target: {}) -> boolean
+export declare fn isExtensible(target: {...}) -> boolean
 
 /**
  * Returns the string and symbol keys of the own properties of an object. The own properties of an object
@@ -94,7 +94,7 @@ export declare fn isExtensible(target: {}) -> boolean
  * @param target Object that contains the own properties.
  */
 @js("Reflect.ownKeys")
-export declare fn ownKeys(target: {}) -> mut Array<string | symbol>
+export declare fn ownKeys(target: {...}) -> mut Array<string | symbol>
 
 /**
  * Prevents the addition of new properties to an object.
@@ -102,7 +102,7 @@ export declare fn ownKeys(target: {}) -> mut Array<string | symbol>
  * @return Whether the object has been made non-extensible.
  */
 @js("Reflect.preventExtensions")
-export declare fn preventExtensions(target: {}) -> boolean
+export declare fn preventExtensions(target: {...}) -> boolean
 
 /**
  * Sets the property of target, equivalent to `target[propertyKey] = value` when `receiver === target`.
@@ -112,10 +112,10 @@ export declare fn preventExtensions(target: {}) -> boolean
  *        if `target[propertyKey]` is an accessor property.
  */
 @js("Reflect.set")
-export declare fn set<T: {}, P: PropertyKey>(target: T, propertyKey: P, value: if P : keyof T { T[P] } else { any }, receiver?: any) -> boolean
+export declare fn set<T: {...}, P: PropertyKey>(target: T, propertyKey: P, value: if P : keyof T { T[P] } else { any }, receiver?: any) -> boolean
 
 @js("Reflect.set")
-export declare fn set(target: {}, propertyKey: PropertyKey, value: any, receiver?: any) -> boolean
+export declare fn set(target: {...}, propertyKey: PropertyKey, value: any, receiver?: any) -> boolean
 
 /**
  * Sets the prototype of a specified object o to object proto or null.
@@ -124,4 +124,4 @@ export declare fn set(target: {}, propertyKey: PropertyKey, value: any, receiver
  * @return Whether setting the prototype was successful.
  */
 @js("Reflect.setPrototypeOf")
-export declare fn setPrototypeOf(target: {}, proto: {} | null) -> boolean
+export declare fn setPrototypeOf(target: {...}, proto: {...} | null) -> boolean

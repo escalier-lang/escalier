@@ -1021,3 +1021,37 @@ func TestConvertTemplateLiteralType_RestoresEmptyQuasis(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertTypeAnn_ObjectLowersToInexact pins the two object types
+// apart. TypeScript's `object` is any non-primitive, so it accepts an
+// object with any properties, and Escalier spells that `{...}`. Plain
+// `{}` is the exact empty object.
+//
+// Lowering both to `{}` made them one type, which is visible in
+// `ObjectConstructor`: it declares `keys(o: object)` and `keys(o: {})`
+// as separate overloads, and they collapsed into a single signature.
+func TestConvertTypeAnn_ObjectLowersToInexact(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, input, want string
+	}{
+		{"object is inexact", "object", "{...}"},
+		{"empty object type is exact", "{}", "{}"},
+		{"object in an intersection", "object & { x: number }", "{...} & {\n    x: number\n}"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			dtsTypeAnn := dts_parser.NewDtsParser(&ast.Source{
+				Path: "test.d.ts", Contents: tc.input,
+			}).ParseTypeAnn()
+			require.NotNil(t, dtsTypeAnn, "parse %s", tc.input)
+
+			converted, err := convertTypeAnn(dtsTypeAnn)
+			require.NoError(t, err)
+			printed, err := printer.Print(converted, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, printed)
+		})
+	}
+}
