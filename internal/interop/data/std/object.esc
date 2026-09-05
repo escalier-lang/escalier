@@ -70,7 +70,7 @@ export declare class Object {
      * @param target The target object to copy to.
      * @param sources One or more source objects from which to copy properties
      */
-    static assign(target: {}, ...sources: mut Array<any>) -> any,
+    static assign(target: {...}, ...sources: mut Array<any>) -> any,
     /**
      * Returns an array of all symbol properties found directly on object o.
      * @param o Object to retrieve the symbols from.
@@ -92,7 +92,7 @@ export declare class Object {
      * @param o The object to change its prototype.
      * @param proto The value of the new prototype or null.
      */
-    static setPrototypeOf(o: any, proto: {} | null) -> any,
+    static setPrototypeOf(o: any, proto: {...} | null) -> any,
     /**
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
@@ -135,7 +135,7 @@ export declare class Object {
      * @param o An object.
      * @param v A property name.
      */
-    static hasOwn(o: {}, v: PropertyKey) -> boolean,
+    static hasOwn(o: {...}, v: PropertyKey) -> boolean,
     /**
      * Groups members of an iterable according to the return value of the passed callback.
      * @param items An iterable.
@@ -167,13 +167,13 @@ export declare class Object {
      * Creates an object that has the specified prototype or that has null prototype.
      * @param o Object to use as a prototype. May be null.
      */
-    static create(o: {} | null) -> any,
+    static create(o: {...} | null) -> any,
     /**
      * Creates an object that has the specified prototype, and that optionally contains specified properties.
      * @param o Object to use as a prototype. May be null
      * @param properties JavaScript object that contains one or more property descriptors.
      */
-    static create(o: {} | null, properties: PropertyDescriptorMap & ThisType<any>) -> any,
+    static create(o: {...} | null, properties: PropertyDescriptorMap & ThisType<any>) -> any,
     /**
      * Adds a property to an object, or modifies attributes of an existing property.
      * @param o Object on which to add or modify the property. This can be a native JavaScript object (that is, a user-defined object or a built in object) or a DOM object.
@@ -226,7 +226,12 @@ export declare class Object {
      * Returns a value that indicates whether new properties can be added to an object.
      * @param o Object to test.
      */
-    static isExtensible(o: any) -> boolean
+    static isExtensible(o: any) -> boolean,
+    /**
+     * Returns the names of the enumerable string properties and methods of an object.
+     * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
+     */
+    static keys(o: {...}) -> mut Array<string>
 }
 
 export declare interface TypedPropertyDescriptor<T> {

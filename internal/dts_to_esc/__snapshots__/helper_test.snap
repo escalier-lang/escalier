@@ -58,6 +58,7 @@
 
 [TestConvertTypeAnn/primitive_object - 1]
 &ast.ObjectTypeAnn{
+    Inexact: true,
     span: 0-6,
 }
 ---
@@ -2183,6 +2184,7 @@
                         span: 39-50,
                     },
                     TypeAnn: &ast.ObjectTypeAnn{
+                        Inexact: true,
                         span: 44-50,
                     },
                 },

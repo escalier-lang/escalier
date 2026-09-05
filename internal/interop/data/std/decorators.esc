@@ -12,7 +12,7 @@ export declare type ClassMemberDecoratorContext = ClassMethodDecoratorContext | 
  */
 export declare type DecoratorContext = ClassDecoratorContext | ClassMemberDecoratorContext
 
-export declare type DecoratorMetadataObject = Record<PropertyKey, unknown> & {}
+export declare type DecoratorMetadataObject = Record<PropertyKey, unknown> & {...}
 
 export declare type DecoratorMetadata = if typeof globalThis : {
     Symbol: {
