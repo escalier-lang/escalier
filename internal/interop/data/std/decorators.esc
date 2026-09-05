@@ -258,17 +258,17 @@ export declare interface ClassAccessorDecoratorResult<This, Value> {
     /**
      * An optional replacement getter function. If not provided, the existing getter function is used instead.
      */
-    get(this: This) -> Value,
+    get?: fn (this: This) -> Value,
     /**
      * An optional replacement setter function. If not provided, the existing setter function is used instead.
      */
-    set(this: This, value: Value) -> unknown,
+    set?: fn (this: This, value: Value) -> unknown,
     /**
      * An optional initializer mutator that is invoked when the underlying field initializer is evaluated.
      * @param value The incoming initializer value.
      * @returns The replacement initializer value.
      */
-    init(this: This, value: Value) -> Value
+    init?: fn (this: This, value: Value) -> Value
 }
 
 /**

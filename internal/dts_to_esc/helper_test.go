@@ -1056,3 +1056,50 @@ func TestConvertTypeAnn_ObjectLowersToInexact(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertInterfaceMember_KeepsWhatTheGrammarHasRoomFor covers the
+// optional method, which the converter used to drop because Escalier
+// has no `foo?(): T` syntax. An optional property holding a function
+// type says the same thing and does parse. Dropping the marker made
+// every ProxyHandler trap required.
+// The index signature is the other half of #1417 and is still dropped,
+// held back by the checker rather than by the grammar. See the
+// IndexSignature case in convertInterfaceMember.
+func TestConvertInterfaceMember_KeepsWhatTheGrammarHasRoomFor(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, input, want string
+	}{
+		{
+			"optional method becomes an optional function property",
+			"interface F { apply?(target: T, thisArg: any): any; }",
+			"apply?: fn (target: T, thisArg: any) -> any",
+		},
+		{
+			"a required method stays a method",
+			"interface F { apply(target: T): any; }",
+			"apply(target: T) -> any",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mod, errs := dts_parser.NewDtsParser(&ast.Source{
+				Path: "test.d.ts", Contents: tc.input,
+			}).ParseModule()
+			require.Empty(t, errs)
+
+			iface, ok := mod.Statements[0].(*dts_parser.InterfaceDecl)
+			require.True(t, ok)
+			require.Len(t, iface.Members, 1)
+
+			elem, err := convertInterfaceMember(iface.Members[0])
+			require.NoError(t, err)
+			require.NotNil(t, elem, "the member reached the output")
+
+			printed, err := printer.PrintObjTypeAnnElem(elem, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, printed)
+		})
+	}
+}

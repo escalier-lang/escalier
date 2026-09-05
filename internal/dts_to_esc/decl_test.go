@@ -507,14 +507,16 @@ func TestConvertClassDecl(t *testing.T) {
 		// Note: Getter/setter test skipped - the class parser doesn't currently
 		// support getter/setter syntax in class declarations
 		{
-			name:      "class with index signature (should be skipped)",
+			// Skipped on both paths. convertInterfaceMember records why
+			// the interface one is held back; a class body has no member
+			// kind for an index signature either way, since the
+			// mapped-type shorthand is an ObjTypeAnnElem rather than a
+			// ClassElem.
+			name:      "class with index signature (skipped)",
 			input:     "declare class Dict { [key: string]: any }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl *ast.ClassDecl) {
-				// Index signatures should be skipped
-				if len(decl.Body) != 0 {
-					t.Errorf("expected index signature to be skipped, got %d body elements", len(decl.Body))
-				}
+				require.Empty(t, decl.Body)
 			},
 		},
 	}
@@ -642,7 +644,10 @@ func TestConvertInterfaceDecl(t *testing.T) {
 			},
 		},
 		{
-			name:      "interface with index signature (should be skipped)",
+			// Held back by the checker rather than by the grammar. See
+			// the IndexSignature case in convertInterfaceMember and
+			// #1417.
+			name:      "interface with index signature (skipped)",
 			input:     "interface Dictionary { [key: string]: any }",
 			wantError: false,
 			checkFunc: func(t *testing.T, decl ast.Decl) {
@@ -650,14 +655,8 @@ func TestConvertInterfaceDecl(t *testing.T) {
 				if !ok {
 					t.Fatalf("expected InterfaceDecl, got %T", decl)
 				}
-				objType := interfaceDecl.TypeAnn
-				if objType == nil {
-					t.Fatalf("expected ObjectTypeAnn, got nil")
-				}
-				// Index signatures return nil from convertInterfaceMember, so should be skipped
-				if len(objType.Elems) != 0 {
-					t.Errorf("expected index signature to be skipped, got %d elements", len(objType.Elems))
-				}
+				require.NotNil(t, interfaceDecl.TypeAnn)
+				require.Empty(t, interfaceDecl.TypeAnn.Elems)
 			},
 		},
 	}
