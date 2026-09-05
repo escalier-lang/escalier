@@ -9,9 +9,9 @@ serializes the resulting control-flow graph to
 plans the pipeline; §2 covers the toolchain and §3 the serializer.
 
 `cfg.json` is committed, and regenerating it is the only reason to run anything
-here. It lives beside the Go analysis that reads it, which embeds it so the
-compiler carries the receiver claims wherever it runs. A contributor building
-the compiler never needs a JVM.
+here. It lives beside the Go analysis that reads it, which embeds it so a
+`dts_to_esc generate` run carries the receiver claims without being handed a
+path. A contributor building the compiler never needs a JVM.
 
 Nothing here is part of the Go build or CI. The compiler builds from the repo
 root with the tools in the root `mise.toml`, which lists neither Java nor sbt.

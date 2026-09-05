@@ -8,16 +8,17 @@ import (
 )
 
 // committed.go derives the fact set of the pinned spec revision, which is what
-// the converter and the checker prelude classify receivers from. Appendix B of
+// the converter classifies receivers from. Appendix B of
 // planning/ecma-262/implementation_plan.md keeps facts.json derived rather than
 // committed, so the pinned answer is the analysis run over the committed graph
 // rather than a file anyone edits.
 
 // committedCFG is the control-flow graph tools/spec-extract serializes, which
-// the analysis runs over. It is embedded because the compiler classifies
-// receivers from it wherever it runs, which is a user's project directory
-// rather than this repository. See tools/spec-extract/README.md for how a spec
-// bump regenerates it.
+// the analysis runs over. It is embedded so that a `generate` run classifies
+// from it without being handed a path, which is what lets CI regenerate the
+// committed tree and diff the result. The linker drops it from a binary that
+// never calls CommittedFacts, so it costs the compiler nothing. See
+// tools/spec-extract/README.md for how a spec bump regenerates it.
 //
 //go:embed cfg.json
 var committedCFG []byte

@@ -1345,9 +1345,6 @@ func interfaceMemberToClassElem(
 	}
 }
 
-// constructSignatureToCtorElem builds a ConstructorElem from the trio's
-// `new (...)` signature. The synthesised `mut self` matches the receiver
-// shape that convertClassDecl produces for a real ConstructorDecl.
 // methodDeclOf reads an interface method signature as the class member it
 // becomes. The two shapes differ only by the modifiers a signature cannot
 // spell, which is what lets a class fused from interface signatures reach the
@@ -1364,6 +1361,9 @@ func methodDeclOf(m *dts_parser.MethodSignature) *dts_parser.MethodDecl {
 	}
 }
 
+// constructSignatureToCtorElem builds a ConstructorElem from the trio's
+// `new (...)` signature. The synthesised `mut self` matches the receiver
+// shape that convertClassDecl produces for a real ConstructorDecl.
 func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.ConstructorElem, error) {
 	params, err := convertParams(cs.Params)
 	if err != nil {
