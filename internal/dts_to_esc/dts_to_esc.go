@@ -1346,11 +1346,7 @@ func interfaceMemberToClassElem(
 }
 
 // methodDeclOf reads an interface method signature as the class member it
-// becomes. The two shapes differ only by the modifiers a signature cannot
-// spell, which is what lets a class fused from interface signatures reach the
-// same classification cascade a `declare class` member does. The explicit
-// author signals of tier 3 come with it, since those read the declaration
-// rather than its name.
+// becomes. The two shapes differ only by the modifiers a signature cannot spell.
 func methodDeclOf(m *dts_parser.MethodSignature) *dts_parser.MethodDecl {
 	return &dts_parser.MethodDecl{
 		Name:       m.Name,
