@@ -47,7 +47,7 @@ jobs:
 
   check_generated_tree:
     runs-on: ubuntu-latest
-    # The job reads the repository and commits its scratch tree to a
+    # The job reads the repository and stages what it regenerates into a
     # local index. Neither needs a writable token, and no step needs the
     # credentials the checkout would otherwise leave in .git/config.
     permissions:
