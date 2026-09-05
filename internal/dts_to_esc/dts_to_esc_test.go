@@ -1412,21 +1412,16 @@ export declare var widgetCount: number
 	require.Len(t, parsedDecls, 3)
 }
 
-// A trio whose instance name is already declared by a `declare class`
-// is left alone, so the converter does not add a second class beside
-// the one the source spells out. `lib.esnext.iterator.d.ts` writes
-// `Iterator` that way: an abstract class at module scope, and
-// `IteratorConstructor` plus the binding inside its `declare global`
-// block.
+// TypeScript merges a class with a same-named interface, so a name declared both
+// ways has one instance side: the class, with the interface's members folded in.
+// A `FooConstructor` and its binding then become the class's statics, the same
+// way they do for a name declared only as an interface.
 //
-// The snapshot pins current behaviour, not the right answer. TypeScript
-// merges `interface Foo` into `class Foo`, so what this input means is
-// one class carrying `next` and `peek` as instance members and `from`
-// as a static. mergeDecls folds an interface into an interface and not
-// into a class, so the pair stays split whether or not the trio fuses,
-// and declining only keeps the split from getting wider. #1430 covers
-// the merge and takes this guard out with it.
-func TestStandalone_TrioDeclinedWhenNameIsAlreadyAClass(t *testing.T) {
+// `lib.esnext.iterator.d.ts` writes `Iterator` this way: an abstract class at
+// module scope, and `IteratorConstructor` plus the binding inside its
+// `declare global` block. It is the pinned lib set's one class-and-interface
+// pair.
+func TestStandalone_ClassAbsorbsItsInterfaceAndConstructorSide(t *testing.T) {
 	const slice = `
 declare abstract class Foo {
     next(): string;
@@ -1445,25 +1440,189 @@ declare var Foo: FooConstructor;
 	_, printed := convertSlice(t, slice)
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
 export declare class Foo {
-    next(mut self) -> string
+    next(mut self) -> string,
+    peek(mut self) -> string,
+    static from(s: string) -> Foo
 }
-
-export declare interface Foo {
-    peek() -> string
-}
-
-export declare interface FooConstructor {
-    from(s: string) -> Foo
-}
-
-@js("Foo")
-export declare var Foo: FooConstructor
 `))
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
 		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
 	require.Empty(t, parseErrs, "printed output parses")
-	require.Len(t, parsedDecls, 4)
+	require.Len(t, parsedDecls, 1)
+}
+
+// A class and a same-named interface merge whether or not a constructor side
+// exists. The class is what survives, wherever it stands relative to the
+// interface, since it carries what an interface cannot.
+func TestStandalone_ClassAbsorbsAnInterfaceDeclaredBeforeIt(t *testing.T) {
+	const slice = `
+interface Foo<T> {
+    peek(): T;
+}
+
+declare class Foo<U> {
+    constructor(value: U);
+    next(): U;
+}
+`
+	_, printed := convertSlice(t, slice)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Foo")
+export declare class Foo<U> {
+    constructor(mut self, value: U),
+    next(mut self) -> U,
+    peek(mut self) -> U
+}
+`))
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.Len(t, parsedDecls, 1)
+}
+
+// Escalier's `Promise` and `Generator` take a raise parameter the TypeScript
+// declaration has no slot for. The parameter has to arrive whichever kind of
+// declaration declares the name, or the emitted arity would depend on whether
+// some other declaration happened to name it too.
+//
+// The pinned lib set declares all four names as interfaces, so a class form
+// reaches the converter only through an input written by hand. The threading is
+// what makes the cases differ: a reference in an instance member names `E`, and
+// one in a static leaves the argument off, since a static binds none of the
+// class's type parameters.
+func TestStandalone_ClassTakesTheRaiseParameter(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"BareClass": {
+			slice: `
+declare class Promise<T> {
+    then(): Promise<T>;
+    static resolve(): Promise<void>;
+}
+`,
+			want: `@js("Promise")
+export declare class Promise<T, E = never> {
+    then(mut self) -> Promise<T, E>,
+    static resolve() -> Promise<undefined>
+}
+`,
+		},
+		"ClassMergedWithAnInterface": {
+			slice: `
+declare class Promise<T> {
+    then(): Promise<T>;
+}
+
+interface Promise<T> {
+    finally(): Promise<T>;
+}
+`,
+			want: `@js("Promise")
+export declare class Promise<T, E = never> {
+    then(mut self) -> Promise<T, E>,
+    finally(mut self) -> Promise<T, E>
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A class states its superclass where an interface states a type it widens, so
+// the class's own `extends` wins. A merged interface's is taken only when the
+// class writes none, which is the shape `lib.esnext.iterator.d.ts` gives
+// `Iterator`.
+func TestStandalone_ClassTakesAMergedInterfacesExtends(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"ClassWritesNone": {
+			slice: `
+interface Base {
+    id: number;
+}
+
+declare abstract class Foo {
+    next(): string;
+}
+
+interface Foo extends Base {
+    peek(): string;
+}
+`,
+			want: `export declare interface Base {
+    id: number
+}
+
+@js("Foo")
+export declare class Foo extends Base {
+    next(mut self) -> string,
+    peek(mut self) -> string
+}
+`,
+		},
+		"ClassWritesOne": {
+			slice: `
+interface Base {
+    id: number;
+}
+
+declare class Other {
+    tag: string;
+}
+
+declare class Foo extends Other {
+    next(): string;
+}
+
+interface Foo extends Base {
+    peek(): string;
+}
+`,
+			want: `export declare interface Base {
+    id: number
+}
+
+@js("Other")
+export declare class Other {
+    tag: string
+}
+
+@js("Foo")
+export declare class Foo extends Other {
+    next(mut self) -> string,
+    peek(mut self) -> string
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
 }
 
 // lib.dom.d.ts writes the constructor side inline on the binding rather

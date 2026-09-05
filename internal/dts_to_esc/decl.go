@@ -248,6 +248,14 @@ func convertClassDecl(cctx *convertCtx, dc *dts_parser.ClassDecl) (*ast.ClassDec
 		implements = append(implements, typeRef)
 	}
 
+	// A name in RaiseParamDecls takes the raise parameter whichever kind of
+	// declaration declares it. Adding it only where the name arrives as an
+	// interface would make the emitted arity depend on which form the `.d.ts`
+	// happened to use.
+	if RaiseParamDecls.Contains(dc.Name.Name) {
+		typeParams = addRaiseParamToClass(typeParams, bodyElems, convertSpan(dc.Span()))
+	}
+
 	return ast.NewClassDecl(
 		ast.NewIdentifier(dc.Name.Name, convertSpan(dc.Name.Span())),
 		nil,
@@ -361,8 +369,8 @@ func addRaiseParam(typeParams []*ast.TypeParam, body ast.Node, declSpan ast.Span
 	return append(typeParams, &param)
 }
 
-// addRaiseParamToClass is addRaiseParam for a fused class, threading the
-// raise through the instance members alone.
+// addRaiseParamToClass is addRaiseParam for a class, threading the raise
+// through the instance members alone.
 //
 // A static has no binding for the class's own type parameters, so
 // `static all<T>(…) -> Promise<Array<Awaited<T>>>` must keep its raise
@@ -374,6 +382,18 @@ func addRaiseParamToClass(
 	body []ast.ClassElem,
 	declSpan ast.Span,
 ) []*ast.TypeParam {
+	threadRaiseParamThrough(body)
+	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
+	return append(typeParams, &param)
+}
+
+// threadRaiseParamThrough names the raise parameter in every reference the
+// instance members make to a declaration that carries one.
+//
+// It appends an argument rather than replacing one, so each elem must reach it
+// exactly once. fuseTrio calls it on the members it adds to a class
+// convertClassDecl already converted, whose own members are threaded by then.
+func threadRaiseParamThrough(body []ast.ClassElem) {
 	v := &raiseParamVisitor{}
 	for _, elem := range body {
 		if classElemIsStatic(elem) {
@@ -381,8 +401,6 @@ func addRaiseParamToClass(
 		}
 		elem.Accept(v)
 	}
-	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
-	return append(typeParams, &param)
 }
 
 // classElemIsStatic reports whether elem belongs to the class rather
