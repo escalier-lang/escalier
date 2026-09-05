@@ -48,7 +48,6 @@ export declare class Map<K, V> {
     constructor(mut self),
     constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: mut Map<any, any>,
-    constructor(mut self),
     constructor(mut self, iterable?: Iterable<[K, V]> | null),
     static readonly [Symbol.species]: MapConstructor,
     /**

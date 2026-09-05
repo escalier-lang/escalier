@@ -10,6 +10,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/tidwall/btree"
 )
@@ -358,7 +359,70 @@ func convertFusedBucket(
 	}
 	applyReadonlyTwinReceivers(mod, own)
 	rewriteReadonlyTwinRefs(mod, all)
+	if err := dedupeMembers(mod); err != nil {
+		return nil, err
+	}
 	return mod, nil
+}
+
+// dedupeMembers drops a member a declaration carries more than once,
+// keeping the first.
+//
+// A lib file that adds an overload restates the ones it is adding to.
+// `lib.dom.iterable.d.ts` repeats three of `SubtleCrypto.generateKey`'s
+// four signatures verbatim to add a fourth taking an `Iterable`, and
+// `MapConstructor` is declared in both lib.es2015.collection.d.ts and
+// lib.es2015.iterable.d.ts, each with a bare `new ()`. mergeDecls and
+// trio fusion concatenate without looking, so those arrive twice.
+//
+// The key is the member's printed form, which is what makes a repeat
+// distinguishable from an overload: the three restated `generateKey`
+// signatures print identically and the fourth does not. Printing also
+// keeps the comparison off spans, which differ between two lib files
+// declaring the same signature.
+func dedupeMembers(mod *StandaloneModule) error {
+	var err error
+	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			switch d := decl.(type) {
+			case *ast.ClassDecl:
+				d.Body, err = dedupeBy(d.Body, func(e ast.ClassElem) (string, error) {
+					return printer.PrintClassElem(e, printer.DefaultOptions())
+				})
+			case *ast.InterfaceDecl:
+				if d.TypeAnn == nil {
+					continue
+				}
+				d.TypeAnn.Elems, err = dedupeBy(d.TypeAnn.Elems,
+					func(e ast.ObjTypeAnnElem) (string, error) {
+						return printer.PrintObjTypeAnnElem(e, printer.DefaultOptions())
+					})
+			}
+			if err != nil {
+				return false
+			}
+		}
+		return true
+	})
+	return err
+}
+
+// dedupeBy keeps the first member of each distinct key, in order.
+func dedupeBy[T any](members []T, key func(T) (string, error)) ([]T, error) {
+	seen := set.NewSet[string]()
+	out := make([]T, 0, len(members))
+	for _, m := range members {
+		k, err := key(m)
+		if err != nil {
+			return nil, err
+		}
+		if seen.Contains(k) {
+			continue
+		}
+		seen.Add(k)
+		out = append(out, m)
+	}
+	return out, nil
 }
 
 // readonlyTwin records one (Foo, ReadonlyFoo) pair detected at bucket
