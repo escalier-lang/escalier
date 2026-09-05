@@ -566,6 +566,15 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		)
 		return ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{mappedElem}, t.Span()), nil
 	case *dts_parser.TemplateLiteralType:
+		// The printer walks the quasis and emits the interpolation after
+		// each, so it needs one more quasi than type. The dts parser
+		// omits an empty quasi rather than recording it, so
+		// `${string}-${string}` arrives as type, "-", type and the
+		// leading and trailing empties have to go back. Without them the
+		// printer runs out of quasis and drops the trailing
+		// interpolations: `${string}-${string}-${string}-${string}-${string}`
+		// on `Crypto.randomUUID` printed as
+		// `-${string}-${string}-${string}-${string}`, which matches no UUID.
 		quasis := []*ast.Quasi{}
 		typeAnns := []ast.TypeAnn{}
 		for _, part := range t.Parts {
@@ -573,12 +582,18 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 			case *dts_parser.TemplateString:
 				quasis = append(quasis, &ast.Quasi{Value: p.Value, Span: p.Span()})
 			case *dts_parser.TemplateType:
+				if len(quasis) == len(typeAnns) {
+					quasis = append(quasis, &ast.Quasi{Value: "", Span: p.Span()})
+				}
 				typeAnn, err := convertTypeAnn(p.Type)
 				if err != nil {
 					return nil, fmt.Errorf("converting template literal type part: %w", err)
 				}
 				typeAnns = append(typeAnns, typeAnn)
 			}
+		}
+		if len(quasis) == len(typeAnns) {
+			quasis = append(quasis, &ast.Quasi{Value: "", Span: t.Span()})
 		}
 		return ast.NewTemplateLitTypeAnn(quasis, typeAnns, t.Span()), nil
 	case *dts_parser.KeyOfType:
