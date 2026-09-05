@@ -1595,7 +1595,7 @@ func TestPrintInterfaceDecl(t *testing.T) {
 			"export interface Point {\n    x: number,\n    y: number\n}",
 		},
 		{
-			// A heritage clause is where the interface's inherited
+			// An `extends` clause is where the interface's inherited
 			// members come from, so dropping it prints an interface
 			// that parses back with none of them.
 			"interface extending one base",

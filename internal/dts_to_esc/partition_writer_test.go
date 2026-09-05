@@ -863,8 +863,8 @@ func keysOf(mods map[string]*StandaloneModule) []string {
 // may name their parameters differently, and mergeDecls keeps the first
 // declaration's. `lib.es2015.iterable.d.ts` declares `Iterator<T, TReturn
 // = any, TNext = any>` while `lib.esnext.iterator.d.ts` declares
-// `Iterator<T, TResult, TNext>` with a heritage clause naming TResult, so
-// appending that clause unchanged leaves TResult naming nothing.
+// `Iterator<T, TResult, TNext>` with an `extends` clause naming TResult,
+// so appending that clause unchanged leaves TResult naming nothing.
 func TestMergeDecls_RenamesTypeParamsToTheRetainedDecl(t *testing.T) {
 	t.Parallel()
 	res, err := PartitionLib([]LibInput{
@@ -897,7 +897,7 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 	require.Equal(t, []string{"T", "TReturn", "TNext"}, names)
 
 	// Every reference the second declaration contributed reads against
-	// them, in its heritage and in its members alike.
+	// them, in its `extends` clause and in its members alike.
 	var refs []string
 	collect := func(t dts_parser.TypeAnn) {
 		walkTypeRefs(t, func(ref *dts_parser.TypeReference) {

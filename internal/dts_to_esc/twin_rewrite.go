@@ -162,13 +162,14 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 	}
 }
 
-// renameTypeRefInPlace handles the subset of the rewrite that fits a
-// `*TypeRefTypeAnn`-only slot (Extends, Implements). It only renames
-// `ReadonlyFoo` → `Foo`; it cannot wrap a mutable twin in
-// `MutableTypeAnn` because the slot is typed `*TypeRefTypeAnn`. The
-// TypeArgs are still walked recursively so nested refs are rewritten.
+// renameTypeRefInPlace handles the subset of the rewrite that fits an
+// `extends` or `implements` clause, whose AST slot holds a
+// `*TypeRefTypeAnn` and nothing else. It only renames `ReadonlyFoo` →
+// `Foo`; it cannot wrap a mutable twin in `MutableTypeAnn`, because that
+// slot has no room for one. The TypeArgs are still walked recursively so
+// nested refs are rewritten.
 //
-// A mutable twin name in one of these slots is left alone, and it names
+// A mutable twin name in one of these clauses is left alone, and it names
 // the whole definition rather than the immutable view of it. A
 // definition holds both `self` and `mut self` methods, and extending it
 // inherits all of them, so `interface RegExpMatchArray extends
@@ -178,10 +179,10 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 // `mut self`. Reading the bare name as the immutable view instead would
 // silently drop the mutating half of the inherited surface.
 //
-// `mut` cannot be written here in any case: an Extends/Implements slot
-// is typed `*ast.TypeRefTypeAnn`, which carries no wrapper. That the
-// syntax has no room for a view is the same fact stated from the
-// grammar's side.
+// `mut` cannot be written here in any case: an `extends` or
+// `implements` clause is typed `*ast.TypeRefTypeAnn`, which carries no
+// wrapper. That the syntax has no room for a view is the same fact
+// stated from the grammar's side.
 //
 // Eight declarations in the pinned lib set take this shape:
 // `RegExpMatchArray`, `RegExpExecArray`, `RegExpIndicesArray`,

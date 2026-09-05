@@ -156,16 +156,16 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 }
 
 // renameTypeParams rewrites decl's type-parameter names to keep, matched
-// by position, so decl's members and heritage read against the merged
-// declaration's parameters.
+// by position, so decl's members and `extends` clause read against the
+// merged declaration's parameters.
 //
 // Merged declarations of one interface are free to name their parameters
 // differently. `lib.es2015.iterable.d.ts` declares `interface Iterator<T,
 // TReturn = any, TNext = any>` and `lib.esnext.iterator.d.ts` declares
 // `interface Iterator<T, TResult, TNext> extends
 // globalThis.IteratorObject<T, TResult, TNext>`. mergeDecls keeps the
-// first declaration's parameters, so appending the second's heritage
-// unchanged leaves `TResult` naming nothing.
+// first declaration's parameters, so appending the second's `extends`
+// clause unchanged leaves `TResult` naming nothing.
 //
 // A parameter the merged declaration does not have is left alone. Arity
 // is equal across every merged pair in the pinned corpus, and renaming

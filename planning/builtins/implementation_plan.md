@@ -1816,8 +1816,9 @@ and passes the whole twin set to the rewrite. Receiver flips stay
 bucket-local, since only the declaring bucket holds both member
 lists.
 
-A heritage slot keeps the mutable name as written, and that name
-denotes the whole definition rather than the immutable view of it.
+An `extends` clause keeps the mutable name as written, and that
+name denotes the whole definition rather than the immutable view of
+it.
 A definition holds both `self` and `mut self` methods, and
 extending it inherits all of them, so `interface RegExpMatchArray
 extends Array<string>` gives `RegExpMatchArray` every `Array`
@@ -1825,10 +1826,10 @@ member including `push`. Whether a given instance may call `push`
 is settled where it is bound, because `push` takes `mut self`.
 Reading the bare name as the immutable view would silently drop
 the mutating half of the inherited surface. `mut` has no place to
-go here in any case: an Extends slot is typed
+go here in any case: an `extends` clause is typed
 `*ast.TypeRefTypeAnn`, which carries no wrapper.
 
-The same reading covers a heritage clause the rename touched.
+The same reading covers an `extends` clause the rename touched.
 `interface RTCStatsReport extends ReadonlyMap<string, any>`
 becomes `extends Map<string, any>`, which inherits `set` as well
 as `get`. Nothing is lost, because `set` takes `mut self` and a
