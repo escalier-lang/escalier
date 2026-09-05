@@ -1030,6 +1030,16 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 		extends = ref
 	}
 
+	// Escalier's `Promise` takes a raise parameter where the TypeScript
+	// declaration has no slot for one. The TypeDecl and InterfaceDecl
+	// paths add it in decl.go; a trio fuses into a class, so `Promise`
+	// needs it here too. Without it the declaration reads `Promise<T>`
+	// while every raised use passes two arguments.
+	if RaiseParamDecls.Contains(className) {
+		typeParams = addRaiseParamToClass(
+			typeParams, body, convertSpan(info.instance.Span()))
+	}
+
 	return ast.NewClassDecl(
 		ast.NewIdentifier(className, convertSpan(info.instance.Name.Span())),
 		nil, // lifetime params
