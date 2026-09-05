@@ -12,3 +12,12 @@
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
 }
+
+// `throw` injects an exception at the generator's suspended yield. A
+// body that does not catch it rethrows it to the caller, so a value the
+// caller may pass freely would escape past what `E` says this generator
+// raises. Constraining the parameter to `E` is what keeps that claim
+// true. TypeScript writes `e: any`, which carries no such rule.
+export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> {
+    throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
+}

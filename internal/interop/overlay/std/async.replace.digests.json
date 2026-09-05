@@ -1,5 +1,11 @@
 [
   {
+    "decl": "AsyncGenerator",
+    "member": "throw",
+    "kind": "method",
+    "digest": "1386f0dcfb074072"
+  },
+  {
     "decl": "Promise",
     "member": "reject",
     "kind": "method",
