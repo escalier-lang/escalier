@@ -7,9 +7,33 @@
   },
   {
     "decl": "Promise",
+    "member": "catch",
+    "kind": "method",
+    "digest": "498391d6534d65da"
+  },
+  {
+    "decl": "Promise",
+    "member": "constructor",
+    "kind": "constructor",
+    "digest": "456519da26d0db0b"
+  },
+  {
+    "decl": "Promise",
+    "member": "then",
+    "kind": "method",
+    "digest": "8894daa091d8b71b"
+  },
+  {
+    "decl": "Promise",
     "member": "reject",
     "kind": "method",
     "static": true,
     "digest": "e600e2e52c7f2fd1"
+  },
+  {
+    "decl": "PromiseLike",
+    "member": "then",
+    "kind": "method",
+    "digest": "0143ef3631f4a9e9"
   }
 ]
