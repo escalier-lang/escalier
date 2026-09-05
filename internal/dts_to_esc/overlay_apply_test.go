@@ -117,7 +117,7 @@ func TestApplyOverlay_Operations(t *testing.T) {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean,
     static of<T>(...items: Array<T>) -> Array<T>
 }
@@ -137,7 +137,7 @@ export declare interface ArrayLike<T> {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -157,7 +157,7 @@ export declare interface ArrayLike<T> {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -179,7 +179,7 @@ export declare val iteratorKey: unique symbol
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -197,7 +197,7 @@ export declare interface ArrayLike<T> {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -215,7 +215,7 @@ export declare type ArrayLike<T> = {
 			want: `@js("Array")
 export declare class Array<T> {
     length: number,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -233,7 +233,7 @@ export declare interface ArrayLike<T> {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 `,
@@ -371,7 +371,7 @@ export declare class Array<T> {
     length: number,
     /** Reads one element. */
     at(self, index: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -422,7 +422,7 @@ export declare class Array<T> {
     get first(self) -> T,
     find(self, x: number) -> T,
     find(self, x: string) -> T,
-    constructor(mut self)
+    constructor(mut self) -> Array<T>
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
 		"std/array.replace.esc": "export declare class Array<T> {\n" +
@@ -495,7 +495,7 @@ export declare class Array<T> {
     get first(self) -> T,
     find(self, x: number) -> T | undefined,
     find(self, x: string) -> T | undefined,
-    constructor(mut self)
+    constructor(mut self) -> Array<T>
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
 			"std/array.replace.esc": "export declare class Array<T> {\n" +
@@ -537,7 +537,7 @@ func TestApplyOverlay_AddContributesAnOverloadSet(t *testing.T) {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean,
     indexOf(self, item: T) -> number,
     indexOf(self, item: T, from: number) -> number
@@ -566,7 +566,7 @@ export declare class Array<T> {
     get first(self) -> T,
     find(self, x: number) -> T,
     find(self, x: string) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     set first(mut self, v: T)
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
@@ -650,7 +650,7 @@ func TestApplyOverlay_KeysAMemberOnItsSideOfTheClass(t *testing.T) {
 export declare class Array<T> {
     of(mut self, x: number) -> T | undefined,
     at(self, x: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static of(x: string) -> Array<any>
 }
 `,
@@ -665,7 +665,7 @@ export declare class Array<T> {
 export declare class Array<T> {
     of(mut self, x: number) -> T,
     at(self, x: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static of(x: string) -> Array<T>
 }
 `,
@@ -680,7 +680,7 @@ export declare class Array<T> {
 export declare class Array<T> {
     of(mut self, x: number) -> T,
     at(self, x: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static of(x: string) -> Array<any>,
     static at(x: number) -> T
 }
@@ -814,7 +814,7 @@ func TestApplyOverlay_ComparesTypeParametersByNameAlone(t *testing.T) {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 
@@ -838,7 +838,7 @@ func TestApplyOverlay_WholeDeclarationReplacementReadsWhatAMergeDoesNot(t *testi
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 

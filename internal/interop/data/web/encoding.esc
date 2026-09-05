@@ -40,7 +40,7 @@ export declare class TextDecoder extends TextDecoderCommon {
      */
     decode(mut self, input?: AllowSharedBufferSource, options?: TextDecodeOptions) -> string,
     static prototype: TextDecoder,
-    constructor(mut self, label?: string, options?: TextDecoderOptions)
+    constructor(mut self, label?: string, options?: TextDecoderOptions) -> TextDecoder
 }
 
 export declare interface TextDecoderCommon {
@@ -70,7 +70,7 @@ export declare class TextDecoderStream extends GenericTransformStream {
     readonly readable: ReadableStream<string>,
     readonly writable: WritableStream<BufferSource>,
     static prototype: TextDecoderStream,
-    constructor(mut self, label?: string, options?: TextDecoderOptions)
+    constructor(mut self, label?: string, options?: TextDecoderOptions) -> TextDecoderStream
 }
 
 /**
@@ -93,7 +93,7 @@ export declare class TextEncoder extends TextEncoderCommon {
      */
     encodeInto(mut self, source: string, destination: Uint8Array) -> TextEncoderEncodeIntoResult,
     static prototype: TextEncoder,
-    constructor(mut self)
+    constructor(mut self) -> TextEncoder
 }
 
 export declare interface TextEncoderCommon {
@@ -111,5 +111,5 @@ export declare class TextEncoderStream extends GenericTransformStream {
     readonly readable: ReadableStream<Uint8Array>,
     readonly writable: WritableStream<string>,
     static prototype: TextEncoderStream,
-    constructor(mut self)
+    constructor(mut self) -> TextEncoderStream
 }

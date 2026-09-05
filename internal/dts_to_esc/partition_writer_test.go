@@ -588,7 +588,7 @@ export declare class Array<T> {
     push(mut self, ...items: mut Array<T>) -> number,
     concat(self, items: Array<T>) -> mut Array<T>,
     readArr(mut self, items: Array<T>) -> unknown,
-    constructor(mut self),
+    constructor(mut self) -> mut Array<T>,
     static readonly prototype: mut Array<any>
 }`))
 
@@ -967,9 +967,9 @@ interface MapConstructor {
 export declare class Map<K, V> {
     get(self, key: K) -> V | undefined,
     keys(self) -> IterableIterator<K>,
-    constructor(mut self),
-    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null),
-    constructor(mut self, iterable?: Iterable<[K, V]> | null)
+    constructor(mut self) -> Map<any, any>,
+    constructor(mut self, entries?: ReadonlyArray<[K, V]> | null) -> Map<K, V>,
+    constructor(mut self, iterable?: Iterable<[K, V]> | null) -> Map<K, V>
 }`))
 }
 

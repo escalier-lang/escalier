@@ -3873,45 +3873,6 @@
 }
 ---
 
-[TestClassConstructorErrors/ConstructorWithReturnType - 1]
-&ast.DeclStmt{
-    Decl: &ast.ClassDecl{
-        Name: &ast.Ident{
-            Name: "Foo",
-            span: 11-14,
-        },
-        Body: []ast.ClassElem{
-            &ast.ConstructorElem{
-                Fn: &ast.FuncExpr{
-                    FuncSig: ast.FuncSig{
-                        Params: []*ast.Param{
-                            &ast.Param{
-                                Pattern: &ast.IdentPat{
-                                    Name: "self",
-                                    Mutable: true,
-                                    span: 34-42,
-                                },
-                            },
-                        },
-                    },
-                    Body: &ast.Block{
-                        Span: 54-56,
-                    },
-                    span: 22-56,
-                },
-                Receiver: &ast.MethodReceiver{
-                    Mut: true,
-                    Span_: 34-42,
-                },
-                Span_: 22-56,
-            },
-        },
-        span: 5-62,
-    },
-    span: 5-62,
-}
----
-
 [TestClassConstructorErrors/AsyncConstructor - 1]
 &ast.DeclStmt{
     Decl: &ast.ClassDecl{
@@ -3948,15 +3909,6 @@
         span: 5-58,
     },
     span: 5-58,
-}
----
-
-[TestClassConstructorErrors/ConstructorWithReturnType - 2]
-[]*parser.Error{
-    &parser.Error{
-        Span: 44-46,
-        Message: "constructors cannot declare a return type",
-    },
 }
 ---
 

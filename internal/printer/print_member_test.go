@@ -34,6 +34,7 @@ func TestPrintClassElem(t *testing.T) {
     set first(mut self, value: T),
     callable(value: T) -> Foo<T>,
     callable<U>(value: U) -> Foo<U>,
+    constructor<U>(mut self, value: U) -> Foo<U>,
 }`)
 	class, ok := decl.(*ast.ClassDecl)
 	require.True(t, ok)
@@ -47,6 +48,7 @@ func TestPrintClassElem(t *testing.T) {
 		"set first(mut self, value: T)",
 		"callable(value: T) -> Foo<T>",
 		"callable<U>(value: U) -> Foo<U>",
+		"constructor<U>(mut self, value: U) -> Foo<U>",
 	}
 	require.Len(t, class.Body, len(expected))
 	for i, want := range expected {

@@ -45,10 +45,10 @@ export declare class DateTimeFormat {
     formatRangeToParts(mut self, startDate: Date | number | bigint, endDate: Date | number | bigint) -> mut Array<DateTimeRangeFormatPart>,
     format(mut self, date?: Date | number) -> string,
     resolvedOptions(mut self) -> ResolvedDateTimeFormatOptions,
-    constructor(mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
     callable(locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: DateTimeFormatOptions) -> mut Array<string>,
-    constructor(mut self, locales?: string | mut Array<string>, options?: DateTimeFormatOptions),
+    constructor(mut self, locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
     callable(locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: DateTimeFormatOptions) -> mut Array<string>,
     static readonly prototype: DateTimeFormat
@@ -83,12 +83,12 @@ export declare interface ResolvedPluralRulesOptions {
 export declare class PluralRules {
     resolvedOptions(mut self) -> ResolvedPluralRulesOptions,
     select(mut self, n: number) -> LDMLPluralRule,
-    constructor(mut self, locales?: string | Array<string>, options?: PluralRulesOptions),
+    constructor(mut self, locales?: string | Array<string>, options?: PluralRulesOptions) -> PluralRules,
     callable(locales?: string | Array<string>, options?: PluralRulesOptions) -> PluralRules,
     static supportedLocalesOf(locales: string | Array<string>, options?: {
         localeMatcher?: "lookup" | "best fit"
     }) -> mut Array<string>,
-    constructor(mut self, locales?: LocalesArgument, options?: PluralRulesOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: PluralRulesOptions) -> PluralRules,
     callable(locales?: LocalesArgument, options?: PluralRulesOptions) -> PluralRules,
     static supportedLocalesOf(locales: LocalesArgument, options?: {
         localeMatcher?: "lookup" | "best fit"
@@ -133,10 +133,10 @@ export declare class NumberFormat {
     formatRangeToParts(mut self, start: number | bigint | StringNumericLiteral, end: number | bigint | StringNumericLiteral) -> mut Array<NumberRangeFormatPart>,
     format(mut self, value: number) -> string,
     resolvedOptions(mut self) -> ResolvedNumberFormatOptions,
-    constructor(mut self, locales?: LocalesArgument, options?: NumberFormatOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
     callable(locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: NumberFormatOptions) -> mut Array<string>,
-    constructor(mut self, locales?: string | mut Array<string>, options?: NumberFormatOptions),
+    constructor(mut self, locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
     callable(locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: NumberFormatOptions) -> mut Array<string>,
     static readonly prototype: NumberFormat
@@ -300,7 +300,7 @@ export declare class RelativeTimeFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/RelativeTimeFormat/RelativeTimeFormat).
      */
-    constructor(mut self, locales?: LocalesArgument, options?: RelativeTimeFormatOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: RelativeTimeFormatOptions) -> RelativeTimeFormat,
     /**
      * Returns an array containing those of the provided locales
      * that are supported in date and time formatting
@@ -457,7 +457,7 @@ export declare class Locale extends LocaleOptions {
     minimize(mut self) -> Locale,
     /** Returns the locale's full locale identifier string. */
     toString(self) -> UnicodeBCP47LocaleIdentifier,
-    constructor(mut self, tag: UnicodeBCP47LocaleIdentifier | Locale, options?: LocaleOptions)
+    constructor(mut self, tag: UnicodeBCP47LocaleIdentifier | Locale, options?: LocaleOptions) -> Locale
 }
 
 export declare type DisplayNamesFallback = "code" | "none"
@@ -517,7 +517,7 @@ export declare class DisplayNames {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/DisplayNames/DisplayNames).
      */
-    constructor(mut self, locales: LocalesArgument, options: DisplayNamesOptions),
+    constructor(mut self, locales: LocalesArgument, options: DisplayNamesOptions) -> DisplayNames,
     /**
      * Returns an array containing those of the provided locales that are supported in display names without having to fall back to the runtime's default locale.
      *
@@ -657,7 +657,7 @@ export declare class ListFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat).
      */
-    constructor(mut self, locales?: LocalesArgument, options?: ListFormatOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: ListFormatOptions) -> ListFormat,
     /**
      * Returns an array containing those of the provided locales that are
      * supported in list formatting without having to fall back to the runtime's default locale.
@@ -715,7 +715,7 @@ export declare class Segmenter {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter).
      */
-    constructor(mut self, locales?: LocalesArgument, options?: SegmenterOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: SegmenterOptions) -> Segmenter,
     /**
      * Returns an array containing those of the provided locales that are supported without having to fall back to the runtime's default locale.
      *
@@ -811,10 +811,10 @@ export declare interface ResolvedCollatorOptions {
 export declare class Collator {
     compare(mut self, x: string, y: string) -> number,
     resolvedOptions(mut self) -> ResolvedCollatorOptions,
-    constructor(mut self, locales?: LocalesArgument, options?: CollatorOptions),
+    constructor(mut self, locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
     callable(locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
     static supportedLocalesOf(locales: LocalesArgument, options?: CollatorOptions) -> mut Array<string>,
-    constructor(mut self, locales?: string | mut Array<string>, options?: CollatorOptions),
+    constructor(mut self, locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
     callable(locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: CollatorOptions) -> mut Array<string>
 }

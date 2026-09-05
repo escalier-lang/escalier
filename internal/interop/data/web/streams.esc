@@ -29,9 +29,9 @@ export declare class ReadableStream<R = any> {
     static prototype: ReadableStream,
     constructor(mut self, underlyingSource: UnderlyingByteSource, strategy?: {
         highWaterMark?: number
-    }),
-    constructor(mut self, underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>),
-    constructor(mut self, underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>)
+    }) -> ReadableStream<Uint8Array>,
+    constructor(mut self, underlyingSource: UnderlyingDefaultSource<R>, strategy?: QueuingStrategy<R>) -> ReadableStream<R>,
+    constructor(mut self, underlyingSource?: UnderlyingSource<R>, strategy?: QueuingStrategy<R>) -> ReadableStream<R>
 }
 
 export declare interface QueuingStrategy<T = any> {
@@ -163,7 +163,7 @@ export declare class ByteLengthQueuingStrategy extends QueuingStrategy<ArrayBuff
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/size) */
     readonly size: QueuingStrategySize<ArrayBufferView>,
     static prototype: ByteLengthQueuingStrategy,
-    constructor(mut self, init: QueuingStrategyInit)
+    constructor(mut self, init: QueuingStrategyInit) -> ByteLengthQueuingStrategy
 }
 
 /**
@@ -178,7 +178,7 @@ export declare class CountQueuingStrategy extends QueuingStrategy {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CountQueuingStrategy/size) */
     readonly size: QueuingStrategySize,
     static prototype: CountQueuingStrategy,
-    constructor(mut self, init: QueuingStrategyInit)
+    constructor(mut self, init: QueuingStrategyInit) -> CountQueuingStrategy
 }
 
 export declare interface GenericTransformStream {
@@ -202,7 +202,7 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
     error(mut self, e?: any) -> unknown,
     static prototype: ReadableByteStreamController,
-    constructor(mut self)
+    constructor(mut self) -> ReadableByteStreamController
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader) */
@@ -213,7 +213,7 @@ export declare class ReadableStreamBYOBReader extends ReadableStreamGenericReade
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
     releaseLock(mut self) -> unknown,
     static prototype: ReadableStreamBYOBReader,
-    constructor(mut self, stream: ReadableStream<Uint8Array>)
+    constructor(mut self, stream: ReadableStream<Uint8Array>) -> ReadableStreamBYOBReader
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest) */
@@ -226,7 +226,7 @@ export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
     respondWithNewView(mut self, view: ArrayBufferView) -> unknown,
     static prototype: ReadableStreamBYOBRequest,
-    constructor(mut self)
+    constructor(mut self) -> ReadableStreamBYOBRequest
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController) */
@@ -241,7 +241,7 @@ export declare class ReadableStreamDefaultController<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/error) */
     error(mut self, e?: any) -> unknown,
     static prototype: ReadableStreamDefaultController,
-    constructor(mut self)
+    constructor(mut self) -> ReadableStreamDefaultController
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader) */
@@ -252,7 +252,7 @@ export declare class ReadableStreamDefaultReader<R = any> extends ReadableStream
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
     releaseLock(mut self) -> unknown,
     static prototype: ReadableStreamDefaultReader,
-    constructor(mut self, stream: ReadableStream<R>)
+    constructor(mut self, stream: ReadableStream<R>) -> ReadableStreamDefaultReader<R>
 }
 
 export declare interface ReadableStreamGenericReader {
@@ -270,7 +270,7 @@ export declare class TransformStream<I = any, O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream/writable) */
     readonly writable: WritableStream<I>,
     static prototype: TransformStream,
-    constructor(mut self, transformer?: Transformer<I, O>, writableStrategy?: QueuingStrategy<I>, readableStrategy?: QueuingStrategy<O>)
+    constructor(mut self, transformer?: Transformer<I, O>, writableStrategy?: QueuingStrategy<I>, readableStrategy?: QueuingStrategy<O>) -> TransformStream<I, O>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController) */
@@ -285,7 +285,7 @@ export declare class TransformStreamDefaultController<O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/terminate) */
     terminate(mut self) -> unknown,
     static prototype: TransformStreamDefaultController,
-    constructor(mut self)
+    constructor(mut self) -> TransformStreamDefaultController
 }
 
 /**
@@ -304,7 +304,7 @@ export declare class WritableStream<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/getWriter) */
     getWriter(self) -> WritableStreamDefaultWriter<W>,
     static prototype: WritableStream,
-    constructor(mut self, underlyingSink?: UnderlyingSink<W>, strategy?: QueuingStrategy<W>)
+    constructor(mut self, underlyingSink?: UnderlyingSink<W>, strategy?: QueuingStrategy<W>) -> WritableStream<W>
 }
 
 /**
@@ -319,7 +319,7 @@ export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
     error(mut self, e?: any) -> unknown,
     static prototype: WritableStreamDefaultController,
-    constructor(mut self)
+    constructor(mut self) -> WritableStreamDefaultController
 }
 
 /**
@@ -344,7 +344,7 @@ export declare class WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/write) */
     write(mut self, chunk?: W) -> Promise<undefined>,
     static prototype: WritableStreamDefaultWriter,
-    constructor(mut self, stream: WritableStream<W>)
+    constructor(mut self, stream: WritableStream<W>) -> WritableStreamDefaultWriter<W>
 }
 
 export declare interface QueuingStrategySize<T = any> {

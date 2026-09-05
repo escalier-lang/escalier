@@ -38,7 +38,7 @@ export declare class NavigationPreloadManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/setHeaderValue) */
     setHeaderValue(mut self, value: string) -> Promise<undefined>,
     static prototype: NavigationPreloadManager,
-    constructor(mut self)
+    constructor(mut self) -> NavigationPreloadManager
 }
 
 export declare interface ServiceWorkerEventMap extends AbstractWorkerEventMap {
@@ -67,7 +67,7 @@ export declare class ServiceWorker extends EventTarget {
     removeEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorker,
-    constructor(mut self)
+    constructor(mut self) -> ServiceWorker
 }
 
 export declare interface ServiceWorkerContainerEventMap {
@@ -107,7 +107,7 @@ export declare class ServiceWorkerContainer extends EventTarget {
     removeEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorkerContainer,
-    constructor(mut self)
+    constructor(mut self) -> ServiceWorkerContainer
 }
 
 export declare interface ServiceWorkerRegistrationEventMap {
@@ -151,7 +151,7 @@ export declare class ServiceWorkerRegistration extends EventTarget {
     removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorkerRegistration,
-    constructor(mut self)
+    constructor(mut self) -> ServiceWorkerRegistration
 }
 
 export declare type ClientTypes = "all" | "sharedworker" | "window" | "worker"

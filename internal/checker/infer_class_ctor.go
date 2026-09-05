@@ -53,16 +53,17 @@ func ctorCallableParams(ctor *ast.ConstructorElem) []*ast.Param {
 	return ctor.Fn.Params[1:]
 }
 
-// validateConstructorSelf checks that the constructor's first parameter
-// is a well-formed `mut self` receiver and that the constructor does not
-// declare an explicit return type. Returns the diagnostics; an empty
-// slice means the signature shape is acceptable.
+// validateConstructorSelf checks that the constructor's first parameter is a
+// well-formed `mut self` receiver, and that only a `declare class` constructor
+// writes a return type. `declare` says which kind of class the constructor
+// belongs to. Returns the diagnostics; an empty slice means the signature shape
+// is acceptable.
 //
 // `MutSelf` is the parser's truth source for whether the user wrote
 // `self` / `mut self`: nil means absent, false means `self`, true means
 // `mut self`. The first `ast.Param` (when present) carries the `self`
 // pattern itself, which is where a stray type annotation would live.
-func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
+func validateConstructorSelf(ctor *ast.ConstructorElem, declare bool) []Error {
 	errors := []Error{}
 	span := ctor.Span()
 
@@ -90,21 +91,48 @@ func validateConstructorSelf(ctor *ast.ConstructorElem) []Error {
 		errors = append(errors, MissingMutSelfParameterError{Reason: MutSelfHasLifetime, span: ctor.Receiver.Lifetime.Span()})
 	}
 
-	if ctor.Fn.Return != nil {
+	// A `declare class` describes a binding some other code supplies, and its
+	// constructor may pin a type argument the class leaves free. inferConstructorSig
+	// checks that the return still names the class. A class the compiler emits
+	// builds `Self` and has nowhere to put anything else.
+	if ctor.Fn.Return != nil && !declare {
 		errors = append(errors, ConstructorWithReturnTypeError{span: ctor.Fn.Return.Span()})
 	}
 
 	return errors
 }
 
+// typeRefName returns the name a type reference applies, and false for a type of
+// any other shape. A constructor's return has to name the class it builds, and
+// both the class's own instance type and a pinned annotation such as
+// `Uint8Array<ArrayBuffer>` reach here as one.
+//
+// A `mut` wrapper is read through. `mut Array<any>` is the annotation the
+// converter writes on `Array`'s no-argument constructor, matching how the rest of
+// that declaration spells a mutable array, and it still names `Array`.
+func typeRefName(t type_system.Type) (string, bool) {
+	pruned := type_system.Prune(t)
+	if mut, ok := pruned.(*type_system.MutType); ok {
+		pruned = type_system.Prune(mut.Type)
+	}
+	ref, ok := pruned.(*type_system.TypeRefType)
+	if !ok {
+		return "", false
+	}
+	return type_system.QualIdentToString(ref.Name), true
+}
+
 // inferConstructorSig builds the callable `FuncType` for an in-body
 // `ConstructorElem`. It mirrors `inferFuncSig` but bakes in the three
 // places a constructor signature diverges from a normal function:
 //
-//  1. The return type is fixed to the class's instance type (`retType`,
-//     which already carries the class's type arguments). User-written
-//     return annotations are rejected via `ConstructorWithReturnTypeError`
-//     (see `validateConstructorSelf`) and ignored when building the type.
+//  1. The return type is the class's instance type (`retType`, which already
+//     carries the class's type arguments). A `declare class` constructor may
+//     write its own to pin one of those arguments, as
+//     `constructor(mut self, length?: number) -> Uint8Array<ArrayBuffer>` does;
+//     the annotation is used in place of `retType` once it is confirmed to name
+//     the class. Every other constructor is rejected for writing one, via
+//     `ConstructorWithReturnTypeError` in `validateConstructorSelf`.
 //  2. The leading `mut self` parameter is stripped from the callable
 //     arity — it is not part of how callers invoke `Foo(...)`. The
 //     receiver shape is validated via `validateConstructorSelf`.
@@ -121,9 +149,10 @@ func (c *Checker) inferConstructorSig(
 	ctor *ast.ConstructorElem,
 	classTypeParams []*type_system.TypeParam,
 	retType type_system.Type,
+	declare bool,
 	prov provenance.Provenance,
 ) (*type_system.FuncType, Context, map[string]*type_system.Binding, []Error) {
-	errors := validateConstructorSelf(ctor)
+	errors := validateConstructorSelf(ctor, declare)
 	ctorCtx := declCtx.WithNewScope()
 
 	// (3) Constructor-level type params (rare) are layered on top of the
@@ -148,14 +177,32 @@ func (c *Checker) inferConstructorSig(
 		errors = slices.Concat(errors, throwsErrors)
 	}
 
-	// (1) Return type is `Self`-with-type-args, supplied by the caller
-	// as `retType`. Any user-written `Fn.Return` was already reported by
-	// `validateConstructorSelf`.
+	// (1) Return type is `Self`-with-type-args, supplied by the caller as
+	// `retType`, unless a `declare class` constructor pinned its own. The
+	// annotation is inferred in the constructor's scope so it can name the
+	// constructor's own type params, and it has to name the class: a constructor
+	// builds what it belongs to, whatever type arguments it applies.
+	ctorRetType := retType
+	if declare && ctor.Fn.Return != nil {
+		annType, annErrors := c.inferTypeAnn(ctorCtx, ctor.Fn.Return)
+		errors = slices.Concat(errors, annErrors)
+		if className, ok := typeRefName(retType); ok {
+			if annName, ok := typeRefName(annType); !ok || annName != className {
+				errors = append(errors, ConstructorReturnMustBeSelfError{
+					Class: className,
+					span:  ctor.Fn.Return.Span(),
+				})
+			} else {
+				ctorRetType = annType
+			}
+		}
+	}
+
 	funcType := type_system.NewFuncType(
 		prov,
 		ctorTypeParams,
 		params,
-		retType,
+		ctorRetType,
 		throwsType,
 	)
 	// Note: constructors deliberately do NOT carry SelfParam. A

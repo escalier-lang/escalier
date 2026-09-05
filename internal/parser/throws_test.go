@@ -66,11 +66,35 @@ func TestParseThrowsClauseMissingType(t *testing.T) {
 	})
 }
 
-// A constructor accepts `throws` on either side of the `->` it may not declare. Writing
-// one on each side is a single error, the return type, and the body still parses: the
-// second clause is consumed and discarded, and the first is the one that survives.
+// A constructor accepts `throws` on either side of its `->`. Writing one on each side
+// parses: the second clause is consumed and discarded, and the first is the one that
+// survives.
 func TestParseThrowsClauseOnBothSidesOfConstructorArrow(t *testing.T) {
-	require.Equal(t,
-		[]string{"1:47-1:49: constructors cannot declare a return type"},
-		parseThrowsSrc(t, `class C { constructor(mut self) throws string -> number throws boolean { } }`))
+	src := `declare class C { constructor(mut self) throws string -> C throws boolean }`
+	require.Empty(t, parseThrowsSrc(t, src))
+
+	ctor := parseOneConstructor(t, src)
+	require.IsType(t, &ast.TypeRefTypeAnn{}, ctor.Fn.Return)
+	require.IsType(t, &ast.StringTypeAnn{}, ctor.Fn.Throws,
+		"the first clause is the one that survives")
+}
+
+// parseOneConstructor parses a source holding a single class declaration and returns
+// the one constructor in its body.
+func parseOneConstructor(t *testing.T, src string) *ast.ConstructorElem {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: src}
+	module, errs := ParseLibFiles(ctx, []*ast.Source{source})
+	require.Empty(t, errs)
+	ns, ok := module.Namespaces.Get("")
+	require.True(t, ok)
+	require.Len(t, ns.Decls, 1)
+	class, ok := ns.Decls[0].(*ast.ClassDecl)
+	require.True(t, ok)
+	require.Len(t, class.Body, 1)
+	ctor, ok := class.Body[0].(*ast.ConstructorElem)
+	require.True(t, ok)
+	return ctor
 }

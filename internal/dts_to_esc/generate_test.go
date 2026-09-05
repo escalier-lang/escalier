@@ -85,7 +85,7 @@ func TestGenerate_WritesTheTreeWithAHeader(t *testing.T) {
 export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean
 }
 

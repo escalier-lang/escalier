@@ -320,7 +320,7 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 		ctor := inBodyCtors[0]
 		var sigErrors []Error
 		ctorFuncType, ctorCtx, ctorParamBindings, sigErrors = c.inferConstructorSig(
-			declCtx, ctor, typeParams, classSelfRef, provenance,
+			declCtx, ctor, typeParams, classSelfRef, decl.Declare(), provenance,
 		)
 		errors = slices.Concat(errors, sigErrors)
 	} else {

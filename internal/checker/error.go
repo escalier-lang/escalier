@@ -1,6 +1,7 @@
 package checker
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -67,6 +68,7 @@ func (e MissingMutSelfParameterError) isError()             {}
 func (e MissingSelfReceiverError) isError()                 {}
 func (e MultipleConstructorsNotYetSupportedError) isError() {}
 func (e ConstructorWithReturnTypeError) isError()           {}
+func (e ConstructorReturnMustBeSelfError) isError()         {}
 func (e PrivateConstructorNotYetSupportedError) isError()   {}
 func (e FieldInitializerNotAllowedError) isError()          {}
 func (e StaticFieldMissingInitializerError) isError()       {}
@@ -129,6 +131,7 @@ func (e MissingMutSelfParameterError) IsWarning() bool             { return fals
 func (e MissingSelfReceiverError) IsWarning() bool                 { return false }
 func (e MultipleConstructorsNotYetSupportedError) IsWarning() bool { return false }
 func (e ConstructorWithReturnTypeError) IsWarning() bool           { return false }
+func (e ConstructorReturnMustBeSelfError) IsWarning() bool         { return false }
 func (e PrivateConstructorNotYetSupportedError) IsWarning() bool   { return false }
 func (e FieldInitializerNotAllowedError) IsWarning() bool          { return false }
 func (e StaticFieldMissingInitializerError) IsWarning() bool       { return false }
@@ -869,9 +872,11 @@ func (e MultipleConstructorsNotYetSupportedError) Message() string {
 	return "Multiple constructors per class are not yet supported."
 }
 
-// ConstructorWithReturnTypeError is reported when a user-written
-// constructor declares an explicit return type (the return type is
-// implicitly `Self`).
+// ConstructorWithReturnTypeError is reported for a return type written on the
+// constructor of a class the compiler emits. Such a class builds `Self`, and
+// codegen has nowhere to put a different return. A `declare class` may write
+// one to pin a type argument, which is what `.d.ts` construct signatures such
+// as `new (length?: number): Uint8Array<ArrayBuffer>` declare.
 type ConstructorWithReturnTypeError struct {
 	span ast.Span
 }
@@ -880,7 +885,23 @@ func (e ConstructorWithReturnTypeError) Span() ast.Span {
 	return e.span
 }
 func (e ConstructorWithReturnTypeError) Message() string {
-	return "Constructors cannot declare a return type; the return type is always `Self`."
+	return "Only a `declare class` constructor can declare a return type; every other constructor returns `Self`."
+}
+
+// ConstructorReturnMustBeSelfError is reported for a constructor return type
+// that names something other than the class it belongs to. A constructor may
+// pin its class's type arguments, as `Uint8Array<ArrayBuffer>` does on
+// `class Uint8Array<TArrayBuffer>`, but it always builds its own class.
+type ConstructorReturnMustBeSelfError struct {
+	Class string
+	span  ast.Span
+}
+
+func (e ConstructorReturnMustBeSelfError) Span() ast.Span {
+	return e.span
+}
+func (e ConstructorReturnMustBeSelfError) Message() string {
+	return fmt.Sprintf("A constructor of `%s` must return `%s`.", e.Class, e.Class)
 }
 
 type PrivateConstructorNotYetSupportedError struct {

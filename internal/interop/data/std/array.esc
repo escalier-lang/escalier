@@ -364,9 +364,9 @@ export declare class Array<T> {
      */
     static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: any) -> mut Array<U>,
     static readonly [Symbol.species]: ArrayConstructor,
-    constructor(mut self, arrayLength?: number),
-    constructor(mut self, arrayLength: number),
-    constructor(mut self, ...items: mut Array<T>),
+    constructor(mut self, arrayLength?: number) -> mut Array<any>,
+    constructor(mut self, arrayLength: number) -> mut Array<T>,
+    constructor(mut self, ...items: mut Array<T>) -> mut Array<T>,
     callable(arrayLength?: number) -> mut Array<any>,
     callable<T>(arrayLength: number) -> mut Array<T>,
     callable<T>(...items: mut Array<T>) -> mut Array<T>,

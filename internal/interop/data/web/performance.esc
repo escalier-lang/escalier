@@ -76,7 +76,7 @@ export declare class Performance extends EventTarget {
     removeEventListener<K: keyof PerformanceEventMap>(mut self, type: K, listener: fn (this: Performance, ev: PerformanceEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Performance,
-    constructor(mut self)
+    constructor(mut self) -> Performance
 }
 
 /**
@@ -97,7 +97,7 @@ export declare class PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEntry/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceEntry,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceEntry
 }
 
 /**
@@ -110,7 +110,7 @@ export declare class PerformanceMark extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMark/detail) */
     readonly detail: any,
     static prototype: PerformanceMark,
-    constructor(mut self, markName: string, markOptions?: PerformanceMarkOptions)
+    constructor(mut self, markName: string, markOptions?: PerformanceMarkOptions) -> PerformanceMark
 }
 
 /**
@@ -123,7 +123,7 @@ export declare class PerformanceMeasure extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceMeasure/detail) */
     readonly detail: any,
     static prototype: PerformanceMeasure,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceMeasure
 }
 
 /**
@@ -157,7 +157,7 @@ export declare class PerformanceNavigation {
     readonly TYPE_BACK_FORWARD: 2,
     readonly TYPE_RESERVED: 255,
     static prototype: PerformanceNavigation,
-    constructor(mut self),
+    constructor(mut self) -> PerformanceNavigation,
     static readonly TYPE_NAVIGATE: 0,
     static readonly TYPE_RELOAD: 1,
     static readonly TYPE_BACK_FORWARD: 2,
@@ -194,7 +194,7 @@ export declare class PerformanceNavigationTiming extends PerformanceResourceTimi
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceNavigationTiming/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceNavigationTiming,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceNavigationTiming
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver) */
@@ -207,7 +207,7 @@ export declare class PerformanceObserver {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/takeRecords) */
     takeRecords(mut self) -> PerformanceEntryList,
     static prototype: PerformanceObserver,
-    constructor(mut self, callback: PerformanceObserverCallback),
+    constructor(mut self, callback: PerformanceObserverCallback) -> PerformanceObserver,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/supportedEntryTypes_static) */
     static readonly supportedEntryTypes: Array<string>
 }
@@ -222,14 +222,14 @@ export declare class PerformanceObserverEntryList {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList/getEntriesByType) */
     getEntriesByType(self, type: string) -> PerformanceEntryList,
     static prototype: PerformanceObserverEntryList,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceObserverEntryList
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformancePaintTiming) */
 @js("PerformancePaintTiming")
 export declare class PerformancePaintTiming extends PerformanceEntry {
     static prototype: PerformancePaintTiming,
-    constructor(mut self)
+    constructor(mut self) -> PerformancePaintTiming
 }
 
 /**
@@ -280,7 +280,7 @@ export declare class PerformanceResourceTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceResourceTiming,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceResourceTiming
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming) */
@@ -295,7 +295,7 @@ export declare class PerformanceServerTiming {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceServerTiming/toJSON) */
     toJSON(self) -> any,
     static prototype: PerformanceServerTiming,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceServerTiming
 }
 
 /**
@@ -439,7 +439,7 @@ export declare class PerformanceTiming {
      */
     toJSON(self) -> any,
     static prototype: PerformanceTiming,
-    constructor(mut self)
+    constructor(mut self) -> PerformanceTiming
 }
 
 export declare interface PerformanceObserverCallback {

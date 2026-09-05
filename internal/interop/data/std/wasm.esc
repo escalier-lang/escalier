@@ -5,7 +5,7 @@
 @js("WebAssembly.CompileError")
 export declare class CompileError extends Error {
     static prototype: CompileError,
-    constructor(mut self, message?: string),
+    constructor(mut self, message?: string) -> CompileError,
     callable(message?: string) -> CompileError
 }
 
@@ -15,7 +15,7 @@ export declare class Global<T: ValueType = ValueType> {
     value: ValueTypeMap[T],
     valueOf(self) -> ValueTypeMap[T],
     static prototype: Global,
-    constructor(mut self, descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T])
+    constructor(mut self, descriptor: GlobalDescriptor<T>, v?: ValueTypeMap[T]) -> Global<T>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance) */
@@ -24,13 +24,13 @@ export declare class Instance {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Instance/exports) */
     readonly exports: Exports,
     static prototype: Instance,
-    constructor(mut self, module: Module, importObject?: Imports)
+    constructor(mut self, module: Module, importObject?: Imports) -> Instance
 }
 
 @js("WebAssembly.LinkError")
 export declare class LinkError extends Error {
     static prototype: LinkError,
-    constructor(mut self, message?: string),
+    constructor(mut self, message?: string) -> LinkError,
     callable(message?: string) -> LinkError
 }
 
@@ -42,14 +42,14 @@ export declare class Memory {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory/grow) */
     grow(mut self, delta: number) -> number,
     static prototype: Memory,
-    constructor(mut self, descriptor: MemoryDescriptor)
+    constructor(mut self, descriptor: MemoryDescriptor) -> Memory
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module) */
 @js("WebAssembly.Module")
 export declare class Module {
     static prototype: Module,
-    constructor(mut self, bytes: BufferSource),
+    constructor(mut self, bytes: BufferSource) -> Module,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
     static customSections(moduleObject: Module, sectionName: string) -> mut Array<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
@@ -61,7 +61,7 @@ export declare class Module {
 @js("WebAssembly.RuntimeError")
 export declare class RuntimeError extends Error {
     static prototype: RuntimeError,
-    constructor(mut self, message?: string),
+    constructor(mut self, message?: string) -> RuntimeError,
     callable(message?: string) -> RuntimeError
 }
 
@@ -77,7 +77,7 @@ export declare class Table {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/set) */
     set(mut self, index: number, value?: any) -> unknown,
     static prototype: Table,
-    constructor(mut self, descriptor: TableDescriptor, value?: any)
+    constructor(mut self, descriptor: TableDescriptor, value?: any) -> Table
 }
 
 export declare interface GlobalDescriptor<T: ValueType = ValueType> {

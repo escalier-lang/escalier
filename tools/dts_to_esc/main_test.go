@@ -46,7 +46,7 @@ func TestRun_SingleFileWritesEscToStdout(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, stdout.String(), snaps.Inline(`@js("Array")
 export declare class Array<T> {
     length: number,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean,
     static readonly prototype: Array<any>
 }
@@ -229,7 +229,7 @@ std/array.esc
 @js("Array")
 export declare class Array<T> {
     length: number,
-    constructor(mut self),
+    constructor(mut self) -> Array<T>,
     static isArray(arg: any) -> boolean,
     static readonly prototype: Array<any>
 }
