@@ -296,4 +296,4 @@ export declare type Omit<T, K: keyof any> = Pick<T, Exclude<keyof T, K>>
 /**
  * Exclude null and undefined from T
  */
-export declare type NonNullable<T> = T & {}
+export declare type NonNullable<T> = T & ~(undefined | null)
