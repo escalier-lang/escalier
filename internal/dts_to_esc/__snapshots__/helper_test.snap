@@ -738,6 +738,7 @@
 
 [TestConvertTypeAnn/empty_object - 1]
 &ast.ObjectTypeAnn{
+    Inexact: true,
     span: 0-2,
 }
 ---

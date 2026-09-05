@@ -1,0 +1,10 @@
+// TypeScript writes `NonNullable<T>` as `T & {}`, leaning on its own
+// reading of `{}` as any value except `null` and `undefined`. Escalier's
+// `{}` is the exact empty object, so the mechanical lowering computes
+// the wrong set: `NonNullable<string>` would come out empty rather than
+// `string`.
+//
+// The complement says it directly. `~(undefined | null)` admits every
+// value the union rejects, so the intersection subtracts exactly the two
+// members TypeScript means to exclude, primitives included.
+export declare type NonNullable<T> = T & ~(undefined | null)

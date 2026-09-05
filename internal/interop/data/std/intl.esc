@@ -815,6 +815,6 @@ export declare type NumberFormatOptionsStyle = keyof NumberFormatOptionsStyleReg
 
 export declare type NumberFormatOptionsCurrencyDisplay = keyof NumberFormatOptionsCurrencyDisplayRegistry
 
-export declare type NumberFormatOptionsUseGrouping = if {} : NumberFormatOptionsUseGroupingRegistry { boolean } else { keyof NumberFormatOptionsUseGroupingRegistry | "true" | "false" | boolean }
+export declare type NumberFormatOptionsUseGrouping = if {...} : NumberFormatOptionsUseGroupingRegistry { boolean } else { keyof NumberFormatOptionsUseGroupingRegistry | "true" | "false" | boolean }
 
-export declare type ResolvedNumberFormatOptionsUseGrouping = if {} : NumberFormatOptionsUseGroupingRegistry { boolean } else { keyof NumberFormatOptionsUseGroupingRegistry | false }
+export declare type ResolvedNumberFormatOptionsUseGrouping = if {...} : NumberFormatOptionsUseGroupingRegistry { boolean } else { keyof NumberFormatOptionsUseGroupingRegistry | false }

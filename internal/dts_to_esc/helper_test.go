@@ -1022,22 +1022,30 @@ func TestConvertTemplateLiteralType_RestoresEmptyQuasis(t *testing.T) {
 	}
 }
 
-// TestConvertTypeAnn_ObjectLowersToInexact pins the two object types
-// apart. TypeScript's `object` is any non-primitive, so it accepts an
-// object with any properties, and Escalier spells that `{...}`. Plain
-// `{}` is the exact empty object.
+// TestConvertTypeAnn_ObjectLowersToInexact covers the two spellings
+// TypeScript uses for "an object with any properties". `object` is any
+// non-primitive and `{}` is any value except `null` and `undefined`;
+// both accept an object carrying properties the annotation does not
+// name, which Escalier spells `{...}`.
 //
-// `ObjectConstructor` is where the difference shows: it declares
-// `keys(o: object)` and `keys(o: {})` as separate overloads, so one
-// spelling for both leaves it with a single signature.
+// Escalier's `{}` is the exact empty object, accepting one with no
+// properties at all, so it is what `Object.keys(o: {})` must not lower
+// to.
+//
+// The member count is read on the source rather than on the converted
+// elements. An object type whose only member is an index signature
+// converts to no elements, and it wants the key and value types back
+// rather than inexactness, so it stays exact and stays visibly wrong.
 func TestConvertTypeAnn_ObjectLowersToInexact(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		name, input, want string
 	}{
 		{"object is inexact", "object", "{...}"},
-		{"empty object type is exact", "{}", "{}"},
+		{"an empty object type is inexact too", "{}", "{...}"},
 		{"object in an intersection", "object & { x: number }", "{...} & {\n    x: number\n}"},
+		{"a named member keeps the type exact", "{ x: number }", "{\n    x: number\n}"},
+		{"an index signature alone stays exact", "{ [k: string]: number }", "{}"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
