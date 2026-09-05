@@ -1,0 +1,9 @@
+[
+  {
+    "decl": "Promise",
+    "member": "reject",
+    "kind": "method",
+    "static": true,
+    "digest": "21f5e5c510490abc"
+  }
+]

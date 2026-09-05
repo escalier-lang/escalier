@@ -1,0 +1,14 @@
+// `Promise.reject` builds a promise that rejects, so what it rejects
+// with is the type of the reason it is handed. The converted signature
+// writes `-> Promise<T>`, leaving the raise slot to its `never` default
+// and saying the promise never rejects — the opposite of what this
+// function does.
+//
+// `E` defaults to `undefined` rather than `never` because `reject()`
+// with no argument rejects with `undefined`. It shadows the class's own
+// `E`, as `T` already shadows the class's `T`: a static binds neither,
+// which is why the converter threads the raise parameter through
+// instance members alone.
+export declare class Promise<T, E = never> {
+    static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
+}

@@ -71,7 +71,7 @@ export declare class Promise<T, E = never> {
      * @param reason The reason the promise was rejected.
      * @returns A new rejected Promise.
      */
-    static reject<T = never>(reason?: any) -> Promise<T>,
+    static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
     /**
      * Creates a new resolved promise.
      * @returns A resolved promise.
