@@ -162,32 +162,23 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 	}
 }
 
-// renameTypeRefInPlace handles the subset of the rewrite that fits an
-// `extends` or `implements` clause, whose AST slot holds a
-// `*TypeRefTypeAnn` and nothing else. It only renames `ReadonlyFoo` →
-// `Foo`; it cannot wrap a mutable twin in `MutableTypeAnn`, because that
-// slot has no room for one. The TypeArgs are still walked recursively so
-// nested refs are rewritten.
+// renameTypeRefInPlace handles the rewrite inside an `extends` or
+// `implements` clause, whose AST slot holds a `*TypeRefTypeAnn` and
+// nothing else. It renames `ReadonlyFoo` → `Foo` and cannot wrap a
+// mutable twin in `MutableTypeAnn`, having no room for one. TypeArgs are
+// still walked, so nested refs are rewritten.
 //
-// A mutable twin name in one of these clauses is left alone, and it names
-// the whole definition rather than the immutable view of it. A
-// definition holds both `self` and `mut self` methods, and extending it
-// inherits all of them, so `interface RegExpMatchArray extends
-// Array<string>` gives `RegExpMatchArray` every `Array` member
-// including `push`. Whether a particular instance may call `push` is
-// then settled where that instance is bound, because `push` takes
-// `mut self`. Reading the bare name as the immutable view instead would
-// silently drop the mutating half of the inherited surface.
+// A mutable twin name here is left alone, naming the whole definition
+// rather than the immutable view of it. A definition holds both `self`
+// and `mut self` methods and extending it inherits all of them, so
+// `interface RegExpMatchArray extends Array<string>` gets every `Array`
+// member including `push`; whether a given instance may call it is
+// settled where that instance is bound. Reading the bare name as the
+// immutable view would drop the mutating half of the inherited surface.
 //
-// `mut` cannot be written here in any case: an `extends` or
-// `implements` clause is typed `*ast.TypeRefTypeAnn`, which carries no
-// wrapper. That the syntax has no room for a view is the same fact
-// stated from the grammar's side.
-//
-// Eight declarations in the pinned lib set take this shape:
-// `RegExpMatchArray`, `RegExpExecArray`, `RegExpIndicesArray`,
-// `FontFaceSet`, `CustomStateSet`, `Highlight`, `ViewTransitionTypeSet`,
-// and `HighlightRegistry`.
+// Eight declarations in the pinned lib set take this shape,
+// `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
+// them.
 func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)

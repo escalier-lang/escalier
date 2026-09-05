@@ -159,17 +159,16 @@ func PartitionLibWithOverlay(inputs []LibInput, overlay *Overlay) (*PartitionRes
 // by position, so decl's members and `extends` clause read against the
 // merged declaration's parameters.
 //
-// Merged declarations of one interface are free to name their parameters
-// differently. `lib.es2015.iterable.d.ts` declares `interface Iterator<T,
-// TReturn = any, TNext = any>` and `lib.esnext.iterator.d.ts` declares
-// `interface Iterator<T, TResult, TNext> extends
-// globalThis.IteratorObject<T, TResult, TNext>`. mergeDecls keeps the
-// first declaration's parameters, so appending the second's `extends`
-// clause unchanged leaves `TResult` naming nothing.
+// Merged declarations of one interface may name their parameters
+// differently, and mergeDecls keeps the first's: `Iterator<T, TReturn,
+// TNext>` in lib.es2015.iterable.d.ts against `Iterator<T, TResult,
+// TNext> extends globalThis.IteratorObject<T, TResult, TNext>` in
+// lib.esnext.iterator.d.ts, where appending that clause unchanged leaves
+// `TResult` naming nothing.
 //
-// A parameter the merged declaration does not have is left alone. Arity
-// is equal across every merged pair in the pinned corpus, and renaming
-// past the end would invent a binding rather than resolve one.
+// A parameter past keep's arity is left alone. Arity is equal across
+// every merged pair in the pinned corpus, and renaming past the end
+// would invent a binding rather than resolve one.
 func renameTypeParams(decl *dts_parser.InterfaceDecl, keep []*dts_parser.TypeParam) {
 	renames := map[string]string{}
 	for i, tp := range decl.TypeParams {
@@ -343,14 +342,12 @@ func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 // convertFusedBucket converts one already-fused bucket. `own` are the
 // twins this bucket declares and `all` are every twin in the tree.
 //
-// The two differ because a twin's declarations and the references to
-// them sit in different packages. `Array` and `ReadonlyArray` are both
-// declared in std:array, so only that bucket can merge their members
-// and flip a receiver. Every other package references the names without
-// declaring them: web:dom alone writes 119 of them. Rewriting against
-// `own` leaves those spelled the TypeScript way — a bare `Array<T>`
-// where Escalier means `mut Array<T>`, and a `ReadonlyArray<T>` that
-// names nothing the tree declares.
+// Merging members and flipping a receiver need both declarations, so
+// they read `own`. Respelling a reference does not, and the references
+// outnumber the declarations by packages: `Array` and `ReadonlyArray`
+// are declared in std:array alone, and web:dom writes 119 references to
+// them. Rewriting against `own` leaves every other package spelled the
+// TypeScript way.
 func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,
