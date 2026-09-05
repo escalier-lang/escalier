@@ -130,7 +130,8 @@ const (
 func followsAName(tokenType TokenType) bool {
 	// nolint: exhaustive
 	switch tokenType {
-	case OpenParen, CloseParen, LessThan, Colon, Question, Comma, CloseBrace, Equal:
+	case OpenParen, CloseParen, LessThan, Colon, Question, QuestionOpenParen,
+		Comma, CloseBrace, Equal:
 		return true
 	default:
 		return false

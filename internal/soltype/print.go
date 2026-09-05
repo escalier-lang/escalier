@@ -1135,9 +1135,13 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		}
 		return ro + printObjectKeyName(e.Name) + opt + ": " + p.printType(e.Type)
 	case *MethodElem:
+		opt := ""
+		if e.Optional {
+			opt = "?"
+		}
 		arms := make([]string, len(e.Signatures))
 		for i, sig := range e.Signatures {
-			arms[i] = printObjectKeyName(e.Name) + p.printFuncTail(sig)
+			arms[i] = printObjectKeyName(e.Name) + opt + p.printFuncTail(sig)
 		}
 		return strings.Join(arms, "; ")
 	case *GetterElem:

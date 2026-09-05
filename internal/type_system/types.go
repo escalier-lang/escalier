@@ -1065,6 +1065,10 @@ type ConstructorElem struct{ Fn *FuncType }
 type MethodElem struct {
 	Name       ObjTypeKey
 	Signatures []*FuncType
+	// Optional records the `?` in `m?(x: T) -> T`. An object type with an
+	// optional method is a supertype of one that omits the member, the
+	// same rule PropertyElem.Optional carries.
+	Optional bool
 }
 
 // SingleSig returns the sole signature for a method that is
@@ -1152,7 +1156,7 @@ type PropertyElem struct {
 }
 
 func NewMethodElem(name ObjTypeKey, fn *FuncType) *MethodElem {
-	return &MethodElem{Name: name, Signatures: []*FuncType{fn}}
+	return &MethodElem{Name: name, Signatures: []*FuncType{fn}, Optional: false}
 }
 func NewGetterElem(name ObjTypeKey, fn *FuncType) *GetterElem {
 	return &GetterElem{Name: name, Fn: fn}

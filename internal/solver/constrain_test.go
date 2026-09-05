@@ -754,6 +754,11 @@ func TestConstrainObjectMethodMembers(t *testing.T) {
 			Params: []*soltype.FuncParam{identParam("a", param)}, Ret: ret,
 		}}}
 	}
+	optMethod := func(name string, param, ret soltype.Type) *soltype.MethodElem {
+		m := method(name, param, ret)
+		m.Optional = true
+		return m
+	}
 	tests := []struct {
 		name       string
 		sub, super soltype.Type
@@ -763,6 +768,37 @@ func TestConstrainObjectMethodMembers(t *testing.T) {
 			name:  "identical method members",
 			sub:   exactObj(method("m", num(), num())),
 			super: exactObj(method("m", num(), num())),
+		},
+		// MethodElem.Optional is part of the object shape the same way
+		// PropertyElem.Optional is, so the four presence cases mirror the
+		// property ones in TestConstrainObject.
+		{
+			// {} <: {m?(a: number) -> number}
+			name:  "absent source satisfies optional target method",
+			sub:   exactObj(),
+			super: exactObj(optMethod("m", num(), num())),
+		},
+		{
+			// {m?(…)} <: {m(…)}: the source may omit m, so it cannot fill a
+			// required method.
+			name:  "optional source method rejected by required target",
+			sub:   exactObj(optMethod("m", num(), num())),
+			super: exactObj(method("m", num(), num())),
+			want:  []string{"object property is optional but required: m"},
+		},
+		{
+			// {m(…)} <: {m?(…)}: a required method fills an optional one.
+			name:  "required source method fills optional target",
+			sub:   exactObj(method("m", num(), num())),
+			super: exactObj(optMethod("m", num(), num())),
+		},
+		{
+			// Optional on both sides still recurses into the signature, so an
+			// incompatible return is caught.
+			name:  "optional on both sides depth mismatch",
+			sub:   exactObj(optMethod("m", num(), str())),
+			super: exactObj(optMethod("m", num(), num())),
+			want:  []string{"cannot constrain string <: number"},
 		},
 		{
 			// A method's return is covariant, read through its callable value.

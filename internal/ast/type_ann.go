@@ -266,8 +266,11 @@ func NewConstructorTypeAnn(fn *FuncTypeAnn, span Span) *ConstructorTypeAnn {
 
 type MethodTypeAnn struct {
 	declDoc
-	Name     ObjKey
-	Fn       *FuncTypeAnn
+	Name ObjKey
+	Fn   *FuncTypeAnn
+	// Optional records the `?` in `m?(x: T) -> T`, which says an object
+	// satisfying this type need not carry the method at all.
+	Optional bool
 	Receiver *MethodReceiver // nil if no receiver
 	elemSpan
 	commentSlots
@@ -278,6 +281,7 @@ func NewMethodTypeAnn(name ObjKey, fn *FuncTypeAnn, receiver *MethodReceiver, sp
 		declDoc:      declDoc{},
 		Name:         name,
 		Fn:           fn,
+		Optional:     false,
 		Receiver:     receiver,
 		elemSpan:     elemSpan{span: span},
 		commentSlots: commentSlots{},

@@ -561,3 +561,57 @@ func TestObjTypeAnnElemSpans(t *testing.T) {
 		})
 	}
 }
+
+// TestParseOptionalMethodTypeAnn covers the `?` on a method member. The
+// marker reads the same on a property and on a method, so what follows
+// it decides which one is being written, and `?(` arrives as one token
+// because it is also the optional-call operator.
+//
+// A keyword-named member is here because that token drives two rules.
+// `get?(…)` names a method `get` rather than opening an accessor, and
+// `return?(…)` names a method at all, both because `?(` is something
+// that follows a name.
+func TestParseOptionalMethodTypeAnn(t *testing.T) {
+	t.Parallel()
+	// Each case is one member. The printer writes an object type over
+	// several lines, so the expected output is built from the member
+	// rather than repeated.
+	members := map[string]string{
+		"optional method":            "m?(x: number) -> string",
+		"required method":            "m(x: number) -> string",
+		"optional property":          "m?: fn (x: number) -> string",
+		"optional method with self":  "m?(self, x: number) -> string",
+		"no parameters":              "m?() -> string",
+		"named get":                  "get?(x: number) -> string",
+		"named set":                  "set?(x: number) -> string",
+		"keyword name":               "return?(x: number) -> string",
+		"accessor is still accessor": "get m(self) -> string",
+	}
+	for name, member := range members {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{Path: "test.esc", Contents: "{" + member + "}"}
+			p := NewParser(context.Background(), source)
+			typeAnn := p.typeAnn()
+			require.Empty(t, p.errors)
+			require.NotNil(t, typeAnn)
+
+			printed, err := printer.Print(typeAnn, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, "{\n    "+member+"\n}", printed)
+		})
+	}
+}
+
+// TestParseOptionalMethodTypeAnn_GenericIsNotSupported pins the one form
+// the grammar leaves out. TypeScript writes `m?<T>(x: T): T`, where the
+// type parameters follow the marker. `?<` is two tokens rather than the
+// single `?(`, so the member reads as a property and fails on the
+// missing `:`. No declaration in the pinned TypeScript lib set writes it.
+func TestParseOptionalMethodTypeAnn_GenericIsNotSupported(t *testing.T) {
+	t.Parallel()
+	source := &ast.Source{Path: "test.esc", Contents: "{m?<T>(x: T) -> T}"}
+	p := NewParser(context.Background(), source)
+	p.typeAnn()
+	require.NotEmpty(t, p.errors)
+}

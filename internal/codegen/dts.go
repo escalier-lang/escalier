@@ -892,8 +892,9 @@ func (b *Builder) buildObjTypeAnnElems(elem type_sys.ObjTypeElem, symbolExprMap 
 		out := make([]ObjTypeAnnElem, len(me.Signatures))
 		for i, fn := range me.Signatures {
 			out[i] = &MethodTypeAnn{
-				Name: b.buildTypeAnnObjKey(me.Name, symbolExprMap),
-				Fn:   b.buildFuncTypeAnn(fn),
+				Name:     b.buildTypeAnnObjKey(me.Name, symbolExprMap),
+				Fn:       b.buildFuncTypeAnn(fn),
+				Optional: me.Optional,
 			}
 		}
 		return out
@@ -920,8 +921,9 @@ func (b *Builder) buildObjTypeAnnElem(elem type_sys.ObjTypeElem, symbolExprMap m
 		// so the plural builder owns the fan-out and this case only
 		// sees the degenerate single-arm shape.
 		return &MethodTypeAnn{
-			Name: b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
-			Fn:   b.buildFuncTypeAnn(elem.Signatures[0]),
+			Name:     b.buildTypeAnnObjKey(elem.Name, symbolExprMap),
+			Fn:       b.buildFuncTypeAnn(elem.Signatures[0]),
+			Optional: elem.Optional,
 		}
 	case *type_sys.GetterElem:
 		return &GetterTypeAnn{
@@ -993,8 +995,9 @@ func (b *Builder) buildObjTypeAnnElemFromAST(elem ast.ObjTypeAnnElem) ObjTypeAnn
 		}
 	case *ast.MethodTypeAnn:
 		return &MethodTypeAnn{
-			Name: b.buildTypeAnnObjKeyFromAST(elem.Name),
-			Fn:   *b.buildFuncTypeAnnFromAST(elem.Fn),
+			Name:     b.buildTypeAnnObjKeyFromAST(elem.Name),
+			Fn:       *b.buildFuncTypeAnnFromAST(elem.Fn),
+			Optional: elem.Optional,
 		}
 	case *ast.GetterTypeAnn:
 		return &GetterTypeAnn{

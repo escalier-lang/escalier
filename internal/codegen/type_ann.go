@@ -199,6 +199,9 @@ type ConstructorTypeAnn struct{ Fn FuncTypeAnn }
 type MethodTypeAnn struct {
 	Name ObjKey
 	Fn   FuncTypeAnn
+	// Optional is the `?` of `m?(x: T): T`, which TypeScript writes
+	// between the name and the parameter list.
+	Optional bool
 }
 type GetterTypeAnn struct {
 	Name ObjKey

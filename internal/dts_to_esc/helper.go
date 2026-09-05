@@ -229,9 +229,11 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature type parameter: %w", err)
 			}
 		}
-		// An optional method is emitted below as a property holding a
-		// function type, which is a value whoever implements the
-		// interface writes. Its parameters read like a callback's.
+		// An optional method is one whoever implements the interface may
+		// supply, which makes it a body the caller writes rather than the
+		// runtime. Its parameters read like a callback's, so a `any`
+		// stays: widening `thisArg` on a ProxyHandler trap would make
+		// every handler narrow before touching the value.
 		convert := convertParam
 		if m.Optional {
 			convert = convertCallbackParam
@@ -253,23 +255,8 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
 		}
-		if m.Optional {
-			// Escalier has no optional method syntax: `foo?(): T` does
-			// not parse. An optional property holding a function type
-			// says the same thing and does parse, so `apply?(t: T): any`
-			// becomes `apply?: fn (t: T) -> any`. Dropping the marker
-			// instead would make every ProxyHandler trap required, and
-			// a handler is meant to supply the traps it wants.
-			//
-			// Nothing is lost to the shape change. A method signature
-			// can be overloaded where a property cannot, and none of the
-			// 22 optional methods in the pinned lib set is: the repeated
-			// names sit in different interfaces.
-			prop := ast.NewPropertyTypeAnn(name, true, false, fn, m.Span())
-			prop.SetDoc(m.Doc())
-			return prop, nil
-		}
 		elem := ast.NewMethodTypeAnn(name, fn, nil, m.Span())
+		elem.Optional = m.Optional
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.PropertySignature:

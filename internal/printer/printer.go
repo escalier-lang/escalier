@@ -1574,6 +1574,11 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 		p.printFuncTypeAnnTail(e.Fn)
 	case *ast.MethodTypeAnn:
 		p.printObjKey(e.Name)
+		if e.Optional {
+			// Before the type parameters, which is where the parser reads
+			// it back from.
+			p.writeString("?")
+		}
 		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
 		p.printAnnMemberParams(annMemberReceiver(e.Receiver, ""), e.Fn.Params)
 		p.printReturnAndThrows(e.Fn.Return, e.Fn.Throws)

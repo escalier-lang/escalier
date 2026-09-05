@@ -1016,7 +1016,7 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	// (the OpenParen branch). Properties — `p: T`, `p?: T`, or the
 	// recovery branches that build a PropertyTypeAnn with no value —
 	// can't carry them, so flag rather than silently dropping.
-	if token.Type != OpenParen {
+	if token.Type != OpenParen && token.Type != QuestionOpenParen {
 		for _, lp := range lifetimeParams {
 			p.reportError(lp.Span(),
 				"lifetime parameters are not supported in this context")
@@ -1032,6 +1032,10 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	recoveryNever := func(span ast.Span) ast.TypeAnn {
 		return ast.NewNeverTypeAnn(span)
 	}
+
+	// Set by the Question case when the marker turns out to sit on a
+	// method rather than a property, and read where the method is built.
+	optional := false
 
 	// nolint: exhaustive
 	switch token.Type {
@@ -1055,12 +1059,25 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		value := p.typeAnnRequired()
 		return ast.NewPropertyTypeAnn(objKey, false, readonly, value, p.elemSpanFrom(start))
 	case Question:
+		// A plain `?` here belongs to a property. An optional method
+		// arrives as QuestionOpenParen below, since `?(` is one token.
+		//
+		// A generic optional method, `m?<T>(x: T) -> T`, does not parse:
+		// `?<` is two tokens, so it reaches this case and fails on the
+		// missing `:`. TypeScript allows the form and the pinned lib set
+		// writes none, so the grammar leaves it out.
 		p.lexer.consume() // consume '?'
 		p.expect(Colon, ConsumeOnMatch)
 		value := p.typeAnnRequired()
 		return ast.NewPropertyTypeAnn(objKey, true, readonly, value, p.elemSpanFrom(start))
+	case QuestionOpenParen:
+		// `m?(…)` arrives as one token, since `?(` is also the optional-call
+		// operator. In a member position it marks the method optional, and
+		// the case below consumes the token for either spelling.
+		optional = true
+		fallthrough
 	case OpenParen:
-		p.lexer.consume() // consume '('
+		p.lexer.consume() // consume '(' or '?('
 
 		// Methods, getters, and setters all accept a leading `self` /
 		// `mut self` receiver (optionally with a lifetime: `'a self` /
@@ -1115,7 +1132,9 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		case "set":
 			return ast.NewSetterTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
 		default:
-			return ast.NewMethodTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
+			elem := ast.NewMethodTypeAnn(objKey, fnTypeAnn, receiver, p.elemSpanFrom(start))
+			elem.Optional = optional
+			return elem
 		}
 	default:
 		// Report error for invalid property syntax instead of panicking
