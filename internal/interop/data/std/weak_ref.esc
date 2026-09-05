@@ -50,7 +50,7 @@ export declare class FinalizationRegistry<T> {
 
 export declare interface WeakKeyTypes {
     symbol: symbol,
-    object: {}
+    object: {...}
 }
 
 export declare type WeakKey = WeakKeyTypes[keyof WeakKeyTypes]

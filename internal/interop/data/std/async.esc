@@ -249,6 +249,6 @@ export declare interface PromiseLike<T, E = never> {
 /**
  * Recursively unwraps the "awaited type" of a type. Non-promise "thenables" should resolve to `never`. This emulates the behavior of `await`.
  */
-export declare type Awaited<T> = if T : null | undefined { T } else { if T : {} & {
+export declare type Awaited<T> = if T : null | undefined { T } else { if T : {...} & {
     then(onfulfilled: infer F, ...args: infer _) -> any
 } { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }

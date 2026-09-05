@@ -325,7 +325,17 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		case dts_parser.PrimUniqueSymbol:
 			return ast.NewUniqueSymbolTypeAnn(span), nil
 		case dts_parser.PrimObject:
-			return ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{}, span), nil
+			// `object` is TypeScript's "any non-primitive", so it accepts
+			// an object with any properties. Escalier spells that `{...}`,
+			// an inexact object type. Plain `{}` is the exact empty
+			// object, which accepts one with no properties at all.
+			//
+			// The distinction is load-bearing. `ObjectConstructor`
+			// declares `keys(o: object)` and `keys(o: {})` as separate
+			// overloads, and only one spelling keeps them apart.
+			obj := ast.NewObjectTypeAnn([]ast.ObjTypeAnnElem{}, span)
+			obj.Inexact = true
+			return obj, nil
 		case dts_parser.PrimIntrinsic:
 			return ast.NewIntrinsicTypeAnn(span), nil
 		default:
