@@ -1130,16 +1130,14 @@ declare var Array: ArrayConstructor;
 }
 
 // A constructor interface with a call signature and no `new` describes
-// something callable and not constructible. fuseTrio has no class elem
-// for a call signature, so the fused class could be neither called nor
-// constructed. The trio passes through instead, keeping the call
-// signature on the interface, until #1412 gives a class somewhere to
-// hold one.
+// something callable and not constructible. The fused class carries the call
+// signature as `callable` and no `constructor`, which is what makes
+// `Symbol("x")` typed and `new Symbol()` unrepresentable.
 //
 // `SymbolConstructor` below is verbatim from lib.es2015.symbol.d.ts.
 // `BigIntConstructor` is the same shape and the only other one in the
 // pinned lib set.
-func TestStandalone_TrioNotFusedWhenTheConstructorIsOnlyCallable(t *testing.T) {
+func TestStandalone_CallableConstructorFusesWithACallSignature(t *testing.T) {
 	const slice = `
 interface Symbol {
     toString(): string;
@@ -1153,27 +1151,16 @@ interface SymbolConstructor {
 
 declare var Symbol: SymbolConstructor;
 `
-	astModule, printed := convertSlice(t, slice)
-	rootNS, ok := astModule.Module.Namespaces.Get("")
-	require.True(t, ok, "root namespace exists")
+	_, printed := convertSlice(t, slice)
 
-	var classes, interfaces, vars int
-	for _, d := range rootNS.Decls {
-		switch d.(type) {
-		case *ast.ClassDecl:
-			classes++
-		case *ast.InterfaceDecl:
-			interfaces++
-		case *ast.VarDecl:
-			vars++
-		}
-	}
-	require.Equal(t, 0, classes, "no class synthesized")
-	require.Equal(t, 2, interfaces, "both interfaces survive")
-	require.Equal(t, 1, vars, "the binding survives")
-
-	require.Contains(t, printed, "fn (description?: string | number) -> symbol",
-		"the call signature survives, which is the whole point of holding back")
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Symbol")
+export declare class Symbol {
+    toString(self) -> string,
+    static readonly prototype: Symbol,
+    callable(description?: string | number) -> symbol,
+    static for(key: string) -> symbol
+}
+`))
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
 		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
@@ -1181,7 +1168,38 @@ declare var Symbol: SymbolConstructor;
 	require.NotEmpty(t, parsedDecls)
 }
 
-// ConvertToStandaloneModule converts every declaration a file holds,
+// A call signature on the instance side says instances are callable, which is
+// not a shape a class has: `callable` describes the class value, and no class
+// elem describes an instance being called. Fusing would have to drop it, so the
+// converter refuses.
+//
+// 67 interfaces in the pinned lib set carry a call signature and none of them is
+// the instance side of a trio, so the input below is written by hand and the
+// error names a `.d.ts` the converter has not seen.
+func TestStandalone_InstanceCallSignatureIsRejected(t *testing.T) {
+	const slice = `
+interface Handler {
+    (event: string): void;
+    name: string;
+}
+
+interface HandlerConstructor {
+    new (): Handler;
+}
+
+declare var Handler: HandlerConstructor;
+`
+	source := &ast.Source{Path: "test.d.ts", Contents: slice, ID: 0}
+	dtsModule, parseErrs := dts_parser.NewDtsParser(source).ParseModule()
+	require.Empty(t, parseErrs, "dts parse errors")
+
+	_, err := ConvertToStandaloneModule(dtsModule)
+	require.EqualError(t, err,
+		"fusing trio for Handler: trio Handler: the instance side declares a call "+
+			"signature, which says an instance is callable; no class elem expresses that")
+}
+
+// ConvertToStandaloneModule converts every declaration a file holds,// ConvertToStandaloneModule converts every declaration a file holds,
 // with each `declare global { ... }` block lifted so its contents are
 // converted as if written beside it. Whether those declarations are
 // actually global is a question only the global tree asks, and

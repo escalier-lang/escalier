@@ -722,6 +722,16 @@ func (c *Checker) InferComponent(
 								type_system.NewSetterElem(*key, funcType),
 							)
 						}
+					case *ast.CallableElem:
+						// A call signature makes the class value itself callable,
+						// so it joins the static object type rather than the
+						// instance type. Only a `declare class` body produces one:
+						// the parser reads `callable` as an ordinary member name
+						// everywhere else.
+						fnType, _, _, sigErrors := c.inferFuncSig(
+							declCtx, &elem.Fn.FuncSig, elem.Fn, nil)
+						errors = slices.Concat(errors, sigErrors)
+						staticElems = append(staticElems, &type_system.CallableElem{Fn: fnType})
 					case *ast.ConstructorElem:
 						// Constructors are not class-instance members and so
 						// do not contribute to `objTypeElems`. The callable
@@ -828,8 +838,19 @@ func (c *Checker) InferComponent(
 				// Create an object type with a constructor element and static methods/properties
 				mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
 				errors = slices.Concat(errors, staticMergeErrors)
-				constructorElem := &type_system.ConstructorElem{Fn: funcType}
-				classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+				// A `declare class` describes a binding some other code supplies, and
+				// its constructor is whatever it writes down. One that declares no
+				// `constructor` is not constructible: `Symbol` and `BigInt` fuse to
+				// that shape because the specification forbids `new` on them, and
+				// Escalier spells construction as a call, so an implicit zero-arg
+				// constructor would both make `Symbol()` legal and shadow the class's
+				// own `callable` call signature. A class the compiler emits always
+				// gets one, synthesised above when the body omits it.
+				var classObjTypeElems []type_system.ObjTypeElem
+				if len(inBodyCtors) > 0 || !decl.Declare() {
+					classObjTypeElems = append(classObjTypeElems,
+						&type_system.ConstructorElem{Fn: funcType})
+				}
 				classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 
 				classObjType := type_system.NewObjectType(provenance, classObjTypeElems)

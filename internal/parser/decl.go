@@ -612,7 +612,9 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 	}
 	p.lexer.consume()
 
-	body := parseDelimSeq(p, CloseBrace, Comma, p.parseClassElem)
+	body := parseDelimSeq(p, CloseBrace, Comma, func() ast.ClassElem {
+		return p.parseClassElem(declare)
+	})
 	p.expect(CloseBrace, AlwaysConsume)
 
 	end := p.lexer.currentLoc()
@@ -770,7 +772,7 @@ func (p *Parser) parseConstructorElem(
 // and attaches any leading JSDoc block comment to the resulting elem's
 // Doc field. Non-JSDoc comments (line comments, plain block comments)
 // are still consumed but do not populate Doc.
-func (p *Parser) parseClassElem() ast.ClassElem {
+func (p *Parser) parseClassElem(declare bool) ast.ClassElem {
 	doc := p.consumeLeadingDoc()
 	// After consuming a leading JSDoc, if we're sitting on the class
 	// body's closing brace, there's no elem to attach the doc to.
@@ -783,12 +785,37 @@ func (p *Parser) parseClassElem() ast.ClassElem {
 		}
 		return nil
 	}
-	elem := p.parseClassElemInner()
+	elem := p.parseClassElemInner(declare)
 	attachDoc(elem, doc)
 	return elem
 }
 
-func (p *Parser) parseClassElemInner() ast.ClassElem {
+// callableSigName is the member name a `declare class` reads as its call
+// signature. It is a contextual keyword, the way `constructor` is: a member that
+// writes a receiver, carries a modifier, or spells the name with a string key
+// keeps it as an ordinary name.
+const callableSigName = "callable"
+
+// isCallableSig reports whether a parsed class member is the call signature
+// rather than a method named `callable`. See the call site for the rule.
+func isCallableSig(
+	declare bool,
+	name ast.ObjKey,
+	receiver *ast.MethodReceiver,
+	body *ast.Block,
+	isStatic, isAsync, isGen, isPrivate, isReadonly bool,
+) bool {
+	if !declare || receiver != nil || body != nil {
+		return false
+	}
+	if isStatic || isAsync || isGen || isPrivate || isReadonly {
+		return false
+	}
+	ident, ok := name.(*ast.IdentExpr)
+	return ok && ident.Name == callableSigName
+}
+
+func (p *Parser) parseClassElemInner(declare bool) ast.ClassElem {
 	token := p.lexer.peek()
 
 	isStatic := false
@@ -1036,6 +1063,20 @@ modifiers_done:
 		span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 		fn := ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, isAsync, body, span)
 		fn.Gen = isGen
+
+		// `callable(x: number) -> string` is the call signature that makes the class
+		// value callable, the member an object type writes as `fn (x: number) -> T`.
+		// It claims the one shape a member cannot otherwise take: an instance method
+		// declares `self` and a static carries `static`, so a member with neither is
+		// no member at all. A method of that name keeps it by writing its receiver.
+		//
+		// Only a `declare class` reads the name this way. A class the compiler emits
+		// is not callable, and a `callable` method ported into one would otherwise
+		// have to be spelled around.
+		if isCallableSig(declare, name, receiver, body, isStatic, isAsync, isGen, isPrivate, isReadonly) {
+			return &ast.CallableElem{Fn: fn, Span_: span}
+		}
+
 		return &ast.MethodElem{
 			Name:     name,
 			Fn:       fn,

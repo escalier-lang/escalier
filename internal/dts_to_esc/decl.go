@@ -387,7 +387,9 @@ func addRaiseParamToClass(
 
 // classElemIsStatic reports whether elem belongs to the class rather
 // than to an instance of it. A constructor is neither: it runs before
-// there is an instance, and it binds no instance type parameter.
+// there is an instance, and it binds no instance type parameter. A call
+// signature describes the class value being called, so it is not an
+// instance member either.
 func classElemIsStatic(elem ast.ClassElem) bool {
 	switch e := elem.(type) {
 	case *ast.FieldElem:
@@ -399,6 +401,8 @@ func classElemIsStatic(elem ast.ClassElem) bool {
 	case *ast.SetterElem:
 		return e.Static
 	case *ast.ConstructorElem:
+		return true
+	case *ast.CallableElem:
 		return true
 	}
 	return false

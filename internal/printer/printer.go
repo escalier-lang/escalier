@@ -477,6 +477,11 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 			p.space()
 			p.printBlock(e.Fn.Body)
 		}
+	case *ast.CallableElem:
+		// No receiver, which is what tells the call signature from a method of the
+		// same name. printMethodSig leaves the parameter list empty of one.
+		p.writeString("callable")
+		p.printMethodSig(&e.Fn.FuncSig, nil)
 	}
 }
 

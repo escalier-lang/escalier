@@ -223,14 +223,6 @@ type trioTable struct {
 // already written the long way. Recognition was the only place the two
 // spellings had to be told apart.
 //
-// One shape is held back, and for a reason that is about the class
-// form rather than about recognition. A constructor interface with a
-// call signature and no `new` describes something callable and not
-// constructible, and fuseTrio has no class elem for a call signature,
-// so the fused class could be neither called nor constructed.
-// `SymbolConstructor` and `BigIntConstructor` are the two, and the
-// guard comes out when #1412 gives a class somewhere to hold one.
-//
 // This matches tryFuseTrio in internal/interop/class_shapes.go, which
 // has never gated on a construct signature.
 //
@@ -274,24 +266,6 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		}
 		ctorMembers, ctorName, ok := constructorSide(name, v, interfaces)
 		if !ok {
-			continue
-		}
-		// A constructor side whose only callable form is a call
-		// signature would lose it: fuseTrio has no class elem to put
-		// one on, so the fused class could be neither called nor
-		// constructed. `SymbolConstructor` and `BigIntConstructor` are
-		// the two, and the specification forbids `new` on both, so the
-		// call signature is the only way to make one. They stay
-		// interfaces until #1412 gives a class somewhere to hold it.
-		//
-		// This reaches only the named form. An inline constructor side
-		// is required to carry a `new`, so it never has a call
-		// signature as its only callable form. One that has both still
-		// loses the call — `CompileError`, `LinkError` and
-		// `RuntimeError` in `lib.dom.d.ts` are the three — which is
-		// the same loss the 19 named trios that already fuse take, and
-		// #1412 covers all of them together.
-		if hasCallSignature(ctorMembers) && !hasConstructSignature(ctorMembers) {
 			continue
 		}
 
@@ -372,18 +346,6 @@ func ctorsReturning(members []dts_parser.InterfaceMember, instanceName string) b
 		found = true
 	}
 	return found
-}
-
-// hasCallSignature reports whether members holds at least one bare
-// `(...)` member, the form that makes `Symbol("x")` a call rather than
-// a construction.
-func hasCallSignature(members []dts_parser.InterfaceMember) bool {
-	for _, m := range members {
-		if _, ok := m.(*dts_parser.CallSignature); ok {
-			return true
-		}
-	}
-	return false
 }
 
 // hasConstructSignature reports whether members holds at least one
@@ -1120,10 +1082,11 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //   - GetterSignature   → GetterElem
 //   - SetterSignature   → SetterElem
 //   - ConstructSignature (static side only) → ConstructorElem
-//   - CallSignature (static side: bare-call form like `Boolean(x)`) and
-//     IndexSignature are skipped for the MVP — they have no direct class-
-//     elem mapping. §6 may revisit (e.g. lower the bare-call form into a
-//     static factory).
+//   - CallSignature (static side) → CallableElem. On the instance side it says
+//     instances are callable, which no class elem expresses, so the conversion
+//     fails rather than dropping it.
+//   - IndexSignature is skipped. `ast` has no node for one, so an interface
+//     loses it too; #1464 covers giving it somewhere to go.
 func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 	className := info.instance.Name.Name
 	typeParams, err := convertTypeParams(info.instance.TypeParams)
@@ -1204,8 +1167,8 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 
 // interfaceMemberToClassElem converts an interface member to a class elem,
 // keying the static flag off the caller (instance side vs constructor side
-// of the trio). Returns (nil, nil) for member kinds with no class-elem
-// representation (CallSignature, IndexSignature).
+// of the trio). Returns (nil, nil) for an IndexSignature, which no class elem
+// holds, and for a ConstructSignature, which the caller reads itself.
 //
 // owner is the name of the class being fused, which the receiver
 // classification reads for the owner-wide tiers. See ReceiverMutates.
@@ -1326,9 +1289,57 @@ func interfaceMemberToClassElem(
 		elem.SetDoc(doc)
 		return elem, nil
 
-	case *dts_parser.CallSignature, *dts_parser.IndexSignature, *dts_parser.ConstructSignature:
-		// Skip — no direct class-elem mapping in the MVP. ConstructSignature
-		// is handled by the caller for the static side.
+	case *dts_parser.CallSignature:
+		// A call signature on the constructor side says the binding can be called
+		// without `new`, which is what `Number("1")` and `Symbol("x")` do. It lands
+		// on the class as its `callable` member.
+		//
+		// On the instance side it says instances are callable, which is not a shape
+		// a class has: `callable` describes the class value, and no class elem
+		// describes an instance being called. Fusing would have to drop it, so the
+		// converter refuses instead. 67 interfaces in the pinned lib set carry a
+		// call signature and none of them is the instance side of a trio, so this
+		// reports a `.d.ts` the converter has not seen rather than a shape it is
+		// choosing not to handle.
+		if !static {
+			return nil, fmt.Errorf(
+				"trio %s: the instance side declares a call signature, which says "+
+					"an instance is callable; no class elem expresses that", owner)
+		}
+		typeParams, err := convertTypeParams(m.TypeParams)
+		if err != nil {
+			return nil, fmt.Errorf("call signature: type params: %w", err)
+		}
+		params, err := convertParams(m.Params)
+		if err != nil {
+			return nil, fmt.Errorf("call signature: params: %w", err)
+		}
+		var ret ast.TypeAnn
+		if m.ReturnType != nil {
+			ret, err = convertReturnTypeAnn(m.ReturnType)
+			if err != nil {
+				return nil, fmt.Errorf("call signature: return: %w", err)
+			}
+		}
+		span := convertSpan(m.Span())
+		elem := &ast.CallableElem{
+			Fn:    ast.NewFuncExpr(nil, typeParams, params, ret, nil, false, nil, span),
+			Span_: span,
+		}
+		elem.SetDoc(doc)
+		return elem, nil
+
+	case *dts_parser.IndexSignature:
+		// Skipped, and unlike a call signature this one is a real loss: 51 fused
+		// classes declare an index signature, `Array`, `String` and every typed
+		// array among them, so `arr[0]` reaches the tree with no declared type.
+		// It is not a fusion problem to fix here. `ast` has no index-signature
+		// node at all, so an interface loses one too, and nothing in the emitted
+		// tree carries one. #1464 covers giving it somewhere to go.
+		return nil, nil
+
+	case *dts_parser.ConstructSignature:
+		// Handled by the caller for the static side.
 		return nil, nil
 
 	default:
