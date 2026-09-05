@@ -13,7 +13,7 @@ export declare class ReadableStream<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
-    cancel(mut self, reason?: any) -> Promise<undefined>,
+    cancel(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
     getReader(self, options: {
         mode: "byob"
@@ -200,7 +200,7 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue) */
     enqueue(mut self, chunk: ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
-    error(mut self, e?: any) -> unknown,
+    error(mut self, e?: unknown) -> unknown,
     static prototype: ReadableByteStreamController,
     constructor(mut self)
 }
@@ -239,7 +239,7 @@ export declare class ReadableStreamDefaultController<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/enqueue) */
     enqueue(mut self, chunk?: R) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultController/error) */
-    error(mut self, e?: any) -> unknown,
+    error(mut self, e?: unknown) -> unknown,
     static prototype: ReadableStreamDefaultController,
     constructor(mut self)
 }
@@ -259,7 +259,7 @@ export declare interface ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/closed) */
     readonly closed: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/cancel) */
-    cancel(reason?: any) -> Promise<undefined>
+    cancel(reason?: unknown) -> Promise<undefined>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream) */
@@ -281,7 +281,7 @@ export declare class TransformStreamDefaultController<O = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/enqueue) */
     enqueue(mut self, chunk?: O) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/error) */
-    error(mut self, reason?: any) -> unknown,
+    error(mut self, reason?: unknown) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStreamDefaultController/terminate) */
     terminate(mut self) -> unknown,
     static prototype: TransformStreamDefaultController,
@@ -298,7 +298,7 @@ export declare class WritableStream<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/abort) */
-    abort(mut self, reason?: any) -> Promise<undefined>,
+    abort(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/close) */
     close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/getWriter) */
@@ -317,7 +317,7 @@ export declare class WritableStreamDefaultController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/signal) */
     readonly signal: AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultController/error) */
-    error(mut self, e?: any) -> unknown,
+    error(mut self, e?: unknown) -> unknown,
     static prototype: WritableStreamDefaultController,
     constructor(mut self)
 }
@@ -336,7 +336,7 @@ export declare class WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/ready) */
     readonly ready: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/abort) */
-    abort(mut self, reason?: any) -> Promise<undefined>,
+    abort(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/close) */
     close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/releaseLock) */

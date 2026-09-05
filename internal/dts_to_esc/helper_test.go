@@ -1111,3 +1111,57 @@ func TestConvertInterfaceMember_KeepsWhatTheGrammarHasRoomFor(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertParam_AnyWidensOnlyWhereTheRuntimeSuppliesTheBody covers
+// which `any` parameters lower to `unknown`. A declared function's own
+// parameter widens, since the caller only passes a value in and both
+// types accept every argument. A parameter of a function type the caller
+// writes the body for does not, since widening it would make that body
+// narrow before touching the value.
+func TestConvertParam_AnyWidensOnlyWhereTheRuntimeSuppliesTheBody(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name, input, want string
+	}{
+		{
+			"a declared parameter widens",
+			"interface F { is(value1: any, value2: any): boolean; }",
+			"is(value1: unknown, value2: unknown) -> boolean",
+		},
+		{
+			"a nested any stays, and so does a return",
+			"interface F { assign(target: object, ...sources: any[]): any; }",
+			"assign(target: {...}, ...sources: Array<any>) -> any",
+		},
+		{
+			"a callback's parameter stays",
+			"interface F { catch(onrejected: (reason: any) => void): void; }",
+			"catch(onrejected: fn (reason: any) -> unknown) -> unknown",
+		},
+		{
+			"a property holding a function type stays",
+			"interface F { onerror: (event: any) => void; }",
+			"onerror: fn (event: any) -> unknown",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			mod, errs := dts_parser.NewDtsParser(&ast.Source{
+				Path: "test.d.ts", Contents: tc.input,
+			}).ParseModule()
+			require.Empty(t, errs)
+
+			iface, ok := mod.Statements[0].(*dts_parser.InterfaceDecl)
+			require.True(t, ok)
+			require.Len(t, iface.Members, 1)
+
+			elem, err := convertInterfaceMember(iface.Members[0])
+			require.NoError(t, err)
+
+			printed, err := printer.PrintObjTypeAnnElem(elem, printer.DefaultOptions())
+			require.NoError(t, err)
+			require.Equal(t, tc.want, printed)
+		})
+	}
+}

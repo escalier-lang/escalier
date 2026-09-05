@@ -404,7 +404,7 @@ export declare class AudioParam {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParamMap) */
 @js("AudioParamMap")
 export declare class AudioParamMap extends Map<string, AudioParam> {
-    forEach(self, callbackfn: fn (value: AudioParam, key: string, parent: AudioParamMap) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: AudioParam, key: string, parent: AudioParamMap) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: AudioParamMap,
     constructor(mut self)
 }

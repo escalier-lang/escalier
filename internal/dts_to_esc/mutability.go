@@ -242,7 +242,7 @@ var ImmutableOwners = set.FromSlice([]string{
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //
-// TODO(#500): extend this for Promise, Error, and other classes whose
+// TODO(#500): extend this for Error and the other classes whose
 // non-mutating methods should be callable on a non-mut receiver.
 var nonMutatingOverrides = map[string]MethodNames{
 	"String": set.FromSlice([]string{
@@ -288,6 +288,19 @@ var nonMutatingOverrides = map[string]MethodNames{
 		"apply",
 		"bind",
 		"call",
+	}),
+	"Promise": set.FromSlice([]string{
+		// Attaching a handler appends to the promise's reaction lists,
+		// which is a write the specification makes and no reader can
+		// observe: nothing reachable through `Promise<T, E>` differs
+		// before and after. A `mut self` receiver would fail the ordinary
+		// use of a promise, since it demands unique mutable access to
+		// attach a handler at all. `val p = fetch(url)` could not call
+		// `p.then(…)`, and two consumers of one promise could not each
+		// attach their own.
+		"catch",
+		"finally",
+		"then",
 	}),
 	// `Number`, `Boolean`, and `Date` need no entry. The name-only tiers
 	// answer every non-mutating method they declare, through the `get*` and

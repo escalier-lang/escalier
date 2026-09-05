@@ -5,7 +5,7 @@
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
     next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
     return(value: TReturn) -> IteratorResult<T, TReturn>,
-    throw(e: any) -> IteratorResult<T, TReturn>,
+    throw(e: E) -> IteratorResult<T, TReturn>,
     [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
 }
 
@@ -60,7 +60,7 @@ export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | 
 export declare class Iterator<T, TReturn = any, TNext = any> {
     next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
     return(mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
-    throw(mut self, e?: any) -> IteratorResult<T, TReturn>,
+    throw(mut self, e?: unknown) -> IteratorResult<T, TReturn>,
     /**
      * Creates a native iterator from an iterator or iterable object.
      * Returns its input if the input already inherits from the built-in Iterator class.

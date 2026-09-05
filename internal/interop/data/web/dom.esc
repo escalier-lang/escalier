@@ -1192,7 +1192,7 @@ export declare class AbortController {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortController/abort)
      */
-    abort(mut self, reason?: any) -> unknown,
+    abort(mut self, reason?: unknown) -> unknown,
     static prototype: AbortController,
     constructor(mut self)
 }
@@ -1227,7 +1227,7 @@ export declare class AbortSignal extends EventTarget {
     static prototype: AbortSignal,
     constructor(mut self),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/abort_static) */
-    static abort(reason?: any) -> AbortSignal,
+    static abort(reason?: unknown) -> AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/any_static) */
     static any(signals: mut Array<AbortSignal>) -> AbortSignal,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AbortSignal/timeout_static) */
@@ -1496,7 +1496,7 @@ export declare class BroadcastChannel extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/BroadcastChannel/postMessage)
      */
-    postMessage(mut self, message: any) -> unknown,
+    postMessage(mut self, message: unknown) -> unknown,
     addEventListener<K: keyof BroadcastChannelEventMap>(mut self, type: K, listener: fn (this: BroadcastChannel, ev: BroadcastChannelEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof BroadcastChannelEventMap>(mut self, type: K, listener: fn (this: BroadcastChannel, ev: BroadcastChannelEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -1850,7 +1850,7 @@ export declare class CSSNestedDeclarations extends CSSRule {
 export declare class CSSNumericArray {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray/length) */
     readonly length: number,
-    forEach(self, callbackfn: fn (value: CSSNumericValue, key: number, parent: CSSNumericArray) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: CSSNumericValue, key: number, parent: CSSNumericArray) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> ArrayIterator<CSSNumericValue>,
     entries(self) -> ArrayIterator<[number, CSSNumericValue]>,
     keys(self) -> ArrayIterator<number>,
@@ -3482,7 +3482,7 @@ export declare class CSSTransformValue extends CSSStyleValue {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/toMatrix) */
     toMatrix(self) -> DOMMatrix,
-    forEach(self, callbackfn: fn (value: CSSTransformComponent, key: number, parent: CSSTransformValue) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: CSSTransformComponent, key: number, parent: CSSTransformValue) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> ArrayIterator<CSSTransformComponent>,
     entries(self) -> ArrayIterator<[number, CSSTransformComponent]>,
     keys(self) -> ArrayIterator<number>,
@@ -3533,7 +3533,7 @@ export declare class CSSUnitValue extends CSSNumericValue {
 export declare class CSSUnparsedValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue/length) */
     readonly length: number,
-    forEach(self, callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: CSSUnparsedValue) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: CSSUnparsedValue) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> ArrayIterator<CSSUnparsedSegment>,
     entries(self) -> ArrayIterator<[number, CSSUnparsedSegment]>,
     keys(self) -> ArrayIterator<number>,
@@ -4068,7 +4068,7 @@ export declare class CustomEvent<T = any> extends Event {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomStateSet) */
 @js("CustomStateSet")
 export declare class CustomStateSet extends Set<string> {
-    forEach(self, callbackfn: fn (value: string, key: string, parent: CustomStateSet) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: string, key: string, parent: CustomStateSet) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: CustomStateSet,
     constructor(mut self)
 }
@@ -4613,7 +4613,7 @@ export declare class DOMTokenList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMTokenList/toggle)
      */
     toggle(mut self, token: string, force?: boolean) -> boolean,
-    forEach(self, callbackfn: fn (value: string, key: number, parent: DOMTokenList) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: string, key: number, parent: DOMTokenList) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> ArrayIterator<string>,
     entries(self) -> ArrayIterator<[number, string]>,
     keys(self) -> ArrayIterator<number>,
@@ -6113,7 +6113,7 @@ export declare class Event {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
 @js("EventCounts")
 export declare class EventCounts extends Map<string, number> {
-    forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: EventCounts,
     constructor(mut self)
 }
@@ -6413,7 +6413,7 @@ export declare class FontFaceSet extends EventTarget {
     check(mut self, font: string, text?: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FontFaceSet/load) */
     load(mut self, font: string, text?: string) -> Promise<mut Array<FontFace>>,
-    forEach(self, callbackfn: fn (value: FontFace, key: FontFace, parent: FontFaceSet) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: FontFace, key: FontFace, parent: FontFaceSet) -> unknown, thisArg?: unknown) -> unknown,
     addEventListener<K: keyof FontFaceSetEventMap>(mut self, type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof FontFaceSetEventMap>(mut self, type: K, listener: fn (this: FontFaceSet, ev: FontFaceSetEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -6459,7 +6459,7 @@ export declare class FormData {
     set(mut self, name: string, value: string | Blob) -> unknown,
     set(mut self, name: string, value: string) -> unknown,
     set(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
-    forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(self) -> FormDataIterator<[string, FormDataEntryValue]>,
@@ -7590,7 +7590,7 @@ export declare class HTMLCanvasElement extends HTMLElement {
     getContext(self, contextId: "bitmaprenderer", options?: ImageBitmapRenderingContextSettings) -> ImageBitmapRenderingContext | null,
     getContext(self, contextId: "webgl", options?: WebGLContextAttributes) -> WebGLRenderingContext | null,
     getContext(self, contextId: "webgl2", options?: WebGLContextAttributes) -> WebGL2RenderingContext | null,
-    getContext(self, contextId: string, options?: any) -> RenderingContext | null,
+    getContext(self, contextId: string, options?: unknown) -> RenderingContext | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLCanvasElement/toBlob) */
     toBlob(self, callback: BlobCallback, type?: string, quality?: number) -> unknown,
     /**
@@ -11260,7 +11260,7 @@ export declare class Highlight extends Set<AbstractRange> {
     priority: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/type) */
     type: HighlightType,
-    forEach(self, callbackfn: fn (value: AbstractRange, key: AbstractRange, parent: Highlight) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: AbstractRange, key: AbstractRange, parent: Highlight) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: Highlight,
     constructor(mut self, ...initialRanges: mut Array<AbstractRange>)
 }
@@ -11268,7 +11268,7 @@ export declare class Highlight extends Set<AbstractRange> {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HighlightRegistry) */
 @js("HighlightRegistry")
 export declare class HighlightRegistry extends Map<string, Highlight> {
-    forEach(self, callbackfn: fn (value: Highlight, key: string, parent: HighlightRegistry) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: Highlight, key: string, parent: HighlightRegistry) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: HighlightRegistry,
     constructor(mut self)
 }
@@ -11293,9 +11293,9 @@ export declare class History {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/go) */
     go(mut self, delta?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/pushState) */
-    pushState(mut self, data: any, unused: string, url?: string | URL | null) -> unknown,
+    pushState(mut self, data: unknown, unused: string, url?: string | URL | null) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/replaceState) */
-    replaceState(mut self, data: any, unused: string, url?: string | URL | null) -> unknown,
+    replaceState(mut self, data: unknown, unused: string, url?: string | URL | null) -> unknown,
     static prototype: History,
     constructor(mut self)
 }
@@ -11775,7 +11775,7 @@ export declare class MIDIInput extends MIDIPort {
  */
 @js("MIDIInputMap")
 export declare class MIDIInputMap extends Map<string, MIDIInput> {
-    forEach(self, callbackfn: fn (value: MIDIInput, key: string, parent: MIDIInputMap) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: MIDIInput, key: string, parent: MIDIInputMap) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIInputMap,
     constructor(mut self)
 }
@@ -11819,7 +11819,7 @@ export declare class MIDIOutput extends MIDIPort {
  */
 @js("MIDIOutputMap")
 export declare class MIDIOutputMap extends Map<string, MIDIOutput> {
-    forEach(self, callbackfn: fn (value: MIDIOutput, key: string, parent: MIDIOutputMap) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: MIDIOutput, key: string, parent: MIDIOutputMap) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIOutputMap,
     constructor(mut self)
 }
@@ -12046,7 +12046,7 @@ export declare class MediaKeyStatusMap {
     get(self, keyId: BufferSource) -> MediaKeyStatus | undefined,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyStatusMap/has) */
     has(self, keyId: BufferSource) -> boolean,
-    forEach(self, callbackfn: fn (value: MediaKeyStatus, key: BufferSource, parent: MediaKeyStatusMap) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: MediaKeyStatus, key: BufferSource, parent: MediaKeyStatusMap) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     entries(self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     keys(self) -> MediaKeyStatusMapIterator<BufferSource>,
@@ -12466,9 +12466,9 @@ export declare class MessageEvent<T = any> extends Event {
      */
     readonly source: MessageEventSource | null,
     /** @deprecated */
-    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: any, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: mut Array<MessagePort>) -> unknown,
+    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: unknown, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: mut Array<MessagePort>) -> unknown,
     /** @deprecated */
-    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: any, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: Iterable<MessagePort>) -> unknown,
+    initMessageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, data?: unknown, origin?: string, lastEventId?: string, source?: MessageEventSource | null, ports?: Iterable<MessagePort>) -> unknown,
     static prototype: MessageEvent,
     constructor(mut self, type: string, eventInitDict?: MessageEventInit<T>)
 }
@@ -12514,8 +12514,8 @@ export declare class MessagePort extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MessagePort/postMessage)
      */
-    postMessage(mut self, message: any, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(mut self, message: any, options?: StructuredSerializeOptions) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: StructuredSerializeOptions) -> unknown,
     /**
      * Begins dispatching messages received on the port.
      *
@@ -13290,7 +13290,7 @@ export declare class NodeList {
      * @param callbackfn  A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the list.
      * @param thisArg  An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(self, callbackfn: fn (value: Node, key: number, parent: NodeList) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: Node, key: number, parent: NodeList) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> ArrayIterator<Node>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(self) -> ArrayIterator<[number, Node]>,
@@ -13309,7 +13309,7 @@ export declare interface NodeListOf<TNode: Node> extends NodeList {
      * @param callbackfn  A function that accepts up to three arguments. forEach calls the callbackfn function one time for each element in the list.
      * @param thisArg  An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
-    forEach(callbackfn: fn (value: TNode, key: number, parent: NodeListOf<TNode>) -> unknown, thisArg?: any) -> unknown,
+    forEach(callbackfn: fn (value: TNode, key: number, parent: NodeListOf<TNode>) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator]() -> ArrayIterator<TNode>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries() -> ArrayIterator<[number, TNode]>,
@@ -13444,11 +13444,11 @@ export declare class OffscreenCanvas extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvas/getContext)
      */
-    getContext(self, contextId: "2d", options?: any) -> OffscreenCanvasRenderingContext2D | null,
-    getContext(self, contextId: "bitmaprenderer", options?: any) -> ImageBitmapRenderingContext | null,
-    getContext(self, contextId: "webgl", options?: any) -> WebGLRenderingContext | null,
-    getContext(self, contextId: "webgl2", options?: any) -> WebGL2RenderingContext | null,
-    getContext(self, contextId: OffscreenRenderingContextId, options?: any) -> OffscreenRenderingContext | null,
+    getContext(self, contextId: "2d", options?: unknown) -> OffscreenCanvasRenderingContext2D | null,
+    getContext(self, contextId: "bitmaprenderer", options?: unknown) -> ImageBitmapRenderingContext | null,
+    getContext(self, contextId: "webgl", options?: unknown) -> WebGLRenderingContext | null,
+    getContext(self, contextId: "webgl2", options?: unknown) -> WebGL2RenderingContext | null,
+    getContext(self, contextId: OffscreenRenderingContextId, options?: unknown) -> OffscreenRenderingContext | null,
     /**
      * Returns a newly created ImageBitmap object with the image in the OffscreenCanvas object. The image in the OffscreenCanvas object is replaced with a new blank image.
      *
@@ -16752,7 +16752,7 @@ export declare class StylePropertyMapReadOnly {
     getAll(self, property: string) -> mut Array<CSSStyleValue>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/has) */
     has(self, property: string) -> boolean,
-    forEach(self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     entries(self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     keys(self) -> StylePropertyMapReadOnlyIterator<string>,
@@ -17496,7 +17496,7 @@ export declare class ViewTransition {
 
 @js("ViewTransitionTypeSet")
 export declare class ViewTransitionTypeSet extends Set<string> {
-    forEach(self, callbackfn: fn (value: string, key: string, parent: ViewTransitionTypeSet) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: string, key: string, parent: ViewTransitionTypeSet) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: ViewTransitionTypeSet,
     constructor(mut self)
 }
@@ -17867,7 +17867,7 @@ export declare class Window extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/window) */
     readonly window: Window & typeof globalThis,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/alert) */
-    alert(mut self, message?: any) -> unknown,
+    alert(mut self, message?: unknown) -> unknown,
     /**
      * @deprecated
      *
@@ -17921,8 +17921,8 @@ export declare class Window extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
      */
-    postMessage(mut self, message: any, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown,
-    postMessage(mut self, message: any, options?: WindowPostMessageOptions) -> unknown,
+    postMessage(mut self, message: unknown, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: WindowPostMessageOptions) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/print) */
     print(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/prompt) */
@@ -18076,7 +18076,7 @@ export declare interface WindowOrWorkerGlobalScope {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/queueMicrotask) */
     queueMicrotask(callback: VoidFunction) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
-    reportError(e: any) -> unknown,
+    reportError(e: unknown) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setInterval) */
     setInterval(handler: TimerHandler, timeout?: number, ...arguments: mut Array<any>) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setTimeout) */
@@ -18432,7 +18432,7 @@ export declare class XSLTProcessor {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/reset) */
     reset(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/setParameter) */
-    setParameter(mut self, namespaceURI: string | null, localName: string, value: any) -> unknown,
+    setParameter(mut self, namespaceURI: string | null, localName: string, value: unknown) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/transformToDocument) */
     transformToDocument(mut self, source: Node) -> Document,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/XSLTProcessor/transformToFragment) */
@@ -19320,7 +19320,7 @@ export declare var window: Window & typeof globalThis
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/alert) */
 @js("alert")
-export declare fn alert(message?: any) -> unknown
+export declare fn alert(message?: unknown) -> unknown
 
 /**
  * @deprecated
@@ -19400,10 +19400,10 @@ export declare fn open(url?: string | URL, target?: string, features?: string) -
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/postMessage)
  */
 @js("postMessage")
-export declare fn postMessage(message: any, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown
+export declare fn postMessage(message: unknown, targetOrigin: string, transfer?: mut Array<Transferable>) -> unknown
 
 @js("postMessage")
-export declare fn postMessage(message: any, options?: WindowPostMessageOptions) -> unknown
+export declare fn postMessage(message: unknown, options?: WindowPostMessageOptions) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/print) */
 @js("print")
@@ -20256,7 +20256,7 @@ export declare fn queueMicrotask(callback: VoidFunction) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
 @js("reportError")
-export declare fn reportError(e: any) -> unknown
+export declare fn reportError(e: unknown) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/setInterval) */
 @js("setInterval")

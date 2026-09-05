@@ -58,7 +58,34 @@ func convertTypeParam(tp *dts_parser.TypeParam) (*ast.TypeParam, error) {
 }
 
 // TODO(#259): Handle all function param patterns
+// convertParam converts a parameter of a function the runtime supplies the
+// body for — a declared function, a method, a constructor, a setter. The
+// caller only passes a value in, so a parameter TypeScript types `any`
+// lowers to `unknown`: both accept every argument, and `unknown` does not
+// hand an unchecked value back out if someone binds it.
+//
+// Only a parameter whose whole type is `any` widens. An `any` nested in
+// `mut Array<any>` stays, since widening it would change what the array
+// accepts rather than what the parameter does.
+//
+// A callback the caller writes the body for takes convertCallbackParam
+// instead, which leaves `any` alone.
 func convertParam(p *dts_parser.Param) (*ast.Param, error) {
+	param, err := convertCallbackParam(p)
+	if err != nil {
+		return nil, err
+	}
+	if _, isAny := param.TypeAnn.(*ast.AnyTypeAnn); isAny {
+		param.TypeAnn = ast.NewUnknownTypeAnn(param.TypeAnn.Span())
+	}
+	return param, nil
+}
+
+// convertCallbackParam converts a parameter of a function type the caller
+// supplies the body for, as in `onrejected?: (reason: any) => void`. The
+// type flows the other way there: widening `reason` to `unknown` would
+// make the caller narrow before touching it. See convertParam.
+func convertCallbackParam(p *dts_parser.Param) (*ast.Param, error) {
 	// Convert the parameter name to an IdentPat pattern
 	var pattern ast.Pat = ast.NewIdentPat(p.Name.Name, false, nil, nil, p.Span())
 	if p.Rest {
@@ -159,7 +186,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		params := make([]*ast.Param, len(m.Params))
 		for i, p := range m.Params {
 			var err error
-			params[i], err = convertParam(p)
+			params[i], err = convertCallbackParam(p)
 			if err != nil {
 				return nil, fmt.Errorf("converting call signature parameter: %w", err)
 			}
@@ -182,7 +209,7 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		params := make([]*ast.Param, len(m.Params))
 		for i, p := range m.Params {
 			var err error
-			params[i], err = convertParam(p)
+			params[i], err = convertCallbackParam(p)
 			if err != nil {
 				return nil, fmt.Errorf("converting construct signature parameter: %w", err)
 			}
@@ -202,10 +229,17 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 				return nil, fmt.Errorf("converting method signature type parameter: %w", err)
 			}
 		}
+		// An optional method is emitted below as a property holding a
+		// function type, which is a value whoever implements the
+		// interface writes. Its parameters read like a callback's.
+		convert := convertParam
+		if m.Optional {
+			convert = convertCallbackParam
+		}
 		params := make([]*ast.Param, len(m.Params))
 		for i, p := range m.Params {
 			var err error
-			params[i], err = convertParam(p)
+			params[i], err = convert(p)
 			if err != nil {
 				return nil, fmt.Errorf("converting method signature parameter: %w", err)
 			}
@@ -463,7 +497,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		params := make([]*ast.Param, len(t.Params))
 		for i, p := range t.Params {
 			var err error
-			params[i], err = convertParam(p)
+			params[i], err = convertCallbackParam(p)
 			if err != nil {
 				return nil, fmt.Errorf("converting function parameter %d: %w", i, err)
 			}
@@ -487,7 +521,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		params := make([]*ast.Param, len(t.Params))
 		for i, p := range t.Params {
 			var err error
-			params[i], err = convertParam(p)
+			params[i], err = convertCallbackParam(p)
 			if err != nil {
 				return nil, fmt.Errorf("converting constructor parameter %d: %w", i, err)
 			}
@@ -679,7 +713,7 @@ func convertTypeAnn(ta dts_parser.TypeAnn) (ast.TypeAnn, error) {
 		// there. A guard, `arg is T`, returns a boolean. An assertion,
 		// `asserts arg is T`, either throws or returns no value, so it lowers to
 		// `undefined`. Converting the right-hand type instead would claim that
-		// `isArray(arg: any): arg is any[]` returns an array.
+		// `isArray(arg: unknown): arg is any[]` returns an array.
 		// TODO(#229): add support for type predicates to Escalier
 		if t.Asserts {
 			return ast.NewLitTypeAnn(ast.NewUndefined(t.Span()), t.Span()), nil

@@ -86,7 +86,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     constructor(mut self),
-    static isArray(arg: any) -> boolean
+    static isArray(arg: unknown) -> boolean
 }
 
 export declare interface ArrayLike<T> {

@@ -2218,7 +2218,7 @@
                         Name: "d",
                         span: 38-44,
                     },
-                    TypeAnn: &ast.AnyTypeAnn{
+                    TypeAnn: &ast.UnknownTypeAnn{
                         span: 41-44,
                     },
                 },

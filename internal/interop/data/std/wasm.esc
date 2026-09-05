@@ -70,11 +70,11 @@ export declare class Table {
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/get) */
     get(self, index: number) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/grow) */
-    grow(mut self, delta: number, value?: any) -> number,
+    grow(mut self, delta: number, value?: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table/set) */
-    set(mut self, index: number, value?: any) -> unknown,
+    set(mut self, index: number, value?: unknown) -> unknown,
     static prototype: Table,
-    constructor(mut self, descriptor: TableDescriptor, value?: any)
+    constructor(mut self, descriptor: TableDescriptor, value?: unknown)
 }
 
 export declare interface GlobalDescriptor<T: ValueType = ValueType> {

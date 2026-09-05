@@ -75,7 +75,7 @@ export declare class Object {
      * Returns an array of all symbol properties found directly on object o.
      * @param o Object to retrieve the symbols from.
      */
-    static getOwnPropertySymbols(o: any) -> mut Array<symbol>,
+    static getOwnPropertySymbols(o: unknown) -> mut Array<symbol>,
     /**
      * Returns the names of the enumerable string properties and methods of an object.
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
@@ -86,13 +86,13 @@ export declare class Object {
      * @param value1 The first value.
      * @param value2 The second value.
      */
-    static is(value1: any, value2: any) -> boolean,
+    static is(value1: unknown, value2: unknown) -> boolean,
     /**
      * Sets the prototype of a specified object o to object proto or null. Returns the object o.
      * @param o The object to change its prototype.
      * @param proto The value of the new prototype or null.
      */
-    static setPrototypeOf(o: any, proto: {...} | null) -> any,
+    static setPrototypeOf(o: unknown, proto: {...} | null) -> any,
     /**
      * Returns an array of values of the enumerable own properties of an object
      * @param o Object that contains the properties and methods. This can be an object that you created or an existing Document Object Model (DOM) object.
@@ -142,27 +142,27 @@ export declare class Object {
      * @param keySelector A callback which will be invoked for each item in items.
      */
     static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
-    constructor(mut self, value?: any),
+    constructor(mut self, value?: unknown),
     /** A reference to the prototype for a class of objects. */
     static readonly prototype: Object,
     /**
      * Returns the prototype of an object.
      * @param o The object that references the prototype.
      */
-    static getPrototypeOf(o: any) -> any,
+    static getPrototypeOf(o: unknown) -> any,
     /**
      * Gets the own property descriptor of the specified object.
      * An own property descriptor is one that is defined directly on the object and is not inherited from the object's prototype.
      * @param o Object that contains the property.
      * @param p Name of the property.
      */
-    static getOwnPropertyDescriptor(o: any, p: PropertyKey) -> PropertyDescriptor | undefined,
+    static getOwnPropertyDescriptor(o: unknown, p: PropertyKey) -> PropertyDescriptor | undefined,
     /**
      * Returns the names of the own properties of an object. The own properties of an object are those that are defined directly
      * on that object, and are not inherited from the object's prototype. The properties of an object include both fields (objects) and functions.
      * @param o Object that contains the own properties.
      */
-    static getOwnPropertyNames(o: any) -> mut Array<string>,
+    static getOwnPropertyNames(o: unknown) -> mut Array<string>,
     /**
      * Creates an object that has the specified prototype or that has null prototype.
      * @param o Object to use as a prototype. May be null.
@@ -216,17 +216,17 @@ export declare class Object {
      * Returns true if existing property attributes cannot be modified in an object and new properties cannot be added to the object.
      * @param o Object to test.
      */
-    static isSealed(o: any) -> boolean,
+    static isSealed(o: unknown) -> boolean,
     /**
      * Returns true if existing property attributes and values cannot be modified in an object, and new properties cannot be added to the object.
      * @param o Object to test.
      */
-    static isFrozen(o: any) -> boolean,
+    static isFrozen(o: unknown) -> boolean,
     /**
      * Returns a value that indicates whether new properties can be added to an object.
      * @param o Object to test.
      */
-    static isExtensible(o: any) -> boolean
+    static isExtensible(o: unknown) -> boolean
 }
 
 export declare interface TypedPropertyDescriptor<T> {

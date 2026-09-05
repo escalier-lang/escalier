@@ -590,6 +590,13 @@ func TestReceiverMutates_ImmutableOwner(t *testing.T) {
 		{"Array", "push", true},
 		{"Array", "slice", false},
 		{"Map", "set", true},
+		// Attaching a handler writes only the promise's reaction lists,
+		// which no reader can observe, so the override keeps the receiver
+		// callable through an immutable binding. The constructor is not
+		// on the list and keeps `mut self`.
+		{"Promise", "then", false},
+		{"Promise", "catch", false},
+		{"Promise", "finally", false},
 		// An owner with no rule and a name no tier matches falls to the
 		// mutating default.
 		{"Widget", "frobnicate", true},

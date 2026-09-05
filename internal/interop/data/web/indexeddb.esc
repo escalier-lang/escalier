@@ -94,7 +94,7 @@ export declare class IDBCursor {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBCursor/update)
      */
-    update(mut self, value: any) -> IDBRequest<IDBValidKey>,
+    update(mut self, value: unknown) -> IDBRequest<IDBValidKey>,
     static prototype: IDBCursor,
     constructor(mut self)
 }
@@ -210,7 +210,7 @@ export declare class IDBFactory {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/cmp)
      */
-    cmp(mut self, first: any, second: any) -> number,
+    cmp(mut self, first: unknown, second: unknown) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBFactory/databases) */
     databases(mut self) -> Promise<mut Array<IDBDatabaseInfo>>,
     /**
@@ -350,7 +350,7 @@ export declare class IDBKeyRange {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/includes)
      */
-    includes(self, key: any) -> boolean,
+    includes(self, key: unknown) -> boolean,
     static prototype: IDBKeyRange,
     constructor(mut self),
     /**
@@ -358,25 +358,25 @@ export declare class IDBKeyRange {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/bound_static)
      */
-    static bound(lower: any, upper: any, lowerOpen?: boolean, upperOpen?: boolean) -> IDBKeyRange,
+    static bound(lower: unknown, upper: unknown, lowerOpen?: boolean, upperOpen?: boolean) -> IDBKeyRange,
     /**
      * Returns a new IDBKeyRange starting at key with no upper bound. If open is true, key is not included in the range.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/lowerBound_static)
      */
-    static lowerBound(lower: any, open?: boolean) -> IDBKeyRange,
+    static lowerBound(lower: unknown, open?: boolean) -> IDBKeyRange,
     /**
      * Returns a new IDBKeyRange spanning only key.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/only_static)
      */
-    static only(value: any) -> IDBKeyRange,
+    static only(value: unknown) -> IDBKeyRange,
     /**
      * Returns a new IDBKeyRange with no lower bound and ending at key. If open is true, key is not included in the range.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBKeyRange/upperBound_static)
      */
-    static upperBound(upper: any, open?: boolean) -> IDBKeyRange
+    static upperBound(upper: unknown, open?: boolean) -> IDBKeyRange
 }
 
 /**
@@ -427,7 +427,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/add)
      */
-    add(mut self, value: any, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
+    add(mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
     /**
      * Deletes all records in store.
      *
@@ -529,7 +529,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/put)
      */
-    put(mut self, value: any, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
+    put(mut self, value: unknown, key?: IDBValidKey) -> IDBRequest<IDBValidKey>,
     /**
      * Creates a new index in store with the given name, keyPath and options and returns a new IDBIndex. If the keyPath and options define constraints that cannot be satisfied with the data already in store the upgrade transaction will abort with a "ConstraintError" DOMException.
      *

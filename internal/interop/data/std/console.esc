@@ -15,7 +15,7 @@ export declare interface Console {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/debug_static) */
     debug(...data: mut Array<any>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/dir_static) */
-    dir(item?: any, options?: any) -> unknown,
+    dir(item?: unknown, options?: unknown) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/dirxml_static) */
     dirxml(...data: mut Array<any>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/error_static) */
@@ -31,7 +31,7 @@ export declare interface Console {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/log_static) */
     log(...data: mut Array<any>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/table_static) */
-    table(tabularData?: any, properties?: mut Array<string>) -> unknown,
+    table(tabularData?: unknown, properties?: mut Array<string>) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/time_static) */
     time(label?: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/console/timeEnd_static) */

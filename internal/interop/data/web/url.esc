@@ -93,7 +93,7 @@ export declare class URLSearchParams {
     sort(mut self) -> unknown,
     /** Returns a string containing a query string suitable for use in a URL. Does not include the question mark. */
     toString(self) -> string,
-    forEach(self, callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: any) -> unknown,
+    forEach(self, callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](mut self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns an array of key, value pairs for every entry in the search params. */
     entries(self) -> URLSearchParamsIterator<[string, string]>,

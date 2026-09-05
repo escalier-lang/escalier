@@ -48,8 +48,8 @@ export declare class Worker extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(mut self, message: any, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(mut self, message: any, options?: StructuredSerializeOptions) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: StructuredSerializeOptions) -> unknown,
     /**
      * Aborts worker's associated global environment.
      *

@@ -15,7 +15,7 @@ import (
 // does to a `replace`.
 const overlayMovedLib = `
 interface Array<T> { length: number; at(index: number): T | null; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
 interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
@@ -197,14 +197,14 @@ func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
 // bulk of a TypeScript version bump, and it moves no shape.
 const overlayDocLib = `
 interface Array<T> { length: number; /** Reads one element. */ at(index: number): T | undefined; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
 interface ArrayLike<T> { readonly length: number; }
 `
 
 const overlayEditedDocLib = `
 interface Array<T> { length: number; /** Reads the element at index. */ at(index: number): T | undefined; }
-interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: any): boolean; }
+interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
 interface ArrayLike<T> { readonly length: number; }
 `
@@ -256,7 +256,7 @@ func TestOverlayDigests_KeepTheTwoSidesOfAClassApart(t *testing.T) {
     "member": "isArray",
     "kind": "method",
     "static": true,
-    "digest": "60de184c2c659aec"
+    "digest": "242e253f0166ec98"
   }
 ]
 `))

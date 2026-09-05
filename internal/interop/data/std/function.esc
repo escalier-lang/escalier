@@ -15,26 +15,26 @@ export declare class Function {
      * A constructor function can control which objects are recognized as its instances by
      * 'instanceof' by overriding this method.
      */
-    [Symbol.hasInstance](mut self, value: any) -> boolean,
+    [Symbol.hasInstance](mut self, value: unknown) -> boolean,
     /**
      * Calls the function, substituting the specified object for the this value of the function, and the specified array for the arguments of the function.
      * @param thisArg The object to be used as the this object.
      * @param argArray A set of arguments to be passed to the function.
      */
-    apply(self, this: Function, thisArg: any, argArray?: any) -> any,
+    apply(self, this: Function, thisArg: unknown, argArray?: unknown) -> any,
     /**
      * Calls a method of an object, substituting another object for the current object.
      * @param thisArg The object to be used as the current object.
      * @param argArray A list of arguments to be passed to the method.
      */
-    call(self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
+    call(self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
     /**
      * For a given function, creates a bound function that has the same body as the original function.
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.
      * @param thisArg An object to which the this keyword can refer inside the new function.
      * @param argArray A list of arguments to be passed to the new function.
      */
-    bind(self, this: Function, thisArg: any, ...argArray: mut Array<any>) -> any,
+    bind(self, this: Function, thisArg: unknown, ...argArray: mut Array<any>) -> any,
     /** Returns a string representation of a function. */
     toString(self) -> string,
     prototype: any,
@@ -123,14 +123,14 @@ export declare interface NewableFunction extends Function {
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.
      * @param thisArg The object to be used as the this object.
      */
-    bind<T>(this: T, thisArg: any) -> T,
+    bind<T>(this: T, thisArg: unknown) -> T,
     /**
      * For a given function, creates a bound function that has the same body as the original function.
      * The this object of the bound function is associated with the specified object, and has the specified initial parameters.
      * @param thisArg The object to be used as the this object.
      * @param args Arguments to bind to the parameters of the function.
      */
-    bind<A: mut Array<any>, B: mut Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, thisArg: any, ...args: A) -> fn (...args: B) -> R
+    bind<A: mut Array<any>, B: mut Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, thisArg: unknown, ...args: A) -> fn (...args: B) -> R
 }
 
 /**
