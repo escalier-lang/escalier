@@ -219,6 +219,22 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		if err != nil {
 			return nil, fmt.Errorf("converting method name: %w", err)
 		}
+		if m.Optional {
+			// Escalier has no optional method syntax: `foo?(): T` does
+			// not parse. An optional property holding a function type
+			// says the same thing and does parse, so `apply?(t: T): any`
+			// becomes `apply?: fn (t: T) -> any`. Dropping the marker
+			// instead would make every ProxyHandler trap required, and
+			// a handler is meant to supply the traps it wants.
+			//
+			// Nothing is lost to the shape change. A method signature
+			// can be overloaded where a property cannot, and none of the
+			// 22 optional methods in the pinned lib set is: the repeated
+			// names sit in different interfaces.
+			prop := ast.NewPropertyTypeAnn(name, true, false, fn, m.Span())
+			prop.SetDoc(m.Doc())
+			return prop, nil
+		}
 		elem := ast.NewMethodTypeAnn(name, fn, nil, m.Span())
 		elem.SetDoc(m.Doc())
 		return elem, nil
@@ -264,10 +280,24 @@ func convertInterfaceMember(member dts_parser.InterfaceMember) (ast.ObjTypeAnnEl
 		elem.SetDoc(m.Doc())
 		return elem, nil
 	case *dts_parser.IndexSignature:
-		// Index signatures don't have a direct equivalent in Escalier's ObjTypeAnnElem
-		// We could potentially use a MappedTypeAnn or skip them for now
-		// For now, we'll skip index signatures
-		// TODO: determine how to properly represent index signatures
+		// Held back, not unrepresentable. Escalier writes an index
+		// signature as a mapped type in its shorthand spelling,
+		// `[key: K]: V`, and emitting one is five lines: convert the key
+		// and value types, carry `readonly` as a MappedModifier, and
+		// build a MappedTypeAnn with Shorthand set.
+		//
+		// The checker is what is not ready. A property access that
+		// reaches an unexpanded MappedElem panics in expand_type.go with
+		// "MappedElems should have been expanded before property
+		// access", and emitting these takes the interop_mutability
+		// fixture down that path. expandMappedElems already does the
+		// right thing when it runs — a primitive constraint becomes an
+		// IndexSignatureElem — so what is missing is the expansion
+		// reaching that access, not the representation.
+		//
+		// Until then PropertyDescriptorMap emits empty and
+		// Object.defineProperties takes an unconstrained object. See
+		// #1417.
 		return nil, nil
 	default:
 		return nil, fmt.Errorf("convertInterfaceMember: unknown interface member type %T", member)
