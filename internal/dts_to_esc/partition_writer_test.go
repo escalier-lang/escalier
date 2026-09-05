@@ -984,3 +984,52 @@ func TestDedupeBy_KeepsTheFirstOfEachKey(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, []string{"a1", "b", "c"}, got)
 }
+
+// modWithDecls builds the smallest StandaloneModule dedupeMembers reads:
+// one root namespace holding the given declarations.
+func modWithDecls(decls ...ast.Decl) *StandaloneModule {
+	mod := &ast.Module{}
+	mod.Namespaces.Set("", &ast.Namespace{Decls: decls})
+	return &StandaloneModule{Module: mod}
+}
+
+// TestDedupeMembers_InterfaceWithoutBody covers a declaration the walk
+// has to step over rather than read. An InterfaceDecl the converter
+// builds always carries an ObjectTypeAnn, so nothing in the pinned lib
+// set reaches this.
+func TestDedupeMembers_InterfaceWithoutBody(t *testing.T) {
+	t.Parallel()
+	decl := &ast.InterfaceDecl{Name: ast.NewIdentifier("Foo", synthSpan())}
+	require.NoError(t, dedupeMembers(modWithDecls(decl)))
+	require.Nil(t, decl.TypeAnn)
+}
+
+// TestDedupeMembers_UnprintableMember covers what happens when the key
+// cannot be computed. The key is the member's printed form, so a member
+// the printer refuses fails the run rather than being treated as
+// distinct from every other member.
+func TestDedupeMembers_UnprintableMember(t *testing.T) {
+	t.Parallel()
+	span := synthSpan()
+
+	t.Run("class", func(t *testing.T) {
+		t.Parallel()
+		cls := &ast.ClassDecl{
+			Name: ast.NewIdentifier("Foo", span),
+			Body: []ast.ClassElem{(*ast.MethodElem)(nil)},
+		}
+		err := dedupeMembers(modWithDecls(cls))
+		require.EqualError(t, err, "cannot print a nil class member")
+	})
+
+	t.Run("interface", func(t *testing.T) {
+		t.Parallel()
+		iface := &ast.InterfaceDecl{
+			Name: ast.NewIdentifier("Foo", span),
+			TypeAnn: ast.NewObjectTypeAnn(
+				[]ast.ObjTypeAnnElem{(*ast.MethodTypeAnn)(nil)}, span),
+		}
+		err := dedupeMembers(modWithDecls(iface))
+		require.EqualError(t, err, "cannot print a nil object type member")
+	})
+}
