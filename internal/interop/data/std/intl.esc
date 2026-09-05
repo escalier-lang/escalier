@@ -771,7 +771,7 @@ export declare interface NumberRangeFormatPart extends NumberFormatPart {
     source: "startRange" | "endRange" | "shared"
 }
 
-export declare type StringNumericLiteral = `` | "Infinity" | "-Infinity" | "+Infinity"
+export declare type StringNumericLiteral = `${number}` | "Infinity" | "-Infinity" | "+Infinity"
 
 export declare interface CollatorOptions {
     usage?: "sort" | "search" | undefined,
