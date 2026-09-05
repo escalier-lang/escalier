@@ -317,7 +317,7 @@ func TestWriteValidationReport(t *testing.T) {
 	// override entry lands in the last list. The lines below are the head of
 	// it, and the assertion after them covers the rest.
 	require.True(t, strings.HasPrefix(out.String(),
-		`  receivers: 1 confirmed by a name tier, 1 heuristics corrected, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 59 overrides no fact answers
+		`  receivers: 1 confirmed by a name tier, 1 heuristics corrected, 1 redundant overrides, 1 disagreements, 1 answered by the facts alone, 62 overrides no fact answers
     disagreement: String.prototype.trim: fact mutBorrow, override borrow
     corrected heuristic: Array.prototype.sort: fact borrow, heuristic mutBorrow
     redundant override: String.charAt

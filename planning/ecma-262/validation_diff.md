@@ -6,14 +6,13 @@ That is requirements.md FR9. The diff measures the receiver-mutability claim of
 every published fact against the hand-written answer in force today. This
 document gives a disposition for each entry the diff turned up.
 
-**Verdict: the fact source holds.** Over the committed graph the diff compares
-218 methods. Before the fixes recorded below, the two sources agreed on 215 of
-them. All three disagreements are resolved, so they now agree on every one. Two
-of the three were a heuristic mis-classification the facts caught, and one was
-an analyzer gap the facts missed. §7 was authorized on this evidence to rank
-the facts above the name tiers. The 24 override entries listed below are
-redundant for the converter, and the sequencing note explains why they are
-still in the table.
+**Verdict: the fact source holds.** Over the committed graph the diff compared
+218 methods when §6 ran, and the two sources agreed on 215 of them. All three
+disagreements are resolved, so they now agree on every one. Two of the three
+were a heuristic mis-classification the facts caught, and one was an analyzer
+gap the facts missed. §7 was authorized on this evidence to rank the facts
+above the name tiers. The override entries listed below are redundant for the
+converter, and the sequencing note explains why they are still in the table.
 
 ## What the diff compares
 
@@ -58,7 +57,7 @@ cannot answer them:
 | ------ | ----- | ------- |
 | Confirmed | 194 | A heuristic the fact agrees with. |
 | Corrected | 0 | A heuristic the fact overrules. Empty while the entries stand. |
-| Redundant | 24 | An override entry the fact agrees with. |
+| Redundant | 27 | An override entry the fact agrees with. |
 | Disagreement | 0 | An override entry the fact contradicts. |
 | Answered by the facts alone | 48 | Neither hand-written source answers. Each of these reaches the `&mut self` default in the prelude, and its fact in the converter. |
 | Override with no fact | 37 | An override entry no fact answers. |
@@ -120,12 +119,14 @@ about 50 builtins, each of which would then need a curated entry. The general
 rule is the more honest answer to what the analysis does not know, and paying
 for it is §4 work rather than §6 work.
 
-## The 24 redundant override entries
+## The redundant override entries
 
 Each is an entry in `nonMutatingOverrides` whose owner and member a published
 fact answers the same way. They come out with the prelude pass that reads them,
 per the sequencing note below. `TestCommittedGraphRedundantOverrides` pins the
-list so that deletion works from a checked set rather than a recomputed one.
+list so that deletion works from a checked set rather than a recomputed one,
+and it grows whenever an entry lands that the facts already answer. The names
+below are the list as §6 measured it.
 
 ```
 Function.apply               String.localeCompare  String.replaceAll
@@ -148,7 +149,7 @@ answer `borrow` for it through a tier the prelude cannot reach leaves
 `TestPreludeOverridesCallableOnNonMutReceiver` failing with "Callee is not
 callable" on `s.charAt(0)`. The entry is what carries the claim.
 
-So deleting the 24 entries while wiring the facts into the converter alone
+So deleting them while wiring the facts into the converter alone
 would leave the prelude reaching those methods through the name heuristics, and
 the heuristics are what the entries exist to correct.
 `String.prototype.replace` would go back to a mutating receiver.
@@ -156,8 +157,8 @@ the heuristics are what the entries exist to correct.
 Either of two things makes the deletion safe. The facts reach the pass that
 applies receiver mutability to the `.d.ts`-loaded lib types, or that pass is
 gone, which is what the M12 flip of the builtins workstream does to
-`UpdateMethodMutability`. **§7 relies on the second, and so kept all 24
-entries.** The first would mean `internal/checker` reading `internal/ecma262`,
+`UpdateMethodMutability`. **§7 relies on the second, and so kept every
+entry.** The first would mean `internal/checker` reading `internal/ecma262`,
 and the legacy checker is not this workstream's target: the facts belong to the
 converter that generates the `std:*` `.esc` files, and the solver reads those
 files rather than the spec. The solver also has nothing for a fact to apply to.

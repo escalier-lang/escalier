@@ -8,7 +8,7 @@ export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends Async
 
 @js("FileSystemDirectoryHandle")
 export declare class FileSystemDirectoryHandle extends FileSystemHandle {
-    [Symbol.asyncIterator](mut self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
+    [Symbol.asyncIterator](self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     entries(self) -> FileSystemDirectoryHandleAsyncIterator<[string, FileSystemHandle]>,
     keys(self) -> FileSystemDirectoryHandleAsyncIterator<string>,
     values(self) -> FileSystemDirectoryHandleAsyncIterator<FileSystemHandle>,
@@ -1693,7 +1693,7 @@ export declare class CSSKeyframesRule extends CSSRule {
     deleteRule(mut self, select: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSKeyframesRule/findRule) */
     findRule(self, select: string) -> CSSKeyframeRule | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSKeyframeRule>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSKeyframeRule>,
     static prototype: CSSKeyframesRule,
     constructor(mut self)
 }
@@ -1851,7 +1851,7 @@ export declare class CSSNumericArray {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSNumericArray/length) */
     readonly length: number,
     forEach(self, callbackfn: fn (value: CSSNumericValue, key: number, parent: CSSNumericArray) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSNumericValue>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSNumericValue>,
     entries(self) -> ArrayIterator<[number, CSSNumericValue]>,
     keys(self) -> ArrayIterator<number>,
     values(self) -> ArrayIterator<CSSNumericValue>,
@@ -2002,7 +2002,7 @@ export declare class CSSRuleList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSRuleList/item) */
     item(mut self, index: number) -> CSSRule | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSRule>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSRule>,
     static prototype: CSSRuleList,
     constructor(mut self)
 }
@@ -3374,7 +3374,7 @@ export declare class CSSStyleDeclaration {
     removeProperty(mut self, property: string) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSStyleDeclaration/setProperty) */
     setProperty(mut self, property: string, value: string | null, priority?: string) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<string>,
+    [Symbol.iterator](self) -> ArrayIterator<string>,
     static prototype: CSSStyleDeclaration,
     constructor(mut self)
 }
@@ -3483,7 +3483,7 @@ export declare class CSSTransformValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSTransformValue/toMatrix) */
     toMatrix(self) -> DOMMatrix,
     forEach(self, callbackfn: fn (value: CSSTransformComponent, key: number, parent: CSSTransformValue) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSTransformComponent>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSTransformComponent>,
     entries(self) -> ArrayIterator<[number, CSSTransformComponent]>,
     keys(self) -> ArrayIterator<number>,
     values(self) -> ArrayIterator<CSSTransformComponent>,
@@ -3534,7 +3534,7 @@ export declare class CSSUnparsedValue extends CSSStyleValue {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CSSUnparsedValue/length) */
     readonly length: number,
     forEach(self, callbackfn: fn (value: CSSUnparsedSegment, key: number, parent: CSSUnparsedValue) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSUnparsedSegment>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSUnparsedSegment>,
     entries(self) -> ArrayIterator<[number, CSSUnparsedSegment]>,
     keys(self) -> ArrayIterator<number>,
     values(self) -> ArrayIterator<CSSUnparsedSegment>,
@@ -4454,7 +4454,7 @@ export declare class DOMRectList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMRectList/item) */
     item(mut self, index: number) -> DOMRect | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<DOMRect>,
+    [Symbol.iterator](self) -> ArrayIterator<DOMRect>,
     static prototype: DOMRectList,
     constructor(mut self)
 }
@@ -4511,7 +4511,7 @@ export declare class DOMStringList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMStringList/item)
      */
     item(mut self, index: number) -> string | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<string>,
+    [Symbol.iterator](self) -> ArrayIterator<string>,
     static prototype: DOMStringList,
     constructor(mut self)
 }
@@ -4614,7 +4614,7 @@ export declare class DOMTokenList {
      */
     toggle(mut self, token: string, force?: boolean) -> boolean,
     forEach(self, callbackfn: fn (value: string, key: number, parent: DOMTokenList) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<string>,
+    [Symbol.iterator](self) -> ArrayIterator<string>,
     entries(self) -> ArrayIterator<[number, string]>,
     keys(self) -> ArrayIterator<number>,
     values(self) -> ArrayIterator<string>,
@@ -4764,7 +4764,7 @@ export declare class DataTransferItemList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransferItemList/remove)
      */
     remove(mut self, index: number) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<DataTransferItem>,
+    [Symbol.iterator](self) -> ArrayIterator<DataTransferItem>,
     static prototype: DataTransferItemList,
     constructor(mut self)
 }
@@ -6460,7 +6460,7 @@ export declare class FormData {
     set(mut self, name: string, value: string) -> unknown,
     set(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
     forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> FormDataIterator<[string, FormDataEntryValue]>,
+    [Symbol.iterator](self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns a list of keys in the list. */
@@ -7227,7 +7227,7 @@ export declare class HTMLAllCollection {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLAllCollection/namedItem)
      */
     namedItem(mut self, name: string) -> HTMLCollection | Element | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<Element>,
+    [Symbol.iterator](self) -> ArrayIterator<Element>,
     static prototype: HTMLAllCollection,
     constructor(mut self)
 }
@@ -8131,7 +8131,7 @@ export declare class HTMLFormElement extends HTMLElement {
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(mut self, type: K, listener: fn (this: HTMLFormElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<Element>,
+    [Symbol.iterator](self) -> ArrayIterator<Element>,
     static prototype: HTMLFormElement,
     constructor(mut self)
 }
@@ -10248,7 +10248,7 @@ export declare class HTMLSelectElement extends HTMLElement {
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof HTMLElementEventMap>(mut self, type: K, listener: fn (this: HTMLSelectElement, ev: HTMLElementEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<HTMLOptionElement>,
+    [Symbol.iterator](self) -> ArrayIterator<HTMLOptionElement>,
     static prototype: HTMLSelectElement,
     constructor(mut self)
 }
@@ -12047,7 +12047,7 @@ export declare class MediaKeyStatusMap {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyStatusMap/has) */
     has(self, keyId: BufferSource) -> boolean,
     forEach(self, callbackfn: fn (value: MediaKeyStatus, key: BufferSource, parent: MediaKeyStatusMap) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
+    [Symbol.iterator](self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     entries(self) -> MediaKeyStatusMapIterator<[BufferSource, MediaKeyStatus]>,
     keys(self) -> MediaKeyStatusMapIterator<BufferSource>,
     values(self) -> MediaKeyStatusMapIterator<MediaKeyStatus>,
@@ -12105,7 +12105,7 @@ export declare class MediaList {
     deleteMedium(mut self, medium: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaList/item) */
     item(mut self, index: number) -> string | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<string>,
+    [Symbol.iterator](self) -> ArrayIterator<string>,
     static prototype: MediaList,
     constructor(mut self)
 }
@@ -12576,7 +12576,7 @@ export declare class MimeTypeArray {
     item(mut self, index: number) -> MimeType | null,
     /** @deprecated */
     namedItem(mut self, name: string) -> MimeType | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<MimeType>,
+    [Symbol.iterator](self) -> ArrayIterator<MimeType>,
     static prototype: MimeTypeArray,
     constructor(mut self)
 }
@@ -12761,7 +12761,7 @@ export declare class NamedNodeMap {
     setNamedItem(mut self, attr: Attr) -> Attr | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NamedNodeMap/setNamedItemNS) */
     setNamedItemNS(mut self, attr: Attr) -> Attr | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<Attr>,
+    [Symbol.iterator](self) -> ArrayIterator<Attr>,
     static prototype: NamedNodeMap,
     constructor(mut self)
 }
@@ -13291,7 +13291,7 @@ export declare class NodeList {
      * @param thisArg  An object to which the this keyword can refer in the callbackfn function. If thisArg is omitted, undefined is used as the this value.
      */
     forEach(self, callbackfn: fn (value: Node, key: number, parent: NodeList) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<Node>,
+    [Symbol.iterator](self) -> ArrayIterator<Node>,
     /** Returns an array of key, value pairs for every entry in the list. */
     entries(self) -> ArrayIterator<[number, Node]>,
     /** Returns an list of keys in the list. */
@@ -13768,7 +13768,7 @@ export declare class Plugin {
     item(mut self, index: number) -> MimeType | null,
     /** @deprecated */
     namedItem(mut self, name: string) -> MimeType | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<MimeType>,
+    [Symbol.iterator](self) -> ArrayIterator<MimeType>,
     static prototype: Plugin,
     constructor(mut self)
 }
@@ -13789,7 +13789,7 @@ export declare class PluginArray {
     namedItem(mut self, name: string) -> Plugin | null,
     /** @deprecated */
     refresh(mut self) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<Plugin>,
+    [Symbol.iterator](self) -> ArrayIterator<Plugin>,
     static prototype: PluginArray,
     constructor(mut self)
 }
@@ -15403,7 +15403,7 @@ export declare class SVGLengthList {
     removeItem(mut self, index: number) -> SVGLength,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGLengthList/replaceItem) */
     replaceItem(mut self, newItem: SVGLength, index: number) -> SVGLength,
-    [Symbol.iterator](mut self) -> ArrayIterator<SVGLength>,
+    [Symbol.iterator](self) -> ArrayIterator<SVGLength>,
     static prototype: SVGLengthList,
     constructor(mut self)
 }
@@ -15585,7 +15585,7 @@ export declare class SVGNumberList {
     removeItem(mut self, index: number) -> SVGNumber,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGNumberList/replaceItem) */
     replaceItem(mut self, newItem: SVGNumber, index: number) -> SVGNumber,
-    [Symbol.iterator](mut self) -> ArrayIterator<SVGNumber>,
+    [Symbol.iterator](self) -> ArrayIterator<SVGNumber>,
     static prototype: SVGNumberList,
     constructor(mut self)
 }
@@ -15651,7 +15651,7 @@ export declare class SVGPointList {
     removeItem(mut self, index: number) -> DOMPoint,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGPointList/replaceItem) */
     replaceItem(mut self, newItem: DOMPoint, index: number) -> DOMPoint,
-    [Symbol.iterator](mut self) -> ArrayIterator<DOMPoint>,
+    [Symbol.iterator](self) -> ArrayIterator<DOMPoint>,
     static prototype: SVGPointList,
     constructor(mut self)
 }
@@ -15890,7 +15890,7 @@ export declare class SVGStringList {
     insertItemBefore(mut self, newItem: string, index: number) -> string,
     removeItem(mut self, index: number) -> string,
     replaceItem(mut self, newItem: string, index: number) -> string,
-    [Symbol.iterator](mut self) -> ArrayIterator<string>,
+    [Symbol.iterator](self) -> ArrayIterator<string>,
     static prototype: SVGStringList,
     constructor(mut self)
 }
@@ -16171,7 +16171,7 @@ export declare class SVGTransformList {
     removeItem(mut self, index: number) -> SVGTransform,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SVGTransformList/replaceItem) */
     replaceItem(mut self, newItem: SVGTransform, index: number) -> SVGTransform,
-    [Symbol.iterator](mut self) -> ArrayIterator<SVGTransform>,
+    [Symbol.iterator](self) -> ArrayIterator<SVGTransform>,
     static prototype: SVGTransformList,
     constructor(mut self)
 }
@@ -16513,7 +16513,7 @@ export declare class SourceBufferList extends EventTarget {
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof SourceBufferListEventMap>(mut self, type: K, listener: fn (this: SourceBufferList, ev: SourceBufferListEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<SourceBuffer>,
+    [Symbol.iterator](self) -> ArrayIterator<SourceBuffer>,
     static prototype: SourceBufferList,
     constructor(mut self)
 }
@@ -16538,7 +16538,7 @@ export declare class SpeechRecognitionResult {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionResult/item) */
     item(mut self, index: number) -> SpeechRecognitionAlternative,
-    [Symbol.iterator](mut self) -> ArrayIterator<SpeechRecognitionAlternative>,
+    [Symbol.iterator](self) -> ArrayIterator<SpeechRecognitionAlternative>,
     static prototype: SpeechRecognitionResult,
     constructor(mut self)
 }
@@ -16550,7 +16550,7 @@ export declare class SpeechRecognitionResultList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SpeechRecognitionResultList/item) */
     item(mut self, index: number) -> SpeechRecognitionResult,
-    [Symbol.iterator](mut self) -> ArrayIterator<SpeechRecognitionResult>,
+    [Symbol.iterator](self) -> ArrayIterator<SpeechRecognitionResult>,
     static prototype: SpeechRecognitionResultList,
     constructor(mut self)
 }
@@ -16753,7 +16753,7 @@ export declare class StylePropertyMapReadOnly {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StylePropertyMapReadOnly/has) */
     has(self, property: string) -> boolean,
     forEach(self, callbackfn: fn (value: mut Array<CSSStyleValue>, key: string, parent: StylePropertyMapReadOnly) -> unknown, thisArg?: unknown) -> unknown,
-    [Symbol.iterator](mut self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
+    [Symbol.iterator](self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     entries(self) -> StylePropertyMapReadOnlyIterator<[string, Iterable<CSSStyleValue>]>,
     keys(self) -> StylePropertyMapReadOnlyIterator<string>,
     values(self) -> StylePropertyMapReadOnlyIterator<Iterable<CSSStyleValue>>,
@@ -16798,7 +16798,7 @@ export declare class StyleSheetList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StyleSheetList/item) */
     item(mut self, index: number) -> CSSStyleSheet | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<CSSStyleSheet>,
+    [Symbol.iterator](self) -> ArrayIterator<CSSStyleSheet>,
     static prototype: StyleSheetList,
     constructor(mut self)
 }
@@ -17111,7 +17111,7 @@ export declare class TextTrackCueList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextTrackCueList/getCueById)
      */
     getCueById(self, id: string) -> TextTrackCue | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<TextTrackCue>,
+    [Symbol.iterator](self) -> ArrayIterator<TextTrackCue>,
     static prototype: TextTrackCueList,
     constructor(mut self)
 }
@@ -17139,7 +17139,7 @@ export declare class TextTrackList extends EventTarget {
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof TextTrackListEventMap>(mut self, type: K, listener: fn (this: TextTrackList, ev: TextTrackListEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
-    [Symbol.iterator](mut self) -> ArrayIterator<TextTrack>,
+    [Symbol.iterator](self) -> ArrayIterator<TextTrack>,
     static prototype: TextTrackList,
     constructor(mut self)
 }
@@ -17259,7 +17259,7 @@ export declare class TouchList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TouchList/item) */
     item(mut self, index: number) -> Touch | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<Touch>,
+    [Symbol.iterator](self) -> ArrayIterator<Touch>,
     static prototype: TouchList,
     constructor(mut self)
 }

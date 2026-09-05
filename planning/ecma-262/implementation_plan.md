@@ -1498,16 +1498,17 @@ dispositions and the counts behind them. The diff is
 `dts_to_esc.ValidateReceivers`, and `dts_to_esc generate --cfg` prints its
 report beside the curation and join ones. Of the 218 methods both sources
 answer, they agreed on 215 and the three disagreements are all resolved, so
-§7 may rank the facts above the name tiers and delete the 24 redundant
+§7 may rank the facts above the name tiers and delete the redundant
 override entries the report lists. Two findings shape the phases after this
 one.
 
-- **§7 (removal list).** `TestCommittedGraphRedundantOverrides` pins the 24
+- **§7 (removal list).** `TestCommittedGraphRedundantOverrides` pins the
   entries a fact answers the same way, and
   `TestCommittedGraphOverridesWithNoFact` pins the 37 no fact addresses. §7
-  works from the two checked lists rather than recomputing them. The 37 are
-  the `web:*` owners plus `String.substr`, an Annex B method the graph does
-  not carry.
+  works from the two checked lists rather than recomputing them, and the
+  first grows whenever an entry lands that the facts already answer. The 37
+  are the `web:*` owners plus `String.substr`, an Annex B method the graph
+  does not carry.
 - **§4.1 (the mutation seed).** The one analyzer bug the diff found is a
   computed-slot write on a declared parameter, which leaves an abstract
   operation `Incomplete` rather than charging the parameter. `Incomplete`
