@@ -186,8 +186,8 @@ export declare interface AsyncGeneratorFunctionConstructor {
 
 export declare interface AsyncIterator<T, TReturn = any, TNext = any> {
     next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>>,
-    return(value?: TReturn | PromiseLike<TReturn>) -> Promise<IteratorResult<T, TReturn>>,
-    throw(e?: any) -> Promise<IteratorResult<T, TReturn>>
+    return?: fn (value?: TReturn | PromiseLike<TReturn>) -> Promise<IteratorResult<T, TReturn>>,
+    throw?: fn (e?: any) -> Promise<IteratorResult<T, TReturn>>
 }
 
 export declare interface AsyncIterable<T, TReturn = any, TNext = any> {
