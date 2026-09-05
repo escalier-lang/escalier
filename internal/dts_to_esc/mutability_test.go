@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/dts_parser"
+	"github.com/escalier-lang/escalier/internal/ecma262"
 	"github.com/stretchr/testify/require"
 )
 
@@ -604,7 +605,8 @@ func TestReceiverMutates_ImmutableOwner(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.owner+"."+tc.method, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.wantMut, ReceiverMutates(tc.owner, tc.method))
+			require.Equal(t, tc.wantMut,
+				ReceiverMutates(nil, tc.owner, ecma262.StrMember(tc.method)))
 		})
 	}
 }
@@ -619,7 +621,7 @@ func TestReceiverMutates_ReadsNonMutatingOverrides(t *testing.T) {
 	require.False(t, ok, "the name-only tiers should miss this name")
 	require.True(t, NonMutatingOverrides("Object").Contains("propertyIsEnumerable"))
 
-	require.False(t, ReceiverMutates("Object", "propertyIsEnumerable"))
+	require.False(t, ReceiverMutates(nil, "Object", ecma262.StrMember("propertyIsEnumerable")))
 	// An owner with no entry keeps the name-only answer.
-	require.True(t, ReceiverMutates("Widget", "propertyIsEnumerable"))
+	require.True(t, ReceiverMutates(nil, "Widget", ecma262.StrMember("propertyIsEnumerable")))
 }

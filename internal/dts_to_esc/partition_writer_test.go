@@ -237,7 +237,7 @@ declare namespace Math {
 	res, err := PartitionLib([]LibInput{es5})
 	require.NoError(t, err)
 
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"std:array", "std:math"}, keysOf(mods))
 
@@ -347,7 +347,7 @@ interface Array<T> {
 	require.NoError(t, err)
 	require.Contains(t, res.Buckets, "std:array")
 
-	mod, err := ConvertBucket(res.Buckets["std:array"])
+	mod, err := ConvertBucket(res.Buckets["std:array"], nil)
 	require.NoError(t, err)
 
 	rootNS, ok := mod.Module.Namespaces.Get("")
@@ -429,7 +429,7 @@ declare var Map: MapConstructor;
 	res, err := PartitionLib([]LibInput{lib})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:map"])
+	mod, err := ConvertBucket(res.Buckets["std:map"], nil)
 	require.NoError(t, err)
 
 	rootNS, ok := mod.Module.Namespaces.Get("")
@@ -510,7 +510,7 @@ declare var Foo: FooConstructor;
 	// manually for the test by building a bucket directly.
 	stmts := lib.Module.Statements
 	stmts = mergeDecls(stmts)
-	mod, err := ConvertBucket(stmts)
+	mod, err := ConvertBucket(stmts, nil)
 	require.NoError(t, err)
 
 	rootNS, _ := mod.Module.Namespaces.Get("")
@@ -561,7 +561,7 @@ declare var Array: ArrayConstructor;
 	res, err := PartitionLib([]LibInput{lib})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:array"])
+	mod, err := ConvertBucket(res.Buckets["std:array"], nil)
 	require.NoError(t, err)
 
 	rootNS, _ := mod.Module.Namespaces.Get("")
@@ -637,7 +637,7 @@ interface String {
 	})
 	require.NoError(t, err)
 
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 	require.Contains(t, mods, "std:string")
 
@@ -762,7 +762,7 @@ func TestConvertBuckets_NamesThePackageAFailedBucketBelongsTo(t *testing.T) {
 				Extends: &dts_parser.PrimitiveType{Kind: dts_parser.PrimNumber},
 			}},
 		},
-	})
+	}, nil)
 	require.EqualError(t, err,
 		"converting bucket std:array: extends type for class Array isn't a type ref")
 
@@ -787,7 +787,7 @@ declare var Array: ArrayConstructor;
 `)
 	res, err := PartitionLib([]LibInput{es5})
 	require.NoError(t, err)
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 
 	cases := []struct {
@@ -946,7 +946,7 @@ interface MapConstructor {
 	})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:map"])
+	mod, err := ConvertBucket(res.Buckets["std:map"], nil)
 	require.NoError(t, err)
 	rootNS, ok := mod.Module.Namespaces.Get("")
 	require.True(t, ok)
@@ -1067,7 +1067,7 @@ declare global {
 	res, err := PartitionLib([]LibInput{script, module_})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:iterator"])
+	mod, err := ConvertBucket(res.Buckets["std:iterator"], nil)
 	require.NoError(t, err)
 	printed, err := RenderStandaloneModule(mod)
 	require.NoError(t, err)

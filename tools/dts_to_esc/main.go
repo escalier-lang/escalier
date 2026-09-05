@@ -25,12 +25,15 @@
 //	    recording the converted form it stands in for, instead of
 //	    checking what those sidecars already record.
 //
-//	    With --cfg, the run also joins every std:* member it emits
-//	    against the ECMA-262 effect facts derived from that control-flow
-//	    graph, and reports the names present on one side only. It reports
-//	    what the curated layer did to those facts alongside it, and diffs
-//	    every receiver claim against the hand-written mutability sources.
-//	    See planning/ecma-262/implementation_plan.md.
+//	    The facts come from the control-flow graph internal/ecma262
+//	    commits. --cfg classifies from the graph at that path instead,
+//	    and prints four reports about it: the join of every std:* member
+//	    the run emits against those facts, naming what is present on one
+//	    side only, what the curated layer did to them, what the coercion
+//	    filter dropped, and how every receiver claim compares with the
+//	    hand-written mutability sources. It is how a spec bump is
+//	    previewed before its graph is committed. See
+//	    planning/ecma-262/implementation_plan.md.
 package main
 
 import (
@@ -88,7 +91,11 @@ func runSingleFile(args []string, out io.Writer) error {
 	if len(errs) > 0 {
 		return fmt.Errorf("parse errors in %s: %v", path, errs)
 	}
-	standalone, err := dts_to_esc.ConvertToStandaloneModule(dtsModule)
+	facts, err := ecma262.CommittedFacts()
+	if err != nil {
+		return err
+	}
+	standalone, err := dts_to_esc.ConvertToStandaloneModule(dtsModule, dts_to_esc.NewReceiverFacts(facts))
 	if err != nil {
 		return fmt.Errorf("converting %s: %w", path, err)
 	}
@@ -109,7 +116,7 @@ func runGenerate(args []string, stderr io.Writer) error {
 	// second time. Discarding its output leaves one report per error.
 	flags := flag.NewFlagSet("generate", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
-	cfgPath := flags.String("cfg", "", "path to the ECMA-262 cfg.json; adds the curation, coercion-filter, receiver-validation, and effect-fact join reports")
+	cfgPath := flags.String("cfg", "", "path to an ECMA-262 cfg.json to classify receivers from and report on; defaults to the committed graph, which prints no reports")
 	overlayDir := flags.String("overlay", "", "`path` to the overlay tree; defaults to the overlay directory beside <esc-dir>")
 	updateDigests := flags.Bool("update-digests", false, "record what every overlay replace stands in for, rather than checking the recorded digests")
 	if err := flags.Parse(args); err != nil {
@@ -144,6 +151,7 @@ func runGenerate(args []string, stderr io.Writer) error {
 		OutDir:        escDir,
 		HandAuthored:  dts_to_esc.HandAuthoredPackages,
 		RecordDigests: *updateDigests,
+		Facts:         dts_to_esc.NewReceiverFacts(facts),
 	})
 	if err != nil {
 		return err
@@ -163,19 +171,31 @@ func runGenerate(args []string, stderr io.Writer) error {
 	if err := dts_to_esc.ReportSingletonKeyDrops(res.Modules, stderr); err != nil {
 		return err
 	}
+	if *cfgPath == "" {
+		// Every run classifies from the facts; only a run that named a
+		// graph reports on it. The filter report alone runs to thousands
+		// of lines, which is a review artifact rather than something a
+		// regeneration should print.
+		return nil
+	}
 	return writeFactReports(facts, join, res.Modules, stderr)
 }
 
-// loadFacts derives the ECMA-262 facts a run reports against, or returns
-// nils when no cfg.json was named.
+// loadFacts derives the ECMA-262 facts a run classifies receivers from and
+// reports against. cfgPath names the graph to analyze; "" reads the graph
+// internal/ecma262 commits, which is what a run producing the committed tree
+// uses. Passing one is how a spec bump is previewed before it is committed.
 //
 // The facts are derived before any output is written, so neither a bad
 // --cfg path nor a fact with a hole in it leaves a half-joined tree on
-// disk. The tree does not read the facts, but a run that ends in an
-// error should not leave output behind that looks like it succeeded.
+// disk.
 func loadFacts(cfgPath string, stderr io.Writer) (*ecma262.Facts, *ecma262.Join, error) {
 	if cfgPath == "" {
-		return nil, nil, nil
+		facts, err := ecma262.CommittedFacts()
+		if err != nil {
+			return nil, nil, err
+		}
+		return facts, ecma262.NewJoin(facts), nil
 	}
 	cfg, err := ecma262.LoadCFG(cfgPath)
 	if err != nil {
@@ -216,9 +236,6 @@ func writeFactReports(
 	mods map[string]*dts_to_esc.StandaloneModule,
 	stderr io.Writer,
 ) error {
-	if join == nil {
-		return nil
-	}
 	if err := ecma262.WriteCurationReport(facts.Curation(), stderr); err != nil {
 		return err
 	}

@@ -67,7 +67,7 @@ export declare class RegExp {
      * @param limit if not undefined, the output array is truncated so that it contains no more
      * than 'limit' elements.
      */
-    [Symbol.split](mut self, string: string, limit?: number) -> mut Array<string>,
+    [Symbol.split](self, string: string, limit?: number) -> mut Array<string>,
     /**
      * Returns a Boolean value indicating the state of the dotAll flag (s) used with a regular expression.
      * Default is false. Read-only.
@@ -78,7 +78,7 @@ export declare class RegExp {
      * containing the results of that search.
      * @param string A string to search within.
      */
-    [Symbol.matchAll](mut self, str: string) -> RegExpStringIterator<RegExpMatchArray>,
+    [Symbol.matchAll](self, str: string) -> RegExpStringIterator<RegExpMatchArray>,
     /**
      * Returns a Boolean value indicating the state of the hasIndices flag (d) used with a regular expression.
      * Default is false. Read-only.

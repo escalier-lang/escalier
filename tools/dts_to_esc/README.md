@@ -75,13 +75,19 @@ A `replace` records the converted form it stands in for so a later run
 fails when that form moves, and this is the flag that records it. Run it
 after writing a new `replace`, and again to accept a form that has moved.
 
-`--cfg <cfg.json>` additionally joins every `std:*` member the run emits
-against the ECMA-262 effect facts derived from that control-flow graph
-and reports the names present on one side only. It also reports what the
-curated layer and the coercion filter did to those facts, and diffs the
-receiver claim of every instance method against the hand-written
-mutability sources. See §5, §6, and §9.2 of
+Every run classifies each emitted method's receiver from the ECMA-262
+effect facts, derived from the control-flow graph `internal/ecma262`
+embeds. The facts rank above the converter's name heuristics and below
+the explicit signals in the `.d.ts`. See §7 of
 [planning/ecma-262/implementation_plan.md](../../planning/ecma-262/implementation_plan.md).
+
+`--cfg <cfg.json>` classifies from the graph at that path instead, and
+prints four reports about it. It joins every `std:*` member the run emits
+against those facts and lists the names present on one side only, reports
+what the curated layer and the coercion filter did to them, and diffs the
+receiver claim of every instance method against the hand-written
+mutability sources. It is how a spec bump is previewed before its graph is
+committed. See §5, §6, and §9.2 of the same plan.
 
 ## Bumping the pinned TypeScript version
 

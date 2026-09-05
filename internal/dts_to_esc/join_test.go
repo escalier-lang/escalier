@@ -15,7 +15,7 @@ import (
 // drilling into each triple.
 func collectFrom(t *testing.T, src string) string {
 	t.Helper()
-	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", src).Module)
+	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", src).Module, nil)
 	require.NoError(t, err)
 
 	decls := CollectDeclarations(mod)
@@ -256,7 +256,7 @@ interface Fixture {
     withTail(head: string): string;
     withTail(head: string, tail: string): string;
 }
-`).Module)
+`).Module, nil)
 	require.NoError(t, err)
 
 	tail := 1
@@ -312,7 +312,7 @@ interface CallableFunction extends Function {
 // from.
 func returnsFrom(t *testing.T, src string) string {
 	t.Helper()
-	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", src).Module)
+	mod, err := ConvertToStandaloneModule(parseLib(t, "lib.test.d.ts", src).Module, nil)
 	require.NoError(t, err)
 
 	var lines []string
@@ -403,7 +403,7 @@ interface DataView {
     getUint8(byteOffset: number): number;
     setFloat64(byteOffset: number, value: number, littleEndian?: boolean): void;
 }
-`).Module)
+`).Module, nil)
 	require.NoError(t, err)
 
 	unnamed := ecma262.ReturnFact{Kind: ecma262.AliasUnknown}
@@ -458,7 +458,7 @@ declare function parseInt(string: string, radix?: number): number;
 `)}
 	result, err := PartitionLib(inputs)
 	require.NoError(t, err)
-	mods, err := ConvertBuckets(result)
+	mods, err := ConvertBuckets(result, nil)
 	require.NoError(t, err)
 
 	facts := &ecma262.Facts{
