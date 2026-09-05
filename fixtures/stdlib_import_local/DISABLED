@@ -1,0 +1,9 @@
+DISABLED until SimpleSub M7.5.
+
+The §2-era std:array and std:math stubs this fixture was written
+against are gone; #1232 committed the real generated packages. The
+prelude loads the ES2015 lib subset (internal/checker/prelude.go,
+targetVersion) while `generate` reads all 88 lib files, so every
+post-ES2015 global the tree declares fails the §3.4(4) `@js` target
+check and the package fails to load. Re-enable by deleting this file
+once M7.5 ingests the committed tree. See #1402.

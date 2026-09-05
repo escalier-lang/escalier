@@ -708,6 +708,19 @@ func (p *Printer) printInterfaceDecl(decl *ast.InterfaceDecl) {
 
 	p.printGenericParams(decl.LifetimeParams, decl.TypeParams)
 
+	// An `extends` clause names the definition an interface inherits
+	// its members from. Dropping it here would print an interface that
+	// parses back with none of them.
+	if len(decl.Extends) > 0 {
+		p.writeString(" extends ")
+		for i, ext := range decl.Extends {
+			if i > 0 {
+				p.writeString(", ")
+			}
+			p.printTypeAnn(ext)
+		}
+	}
+
 	p.space()
 	p.printTypeAnn(decl.TypeAnn)
 }

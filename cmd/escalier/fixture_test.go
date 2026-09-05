@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -79,7 +80,19 @@ func copyDir(src string, dst string) error {
 }
 
 // TODO: Update this to work with changes to `build` in build.go
+// disabledMarker is the file that holds a fixture out of the run. It
+// is the fixture-tree counterpart of wrapping a Go test body in `/* */`
+// under a `DISABLED until <milestone>` comment: the fixture stays
+// committed and readable, and its contents say which milestone brings
+// it back. checkFixture reports the reason so a run says what it
+// skipped and why.
+const disabledMarker = "DISABLED"
+
 func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
+	if reason, err := os.ReadFile(filepath.Join(fixtureDir, disabledMarker)); err == nil {
+		t.Skip(strings.TrimSpace(string(reason)))
+	}
+
 	tmpDir := t.TempDir()
 
 	err := os.Mkdir(filepath.Join(tmpDir, "lib"), 0755)

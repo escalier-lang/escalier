@@ -562,3 +562,57 @@ func TestClassifyMethodByName(t *testing.T) {
 		})
 	}
 }
+
+// TestReceiverMutates_ImmutableOwner covers the owner-wide tier. Every
+// instance method on a primitive wrapper leaves the receiver alone, and
+// the name-only tiers cannot say so: `strike` and `italics` match no
+// heuristic prefix, so they reach the mutating default. Naming the owner
+// is what answers them.
+func TestReceiverMutates_ImmutableOwner(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		owner, method string
+		wantMut       bool
+	}{
+		// Annex B string wrappers: no prefix matches, so the name-only
+		// tiers default to mutating.
+		{"String", "strike", false},
+		{"String", "italics", false},
+		{"String", "repeat", false},
+		// `normalize` reads as mutating by prefix, and does not mutate
+		// a string.
+		{"String", "normalize", false},
+		{"Number", "toFixed", false},
+		{"Boolean", "valueOf", false},
+		{"Symbol", "toString", false},
+		{"BigInt", "toLocaleString", false},
+		// A mutable owner keeps the name-only answer.
+		{"Array", "push", true},
+		{"Array", "slice", false},
+		{"Map", "set", true},
+		// An owner with no rule and a name no tier matches falls to the
+		// mutating default.
+		{"Widget", "frobnicate", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.owner+"."+tc.method, func(t *testing.T) {
+			t.Parallel()
+			require.Equal(t, tc.wantMut, ReceiverMutates(tc.owner, tc.method))
+		})
+	}
+}
+
+// TestReceiverMutates_ReadsNonMutatingOverrides covers the tier between
+// the owner-wide rule and the name-only heuristics. `propertyIsEnumerable`
+// matches no prefix, so the heuristics leave it to the mutating default,
+// and nonMutatingOverrides records the answer for it under Object.
+func TestReceiverMutates_ReadsNonMutatingOverrides(t *testing.T) {
+	t.Parallel()
+	_, ok := ClassifyMethodByName("propertyIsEnumerable")
+	require.False(t, ok, "the name-only tiers should miss this name")
+	require.True(t, NonMutatingOverrides("Object").Contains("propertyIsEnumerable"))
+
+	require.False(t, ReceiverMutates("Object", "propertyIsEnumerable"))
+	// An owner with no entry keeps the name-only answer.
+	require.True(t, ReceiverMutates("Widget", "propertyIsEnumerable"))
+}

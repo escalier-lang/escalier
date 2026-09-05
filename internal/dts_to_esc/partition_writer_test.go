@@ -435,10 +435,11 @@ declare var Map: MapConstructor;
 	rootNS, ok := mod.Module.Namespaces.Get("")
 	require.True(t, ok)
 
-	// ReadonlyMap must not survive as an interface — it should
-	// have been replaced by a `type ReadonlyMap<K, V> = Map<K, V>`.
+	// ReadonlyMap leaves the output entirely. Escalier spells the
+	// immutable view `Map<K, V>` and the mutable one `mut Map<K, V>`,
+	// so the readonly name has nothing left to denote once every
+	// reference to it is respelled.
 	var mapClass *ast.ClassDecl
-	var readonlyAlias *ast.TypeDecl
 	for _, decl := range rootNS.Decls {
 		switch d := decl.(type) {
 		case *ast.ClassDecl:
@@ -449,13 +450,11 @@ declare var Map: MapConstructor;
 			require.NotEqual(t, "ReadonlyMap", d.Name.Name,
 				"ReadonlyMap must be dropped, not emitted as an interface")
 		case *ast.TypeDecl:
-			if d.Name.Name == "ReadonlyMap" {
-				readonlyAlias = d
-			}
+			require.NotEqual(t, "ReadonlyMap", d.Name.Name,
+				"ReadonlyMap must be dropped, not aliased to Map")
 		}
 	}
 	require.NotNil(t, mapClass, "Map should be trio-fused into a class")
-	require.NotNil(t, readonlyAlias, "ReadonlyMap should be emitted as a type alias")
 
 	// Receivers: methods on the readonly twin are `self`; others `mut self`.
 	wantReceiver := map[string]bool{ // method name → want mut?
@@ -486,11 +485,6 @@ declare var Map: MapConstructor;
 		require.True(t, seen.Contains(name), "method %s should be present on Map", name)
 	}
 
-	// Alias's RHS is Map<K, V>.
-	rhs, ok := readonlyAlias.TypeAnn.(*ast.TypeRefTypeAnn)
-	require.True(t, ok)
-	require.Equal(t, "Map", ast.QualIdentToString(rhs.Name))
-	require.Len(t, rhs.TypeArgs, 2)
 }
 
 func TestConvertBucket_ReadonlyTwinAppendsUniqueMembers(t *testing.T) {
@@ -598,20 +592,71 @@ export declare class Array<T> {
     static readonly prototype: mut Array<any>
 }`))
 
-	// The synthesised `type ReadonlyArray<T> = Array<T>` alias's RHS
-	// must remain a bare TypeRef — the rewrite pass runs before
-	// appendReadonlyAliases, so the alias is appended after the
-	// wrapping pass and its `Array<T>` reference stays unwrapped.
-	var alias *ast.TypeDecl
+	// No `ReadonlyArray` survives in any form. The rewrite above put
+	// every reference into Escalier's vocabulary, and an alias would
+	// put the TypeScript spelling back as a second name for `Array<T>`.
 	for _, decl := range rootNS.Decls {
-		if td, ok := decl.(*ast.TypeDecl); ok && td.Name.Name == "ReadonlyArray" {
-			alias = td
+		td, ok := decl.(*ast.TypeDecl)
+		if !ok {
+			continue
+		}
+		require.NotEqual(t, "ReadonlyArray", td.Name.Name,
+			"ReadonlyArray must be dropped, not aliased to Array")
+	}
+}
+
+// TestConvertBuckets_RewritesTwinRefsAcrossPackages covers the scope the
+// rewrite runs at. TypeScript spells one type two ways, `Array<T>` and
+// `ReadonlyArray<T>`; Escalier spells it once and qualifies the use site
+// with `mut`. The rewrite translates between the two vocabularies.
+//
+// The declarations it keys off sit in one bucket while the references
+// sit in many. std:array declares both names below and std:string
+// references both without declaring either, so a rewrite reading only
+// its own bucket's twins leaves every other package spelled the
+// TypeScript way.
+func TestConvertBuckets_RewritesTwinRefsAcrossPackages(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{
+		parseLib(t, "lib.es5.d.ts", `
+interface ReadonlyArray<T> {
+    readonly length: number;
+}
+interface Array<T> {
+    length: number;
+}
+interface ArrayConstructor {
+    new <T>(): Array<T>;
+}
+declare var Array: ArrayConstructor;
+interface String {
+    split(sep: string): string[];
+    join(parts: ReadonlyArray<string>): string;
+}
+`),
+	})
+	require.NoError(t, err)
+
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+	require.Contains(t, mods, "std:string")
+
+	rootNS, ok := mods["std:string"].Module.Namespaces.Get("")
+	require.True(t, ok)
+	var str *ast.InterfaceDecl
+	for _, decl := range rootNS.Decls {
+		if id, ok := decl.(*ast.InterfaceDecl); ok && id.Name.Name == "String" {
+			str = id
 		}
 	}
-	require.NotNil(t, alias)
-	rhs, ok := alias.TypeAnn.(*ast.TypeRefTypeAnn)
-	require.True(t, ok, "ReadonlyArray alias RHS should be a bare TypeRef, got %T", alias.TypeAnn)
-	require.Equal(t, "Array", ast.QualIdentToString(rhs.Name))
+	require.NotNil(t, str)
+
+	printed, err := printer.Print(str, printer.DefaultOptions())
+	require.NoError(t, err)
+	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`export declare interface String {
+    split(sep: string) -> mut Array<string>,
+    join(parts: Array<string>) -> string
+}`))
 }
 
 // TestReportPartition_NamesDropsWithoutRoutedCounts pins both halves of
@@ -811,4 +856,61 @@ func keysOf(mods map[string]*StandaloneModule) []string {
 		out = append(out, uri)
 	}
 	return out
+}
+
+// TestMergeDecls_RenamesTypeParamsToTheRetainedDecl covers the case the
+// merge's own comment assumed away. Merged declarations of one interface
+// may name their parameters differently, and mergeDecls keeps the first
+// declaration's. `lib.es2015.iterable.d.ts` declares `Iterator<T, TReturn
+// = any, TNext = any>` while `lib.esnext.iterator.d.ts` declares
+// `Iterator<T, TResult, TNext>` with an `extends` clause naming TResult,
+// so appending that clause unchanged leaves TResult naming nothing.
+func TestMergeDecls_RenamesTypeParamsToTheRetainedDecl(t *testing.T) {
+	t.Parallel()
+	res, err := PartitionLib([]LibInput{
+		parseLib(t, "lib.es2015.iterable.d.ts", `
+interface Iterator<T, TReturn = any, TNext = any> {
+    next(value?: TNext): TReturn;
+}
+`),
+		parseLib(t, "lib.esnext.iterator.d.ts", `
+interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> {
+    take(limit: number): TResult;
+}
+`),
+	})
+	require.NoError(t, err)
+
+	var iter *dts_parser.InterfaceDecl
+	for _, stmt := range res.Buckets["std:iterator"] {
+		if id, ok := stmt.(*dts_parser.InterfaceDecl); ok && id.Name.Name == "Iterator" {
+			iter = id
+		}
+	}
+	require.NotNil(t, iter)
+
+	// The retained parameters are the first declaration's.
+	names := make([]string, 0, len(iter.TypeParams))
+	for _, tp := range iter.TypeParams {
+		names = append(names, tp.Name.Name)
+	}
+	require.Equal(t, []string{"T", "TReturn", "TNext"}, names)
+
+	// Every reference the second declaration contributed reads against
+	// them, in its `extends` clause and in its members alike.
+	var refs []string
+	collect := func(t dts_parser.TypeAnn) {
+		walkTypeRefs(t, func(ref *dts_parser.TypeReference) {
+			refs = append(refs, typeRefName(ref))
+		})
+	}
+	for _, ext := range iter.Extends {
+		collect(ext)
+	}
+	for _, m := range iter.Members {
+		walkInterfaceMemberTypes(m, collect)
+	}
+	require.NotContains(t, refs, "TResult",
+		"the merged declaration has no TResult parameter to bind")
+	require.Contains(t, refs, "TReturn")
 }

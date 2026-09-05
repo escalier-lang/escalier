@@ -19,7 +19,7 @@ Status legend: ✅ done, 🚧 partial, ⬜ not started.
 | 4   | Single `web:dom` package + inter-package imports     | FR6, FR7 (deferred), FR8, FR9 (deferred) | ✅ | §2 | SCC-aware pseudo-package loader (`internal/checker/infer_stdlib_scc.go`) permits cycles among `std:`/`web:` packages (§4.3); §4.4 gate fixtures (closed-registry `keyof T` / `T[K]` narrowing, NS-keyed overloads, cross-package qualified type references, std↔std / web↔web / web↔std cycles, decorator-error URI labels, rollback) pass in `internal/checker/tests/stdlib_import_test.go`. MVP collapses the entire DOM tree (HTML/SVG/MathML/CSSOM/observers/events/…) into one `web:dom` package with closed registries; standalone web APIs (Fetch, Streams, Crypto, Workers, WebGL, …) get sibling `web:*` packages that thread `web:dom` types through via qualified references (§4.2). Well-known symbols stay on `Symbol`; domain packages re-export aliases (FR8). FR7 (per-file cross-package augmentation) and FR9 (its activation semantics) are deferred to a future custom-elements workstream; §4.1 records the spike conclusions. §4.6 (method-elem overload resolution on class/interface declarations) landed via PR-A (#652), PR-B (#653), and PR-C (#656); the NS-keyed-overloads gate fixture is now declared as methods on a `Document` class, matching the shape the real DOM needs. Inheritance + `implements` overload merging is deferred to [#651](https://github.com/escalier-lang/escalier/issues/651). |
 | 5   | Converter MVP (`tools/dts_to_esc/`)                  | FR10        | ✅      | §1, §3     | CLI at [tools/dts_to_esc/](../../tools/dts_to_esc/) wraps `dts_to_esc.ConvertToStandaloneModule` ([internal/dts_to_esc/dts_to_esc.go](../../internal/dts_to_esc/dts_to_esc.go)). Boolean-trio fusion + namespace flattening + `@js("...")` decoration land; gate fixtures in [internal/dts_to_esc/dts_to_esc_test.go](../../internal/dts_to_esc/dts_to_esc_test.go) (printed output parses; idempotent re-conversion; trio yields one `ClassDecl` and zero `VarDecl`; namespace slice emits zero nested namespaces). |
 | 6   | Converter productionization                          | FR10        | 🚧      | §5         | PR A landed: hand-maintained partition map ([internal/dts_to_esc/partition.go](../../internal/dts_to_esc/partition.go)) with `Route` + DOM residual + unmapped-symbol fail-safe; partition pipeline ([internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go)) that buckets, interface-/namespace-merges across input files, converts each bucket, and writes the partitioned tree under `<out>/std/`, `<out>/web/`, `<out>/node/`; the seeding subcommand `dts_to_esc bootstrap <lib-dir> <out-dir>`. The whole pinned lib set now routes and converts: 49 packages under `std/` and `web/`, every emitted file reparses, and two runs produce identical trees. #1333 and #1340 closed the last printer and parser gaps. PR D landed: the AST-producing conversion moved to [internal/dts_to_esc/](../../internal/dts_to_esc/), leaving `internal/interop` with the runtime override store alone. The converter reads recorded receiver mutability through the `dts_to_esc.OverrideLookup` interface, which the store implements, so no converter file imports `type_system`. One transitive link survives through `internal/ast`, which names `type_system.Type` and `type_system.BindingOwner`; M12 re-homes those two references whether or not the converter moves. PR B landed check 1 (missing declarations and members) plus additive write mode, wired as `dts_to_esc check` and `dts_to_esc regenerate`; its §6.4 checks 2 and 3 run the solver's `constrain` over `soltype` and wait on SimpleSub M7.5. PR C landed the three pinned-lib subcommands `bootstrap` / `regenerate` / `check`, the unified-diff `check` report over `go-udiff`, and the bump walkthrough in [tools/dts_to_esc/README.md](../../tools/dts_to_esc/README.md). PR E ([#1341](https://github.com/escalier-lang/escalier/issues/1341)) supersedes B and C: a generated `.esc` becomes a build output written by one `generate` subcommand from the three inputs of §6.4, so [#1345](https://github.com/escalier-lang/escalier/issues/1345) removed the additive write mode, the `check` / `regenerate` split, and the `go-udiff` dependency, and regenerating and diffing subsumes B's outstanding checks 2 and 3 without waiting on SimpleSub M7.5. §6.8 sequences the four derived determinations onto the generated declarations and records the three trio shapes that do not fuse yet — 625 inline-constructor pairs deferred with `web:*` fusion, `Array`, and `Symbol` / `BigInt`. |
-| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | ⬜      | §6         | Run `generate` once; review; commit the tree together with the overlay and `curated.json` entries that produce it. Review never edits the output — a wrong determination costs a `curated.json` entry, an inexpressible shape costs an overlay `replace`, a systematic error is a converter fix (§7 step 2). The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
+| 7   | Stdlib bootstrap (committed `.esc` files)            | FR1–FR2     | 🚧      | §6         | Run `generate` once; review; commit the tree together with the overlay and `curated.json` entries that produce it. Review never edits the output — a wrong determination costs a `curated.json` entry, an inexpressible shape costs an overlay `replace`, a systematic error is a converter fix (§7 step 2). The output is checker-agnostic `.esc` source, so this can land before SimpleSub M7.5 ingests it. The tree is committed: 49 packages, 40,312 lines, byte-identical on a re-run. Nothing type-checks it yet — the prelude loads the ES2015 lib subset while `generate` reads all 88 lib files, so every post-ES2015 global the tree declares fails the §3.4(4) `@js` target check ([#1402](https://github.com/escalier-lang/escalier/issues/1402)). Four `TestStdlibImport_*` tests and the `stdlib_import_local` and `stdlib_import_single_class` fixtures are disabled against it until M7.5. (§4.6 prerequisite for same-named method dispatch — `createElement`, `addEventListener`, `getContext`, … — landed with §4.)                                                                                                                                                                                                                                                                                            |
 | 8   | Internal fixture migration                           | (before M12)  | ⬜ | §4, §7, M7.5 | Migrate Escalier's own fixtures to `import "std:*"`. The solver has no ambient surface, so this is what lets SimpleSub M8's second fixture harness run the `fixtures/` tree at all. Requires §7 because the imports resolve against the committed `.esc` files; requires §4 for any fixture that touches inter-package imports / the single-`web:dom` package + cross-package type references. The old checker keeps resolving previously-ambient names while it exists, so the added imports are additive and both harnesses stay green. |
 | 9   | Per-file shape loading in `internal/solver`          | FR11, FR12  | ⬜      | §2, §4, §7, §8, M7.5 | Add the FR11 trigger map on top of M7.5's import ingestion, so a file gets a literal's or language feature's method surface without naming the owning package. There is no switchover: the solver never had an ambient lib, and the legacy `internal/checker/` machinery goes out with the M12 flip, so §9.3 is an audit rather than a deletion PR. Re-home the §3.4 loader rules: rules 1–3 are AST-only and move to the pseudo-package load path; rule 4 (`@js` arg validation) needs a parsed TS lib, which only the old checker has via `GlobalScope.Namespace.Values` in [js_globals.go](../../internal/checker/js_globals.go), so it becomes a CI-only test that freshly parses the pinned `lib.*.d.ts` and validates every `@js("...")` arg across the committed stdlib. Same test adds **rule §3.4(5): `@js` decl shape matches lib target** — locate the lib member named by each `@js("...")` and assert: `readonly` / getter-only lib member ⇒ Escalier decl is `val` or `get`, never `var`; setter-only ⇒ `set`; method ⇒ `fn`. Catches stdlib stubs that silently make readonly things look writable. Today `@js("Math.PI") export declare var PI: number` compiles and lowers to a `Math.PI = ...` that TypeErrors at runtime. Rule 5 shares the lib parse with rule 4, so doing them separately would duplicate it. |
 | 10  | Intrinsics, adaptive rendering, LSP support          | FR13, FR15, FR16 | ⬜ | M7.5, M9, M11, M11.5 | Implement adaptive diagnostic rendering (FR15) over the `soltype` printer and the auto-import quick-fix (FR16) on the solver-backed LSP (SimpleSub M11); verify the `Awaited<T>` source-level definition with documented-fallback policy; confirm the intrinsic handlers stay solver-resident (FR13). |
@@ -1774,10 +1774,12 @@ not mutate; the new converter does the same at emission time:
 2. Append any `ReadonlyFoo` member not already present on `Foo`
    to `Foo.Members` so the fused class carries the readonly
    surface too.
-3. Drop the `ReadonlyFoo` declaration from the bucket and emit
-   `type ReadonlyFoo<…> = Foo<…>` in its place — keeps the
-   readonly name resolvable in user code (no runtime referent;
-   the type alias has no `@js(...)`).
+3. Drop the `ReadonlyFoo` declaration from the bucket, with
+   nothing standing in for it. Escalier spells the immutable view
+   `Foo<…>` and the mutable one `mut Foo<…>`, so once the rewrite
+   below respells every reference the readonly name has nothing
+   left to denote, and an alias would only offer a second spelling
+   for a type that already has one.
 4. After trio fusion produces `class Foo`, post-process each
    instance `MethodElem`: if the method name appears on the
    readonly twin's member set, set `Receiver.Mut = false`;
@@ -1790,21 +1792,48 @@ See `fuseReadonlyTwins` / `applyReadonlyTwinReceivers` /
 `appendReadonlyAliases` in
 [internal/dts_to_esc/partition_writer.go](../../internal/dts_to_esc/partition_writer.go).
 
-**Known gap: the alias in step 3 keeps no readonly restriction.**
-`type ReadonlyArray<T> = Array<T>` makes the two names one type, so
-a `ReadonlyArray<T>` value accepts `push` and every other
-mutable-only member. Step 4's receiver flip is narrower than it
-looks: it decides whether a method on the fused `Foo` takes
-`self` or `mut self`, which stops a mutation through an immutable
-binding, but it does not remove a member from the readonly name's
-surface. Resolving this needs one of two things, and the §7 review
-is where the choice gets made and recorded: emit `ReadonlyFoo` as
-its own declaration carrying only the twin's members, or keep the
-alias and restrict it at the type level once the operator
-machinery exists. Fixtures for whichever route is picked must
-cover a mutable-only member on both `ReadonlyArray` and
-`ReadonlyMap` — `push` and `set` are the obvious ones — and assert
-it is rejected through the readonly name.
+**Step 4 is retired.** The twins were a proxy for receiver
+mutability: presence on `ReadonlyFoo` said the method does not
+mutate. The ECMA-262 derived facts answer that from the
+specification instead, and `generate` reports zero disagreements
+between the two over the pinned lib set, so the twin adds nothing
+the facts do not already settle. §7 recorded the decision and
+[#1408](https://github.com/escalier-lang/escalier/issues/1408)
+carries the removal. Steps 1 through 3 stay: the twin's members
+still reach the fused class, and `ReadonlyFoo` still leaves the
+bucket.
+
+**The reference rewrite runs over every bucket at once.** A twin's
+declarations and the references to them sit in different packages.
+`Array` and `ReadonlyArray` are declared in `std:array`, and 35
+other packages reference them without declaring either — `web:dom`
+alone writes 119. Rewriting a bucket against only the twins it
+declares leaves every other package spelled the TypeScript way: a
+bare `Array<T>` where Escalier means `mut Array<T>`, and a
+`ReadonlyArray<T>` naming nothing the tree declares. So
+`ConvertBuckets` fuses every bucket before converting any of them
+and passes the whole twin set to the rewrite. Receiver flips stay
+bucket-local, since only the declaring bucket holds both member
+lists.
+
+An `extends` clause keeps the mutable name as written, and that
+name denotes the whole definition rather than the immutable view of
+it.
+A definition holds both `self` and `mut self` methods, and
+extending it inherits all of them, so `interface RegExpMatchArray
+extends Array<string>` gives `RegExpMatchArray` every `Array`
+member including `push`. Whether a given instance may call `push`
+is settled where it is bound, because `push` takes `mut self`.
+Reading the bare name as the immutable view would silently drop
+the mutating half of the inherited surface. `mut` has no place to
+go here in any case: an `extends` clause is typed
+`*ast.TypeRefTypeAnn`, which carries no wrapper.
+
+The same reading covers an `extends` clause the rename touched.
+`interface RTCStatsReport extends ReadonlyMap<string, any>`
+becomes `extends Map<string, any>`, which inherits `set` as well
+as `get`. Nothing is lost, because `set` takes `mut self` and a
+`RTCStatsReport` binding is immutable unless it says `mut`.
 
 ### 6.2 Registry routing
 
@@ -2307,8 +2336,12 @@ replaces.
 
 **Known fusion gaps.** A determination can only land on a fused
 class, since an `interface` member has no receiver to annotate.
-Three shapes do not fuse today, measured over the pinned lib set
-with the Web Worker and Windows Script Host libs excluded:
+Two shapes do not fuse today, measured over the pinned lib set
+with the Web Worker and Windows Script Host libs excluded.
+`Array` was a third: its `ArrayConstructor` returns `T[]`, which
+is `Array<T>` in shorthand rather than a type reference, and
+`ctorReturnNames` now reads both forms
+([#1350](https://github.com/escalier-lang/escalier/issues/1350)).
 
 - **625 `interface Foo` + `declare var Foo: { prototype: Foo, new (…): Foo }`
   pairs**, of which 472 land in `web:dom`. `detectTrios` requires a
@@ -2319,12 +2352,6 @@ with the Web Worker and Windows Script Host libs excluded:
   `web:*` is generated now as a check on the converter's ability to
   read `lib.dom.d.ts` and not yet as an annotated surface.
   [#1351](https://github.com/escalier-lang/escalier/issues/1351).
-- **`Array`**, whose `ArrayConstructor` declares
-  `new <T>(arrayLength: number): T[]`. `hasCtorReturning` looks for
-  a construct signature returning a type reference named `Array`
-  and an array type is not one, so the single most consequential
-  `std:*` type stays an interface.
-  [#1350](https://github.com/escalier-lang/escalier/issues/1350).
 - **`Symbol` and `BigInt`**, whose constructor interfaces carry no
   construct signature at all, because the specification forbids
   `new` on them. [#1309](https://github.com/escalier-lang/escalier/issues/1309).
@@ -2345,6 +2372,16 @@ together with the inputs that produce it. The tree is the source of
 truth for every consumer that reads a `std:*` or `web:*` package;
 the §6.4 inputs are the source of truth for the tree. Tracked as
 [#1232](https://github.com/escalier-lang/escalier/issues/1232).
+
+Work items 1 and 5 are done: the tree is committed at 49 packages
+and 40,312 lines, byte-identical on a re-run. Item 2's mechanical
+half is clean — every exported value-level declaration carries an
+`@js` decorator and no unexported declaration leaks — and its
+judgment half is open. Item 3 needs no overlay entry after all: the
+converter emits `Awaited` faithfully from `lib.es5.d.ts`, so only
+verification is left. Nothing type-checks the tree yet, per
+[#1402](https://github.com/escalier-lang/escalier/issues/1402) and
+[#1403](https://github.com/escalier-lang/escalier/issues/1403).
 
 Depends on §6 PR E. Before that lands this phase reads as
 "hand-edit the generated files", which it no longer is.
@@ -2390,7 +2427,9 @@ Depends on §6 PR E. Before that lands this phase reads as
    M9. On a concrete blocker, fall back to a solver-resident
    intrinsic and document the specific failure.
 4. **FR5 finalization — non-class package exports as namespace
-   members.** §2's single-class shortcut binds the class itself when
+   members**
+   ([#1406](https://github.com/escalier-lang/escalier/issues/1406))**.**
+   §2's single-class shortcut binds the class itself when
    activated; FR5 also calls for other package exports to stay
    reachable as namespace members on the same binding, with static
    methods winning a name collision. §2 left this a TODO in
@@ -2410,16 +2449,24 @@ Depends on §6 PR E. Before that lands this phase reads as
    an ongoing edit goes to one of those inputs and never to a
    generated file. The §6.6 CI job is what keeps that true, and it
    is also what catches an input left uncommitted.
-6. **§3.5 codegen fixtures deferred from §3**, now that
-   `std:number` and `std:iterator` exist as committed packages:
-   hoisted global `parseInt`, the `Symbol.iterator` re-export, and
-   package-private invisibility.
+6. **§3.5 codegen fixtures deferred from §3**
+   ([#1407](https://github.com/escalier-lang/escalier/issues/1407)),
+   now that `std:number` and `std:iterator` exist as committed
+   packages: hoisted global `parseInt`, the `Symbol.iterator`
+   re-export, and package-private invisibility.
 
-**Decision owed here.** The readonly-twin gap from §6 PR A: either
-emit `ReadonlyFoo` as its own declaration carrying only the twin's
-members, or keep the alias and restrict it at the type level.
-Record the choice and add the `ReadonlyArray` / `ReadonlyMap`
-fixtures.
+**Decision made.** The readonly-twin gap from §6 PR A: neither
+route is taken, and the twin names leave the output entirely. The
+twins existed to say whether a method mutates its receiver, and
+the ECMA-262 derived facts answer that directly, with zero
+disagreements between the two over the pinned lib set. Dropping
+the name costs nothing, because Escalier already spells the
+immutable view `Array<T>` and the mutable one `mut Array<T>`.
+`ReadonlyArray<T> = Array<T>` was a second spelling for a type
+that already had one, and TS `ReadonlyArray<T>` now converts
+straight to `Array<T>` at every reference site.
+[#1408](https://github.com/escalier-lang/escalier/issues/1408)
+records the decision.
 
 **Gate.** Humans review the committed files; every emitted file
 parses and round-trips through the printer per §1; regenerating

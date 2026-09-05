@@ -252,11 +252,11 @@ interface QueuingStrategySize { size: number; }
 	}, routing.SoleReferrer)
 }
 
-// TestAnalyzeTypeOnlyRouting_ReadsClassHeritage covers a class's
+// TestAnalyzeTypeOnlyRouting_ReadsExtendsAndImplements covers a class's
 // superclass and the interfaces it implements. Both name a type the
 // members repeat only by accident, so a walk that reads members alone
-// reports the two heritage types as referenced by nothing.
-func TestAnalyzeTypeOnlyRouting_ReadsClassHeritage(t *testing.T) {
+// reports the two as referenced by nothing.
+func TestAnalyzeTypeOnlyRouting_ReadsExtendsAndImplements(t *testing.T) {
 	t.Parallel()
 	res, err := PartitionLib([]LibInput{parseLib(t, "lib.dom.d.ts", `
 declare class Holder extends BaseOpts implements IfaceOpts { x: number; }

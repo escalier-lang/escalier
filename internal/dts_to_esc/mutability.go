@@ -108,6 +108,13 @@ func Classify(ctx ClassifyContext) ClassifyResult {
 		return *override
 	}
 
+	// Tier 4 (owner-wide): a type wrapping an immutable primitive has
+	// no mutating method to find, so the heuristics below have nothing
+	// to decide. See ImmutableOwners.
+	if ImmutableOwners.Contains(ctx.ClassName) {
+		return ClassifyResult{Mut: false, Source: TierBuiltinOverride}
+	}
+
 	// Tier 5: get* prefix rule.
 	if result, ok := classifyGetPrefix(ctx); ok {
 		return result
@@ -173,11 +180,49 @@ func ClassifyMethodByName(name string) (mut bool, ok bool) {
 	return false, false
 }
 
+// ReceiverMutates reports whether calling method on owner mutates the
+// receiver, deciding between `self` and `mut self` on the emitted class.
+// It serves a caller holding two names rather than a
+// dts_parser.ClassMember, which is what trio fusion holds.
+//
+// It runs the owner-wide tiers, then the name-only ones, then Classify's
+// tier-7 default of mutating. Applying that default itself is why it
+// returns a bare bool where Classify and ClassifyMethodByName also
+// report whether a tier matched.
+func ReceiverMutates(owner, method string) bool {
+	if ImmutableOwners.Contains(owner) {
+		return false
+	}
+	if NonMutatingOverrides(owner).Contains(method) {
+		return false
+	}
+	if mut, ok := ClassifyMethodByName(method); ok {
+		return mut
+	}
+	return true
+}
+
 // MethodNames names the methods of one owner whose receiver an override marks
 // non-mutating. Membership means "strip `mut self`". There is no counterpart
 // set for marking a method mutating, because a `.d.ts` method carries
 // `mut self` by default and needs no entry to keep it.
 type MethodNames = set.Set[string]
+
+// ImmutableOwners names the types whose instance methods never take
+// `mut self`. Each wraps a JavaScript primitive, and a primitive is
+// immutable at the language level.
+//
+// Naming the owner rather than its methods is what makes the rule hold
+// as TypeScript grows. A per-method list covers only the names someone
+// thought of, and `strike`, `italics`, and the other Annex B wrappers
+// match no heuristic prefix, so they reach the mutating default.
+var ImmutableOwners = set.FromSlice([]string{
+	"String",
+	"Number",
+	"Boolean",
+	"Symbol",
+	"BigInt",
+})
 
 // nonMutatingOverrides names, per owner, the methods whose receiver the
 // name-only tiers get wrong.
@@ -189,11 +234,11 @@ type MethodNames = set.Set[string]
 // does not belong here. The reader applies the heuristics as a fall-through
 // for any method with no entry.
 //
-// The one production reader is `checker.UpdateMethodMutability`, which strips
-// `mut self` from the `.d.ts`-loaded lib types. Classify does not consult this
-// table. Its tier 4 reads the override store of `internal/interop`, whose
-// built-in subtree is still empty, so the converter reaches a `.d.ts` method
-// through the name-only tiers alone.
+// Two readers consult it: `checker.UpdateMethodMutability`, which strips
+// `mut self` from the `.d.ts`-loaded lib types, and `ReceiverMutates`,
+// which the converter's trio fusion calls. `Classify` does not — its tier 4
+// reads the override store of `internal/interop`, whose built-in subtree is
+// still empty.
 //
 // The key is the name of the interface the `.d.ts` declares the member on.
 //
