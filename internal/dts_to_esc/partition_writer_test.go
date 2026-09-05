@@ -918,8 +918,8 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 // TestConvertBucket_DedupesRepeatedMembers covers what a lib file that
 // adds an overload does to a merged declaration. It restates the
 // signatures it is adding to, so `Map` arrives with two bare
-// constructors and `Bag` with two identical `get`s, while the overloads
-// each file genuinely adds have to survive.
+// constructors and two identical `get`s, while the overloads each file
+// genuinely adds have to survive.
 func TestConvertBucket_DedupesRepeatedMembers(t *testing.T) {
 	t.Parallel()
 	res, err := PartitionLib([]LibInput{
