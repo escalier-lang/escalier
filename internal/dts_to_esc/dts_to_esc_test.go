@@ -1283,3 +1283,186 @@ export declare var Foo: FooConstructor
 	require.Empty(t, parseErrs, "printed output parses")
 	require.Len(t, parsedDecls, 4)
 }
+
+// lib.dom.d.ts writes the constructor side inline on the binding rather
+// than as a named `FooConstructor` interface. There is no second name to
+// match on, so the construct signature is what ties the object type to
+// the instance interface.
+//
+// Each case states the whole emitted module. A pair that fuses leaves
+// one class and nothing else; a pair that does not leaves the interface
+// and the binding exactly as written.
+func TestStandalone_InlineConstructorFuses(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			// AbortController, verbatim from lib.dom.d.ts.
+			name: "object type with a new returning the interface",
+			input: `
+interface AbortController {
+    readonly signal: AbortSignal;
+    abort(reason?: any): void;
+}
+
+declare var AbortController: {
+    prototype: AbortController;
+    new (): AbortController;
+};
+`,
+			want: `@js("AbortController")
+export declare class AbortController {
+    readonly signal: AbortSignal,
+    abort(mut self, reason?: any) -> unknown,
+    static prototype: AbortController,
+    constructor(mut self)
+}
+`,
+		},
+		{
+			// Statics written on the object type land on the class's
+			// static side, the same as members of a named
+			// `FooConstructor` interface do.
+			name: "statics on the object type become statics",
+			input: `
+interface Response {
+    readonly ok: boolean;
+}
+
+declare var Response: {
+    prototype: Response;
+    new (body?: string): Response;
+    error(): Response;
+};
+`,
+			want: `@js("Response")
+export declare class Response {
+    readonly ok: boolean,
+    static prototype: Response,
+    constructor(mut self, body?: string),
+    static error() -> Response
+}
+`,
+		},
+		{
+			// A shared name alone does not make an object type a
+			// constructor side. Without a `new` nothing states the
+			// relationship, so the pair is left as written.
+			name: "object type with no new does not fuse",
+			input: `
+interface Config {
+    readonly debug: boolean;
+}
+
+declare var Config: {
+    readonly defaults: Config;
+};
+`,
+			want: `export declare interface Config {
+    readonly debug: boolean
+}
+
+@js("Config")
+export declare var Config: {
+    readonly defaults: Config
+}
+`,
+		},
+		{
+			// fuseTrio turns each construct signature into a
+			// constructor of the fused class, so a mixed overload set
+			// would come out claiming both build `Config`. The second
+			// builds an `Other` in the source.
+			name: "object type whose new overloads disagree does not fuse",
+			input: `
+interface Config {
+    readonly debug: boolean;
+}
+
+declare var Config: {
+    new (): Config;
+    new (kind: string): Other;
+};
+`,
+			want: `export declare interface Config {
+    readonly debug: boolean
+}
+
+@js("Config")
+export declare var Config: {
+    new () -> Config,
+    new (kind: string) -> Other
+}
+`,
+		},
+		{
+			// The `new` builds something else, so the object type is not
+			// this interface's constructor side.
+			name: "object type whose new returns another type does not fuse",
+			input: `
+interface Config {
+    readonly debug: boolean;
+}
+
+declare var Config: {
+    new (): Other;
+};
+`,
+			want: `export declare interface Config {
+    readonly debug: boolean
+}
+
+@js("Config")
+export declare var Config: {
+    new () -> Other
+}
+`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.input)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A fused DOM interface brings its accessors onto the class, and a
+// class setter has no return type in the grammar. Printing the
+// `undefined` the AST carries there emitted
+// `set style(mut self, v: string) -> undefined`, which does not
+// reparse. lib.dom.d.ts has hundreds of these.
+func TestStandalone_FusedSetterReparses(t *testing.T) {
+	const slice = `
+interface CSSFontFaceRule {
+    get style(): string;
+    set style(v: string);
+}
+
+declare var CSSFontFaceRule: {
+    prototype: CSSFontFaceRule;
+    new (): CSSFontFaceRule;
+};
+`
+	_, printed := convertSlice(t, slice)
+
+	require.Contains(t, printed, "get style(self) -> string",
+		"a getter keeps its return type")
+	require.Contains(t, printed, "set style(mut self, v: string),",
+		"a setter has none")
+	require.NotContains(t, printed, "set style(mut self, v: string) -> undefined",
+		"the return the AST carries for the checker is not printed")
+
+	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+	require.Empty(t, parseErrs, "printed output parses")
+	require.Len(t, parsedDecls, 1)
+}

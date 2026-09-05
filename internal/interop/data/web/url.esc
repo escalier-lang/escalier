@@ -7,7 +7,8 @@
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL)
  */
-export declare interface URL {
+@js("URL")
+export declare class URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/hash) */
     hash: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/host) */
@@ -16,7 +17,7 @@ export declare interface URL {
     hostname: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/href) */
     href: string,
-    toString() -> string,
+    toString(self) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/origin) */
     readonly origin: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/password) */
@@ -34,25 +35,22 @@ export declare interface URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/username) */
     username: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/toJSON) */
-    toJSON() -> string
-}
-
-@js("URL")
-export declare var URL: {
-    prototype: URL,
-    new (url: string | URL, base?: string | URL) -> URL,
+    toJSON(self) -> string,
+    static prototype: URL,
+    constructor(mut self, url: string | URL, base?: string | URL),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/canParse_static) */
-    canParse(url: string | URL, base?: string | URL) -> boolean,
+    static canParse(url: string | URL, base?: string | URL) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/createObjectURL_static) */
-    createObjectURL(obj: Blob | MediaSource) -> string,
+    static createObjectURL(obj: Blob | MediaSource) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/parse_static) */
-    parse(url: string | URL, base?: string | URL) -> URL | null,
+    static parse(url: string | URL, base?: string | URL) -> URL | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/revokeObjectURL_static) */
-    revokeObjectURL(url: string) -> unknown
+    static revokeObjectURL(url: string) -> unknown
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams) */
-export declare interface URLSearchParams {
+@js("URLSearchParams")
+export declare class URLSearchParams {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/size) */
     readonly size: number,
     /**
@@ -60,55 +58,51 @@ export declare interface URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/append)
      */
-    append(name: string, value: string) -> unknown,
+    append(mut self, name: string, value: string) -> unknown,
     /**
      * Deletes the given search parameter, and its associated value, from the list of all search parameters.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/delete)
      */
-    delete(name: string, value?: string) -> unknown,
+    delete(mut self, name: string, value?: string) -> unknown,
     /**
      * Returns the first value associated to the given search parameter.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/get)
      */
-    get(name: string) -> string | null,
+    get(self, name: string) -> string | null,
     /**
      * Returns all the values association with a given search parameter.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/getAll)
      */
-    getAll(name: string) -> mut Array<string>,
+    getAll(self, name: string) -> mut Array<string>,
     /**
      * Returns a Boolean indicating if such a search parameter exists.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/has)
      */
-    has(name: string, value?: string) -> boolean,
+    has(self, name: string, value?: string) -> boolean,
     /**
      * Sets the value associated to a given search parameter to the given value. If there were several values, delete the others.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/set)
      */
-    set(name: string, value: string) -> unknown,
+    set(mut self, name: string, value: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/sort) */
-    sort() -> unknown,
+    sort(mut self) -> unknown,
     /** Returns a string containing a query string suitable for use in a URL. Does not include the question mark. */
-    toString() -> string,
-    forEach(callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: any) -> unknown,
-    [Symbol.iterator]() -> URLSearchParamsIterator<[string, string]>,
+    toString(self) -> string,
+    forEach(self, callbackfn: fn (value: string, key: string, parent: URLSearchParams) -> unknown, thisArg?: any) -> unknown,
+    [Symbol.iterator](mut self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns an array of key, value pairs for every entry in the search params. */
-    entries() -> URLSearchParamsIterator<[string, string]>,
+    entries(self) -> URLSearchParamsIterator<[string, string]>,
     /** Returns a list of keys in the search params. */
-    keys() -> URLSearchParamsIterator<string>,
+    keys(self) -> URLSearchParamsIterator<string>,
     /** Returns a list of values in the search params. */
-    values() -> URLSearchParamsIterator<string>
-}
-
-@js("URLSearchParams")
-export declare var URLSearchParams: {
-    prototype: URLSearchParams,
-    new (init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams) -> URLSearchParams
+    values(self) -> URLSearchParamsIterator<string>,
+    static prototype: URLSearchParams,
+    constructor(mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams)
 }
 
 export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

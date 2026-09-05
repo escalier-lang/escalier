@@ -21,7 +21,8 @@ export declare interface TextEncoderEncodeIntoResult {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoder)
  */
-export declare interface TextDecoder extends TextDecoderCommon {
+@js("TextDecoder")
+export declare class TextDecoder extends TextDecoderCommon {
     /**
      * Returns the result of running encoding's decoder. The method can be invoked zero or more times with options's stream set to true, and then once without options's stream (or set to false), to process a fragmented input. If the invocation without options's stream (or set to false) has no input, it's clearest to omit both arguments.
      *
@@ -37,13 +38,9 @@ export declare interface TextDecoder extends TextDecoderCommon {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoder/decode)
      */
-    decode(input?: AllowSharedBufferSource, options?: TextDecodeOptions) -> string
-}
-
-@js("TextDecoder")
-export declare var TextDecoder: {
-    prototype: TextDecoder,
-    new (label?: string, options?: TextDecoderOptions) -> TextDecoder
+    decode(mut self, input?: AllowSharedBufferSource, options?: TextDecodeOptions) -> string,
+    static prototype: TextDecoder,
+    constructor(mut self, label?: string, options?: TextDecoderOptions)
 }
 
 export declare interface TextDecoderCommon {
@@ -68,15 +65,12 @@ export declare interface TextDecoderCommon {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextDecoderStream) */
-export declare interface TextDecoderStream extends GenericTransformStream, TextDecoderCommon {
-    readonly readable: ReadableStream<string>,
-    readonly writable: WritableStream<BufferSource>
-}
-
 @js("TextDecoderStream")
-export declare var TextDecoderStream: {
-    prototype: TextDecoderStream,
-    new (label?: string, options?: TextDecoderOptions) -> TextDecoderStream
+export declare class TextDecoderStream extends GenericTransformStream {
+    readonly readable: ReadableStream<string>,
+    readonly writable: WritableStream<BufferSource>,
+    static prototype: TextDecoderStream,
+    constructor(mut self, label?: string, options?: TextDecoderOptions)
 }
 
 /**
@@ -84,25 +78,22 @@ export declare var TextDecoderStream: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder)
  */
-export declare interface TextEncoder extends TextEncoderCommon {
+@js("TextEncoder")
+export declare class TextEncoder extends TextEncoderCommon {
     /**
      * Returns the result of running UTF-8's encoder.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encode)
      */
-    encode(input?: string) -> Uint8Array,
+    encode(mut self, input?: string) -> Uint8Array,
     /**
      * Runs the UTF-8 encoder on source, stores the result of that operation into destination, and returns the progress made as an object wherein read is the number of converted code units of source and written is the number of bytes modified in destination.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encodeInto)
      */
-    encodeInto(source: string, destination: Uint8Array) -> TextEncoderEncodeIntoResult
-}
-
-@js("TextEncoder")
-export declare var TextEncoder: {
-    prototype: TextEncoder,
-    new () -> TextEncoder
+    encodeInto(mut self, source: string, destination: Uint8Array) -> TextEncoderEncodeIntoResult,
+    static prototype: TextEncoder,
+    constructor(mut self)
 }
 
 export declare interface TextEncoderCommon {
@@ -115,13 +106,10 @@ export declare interface TextEncoderCommon {
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */
-export declare interface TextEncoderStream extends GenericTransformStream, TextEncoderCommon {
-    readonly readable: ReadableStream<Uint8Array>,
-    readonly writable: WritableStream<string>
-}
-
 @js("TextEncoderStream")
-export declare var TextEncoderStream: {
-    prototype: TextEncoderStream,
-    new () -> TextEncoderStream
+export declare class TextEncoderStream extends GenericTransformStream {
+    readonly readable: ReadableStream<Uint8Array>,
+    readonly writable: WritableStream<string>,
+    static prototype: TextEncoderStream,
+    constructor(mut self)
 }

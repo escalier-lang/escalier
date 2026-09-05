@@ -13,7 +13,8 @@ export declare interface CloseEventInit extends EventInit {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CloseEvent)
  */
-export declare interface CloseEvent extends Event {
+@js("CloseEvent")
+export declare class CloseEvent extends Event {
     /**
      * Returns the WebSocket connection close code provided by the server.
      *
@@ -31,13 +32,9 @@ export declare interface CloseEvent extends Event {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CloseEvent/wasClean)
      */
-    readonly wasClean: boolean
-}
-
-@js("CloseEvent")
-export declare var CloseEvent: {
-    prototype: CloseEvent,
-    new (type: string, eventInitDict?: CloseEventInit) -> CloseEvent
+    readonly wasClean: boolean,
+    static prototype: CloseEvent,
+    constructor(mut self, type: string, eventInitDict?: CloseEventInit)
 }
 
 export declare interface WebSocketEventMap {
@@ -52,7 +49,8 @@ export declare interface WebSocketEventMap {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket)
  */
-export declare interface WebSocket extends EventTarget {
+@js("WebSocket")
+export declare class WebSocket extends EventTarget {
     /**
      * Returns a string that indicates how binary data from the WebSocket object is exposed to scripts:
      *
@@ -106,29 +104,25 @@ export declare interface WebSocket extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/close)
      */
-    close(code?: number, reason?: string) -> unknown,
+    close(mut self, code?: number, reason?: string) -> unknown,
     /**
      * Transmits data using the WebSocket connection. data can be a string, a Blob, an ArrayBuffer, or an ArrayBufferView.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebSocket/send)
      */
-    send(data: string | ArrayBufferLike | Blob | ArrayBufferView) -> unknown,
+    send(mut self, data: string | ArrayBufferLike | Blob | ArrayBufferView) -> unknown,
     readonly CONNECTING: 0,
     readonly OPEN: 1,
     readonly CLOSING: 2,
     readonly CLOSED: 3,
-    addEventListener<K: keyof WebSocketEventMap>(type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
-    addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof WebSocketEventMap>(type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
-    removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
-}
-
-@js("WebSocket")
-export declare var WebSocket: {
-    prototype: WebSocket,
-    new (url: string | URL, protocols?: string | mut Array<string>) -> WebSocket,
-    readonly CONNECTING: 0,
-    readonly OPEN: 1,
-    readonly CLOSING: 2,
-    readonly CLOSED: 3
+    addEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
+    static prototype: WebSocket,
+    constructor(mut self, url: string | URL, protocols?: string | mut Array<string>),
+    static readonly CONNECTING: 0,
+    static readonly OPEN: 1,
+    static readonly CLOSING: 2,
+    static readonly CLOSED: 3
 }

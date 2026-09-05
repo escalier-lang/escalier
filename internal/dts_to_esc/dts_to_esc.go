@@ -176,8 +176,11 @@ func writeStandaloneModule(m *StandaloneModule, w io.Writer) error {
 // keeps track of the constructor interface and the `declare var` binding
 // so the main pass skips them.
 type trioInfo struct {
-	instance    *dts_parser.InterfaceDecl
-	constructor *dts_parser.InterfaceDecl
+	instance *dts_parser.InterfaceDecl
+	// ctorMembers is the constructor side, whichever form declared it:
+	// the members of a named `FooConstructor` interface, or those of
+	// the object type written inline on the binding.
+	ctorMembers []dts_parser.InterfaceMember
 	binding     *dts_parser.VarDecl
 }
 
@@ -265,51 +268,117 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		if classes.Contains(name) {
 			continue
 		}
-		ctorName := name + "Constructor"
-		ctor, hasCtor := interfaces[ctorName]
-		if !hasCtor {
-			continue
-		}
 		v, hasVar := vars[name]
 		if !hasVar {
 			continue
 		}
-		// Var must be typed FooConstructor.
-		ref, ok := v.TypeAnn.(*dts_parser.TypeReference)
+		ctorMembers, ctorName, ok := constructorSide(name, v, interfaces)
 		if !ok {
 			continue
 		}
-		if typeRefName(ref) != ctorName {
-			continue
-		}
-		// A constructor interface whose only callable form is a call
+		// A constructor side whose only callable form is a call
 		// signature would lose it: fuseTrio has no class elem to put
 		// one on, so the fused class could be neither called nor
 		// constructed. `SymbolConstructor` and `BigIntConstructor` are
 		// the two, and the specification forbids `new` on both, so the
 		// call signature is the only way to make one. They stay
 		// interfaces until #1412 gives a class somewhere to hold it.
-		if hasCallSignature(ctor) && !hasConstructSignature(ctor) {
+		//
+		// This reaches only the named form. An inline constructor side
+		// is required to carry a `new`, so it never has a call
+		// signature as its only callable form. One that has both still
+		// loses the call — `CompileError`, `LinkError` and
+		// `RuntimeError` in `lib.dom.d.ts` are the three — which is
+		// the same loss the 19 named trios that already fuse take, and
+		// #1412 covers all of them together.
+		if hasCallSignature(ctorMembers) && !hasConstructSignature(ctorMembers) {
 			continue
 		}
 
 		t.byName[name] = &trioInfo{
 			instance:    inst,
-			constructor: ctor,
+			ctorMembers: ctorMembers,
 			binding:     v,
 		}
-		t.consumedCtor.Add(ctorName)
+		if ctorName != "" {
+			t.consumedCtor.Add(ctorName)
+		}
 		t.consumedVar.Add(name)
 	}
 
 	return t
 }
 
-// hasCallSignature reports whether iface declares at least one bare
+// constructorSide returns the members of the constructor side that the
+// binding named `name` points at, and the name of the interface they
+// came from when one did. TypeScript writes that side two ways: as a
+// named `FooConstructor` interface, or inline on the binding, which is
+// what `lib.dom.d.ts` does.
+//
+//	declare var AbortController: {
+//	    prototype: AbortController;
+//	    new (): AbortController;
+//	};
+//
+// The inline form has no second name to match on, and a shared name
+// alone would fuse `interface Foo` with any `declare var Foo: { ... }`.
+// The construct signature is what states the relationship, so the
+// object type must carry a `new (...)` returning `name`. The named
+// form needs no such check, since `FooConstructor` already states it.
+func constructorSide(
+	name string,
+	binding *dts_parser.VarDecl,
+	interfaces map[string]*dts_parser.InterfaceDecl,
+) (members []dts_parser.InterfaceMember, ctorName string, ok bool) {
+	switch ann := binding.TypeAnn.(type) {
+	case *dts_parser.TypeReference:
+		named := name + "Constructor"
+		if typeRefName(ann) != named {
+			return nil, "", false
+		}
+		ctor, hasCtor := interfaces[named]
+		if !hasCtor {
+			return nil, "", false
+		}
+		return ctor.Members, named, true
+
+	case *dts_parser.ObjectType:
+		if !ctorsReturning(ann.Members, name) {
+			return nil, "", false
+		}
+		return ann.Members, "", true
+	}
+	return nil, "", false
+}
+
+// ctorsReturning reports whether members holds at least one `new (...)`
+// and every one of them returns a TypeReference naming instanceName.
+//
+// Every one, because fuseTrio makes each construct signature a
+// constructor of the fused class. A binding declaring both
+// `new (): Foo` and `new (kind: string): Other` would come out claiming
+// each builds `Foo`, so it stays unfused.
+func ctorsReturning(members []dts_parser.InterfaceMember, instanceName string) bool {
+	found := false
+	for _, m := range members {
+		cs, ok := m.(*dts_parser.ConstructSignature)
+		if !ok {
+			continue
+		}
+		ref, ok := cs.ReturnType.(*dts_parser.TypeReference)
+		if !ok || typeRefName(ref) != instanceName {
+			return false
+		}
+		found = true
+	}
+	return found
+}
+
+// hasCallSignature reports whether members holds at least one bare
 // `(...)` member, the form that makes `Symbol("x")` a call rather than
 // a construction.
-func hasCallSignature(iface *dts_parser.InterfaceDecl) bool {
-	for _, m := range iface.Members {
+func hasCallSignature(members []dts_parser.InterfaceMember) bool {
+	for _, m := range members {
 		if _, ok := m.(*dts_parser.CallSignature); ok {
 			return true
 		}
@@ -317,10 +386,10 @@ func hasCallSignature(iface *dts_parser.InterfaceDecl) bool {
 	return false
 }
 
-// hasConstructSignature reports whether iface declares at least one
+// hasConstructSignature reports whether members holds at least one
 // `new (...)` member.
-func hasConstructSignature(iface *dts_parser.InterfaceDecl) bool {
-	for _, m := range iface.Members {
+func hasConstructSignature(members []dts_parser.InterfaceMember) bool {
+	for _, m := range members {
 		if _, ok := m.(*dts_parser.ConstructSignature); ok {
 			return true
 		}
@@ -344,7 +413,7 @@ func namesWithConstructSignature(stmts []dts_parser.Statement) set.Set[string] {
 		if !ok {
 			continue
 		}
-		if hasConstructSignature(iface) {
+		if hasConstructSignature(iface.Members) {
 			names.Add(iface.Name.Name)
 		}
 	}
@@ -1041,7 +1110,7 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 
 // fuseTrio synthesises a ClassDecl from a matched trio. Instance members
 // come from `info.instance` (always non-static); static members and the
-// constructor come from `info.constructor`.
+// constructor come from `info.ctorMembers`.
 //
 // Mapping from interface members to class elems:
 //   - MethodSignature   → MethodElem (Static set per side; receiver from
@@ -1074,7 +1143,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 		}
 	}
 
-	for _, m := range info.constructor.Members {
+	for _, m := range info.ctorMembers {
 		if cs, ok := m.(*dts_parser.ConstructSignature); ok {
 			ctor, err := constructSignatureToCtorElem(cs)
 			if err != nil {

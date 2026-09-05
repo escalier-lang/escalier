@@ -151,7 +151,8 @@ export declare interface RsaPssParams extends Algorithm {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto)
  */
-export declare interface Crypto {
+@js("Crypto")
+export declare class Crypto {
     /**
      * Available only in secure contexts.
      *
@@ -159,19 +160,15 @@ export declare interface Crypto {
      */
     readonly subtle: SubtleCrypto,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto/getRandomValues) */
-    getRandomValues<T: ArrayBufferView | null>(array: T) -> T,
+    getRandomValues<T: ArrayBufferView | null>(self, array: T) -> T,
     /**
      * Available only in secure contexts.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto/randomUUID)
      */
-    randomUUID() -> `${string}-${string}-${string}-${string}-${string}`
-}
-
-@js("Crypto")
-export declare var Crypto: {
-    prototype: Crypto,
-    new () -> Crypto
+    randomUUID(mut self) -> `${string}-${string}-${string}-${string}-${string}`,
+    static prototype: Crypto,
+    constructor(mut self)
 }
 
 /**
@@ -180,7 +177,8 @@ export declare var Crypto: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey)
  */
-export declare interface CryptoKey {
+@js("CryptoKey")
+export declare class CryptoKey {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey/algorithm) */
     readonly algorithm: KeyAlgorithm,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey/extractable) */
@@ -188,13 +186,9 @@ export declare interface CryptoKey {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey/type) */
     readonly type: KeyType,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey/usages) */
-    readonly usages: mut Array<KeyUsage>
-}
-
-@js("CryptoKey")
-export declare var CryptoKey: {
-    prototype: CryptoKey,
-    new () -> CryptoKey
+    readonly usages: mut Array<KeyUsage>,
+    static prototype: CryptoKey,
+    constructor(mut self)
 }
 
 /**
@@ -203,51 +197,48 @@ export declare var CryptoKey: {
  *
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto)
  */
-export declare interface SubtleCrypto {
+@js("SubtleCrypto")
+export declare class SubtleCrypto {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/decrypt) */
-    decrypt(algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    decrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveBits) */
-    deriveBits(algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, length?: number | null) -> Promise<ArrayBuffer>,
+    deriveBits(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, length?: number | null) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveKey) */
-    deriveKey(algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
+    deriveKey(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/digest) */
-    digest(algorithm: AlgorithmIdentifier, data: BufferSource) -> Promise<ArrayBuffer>,
+    digest(mut self, algorithm: AlgorithmIdentifier, data: BufferSource) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/encrypt) */
-    encrypt(algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    encrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/exportKey) */
-    exportKey(format: "jwk", key: CryptoKey) -> Promise<JsonWebKey>,
-    exportKey(format: Exclude<KeyFormat, "jwk">, key: CryptoKey) -> Promise<ArrayBuffer>,
-    exportKey(format: KeyFormat, key: CryptoKey) -> Promise<ArrayBuffer | JsonWebKey>,
+    exportKey(mut self, format: "jwk", key: CryptoKey) -> Promise<JsonWebKey>,
+    exportKey(mut self, format: Exclude<KeyFormat, "jwk">, key: CryptoKey) -> Promise<ArrayBuffer>,
+    exportKey(mut self, format: KeyFormat, key: CryptoKey) -> Promise<ArrayBuffer | JsonWebKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/generateKey) */
-    generateKey(algorithm: "Ed25519" | {
+    generateKey(mut self, algorithm: "Ed25519" | {
         name: "Ed25519"
     }, extractable: boolean, keyUsages: Array<"sign" | "verify">) -> Promise<CryptoKeyPair>,
-    generateKey(algorithm: RsaHashedKeyGenParams | EcKeyGenParams, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKeyPair>,
-    generateKey(algorithm: AesKeyGenParams | HmacKeyGenParams | Pbkdf2Params, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKey>,
-    generateKey(algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
+    generateKey(mut self, algorithm: RsaHashedKeyGenParams | EcKeyGenParams, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKeyPair>,
+    generateKey(mut self, algorithm: AesKeyGenParams | HmacKeyGenParams | Pbkdf2Params, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKey>,
+    generateKey(mut self, algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/importKey) */
-    importKey(format: "jwk", keyData: JsonWebKey, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKey>,
-    importKey(format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
+    importKey(mut self, format: "jwk", keyData: JsonWebKey, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKey>,
+    importKey(mut self, format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/sign) */
-    sign(algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    sign(mut self, algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey) */
-    unwrapKey(format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
+    unwrapKey(mut self, format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/verify) */
-    verify(algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, signature: BufferSource, data: BufferSource) -> Promise<boolean>,
+    verify(mut self, algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, signature: BufferSource, data: BufferSource) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/wrapKey) */
-    wrapKey(format: KeyFormat, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams) -> Promise<ArrayBuffer>,
+    wrapKey(mut self, format: KeyFormat, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams) -> Promise<ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveKey) */
-    deriveKey(algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
-    generateKey(algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
-    importKey(format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
+    deriveKey(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
+    generateKey(mut self, algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
+    importKey(mut self, format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey) */
-    unwrapKey(format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>
-}
-
-@js("SubtleCrypto")
-export declare var SubtleCrypto: {
-    prototype: SubtleCrypto,
-    new () -> SubtleCrypto
+    unwrapKey(mut self, format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
+    static prototype: SubtleCrypto,
+    constructor(mut self)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crypto) */

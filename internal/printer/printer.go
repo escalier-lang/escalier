@@ -462,7 +462,7 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 		}
 		p.writeString("set ")
 		p.printObjKey(e.Name)
-		p.printMethodSig(&e.Fn.FuncSig, e.Receiver)
+		p.printSetterSig(&e.Fn.FuncSig, e.Receiver)
 		if e.Fn.Body != nil {
 			p.space()
 			p.printBlock(e.Fn.Body)
@@ -480,11 +480,33 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 	}
 }
 
-// printMethodSig prints a method/getter/setter/constructor signature
+// printMethodSig prints a method/getter/constructor signature
 // including an optional `self` / `mut self` receiver. It is parallel
 // to printFuncSig but injects the receiver as the first parameter
 // inside the parentheses so the round-trip preserves it.
 func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
+	p.printMethodSigParts(sig, recv, true)
+}
+
+// printSetterSig prints a class setter's signature. A setter in a class
+// body has no return type in the grammar. The setter branch of
+// parseClassElemInner in internal/parser/decl.go reads a throws clause
+// after the parameter list and nothing else, so the return is left out
+// even though the AST carries `undefined` there for the checker.
+// Printing it emits `set x(mut self, v: string) -> undefined`, which
+// does not reparse.
+//
+// The interface form is a separate path and keeps its return.
+// `SetterTypeAnn` prints one and the parser reads one, so
+// `set value(mut self, x: number) -> undefined` round-trips inside an
+// `interface` body.
+func (p *Printer) printSetterSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
+	p.printMethodSigParts(sig, recv, false)
+}
+
+// printMethodSigParts prints the shared body of the two. withReturn is
+// false only for a class setter, whose grammar has no return slot.
+func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver, withReturn bool) {
 	p.printGenericParams(sig.LifetimeParams, sig.TypeParams)
 	p.writeString("(")
 	first := true
@@ -522,7 +544,12 @@ func (p *Printer) printMethodSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 		}
 	}
 	p.writeString(")")
-	p.printReturnAndThrows(sig.Return, sig.Throws)
+	if withReturn {
+		p.printReturnAndThrows(sig.Return, sig.Throws)
+		return
+	}
+	// printReturnAndThrows with a nil return emits the throws clause alone.
+	p.printReturnAndThrows(nil, sig.Throws)
 }
 
 // annMemberReceiver returns the receiver text a member annotation prints, or "" for none. The
