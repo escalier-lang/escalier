@@ -638,6 +638,29 @@ func TestARejectedNamedImportBindsNothing(t *testing.T) {
 	}, errorMessagesOf(res.Errors))
 }
 
+// A specifier whose scheme is not lowercase is not diverted to the
+// pseudo-package path, so it reaches the npm side with its colon intact and
+// binds what follows the colon.
+func TestBareImportDropsANonSchemePrefix(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, IsSchemePrefixedImport("HTTP:thing"),
+		"an uppercase scheme names no pseudo-package family")
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "HTTP:thing"
+			val n = thing.value
+		`),
+		sourceOf(t, map[string]string{
+			"HTTP:thing": `export val value: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
 // A bare import of a path binds the last segment, so `lodash/fp` binds `fp`.
 func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 	t.Parallel()

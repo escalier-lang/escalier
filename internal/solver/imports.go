@@ -98,8 +98,12 @@ func namedSpecifierErrors(uri string, stmt *ast.ImportStmt) []SolverError {
 }
 
 // localName returns the name a bare import binds a package under: the last
-// segment of its specifier, so `lodash/fp` binds `fp`. A scheme-prefixed URI
-// never reaches here, since bindImport diverts one to the pseudo-package path.
+// segment of its specifier, so `lodash/fp` binds `fp`.
+//
+// Anything before a colon is dropped first. A recognized scheme never reaches
+// here, since bindImport diverts one to the pseudo-package path, but a
+// specifier whose scheme is not lowercase is not diverted and still arrives
+// with its colon: `HTTP:thing` binds `thing`.
 func localName(uri string) string {
 	if _, pkg, ok := strings.Cut(uri, ":"); ok {
 		uri = pkg
