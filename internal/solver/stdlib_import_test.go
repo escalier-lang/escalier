@@ -53,6 +53,27 @@ func TestStdlibImportBindsByPackageName(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "x")))
 }
 
+// A package name holds lowercase letters, digits, and underscores, which is
+// what `std:typed_arrays` and `std:base64` are made of. The hyphenated form is
+// rejected, in the malformed-URI table below.
+func TestStdlibImportAcceptsUnderscoresAndDigits(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "std:typed_arrays"
+		import "std:base64"
+		val a = typed_arrays.BYTES_PER_ELEMENT
+		val b = base64.padding
+	`, map[string]string{
+		"std/typed_arrays.esc": `export val BYTES_PER_ELEMENT: number = 4`,
+		"std/base64.esc":       `export val padding: string = "="`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "a")))
+	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "b")))
+}
+
 // A package whose sole class shares its name binds that class directly, under
 // the class's own capitalization rather than the package's. This is the FR5
 // single-class shortcut.
