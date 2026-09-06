@@ -291,7 +291,6 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 
 	// §3.4 loader rules per member, so diagnostic messages name the
 	// originating URI (e.g. `web:dom`) instead of an opaque SCC label.
-	globals := c.knownJSGlobals()
 	var decErrs []Error
 	for _, m := range members {
 		ns, ok := mod.Namespaces.Get(m.pkg)
@@ -299,7 +298,7 @@ func (c *Checker) loadStdlibSCC(sccURIs []string, span ast.Span) []Error {
 			continue
 		}
 		for _, decl := range ns.Decls {
-			decErrs = append(decErrs, validateJsDecorator(m.uri, decl, span, globals)...)
+			decErrs = append(decErrs, validateJsDecorator(m.uri, decl, span)...)
 		}
 	}
 	if len(decErrs) > 0 {

@@ -59,49 +59,25 @@ func errorMessages(errs []Error) []string {
 	return out
 }
 
-// DISABLED until SimpleSub M7.5. A bare `import "std:math"` binds the package under `math`.
-//
-// The §2-era `std:array` and `std:math` stubs these were written
-// against are gone; #1232 committed the real generated packages. The
-// prelude loads the ES2015 lib subset (prelude.go, targetVersion)
-// while `generate` reads all 88 lib files, so every post-ES2015 global
-// the tree declares — `Atomics`, `WeakRef`, `BigInt64Array`,
-// `Intl.Segmenter`, `Math.f16round` — fails the §3.4(4) `@js` target
-// check and the package fails to load. Re-enable by removing the
-// wrapper once M7.5 ingests the committed tree. See #1402.
 func TestStdlibImport_BareLocalBindsByLastSegment(t *testing.T) {
-	/*
-		fileScopes, errs := inferStdlibImportSource(t, `
-			import "std:math"
-			val x: number = math.PI
-		`)
-		require.Empty(t, errorMessages(errs))
+	fileScopes, errs := inferStdlibImportSource(t, `
+		import "std:math"
+		val x: number = math.PI
+	`)
+	require.Empty(t, errorMessages(errs))
 
-		fileScope, ok := fileScopes[0]
-		require.True(t, ok, "file scope for source 0 missing")
-		_, ok = fileScope.Namespace.GetNamespace("math")
-		require.True(t, ok, "expected `math` namespace bound in the file scope")
-	*/
+	fileScope, ok := fileScopes[0]
+	require.True(t, ok, "file scope for source 0 missing")
+	_, ok = fileScope.Namespace.GetNamespace("math")
+	require.True(t, ok, "expected `math` namespace bound in the file scope")
 }
 
-// DISABLED until SimpleSub M7.5. An explicit `?local` flag binds the package under `math`.
-//
-// The §2-era `std:array` and `std:math` stubs these were written
-// against are gone; #1232 committed the real generated packages. The
-// prelude loads the ES2015 lib subset (prelude.go, targetVersion)
-// while `generate` reads all 88 lib files, so every post-ES2015 global
-// the tree declares — `Atomics`, `WeakRef`, `BigInt64Array`,
-// `Intl.Segmenter`, `Math.f16round` — fails the §3.4(4) `@js` target
-// check and the package fails to load. Re-enable by removing the
-// wrapper once M7.5 ingests the committed tree. See #1402.
 func TestStdlibImport_ExplicitLocalFlag(t *testing.T) {
-	/*
-		_, errs := inferStdlibImportSource(t, `
-			import "std:math?local"
-			val x: number = math.PI
-		`)
-		require.Empty(t, errorMessages(errs))
-	*/
+	_, errs := inferStdlibImportSource(t, `
+		import "std:math?local"
+		val x: number = math.PI
+	`)
+	require.Empty(t, errorMessages(errs))
 }
 
 func TestStdlibImport_UnknownScheme(t *testing.T) {
@@ -172,19 +148,13 @@ func TestStdlibImport_DuplicateFlag(t *testing.T) {
 	)
 }
 
-// DISABLED until SimpleSub M7.5. FR5 binds `std:array`'s sole class as `Array`, not `array`.
-//
-// The §2-era `std:array` and `std:math` stubs these were written
-// against are gone; #1232 committed the real generated packages. The
-// prelude loads the ES2015 lib subset (prelude.go, targetVersion)
-// while `generate` reads all 88 lib files, so every post-ES2015 global
-// the tree declares — `Atomics`, `WeakRef`, `BigInt64Array`,
-// `Intl.Segmenter`, `Math.f16round` — fails the §3.4(4) `@js` target
-// check and the package fails to load. Re-enable by removing the
-// wrapper once M7.5 ingests the committed tree. See #1402.
+// DISABLED until #1457. Importing `std:array` panics before any assertion here
+// is reached. The class's instance alias prunes to a `RestSpreadType` and
+// `InferComponent` asserts an `*ObjectType` on it. Re-enable by removing the
+// wrapper once that import loads.
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	/*
-		// std:array stub exposes `class Array<T>` — FR5 binds the class
+		// std:array exposes `class Array<T>` — FR5 binds the class
 		// with its original capitalization (not lowercased "array").
 		fileScopes, errs := inferStdlibImportSource(t, `
 			import "std:array"
@@ -274,46 +244,34 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // PackageRegistry caches. Combined with the §3.4 rule that forbids
 // unexported decls in stdlib pkgs, this lets importers see the
 // canonical declarations without an intervening filtered copy.
-// DISABLED until SimpleSub M7.5. `?local` shares the canonical pkgNs pointer rather than a copy.
-//
-// The §2-era `std:array` and `std:math` stubs these were written
-// against are gone; #1232 committed the real generated packages. The
-// prelude loads the ES2015 lib subset (prelude.go, targetVersion)
-// while `generate` reads all 88 lib files, so every post-ES2015 global
-// the tree declares — `Atomics`, `WeakRef`, `BigInt64Array`,
-// `Intl.Segmenter`, `Math.f16round` — fails the §3.4(4) `@js` target
-// check and the package fails to load. Re-enable by removing the
-// wrapper once M7.5 ingests the committed tree. See #1402.
 func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
-	/*
-		// std:math has no class whose name matches the pkg name, so the
-		// single-class shortcut doesn't fire and `?local` binds the pkg as
-		// a namespace under `math` — the right shape for the pointer
-		// comparison. std:array would route through the shortcut and bind
-		// the class directly.
-		source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
-			import "std:math"
-		`}
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
-		require.Empty(t, parseErrs)
+	// std:math has no class whose name matches the pkg name, so the
+	// single-class shortcut doesn't fire and `?local` binds the pkg as
+	// a namespace under `math` — the right shape for the pointer
+	// comparison. std:array would route through the shortcut and bind
+	// the class directly.
+	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
+		import "std:math"
+	`}
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	module, parseErrs := parser.ParseLibFiles(ctx, []*ast.Source{source})
+	require.Empty(t, parseErrs)
 
-		c := NewChecker(ctx)
-		inferCtx := Context{Scope: Prelude(c)}
-		_, errs := c.InferModule(inferCtx, module)
-		require.Empty(t, errorMessages(errs))
+	c := NewChecker(ctx)
+	inferCtx := Context{Scope: Prelude(c)}
+	_, errs := c.InferModule(inferCtx, module)
+	require.Empty(t, errorMessages(errs))
 
-		canonical, ok := c.PackageRegistry.Lookup("std:math")
-		require.True(t, ok, "expected std:math in PackageRegistry")
-		require.NotNil(t, canonical)
+	canonical, ok := c.PackageRegistry.Lookup("std:math")
+	require.True(t, ok, "expected std:math in PackageRegistry")
+	require.NotNil(t, canonical)
 
-		fileScope := c.FileScopes[0]
-		bound, ok := fileScope.Namespace.GetNamespace("math")
-		require.True(t, ok, "expected `math` namespace from import")
-		require.Same(t, canonical, bound,
-			"?local binding should share the canonical pkgNs pointer, not a filtered copy")
-	*/
+	fileScope := c.FileScopes[0]
+	bound, ok := fileScope.Namespace.GetNamespace("math")
+	require.True(t, ok, "expected `math` namespace from import")
+	require.Same(t, canonical, bound,
+		"?local binding should share the canonical pkgNs pointer, not a filtered copy")
 }
 
 // TestStdlibImport_LoaderRule_UnexportedTypeLevelRejected pins the
@@ -388,107 +346,6 @@ func TestStdlibImport_LoaderRule_MalformedJSDecorator(t *testing.T) {
 				fmt.Sprintf("`@js` decorator on value %q in pseudo-package file %s must take a single string-literal argument",
 					"PI", filepath.Join(dir, "std/example.esc")),
 				errs[0].Message())
-		})
-	}
-}
-
-// TestStdlibImport_LoaderRule_UnknownJSGlobal pins loader rule §3.4(4):
-// the `@js("...")` argument must name a known JS runtime path. A typo
-// like `@js("Mat.sin")` is caught at load time with the file,
-// declaration, and decorator argument named in the diagnostic. When
-// the arg is dotted, the diagnostic identifies whether the prefix or
-// the member is the unknown part so the user can act on it without
-// guessing.
-func TestStdlibImport_LoaderRule_UnknownJSGlobal(t *testing.T) {
-	dir := makeCustomStdlibDir(t, map[string]string{
-		"std/example.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number",
-	})
-	t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-	_, errs := inferStdlibImportSource(t, `import "std:example"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (prefix %q is not a known top-level global)",
-			"Mat.sin", "sin", filepath.Join(dir, "std/example.esc"), "Mat"),
-		errs[0].Message())
-}
-
-// TestStdlibImport_LoaderRule_UnknownJSGlobalMember pins the
-// member-typo flavour of rule 4: when the prefix IS a known top-level
-// global but the dotted member is not on it, the diagnostic says so —
-// so the user knows `Math` is fine and `sni` is the typo.
-func TestStdlibImport_LoaderRule_UnknownJSGlobalMember(t *testing.T) {
-	dir := makeCustomStdlibDir(t, map[string]string{
-		"std/example.esc": "@js(\"Math.sni\")\nexport declare fn sin(x: number) -> number",
-	})
-	t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-	_, errs := inferStdlibImportSource(t, `import "std:example"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global (%q has no known runtime member %q)",
-			"Math.sni", "sin", filepath.Join(dir, "std/example.esc"), "Math", "sni"),
-		errs[0].Message())
-}
-
-// TestStdlibImport_LoaderRule_AllowList pins that hand-authored
-// Escalier-specific names (currently `Symbol.customMatcher`) bypass
-// rule 4 even though they don't appear in lib.*.d.ts.
-func TestStdlibImport_LoaderRule_AllowList(t *testing.T) {
-	dir := makeCustomStdlibDir(t, map[string]string{
-		"std/example.esc": "@js(\"Symbol.customMatcher\")\nexport declare val customMatcher: symbol",
-	})
-	t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-	_, errs := inferStdlibImportSource(t, `import "std:example"`)
-	require.Empty(t, errorMessages(errs))
-}
-
-// TestStdlibImport_LoaderRule_TypeOnlyGlobalRejected pins that a name
-// that exists only at the type level in the prelude (no runtime value
-// counterpart) does NOT satisfy rule 4 — `@js("PromiseLike")` would
-// produce a `ReferenceError` at runtime, which is exactly the failure
-// mode rule 4 exists to catch.
-func TestStdlibImport_LoaderRule_TypeOnlyGlobalRejected(t *testing.T) {
-	dir := makeCustomStdlibDir(t, map[string]string{
-		"std/example.esc": "@js(\"PromiseLike\")\nexport declare fn p() -> number",
-	})
-	t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-	_, errs := inferStdlibImportSource(t, `import "std:example"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		fmt.Sprintf("`@js(%q)` on function %q in pseudo-package file %s does not name a known JS runtime global",
-			"PromiseLike", "p", filepath.Join(dir, "std/example.esc")),
-		errs[0].Message())
-}
-
-// TestStdlibImport_LoaderRule_KnownGlobals confirms that representative
-// JS runtime paths used by current and near-future stubs validate
-// against the lib-extracted globals set: a top-level function
-// (`parseInt`), a namespace member (`Math.PI`), a class constructor
-// (`Date`), and a class static method (`Array.isArray`).
-func TestStdlibImport_LoaderRule_KnownGlobals(t *testing.T) {
-	cases := map[string]string{
-		"TopLevelFn":     "@js(\"parseInt\")\nexport declare fn parseInt(s: string) -> number",
-		"NamespaceMem":   "@js(\"Math.PI\")\nexport declare val PI: number",
-		"ClassCtor":      "@js(\"Date\")\nexport declare class Date { constructor(mut self) }",
-		"ClassStaticMem": "@js(\"Array.isArray\")\nexport declare fn isArray(v: unknown) -> boolean",
-		// `Intl` lands in GlobalScope.Namespace.Namespaces (a
-		// sub-Namespace), not .Values — `declare namespace Intl { ... }`
-		// in lib.es5. Rule 4 must walk sub-namespaces too.
-		"DeclaredNs":       "@js(\"Intl\")\nexport declare val Intl: unknown",
-		"DeclaredNsMember": "@js(\"Intl.Collator\")\nexport declare val Collator: unknown",
-	}
-	for name, source := range cases {
-		t.Run(name, func(t *testing.T) {
-			dir := makeCustomStdlibDir(t, map[string]string{
-				"std/example.esc": source,
-			})
-			t.Setenv("ESCALIER_STDLIB_DIR", dir)
-
-			_, errs := inferStdlibImportSource(t, `import "std:example"`)
-			require.Empty(t, errorMessages(errs))
 		})
 	}
 }
@@ -697,7 +554,6 @@ export declare class HTMLCanvasElement {
 		"web/webgl.esc": `
 import "web:dom"
 
-@js("ThisGlobalDoesNotExist")
 export declare class WebGLRenderingContext {
     canvas: dom.HTMLCanvasElement,
 }
@@ -707,7 +563,7 @@ export declare class WebGLRenderingContext {
 
 	_, errs := inferStdlibImportSource(t, `import "web:dom"`)
 	expected := []string{
-		"`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global",
+		"exported class \"WebGLRenderingContext\" in pseudo-package file web:webgl is missing an `@js(\"...\")` decorator",
 	}
 	require.Equal(t, expected, errorMessages(errs))
 }
@@ -731,7 +587,6 @@ export declare class HTMLCanvasElement {
 		"web/webgl.esc": `
 import "web:dom"
 
-@js("ThisGlobalDoesNotExist")
 export declare class WebGLRenderingContext {
     canvas: dom.HTMLCanvasElement,
 }
@@ -748,7 +603,7 @@ export declare class WebGLRenderingContext {
 import "web:dom"
 import "web:webgl"
 `)
-	msg := "`@js(\"ThisGlobalDoesNotExist\")` on class \"WebGLRenderingContext\" in pseudo-package file web:webgl does not name a known JS runtime global"
+	msg := "exported class \"WebGLRenderingContext\" in pseudo-package file web:webgl is missing an `@js(\"...\")` decorator"
 	require.Equal(t, []string{msg, msg}, errorMessages(errs))
 }
 

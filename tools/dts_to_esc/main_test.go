@@ -31,6 +31,15 @@ interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean
 declare var Array: ArrayConstructor;
 `
 
+// symbolLib declares the global the generating run's overlay entry points its
+// `@js` decorator at. A target is validated against the `.d.ts` set the run
+// reads, so a lib set that omits `Symbol` fails the run rather than writing a
+// decorator naming a global nothing declares.
+const symbolLib = `
+interface SymbolConstructor { readonly iterator: unique symbol; }
+declare var Symbol: SymbolConstructor;
+`
+
 // TestRun_SingleFileWritesEscToStdout covers the §5 single-file mode:
 // one `.d.ts` in, Escalier source out on stdout, nothing written to
 // disk. The snapshot is the whole emitted module, so it also pins the
@@ -202,7 +211,7 @@ func TestRun_RejectsBadInvocations(t *testing.T) {
 // replaced by a placeholder before the comparison.
 func TestRun_GenerateWritesTheTree(t *testing.T) {
 	t.Parallel()
-	libDir := seedLib(t, arrayLib)
+	libDir := seedLib(t, arrayLib+symbolLib)
 	escDir := t.TempDir()
 	overlayDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(overlayDir, "std"), 0o755))
@@ -221,10 +230,11 @@ func TestRun_GenerateWritesTheTree(t *testing.T) {
 		"--- stderr ---\n%s--- tree ---\n%s\n--- std/array.esc ---\n%s",
 		report, strings.Join(treeOf(t, escDir), "\n"), contents), snaps.Inline(`--- stderr ---
 discovered 1 lib files
-wrote 1 packages under <esc-dir>
+wrote 2 packages under <esc-dir>
 --- tree ---
 node/README.md
 std/array.esc
+std/symbol.esc
 --- std/array.esc ---
 @js("Array")
 export declare class Array<T> {

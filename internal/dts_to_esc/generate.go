@@ -123,6 +123,22 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 		}
 	}
 
+	// Validated against the same `.d.ts` set the conversion read, so a target
+	// naming a global that set does not declare fails this run rather than
+	// whoever imports the package it would have been written to.
+	//
+	// What the run writes is what it checks, so a hand-authored package is
+	// outside this. Its file is never converted, so `mods` holds no form of it
+	// to read a decorator from.
+	if findings := ValidateJSTargets(mods, CollectJSGlobals(inputs)); len(findings) > 0 {
+		lines := make([]string, 0, len(findings))
+		for _, finding := range findings {
+			lines = append(lines, finding.String())
+		}
+		return nil, fmt.Errorf("%d `@js` target(s) name no JS runtime global:\n  %s",
+			len(findings), strings.Join(lines, "\n  "))
+	}
+
 	written, err := WriteConvertedTree(mods, opts.OutDir)
 	if err != nil {
 		return nil, err
