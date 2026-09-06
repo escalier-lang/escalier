@@ -187,7 +187,7 @@ export declare class AnalyserNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AnalyserNode/getFloatTimeDomainData) */
     getFloatTimeDomainData(self, array: Float32Array) -> unknown,
     static prototype: AnalyserNode,
-    constructor(mut self, context: BaseAudioContext, options?: AnalyserOptions)
+    constructor(mut self, context: BaseAudioContext, options?: AnalyserOptions) -> AnalyserNode
 }
 
 /**
@@ -212,7 +212,7 @@ export declare class AudioBuffer {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioBuffer/getChannelData) */
     getChannelData(self, channel: number) -> Float32Array,
     static prototype: AudioBuffer,
-    constructor(mut self, options: AudioBufferOptions)
+    constructor(mut self, options: AudioBufferOptions) -> AudioBuffer
 }
 
 /**
@@ -241,7 +241,7 @@ export declare class AudioBufferSourceNode extends AudioScheduledSourceNode {
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(mut self, type: K, listener: fn (this: AudioBufferSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioBufferSourceNode,
-    constructor(mut self, context: BaseAudioContext, options?: AudioBufferSourceOptions)
+    constructor(mut self, context: BaseAudioContext, options?: AudioBufferSourceOptions) -> AudioBufferSourceNode
 }
 
 /**
@@ -274,7 +274,7 @@ export declare class AudioContext extends BaseAudioContext {
     removeEventListener<K: keyof BaseAudioContextEventMap>(mut self, type: K, listener: fn (this: AudioContext, ev: BaseAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioContext,
-    constructor(mut self, contextOptions?: AudioContextOptions)
+    constructor(mut self, contextOptions?: AudioContextOptions) -> AudioContext
 }
 
 /**
@@ -287,7 +287,7 @@ export declare class AudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDestinationNode/maxChannelCount) */
     readonly maxChannelCount: number,
     static prototype: AudioDestinationNode,
-    constructor(mut self)
+    constructor(mut self) -> AudioDestinationNode
 }
 
 /**
@@ -328,7 +328,7 @@ export declare class AudioListener {
      */
     setPosition(mut self, x: number, y: number, z: number) -> unknown,
     static prototype: AudioListener,
-    constructor(mut self)
+    constructor(mut self) -> AudioListener
 }
 
 /**
@@ -362,7 +362,7 @@ export declare class AudioNode extends EventTarget {
     disconnect(mut self, destinationParam: AudioParam) -> unknown,
     disconnect(mut self, destinationParam: AudioParam, output: number) -> unknown,
     static prototype: AudioNode,
-    constructor(mut self)
+    constructor(mut self) -> AudioNode
 }
 
 /**
@@ -398,7 +398,7 @@ export declare class AudioParam {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParam/setValueCurveAtTime) */
     setValueCurveAtTime(mut self, values: Iterable<number>, startTime: number, duration: number) -> AudioParam,
     static prototype: AudioParam,
-    constructor(mut self)
+    constructor(mut self) -> AudioParam
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioParamMap) */
@@ -406,7 +406,7 @@ export declare class AudioParam {
 export declare class AudioParamMap extends Map<string, AudioParam> {
     forEach(self, callbackfn: fn (value: AudioParam, key: string, parent: AudioParamMap) -> unknown, thisArg?: any) -> unknown,
     static prototype: AudioParamMap,
-    constructor(mut self)
+    constructor(mut self) -> AudioParamMap
 }
 
 /**
@@ -436,7 +436,7 @@ export declare class AudioProcessingEvent extends Event {
      */
     readonly playbackTime: number,
     static prototype: AudioProcessingEvent,
-    constructor(mut self, type: string, eventInitDict: AudioProcessingEventInit)
+    constructor(mut self, type: string, eventInitDict: AudioProcessingEventInit) -> AudioProcessingEvent
 }
 
 export declare interface AudioScheduledSourceNodeEventMap {
@@ -457,7 +457,7 @@ export declare class AudioScheduledSourceNode extends AudioNode {
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(mut self, type: K, listener: fn (this: AudioScheduledSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioScheduledSourceNode,
-    constructor(mut self)
+    constructor(mut self) -> AudioScheduledSourceNode
 }
 
 /**
@@ -468,7 +468,7 @@ export declare class AudioScheduledSourceNode extends AudioNode {
 @js("AudioWorklet")
 export declare class AudioWorklet extends Worklet {
     static prototype: AudioWorklet,
-    constructor(mut self)
+    constructor(mut self) -> AudioWorklet
 }
 
 export declare interface AudioWorkletNodeEventMap {
@@ -493,7 +493,7 @@ export declare class AudioWorkletNode extends AudioNode {
     removeEventListener<K: keyof AudioWorkletNodeEventMap>(mut self, type: K, listener: fn (this: AudioWorkletNode, ev: AudioWorkletNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioWorkletNode,
-    constructor(mut self, context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions)
+    constructor(mut self, context: BaseAudioContext, name: string, options?: AudioWorkletNodeOptions) -> AudioWorkletNode
 }
 
 export declare interface BaseAudioContextEventMap {
@@ -572,7 +572,7 @@ export declare class BaseAudioContext extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BaseAudioContext/createPeriodicWave) */
     createPeriodicWave(mut self, real: Iterable<number>, imag: Iterable<number>, constraints?: PeriodicWaveConstraints) -> PeriodicWave,
     static prototype: BaseAudioContext,
-    constructor(mut self)
+    constructor(mut self) -> BaseAudioContext
 }
 
 /**
@@ -595,7 +595,7 @@ export declare class BiquadFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BiquadFilterNode/getFrequencyResponse) */
     getFrequencyResponse(self, frequencyHz: Float32Array, magResponse: Float32Array, phaseResponse: Float32Array) -> unknown,
     static prototype: BiquadFilterNode,
-    constructor(mut self, context: BaseAudioContext, options?: BiquadFilterOptions)
+    constructor(mut self, context: BaseAudioContext, options?: BiquadFilterOptions) -> BiquadFilterNode
 }
 
 /**
@@ -606,7 +606,7 @@ export declare class BiquadFilterNode extends AudioNode {
 @js("ChannelMergerNode")
 export declare class ChannelMergerNode extends AudioNode {
     static prototype: ChannelMergerNode,
-    constructor(mut self, context: BaseAudioContext, options?: ChannelMergerOptions)
+    constructor(mut self, context: BaseAudioContext, options?: ChannelMergerOptions) -> ChannelMergerNode
 }
 
 /**
@@ -617,7 +617,7 @@ export declare class ChannelMergerNode extends AudioNode {
 @js("ChannelSplitterNode")
 export declare class ChannelSplitterNode extends AudioNode {
     static prototype: ChannelSplitterNode,
-    constructor(mut self, context: BaseAudioContext, options?: ChannelSplitterOptions)
+    constructor(mut self, context: BaseAudioContext, options?: ChannelSplitterOptions) -> ChannelSplitterNode
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConstantSourceNode) */
@@ -630,7 +630,7 @@ export declare class ConstantSourceNode extends AudioScheduledSourceNode {
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(mut self, type: K, listener: fn (this: ConstantSourceNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ConstantSourceNode,
-    constructor(mut self, context: BaseAudioContext, options?: ConstantSourceOptions)
+    constructor(mut self, context: BaseAudioContext, options?: ConstantSourceOptions) -> ConstantSourceNode
 }
 
 /**
@@ -645,7 +645,7 @@ export declare class ConvolverNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ConvolverNode/normalize) */
     normalize: boolean,
     static prototype: ConvolverNode,
-    constructor(mut self, context: BaseAudioContext, options?: ConvolverOptions)
+    constructor(mut self, context: BaseAudioContext, options?: ConvolverOptions) -> ConvolverNode
 }
 
 /**
@@ -658,7 +658,7 @@ export declare class DelayNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DelayNode/delayTime) */
     readonly delayTime: AudioParam,
     static prototype: DelayNode,
-    constructor(mut self, context: BaseAudioContext, options?: DelayOptions)
+    constructor(mut self, context: BaseAudioContext, options?: DelayOptions) -> DelayNode
 }
 
 /**
@@ -681,7 +681,7 @@ export declare class DynamicsCompressorNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DynamicsCompressorNode/threshold) */
     readonly threshold: AudioParam,
     static prototype: DynamicsCompressorNode,
-    constructor(mut self, context: BaseAudioContext, options?: DynamicsCompressorOptions)
+    constructor(mut self, context: BaseAudioContext, options?: DynamicsCompressorOptions) -> DynamicsCompressorNode
 }
 
 /**
@@ -694,7 +694,7 @@ export declare class GainNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/GainNode/gain) */
     readonly gain: AudioParam,
     static prototype: GainNode,
-    constructor(mut self, context: BaseAudioContext, options?: GainOptions)
+    constructor(mut self, context: BaseAudioContext, options?: GainOptions) -> GainNode
 }
 
 /**
@@ -707,7 +707,7 @@ export declare class IIRFilterNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IIRFilterNode/getFrequencyResponse) */
     getFrequencyResponse(self, frequencyHz: Float32Array, magResponse: Float32Array, phaseResponse: Float32Array) -> unknown,
     static prototype: IIRFilterNode,
-    constructor(mut self, context: BaseAudioContext, options: IIRFilterOptions)
+    constructor(mut self, context: BaseAudioContext, options: IIRFilterOptions) -> IIRFilterNode
 }
 
 /**
@@ -720,7 +720,7 @@ export declare class MediaElementAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaElementAudioSourceNode/mediaElement) */
     readonly mediaElement: HTMLMediaElement,
     static prototype: MediaElementAudioSourceNode,
-    constructor(mut self, context: AudioContext, options: MediaElementAudioSourceOptions)
+    constructor(mut self, context: AudioContext, options: MediaElementAudioSourceOptions) -> MediaElementAudioSourceNode
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode) */
@@ -729,7 +729,7 @@ export declare class MediaStreamAudioDestinationNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioDestinationNode/stream) */
     readonly stream: MediaStream,
     static prototype: MediaStreamAudioDestinationNode,
-    constructor(mut self, context: AudioContext, options?: AudioNodeOptions)
+    constructor(mut self, context: AudioContext, options?: AudioNodeOptions) -> MediaStreamAudioDestinationNode
 }
 
 /**
@@ -742,7 +742,7 @@ export declare class MediaStreamAudioSourceNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaStreamAudioSourceNode/mediaStream) */
     readonly mediaStream: MediaStream,
     static prototype: MediaStreamAudioSourceNode,
-    constructor(mut self, context: AudioContext, options: MediaStreamAudioSourceOptions)
+    constructor(mut self, context: AudioContext, options: MediaStreamAudioSourceOptions) -> MediaStreamAudioSourceNode
 }
 
 /**
@@ -755,7 +755,7 @@ export declare class OfflineAudioCompletionEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/OfflineAudioCompletionEvent/renderedBuffer) */
     readonly renderedBuffer: AudioBuffer,
     static prototype: OfflineAudioCompletionEvent,
-    constructor(mut self, type: string, eventInitDict: OfflineAudioCompletionEventInit)
+    constructor(mut self, type: string, eventInitDict: OfflineAudioCompletionEventInit) -> OfflineAudioCompletionEvent
 }
 
 export declare interface OfflineAudioContextEventMap extends BaseAudioContextEventMap {
@@ -784,8 +784,8 @@ export declare class OfflineAudioContext extends BaseAudioContext {
     removeEventListener<K: keyof OfflineAudioContextEventMap>(mut self, type: K, listener: fn (this: OfflineAudioContext, ev: OfflineAudioContextEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: OfflineAudioContext,
-    constructor(mut self, contextOptions: OfflineAudioContextOptions),
-    constructor(mut self, numberOfChannels: number, length: number, sampleRate: number)
+    constructor(mut self, contextOptions: OfflineAudioContextOptions) -> OfflineAudioContext,
+    constructor(mut self, numberOfChannels: number, length: number, sampleRate: number) -> OfflineAudioContext
 }
 
 /**
@@ -808,7 +808,7 @@ export declare class OscillatorNode extends AudioScheduledSourceNode {
     removeEventListener<K: keyof AudioScheduledSourceNodeEventMap>(mut self, type: K, listener: fn (this: OscillatorNode, ev: AudioScheduledSourceNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: OscillatorNode,
-    constructor(mut self, context: BaseAudioContext, options?: OscillatorOptions)
+    constructor(mut self, context: BaseAudioContext, options?: OscillatorOptions) -> OscillatorNode
 }
 
 /**
@@ -859,7 +859,7 @@ export declare class PannerNode extends AudioNode {
      */
     setPosition(mut self, x: number, y: number, z: number) -> unknown,
     static prototype: PannerNode,
-    constructor(mut self, context: BaseAudioContext, options?: PannerOptions)
+    constructor(mut self, context: BaseAudioContext, options?: PannerOptions) -> PannerNode
 }
 
 /**
@@ -870,7 +870,7 @@ export declare class PannerNode extends AudioNode {
 @js("PeriodicWave")
 export declare class PeriodicWave {
     static prototype: PeriodicWave,
-    constructor(mut self, context: BaseAudioContext, options?: PeriodicWaveOptions)
+    constructor(mut self, context: BaseAudioContext, options?: PeriodicWaveOptions) -> PeriodicWave
 }
 
 /**
@@ -883,7 +883,7 @@ export declare class StereoPannerNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/StereoPannerNode/pan) */
     readonly pan: AudioParam,
     static prototype: StereoPannerNode,
-    constructor(mut self, context: BaseAudioContext, options?: StereoPannerOptions)
+    constructor(mut self, context: BaseAudioContext, options?: StereoPannerOptions) -> StereoPannerNode
 }
 
 /**
@@ -898,7 +898,7 @@ export declare class WaveShaperNode extends AudioNode {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WaveShaperNode/oversample) */
     oversample: OverSampleType,
     static prototype: WaveShaperNode,
-    constructor(mut self, context: BaseAudioContext, options?: WaveShaperOptions)
+    constructor(mut self, context: BaseAudioContext, options?: WaveShaperOptions) -> WaveShaperNode
 }
 
 export declare interface DecodeErrorCallback {

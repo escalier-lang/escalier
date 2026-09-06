@@ -168,7 +168,7 @@ export declare class Crypto {
      */
     randomUUID(mut self) -> `${string}-${string}-${string}-${string}-${string}`,
     static prototype: Crypto,
-    constructor(mut self)
+    constructor(mut self) -> Crypto
 }
 
 /**
@@ -188,7 +188,7 @@ export declare class CryptoKey {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CryptoKey/usages) */
     readonly usages: mut Array<KeyUsage>,
     static prototype: CryptoKey,
-    constructor(mut self)
+    constructor(mut self) -> CryptoKey
 }
 
 /**
@@ -238,7 +238,7 @@ export declare class SubtleCrypto {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey) */
     unwrapKey(mut self, format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
     static prototype: SubtleCrypto,
-    constructor(mut self)
+    constructor(mut self) -> SubtleCrypto
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crypto) */

@@ -100,7 +100,7 @@ export declare class PaymentMethodChangeEvent extends PaymentRequestUpdateEvent 
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodName) */
     readonly methodName: string,
     static prototype: PaymentMethodChangeEvent,
-    constructor(mut self, type: string, eventInitDict?: PaymentMethodChangeEventInit)
+    constructor(mut self, type: string, eventInitDict?: PaymentMethodChangeEventInit) -> PaymentMethodChangeEvent
 }
 
 export declare interface PaymentRequestEventMap {
@@ -162,7 +162,7 @@ export declare class PaymentRequest extends EventTarget {
     removeEventListener<K: keyof PaymentRequestEventMap>(mut self, type: K, listener: fn (this: PaymentRequest, ev: PaymentRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: PaymentRequest,
-    constructor(mut self, methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions)
+    constructor(mut self, methodData: mut Array<PaymentMethodData>, details: PaymentDetailsInit, options?: PaymentOptions) -> PaymentRequest
 }
 
 export declare interface PaymentResponseEventMap {
@@ -206,7 +206,7 @@ export declare class PaymentResponse extends EventTarget {
     removeEventListener<K: keyof PaymentResponseEventMap>(mut self, type: K, listener: fn (this: PaymentResponse, ev: PaymentResponseEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: PaymentResponse,
-    constructor(mut self)
+    constructor(mut self) -> PaymentResponse
 }
 
 export declare type PaymentComplete = "fail" | "success" | "unknown"

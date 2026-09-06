@@ -70,7 +70,7 @@ export declare class DisposableStack {
     move(mut self) -> DisposableStack,
     [Symbol.dispose](mut self) -> unknown,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self),
+    constructor(mut self) -> DisposableStack,
     static readonly prototype: DisposableStack
 }
 
@@ -134,6 +134,6 @@ export declare class AsyncDisposableStack {
     move(mut self) -> AsyncDisposableStack,
     [Symbol.asyncDispose](mut self) -> Promise<undefined>,
     readonly [Symbol.toStringTag]: string,
-    constructor(mut self),
+    constructor(mut self) -> AsyncDisposableStack,
     static readonly prototype: AsyncDisposableStack
 }

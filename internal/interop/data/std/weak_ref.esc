@@ -17,7 +17,7 @@ export declare class WeakRef<T: WeakKey> {
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.
      * @param target The target value for the WeakRef instance.
      */
-    constructor(mut self, target: T)
+    constructor(mut self, target: T) -> WeakRef<T>
 }
 
 @js("FinalizationRegistry")
@@ -45,7 +45,7 @@ export declare class FinalizationRegistry<T> {
      * Creates a finalization registry with an associated cleanup callback
      * @param cleanupCallback The callback to call after a value in the registry has been reclaimed.
      */
-    constructor(mut self, cleanupCallback: fn (heldValue: T) -> unknown)
+    constructor(mut self, cleanupCallback: fn (heldValue: T) -> unknown) -> FinalizationRegistry<T>
 }
 
 export declare interface WeakKeyTypes {

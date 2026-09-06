@@ -96,7 +96,7 @@ export declare class IDBCursor {
      */
     update(mut self, value: any) -> IDBRequest<IDBValidKey>,
     static prototype: IDBCursor,
-    constructor(mut self)
+    constructor(mut self) -> IDBCursor
 }
 
 /**
@@ -113,7 +113,7 @@ export declare class IDBCursorWithValue extends IDBCursor {
      */
     readonly value: any,
     static prototype: IDBCursorWithValue,
-    constructor(mut self)
+    constructor(mut self) -> IDBCursorWithValue
 }
 
 export declare interface IDBDatabaseEventMap {
@@ -193,7 +193,7 @@ export declare class IDBDatabase extends EventTarget {
      */
     transaction(mut self, storeNames: string | Iterable<string>, mode?: IDBTransactionMode, options?: IDBTransactionOptions) -> IDBTransaction,
     static prototype: IDBDatabase,
-    constructor(mut self)
+    constructor(mut self) -> IDBDatabase
 }
 
 /**
@@ -226,7 +226,7 @@ export declare class IDBFactory {
      */
     open(mut self, name: string, version?: number) -> IDBOpenDBRequest,
     static prototype: IDBFactory,
-    constructor(mut self)
+    constructor(mut self) -> IDBFactory
 }
 
 /**
@@ -311,7 +311,7 @@ export declare class IDBIndex {
      */
     openKeyCursor(mut self, query?: IDBValidKey | IDBKeyRange | null, direction?: IDBCursorDirection) -> IDBRequest<IDBCursor | null>,
     static prototype: IDBIndex,
-    constructor(mut self)
+    constructor(mut self) -> IDBIndex
 }
 
 /**
@@ -352,7 +352,7 @@ export declare class IDBKeyRange {
      */
     includes(self, key: any) -> boolean,
     static prototype: IDBKeyRange,
-    constructor(mut self),
+    constructor(mut self) -> IDBKeyRange,
     /**
      * Returns a new IDBKeyRange spanning from lower to upper. If lowerOpen is true, lower is not included in the range. If upperOpen is true, upper is not included in the range.
      *
@@ -539,7 +539,7 @@ export declare class IDBObjectStore {
      */
     createIndex(mut self, name: string, keyPath: string | Iterable<string>, options?: IDBIndexParameters) -> IDBIndex,
     static prototype: IDBObjectStore,
-    constructor(mut self)
+    constructor(mut self) -> IDBObjectStore
 }
 
 export declare interface IDBOpenDBRequestEventMap extends IDBRequestEventMap {
@@ -563,7 +563,7 @@ export declare class IDBOpenDBRequest extends IDBRequest<IDBDatabase> {
     removeEventListener<K: keyof IDBOpenDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBOpenDBRequest, ev: IDBOpenDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBOpenDBRequest,
-    constructor(mut self)
+    constructor(mut self) -> IDBOpenDBRequest
 }
 
 export declare interface IDBRequestEventMap {
@@ -617,7 +617,7 @@ export declare class IDBRequest<T = any> extends EventTarget {
     removeEventListener<K: keyof IDBRequestEventMap>(mut self, type: K, listener: fn (this: IDBRequest<T>, ev: IDBRequestEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBRequest,
-    constructor(mut self)
+    constructor(mut self) -> IDBRequest
 }
 
 export declare interface IDBTransactionEventMap {
@@ -680,7 +680,7 @@ export declare class IDBTransaction extends EventTarget {
     removeEventListener<K: keyof IDBTransactionEventMap>(mut self, type: K, listener: fn (this: IDBTransaction, ev: IDBTransactionEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: IDBTransaction,
-    constructor(mut self)
+    constructor(mut self) -> IDBTransaction
 }
 
 /**
@@ -695,7 +695,7 @@ export declare class IDBVersionChangeEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBVersionChangeEvent/oldVersion) */
     readonly oldVersion: number,
     static prototype: IDBVersionChangeEvent,
-    constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
+    constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit) -> IDBVersionChangeEvent
 }
 
 export declare type IDBValidKey = number | string | Date | BufferSource | mut Array<IDBValidKey>

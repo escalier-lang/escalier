@@ -37,7 +37,7 @@ export declare class URL {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/toJSON) */
     toJSON(self) -> string,
     static prototype: URL,
-    constructor(mut self, url: string | URL, base?: string | URL),
+    constructor(mut self, url: string | URL, base?: string | URL) -> URL,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/canParse_static) */
     static canParse(url: string | URL, base?: string | URL) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/URL/createObjectURL_static) */
@@ -102,7 +102,7 @@ export declare class URLSearchParams {
     /** Returns a list of values in the search params. */
     values(self) -> URLSearchParamsIterator<string>,
     static prototype: URLSearchParams,
-    constructor(mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams)
+    constructor(mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams) -> URLSearchParams
 }
 
 export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

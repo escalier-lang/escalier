@@ -180,8 +180,15 @@ func (g *GetterElem) Span() Span { return g.Span_ }
 // rejected by validation). The first entry in `Fn.Params` corresponds to
 // the user-written receiver when `Receiver` is non-nil; the receiver's
 // mutability is recorded on `Receiver`, not on the param. Remaining params
-// are the constructor's callable params. The constructor's return type is
-// always `Self` and is not part of the AST; `Fn.Return` must remain nil.
+// are the constructor's callable params.
+//
+// `Fn.Return` is nil for the ordinary constructor, which builds the class at
+// the class's own type parameters. A `declare class` may write one to pin a
+// type argument, as `new (length?: number): Uint8Array<ArrayBuffer>` does in a
+// `.d.ts`; it must name the class the constructor belongs to. A class the
+// compiler emits always builds `Self`, so the checker reports
+// ConstructorWithReturnTypeError for a return written on one.
+//
 // `Fn.Throws` may be non-nil — constructors may declare a `throws` clause.
 type ConstructorElem struct {
 	declDoc

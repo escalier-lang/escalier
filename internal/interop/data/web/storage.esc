@@ -62,7 +62,7 @@ export declare class Storage {
      */
     setItem(mut self, key: string, value: string) -> unknown,
     static prototype: Storage,
-    constructor(mut self)
+    constructor(mut self) -> Storage
 }
 
 /**
@@ -109,5 +109,5 @@ export declare class StorageEvent extends Event {
      */
     initStorageEvent(mut self, type: string, bubbles?: boolean, cancelable?: boolean, key?: string | null, oldValue?: string | null, newValue?: string | null, url?: string | URL, storageArea?: Storage | null) -> unknown,
     static prototype: StorageEvent,
-    constructor(mut self, type: string, eventInitDict?: StorageEventInit)
+    constructor(mut self, type: string, eventInitDict?: StorageEventInit) -> StorageEvent
 }

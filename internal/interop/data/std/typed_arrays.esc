@@ -285,7 +285,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Int8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -298,13 +298,13 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Int8Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Int8Array<ArrayBuffer>,
     static readonly prototype: Int8Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Int8Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Int8Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Int8Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Int8Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Int8Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -611,7 +611,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Uint8Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -624,13 +624,13 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Uint8Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Uint8Array<ArrayBuffer>,
     static readonly prototype: Uint8Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Uint8Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Uint8Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Uint8Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Uint8Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Uint8Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -937,7 +937,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -950,13 +950,13 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Uint8ClampedArray<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Uint8ClampedArray<ArrayBuffer>,
     static readonly prototype: Uint8ClampedArray<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Uint8ClampedArray<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Uint8ClampedArray<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Uint8ClampedArray<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Uint8ClampedArray<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Uint8ClampedArray<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -1263,7 +1263,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Int16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -1276,13 +1276,13 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Int16Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Int16Array<ArrayBuffer>,
     static readonly prototype: Int16Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Int16Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Int16Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Int16Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Int16Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Int16Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -1589,7 +1589,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Uint16Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -1602,13 +1602,13 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Uint16Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Uint16Array<ArrayBuffer>,
     static readonly prototype: Uint16Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Uint16Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Uint16Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Uint16Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Uint16Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Uint16Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -1915,7 +1915,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Int32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -1928,13 +1928,13 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Int32Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Int32Array<ArrayBuffer>,
     static readonly prototype: Int32Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Int32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Int32Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Int32Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Int32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Int32Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -2241,7 +2241,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Uint32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -2254,13 +2254,13 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Uint32Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Uint32Array<ArrayBuffer>,
     static readonly prototype: Uint32Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Uint32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Uint32Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Uint32Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Uint32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Uint32Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -2567,7 +2567,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Float32Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -2580,13 +2580,13 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Float32Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Float32Array<ArrayBuffer>,
     static readonly prototype: Float32Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Float32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Float32Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Float32Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Float32Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Float32Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -2893,7 +2893,7 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> Self,
-    constructor(mut self, elements: Iterable<number>),
+    constructor(mut self, elements: Iterable<number>) -> Float64Array<ArrayBuffer>,
     /**
      * Creates an array from an array-like or iterable object.
      * @param elements An iterable object to convert to an array.
@@ -2906,13 +2906,13 @@ export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T>(elements: Iterable<T>, mapfn?: fn (v: T, k: number) -> number, thisArg?: any) -> Float64Array<ArrayBuffer>,
-    constructor(mut self),
+    constructor(mut self) -> Float64Array<ArrayBuffer>,
     static readonly prototype: Float64Array<ArrayBufferLike>,
-    constructor(mut self, length: number),
-    constructor(mut self, array: ArrayLike<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<number> | ArrayBuffer),
+    constructor(mut self, length: number) -> Float64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number>) -> Float64Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Float64Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> Float64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | ArrayBuffer) -> Float64Array<ArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */
@@ -2984,12 +2984,12 @@ export declare class ArrayBuffer {
      */
     slice(self, begin?: number, end?: number) -> ArrayBuffer,
     static readonly [Symbol.species]: ArrayBufferConstructor,
-    constructor(mut self),
+    constructor(mut self) -> ArrayBuffer,
     constructor(mut self, byteLength: number, options?: {
         maxByteLength?: number
-    }),
+    }) -> ArrayBuffer,
     static readonly prototype: ArrayBuffer,
-    constructor(mut self, byteLength: number),
+    constructor(mut self, byteLength: number) -> ArrayBuffer,
     static isView(arg: any) -> boolean
 }
 
@@ -3150,7 +3150,7 @@ export declare class DataView<TArrayBuffer: ArrayBufferLike> {
      */
     setFloat16(mut self, byteOffset: number, value: number, littleEndian?: boolean) -> unknown,
     static readonly prototype: DataView<ArrayBufferLike>,
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, byteLength?: number)
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, byteLength?: number) -> DataView<TArrayBuffer>
 }
 
 @js("SharedArrayBuffer")
@@ -3184,10 +3184,10 @@ export declare class SharedArrayBuffer {
      */
     grow(mut self, newByteLength?: number) -> unknown,
     static readonly prototype: SharedArrayBuffer,
-    constructor(mut self, byteLength?: number),
+    constructor(mut self, byteLength?: number) -> SharedArrayBuffer,
     constructor(mut self, byteLength: number, options?: {
         maxByteLength?: number
-    })
+    }) -> SharedArrayBuffer
 }
 
 export declare interface ArrayBufferTypes {
@@ -3673,11 +3673,11 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     with(self, index: number, value: bigint) -> BigInt64Array<ArrayBuffer>,
     static readonly prototype: BigInt64Array<ArrayBufferLike>,
-    constructor(mut self, length?: number),
-    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer),
+    constructor(mut self, length?: number) -> BigInt64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>) -> BigInt64Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> BigInt64Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> BigInt64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer) -> BigInt64Array<ArrayBuffer>,
     /** The size in bytes of each element in the array. */
     static readonly BYTES_PER_ELEMENT: number,
     /**
@@ -3969,11 +3969,11 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     with(self, index: number, value: bigint) -> BigUint64Array<ArrayBuffer>,
     static readonly prototype: BigUint64Array<ArrayBufferLike>,
-    constructor(mut self, length?: number),
-    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number),
-    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer),
+    constructor(mut self, length?: number) -> BigUint64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<bigint> | Iterable<bigint>) -> BigUint64Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> BigUint64Array<TArrayBuffer>,
+    constructor(mut self, buffer: ArrayBuffer, byteOffset?: number, length?: number) -> BigUint64Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<bigint> | ArrayBuffer) -> BigUint64Array<ArrayBuffer>,
     /** The size in bytes of each element in the array. */
     static readonly BYTES_PER_ELEMENT: number,
     /**
@@ -4311,9 +4311,9 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
     values(self) -> ArrayIterator<number>,
     readonly [Symbol.toStringTag]: "Float16Array",
     static readonly prototype: Float16Array<ArrayBufferLike>,
-    constructor(mut self, length?: number),
-    constructor(mut self, array: ArrayLike<number> | Iterable<number>),
-    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number),
+    constructor(mut self, length?: number) -> Float16Array<ArrayBuffer>,
+    constructor(mut self, array: ArrayLike<number> | Iterable<number>) -> Float16Array<ArrayBuffer>,
+    constructor(mut self, buffer: TArrayBuffer, byteOffset?: number, length?: number) -> Float16Array<TArrayBuffer>,
     /**
      * The size in bytes of each element in the array.
      */

@@ -139,7 +139,7 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
     readonly userHandle: ArrayBuffer | null,
     static prototype: AuthenticatorAssertionResponse,
-    constructor(mut self)
+    constructor(mut self) -> AuthenticatorAssertionResponse
 }
 
 /**
@@ -160,7 +160,7 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
     getTransports(self) -> mut Array<string>,
     static prototype: AuthenticatorAttestationResponse,
-    constructor(mut self)
+    constructor(mut self) -> AuthenticatorAttestationResponse
 }
 
 /**
@@ -173,7 +173,7 @@ export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
     readonly clientDataJSON: ArrayBuffer,
     static prototype: AuthenticatorResponse,
-    constructor(mut self)
+    constructor(mut self) -> AuthenticatorResponse
 }
 
 /**
@@ -194,7 +194,7 @@ export declare class PublicKeyCredential extends Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/toJSON) */
     toJSON(self) -> PublicKeyCredentialJSON,
     static prototype: PublicKeyCredential,
-    constructor(mut self),
+    constructor(mut self) -> PublicKeyCredential,
     static getClientCapabilities() -> Promise<PublicKeyCredentialClientCapabilities>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/isConditionalMediationAvailable_static) */
     static isConditionalMediationAvailable() -> Promise<boolean>,

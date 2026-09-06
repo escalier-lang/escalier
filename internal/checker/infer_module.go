@@ -809,7 +809,7 @@ func (c *Checker) InferComponent(
 					var sigErrors []Error
 					var ctorCtx Context
 					funcType, ctorCtx, paramBindings, sigErrors = c.inferConstructorSig(
-						declCtx, ctor, typeParams, retType, provenance,
+						declCtx, ctor, typeParams, retType, decl.Declare(), provenance,
 					)
 					errors = slices.Concat(errors, sigErrors)
 					// In-body constructor params are scoped to the

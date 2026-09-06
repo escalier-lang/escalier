@@ -32,9 +32,9 @@ export declare fn encodeURIComponent(uriComponent: string | number | boolean) ->
 
 @js("URIError")
 export declare class URIError extends Error {
-    constructor(mut self, message?: string, options?: ErrorOptions),
+    constructor(mut self, message?: string, options?: ErrorOptions) -> URIError,
     callable(message?: string, options?: ErrorOptions) -> URIError,
-    constructor(mut self, message?: string),
+    constructor(mut self, message?: string) -> URIError,
     callable(message?: string) -> URIError,
     static readonly prototype: URIError
 }

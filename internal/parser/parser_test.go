@@ -1314,13 +1314,6 @@ func TestClassConstructorErrors(t *testing.T) {
 				}
 			`,
 		},
-		"ConstructorWithReturnType": {
-			input: `
-				class Foo {
-					constructor(mut self) -> number {}
-				}
-			`,
-		},
 		"ConstructorMissingSelf": {
 			input: `
 				class Foo {

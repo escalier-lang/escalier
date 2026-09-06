@@ -1108,7 +1108,7 @@ func fuseTrio(info *trioInfo) (*ast.ClassDecl, error) {
 
 	for _, m := range info.ctorMembers {
 		if cs, ok := m.(*dts_parser.ConstructSignature); ok {
-			ctor, err := constructSignatureToCtorElem(cs)
+			ctor, err := trioCtorElem(cs, className, info.instance.TypeParams)
 			if err != nil {
 				return nil, err
 			}
@@ -1347,10 +1347,176 @@ func interfaceMemberToClassElem(
 	}
 }
 
+// ctorReturnBase splits a construct signature's declared return into the name it
+// builds and the type arguments it applies. `T[]` reads as `Array<T>`, the way
+// `ArrayConstructor` writes its `new` signatures. Any other shape yields false.
+func ctorReturnBase(t dts_parser.TypeAnn) (name string, args []dts_parser.TypeAnn, ok bool) {
+	switch n := t.(type) {
+	case *dts_parser.TypeReference:
+		return typeRefName(n), n.TypeArgs, true
+	case *dts_parser.ArrayType:
+		return "Array", []dts_parser.TypeAnn{n.ElementType}, true
+	}
+	return "", nil, false
+}
+
+// ctorParamRenames reports whether a construct signature builds the class at the
+// class's own type parameters, and returns the renaming that carries the
+// signature's parameter names onto the class's. A signature that pins a type
+// argument reports false, and trioCtorElem writes its return out instead.
+//
+// The signature's own parameters stand in for the class's position by position,
+// which is how `new <T>(arrayLength: number): T[]` builds `Array<T>` from a
+// non-generic `ArrayConstructor`. Carrying the names across unchanged would leave
+// them bound to the class's by nothing more than having been spelled alike.
+func ctorParamRenames(
+	cs *dts_parser.ConstructSignature,
+	className string,
+	classParams []*dts_parser.TypeParam,
+) (map[string]string, bool) {
+	name, args, ok := ctorReturnBase(cs.ReturnType)
+	if !ok || name != className || len(args) != len(classParams) {
+		return nil, false
+	}
+	// The signature either names the class's parameters directly or declares one
+	// of its own for each of them. Any other count leaves a parameter with no
+	// position to map onto.
+	if len(cs.TypeParams) != 0 && len(cs.TypeParams) != len(classParams) {
+		return nil, false
+	}
+	renames := map[string]string{}
+	for i, tp := range cs.TypeParams {
+		if tp.Name.Name != classParams[i].Name.Name {
+			renames[tp.Name.Name] = classParams[i].Name.Name
+		}
+	}
+	for i, arg := range args {
+		ref, isRef := arg.(*dts_parser.TypeReference)
+		if !isRef || len(ref.TypeArgs) != 0 {
+			return nil, false
+		}
+		got := typeRefName(ref)
+		if to, renamed := renames[got]; renamed {
+			got = to
+		}
+		if got != classParams[i].Name.Name {
+			return nil, false
+		}
+	}
+	return renames, true
+}
+
+// applyCtorParamRenames rewrites the type references in a construct signature's
+// parameter list so its own type parameter names become the class's. It mutates
+// the dts nodes in place, as renameTypeParams does for a merged interface pair.
+func applyCtorParamRenames(cs *dts_parser.ConstructSignature, renames map[string]string) {
+	if len(renames) == 0 {
+		return
+	}
+	for _, param := range cs.Params {
+		walkTypeRefs(param.Type, func(ref *dts_parser.TypeReference) {
+			id, ok := ref.Name.(*dts_parser.Ident)
+			if !ok {
+				return
+			}
+			if to, ok := renames[id.Name]; ok {
+				id.Name = to
+			}
+		})
+	}
+}
+
+// trioCtorElem builds the fused class's `constructor` from one `new` signature.
+// Every constructor writes the return its signature declared, so a reader never
+// has to know which of a class's overloads pins a type argument.
+//
+// A signature that builds the class at the class's own parameters keeps them,
+// renamed onto the class's names. One that pins a type argument, as
+// `new (length?: number): Uint8Array<ArrayBuffer>` does, keeps whatever type
+// parameters it wrote and its return says what it builds. 72 signatures across
+// the pinned lib set pin one, `Array`, `Map` and the typed arrays among them.
+func trioCtorElem(
+	cs *dts_parser.ConstructSignature,
+	className string,
+	classParams []*dts_parser.TypeParam,
+) (*ast.ConstructorElem, error) {
+	if renames, ok := ctorParamRenames(cs, className, classParams); ok {
+		applyCtorParamRenames(cs, renames)
+		ret, err := classSelfAnn(className, classParams, convertSpan(cs.Span()))
+		if err != nil {
+			return nil, err
+		}
+		return constructSignatureToCtorElem(cs, nil, ret)
+	}
+	typeParams, err := convertTypeParams(cs.TypeParams)
+	if err != nil {
+		return nil, fmt.Errorf("constructor type params: %w", err)
+	}
+	ret, err := ctorReturnAnn(cs, className)
+	if err != nil {
+		return nil, err
+	}
+	return constructSignatureToCtorElem(cs, typeParams, ret)
+}
+
+// classSelfAnn renders the class at its own type parameters, which is what a
+// construct signature that pins nothing builds.
+func classSelfAnn(
+	className string,
+	classParams []*dts_parser.TypeParam,
+	span ast.Span,
+) (ast.TypeAnn, error) {
+	typeArgs := make([]ast.TypeAnn, len(classParams))
+	for i, tp := range classParams {
+		typeArgs[i] = ast.NewRefTypeAnn(
+			ast.NewIdentifier(tp.Name.Name, span), nil, span)
+	}
+	return ast.NewRefTypeAnn(ast.NewIdentifier(className, span), typeArgs, span), nil
+}
+
+// ctorReturnAnn renders a construct signature's declared return as the class
+// applied to type arguments, the one shape a constructor's return can take. It
+// is rebuilt from the class name rather than converted whole, so only the type
+// arguments carry across and the shorthand's own spelling does not.
+// rewriteReadonlyTwinRefs walks the return afterwards, which is why `Array`'s
+// constructors read `-> mut Array<…>`.
+//
+// A return naming anything else is nothing a constructor can declare, and
+// substituting the class would have it claim what the `.d.ts` did not, so the
+// conversion fails. No construct signature in any of the 88 lib files builds
+// something other than its own class, dropped sources included.
+func ctorReturnAnn(cs *dts_parser.ConstructSignature, className string) (ast.TypeAnn, error) {
+	name, args, ok := ctorReturnBase(cs.ReturnType)
+	if !ok {
+		return nil, fmt.Errorf(
+			"trio %s: a `new` signature declares a return the converter cannot "+
+				"read as a type reference", className)
+	}
+	if name != className {
+		return nil, fmt.Errorf(
+			"trio %s: a `new` signature builds %s, and a constructor builds the "+
+				"class it belongs to", className, name)
+	}
+	span := convertSpan(cs.Span())
+	typeArgs := make([]ast.TypeAnn, len(args))
+	for i, arg := range args {
+		conv, err := convertTypeAnn(arg)
+		if err != nil {
+			return nil, fmt.Errorf("constructor return: %w", err)
+		}
+		typeArgs[i] = conv
+	}
+	return ast.NewRefTypeAnn(ast.NewIdentifier(className, span), typeArgs, span), nil
+}
+
 // constructSignatureToCtorElem builds a ConstructorElem from the trio's
 // `new (...)` signature. The synthesised `mut self` matches the receiver
 // shape that convertClassDecl produces for a real ConstructorDecl.
-func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.ConstructorElem, error) {
+func constructSignatureToCtorElem(
+	cs *dts_parser.ConstructSignature,
+	typeParams []*ast.TypeParam,
+	ret ast.TypeAnn,
+) (*ast.ConstructorElem, error) {
 	params, err := convertParams(cs.Params)
 	if err != nil {
 		return nil, fmt.Errorf("constructor params: %w", err)
@@ -1359,7 +1525,7 @@ func constructSignatureToCtorElem(cs *dts_parser.ConstructSignature) (*ast.Const
 	selfPat := ast.NewIdentPat("self", true, nil, nil, span)
 	selfParam := &ast.Param{Pattern: selfPat, TypeAnn: nil, Optional: false}
 	allParams := append([]*ast.Param{selfParam}, params...)
-	fn := ast.NewFuncExpr(nil, nil, allParams, nil, nil, false, nil, span)
+	fn := ast.NewFuncExpr(nil, typeParams, allParams, ret, nil, false, nil, span)
 	elem := &ast.ConstructorElem{
 		Fn:       fn,
 		Receiver: &ast.MethodReceiver{Mut: true, Span_: span},

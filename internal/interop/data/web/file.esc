@@ -33,7 +33,7 @@ export declare class Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Blob/text) */
     text(mut self) -> Promise<string>,
     static prototype: Blob,
-    constructor(mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag)
+    constructor(mut self, blobParts?: mut Array<BlobPart>, options?: BlobPropertyBag) -> Blob
 }
 
 /**
@@ -50,7 +50,7 @@ export declare class File extends Blob {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/File/webkitRelativePath) */
     readonly webkitRelativePath: string,
     static prototype: File,
-    constructor(mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag)
+    constructor(mut self, fileBits: mut Array<BlobPart>, fileName: string, options?: FilePropertyBag) -> File
 }
 
 /**
@@ -66,7 +66,7 @@ export declare class FileList {
     item(mut self, index: number) -> File | null,
     [Symbol.iterator](mut self) -> ArrayIterator<File>,
     static prototype: FileList,
-    constructor(mut self)
+    constructor(mut self) -> FileList
 }
 
 export declare interface FileReaderEventMap {
@@ -125,7 +125,7 @@ export declare class FileReader extends EventTarget {
     removeEventListener<K: keyof FileReaderEventMap>(mut self, type: K, listener: fn (this: FileReader, ev: FileReaderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: FileReader,
-    constructor(mut self),
+    constructor(mut self) -> FileReader,
     static readonly EMPTY: 0,
     static readonly LOADING: 1,
     static readonly DONE: 2

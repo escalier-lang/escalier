@@ -234,7 +234,7 @@ export declare class AudioData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData/copyTo) */
     copyTo(self, destination: AllowSharedBufferSource, options: AudioDataCopyToOptions) -> unknown,
     static prototype: AudioData,
-    constructor(mut self, init: AudioDataInit)
+    constructor(mut self, init: AudioDataInit) -> AudioData
 }
 
 export declare interface AudioDecoderEventMap {
@@ -269,7 +269,7 @@ export declare class AudioDecoder extends EventTarget {
     removeEventListener<K: keyof AudioDecoderEventMap>(mut self, type: K, listener: fn (this: AudioDecoder, ev: AudioDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioDecoder,
-    constructor(mut self, init: AudioDecoderInit),
+    constructor(mut self, init: AudioDecoderInit) -> AudioDecoder,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioDecoder/isConfigSupported_static) */
     static isConfigSupported(config: AudioDecoderConfig) -> Promise<AudioDecoderSupport>
 }
@@ -306,7 +306,7 @@ export declare class AudioEncoder extends EventTarget {
     removeEventListener<K: keyof AudioEncoderEventMap>(mut self, type: K, listener: fn (this: AudioEncoder, ev: AudioEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: AudioEncoder,
-    constructor(mut self, init: AudioEncoderInit),
+    constructor(mut self, init: AudioEncoderInit) -> AudioEncoder,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioEncoder/isConfigSupported_static) */
     static isConfigSupported(config: AudioEncoderConfig) -> Promise<AudioEncoderSupport>
 }
@@ -325,7 +325,7 @@ export declare class EncodedAudioChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedAudioChunk/copyTo) */
     copyTo(self, destination: AllowSharedBufferSource) -> unknown,
     static prototype: EncodedAudioChunk,
-    constructor(mut self, init: EncodedAudioChunkInit)
+    constructor(mut self, init: EncodedAudioChunkInit) -> EncodedAudioChunk
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk) */
@@ -342,7 +342,7 @@ export declare class EncodedVideoChunk {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EncodedVideoChunk/copyTo) */
     copyTo(self, destination: AllowSharedBufferSource) -> unknown,
     static prototype: EncodedVideoChunk,
-    constructor(mut self, init: EncodedVideoChunkInit)
+    constructor(mut self, init: EncodedVideoChunkInit) -> EncodedVideoChunk
 }
 
 /**
@@ -367,7 +367,7 @@ export declare class ImageDecoder {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/reset) */
     reset(mut self) -> unknown,
     static prototype: ImageDecoder,
-    constructor(mut self, init: ImageDecoderInit),
+    constructor(mut self, init: ImageDecoderInit) -> ImageDecoder,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageDecoder/isTypeSupported_static) */
     static isTypeSupported(type: string) -> Promise<boolean>
 }
@@ -384,7 +384,7 @@ export declare class ImageTrack {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrack/selected) */
     selected: boolean,
     static prototype: ImageTrack,
-    constructor(mut self)
+    constructor(mut self) -> ImageTrack
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList) */
@@ -400,7 +400,7 @@ export declare class ImageTrackList {
     readonly selectedTrack: ImageTrack | null,
     [Symbol.iterator](mut self) -> ArrayIterator<ImageTrack>,
     static prototype: ImageTrackList,
-    constructor(mut self)
+    constructor(mut self) -> ImageTrackList
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace) */
@@ -417,7 +417,7 @@ export declare class VideoColorSpace {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoColorSpace/toJSON) */
     toJSON(self) -> VideoColorSpaceInit,
     static prototype: VideoColorSpace,
-    constructor(mut self, init?: VideoColorSpaceInit)
+    constructor(mut self, init?: VideoColorSpaceInit) -> VideoColorSpace
 }
 
 export declare interface VideoDecoderEventMap {
@@ -452,7 +452,7 @@ export declare class VideoDecoder extends EventTarget {
     removeEventListener<K: keyof VideoDecoderEventMap>(mut self, type: K, listener: fn (this: VideoDecoder, ev: VideoDecoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: VideoDecoder,
-    constructor(mut self, init: VideoDecoderInit),
+    constructor(mut self, init: VideoDecoderInit) -> VideoDecoder,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoDecoder/isConfigSupported_static) */
     static isConfigSupported(config: VideoDecoderConfig) -> Promise<VideoDecoderSupport>
 }
@@ -489,7 +489,7 @@ export declare class VideoEncoder extends EventTarget {
     removeEventListener<K: keyof VideoEncoderEventMap>(mut self, type: K, listener: fn (this: VideoEncoder, ev: VideoEncoderEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: VideoEncoder,
-    constructor(mut self, init: VideoEncoderInit),
+    constructor(mut self, init: VideoEncoderInit) -> VideoEncoder,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoEncoder/isConfigSupported_static) */
     static isConfigSupported(config: VideoEncoderConfig) -> Promise<VideoEncoderSupport>
 }
@@ -526,8 +526,8 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
     copyTo(self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
     static prototype: VideoFrame,
-    constructor(mut self, image: CanvasImageSource, init?: VideoFrameInit),
-    constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
+    constructor(mut self, image: CanvasImageSource, init?: VideoFrameInit) -> VideoFrame,
+    constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit) -> VideoFrame
 }
 
 export declare interface AudioDataOutputCallback {

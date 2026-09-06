@@ -365,7 +365,7 @@ export declare class String {
     static raw(template: {
         raw: Array<string> | ArrayLike<string>
     }, ...substitutions: mut Array<any>) -> string,
-    constructor(mut self, value?: any),
+    constructor(mut self, value?: any) -> String,
     callable(value?: any) -> string,
     static readonly prototype: String,
     static fromCharCode(...codes: mut Array<number>) -> string

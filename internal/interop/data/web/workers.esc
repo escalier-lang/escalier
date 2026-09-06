@@ -31,7 +31,7 @@ export declare class SharedWorker extends EventTarget {
     removeEventListener<K: keyof AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: SharedWorker,
-    constructor(mut self, scriptURL: string | URL, options?: string | WorkerOptions)
+    constructor(mut self, scriptURL: string | URL, options?: string | WorkerOptions) -> SharedWorker
 }
 
 export declare interface WorkerEventMap extends AbstractWorkerEventMap, MessageEventTargetEventMap {}
@@ -61,7 +61,7 @@ export declare class Worker extends EventTarget {
     removeEventListener<K: keyof WorkerEventMap>(mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Worker,
-    constructor(mut self, scriptURL: string | URL, options?: WorkerOptions)
+    constructor(mut self, scriptURL: string | URL, options?: WorkerOptions) -> Worker
 }
 
 export declare type WorkerType = "classic" | "module"

@@ -93,7 +93,7 @@ export declare class Number {
      * All other strings are considered decimal.
      */
     static parseInt(string: string, radix?: number) -> number,
-    constructor(mut self, value?: any),
+    constructor(mut self, value?: any) -> Number,
     callable(value?: any) -> number,
     static readonly prototype: Number,
     /** The largest number that can be represented in JavaScript. Equal to approximately 1.79E+308. */

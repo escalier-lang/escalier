@@ -49,7 +49,7 @@ export declare class Promise<T, E = never> {
      * a resolve callback used to resolve the promise with a value or the result of another promise,
      * and a reject callback used to reject the promise with a provided reason or error.
      */
-    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: any) -> unknown) -> unknown),
+    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: any) -> unknown) -> unknown) -> Promise<T>,
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -223,10 +223,10 @@ export declare type PromiseSettledResult<T> = PromiseFulfilledResult<T> | Promis
 @js("AggregateError")
 export declare class AggregateError extends Error {
     errors: mut Array<any>,
-    constructor(mut self, errors: Iterable<any>, message?: string),
+    constructor(mut self, errors: Iterable<any>, message?: string) -> AggregateError,
     callable(errors: Iterable<any>, message?: string) -> AggregateError,
     static readonly prototype: AggregateError,
-    constructor(mut self, errors: Iterable<any>, message?: string, options?: ErrorOptions),
+    constructor(mut self, errors: Iterable<any>, message?: string, options?: ErrorOptions) -> AggregateError,
     callable(errors: Iterable<any>, message?: string, options?: ErrorOptions) -> AggregateError
 }
 

@@ -6,7 +6,7 @@ export declare class Boolean {
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> boolean,
     /** Constructs a new Boolean wrapper around a value. */
-    constructor(mut self, value?: any),
+    constructor(mut self, value?: any) -> Boolean,
     /** Coerces a value to a primitive boolean. */
     callable<T>(value?: T) -> boolean,
     /** The Boolean prototype object. */

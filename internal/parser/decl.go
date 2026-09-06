@@ -630,6 +630,9 @@ func (p *Parser) classDecl(start ast.Location, export, declare, final bool) ast.
 // (no type annotation). The remaining params follow after a comma. The
 // `mut self` is preserved as `ConstructorElem.MutSelf` and as `Fn.Params[0]`
 // for the body checker.
+//
+// A `-> T` return is read into `Fn.Return`. Only a `declare class` may write
+// one, which the parser does not know here, so the checker reports it.
 func (p *Parser) parseConstructorElem(
 	start ast.Location,
 	token *Token,
@@ -735,18 +738,14 @@ func (p *Parser) parseConstructorElem(
 		}
 	}
 
-	// `throws` may appear in either order relative to `->` (the arrow form
-	// is itself an error). Accept whichever comes first; if both appear we
-	// keep the first one and discard the second.
+	// `throws` may appear on either side of `->`. Accept whichever comes first; if
+	// both appear we keep the first one and discard the second.
 	throwsType := p.throwsClause()
+	var returnType ast.TypeAnn
 	next = p.lexer.peek()
 	if next.Type == Arrow {
-		p.reportError(next.Span, "constructors cannot declare a return type")
 		p.lexer.consume()
-		_ = p.typeAnn()
-		// A `throws` after `->` is also tolerated, but we already errored. It is consumed
-		// either way, so the body still parses when the source wrote a clause on both
-		// sides of the arrow; the first clause is the one that survives.
+		returnType = p.typeAnn()
 		if second := p.throwsClause(); throwsType == nil {
 			throwsType = second
 		}
@@ -761,7 +760,7 @@ func (p *Parser) parseConstructorElem(
 
 	span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
 	return &ast.ConstructorElem{
-		Fn:       ast.NewFuncExpr(nil, typeParams, params, nil, throwsType, false, body, span),
+		Fn:       ast.NewFuncExpr(nil, typeParams, params, returnType, throwsType, false, body, span),
 		Receiver: receiver,
 		Private:  isPrivate,
 		Span_:    span,

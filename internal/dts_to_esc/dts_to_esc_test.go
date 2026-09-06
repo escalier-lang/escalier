@@ -878,7 +878,7 @@ func TestStandalone_RaiseParamOnAFusedClass(t *testing.T) {
 	snaps.MatchInlineSnapshot(t, printed, snaps.Inline(`@js("Promise")
 export declare class Promise<T, E = never> {
     then<R>(mut self, onfulfilled?: fn (value: T) -> R) -> Promise<R, E>,
-    constructor(mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown),
+    constructor(mut self, executor: fn (resolve: fn (value: T) -> unknown) -> unknown) -> Promise<T>,
     static readonly prototype: Promise<any>,
     static resolve<T>(value: T) -> Promise<T>
 }`))
@@ -1168,6 +1168,170 @@ export declare class Symbol {
 	require.NotEmpty(t, parsedDecls)
 }
 
+// A `new` signature declares what it builds, and a fused constructor has to say
+// the same thing. One that names the class at the class's own type parameters
+// needs no return. One that pins a type argument writes it down, and one that
+// declares its own type parameters has them renamed onto the class's, so the
+// parameter list means the same thing after fusion as before it.
+func TestStandalone_ConstructorKeepsWhatItsNewSignatureDeclares(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		// `ArrayConstructor` verbatim from lib.es5.d.ts. The first overload
+		// builds `any[]`, which the other two do not.
+		"PinnedTypeArgument": {
+			slice: `
+interface Array<T> {
+    length: number;
+}
+
+interface ArrayConstructor {
+    new (arrayLength?: number): any[];
+    new <T>(arrayLength: number): T[];
+}
+
+declare var Array: ArrayConstructor;
+`,
+			want: `@js("Array")
+export declare class Array<T> {
+    length: number,
+    constructor(mut self, arrayLength?: number) -> Array<any>,
+    constructor(mut self, arrayLength: number) -> Array<T>
+}
+`,
+		},
+		// The signature's `U` stands in for the class's `T`, position by
+		// position, so the parameter list is rewritten to name `T`.
+		"RenamedTypeParameter": {
+			slice: `
+interface Box<T> {
+    value: T;
+}
+
+interface BoxConstructor {
+    new <U>(value: U): Box<U>;
+}
+
+declare var Box: BoxConstructor;
+`,
+			want: `@js("Box")
+export declare class Box<T> {
+    value: T,
+    constructor(mut self, value: T) -> Box<T>
+}
+`,
+		},
+		// The signature declares more type parameters than the class has, so
+		// the last of them has no position to map onto.
+		"MoreTypeParametersThanTheClass": {
+			slice: `
+interface Box<T> {
+    value: T;
+}
+
+interface BoxConstructor {
+    new <U, W>(value: U, other: W): Box<U>;
+}
+
+declare var Box: BoxConstructor;
+`,
+			want: `@js("Box")
+export declare class Box<T> {
+    value: T,
+    constructor<U, W>(mut self, value: U, other: W) -> Box<U>
+}
+`,
+		},
+		// The signature declares fewer type parameters than the class has, so
+		// there is no position to map them onto and the return is written out.
+		"FewerTypeParametersThanTheClass": {
+			slice: `
+interface Pair<K, V> {
+    key: K;
+}
+
+interface PairConstructor {
+    new <V>(value: V): Pair<string, V>;
+}
+
+declare var Pair: PairConstructor;
+`,
+			want: `@js("Pair")
+export declare class Pair<K, V> {
+    key: K,
+    constructor<V>(mut self, value: V) -> Pair<string, V>
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A constructor builds the class it belongs to. A `new` signature that declares
+// anything else is nothing the fused constructor can say, and substituting the
+// class would have it claim what the `.d.ts` did not, so the conversion fails.
+//
+// No construct signature in any of the 88 lib files takes either shape, dropped
+// sources included, so the inputs below are written by hand and the errors name
+// a `.d.ts` the converter has not seen.
+func TestStandalone_ConstructorBuildingAnotherTypeIsRejected(t *testing.T) {
+	tests := map[string]struct {
+		ctorSide string
+		wantErr  string
+	}{
+		"AnotherDeclaration": {
+			ctorSide: "new (): Gadget;",
+			wantErr: "fusing trio for Widget: trio Widget: a `new` signature builds " +
+				"Gadget, and a constructor builds the class it belongs to",
+		},
+		// A keyword type is not a TypeReference, so it does not even reach the
+		// name comparison.
+		"APrimitive": {
+			ctorSide: "new (): number;",
+			wantErr: "fusing trio for Widget: trio Widget: a `new` signature declares " +
+				"a return the converter cannot read as a type reference",
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			slice := `
+interface Gadget {
+    tag: string;
+}
+
+interface Widget {
+    id: number;
+}
+
+interface WidgetConstructor {
+    ` + test.ctorSide + `
+}
+
+declare var Widget: WidgetConstructor;
+`
+			source := &ast.Source{Path: "test.d.ts", Contents: slice, ID: 0}
+			dtsModule, parseErrs := dts_parser.NewDtsParser(source).ParseModule()
+			require.Empty(t, parseErrs, "dts parse errors")
+
+			_, err := ConvertToStandaloneModule(dtsModule)
+			require.EqualError(t, err, test.wantErr)
+		})
+	}
+}
+
 // A call signature on the instance side says instances are callable, which is
 // not a shape a class has: `callable` describes the class value, and no class
 // elem describes an instance being called. Fusing would have to drop it, so the
@@ -1335,7 +1499,7 @@ export declare class AbortController {
     readonly signal: AbortSignal,
     abort(mut self, reason?: any) -> unknown,
     static prototype: AbortController,
-    constructor(mut self)
+    constructor(mut self) -> AbortController
 }
 `,
 		},
@@ -1359,7 +1523,7 @@ declare var Response: {
 export declare class Response {
     readonly ok: boolean,
     static prototype: Response,
-    constructor(mut self, body?: string),
+    constructor(mut self, body?: string) -> Response,
     static error() -> Response
 }
 `,

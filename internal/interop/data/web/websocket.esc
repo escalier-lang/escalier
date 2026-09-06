@@ -34,7 +34,7 @@ export declare class CloseEvent extends Event {
      */
     readonly wasClean: boolean,
     static prototype: CloseEvent,
-    constructor(mut self, type: string, eventInitDict?: CloseEventInit)
+    constructor(mut self, type: string, eventInitDict?: CloseEventInit) -> CloseEvent
 }
 
 export declare interface WebSocketEventMap {
@@ -120,7 +120,7 @@ export declare class WebSocket extends EventTarget {
     removeEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: WebSocket,
-    constructor(mut self, url: string | URL, protocols?: string | mut Array<string>),
+    constructor(mut self, url: string | URL, protocols?: string | mut Array<string>) -> WebSocket,
     static readonly CONNECTING: 0,
     static readonly OPEN: 1,
     static readonly CLOSING: 2,
