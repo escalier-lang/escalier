@@ -526,6 +526,22 @@ func TestRetiredClassSyntax(t *testing.T) {
 	}
 }
 
+// `as` takes an identifier, so a literal after it is rejected rather than
+// becoming the name the import binds under.
+func TestParseImportAliasMustBeAnIdentifier(t *testing.T) {
+	t.Parallel()
+
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `import "module" as 123`}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := NewParser(ctx, source)
+	_, errors := p.ParseScript()
+
+	require.NotEmpty(t, errors, "a non-identifier alias should not parse")
+	require.Equal(t, "Expected identifier after 'as'", errors[0].Message)
+}
+
 // Escalier has one import form, `import "uri"`, so a binding clause is a parse
 // error. The message names the form that works, since the shapes rejected here
 // are the ones a reader arrives with from JavaScript or TypeScript.
