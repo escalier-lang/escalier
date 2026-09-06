@@ -442,6 +442,132 @@ func TestADanglingDotDoesNotSwallowTheNextLine(t *testing.T) {
 	}
 }
 
+// `callable` opens a call signature in a `declare class` body, the member an
+// object type writes as `fn (…)`. It claims the one shape a member cannot
+// otherwise take: an instance method declares `self` and a static carries
+// `static`, so a member with neither is no member at all.
+func TestCallableOpensACallSignatureInADeclareClass(t *testing.T) {
+	t.Parallel()
+	sources := map[string]string{
+		"Receiverless":   "callable(x: number) -> string",
+		"WithTypeParams": "callable<T>(x: T) -> string",
+		"WithNoParams":   "callable() -> string",
+	}
+	for name, src := range sources {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			elem := parseOneClassElem(t, true /*declare*/, src)
+			require.IsType(t, &ast.CallableElem{}, elem)
+			_, named := classElemName(t, elem)
+			require.False(t, named, "a call signature carries no member name")
+		})
+	}
+}
+
+// Every other shape keeps `callable` as an ordinary member name, the way
+// `constructor` stays a name where a field's punctuation follows it. Each case
+// names what takes the member out of the call signature's shape.
+func TestAMemberNamedCallableKeepsItsName(t *testing.T) {
+	t.Parallel()
+	tests := map[string]struct {
+		src  string
+		want ast.ClassElem
+	}{
+		"WithAReceiver":       {"callable(mut self, x: number) -> string", &ast.MethodElem{}},
+		"WithASharedReceiver": {"callable(self, x: number) -> string", &ast.MethodElem{}},
+		"Static":              {"static callable(x: number) -> string", &ast.MethodElem{}},
+		"WithAStringKey":      {`"callable"(x: number) -> string`, &ast.MethodElem{}},
+		"WithAnotherModifier": {"readonly callable(x: number) -> string", &ast.MethodElem{}},
+		"WithABody":           {"callable(x: number) -> string { }", &ast.MethodElem{}},
+		"AsAField":            {"callable: number", &ast.FieldElem{}},
+		"AsAGetter":           {"get callable(self) -> number", &ast.GetterElem{}},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			requireKeepsTheName(t, parseOneClassElem(t, true /*declare*/, test.src), test.want)
+		})
+	}
+}
+
+// Outside a `declare class` the name is never claimed, whatever shape the member
+// takes. A class the compiler emits is not callable, so a `callable` method
+// ported into Escalier from an existing codebase is left alone rather than
+// having to be spelled around.
+func TestCallableIsAnOrdinaryNameOutsideADeclareClass(t *testing.T) {
+	t.Parallel()
+	sources := map[string]string{
+		"Receiverless":   "callable(x: number) -> string",
+		"WithTypeParams": "callable<T>(x: T) -> string",
+		"WithNoParams":   "callable() -> string",
+	}
+	for name, src := range sources {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			requireKeepsTheName(t, parseOneClassElem(t, false /*declare*/, src), &ast.MethodElem{})
+		})
+	}
+}
+
+// parseOneClassElem parses a class body holding a single member and returns it.
+// declare picks which kind of class the member is declared in, which is what
+// decides whether `callable` opens a call signature.
+func parseOneClassElem(t *testing.T, declare bool, src string) ast.ClassElem {
+	t.Helper()
+	header := "class C {\n    "
+	if declare {
+		header = "declare class C {\n    "
+	}
+	full := header + src + "\n}"
+	script, errors := parseScriptSrc(t, full)
+	require.Empty(t, errors, "%s should parse", full)
+	require.Len(t, script.Stmts, 1)
+	declStmt, ok := script.Stmts[0].(*ast.DeclStmt)
+	require.True(t, ok)
+	class, ok := declStmt.Decl.(*ast.ClassDecl)
+	require.True(t, ok)
+	require.Len(t, class.Body, 1)
+	return class.Body[0]
+}
+
+// requireKeepsTheName asserts a member reached the parser as want and is still
+// declared under the name `callable`.
+func requireKeepsTheName(t *testing.T, elem ast.ClassElem, want ast.ClassElem) {
+	t.Helper()
+	require.IsType(t, want, elem)
+	name, named := classElemName(t, elem)
+	require.True(t, named, "%T carries no member name", elem)
+	require.Equal(t, "callable", name)
+}
+
+// classElemName returns the name a class member is declared under, and false for
+// a member that has none. A call signature is the only nameless kind, which is
+// what tells it from every member the two tests above cover.
+func classElemName(t *testing.T, elem ast.ClassElem) (string, bool) {
+	t.Helper()
+	var key ast.ObjKey
+	switch e := elem.(type) {
+	case *ast.MethodElem:
+		key = e.Name
+	case *ast.FieldElem:
+		key = e.Name
+	case *ast.GetterElem:
+		key = e.Name
+	case *ast.CallableElem:
+		return "", false
+	default:
+		t.Fatalf("unexpected class elem %T", elem)
+	}
+	switch k := key.(type) {
+	case *ast.IdentExpr:
+		return k.Name, true
+	case *ast.StrLit:
+		return k.Value, true
+	}
+	t.Fatalf("unexpected member key %T", key)
+	return "", false
+}
+
 // A chain broken before the dot keeps the dot and the name together, so a
 // keyword member still reads across lines the way it is normally written.
 func TestAChainBrokenBeforeTheDotNamesAProperty(t *testing.T) {

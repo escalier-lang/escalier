@@ -260,6 +260,13 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 				objTypeElems = append(objTypeElems,
 					type_system.NewSetterElem(*key, funcType))
 			}
+		case *ast.CallableElem:
+			// The class value itself is callable. Only a `declare class` body
+			// produces this elem; see the matching note in InferComponent.
+			fnType, _, _, sigErrors := c.inferFuncSig(
+				declCtx, &elem.Fn.FuncSig, elem.Fn, nil)
+			errors = slices.Concat(errors, sigErrors)
+			staticElems = append(staticElems, &type_system.CallableElem{Fn: fnType})
 		case *ast.ConstructorElem:
 			// Constructor signatures are handled separately below via
 			// inferConstructorSig; nothing to do during the element walk.
@@ -331,8 +338,13 @@ func (c *Checker) inferClassDecl(ctx Context, decl *ast.ClassDecl) []Error {
 
 	mergedStaticElems, staticMergeErrors := c.MergeMethodOverloads(staticElems, decl.Span())
 	errors = slices.Concat(errors, staticMergeErrors)
-	constructorElem := &type_system.ConstructorElem{Fn: ctorFuncType}
-	classObjTypeElems := []type_system.ObjTypeElem{constructorElem}
+	// See the matching note in InferComponent: a `declare class` with no
+	// `constructor` member is not constructible.
+	var classObjTypeElems []type_system.ObjTypeElem
+	if len(inBodyCtors) > 0 || !decl.Declare() {
+		classObjTypeElems = append(classObjTypeElems,
+			&type_system.ConstructorElem{Fn: ctorFuncType})
+	}
 	classObjTypeElems = append(classObjTypeElems, mergedStaticElems...)
 
 	classObjType := type_system.NewObjectType(provenance, classObjTypeElems)

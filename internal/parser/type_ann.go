@@ -917,9 +917,9 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 	//
 	// A method does collide: `fn(x: number) -> T` differs from the call signature only in
 	// whitespace, and a signature must not hinge on that, so the signature wins. Write a
-	// method of either name with a string key, `"fn"(x: number) -> T`. A class body has
-	// no call or construct signature to compete with, so `fn` and `new` name methods
-	// there directly.
+	// method of either name with a string key, `"fn"(x: number) -> T`. A class body
+	// spells the call signature `callable(x: number) -> T` and has no construct
+	// signature at all, so `fn` and `new` name methods there directly.
 	//
 	// Both signatures parse through the same tail the `fn` annotation uses, which gives
 	// them type parameters, an inexact marker, and a `throws` clause for free.

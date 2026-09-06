@@ -226,3 +226,36 @@ func (s *SetterElem) Accept(v Visitor) {
 	v.ExitClassElem(s)
 }
 func (s *SetterElem) Span() Span { return s.Span_ }
+
+// CallableElem is a call signature on a class's static side: the class value
+// can be called without `new`. `Number("1")` and `Symbol("x")` have that shape.
+// A `.d.ts` writes it as a bare call signature on the constructor-side
+// interface, and Escalier writes it `callable(x: number) -> T`.
+//
+// `Fn.Body` is always nil, and only a `declare class` body produces one. The
+// parser reads `callable` as this member only there, and only where the member
+// writes no receiver and carries no modifier; anything else keeps the name. A
+// class the compiler emits is not callable, so there is nothing for the elem to
+// describe on one.
+//
+// Escalier spells construction as a call, so a class that declares both a
+// `constructor` and a `callable` gives one expression two readings. The checker
+// resolves `Foo(x)` against the first of the two the static object type holds,
+// which is the constructor.
+type CallableElem struct {
+	declDoc
+	Fn    *FuncExpr
+	Span_ Span
+	commentSlots
+}
+
+func (*CallableElem) IsClassElem() {}
+func (c *CallableElem) Accept(v Visitor) {
+	if v.EnterClassElem(c) {
+		if c.Fn != nil {
+			c.Fn.Accept(v)
+		}
+	}
+	v.ExitClassElem(c)
+}
+func (c *CallableElem) Span() Span { return c.Span_ }

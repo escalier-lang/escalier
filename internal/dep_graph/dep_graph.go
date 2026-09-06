@@ -737,6 +737,10 @@ func (v *DependencyVisitor) EnterClassElem(elem ast.ClassElem) bool {
 		if e.Fn != nil {
 			e.Fn.Accept(v)
 		}
+	case *ast.CallableElem:
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
 	}
 	return false
 }
