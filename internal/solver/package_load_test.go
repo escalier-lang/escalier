@@ -250,14 +250,17 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 			val fromA: number = lib.shared
 		`,
 		"b.esc": `
-			val fromB: number = 1
+			val fromB: number = lib.shared
 		`,
 	})
 	res := InferModuleWithSource(module, sourceOf(t, map[string]string{
 		"pkg:lib": `export val shared: number = 1`,
 	}))
 
-	require.Empty(t, errorMessagesOf(res.Errors))
+	// `b.esc` writes the same expression as `a.esc` but never imports the
+	// package, so `lib` is not a name it can see.
+	require.Equal(t, []string{"Unknown identifier: lib"}, errorMessagesOf(res.Errors))
+
 	require.Len(t, res.FileScopes, 2)
 
 	importing := res.FileScopes[0]
