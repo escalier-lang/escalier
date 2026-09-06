@@ -22,6 +22,12 @@ import (
 // jsGlobalAllowList names the `@js` targets Escalier adds that no
 // `lib.*.d.ts` declares. `Symbol.customMatcher` is Escalier's own well-known
 // symbol.
+//
+// The pinned set is not the whole web platform. `lib.dom.d.ts` omits APIs the
+// specifications define, so a hand-written declaration for one names a target
+// this walk does not find. Two answers fit: name it here, or read a second
+// source such as the WebIDL a specification publishes, which `CollectJSGlobals`
+// takes the same way it takes a `LibInput`.
 var jsGlobalAllowList = set.FromSlice([]string{
 	"Symbol.customMatcher",
 })
