@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -240,11 +241,8 @@ func TestValidateJSTargetsAcceptsAKnownTarget(t *testing.T) {
 // is the shape the converter emits.
 func moduleWithJSTarget(target string) *StandaloneModule {
 	name := target
-	for i := len(target) - 1; i >= 0; i-- {
-		if target[i] == '.' {
-			name = target[i+1:]
-			break
-		}
+	if i := strings.LastIndex(target, "."); i >= 0 {
+		name = target[i+1:]
 	}
 	fn := ast.NewFuncDecl(
 		ast.NewIdentifier(name, ast.Span{}),
