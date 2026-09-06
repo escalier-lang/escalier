@@ -238,7 +238,8 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 // `geometry.Point` is reported as a type the solver cannot find. The shipped
 // `std/intl.esc` already writes annotations of that shape, so this has to work
 // before the committed tree can be ingested. Re-enable by removing the wrapper
-// and writing both annotations qualified.
+// and rewriting the body as a bare import with both annotations qualified; the
+// named form the body still holds is rejected outright since #1471.
 func TestImportResolvesAnExportedType(t *testing.T) {
 	t.Parallel()
 	/*
@@ -555,6 +556,88 @@ func TestNamespaceSpecifierBindsUnderItsAlias(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
 
+// Escalier has no named import. A specifier naming a member is reported, and
+// the message names the form that works, built from the specifier's own URI so
+// a path specifier names the segment a bare import would bind.
+func TestNamedImportIsRejected(t *testing.T) {
+	t.Parallel()
+
+	tests := map[string]struct {
+		src      string
+		messages []string
+	}{
+		"OneMember": {
+			src: `import { Point } from "geometry"`,
+			messages: []string{
+				"named imports are not supported; write `import \"geometry\"` " +
+					"and reach \"Point\" as `geometry.Point`",
+			},
+		},
+		// One diagnostic per specifier, so an author fixing the import sees every
+		// name they have to rewrite rather than the first.
+		"SeveralMembers": {
+			src: `import { Point, Num } from "geometry"`,
+			messages: []string{
+				"named imports are not supported; write `import \"geometry\"` " +
+					"and reach \"Point\" as `geometry.Point`",
+				"named imports are not supported; write `import \"geometry\"` " +
+					"and reach \"Num\" as `geometry.Num`",
+			},
+		},
+		// The suggestion names the last segment, which is what a bare import of a
+		// path binds.
+		"APathSpecifier": {
+			src: `import { map } from "lodash/fp"`,
+			messages: []string{
+				"named imports are not supported; write `import \"lodash/fp\"` " +
+					"and reach \"map\" as `fp.map`",
+			},
+		},
+		// An alias changes the local name, not whether the form is supported.
+		"AnAliasedMember": {
+			src: `import { Point as P } from "geometry"`,
+			messages: []string{
+				"named imports are not supported; write `import \"geometry\"` " +
+					"and reach \"Point\" as `geometry.Point`",
+			},
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			res := InferModuleWithSource(parseModule(t, test.src), sourceOf(t, map[string]string{
+				"geometry":  `export class Point { x: number, }` + "\n" + `export type Num = number`,
+				"lodash/fp": `export val map: number = 1`,
+			}))
+			require.Equal(t, test.messages, errorMessagesOf(res.Errors))
+		})
+	}
+}
+
+// A rejected import binds nothing, so the name it asked for is unresolved where
+// the file uses it. The rule and the use both get a diagnostic.
+func TestARejectedNamedImportBindsNothing(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import { Point } from "geometry"
+			val p = Point(1, 2)
+		`),
+		sourceOf(t, map[string]string{
+			"geometry": `export class Point { x: number, y: number, }`,
+		}),
+	)
+
+	require.Equal(t, []string{
+		"named imports are not supported; write `import \"geometry\"` " +
+			"and reach \"Point\" as `geometry.Point`",
+		"Unknown identifier: Point",
+	}, errorMessagesOf(res.Errors))
+}
+
 // A bare import of a path binds the last segment, so `lodash/fp` binds `fp`.
 func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 	t.Parallel()
@@ -588,8 +671,10 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 // two declarations of one bare type name, one imported and one local, which
 // only a named import produces. A bare import binds a namespace, so the
 // imported one is written `inner.Widget` and never competes for `Widget`.
-// Re-enable by writing the annotation qualified, which turns this into a test
-// that the qualified name reaches the imported class rather than the local one.
+// Re-enable by rewriting the body as bare imports with the annotation
+// qualified, which turns this into a test that the qualified name reaches the
+// imported class rather than the local one. The named form the body still holds
+// is rejected outright since #1471.
 func TestAFileImportOutranksThePackagesOwnDeclaration(t *testing.T) {
 	t.Parallel()
 	/*

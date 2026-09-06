@@ -50,6 +50,13 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
 	}
+	// A named specifier is reported before the package is loaded. Nothing it
+	// names can be bound, so loading first would only add whatever the package
+	// has to say to a diagnostic the author has to act on either way.
+	if errs := namedSpecifierErrors(uri, stmt); len(errs) > 0 {
+		return errs
+	}
+
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		// Either the load failed, and errs says why, or the URI is being loaded
@@ -64,38 +71,28 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		return errs
 	}
 
+	// Only `* as name` reaches here, since every other specifier was reported.
+	// It binds what the bare form binds, under the name the author chose.
+	for _, spec := range stmt.Specifiers {
+		fileScope.defineNamespace(spec.Alias, ns)
+	}
+	return errs
+}
+
+// namedSpecifierErrors reports every named specifier stmt writes, one each, so
+// an import naming several members says so about all of them rather than about
+// whichever came first.
+func namedSpecifierErrors(uri string, stmt *ast.ImportStmt) []SolverError {
+	var errs []SolverError
 	for _, spec := range stmt.Specifiers {
 		if spec.Name == "*" {
-			fileScope.defineNamespace(spec.Alias, ns)
 			continue
 		}
-		local := spec.Alias
-		if local == "" {
-			local = spec.Name
-		}
-		bound := false
-		if b, ok := ns.Values[spec.Name]; ok {
-			fileScope.defineValue(local, b)
-			bound = true
-		}
-		if b, ok := ns.Types[spec.Name]; ok {
-			fileScope.defineType(local, b)
-			bound = true
-		}
-		// A namespace is a third binding sort, so a specifier naming one binds it
-		// alongside. An enum arrives as a type and a namespace at once, and both
-		// halves are needed for `Color.Red()` to resolve.
-		if nested, ok := ns.Nested[spec.Name]; ok {
-			fileScope.defineNamespace(local, nested)
-			bound = true
-		}
-		if !bound {
-			errs = append(errs, &UnexportedMemberError{
-				URI:    uri,
-				Member: spec.Name,
-				span:   spec.Span(),
-			})
-		}
+		errs = append(errs, &NamedImportError{
+			URI:    uri,
+			Member: spec.Name,
+			span:   spec.Span(),
+		})
 	}
 	return errs
 }
@@ -113,11 +110,10 @@ func localName(uri string) string {
 	return uri
 }
 
-// UnexportedMemberError reports a named import of something the package does
-// not export. A package's surface holds only its exported declarations, so a
-// member that exists but is not exported reads the same as one that does not
-// exist, which is what the message says.
-type UnexportedMemberError struct {
+// NamedImportError reports an `import { name } from "..."`. Escalier has no
+// named import. A package is bound as a namespace and its members are reached
+// through it, so the message names the form that does work.
+type NamedImportError struct {
 	// URI is the package the import named.
 	URI string
 	// Member is the name the specifier asked for.
@@ -125,12 +121,14 @@ type UnexportedMemberError struct {
 	span   ast.Span
 }
 
-func (e *UnexportedMemberError) Message() string {
-	return fmt.Sprintf("package %q exports no %q", e.URI, e.Member)
+func (e *NamedImportError) Message() string {
+	return fmt.Sprintf(
+		"named imports are not supported; write `import %q` and reach %q as `%s.%s`",
+		e.URI, e.Member, localName(e.URI), e.Member)
 }
-func (e *UnexportedMemberError) Span() ast.Span      { return e.span }
-func (e *UnexportedMemberError) Related() []ast.Span { return nil }
-func (e *UnexportedMemberError) isSolverError()      {}
+func (e *NamedImportError) Span() ast.Span      { return e.span }
+func (e *NamedImportError) Related() []ast.Span { return nil }
+func (e *NamedImportError) isSolverError()      {}
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
 //
