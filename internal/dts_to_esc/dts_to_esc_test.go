@@ -51,6 +51,20 @@ declare namespace JSON {
 }
 `
 
+// convertSlice converts one `.d.ts` slice and returns the module and its
+// rendered form.
+//
+// It runs ConvertToStandaloneModule, which is one stage of what `generate`
+// does. Four passes run after it on the real path and none of them here:
+// fuseReadonlyTwins, applyReadonlyTwinReceivers, rewriteReadonlyTwinRefs and
+// dedupeMembers. So a member's mutability spelling, a twin name's rewrite and
+// a repeated member's removal are all absent from what this returns —
+// `ArrayConstructor` renders `-> Array<any>` here where the committed tree
+// carries `-> mut Array<any>`.
+//
+// That makes this the right level for a recognition rule and the wrong level
+// for pinning what a file in the tree holds. The PartitionLib tests and the
+// generated-tree check cover the latter.
 func convertSlice(t *testing.T, input string) (*StandaloneModule, string) {
 	t.Helper()
 	source := &ast.Source{Path: "test.d.ts", Contents: input, ID: 0}
@@ -956,17 +970,16 @@ declare var Foo: Foo;
 			contains:   []string{"new (s: string) -> Foo", "bar() -> unknown"},
 		},
 		{
-			// TypeScript merges the two declarations, and a map keyed
-			// by name keeps only the last. The construct signature sits
-			// on the first, so reading one declaration per name misses
-			// it and flattens `bar` to a top-level decl.
+			// The two declarations reach conversion as one, and the
+			// construct signature the first carries survives the merge,
+			// so the pair is preserved rather than flattened.
 			//
 			// The `new` returns `HTMLElement` rather than `Foo` so that
-			// detectSingletons' own reference count does not decline
-			// the pair for an unrelated reason. This case has to fail
-			// when the construct-signature scan reads a single
-			// declaration, not merely when it is absent.
-			name: "construct signature on a merged declaration",
+			// detectSingletons' own reference count does not decline the
+			// pair for an unrelated reason. This case has to fail when
+			// the construct signature is lost, not merely when it is
+			// absent from the source.
+			name: "construct signature merged in from another declaration",
 			input: `
 interface Foo {
     new (s: string): HTMLElement;
@@ -976,9 +989,9 @@ interface Foo {
 }
 declare var Foo: Foo;
 `,
-			interfaces: 2,
+			interfaces: 1,
 			vars:       1,
-			contains:   []string{"new (s: string) -> HTMLElement"},
+			contains:   []string{"new (s: string) -> HTMLElement", "bar() -> unknown"},
 		},
 	}
 
@@ -1538,6 +1551,98 @@ export declare class Promise<T, E = never> {
 				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
 			require.Empty(t, parseErrs, "printed output parses")
 			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// A name declared more than once reaches conversion as one declaration,
+// whichever kind of instance side it has. Without the merge, detectTrios
+// resolves each name through a single entry: the trio's walk emits a fused
+// class per matching statement, and the constructor side keeps only the last
+// declaration's members.
+//
+// PartitionLibWithOverlay merges each bucket before converting it, so the tree
+// never saw either outcome. Merging inside the conversion means a caller cannot
+// reach one by skipping that step.
+func TestStandalone_SameNameDeclarationsConvertAsOne(t *testing.T) {
+	tests := map[string]struct {
+		slice string
+		want  string
+	}{
+		"InterfaceInstanceSide": {
+			slice: `
+interface Foo {
+    next(): string;
+}
+
+interface Foo {
+    peek(): string;
+}
+
+interface FooConstructor {
+    fromA(s: string): Foo;
+}
+
+interface FooConstructor {
+    fromB(s: string): Foo;
+}
+
+declare var Foo: FooConstructor;
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(mut self) -> string,
+    peek(mut self) -> string,
+    static fromA(s: string) -> Foo,
+    static fromB(s: string) -> Foo
+}
+`,
+		},
+		"ClassInstanceSide": {
+			slice: `
+declare class Foo {
+    next(): string;
+}
+
+interface Foo {
+    peek(): string;
+}
+
+interface Foo {
+    poke(): string;
+}
+
+interface FooConstructor {
+    fromA(s: string): Foo;
+}
+
+interface FooConstructor {
+    fromB(s: string): Foo;
+}
+
+declare var Foo: FooConstructor;
+`,
+			want: `@js("Foo")
+export declare class Foo {
+    next(mut self) -> string,
+    peek(mut self) -> string,
+    poke(mut self) -> string,
+    static fromA(s: string) -> Foo,
+    static fromB(s: string) -> Foo
+}
+`,
+		},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, printed := convertSlice(t, test.slice)
+			require.Equal(t, test.want, printed)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.Len(t, parsedDecls, 1)
 		})
 	}
 }

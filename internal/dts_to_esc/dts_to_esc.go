@@ -76,7 +76,17 @@ type StandaloneModule struct {
 //     key has no plain-name form (see StandaloneModule.KeyDrops).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module) (*StandaloneModule, error) {
 	cctx := &convertCtx{}
-	stmts := liftGlobals(dtsModule.Statements)
+	// TypeScript merges same-named declarations, and every rule below reads one
+	// declaration per name: detectTrios resolves `FooConstructor` through a single
+	// entry, and the walk emits a fused class per matching statement. Merging here
+	// rather than leaving it to the caller means a name declared twice cannot lose
+	// the first declaration's members or produce two classes.
+	//
+	// PartitionLibWithOverlay already merges each bucket, so this is its second
+	// pass there. mergeDecls is idempotent, and running it after liftGlobals also
+	// reaches a declaration a `declare global` block contributes beside a
+	// same-named one at module scope.
+	stmts := mergeDecls(liftGlobals(dtsModule.Statements))
 	trios := detectTrios(stmts)
 	singletons := detectSingletons(stmts, trios)
 	paths := make(map[ast.Decl]string)
@@ -184,9 +194,10 @@ type trioInfo struct {
 	// type, so when the source writes both, the class holds the instance side
 	// and `merged` carries what the interfaces add to it.
 	instanceClass *dts_parser.ClassDecl
-	// merged are the same-named interfaces folded into instanceClass. Empty
-	// when the instance side is itself an interface.
-	merged []*dts_parser.InterfaceDecl
+	// merged is the `interface Foo` folded into instanceClass, or nil when the
+	// class stands alone. ConvertToStandaloneModule merges same-named
+	// declarations before this runs, so there is at most one.
+	merged *dts_parser.InterfaceDecl
 	// ctorMembers is the constructor side, whichever form declared it:
 	// the members of a named `FooConstructor` interface, or those of
 	// the object type written inline on the binding. Empty when the name has
@@ -275,20 +286,15 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		consumedVar:  set.NewSet[string](),
 	}
 
-	// interfaces holds one declaration per name for constructorSide to resolve
-	// `FooConstructor` through; byName holds every declaration under a name, which
-	// is what a class absorbs. mergeDecls has already collapsed same-named
-	// interfaces on the partition path, so the two differ only for a caller that
-	// converts unmerged statements.
+	// One declaration per name: ConvertToStandaloneModule merges same-named
+	// interfaces, recursing into namespaces, before any of this runs.
 	interfaces := make(map[string]*dts_parser.InterfaceDecl)
-	interfacesByName := make(map[string][]*dts_parser.InterfaceDecl)
 	vars := make(map[string]*dts_parser.VarDecl)
 	classes := make(map[string]*dts_parser.ClassDecl)
 	for _, stmt := range stmts {
 		switch s := stmt.(type) {
 		case *dts_parser.InterfaceDecl:
 			interfaces[s.Name.Name] = s
-			interfacesByName[s.Name.Name] = append(interfacesByName[s.Name.Name], s)
 		case *dts_parser.VarDecl:
 			vars[s.Name.Name] = s
 		case *dts_parser.ClassDecl:
@@ -326,8 +332,8 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 				binding:     binding,
 			}
 		} else {
-			merged := interfacesByName[name]
-			if len(merged) == 0 && ctorMembers == nil {
+			merged := interfaces[name]
+			if merged == nil && ctorMembers == nil {
 				// Nothing to absorb, so the class converts on its own.
 				// fuseTrio would produce the same declaration; leaving the
 				// name out of the table keeps every plain class off the
@@ -429,10 +435,8 @@ func hasConstructSignature(members []dts_parser.InterfaceMember) bool {
 	return false
 }
 
-// namesWithConstructSignature returns every interface name that some
-// top-level declaration gives a `new (...)` member. TypeScript merges
-// repeated `interface Foo` declarations, so reading a single statement
-// per name would miss a construct signature written on the second one.
+// namesWithConstructSignature returns every interface name whose declaration
+// carries a `new (...)` member.
 //
 // A signature inherited through `extends` is not counted. A heritage
 // clause can name a type alias, as `IteratorConstructor` does, so
@@ -1209,7 +1213,7 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 		extends, implements = decl.Extends, decl.Implements
 		span, nameSpan = decl.Span(), decl.Name.Span()
 
-		for _, iface := range info.merged {
+		if iface := info.merged; iface != nil {
 			// The class's parameter names are the ones the merged members have to
 			// read against, the same positional rename mergeDecls applies to a pair
 			// of interfaces.
