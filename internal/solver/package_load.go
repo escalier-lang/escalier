@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -33,6 +34,14 @@ import (
 // on the next import would report the same errors again.
 func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverError) {
 	if ns, found := c.packages.Lookup(uri); found {
+		if ns == nil {
+			// The URI is being loaded further up this call chain, so this import
+			// closes a cycle. Nothing is bound, which is what terminates the walk.
+			return nil, []SolverError{&ImportCycleError{
+				Chain: c.cycleChain(uri),
+				span:  span,
+			}}
+		}
 		return ns, nil
 	}
 	if c.source == nil {
@@ -53,7 +62,9 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	}
 
 	c.packages.markLoading(uri, path)
+	c.loadStack = append(c.loadStack, uri)
 	ns, pkgErrs := c.inferPackage(uri, module)
+	c.loadStack = c.loadStack[:len(c.loadStack)-1]
 	c.packages.publish(uri, ns)
 	if len(pkgErrs) > 0 {
 		return ns, []SolverError{&PackageInferenceError{
@@ -65,6 +76,47 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	}
 	return ns, nil
 }
+
+// cycleChain returns the packages a cycle runs through, from the one the cycle
+// re-enters round to itself: `pkg:a` importing `pkg:b` importing `pkg:a` gives
+// a, b, a. Anything loaded before the cycle opened is left out, since it is not
+// part of the loop.
+func (c *checker) cycleChain(uri string) []string {
+	start := 0
+	for i, loading := range c.loadStack {
+		if loading == uri {
+			start = i
+			break
+		}
+	}
+	chain := make([]string, 0, len(c.loadStack)-start+1)
+	chain = append(chain, c.loadStack[start:]...)
+	return append(chain, uri)
+}
+
+// ImportCycleError reports an import that closes a cycle between packages.
+//
+// A cycle is reported where it closes, so the diagnostic reaches the entry
+// module through the same wrapping every other package diagnostic takes. Each
+// package in the loop still publishes what it declared, so one cycle produces
+// one diagnostic rather than one per name the cycle left unbound.
+type ImportCycleError struct {
+	// Chain is the packages the cycle runs through, opening and closing on the
+	// same URI.
+	Chain []string
+	span  ast.Span
+}
+
+func (e *ImportCycleError) Message() string {
+	quoted := make([]string, 0, len(e.Chain))
+	for _, uri := range e.Chain {
+		quoted = append(quoted, strconv.Quote(uri))
+	}
+	return "import cycle: " + strings.Join(quoted, " -> ")
+}
+func (e *ImportCycleError) Span() ast.Span      { return e.span }
+func (e *ImportCycleError) Related() []ast.Span { return nil }
+func (e *ImportCycleError) isSolverError()      {}
 
 // messagesOf renders each diagnostic's message.
 func messagesOf(errs []SolverError) []string {

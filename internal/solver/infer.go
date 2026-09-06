@@ -121,6 +121,12 @@ type checker struct {
 	// source reports every import as unresolved rather than loading anything.
 	source ModuleSource
 
+	// loadStack is the chain of package URIs currently being loaded, outermost
+	// first. loadPackage pushes before inferring a package and pops afterwards, so
+	// an import that re-enters a URI already on it has found a cycle and the stack
+	// is what names the packages involved.
+	loadStack []string
+
 	// inCondExtends is set while resolveCondTypeAnn resolves a conditional's Extends operand, the
 	// one position an `infer U` clause may appear in. resolveTypeAnn's InferTypeAnn arm consults it
 	// to tell a binder from a stray `infer` elsewhere in an annotation, which it rejects. It is
