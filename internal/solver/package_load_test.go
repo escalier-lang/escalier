@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -502,4 +503,167 @@ func TestPackageKeyPrefixIsUnambiguous(t *testing.T) {
 	require.NotEqual(t,
 		qualify(packageKeyPrefix("npm:a.b"), "D"),
 		qualify(packageKeyPrefix("npm:a"), qualify("b", "D")))
+}
+
+// The registry answers what it holds: the path a package was read from, and
+// every URI a run reached.
+func TestPackageRegistryReportsWhatItHolds(t *testing.T) {
+	t.Parallel()
+
+	r := NewPackageRegistry()
+	require.Equal(t, "", r.Path("absent"), "an unknown URI has no path")
+	require.Empty(t, r.URIs())
+
+	r.markLoading("first", "first.esc")
+	require.True(t, r.Loading("first"))
+	require.Equal(t, "first.esc", r.Path("first"))
+	ns, found := r.Lookup("first")
+	require.True(t, found, "a loading URI is found")
+	require.Nil(t, ns, "a loading URI answers the cycle sentinel")
+
+	r.publish("first", newNamespace("first"))
+	require.False(t, r.Loading("first"))
+	ns, found = r.Lookup("first")
+	require.True(t, found)
+	require.NotNil(t, ns)
+
+	// A publish for a URI no load opened records it anyway, so a surface is
+	// never dropped for want of a preceding markLoading.
+	r.publish("second", newNamespace("second"))
+	require.Equal(t, "", r.Path("second"))
+
+	uris := r.URIs()
+	sort.Strings(uris)
+	require.Equal(t, []string{"first", "second"}, uris)
+}
+
+// A destructuring export carries every name its pattern binds, so a consumer
+// can import any leaf of it.
+func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import { first, rest, x, y } from "shapes"
+			val a = first
+			val b = rest
+			val c = x
+			val d = y
+		`),
+		sourceOf(t, map[string]string{
+			"shapes": `
+				export val [first, ...rest] = [1, 2, 3]
+				export val {x, y} = {x: 1, y: 2}
+			`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	for _, name := range []string{"a", "b", "c", "d"} {
+		_, ok := res.Scope.GetValue(name)
+		require.True(t, ok, "expected %q bound", name)
+	}
+}
+
+// A `* as name` specifier binds the package under that name.
+func TestNamespaceSpecifierBindsUnderItsAlias(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import * as lib from "helpers"
+			val n = lib.value
+		`),
+		sourceOf(t, map[string]string{
+			"helpers": `export val value: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
+// A bare import of a path binds the last segment, so `lodash/fp` binds `fp`.
+func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "lodash/fp"
+			val n = fp.value
+		`),
+		// A flat filename, so the package's own export lands at its root rather
+		// than in a namespace derived from the specifier's directory.
+		func(uri string) (*ast.Module, string, error) {
+			if uri != "lodash/fp" {
+				return nil, "", fmt.Errorf("no such package")
+			}
+			return parseModuleFiles(t, map[string]string{
+				"fp.esc": `export val value: number = 1`,
+			}), "fp.esc", nil
+		},
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
+// An import a file wrote outranks a declaration the package made under the same
+// name. The import is bound in the file's own scope, nearer than the module
+// scope the package's declarations live in.
+func TestAFileImportOutranksThePackagesOwnDeclaration(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import { make } from "outer"
+			val w = make()
+			val tag = w.fromInner
+		`),
+		sourceOf(t, map[string]string{
+			// `outer` declares its own `Widget` and imports another. The
+			// annotation on `make` names the imported one, since the file wrote
+			// that import.
+			"outer": `
+				import { Widget } from "inner"
+				export class Widget { fromOuter: number, }
+				export fn make() -> Widget { return Widget(1) }
+			`,
+			"inner": `export class Widget { fromInner: number, }`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "tag")))
+}
+
+// Every package diagnostic points at the import statement that raised it, so a
+// reader is sent to the line they can act on rather than into another module's
+// source.
+func TestPackageDiagnosticsPointAtTheImport(t *testing.T) {
+	t.Parallel()
+
+	src := `import { missing } from "partial"`
+	res := InferModuleWithSource(parseModule(t, src), sourceOf(t, map[string]string{
+		"partial": `export val present: number = 1`,
+	}))
+	require.Len(t, res.Errors, 1)
+
+	span := res.Errors[0].Span()
+	require.Equal(t, 0, span.SourceID, "a diagnostic on the import carries the importing file's id")
+	require.Less(t, span.Start.Offset, span.End.Offset, "the span should cover the specifier")
+	require.Empty(t, res.Errors[0].Related())
+
+	// The two package-level kinds carry the whole statement's span.
+	for name, source := range map[string]ModuleSource{
+		"anUnresolvedURI": sourceOf(t, map[string]string{}),
+		"aFailingPackage": sourceOf(t, map[string]string{"partial": `export val bad: number = nowhere`}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			res := InferModuleWithSource(parseModule(t, `import { thing } from "partial"`), source)
+			require.NotEmpty(t, res.Errors)
+			require.Equal(t, 0, res.Errors[0].Span().SourceID)
+			require.Empty(t, res.Errors[0].Related())
+		})
+	}
 }
