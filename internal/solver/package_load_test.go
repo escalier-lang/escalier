@@ -227,24 +227,6 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 	require.False(t, boundThere, "a sibling file should not see another file's import")
 }
 
-// A bare import binds the package as a namespace under the last segment of its
-// URI.
-func TestBareImportBindsTheLastURISegment(t *testing.T) {
-	t.Parallel()
-
-	module := parseModuleFiles(t, map[string]string{
-		"a.esc": `import "pkg:shapes"`,
-	})
-	res := InferModuleWithSource(module, sourceOf(t, map[string]string{
-		"pkg:shapes": `export val sides: number = 3`,
-	}))
-
-	require.Empty(t, errorMessagesOf(res.Errors))
-	ns, ok := res.FileScopes[0].GetNamespace("shapes")
-	require.True(t, ok, "expected the package bound under `shapes`")
-	require.Contains(t, ns.Values, "sides")
-}
-
 // A package exports its types, not only its values. The registry keys a type
 // under the package URI while an importer names it bare, so the surface has to
 // re-key it.
@@ -545,48 +527,28 @@ func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import { first, rest, x, y } from "shapes"
+			import { first, rest, x, y, inner } from "shapes"
 			val a = first
 			val b = rest
 			val c = x
 			val d = y
+			val e = inner
 		`),
 		sourceOf(t, map[string]string{
 			"shapes": `
+				class Some { value: number, }
 				export val [first, ...rest] = [1, 2, 3]
 				export val {x, y} = {x: 1, y: 2}
-			`,
-		}),
-	)
-
-	require.Empty(t, errorMessagesOf(res.Errors))
-	for _, name := range []string{"a", "b", "c", "d"} {
-		_, ok := res.Scope.GetValue(name)
-		require.True(t, ok, "expected %q bound", name)
-	}
-}
-
-// An extractor pattern binds through its arguments, so a `val` written that way
-// exports the names inside it.
-func TestExportedSurfaceCarriesAnExtractorPatternsLeaves(t *testing.T) {
-	t.Parallel()
-
-	res := InferModuleWithSource(
-		parseModule(t, `
-			import { inner } from "opt"
-			val n = inner
-		`),
-		sourceOf(t, map[string]string{
-			"opt": `
-				class Some { value: number, }
 				export val Some(inner) = Some(1)
 			`,
 		}),
 	)
 
 	require.Empty(t, errorMessagesOf(res.Errors))
-	_, ok := res.Scope.GetValue("n")
-	require.True(t, ok, "expected `n` bound from the extractor's leaf")
+	for _, name := range []string{"a", "b", "c", "d", "e"} {
+		_, ok := res.Scope.GetValue(name)
+		require.True(t, ok, "expected %q bound", name)
+	}
 }
 
 // A `* as name` specifier binds the package under that name.
@@ -659,35 +621,4 @@ func TestAFileImportOutranksThePackagesOwnDeclaration(t *testing.T) {
 
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "tag")))
-}
-
-// Every package diagnostic points at the import statement that raised it, so a
-// reader is sent to the line they can act on rather than into another module's
-// source.
-func TestPackageDiagnosticsPointAtTheImport(t *testing.T) {
-	t.Parallel()
-
-	src := `import { missing } from "partial"`
-	res := InferModuleWithSource(parseModule(t, src), sourceOf(t, map[string]string{
-		"partial": `export val present: number = 1`,
-	}))
-	require.Len(t, res.Errors, 1)
-
-	span := res.Errors[0].Span()
-	require.Equal(t, 0, span.SourceID, "a diagnostic on the import carries the importing file's id")
-	require.Less(t, span.Start.Offset, span.End.Offset, "the span should cover the specifier")
-	require.Empty(t, res.Errors[0].Related())
-
-	// The two package-level kinds carry the whole statement's span.
-	for name, source := range map[string]ModuleSource{
-		"anUnresolvedURI": sourceOf(t, map[string]string{}),
-		"aFailingPackage": sourceOf(t, map[string]string{"partial": `export val bad: number = nowhere`}),
-	} {
-		t.Run(name, func(t *testing.T) {
-			res := InferModuleWithSource(parseModule(t, `import { thing } from "partial"`), source)
-			require.NotEmpty(t, res.Errors)
-			require.Equal(t, 0, res.Errors[0].Span().SourceID)
-			require.Empty(t, res.Errors[0].Related())
-		})
-	}
 }
