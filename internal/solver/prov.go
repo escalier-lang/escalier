@@ -68,28 +68,28 @@ func (FromNormalization) isOrigin() {}
 type ASTOriginKind int
 
 const (
-	LiteralInference     ASTOriginKind = iota // a LitType from inferLiteral
-	ParamBinding                              // a fresh param var from inferFunc
-	Application                               // a fresh call-result var from inferCall
-	TupleElem                                 // a TupleType from inferTuple
-	ObjectField                               // an ObjectType from inferObject
-	FuncInference                             // a FuncType from inferFunc (the function expr/decl)
-	CallShape                                 // the synthesized FuncType{args,res} from inferCall (the CallExpr)
-	MemberAccess                              // a fresh member-result var from inferMember (recorded against the .prop ident)
-	AnnotationType                            // a fresh PrimType from resolveTypeAnn (number/string/boolean)
-	WildcardAnnotation                        // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
-	AwaitResult                               // a fresh `await`-result var from inferAwait
-	PromiseWrap                               // a PromiseType minted by wrapping an async function's external return
-	GeneratorWrap                             // a GeneratorType minted by wrapping a gen function's external return
-	ReturnJoin                                // a fresh return-join var from inferFunc (the union of every return point)
-	IfElseBranch                              // a fresh branch-join var from inferIfElse (the union of cons / alt)
-	MatchBranch                               // a fresh branch-join var from inferMatch (the union of every arm body)
-	IfValBranch                               // a fresh branch-join var from inferIfVal (the union of cons / alt)
-	TryCatchBranch                            // a fresh branch-join var from inferTryCatch (the union of the try block's value and every catch arm body)
-	CaughtThrows                              // a fresh nested throws sink from inferTryCatch (what the try block raises, before the catch arms narrow it)
-	ValElseBranch                             // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
-	BorrowExprOrigin                          // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
-	OwnedMutConstruction                      // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
+	LiteralInference   ASTOriginKind = iota // a LitType from inferLiteral
+	ParamBinding                            // a fresh param var from inferFunc
+	Application                             // a fresh call-result var from inferCall
+	TupleElem                               // a TupleType from inferTuple
+	ObjectField                             // an ObjectType from inferObject
+	FuncInference                           // a FuncType from inferFunc (the function expr/decl)
+	CallShape                               // the synthesized FuncType{args,res} from inferCall (the CallExpr)
+	MemberAccess                            // a fresh member-result var from inferMember (recorded against the .prop ident)
+	AnnotationType                          // a fresh PrimType from resolveTypeAnn (number/string/boolean)
+	WildcardAnnotation                      // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
+	AwaitResult                             // a fresh `await`-result var from inferAwait
+	PromiseWrap                             // a PromiseType minted by wrapping an async function's external return
+	GeneratorWrap                           // a GeneratorType minted by wrapping a gen function's external return
+	ReturnJoin                              // a fresh return-join var from inferFunc (the union of every return point)
+	IfElseBranch                            // a fresh branch-join var from inferIfElse (the union of cons / alt)
+	MatchBranch                             // a fresh branch-join var from inferMatch (the union of every arm body)
+	IfValBranch                             // a fresh branch-join var from inferIfVal (the union of cons / alt)
+	TryCatchBranch                          // a fresh branch-join var from inferTryCatch (the union of the try block's value and every catch arm body)
+	CaughtThrows                            // a fresh nested throws sink from inferTryCatch (what the try block raises, before the catch arms narrow it)
+	ValElseBranch                           // a fresh join var per leaf a val-else binds, the union of that leaf of the narrowed init and of a non-diverging else's fallback
+	BorrowExprOrigin                        // a RefType minted by inferBorrow from a `&p` / `&mut p` expression
+	OwnedMutConstruction                    // an owned-mutable RefType minted for `val mut q = {…}` from a fresh literal
 )
 
 // NodeResolver resolves an operand type to the AST node that minted it. M2.5's

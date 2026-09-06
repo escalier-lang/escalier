@@ -1645,7 +1645,7 @@ func (e *typeEvaluator) indexTuple(tup *soltype.TupleType, index soltype.Type, i
 // Openness comes from a `string` interpolation, not a union. A `string` hole grounds to the
 // primitive rather than a union of choices, so it stays symbolic through the product and
 // foldTemplatePart carries it as a residual interpolation, leaving an open template such as
-// “ `on${string}` “. A union interpolation is always a closed set of choices, so the product over
+// `` `on${string}` ``. A union interpolation is always a closed set of choices, so the product over
 // it is a closed union: `on${"a" | "b"}` reduces to the exact `"ona" | "onb"`.
 func (e *typeEvaluator) reduceTemplateLit(t *soltype.TemplateLitType) soltype.Type {
 	interpChoices := make([][]soltype.Type, len(t.Interps))
