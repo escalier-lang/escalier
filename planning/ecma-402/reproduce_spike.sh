@@ -55,9 +55,20 @@ trap cleanup EXIT
 mkdir -p "$WORKDIR" "$OUT_DIR" "$WORKDIR/stubs"
 
 echo "==> checking out ECMA-402 $ECMA402_REV"
+# A rerun finds the clone already there. Fetch the pinned revision into it and
+# check that out rather than trusting whatever the last run left behind, so the
+# evidence always describes $ECMA402_REV. Local edits under the workdir are
+# refused rather than silently reported as that revision.
 if [ ! -d "$WORKDIR/ecma402" ]; then
   git clone --depth 1 --branch "$ECMA402_REV" \
     https://github.com/tc39/ecma402.git "$WORKDIR/ecma402"
+else
+  if [ -n "$(git -C "$WORKDIR/ecma402" status --porcelain)" ]; then
+    echo "$WORKDIR/ecma402 has local changes; remove it and rerun" >&2
+    exit 1
+  fi
+  git -C "$WORKDIR/ecma402" fetch --depth 1 origin tag "$ECMA402_REV"
+  git -C "$WORKDIR/ecma402" checkout --detach "$ECMA402_REV"
 fi
 
 echo "==> moving the colliding manual stubs aside"
@@ -77,9 +88,13 @@ echo "==> deriving facts from the merged graph"
 cp "$REPO_ROOT/planning/ecma-402/spike_harness/spike402_test.go.txt" \
   "$REPO_ROOT/internal/ecma262/zz_spike402_test.go"
 cd "$REPO_ROOT"
+# Written to a temporary file and renamed only once the probe succeeds, so a
+# failed run leaves the previous facts.txt rather than an empty or half-written
+# one that reads like evidence.
 ESC_SPIKE_CFG="$OUT_DIR/cfg.json" \
   go test ./internal/ecma262/ -run TestSpike402 -v |
-  sed 's/^ *zz_spike402_test.go:[0-9]*: //' > "$OUT_DIR/facts.txt" || true
+  sed 's/^ *zz_spike402_test.go:[0-9]*: //' > "$OUT_DIR/facts.txt.tmp"
+mv "$OUT_DIR/facts.txt.tmp" "$OUT_DIR/facts.txt"
 
 echo
 echo "wrote $OUT_DIR:"

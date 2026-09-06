@@ -231,11 +231,15 @@ tighten. Every other package is byte-identical, so ECMA-402 perturbs nothing
 outside the surface it describes.
 
 That measurement needs one thing the spike does not have. `generate` refuses a
-graph that leaves any receiver determination open, so the 19 the analysis does
-not settle have to carry a curated entry before the converter will read the
-graph at all. The 24 above were measured with a placeholder entry for each,
-marked as a preview rather than a review. The count is what the surface holds,
-not what a review has signed off.
+graph that leaves any receiver determination open, so every one the analysis
+does not settle has to be answered before the converter will read the graph at
+all. The analysis leaves 20 open. Nineteen of them need a curated entry written
+from scratch. The twentieth, `Array.prototype.toLocaleString`, already has one
+in `internal/ecma262/curated.json`, so the converter has its answer today, and
+what that entry needs is the re-reading described below rather than a new entry.
+The 24 relaxed receivers above were measured with a placeholder entry for each
+of the 19, marked as a preview rather than a review. The count is what the
+surface holds, not what a review has signed off.
 
 Two of those 19 shapes recur: ten are `resolvedOptions` and three are the
 `compare`/`format` accessors. The rest of the ECMA-402 curation is the four
