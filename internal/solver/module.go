@@ -88,6 +88,13 @@ func InferModuleWithSource(module *ast.Module, source ModuleSource) *ModuleResul
 // drives the reconciliation pass that reports any top-level declaration the dep
 // graph did not model.
 func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) {
+	// Saving the previous scope is defensive. A walk cannot start while another
+	// is in progress: bindImport is the only caller of loadPackage, and both
+	// call sites bind every import before walking anything, so a package is
+	// fully inferred before the module importing it begins. The save costs
+	// nothing and keeps this correct if that ever stops holding. #1476 makes
+	// the ordering explicit and enforces the invariant, at which point this
+	// goes away.
 	prevModuleScope := c.moduleScope
 	c.moduleScope = scope
 	defer func() { c.moduleScope = prevModuleScope }()
