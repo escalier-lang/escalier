@@ -296,3 +296,227 @@ func TestGeneratedTreeJSTargetsAreAllKnown(t *testing.T) {
 	require.Greater(t, globals.Len(), 1000, "the collector read almost nothing from the lib set")
 	require.Empty(t, ValidateJSTargets(res.Modules, globals))
 }
+
+// A `declare class` names a path under itself for each of its static members,
+// one case per member kind. An instance member of the same kind names none,
+// since it is reached through a receiver rather than through the class binding.
+func TestCollectJSGlobalsReadsStaticClassMembers(t *testing.T) {
+	t.Parallel()
+
+	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
+		"lib.probe.d.ts": `
+			declare class Store {
+				static readonly version: string;
+				static get size(): number;
+				static set size(value: number);
+				static open(): Store;
+				readonly instanceField: string;
+				close(): void;
+			}
+		`,
+	}))
+
+	tests := map[string]struct {
+		target string
+		known  bool
+	}{
+		"AStaticProperty": {target: "Store.version", known: true},
+		"AStaticGetter":   {target: "Store.size", known: true},
+		"AStaticMethod":   {target: "Store.open", known: true},
+
+		"AnInstanceProperty": {target: "Store.instanceField", known: false},
+		"AnInstanceMethod":   {target: "Store.close", known: false},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			require.Equal(t, test.known, globals.Contains(test.target))
+		})
+	}
+}
+
+// Findings come back in a fixed order over a map walk that has none, and each
+// names the declaration its decorator sits on.
+func TestValidateJSTargetsOrdersFindingsAndNamesDeclarations(t *testing.T) {
+	t.Parallel()
+
+	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
+		"lib.probe.d.ts": `declare function parseInt(s: string): number;`,
+	}))
+
+	// `std:first` holds three declarations: two share one target, which makes the
+	// declared name the tiebreaker, and the third differs by target, which makes
+	// the target the one above it.
+	mods := map[string]*StandaloneModule{
+		"std:second": moduleWithJSDecls(map[string]string{"Zebra": "Zebra"}),
+		"std:first": moduleWithJSDecls(map[string]string{
+			"Beta":  "Shared",
+			"Alpha": "Shared",
+			"Gamma": "Apart",
+		}),
+	}
+
+	// Ten runs, since one pass over a map that happened to iterate in order
+	// would not tell a sorted result from an unsorted one.
+	for range 10 {
+		findings := ValidateJSTargets(mods, globals)
+		require.Equal(t, []string{
+			`std:first: ` + "`" + `@js("Apart")` + "`" + ` on "Gamma" names no JS runtime global`,
+			`std:first: ` + "`" + `@js("Shared")` + "`" + ` on "Alpha" names no JS runtime global`,
+			`std:first: ` + "`" + `@js("Shared")` + "`" + ` on "Beta" names no JS runtime global`,
+			`std:second: ` + "`" + `@js("Zebra")` + "`" + ` on "Zebra" names no JS runtime global`,
+		}, findingStrings(findings))
+	}
+}
+
+// findingStrings renders each finding, so a test asserts the text an operator
+// reads rather than a struct.
+func findingStrings(findings []JSTargetFinding) []string {
+	out := make([]string, 0, len(findings))
+	for _, f := range findings {
+		out = append(out, f.String())
+	}
+	return out
+}
+
+// moduleWithJSDecls builds a module holding one decorated function per entry,
+// keyed by the declared name and valued by the decorator's target.
+func moduleWithJSDecls(decls map[string]string) *StandaloneModule {
+	names := make([]string, 0, len(decls))
+	for name := range decls {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	made := make([]ast.Decl, 0, len(names))
+	for _, name := range names {
+		fn := ast.NewFuncDecl(
+			ast.NewIdentifier(name, ast.Span{}),
+			nil, nil, nil, nil, nil, nil,
+			true, true, false,
+			ast.Span{},
+		)
+		attachJSDecorator(fn, decls[name])
+		made = append(made, fn)
+	}
+
+	var namespaces btree.Map[string, *ast.Namespace]
+	namespaces.Set("", &ast.Namespace{Decls: made})
+	return &StandaloneModule{Module: ast.NewModule(namespaces), Paths: map[ast.Decl]string{}}
+}
+
+// A declaration with no single identifier still names something in a finding,
+// so a destructuring `val` does not produce a nameless diagnostic.
+func TestValidateJSTargetsNamesAnUnnamedDeclaration(t *testing.T) {
+	t.Parallel()
+
+	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
+		"lib.probe.d.ts": `declare function parseInt(s: string): number;`,
+	}))
+
+	decl := ast.NewVarDecl(
+		ast.VarKind,
+		ast.NewTuplePat([]ast.Pat{}, ast.Span{}),
+		nil, nil,
+		true, true,
+		ast.Span{},
+	)
+	attachJSDecorator(decl, "Nonexistent")
+
+	var namespaces btree.Map[string, *ast.Namespace]
+	namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{decl}})
+	mods := map[string]*StandaloneModule{
+		"std:probe": {Module: ast.NewModule(namespaces), Paths: map[ast.Decl]string{}},
+	}
+
+	findings := ValidateJSTargets(mods, globals)
+	require.Len(t, findings, 1)
+	require.Equal(t,
+		`std:probe: `+"`"+`@js("Nonexistent")`+"`"+` on "<unnamed>" names no JS runtime global`,
+		findings[0].String())
+}
+
+// A target the `.d.ts` set does not declare fails the run, and nothing is
+// written. The overlay is where a hand-written target comes from, so that is
+// where the case is built.
+func TestGenerateRejectsAnUnknownJSTarget(t *testing.T) {
+	t.Parallel()
+
+	outDir := t.TempDir()
+	_, err := Generate(GenerateOptions{
+		LibDir: seedLibDir(t, overlayLib),
+		OverlayDir: seedOverlay(t, map[string]string{
+			"std/array.add.esc": "@js(\"Mat.sin\")\nexport declare fn sin(x: number) -> number\n",
+		}),
+		OutDir: outDir,
+	})
+
+	require.EqualError(t, err,
+		"1 `@js` target(s) name no JS runtime global:\n"+
+			"  std:array: `@js(\"Mat.sin\")` on \"sin\" names no JS runtime global, "+
+			"and \"Mat\" is not a known top-level global")
+	require.Empty(t, treeUnder(t, outDir))
+}
+
+// A finding names a class the same way it names a function, so a bad target on
+// a `declare class` reads as clearly as one on a `declare fn`.
+func TestValidateJSTargetsNamesAClassDeclaration(t *testing.T) {
+	t.Parallel()
+
+	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
+		"lib.probe.d.ts": `declare function parseInt(s: string): number;`,
+	}))
+
+	decl := ast.NewClassDecl(
+		ast.NewIdentifier("Widget", ast.Span{}),
+		nil, nil, nil, nil, nil,
+		true, true, false,
+		ast.Span{},
+	)
+	attachJSDecorator(decl, "Nonexistent")
+
+	var namespaces btree.Map[string, *ast.Namespace]
+	namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{decl}})
+	mods := map[string]*StandaloneModule{
+		"std:probe": {Module: ast.NewModule(namespaces), Paths: map[ast.Decl]string{}},
+	}
+
+	findings := ValidateJSTargets(mods, globals)
+	require.Len(t, findings, 1)
+	require.Equal(t,
+		`std:probe: `+"`"+`@js("Nonexistent")`+"`"+` on "Widget" names no JS runtime global`,
+		findings[0].String())
+}
+
+// A finding names a `val` by the identifier it binds.
+func TestValidateJSTargetsNamesAValueDeclaration(t *testing.T) {
+	t.Parallel()
+
+	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
+		"lib.probe.d.ts": `declare function parseInt(s: string): number;`,
+	}))
+
+	decl := ast.NewVarDecl(
+		ast.ValKind,
+		ast.NewIdentPat("PI", false, nil, nil, ast.Span{}),
+		nil, nil,
+		true, true,
+		ast.Span{},
+	)
+	attachJSDecorator(decl, "Mat.PI")
+
+	var namespaces btree.Map[string, *ast.Namespace]
+	namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{decl}})
+	mods := map[string]*StandaloneModule{
+		"std:probe": {Module: ast.NewModule(namespaces), Paths: map[ast.Decl]string{}},
+	}
+
+	findings := ValidateJSTargets(mods, globals)
+	require.Len(t, findings, 1)
+	require.Equal(t,
+		`std:probe: `+"`"+`@js("Mat.PI")`+"`"+` on "PI" names no JS runtime global, `+
+			`and "Mat" is not a known top-level global`,
+		findings[0].String())
+}

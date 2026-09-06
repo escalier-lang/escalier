@@ -92,13 +92,12 @@ func collectGlobalPaths(
 ) {
 	switch s := stmt.(type) {
 	case *dts_parser.VarDecl:
-		if s.Name == nil {
-			return
-		}
-		paths.Add(s.Name.Name)
-		for _, member := range boundMembers(s.TypeAnn, interfaces) {
-			if name := interfaceMemberName(member); name != "" {
-				paths.Add(s.Name.Name + "." + name)
+		if s.Name != nil {
+			paths.Add(s.Name.Name)
+			for _, member := range boundMembers(s.TypeAnn, interfaces) {
+				if name := interfaceMemberName(member); name != "" {
+					paths.Add(s.Name.Name + "." + name)
+				}
 			}
 		}
 
@@ -108,27 +107,25 @@ func collectGlobalPaths(
 		}
 
 	case *dts_parser.ClassDecl:
-		if s.Name == nil {
-			return
-		}
-		paths.Add(s.Name.Name)
-		for _, member := range s.Members {
-			if name := staticMemberName(member); name != "" {
-				paths.Add(s.Name.Name + "." + name)
+		if s.Name != nil {
+			paths.Add(s.Name.Name)
+			for _, member := range s.Members {
+				if name := staticMemberName(member); name != "" {
+					paths.Add(s.Name.Name + "." + name)
+				}
 			}
 		}
 
 	case *dts_parser.NamespaceDecl:
-		if s.Name == nil {
-			return
-		}
-		paths.Add(s.Name.Name)
-		// A `declare namespace` holds its own declarations rather than an
-		// interface body, so its members come from the statements inside it.
-		// `Intl.Segmenter` and `WebAssembly.Table` are both this shape.
-		for _, inner := range s.Statements {
-			if name := namespaceMemberName(inner); name != "" {
-				paths.Add(s.Name.Name + "." + name)
+		if s.Name != nil {
+			paths.Add(s.Name.Name)
+			// A `declare namespace` holds its own declarations rather than an
+			// interface body, so its members come from the statements inside it.
+			// `Intl.Segmenter` and `WebAssembly.Table` are both this shape.
+			for _, inner := range s.Statements {
+				if name := namespaceMemberName(inner); name != "" {
+					paths.Add(s.Name.Name + "." + name)
+				}
 			}
 		}
 
@@ -180,11 +177,12 @@ func interfaceMembers(
 	for _, iface := range interfaces[name] {
 		members = append(members, iface.Members...)
 		for _, parent := range iface.Extends {
-			ref, ok := parent.(*dts_parser.TypeReference)
-			if !ok {
-				continue
+			// Only a reference names an interface to inherit from. The `.d.ts`
+			// grammar allows nothing else in an extends clause, though the field is
+			// typed loosely enough to hold one.
+			if ref, ok := parent.(*dts_parser.TypeReference); ok {
+				members = append(members, interfaceMembers(typeRefName(ref), interfaces, seen)...)
 			}
-			members = append(members, interfaceMembers(typeRefName(ref), interfaces, seen)...)
 		}
 	}
 	return members
