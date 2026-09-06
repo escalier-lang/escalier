@@ -40,10 +40,9 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 
 // bindImport loads the package an import names and binds it into fileScope.
 //
-// Three binding shapes, and the statement's specifiers pick between them. A
-// bare `import "std:math"` binds the package as a namespace under its last URI
-// segment. A `* as name` specifier binds it under that name. A named specifier
-// binds one member, under its alias when it has one.
+// One binding shape: the package becomes a namespace under the name the
+// statement binds it as, which is its alias when it wrote one and a name
+// derived from the specifier otherwise. Members are reached through it.
 func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	uri := stmt.PackageName
 	if IsSchemePrefixedImport(uri) {
