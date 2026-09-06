@@ -109,11 +109,17 @@ func TestMutuallyImportingPackagesTerminate(t *testing.T) {
 		}),
 	)
 
-	// `b` re-enters `a` mid-load, so `fromA` is not bound on that side and
-	// the reference in `b` is unresolved. That surfaces as one diagnostic on
-	// the entry module's import, carrying the package's own message. What this
-	// pins is that the run finishes at all, and that the entry module still gets
-	// what it asked for.
+	// The cycle is reported where it closes, in `b`, and reaches the entry
+	// module through the wrapping every package diagnostic takes. One cycle gives
+	// one diagnostic, naming the packages the loop runs through.
+	require.Equal(t, []string{
+		"package \"a\" (a.esc) has 1 error(s):\n" +
+			"  package \"b\" (b.esc) has 1 error(s):\n" +
+			"  import cycle: \"a\" -> \"b\" -> \"a\"",
+	}, errorMessagesOf(res.Errors))
+
+	// The run still finishes and the entry module still gets what it asked for:
+	// each package publishes what it declared before the cycle closed.
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "x")))
 
 	_, loadedA := res.Packages.Lookup("a")
@@ -122,6 +128,41 @@ func TestMutuallyImportingPackagesTerminate(t *testing.T) {
 	require.True(t, loadedB, "b should be published after the walk")
 	require.False(t, res.Packages.Loading("a"), "no package should still be loading")
 	require.False(t, res.Packages.Loading("b"), "no package should still be loading")
+}
+
+// A cycle longer than a pair names every package it runs through, in the order
+// the imports close it.
+func TestAThreePackageCycleNamesTheWholeLoop(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `import "a"`),
+		sourceOf(t, map[string]string{
+			"a": `import "b"`,
+			"b": `import "c"`,
+			"c": `import "a"`,
+		}),
+	)
+
+	require.Len(t, res.Errors, 1)
+	require.Contains(t, res.Errors[0].Message(),
+		`import cycle: "a" -> "b" -> "c" -> "a"`)
+}
+
+// A package importing itself is the shortest cycle, and reads as one.
+func TestAPackageImportingItselfIsACycle(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `import "solo"`),
+		sourceOf(t, map[string]string{
+			"solo": `import "solo"`,
+		}),
+	)
+
+	require.Len(t, res.Errors, 1)
+	require.Contains(t, res.Errors[0].Message(),
+		`import cycle: "solo" -> "solo"`)
 }
 
 // Two modules declaring a class of the same name register two definitions. The
