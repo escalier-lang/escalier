@@ -538,7 +538,8 @@ func TestPackageRegistryReportsWhatItHolds(t *testing.T) {
 }
 
 // A destructuring export carries every name its pattern binds, so a consumer
-// can import any leaf of it.
+// can import any leaf of it. An extractor and an instance pattern bind through
+// their sub-patterns, which a walk written for tuples and objects alone misses.
 func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 	t.Parallel()
 
@@ -563,6 +564,29 @@ func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 		_, ok := res.Scope.GetValue(name)
 		require.True(t, ok, "expected %q bound", name)
 	}
+}
+
+// An extractor pattern binds through its arguments, so a `val` written that way
+// exports the names inside it.
+func TestExportedSurfaceCarriesAnExtractorPatternsLeaves(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import { inner } from "opt"
+			val n = inner
+		`),
+		sourceOf(t, map[string]string{
+			"opt": `
+				class Some { value: number, }
+				export val Some(inner) = Some(1)
+			`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	_, ok := res.Scope.GetValue("n")
+	require.True(t, ok, "expected `n` bound from the extractor's leaf")
 }
 
 // A `* as name` specifier binds the package under that name.

@@ -210,34 +210,14 @@ func exportedNames(decl ast.Decl) []string {
 }
 
 // patternNames returns every identifier a binding pattern introduces, in source
-// order.
+// order. An extractor and an instance pattern bind through their sub-patterns,
+// which is why this reads the leaves through the shared walk rather than a
+// traversal of its own.
 func patternNames(pat ast.Pat) []string {
 	var names []string
-	var walk func(ast.Pat)
-	walk = func(p ast.Pat) {
-		switch v := p.(type) {
-		case *ast.IdentPat:
-			names = append(names, v.Name)
-		case *ast.TuplePat:
-			for _, elem := range v.Elems {
-				walk(elem)
-			}
-		case *ast.ObjectPat:
-			for _, elem := range v.Elems {
-				switch e := elem.(type) {
-				case *ast.ObjKeyValuePat:
-					walk(e.Value)
-				case *ast.ObjShorthandPat:
-					names = append(names, e.Key.Name)
-				case *ast.ObjRestPat:
-					walk(e.Pattern)
-				}
-			}
-		case *ast.RestPat:
-			walk(v.Pattern)
-		}
-	}
-	walk(pat)
+	ast.ForEachLeafBinding(pat, func(name string, _ int) {
+		names = append(names, name)
+	})
 	return names
 }
 
