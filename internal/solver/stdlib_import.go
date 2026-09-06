@@ -115,12 +115,6 @@ func validateStdlibImport(stmt *ast.ImportStmt) []SolverError {
 		errs = append(errs, &MissingPackageNameError{Scheme: scheme, span: span})
 	}
 
-	// A named import from a pseudo-package is rejected per FR4. Members are
-	// reached through the binding the bare form makes.
-	if !stmt.Bare() {
-		errs = append(errs, &NamedPseudoPackageImportError{URI: stmt.PackageName, span: span})
-	}
-
 	errs = append(errs, validateStdlibFlags(stmt.Flags, span)...)
 
 	// `node:` is recognized so that a URI under it reads as reserved rather than
@@ -207,22 +201,6 @@ func (e *MissingPackageNameError) Message() string {
 func (e *MissingPackageNameError) Span() ast.Span      { return e.span }
 func (e *MissingPackageNameError) Related() []ast.Span { return nil }
 func (e *MissingPackageNameError) isSolverError()      {}
-
-// NamedPseudoPackageImportError reports a named import from a pseudo-package.
-type NamedPseudoPackageImportError struct {
-	URI  string
-	span ast.Span
-}
-
-func (e *NamedPseudoPackageImportError) Message() string {
-	return fmt.Sprintf(
-		"named imports from pseudo-package %q are not supported; "+
-			"use a bare-string import (`import %q`) and access members through the namespace",
-		e.URI, e.URI)
-}
-func (e *NamedPseudoPackageImportError) Span() ast.Span      { return e.span }
-func (e *NamedPseudoPackageImportError) Related() []ast.Span { return nil }
-func (e *NamedPseudoPackageImportError) isSolverError()      {}
 
 // ReservedSchemeError reports an import under a scheme no package is published
 // for yet.

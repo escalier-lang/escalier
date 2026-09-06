@@ -217,13 +217,12 @@ func (p *Parser) parseForInStmt() ast.Stmt {
 		ast.MergeSpans(startSpan, body.Span))
 }
 
-// importStmt = 'import' (importSpecifiers 'from')? string
-// importSpecifiers = '{' namedImport (',' namedImport)* '}' | '*' 'as' identifier
-// namedImport = identifier ('as' identifier)?
+// importStmt = 'import' string
 //
-// A bare-string form (`import "std:math"`) has no binding clause and no
-// `from`. The module specifier may carry a `?flag1&flag2` suffix that the
-// parser splits off and stores in ImportStmt.Flags.
+// One form, with no binding clause: `import "std:math"` binds the package as a
+// namespace under the last segment of its specifier, and members are reached
+// through it. The specifier may carry a `?flag1&flag2` suffix that the parser
+// splits off and stores in ImportStmt.Flags.
 func (p *Parser) importStmt() ast.Stmt {
 	importToken := p.lexer.next()
 	if importToken.Type != Import {
@@ -231,102 +230,20 @@ func (p *Parser) importStmt() ast.Stmt {
 		return nil
 	}
 
-	var specifiers []*ast.ImportSpecifier
-	token := p.lexer.peek()
-
-	// Bare-string import: `import "uri"` with no binding clause.
-	if token.Type == StrLit {
-		moduleToken := p.lexer.next()
-		pkg, flags := splitImportFlags(moduleToken.Value)
-		span := ast.MergeSpans(importToken.Span, moduleToken.Span)
-		return ast.NewImportStmt(nil, pkg, flags, span)
-	}
-
-	// Parse import specifiers
-	if token.Type == Asterisk {
-		// Namespace import: import * as ns from "module"
-		p.lexer.consume()
-		asToken := p.lexer.next()
-		if asToken.Type != Identifier || asToken.Value != "as" {
-			p.reportError(asToken.Span, "Expected 'as' after '*'")
-			return nil
-		}
-		nameToken := p.lexer.next()
-		if nameToken.Type != Identifier {
-			p.reportError(nameToken.Span, "Expected identifier after 'as'")
-			return nil
-		}
-		specifier := ast.NewImportSpecifier(
-			"*",
-			nameToken.Value,
-			ast.MergeSpans(token.Span, nameToken.Span),
-		)
-		specifiers = append(specifiers, specifier)
-	} else if token.Type == OpenBrace {
-		// Named imports: import { foo, bar as baz } from "module"
-		p.lexer.consume()
-		for {
-			token = p.lexer.peek()
-			if token.Type == CloseBrace {
-				p.lexer.consume()
-				break
-			}
-			if token.Type == Comma {
-				p.lexer.consume()
-				continue
-			}
-			if token.Type != Identifier {
-				p.reportError(token.Span, "Expected identifier in import specifier")
-				return nil
-			}
-
-			nameToken := p.lexer.next()
-			name := nameToken.Value
-			alias := ""
-
-			// Check for "as" alias
-			nextToken := p.lexer.peek()
-			if nextToken.Type == Identifier && nextToken.Value == "as" {
-				p.lexer.consume()
-				aliasToken := p.lexer.next()
-				if aliasToken.Type != Identifier {
-					p.reportError(aliasToken.Span, "Expected identifier after 'as'")
-					return nil
-				}
-				alias = aliasToken.Value
-				specifier := ast.NewImportSpecifier(
-					name,
-					alias,
-					ast.MergeSpans(nameToken.Span, aliasToken.Span),
-				)
-				specifiers = append(specifiers, specifier)
-			} else {
-				specifier := ast.NewImportSpecifier(name, alias, nameToken.Span)
-				specifiers = append(specifiers, specifier)
-			}
-		}
-	} else {
-		p.reportError(token.Span, "Expected import specifiers ('{' or '*')")
-		return nil
-	}
-
-	// Expect 'from'
-	fromToken := p.lexer.next()
-	if fromToken.Type != From {
-		p.reportError(fromToken.Span, "Expected 'from' after import specifiers")
-		return nil
-	}
-
-	// Expect string literal for module path
+	// `import "uri"` is the only import form. The package is bound as a
+	// namespace under the last segment of its specifier, so there is no binding
+	// clause to parse.
 	moduleToken := p.lexer.next()
 	if moduleToken.Type != StrLit {
-		p.reportError(moduleToken.Span, "Expected string literal for module path")
+		p.reportError(moduleToken.Span,
+			"Expected a string literal after 'import'; Escalier has only `import \"uri\"`, "+
+				"which binds the package as a namespace")
 		return nil
 	}
 
-	span := ast.MergeSpans(importToken.Span, moduleToken.Span)
 	pkg, flags := splitImportFlags(moduleToken.Value)
-	return ast.NewImportStmt(specifiers, pkg, flags, span)
+	span := ast.MergeSpans(importToken.Span, moduleToken.Span)
+	return ast.NewImportStmt(pkg, flags, span)
 }
 
 // splitImportFlags splits a module specifier into the package portion and a

@@ -963,7 +963,7 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 			// This should be rare when looking up by package name
 			return errors
 		}
-		errors = append(errors, c.bindImportSpecifiers(ctx, importStmt, pkgNs)...)
+		errors = append(errors, c.bindImportNamespace(ctx, importStmt, pkgNs)...)
 		return errors
 	}
 
@@ -980,85 +980,30 @@ func (c *Checker) inferImport(ctx Context, importStmt *ast.ImportStmt) []Error {
 		return errors
 	}
 
-	// Bind import specifiers to the current scope
-	errors = append(errors, c.bindImportSpecifiers(ctx, importStmt, loadedPkg.Namespace)...)
+	errors = append(errors, c.bindImportNamespace(ctx, importStmt, loadedPkg.Namespace)...)
 
 	return errors
 }
 
-// bindImportSpecifiers processes import specifiers and binds them to the current scope.
-// This handles both namespace imports (import * as alias) and named imports (import { name }).
-func (c *Checker) bindImportSpecifiers(ctx Context, importStmt *ast.ImportStmt, pkgNs *type_system.Namespace) []Error {
-	errors := []Error{}
-
-	for _, specifier := range importStmt.Specifiers {
-		if specifier.Name == "*" {
-			// Namespace import: import * as alias from "pkg"
-			// Filter to only include exported items
-			filteredNs := filterExportedNamespace(pkgNs)
-			if err := ctx.Scope.Namespace.SetNamespace(specifier.Alias, filteredNs); err != nil {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Cannot bind namespace %q: %s", specifier.Alias, err.Error()),
-					span:    importStmt.Span(),
-				})
-			}
-		} else {
-			// Named import: import { name } from "pkg" or import { name as alias } from "pkg"
-			found := false
-			localName := specifier.Name
-			if specifier.Alias != "" {
-				localName = specifier.Alias
-			}
-
-			// Check for value binding (only if exported)
-			if binding, ok := pkgNs.Values[specifier.Name]; ok && binding.Exported {
-				ctx.Scope.Namespace.Values[localName] = binding
-				found = true
-			}
-
-			// Check for type binding (only if exported)
-			if typeAlias, ok := pkgNs.Types[specifier.Name]; ok && typeAlias.Exported {
-				ctx.Scope.Namespace.Types[localName] = typeAlias
-				found = true
-			}
-
-			// Check for namespace binding
-			if ns, ok := pkgNs.GetNamespace(specifier.Name); ok {
-				if err := ctx.Scope.Namespace.SetNamespace(localName, ns); err != nil {
-					errors = append(errors, &GenericError{
-						message: fmt.Sprintf("Cannot bind namespace %q: %s", localName, err.Error()),
-						span:    importStmt.Span(),
-					})
-				}
-				found = true
-			}
-
-			if !found {
-				errors = append(errors, &GenericError{
-					message: fmt.Sprintf("Package %q has no export named %q",
-						importStmt.PackageName, specifier.Name),
-					span: importStmt.Span(),
-				})
-			}
-		}
+// bindImportNamespace binds an imported package as a namespace under the name
+// the import statement names, which is the last segment of its specifier.
+// Escalier has one import form and it binds exactly this, so there is no
+// binding clause to read.
+//
+// Only exported members reach the importer: the filtered namespace is what
+// separates a package's surface from its internals.
+func (c *Checker) bindImportNamespace(ctx Context, importStmt *ast.ImportStmt, pkgNs *type_system.Namespace) []Error {
+	localName := importStmt.LocalName()
+	if localName == "" {
+		return nil
 	}
-
-	// Log imported specifiers for debugging
-	for _, specifier := range importStmt.Specifiers {
-		if specifier.Name == "*" {
-			fmt.Fprintf(os.Stderr, "Imported namespace %q from module %s\n",
-				specifier.Alias, importStmt.PackageName)
-			continue
-		}
-		localName := specifier.Name
-		if specifier.Alias != "" {
-			localName = specifier.Alias
-		}
-		fmt.Fprintf(os.Stderr, "Imported %q as %q from module %s\n",
-			specifier.Name, localName, importStmt.PackageName)
+	if err := ctx.Scope.Namespace.SetNamespace(localName, filterExportedNamespace(pkgNs)); err != nil {
+		return []Error{&GenericError{
+			message: fmt.Sprintf("Cannot bind namespace %q: %s", localName, err.Error()),
+			span:    importStmt.Span(),
+		}}
 	}
-
-	return errors
+	return nil
 }
 
 // filterExportedNamespace creates a new namespace containing only exported items from the original.

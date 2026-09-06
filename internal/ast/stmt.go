@@ -1,5 +1,7 @@
 package ast
 
+import "strings"
+
 //sumtype:decl
 type Stmt interface {
 	isStmt()
@@ -65,32 +67,34 @@ func (s *ReturnStmt) Accept(v Visitor) {
 // ImportSpecifier represents a single import specifier
 // For named imports: { foo, bar as baz }
 // For namespace imports: * as ns
-type ImportSpecifier struct {
-	Name  string // The name being imported (or "*" for namespace imports)
-	Alias string // The local name (optional for named imports, required for namespace imports)
-	span  Span
-	commentSlots
-}
-
-func NewImportSpecifier(name, alias string, span Span) *ImportSpecifier {
-	return &ImportSpecifier{Name: name, Alias: alias, span: span, commentSlots: commentSlots{}}
-}
-func (i *ImportSpecifier) Span() Span { return i.span }
-
+// ImportStmt is `import "uri"`, the one import form Escalier has. It binds the
+// package as a namespace under the last segment of its specifier, and members
+// are reached through that namespace. There is no binding clause to represent:
+// no named specifier, and no `* as` alias.
 type ImportStmt struct {
-	Specifiers  []*ImportSpecifier
 	PackageName string   // module specifier without the `?flag` suffix, e.g. "lodash", "std:math"
 	Flags       []string // `?flag1&flag2` suffix parsed into a list, preserving order; nil if none
 	span        Span
 	commentSlots
 }
 
-// Bare reports whether this import has no binding clause (no specifiers and no
-// namespace alias), as in `import "std:math"`.
-func (s *ImportStmt) Bare() bool { return len(s.Specifiers) == 0 }
+func NewImportStmt(packageName string, flags []string, span Span) *ImportStmt {
+	return &ImportStmt{PackageName: packageName, Flags: flags, span: span, commentSlots: commentSlots{}}
+}
 
-func NewImportStmt(specifiers []*ImportSpecifier, packageName string, flags []string, span Span) *ImportStmt {
-	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, Flags: flags, span: span, commentSlots: commentSlots{}}
+// LocalName returns the name this import binds the package under: the last
+// segment of its specifier, so `lodash/fp` binds `fp` and `std:math` binds
+// `math`. Anything before a colon is dropped first, which is what strips a
+// `std:` / `web:` / `node:` scheme.
+func (s *ImportStmt) LocalName() string {
+	name := s.PackageName
+	if _, pkg, ok := strings.Cut(name, ":"); ok {
+		name = pkg
+	}
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	return name
 }
 func (*ImportStmt) isStmt()      {}
 func (s *ImportStmt) Span() Span { return s.span }

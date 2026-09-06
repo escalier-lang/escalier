@@ -87,18 +87,6 @@ func (c *Checker) inferStdlibImport(ctx Context, importStmt *ast.ImportStmt) []E
 		})
 	}
 
-	// Named imports from scheme-prefixed URIs are rejected per FR4 /
-	// "Named import from a pseudo-package URI" in the error taxonomy.
-	if !importStmt.Bare() {
-		errs = append(errs, &GenericError{
-			message: fmt.Sprintf(
-				"named imports from pseudo-package %q are not supported; "+
-					"use a bare-string import (`import %q`) and access members through the namespace",
-				importStmt.PackageName, importStmt.PackageName),
-			span: span,
-		})
-	}
-
 	errs = append(errs, resolveStdlibFlags(importStmt.Flags, span)...)
 
 	// node:* is reserved; the resolver rejects every package until Node

@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -50,13 +49,6 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	if IsSchemePrefixedImport(uri) {
 		return c.bindPseudoPackageImport(fileScope, stmt)
 	}
-	// A named specifier is reported before the package is loaded. Nothing it
-	// names can be bound, so loading first would only add whatever the package
-	// has to say to a diagnostic the author has to act on either way.
-	if errs := namedSpecifierErrors(uri, stmt); len(errs) > 0 {
-		return errs
-	}
-
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		// Either the load failed, and errs says why, or the URI is being loaded
@@ -66,73 +58,9 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		return errs
 	}
 
-	if stmt.Bare() {
-		fileScope.defineNamespace(localName(uri), ns)
-		return errs
-	}
-
-	// Only `* as name` reaches here, since every other specifier was reported.
-	// It binds what the bare form binds, under the name the author chose.
-	for _, spec := range stmt.Specifiers {
-		fileScope.defineNamespace(spec.Alias, ns)
-	}
+	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
 }
-
-// namedSpecifierErrors reports every named specifier stmt writes, one each, so
-// an import naming several members says so about all of them rather than about
-// whichever came first.
-func namedSpecifierErrors(uri string, stmt *ast.ImportStmt) []SolverError {
-	var errs []SolverError
-	for _, spec := range stmt.Specifiers {
-		if spec.Name == "*" {
-			continue
-		}
-		errs = append(errs, &NamedImportError{
-			URI:    uri,
-			Member: spec.Name,
-			span:   spec.Span(),
-		})
-	}
-	return errs
-}
-
-// localName returns the name a bare import binds a package under: the last
-// segment of its specifier, so `lodash/fp` binds `fp`.
-//
-// Anything before a colon is dropped first. A recognized scheme never reaches
-// here, since bindImport diverts one to the pseudo-package path, but a
-// specifier whose scheme is not lowercase is not diverted and still arrives
-// with its colon: `HTTP:thing` binds `thing`.
-func localName(uri string) string {
-	if _, pkg, ok := strings.Cut(uri, ":"); ok {
-		uri = pkg
-	}
-	if i := strings.LastIndex(uri, "/"); i >= 0 {
-		uri = uri[i+1:]
-	}
-	return uri
-}
-
-// NamedImportError reports an `import { name } from "..."`. Escalier has no
-// named import. A package is bound as a namespace and its members are reached
-// through it, so the message names the form that does work.
-type NamedImportError struct {
-	// URI is the package the import named.
-	URI string
-	// Member is the name the specifier asked for.
-	Member string
-	span   ast.Span
-}
-
-func (e *NamedImportError) Message() string {
-	return fmt.Sprintf(
-		"named imports are not supported; write `import %q` and reach %q as `%s.%s`",
-		e.URI, e.Member, localName(e.URI), e.Member)
-}
-func (e *NamedImportError) Span() ast.Span      { return e.span }
-func (e *NamedImportError) Related() []ast.Span { return nil }
-func (e *NamedImportError) isSolverError()      {}
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
 //

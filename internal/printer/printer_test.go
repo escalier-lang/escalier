@@ -2183,15 +2183,11 @@ func TestPrintImportStmt(t *testing.T) {
 		name  string
 		input string
 	}{
-		{"named single", `import { foo } from "module"`},
-		{"named multiple", `import { foo, bar, baz } from "module"`},
-		{"named with alias", `import { foo as bar } from "module"`},
-		{"named mixed", `import { foo, bar as baz, qux } from "module"`},
-		{"namespace", `import * as ns from "module"`},
-		{"bare", `import "std:math"`},
-		{"bare with flag", `import "std:math?nested"`},
-		{"bare with flags", `import "std:math?flag1&flag2"`},
-		{"named with flag", `import { foo } from "std:math?local"`},
+		{"a package", `import "module"`},
+		{"a path", `import "lodash/fp"`},
+		{"a pseudo-package", `import "std:math"`},
+		{"with a flag", `import "std:math?nested"`},
+		{"with flags", `import "std:math?flag1&flag2"`},
 	}
 
 	opts := DefaultOptions()

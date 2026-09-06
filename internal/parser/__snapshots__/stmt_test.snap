@@ -5023,3 +5023,38 @@
     span: 0-57,
 }
 ---
+
+[TestParseStmtNoErrors/ImportWithFlags - 1]
+&ast.ImportStmt{
+    PackageName: "std:math",
+    Flags: []string{
+        "flag1",
+        "flag2",
+    },
+    span: 0-29,
+}
+---
+
+[TestParseStmtNoErrors/Import - 1]
+&ast.ImportStmt{
+    PackageName: "module",
+    span: 0-15,
+}
+---
+
+[TestParseStmtNoErrors/ImportAPath - 1]
+&ast.ImportStmt{
+    PackageName: "lodash/fp",
+    span: 0-18,
+}
+---
+
+[TestParseStmtNoErrors/ImportWithFlag - 1]
+&ast.ImportStmt{
+    PackageName: "std:math",
+    Flags: []string{
+        "nested",
+    },
+    span: 0-24,
+}
+---

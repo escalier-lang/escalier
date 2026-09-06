@@ -311,32 +311,17 @@ func TestParseStmtNoErrors(t *testing.T) {
 			// param.
 			input: "class Box { set value(value: number) { } }",
 		},
-		"ImportNamedSingle": {
-			input: `import { foo } from "module"`,
+		"Import": {
+			input: `import "module"`,
 		},
-		"ImportNamedMultiple": {
-			input: `import { foo, bar, baz } from "module"`,
+		"ImportAPath": {
+			input: `import "lodash/fp"`,
 		},
-		"ImportNamedWithAlias": {
-			input: `import { foo as bar } from "module"`,
-		},
-		"ImportNamedMixed": {
-			input: `import { foo, bar as baz, qux } from "module"`,
-		},
-		"ImportNamespace": {
-			input: `import * as ns from "module"`,
-		},
-		"ImportBare": {
-			input: `import "std:math"`,
-		},
-		"ImportBareWithFlag": {
+		"ImportWithFlag": {
 			input: `import "std:math?nested"`,
 		},
-		"ImportBareWithFlags": {
+		"ImportWithFlags": {
 			input: `import "std:math?flag1&flag2"`,
-		},
-		"ImportNamedWithFlag": {
-			input: `import { foo } from "std:math?local"`,
 		},
 		"ForInBasic": {
 			input: `for item in items { console.log(item) }`,

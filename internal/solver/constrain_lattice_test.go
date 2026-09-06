@@ -327,7 +327,7 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 		},
 		{
 			// Branch 2 matches the inner — the lifetime IS the blocker.
-			name:  "union with a matching branch keeps BorrowEscape",
+			name: "union with a matching branch keeps BorrowEscape",
 			super: func() soltype.Type {
 				return newUnion(nil, []soltype.Type{num(), exactObj(propElem("x", num()))})
 			},
@@ -344,4 +344,3 @@ func TestBorrowEscapePromotionByPeeledInner(t *testing.T) {
 		})
 	}
 }
-
