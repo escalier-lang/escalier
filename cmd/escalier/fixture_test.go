@@ -125,7 +125,7 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	// walk would otherwise fail to find the overrides.
 	t.Setenv("ESCALIER_BUILTINS_DIR", filepath.Join(repoRoot, "internal", "interop", "data"))
 	// Same story for the builtins workstream's stdlib data dir: the
-	// resolver's lazy interop.StdlibDir("") call won't find the repo
+	// resolver's lazy stdlibdir.StdlibDir("") call won't find the repo
 	// root from the tmpDir-relocated test binary, so we point it at
 	// the in-repo data tree directly.
 	t.Setenv("ESCALIER_STDLIB_DIR", filepath.Join(repoRoot, "internal", "interop", "data"))

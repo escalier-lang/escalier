@@ -41,11 +41,11 @@ func TestImportResolvesAClassFromAnotherModule(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:geometry"
+			import "geometry"
 			val p = geometry.Point(1, 2)
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:geometry": `
+			"geometry": `
 				export class Point {
 					x: number,
 					y: number,
@@ -66,21 +66,21 @@ func TestImportSeesOnlyExportedDeclarations(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:internals"
+			import "internals"
 			val h = internals.Hidden
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:internals": `
+			"internals": `
 				export val shown: number = 1
 				val Hidden: number = 2
 			`,
 		}),
 	)
 
-	require.Equal(t, []string{"Namespace pkg:internals has no member: Hidden"},
+	require.Equal(t, []string{"Namespace internals has no member: Hidden"},
 		errorMessagesOf(res.Errors))
 
-	ns, ok := res.Packages.Lookup("pkg:internals")
+	ns, ok := res.Packages.Lookup("internals")
 	require.True(t, ok)
 	require.Contains(t, ns.Values, "shown")
 	require.NotContains(t, ns.Values, "Hidden")
@@ -94,34 +94,34 @@ func TestMutuallyImportingPackagesTerminate(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:a"
+			import "a"
 			val x: number = a.fromA
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:a": `
-				import "pkg:b"
+			"a": `
+				import "b"
 				export val fromA: number = 1
 			`,
-			"pkg:b": `
-				import "pkg:a"
+			"b": `
+				import "a"
 				export val fromB: number = 2
 			`,
 		}),
 	)
 
-	// `pkg:b` re-enters `pkg:a` mid-load, so `fromA` is not bound on that side and
-	// the reference in `pkg:b` is unresolved. That surfaces as one diagnostic on
+	// `b` re-enters `a` mid-load, so `fromA` is not bound on that side and
+	// the reference in `b` is unresolved. That surfaces as one diagnostic on
 	// the entry module's import, carrying the package's own message. What this
 	// pins is that the run finishes at all, and that the entry module still gets
 	// what it asked for.
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "x")))
 
-	_, loadedA := res.Packages.Lookup("pkg:a")
-	require.True(t, loadedA, "pkg:a should be published after the walk")
-	_, loadedB := res.Packages.Lookup("pkg:b")
-	require.True(t, loadedB, "pkg:b should be published after the walk")
-	require.False(t, res.Packages.Loading("pkg:a"), "no package should still be loading")
-	require.False(t, res.Packages.Loading("pkg:b"), "no package should still be loading")
+	_, loadedA := res.Packages.Lookup("a")
+	require.True(t, loadedA, "a should be published after the walk")
+	_, loadedB := res.Packages.Lookup("b")
+	require.True(t, loadedB, "b should be published after the walk")
+	require.False(t, res.Packages.Loading("a"), "no package should still be loading")
+	require.False(t, res.Packages.Loading("b"), "no package should still be loading")
 }
 
 // Two modules declaring a class of the same name register two definitions. The
@@ -132,20 +132,20 @@ func TestTwoPackagesDeclaringOneNameStayDistinct(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:plane"
-			import "pkg:space"
+			import "plane"
+			import "space"
 			val a = plane.Point(1)
 			val b = space.Point(1)
 			val ax = a.x
 			val bz = b.z
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:plane": `
+			"plane": `
 				export class Point {
 					x: number,
 				}
 			`,
-			"pkg:space": `
+			"space": `
 				export class Point {
 					z: number,
 				}
@@ -162,8 +162,8 @@ func TestTwoPackagesDeclaringOneNameStayDistinct(t *testing.T) {
 	// qualified names are what tell the two apart.
 	require.Equal(t, "Point", soltype.Print(flat))
 	require.Equal(t, "Point", soltype.Print(deep))
-	require.Equal(t, "import:pkg:plane.Point", soltype.PrintQualified(flat))
-	require.Equal(t, "import:pkg:space.Point", soltype.PrintQualified(deep))
+	require.Equal(t, "import:plane.Point", soltype.PrintQualified(flat))
+	require.Equal(t, "import:space.Point", soltype.PrintQualified(deep))
 
 	// Each instance carries its own package's field. One shared definition would
 	// leave one of these two reads unresolved, so this is what proves the two
@@ -178,11 +178,11 @@ func TestImportOfAnUnknownPackageReports(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
-		parseModule(t, `import "pkg:missing"`),
+		parseModule(t, `import "missing"`),
 		sourceOf(t, map[string]string{}),
 	)
 
-	require.Equal(t, []string{`cannot resolve import "pkg:missing": no such package`},
+	require.Equal(t, []string{`cannot resolve import "missing": no such package`},
 		errorMessagesOf(res.Errors))
 }
 
@@ -191,10 +191,10 @@ func TestImportOfAnUnknownPackageReports(t *testing.T) {
 func TestImportWithNoModuleSourceReports(t *testing.T) {
 	t.Parallel()
 
-	_, _, errs := InferModule(parseModule(t, `import "pkg:anything"`))
+	_, _, errs := InferModule(parseModule(t, `import "anything"`))
 
 	require.Equal(t,
-		[]string{`cannot resolve import "pkg:anything": this inference run was given no module source`},
+		[]string{`cannot resolve import "anything": this inference run was given no module source`},
 		errorMessagesOf(errs))
 }
 
@@ -205,7 +205,7 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 
 	module := parseModuleFiles(t, map[string]string{
 		"a.esc": `
-			import "pkg:lib"
+			import "lib"
 			val fromA: number = lib.shared
 		`,
 		"b.esc": `
@@ -213,7 +213,7 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 		`,
 	})
 	res := InferModuleWithSource(module, sourceOf(t, map[string]string{
-		"pkg:lib": `export val shared: number = 1`,
+		"lib": `export val shared: number = 1`,
 	}))
 
 	require.Empty(t, errorMessagesOf(res.Errors))
@@ -244,12 +244,12 @@ func TestImportResolvesAnExportedType(t *testing.T) {
 	/*
 		res := InferModuleWithSource(
 			parseModule(t, `
-				import { Point, Num } from "pkg:geometry"
+				import { Point, Num } from "geometry"
 				val p: Point = Point(1, 2)
 				val n: Num = 3
 			`),
 			sourceOf(t, map[string]string{
-				"pkg:geometry": `
+				"geometry": `
 					export type Num = number
 					export class Point {
 						x: number,
@@ -273,11 +273,11 @@ func TestPackageResolvesItsOwnTypes(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:geometry"
+			import "geometry"
 			val x = geometry.origin.x
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:geometry": `
+			"geometry": `
 				export class Point {
 					x: number,
 					y: number,
@@ -298,7 +298,7 @@ func TestBareImportReachesANestedNamespace(t *testing.T) {
 
 	module := parseModuleFiles(t, map[string]string{
 		"a.esc": `
-			import "pkg:shapes"
+			import "shapes"
 			val n = shapes.geometry.sides
 		`,
 	})
@@ -306,7 +306,7 @@ func TestBareImportReachesANestedNamespace(t *testing.T) {
 	// under geometry/ declares into the `geometry` namespace, the same rule the
 	// entry module follows.
 	res := InferModuleWithSource(module, func(uri string) (*ast.Module, string, error) {
-		if uri != "pkg:shapes" {
+		if uri != "shapes" {
 			return nil, "", fmt.Errorf("no such package")
 		}
 		return parseModuleFiles(t, map[string]string{
@@ -325,14 +325,14 @@ func TestPackageDiagnosticsAreReportedOnTheImport(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
-		parseModule(t, `import "pkg:bad"`),
+		parseModule(t, `import "bad"`),
 		sourceOf(t, map[string]string{
-			"pkg:bad": `export val broken: number = nowhere`,
+			"bad": `export val broken: number = nowhere`,
 		}),
 	)
 
 	require.Equal(t, []string{
-		"package \"pkg:bad\" (pkg:bad.esc) has 1 error(s):\n  Unknown identifier: nowhere",
+		"package \"bad\" (bad.esc) has 1 error(s):\n  Unknown identifier: nowhere",
 	}, errorMessagesOf(res.Errors))
 }
 
@@ -343,9 +343,9 @@ func TestAFailingPackageStillPublishesItsSurface(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
-		parseModule(t, `import "pkg:partial"`),
+		parseModule(t, `import "partial"`),
 		sourceOf(t, map[string]string{
-			"pkg:partial": `
+			"partial": `
 				export val good: number = 1
 				export val bad: number = nowhere
 			`,
@@ -353,7 +353,7 @@ func TestAFailingPackageStillPublishesItsSurface(t *testing.T) {
 	)
 
 	require.Len(t, res.Errors, 1)
-	ns, ok := res.Packages.Lookup("pkg:partial")
+	ns, ok := res.Packages.Lookup("partial")
 	require.True(t, ok)
 	require.Contains(t, ns.Values, "good")
 }
@@ -366,11 +366,11 @@ func TestImportResolvesAnExportedEnum(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:paint"
+			import "paint"
 			val c = paint.Color.Red()
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:paint": `
+			"paint": `
 				export enum Color {
 					Red,
 					Green,
@@ -416,12 +416,12 @@ func TestPackageDeclarationOutranksThePreludeSeed(t *testing.T) {
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "pkg:futures"
+			import "futures"
 			val p = futures.make()
 			val v = p.value
 		`),
 		sourceOf(t, map[string]string{
-			"pkg:futures": `
+			"futures": `
 				export class Promise {
 					value: number,
 				}

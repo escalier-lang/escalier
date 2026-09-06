@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/interop"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
 func TestMain(m *testing.M) {
@@ -13,7 +14,7 @@ func TestMain(m *testing.M) {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := interop.SetStdlibDirForTest(); err != nil {
+	if err := stdlibdir.SetStdlibDirForTest(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}

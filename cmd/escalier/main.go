@@ -12,7 +12,7 @@ func main() {
 	// stdlib `.esc` files per planning/builtins §2.2a. When supplied,
 	// it overrides ESCALIER_STDLIB_DIR and the executable-relative
 	// discovery paths. We propagate it by setting the env var so the
-	// checker's lazy `interop.StdlibDir("")` call picks it up without
+	// checker's lazy `stdlibdir.StdlibDir("")` call picks it up without
 	// further plumbing — the resolution order still ends up
 	// flag > env > sibling > repo-relative.
 	buildStdlibDir := buildCmd.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, dom/, node/)")

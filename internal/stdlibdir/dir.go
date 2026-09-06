@@ -1,10 +1,9 @@
-package interop
+package stdlibdir
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 // StdlibDir resolves the on-disk directory containing the stdlib `.esc`
@@ -78,7 +77,7 @@ func resolveStdlibDir(in stdlibDirInputs) (string, error) {
 				return filepath.Clean(candidate), nil
 			}
 		}
-		if root := findEscalierRoot(exeDir); root != "" {
+		if root := FindEscalierRoot(exeDir); root != "" {
 			candidate := filepath.Join(root, "internal", "interop", "data")
 			if looksLikeStdlibDir(candidate) {
 				return candidate, nil
@@ -114,32 +113,11 @@ func SetStdlibDirForTest() error {
 	if err != nil {
 		return err
 	}
-	root := findEscalierRoot(cwd)
+	root := FindEscalierRoot(cwd)
 	if root == "" {
 		return fmt.Errorf("could not locate Escalier repo root from %s", cwd)
 	}
 	return os.Setenv("ESCALIER_STDLIB_DIR", filepath.Join(root, "internal", "interop", "data"))
-}
-
-// isStdlibSchemeSubtree reports whether p, relative to root, names a
-// top-level scheme subdirectory (`std`, `web`, `node`) that belongs to
-// the builtins workstream rather than the override system. The
-// override loader uses this to skip those subtrees while walking the
-// shared `internal/interop/data/` directory.
-func isStdlibSchemeSubtree(p, root string) bool {
-	rel := p
-	if root != "" && root != "." {
-		// fs.WalkDir paths are joined under root with `/`; strip the
-		// `<root>/` prefix so "<root>/std" becomes "std". TrimPrefix is
-		// a no-op when there's no match, which leaves `rel == p` for
-		// callers that pass an already-relative path.
-		rel = strings.TrimPrefix(rel, root+"/")
-	}
-	switch rel {
-	case "std", "web", "node":
-		return true
-	}
-	return false
 }
 
 // looksLikeStdlibDir reports whether path looks like a stdlib data
@@ -149,4 +127,22 @@ func isStdlibSchemeSubtree(p, root string) bool {
 func looksLikeStdlibDir(path string) bool {
 	info, err := os.Stat(filepath.Join(path, "std"))
 	return err == nil && info.IsDir()
+}
+
+// FindEscalierRoot walks up from start looking for a directory that
+// contains `internal/interop/data`. Returns "" if no such directory
+// is found before reaching the filesystem root.
+func FindEscalierRoot(start string) string {
+	dir := start
+	for {
+		info, err := os.Stat(filepath.Join(dir, "internal", "interop", "data"))
+		if err == nil && info.IsDir() {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }

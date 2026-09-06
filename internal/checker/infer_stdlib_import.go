@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/interop"
 	"github.com/escalier-lang/escalier/internal/parser"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 	"github.com/escalier-lang/escalier/internal/type_system"
 )
 
@@ -252,7 +252,7 @@ func isValidPackagePath(pkg string) bool {
 
 func (c *Checker) getStdlibDir() (string, error) {
 	c.stdlibDirOnce.Do(func() {
-		c.stdlibDir, c.stdlibDirErr = interop.StdlibDir("")
+		c.stdlibDir, c.stdlibDirErr = stdlibdir.StdlibDir("")
 	})
 	return c.stdlibDir, c.stdlibDirErr
 }

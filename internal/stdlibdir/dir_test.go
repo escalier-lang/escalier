@@ -1,4 +1,4 @@
-package interop
+package stdlibdir
 
 import (
 	"fmt"

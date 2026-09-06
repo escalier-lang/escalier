@@ -378,3 +378,24 @@ func headOrigin(ps []Origin) Origin {
 	}
 	return ps[0]
 }
+
+// isStdlibSchemeSubtree reports whether p, relative to root, names a
+// top-level scheme subdirectory (`std`, `web`, `node`) that belongs to
+// the builtins workstream rather than the override system. The
+// override loader uses this to skip those subtrees while walking the
+// shared `internal/interop/data/` directory.
+func isStdlibSchemeSubtree(p, root string) bool {
+	rel := p
+	if root != "" && root != "." {
+		// fs.WalkDir paths are joined under root with `/`; strip the
+		// `<root>/` prefix so "<root>/std" becomes "std". TrimPrefix is
+		// a no-op when there's no match, which leaves `rel == p` for
+		// callers that pass an already-relative path.
+		rel = strings.TrimPrefix(rel, root+"/")
+	}
+	switch rel {
+	case "std", "web", "node":
+		return true
+	}
+	return false
+}
