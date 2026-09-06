@@ -370,8 +370,11 @@ func TestStdlibSourceReportsAParseError(t *testing.T) {
 
 	dir := seedStdlib(t, map[string]string{"std/broken.esc": `export val = = =`})
 	_, _, err := StdlibSource(dir)("std:broken")
-	require.ErrorContains(t, err, "parse errors in ")
-	require.ErrorContains(t, err, filepath.Join(dir, "std", "broken.esc"))
+	require.EqualError(t, err,
+		"parse errors in "+filepath.Join(dir, "std", "broken.esc")+": "+
+			"11-12: Expected a pattern; 7-10: Expected pattern; "+
+			"13-14: Unexpected token, '='; 15-16: Unexpected token, '='; "+
+			"16-16: Expected an expression")
 }
 
 // A path that resolves to a directory rather than a file is not a package.
@@ -382,5 +385,37 @@ func TestStdlibSourceRejectsADirectory(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(dir, "std", "shaped.esc"), 0o755))
 
 	_, _, err := StdlibSource(dir)("std:shaped")
-	require.ErrorContains(t, err, `unknown package "shaped" in std: scheme`)
+	require.EqualError(t, err,
+		`unknown package "shaped" in std: scheme (no std/shaped.esc under `+dir+`)`)
+}
+
+// The single-class shortcut fires for a class and nothing else.
+//
+// A package exporting a function beside a same-named type has a value and a
+// type under one name, the pair a class produces, but binding that function
+// directly would shadow the namespace: a member access that finds a value never
+// reaches a namespace of the same name, so every other export would be
+// unreachable.
+func TestStdlibShortcutFiresOnlyForAClass(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "std:array"
+		val n = array.helper
+	`, map[string]string{
+		"std/array.esc": `
+			export type array = number
+			export fn array(x: number) -> number { return x }
+			export val helper: number = 1
+		`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+
+	// The package binds as a namespace, and no value shadows it.
+	_, boundNamespace := res.FileScopes[0].GetNamespace("array")
+	require.True(t, boundNamespace)
+	_, boundValue := res.FileScopes[0].values["array"]
+	require.False(t, boundValue, "the shortcut should not bind a non-class value")
 }

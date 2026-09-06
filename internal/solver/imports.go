@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // imports.go binds what a file's `import` statements name.
@@ -171,17 +172,25 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 // singleClassShortcut returns the class name a package binds directly under,
 // and false when the package binds as a namespace instead.
 //
-// The shortcut fires when the package exposes a value and a type under one
-// identifier that matches the package name case-insensitively, which is the
-// shape a class declaration produces and nothing else does. The name comes back
-// in its own capitalization, so `std:array` binds `Array`.
+// The shortcut fires when the package exports a class whose name matches its
+// own case-insensitively. The name comes back in its own capitalization, so
+// `std:array` binds `Array`.
+//
+// A value and a type under one name is not enough to go on. A package exporting
+// `fn array` beside `type array` has both, and binding the function directly
+// would shadow the namespace: a member access that finds a value resolves
+// through that value's type and never reaches a namespace of the same name, so
+// every other export would become unreachable. Only a `ClassType` binding says
+// a class is what produced the pair.
 func singleClassShortcut(ns *Namespace, pkg string) (string, bool) {
 	for name := range ns.Values {
 		if !strings.EqualFold(name, pkg) {
 			continue
 		}
-		if _, hasType := ns.Types[name]; hasType {
-			return name, true
+		if b, hasType := ns.Types[name]; hasType {
+			if _, isClass := b.Type.(*soltype.ClassType); isClass {
+				return name, true
+			}
 		}
 	}
 	return "", false

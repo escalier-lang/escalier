@@ -15,7 +15,7 @@ func main() {
 	// checker's lazy `stdlibdir.StdlibDir("")` call picks it up without
 	// further plumbing — the resolution order still ends up
 	// flag > env > sibling > repo-relative.
-	buildStdlibDir := buildCmd.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, dom/, node/)")
+	buildStdlibDir := buildCmd.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, web/, node/)")
 	formatCmd := flag.NewFlagSet("format", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
