@@ -383,16 +383,22 @@ func addRaiseParamToClass(
 	declSpan ast.Span,
 ) []*ast.TypeParam {
 	threadRaiseParamThrough(body)
+	return append(typeParams, raiseParam(declSpan))
+}
+
+// raiseParam builds the trailing `E = never` parameter itself, for a caller that
+// has already threaded the raise through the members it is adding.
+func raiseParam(declSpan ast.Span) *ast.TypeParam {
 	param := ast.NewTypeParam(raiseParamName, nil, ast.NewNeverTypeAnn(synthSpan()), declSpan)
-	return append(typeParams, &param)
+	return &param
 }
 
 // threadRaiseParamThrough names the raise parameter in every reference the
 // instance members make to a declaration that carries one.
 //
 // It appends an argument rather than replacing one, so each elem must reach it
-// exactly once. fuseTrio calls it on the members it adds to a class
-// convertClassDecl already converted, whose own members are threaded by then.
+// exactly once. Members are threaded where they are converted, and the parameter
+// is appended once by whoever assembles the declaration.
 func threadRaiseParamThrough(body []ast.ClassElem) {
 	v := &raiseParamVisitor{}
 	for _, elem := range body {

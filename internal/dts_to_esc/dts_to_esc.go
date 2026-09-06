@@ -1202,8 +1202,8 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 	)
 
 	if info.instanceClass != nil {
-		// The class already converts to everything the instance side needs, so
-		// the merged interfaces only add members to what it produced.
+		// The class already converts to everything the instance side needs, so a
+		// merged interface only adds to what it produced.
 		decl, err := convertClassDecl(cctx, info.instanceClass)
 		if err != nil {
 			return nil, err
@@ -1218,22 +1218,13 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 			// read against, the same positional rename mergeDecls applies to a pair
 			// of interfaces.
 			renameTypeParams(iface, info.instanceClass.TypeParams)
-			ifaceBody, err := interfaceMembersToClassElems(iface.Members, className, false /*static*/)
+			elems, ifaceExtends, err := interfaceInstanceSide(iface, className)
 			if err != nil {
 				return nil, err
 			}
-			// convertClassDecl threaded the raise through the class's own
-			// members and appended the parameter. What the interface adds
-			// still has to name it.
-			if RaiseParamDecls.Contains(className) {
-				threadRaiseParamThrough(ifaceBody)
-			}
-			body = append(body, ifaceBody...)
-			if extends == nil && len(iface.Extends) > 0 {
-				extends, err = fusedExtends(iface.Extends[0], className)
-				if err != nil {
-					return nil, err
-				}
+			body = append(body, elems...)
+			if extends == nil {
+				extends = ifaceExtends
 			}
 		}
 	} else {
@@ -1242,15 +1233,9 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 		if err != nil {
 			return nil, fmt.Errorf("converting type parameters: %w", err)
 		}
-		body, err = interfaceMembersToClassElems(info.instance.Members, className, false /*static*/)
+		body, extends, err = interfaceInstanceSide(info.instance, className)
 		if err != nil {
 			return nil, err
-		}
-		if len(info.instance.Extends) > 0 {
-			extends, err = fusedExtends(info.instance.Extends[0], className)
-			if err != nil {
-				return nil, err
-			}
 		}
 		span, nameSpan = convertSpan(info.instance.Span()), convertSpan(info.instance.Name.Span())
 	}
@@ -1279,10 +1264,11 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 	// Without it the declaration reads `Promise<T>` while every raised use
 	// passes two arguments.
 	//
-	// A class instance side comes from convertClassDecl, which has already added
-	// it. Only an interface instance side reaches this.
+	// interfaceInstanceSide threaded it through the members it converted, and a
+	// class instance side carries the parameter already, appended by
+	// convertClassDecl. So this only appends, and only for an interface.
 	if info.instanceClass == nil && RaiseParamDecls.Contains(className) {
-		typeParams = addRaiseParamToClass(typeParams, body, span)
+		typeParams = append(typeParams, raiseParam(span))
 	}
 
 	return ast.NewClassDecl(
@@ -1297,6 +1283,33 @@ func fuseTrio(cctx *convertCtx, info *trioInfo) (*ast.ClassDecl, error) {
 		false, // final
 		span,
 	), nil
+}
+
+// interfaceInstanceSide converts an interface that declares a class's instance
+// side, whether it is the whole of that side or a declaration merged into a
+// `declare class`. It returns the members as class elems and the class the
+// interface extends, which the caller takes only where the class writes none.
+func interfaceInstanceSide(
+	iface *dts_parser.InterfaceDecl,
+	className string,
+) ([]ast.ClassElem, *ast.TypeRefTypeAnn, error) {
+	body, err := interfaceMembersToClassElems(iface.Members, className, false /*static*/)
+	if err != nil {
+		return nil, nil, err
+	}
+	// A member is threaded where it is converted, so the caller only appends the
+	// parameter. convertClassDecl does the same for a class's own members.
+	if RaiseParamDecls.Contains(className) {
+		threadRaiseParamThrough(body)
+	}
+	if len(iface.Extends) == 0 {
+		return body, nil, nil
+	}
+	extends, err := fusedExtends(iface.Extends[0], className)
+	if err != nil {
+		return nil, nil, err
+	}
+	return body, extends, nil
 }
 
 // interfaceMembersToClassElems converts every member of an interface that has a
