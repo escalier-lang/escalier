@@ -374,74 +374,32 @@ func moduleWithJSDecls(decls map[string]string) *StandaloneModule {
 
 // A target the `.d.ts` set does not declare fails the run, and nothing is
 // written. The overlay is where a hand-written target comes from, so that is
-// where the case is built.
+// where the cases are built, one per declaration shape a decorator sits on.
+//
+// Those three shapes are every one a finding can name. A `.d.ts` `declare var`
+// binds one identifier and the overlay loader refuses a value it cannot address
+// by name, so no declaration without a name reaches the check.
 func TestGenerateRejectsAnUnknownJSTarget(t *testing.T) {
 	t.Parallel()
 
-	outDir := t.TempDir()
-	_, err := Generate(GenerateOptions{
-		LibDir: seedLibDir(t, overlayLib),
-		OverlayDir: seedOverlay(t, map[string]string{
-			"std/array.add.esc": "@js(\"Aray.isArray\")\n" +
-				"export declare fn isArray(value: unknown) -> boolean\n",
-		}),
-		OutDir: outDir,
-	})
-
-	require.EqualError(t, err,
-		"1 `@js` target(s) name no JS runtime global:\n"+
-			"  std:array: `@js(\"Aray.isArray\")` on \"isArray\" names no JS runtime global, "+
-			"and \"Aray\" is not a known top-level global")
-	require.Empty(t, treeUnder(t, outDir))
-}
-
-// A finding names the declaration its decorator sits on, one case per shape a
-// declaration's name comes from. A `val` bound by a pattern has no single
-// identifier, so it falls back to a placeholder rather than reading as nameless.
-func TestValidateJSTargetsNamesTheDeclaration(t *testing.T) {
-	t.Parallel()
-
-	globals := CollectJSGlobals(libInputsFrom(t, map[string]string{
-		"lib.probe.d.ts": `declare function parseInt(s: string): number;`,
-	}))
-
 	tests := map[string]struct {
-		decl    ast.Decl
-		target  string
+		overlay string
 		message string
 	}{
+		"AFunction": {
+			overlay: "@js(\"Aray.isArray\")\n" +
+				"export declare fn isArray(value: unknown) -> boolean\n",
+			message: "  std:array: `@js(\"Aray.isArray\")` on \"isArray\" names no JS runtime global, " +
+				"and \"Aray\" is not a known top-level global",
+		},
 		"AClass": {
-			decl: ast.NewClassDecl(
-				ast.NewIdentifier("Widget", ast.Span{}),
-				nil, nil, nil, nil, nil,
-				true, true, false,
-				ast.Span{},
-			),
-			target:  "Nonexistent",
-			message: `std:probe: ` + "`" + `@js("Nonexistent")` + "`" + ` on "Widget" names no JS runtime global`,
+			overlay: "@js(\"Aray\")\nexport declare class Widget {}\n",
+			message: "  std:array: `@js(\"Aray\")` on \"Widget\" names no JS runtime global",
 		},
 		"AValue": {
-			decl: ast.NewVarDecl(
-				ast.ValKind,
-				ast.NewIdentPat("PI", false, nil, nil, ast.Span{}),
-				nil, nil,
-				true, true,
-				ast.Span{},
-			),
-			target: "Mat.PI",
-			message: `std:probe: ` + "`" + `@js("Mat.PI")` + "`" + ` on "PI" names no JS runtime global, ` +
-				`and "Mat" is not a known top-level global`,
-		},
-		"AValueBoundByAPattern": {
-			decl: ast.NewVarDecl(
-				ast.VarKind,
-				ast.NewTuplePat([]ast.Pat{}, ast.Span{}),
-				nil, nil,
-				true, true,
-				ast.Span{},
-			),
-			target:  "Nonexistent",
-			message: `std:probe: ` + "`" + `@js("Nonexistent")` + "`" + ` on "<unnamed>" names no JS runtime global`,
+			overlay: "@js(\"Aray.length\")\nexport declare val length: number\n",
+			message: "  std:array: `@js(\"Aray.length\")` on \"length\" names no JS runtime global, " +
+				"and \"Aray\" is not a known top-level global",
 		},
 	}
 
@@ -449,16 +407,34 @@ func TestValidateJSTargetsNamesTheDeclaration(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 
-			attachJSDecorator(test.decl, test.target)
-			var namespaces btree.Map[string, *ast.Namespace]
-			namespaces.Set("", &ast.Namespace{Decls: []ast.Decl{test.decl}})
-			mods := map[string]*StandaloneModule{
-				"std:probe": {Module: ast.NewModule(namespaces), Paths: map[ast.Decl]string{}},
-			}
+			outDir := t.TempDir()
+			_, err := Generate(GenerateOptions{
+				LibDir:     seedLibDir(t, overlayLib),
+				OverlayDir: seedOverlay(t, map[string]string{"std/array.add.esc": test.overlay}),
+				OutDir:     outDir,
+			})
 
-			findings := ValidateJSTargets(mods, globals)
-			require.Len(t, findings, 1)
-			require.Equal(t, test.message, findings[0].String())
+			require.EqualError(t, err,
+				"1 `@js` target(s) name no JS runtime global:\n"+test.message)
+			require.Empty(t, treeUnder(t, outDir))
 		})
 	}
+}
+
+// The overlay loader refuses a value with no addressable name, so a
+// declaration reaches the `@js` check only once it has one.
+func TestOverlayRejectsAValueWithNoName(t *testing.T) {
+	t.Parallel()
+
+	_, err := Generate(GenerateOptions{
+		LibDir: seedLibDir(t, overlayLib),
+		OverlayDir: seedOverlay(t, map[string]string{
+			"std/array.add.esc": "@js(\"Aray.pair\")\nexport declare val [a, b]: number\n",
+		}),
+		OutDir: t.TempDir(),
+	})
+
+	require.EqualError(t, err,
+		"overlay: std/array.add.esc holds a value with no addressable name; "+
+			"every overlay declaration is matched by name")
 }
