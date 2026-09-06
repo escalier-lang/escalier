@@ -45,7 +45,7 @@ STUBS=(
 STUB_DIR="$REPO_ROOT/tools/spec-extract/esmeta/src/main/resources/manuals/funcs"
 
 cleanup() {
-  rm -f "$HARNESS"
+  rm -f "$HARNESS" "$REPO_ROOT/internal/ecma262/zz_spike402_test.go"
   for stub in "${STUBS[@]}"; do
     [ -f "$WORKDIR/stubs/$stub" ] && mv "$WORKDIR/stubs/$stub" "$STUB_DIR/"
   done
@@ -71,13 +71,15 @@ cd "$REPO_ROOT/tools/spec-extract"
 sbt -batch "runMain escalier.specextract.Ecma402Spike $SPEC_DIR $OUT_DIR"
 
 echo "==> deriving facts from the merged graph"
-cp "$REPO_ROOT/planning/ecma-402/spike_harness/spike402_test.go" \
+# The harness is stored with a .txt suffix so `go test ./...` does not try to
+# build planning/ as a package. It is Go source, and only compiles once it sits
+# in internal/ecma262 where the identifiers it reads are declared.
+cp "$REPO_ROOT/planning/ecma-402/spike_harness/spike402_test.go.txt" \
   "$REPO_ROOT/internal/ecma262/zz_spike402_test.go"
 cd "$REPO_ROOT"
 ESC_SPIKE_CFG="$OUT_DIR/cfg.json" \
   go test ./internal/ecma262/ -run TestSpike402 -v |
   sed 's/^ *zz_spike402_test.go:[0-9]*: //' > "$OUT_DIR/facts.txt" || true
-rm -f "$REPO_ROOT/internal/ecma262/zz_spike402_test.go"
 
 echo
 echo "wrote $OUT_DIR:"

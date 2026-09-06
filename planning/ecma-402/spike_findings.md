@@ -17,7 +17,8 @@ the ECMA-262 density, and that lands almost entirely on the `returns` axis.
 
 [reproduce_spike.sh](reproduce_spike.sh) runs the whole thing.
 [spike_harness/](spike_harness/) holds the two programs it copies into the
-build, and [spike_evidence/](spike_evidence/) holds the output this document
+build, the Go one suffixed `.txt` so `go test ./...` does not try to build
+`planning/` as a package, and [spike_evidence/](spike_evidence/) holds the output this document
 reads from.
 
 ## Toolchain and pinned revisions
