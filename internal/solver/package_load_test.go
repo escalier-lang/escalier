@@ -276,7 +276,7 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 // under the package URI while an importer names it bare, so the surface has to
 // re-key it.
 //
-// DISABLED until the solver resolves a dotted type annotation. Without named
+// DISABLED until #1474 resolves a dotted type annotation. Without named
 // imports there is no way to write an imported type in annotation position. A
 // bare import binds the package as a namespace, and an annotation naming
 // `geometry.Point` is reported as a type the solver cannot find. The shipped
@@ -650,7 +650,7 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 // name. The import is bound in the file's own scope, nearer than the module
 // scope the package's declarations live in.
 //
-// DISABLED until the solver resolves a dotted type annotation. The case needs
+// DISABLED until #1474 resolves a dotted type annotation. The case needs
 // two declarations of one bare type name, one imported and one local, which
 // only a named import produces. A bare import binds a namespace, so the
 // imported one is written `inner.Widget` and never competes for `Widget`.
