@@ -31,6 +31,17 @@ func makeCustomStdlibDir(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+// syntheticMath is a two-declaration `std:math`, enough for a test that asserts
+// what an import binds rather than what the committed tree declares.
+//
+// Inferring the committed `std/math.esc` takes most of the budget
+// inferStdlibImportSource allows, and a loaded CI runner spends the rest, so a
+// test pointed at it fails on machine speed rather than on the rule it pins.
+// The stdlib_import_local fixture is what holds the committed tree to loading.
+var syntheticMath = map[string]string{
+	"std/math.esc": "@js(\"Math.PI\")\nexport declare val PI: number\n",
+}
+
 // inferStdlibImportSource parses input as a single lib file, runs
 // InferModule, and returns the file-scope namespace and inference
 // errors. Tests in this file exercise scheme-prefixed imports, so the
@@ -60,6 +71,8 @@ func errorMessages(errs []Error) []string {
 }
 
 func TestStdlibImport_BareLocalBindsByLastSegment(t *testing.T) {
+	t.Setenv("ESCALIER_STDLIB_DIR", makeCustomStdlibDir(t, syntheticMath))
+
 	fileScopes, errs := inferStdlibImportSource(t, `
 		import "std:math"
 		val x: number = math.PI
@@ -73,6 +86,8 @@ func TestStdlibImport_BareLocalBindsByLastSegment(t *testing.T) {
 }
 
 func TestStdlibImport_ExplicitLocalFlag(t *testing.T) {
+	t.Setenv("ESCALIER_STDLIB_DIR", makeCustomStdlibDir(t, syntheticMath))
+
 	_, errs := inferStdlibImportSource(t, `
 		import "std:math?local"
 		val x: number = math.PI
@@ -245,11 +260,15 @@ func TestStdlibImport_LoaderRule_AcceptsValidPackage(t *testing.T) {
 // unexported decls in stdlib pkgs, this lets importers see the
 // canonical declarations without an intervening filtered copy.
 func TestStdlibImport_LocalBindingSharesPkgNsPointer(t *testing.T) {
-	// std:math has no class whose name matches the pkg name, so the
-	// single-class shortcut doesn't fire and `?local` binds the pkg as
-	// a namespace under `math` — the right shape for the pointer
-	// comparison. std:array would route through the shortcut and bind
-	// the class directly.
+	// A synthetic `std:math`, for the reason syntheticMath records: this test
+	// pins a pointer, not the committed tree's contents.
+	//
+	// `math` has no class whose name matches the package name, so the
+	// single-class shortcut does not fire and `?local` binds the package as a
+	// namespace — the shape the pointer comparison needs. `std:array` would route
+	// through the shortcut and bind the class directly.
+	t.Setenv("ESCALIER_STDLIB_DIR", makeCustomStdlibDir(t, syntheticMath))
+
 	source := &ast.Source{ID: 0, Path: "lib/main.esc", Contents: `
 		import "std:math"
 	`}
