@@ -7,15 +7,15 @@ export declare class Date {
     /**
      * Converts a Date object to a string.
      */
-    [Symbol.toPrimitive](mut self, hint: "default") -> string,
+    [Symbol.toPrimitive](self, hint: "default") -> string,
     /**
      * Converts a Date object to a string.
      */
-    [Symbol.toPrimitive](mut self, hint: "string") -> string,
+    [Symbol.toPrimitive](self, hint: "string") -> string,
     /**
      * Converts a Date object to a number.
      */
-    [Symbol.toPrimitive](mut self, hint: "number") -> number,
+    [Symbol.toPrimitive](self, hint: "number") -> number,
     /**
      * Converts a Date object to a string or number.
      *
@@ -24,7 +24,7 @@ export declare class Date {
      * @throws {TypeError} If 'hint' was given something other than "number", "string", or "default".
      * @returns A number if 'hint' was "number", a string if 'hint' was "string" or "default".
      */
-    [Symbol.toPrimitive](mut self, hint: string) -> string | number,
+    [Symbol.toPrimitive](self, hint: string) -> string | number,
     /**
      * Converts a date and time to a string by using the current or specified locale.
      * @param locales A locale string, array of locale strings, Intl.Locale object, or array of Intl.Locale objects that contain one or more language or locale tags. If you include more than one locale string, list them in descending order of priority so that the first entry is the preferred locale. If you omit this parameter, the default locale of the JavaScript runtime is used.

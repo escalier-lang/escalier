@@ -68,7 +68,7 @@ func TestPartitionLib_LibES5_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, res.Buckets, "lib.es5 must produce at least one bucket")
 
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 
 	outDir := t.TempDir()
@@ -164,7 +164,7 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 	require.Equal(t, 1, locked,
 		"ReadableStream.locked must appear once; a worker-host copy was merged in")
 
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 
 	outDir := t.TempDir()
@@ -218,7 +218,7 @@ func TestPartitionLib_SingletonKeyDropsMatchAllowList(t *testing.T) {
 	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
 	require.NoError(t, err)
 
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
 
 	dropped := set.NewSet[SingletonMember]()

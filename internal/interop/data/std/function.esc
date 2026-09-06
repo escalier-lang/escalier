@@ -15,7 +15,7 @@ export declare class Function {
      * A constructor function can control which objects are recognized as its instances by
      * 'instanceof' by overriding this method.
      */
-    [Symbol.hasInstance](mut self, value: unknown) -> boolean,
+    [Symbol.hasInstance](self, value: unknown) -> boolean,
     /**
      * Calls the function, substituting the specified object for the this value of the function, and the specified array for the arguments of the function.
      * @param thisArg The object to be used as the this object.

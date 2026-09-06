@@ -18,6 +18,10 @@ type convertCtx struct {
 	// means no overrides are registered.
 	store OverrideLookup
 
+	// facts is the ECMA-262 receiver source consulted by Classify's fact
+	// tier; nil means the caller supplied no spec graph.
+	facts *ReceiverFacts
+
 	// modulePath is the store key for the module being converted: ""
 	// for globals/prelude lib files, the import specifier for an
 	// imported package (e.g. "lodash/fp"), or the module name from a
@@ -81,6 +85,7 @@ func (c *convertCtx) classifyMember(member dts_parser.ClassMember, className str
 		ModulePath:    c.modulePath,
 		NamespacePath: c.namespacePath,
 		Store:         c.store,
+		Facts:         c.facts,
 	})
 }
 

@@ -17,11 +17,11 @@ table below makes both explicit. Status legend: ✅ done,
 | 1   | Existing surface area                  | ✅      | —           | Descriptive only.                                                                                                                                                                                                                                                                              |
 | 2.1 | Spec scaffolding                       | ✅      | —           | `override` keyword, fixtures, merge-semantics doc, `@esctype` grammar.                                                                                                                                                                                                                         |
 | 2.2 | Parser sub-task                        | ✅      | 2.1         | `declare module/global/namespace` and `override` prefix accepted by [internal/parser/decl.go](../../internal/parser/decl.go); `fixtures/interop_mutability/overrides/example.esc` is no longer `.future`.                                                                                       |
-| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) use the 7-tier ladder (`TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierGetPrefix=5`, `TierNameHeuristic=6`, `TierDefault=7`). All decision sites in `decl.go`/`helper.go` route through `Classify`. |
+| 3   | Resolution-order plumbing              | ✅     | 2.2         | `ResolutionTier` enum and `Classify` entry point in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) walk the ladder `TierUserSource=0` sentinel, `TierUserOverride=1`, `TierEsctype=2`, `TierExplicitSignal=3`, `TierBuiltinOverride=4`, `TierECMA262Fact=5`, `TierGetPrefix=6`, `TierNameHeuristic=7`, `TierDefault=8`. All decision sites in `decl.go`/`helper.go` route through `Classify`. This PR delivered seven rungs; [planning/ecma-262/implementation_plan.md](../ecma-262/implementation_plan.md) §7 inserted `TierECMA262Fact` between the builtin overrides and the `get*` prefix, which renumbered the three below it. |
 | 4   | Strong signals (tier 3)                | ✅     | 3           | `classifyExplicitSignal` in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) handles getters/setters, `readonly` props, `Readonly<T>`/`ReadonlyArray<T>`/`ReadonlySet<T>`/`ReadonlyMap<T>` wrappers, `this: Readonly<T>` (incl. `readonly T[]`), Readonly-prefixed collection classes, and the well-known-symbol allow-list. End-to-end coverage in `TestClassifyTier3_EndToEnd`. Known parser gap (separate from §4): `dts_parser` does not yet parse `[Symbol.iterator]()` as a computed method name — it treats `[` at member position as an index signature. The classifier already handles `ComputedKey` correctly. |
 | 5   | Override file format, loader, merge    | 🚧     | 2.2, 3      | Core pipeline landed across PRs #606–#609 plus the 5.A "section 6 blockers" commit and §5.13 Group B (property-type consistency, `ErrPropertyTypeMismatch`): data types, extract, merge & loader, checker wiring, trio-fusion / static-side lookup, and property/leaf-kind consistency are all in. Remaining: §5.13 Group C (lifetime-erased equivalence, type/value namespace split in `Container.Free`). |
 | 6   | Built-in overrides                      | 🚧     | 5           | Per-class authoring of stdlib + FP-library overrides. Phased as §6.A–§6.F (see [§6 Phasing](#phasing)): infra → always-immutable → mixed-mutability by ES revision → consistency test → FP libs → drop bootstrap entries. §5.13 Group A and Group B prerequisites are done. **Stop-gap landed with #612, trimmed by #614**: the legacy `nonMutatingOverrides` Go map in `internal/dts_to_esc/mutability.go` currently holds entries for `String`, `Object`, `Function`, `Console`, `Body`, `Response`, `Request`. #614 wired `dts_to_esc.ClassifyMethodByName` in as a fall-through inside `applyMethodMutability`, so the redundant `Date`/`Number`/`Boolean`/`RegExp` blocks were removed; what remains is the heuristic misses (bare nouns like `Console.log`, `Body.json`, `Object.propertyIsEnumerable`) and active mis-classifications (`String.replace`/`replaceAll`, `Console.clear`). §6.F drops these once §6.B/§6.C supersede them. |
-| 7   | Heuristics (tiers 5–6)                 | 🚧     | 3           | `classifyGetPrefix` (tier 5) and `classifyNameHeuristic` (tier 6) in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
+| 7   | Heuristics (tiers 6–7)                 | 🚧     | 3           | `classifyGetPrefix` (tier 6) and `classifyNameHeuristic` (tier 7) in [internal/dts_to_esc/mutability.go](../../internal/dts_to_esc/mutability.go) implement the full requirements prefix/exact-match lists with mutating-wins-on-conflict and `getOr{Insert,Update,Create}` fall-through. Inheritance fallthrough wired via optional `ClassifyContext.Base`: when all per-class tiers miss, `Classify` recurses on the base context; tests cover explicit-on-base, heuristic-on-base, default fall-through, and subclass-wins. Pending: plumb `Base` from `decl.go`/`helper.go` call sites (needs class-name → declaration lookup, blocked on §5 override-store path conventions). |
 | 8   | Type-printer round-trip audit          | ✅      | —           | `TestPrintTypeAudit_RoundTrip` in [internal/type_system/print_type_audit_test.go](../../internal/type_system/print_type_audit_test.go) enumerates each `type_system.Type` variant with a syntactic form, prints it via `PrintType`, re-parses through `parser.ParseTypeAnn` + `test_util.ParseTypeAnn`, and asserts double-print idempotency. Variants without source syntax (`UniqueSymbolType`, `CallableElem`, `ConstructorElem`, plus debug-only `IntrinsicType`/`ErrorType`/`GlobalThisType`/`RegexType`/`NamespaceType`/`ExtractorType`/`TypeVarType`/`IndexSignatureElem`) covered by `TestPrintTypeAudit_NoSyntax`. Audit uncovered one printer divergence — mapped-element printing used TypeScript syntax `[K in keyof T]: V` instead of Escalier's `[K]: V for K in keyof T`; fixed in [internal/type_system/print_type.go](../../internal/type_system/print_type.go). |
 | 9   | `@esctype` round-trip                  | ⬜      | 3, 5, 8     | Emit side needs §8; consume side needs parser TSDoc retention (§9.2); integration needs §5.                                                                                                                                                                                                    |
 | 10  | `implements` mutability conformance    | 🚧     | —           | Lean check **already done**: `selfReceiverCompatible` in [internal/checker/check_implements.go:247](../../internal/checker/check_implements.go#L247) implements bidirectional `ReceiverIsMut` equality and is wired in at all three method-comparison sites. Currently emits the generic `mismatchedMember` error. |
@@ -178,8 +178,9 @@ as a single function, wired in but populated only with existing
 behavior (so output is unchanged).
 
 - Add `internal/dts_to_esc/mutability.go` defining the `ResolutionTier`
-  enum (the canonical 7-tier ladder, plus a zero-valued
-  "user-authored source" sentinel — see §11.2):
+  enum, the seven rungs this PR introduced plus a zero-valued
+  "user-authored source" sentinel — see §11.2. The row for this PR in the
+  status table above spells the ladder as it stands now:
 
   ```go
   type ResolutionTier int
@@ -340,13 +341,13 @@ There are two layers of competition:
 
 Naming convention: `OverrideTier` is the *internal* three-tier enum
 used only inside `internal/interop`. `ResolutionTier`
-(defined in `internal/dts_to_esc/mutability.go`) is the broader 7-tier
-ladder. The two never appear in the same field or function
+(defined in `internal/dts_to_esc/mutability.go`) is the broader
+eight-tier ladder. The two never appear in the same field or function
 parameter; the merge translates between them when it builds each
 leaf.
 
 After merge, `Effective.Source` records which tier of the broader
-7-tier resolution ladder produced the value: `TierUserOverride`
+eight-tier resolution ladder produced the value: `TierUserOverride`
 (ladder tier 1) when a user-project or user-dep entry won, or
 `TierBuiltinOverride` (ladder tier 4) when only a built-in entry was
 present. `Classify` reads this value to decide where in the ladder
@@ -1150,7 +1151,7 @@ method-for-method, not just the methods we expect users to call.
 The §6.D consistency test enforces this — it iterates *every* entry
 in `BuiltinFS` against the pinned `.d.ts`, so partial coverage
 surfaces as a test failure rather than silently degrading to
-tier-5/6 heuristic fallback. Treating heuristic fallback as the
+tier-6/7 heuristic fallback. Treating heuristic fallback as the
 backstop for omitted methods is fine in principle, but it makes the
 override file ambiguous (did the author skip the method because
 the heuristic was right, or because they didn't get to it?) and
@@ -1353,7 +1354,7 @@ Exit criteria: built-in counter-examples (`Date.setHours` mutates,
 `toSorted` doesn't, `Object.assign` mutates target) all classify
 correctly; consistency test green against pinned original versions.
 
-## 7. Heuristics (tiers 5–6)
+## 7. Heuristics (tiers 6–7)
 
 Goal: implement the remaining tiers so unknown TS APIs get useful
 classifications.
@@ -1377,19 +1378,19 @@ short-circuit that pipeline; routing them through built-in
 overrides keeps the same authoritative path the rest of the
 stdlib uses.
 
-### 7.1 Tier 5: `get*` prefix rule
+### 7.1 Tier 6: `get*` prefix rule
 
 Requirements §"Core principles" #4 names three mutate-on-miss
 shapes that must not be caught by the `get*` rule: `getOrInsert*`,
 `getOrUpdate*`, `getOrCreate*` (note: `getOrDefault*` is *not* an
-exception — it returns a default without writing). Tier 5 skips
-these names so they fall through to tier 6, which classifies them
+exception — it returns a default without writing). Tier 6 skips
+these names so they fall through to tier 7, which classifies them
 as mutating via its prefix rules.
 
 ```go
 // getOrMutatingPrefixes are name shapes where the leading "get"
-// is followed by a mutating action. Tier 5 must not classify
-// these as non-mutating; tier 6 picks them up via its mutating-
+// is followed by a mutating action. Tier 6 must not classify
+// these as non-mutating; tier 7 picks them up via its mutating-
 // prefix list.
 var getOrMutatingPrefixes = []string{
     "getOrInsert", "getOrUpdate", "getOrCreate",
@@ -1409,7 +1410,7 @@ func classifyTier5(ctx ClassifyContext) (ClassifyResult, bool) {
         // "get" + uppercase) is strictly shorter than `name` when matched —
         // no len(name) == len(p) arm needed.
         if strings.HasPrefix(name, p) && unicode.IsUpper(rune(name[len(p)])) {
-            return ClassifyResult{}, false // fall through to tier 6
+            return ClassifyResult{}, false // fall through to tier 7
         }
     }
     return ClassifyResult{SelfMut: false, Source: TierGetPrefix}, true
@@ -1426,13 +1427,13 @@ Mutating-name signals lists `getOrInsert` / `getOrCreate` /
 `getOrUpdate` as examples of "both prefixes → prefer mutating," so
 this matches the spec.
 
-### 7.2 Tier 6: name-based heuristics
+### 7.2 Tier 7: name-based heuristics
 
 Requirements §"Heuristics" → Medium signals mixes two shapes:
 *prefixes* (e.g. `is*`, `to*`, `find*`) and *exact-match keywords*
 that are themselves whole method names (e.g. `contains`, `equals`,
 `indexOf`, `forEach`, `keys`, `values`, `entries`, `at`, `every`,
-`some`). Tier 6 needs both: the prefix matcher fires when the name
+`some`). Tier 7 needs both: the prefix matcher fires when the name
 starts with the prefix and is followed by end-of-string or an
 uppercase letter, while the exact-match list compares the name in
 full.
@@ -1920,7 +1921,7 @@ Message format:
 ```text
 class `Foo` does not conform to `Bar`: method `baz` declares `mut self`
 but interface declares `self`
-  class side resolved via tier 6 (name heuristic) — add an explicit
+  class side resolved via tier 7 (name heuristic) — add an explicit
   `self` or `mut self` annotation, an override entry, or an
   `@esctype` tag to make this deterministic
 ```
@@ -1958,7 +1959,7 @@ interop → checker cycle exists.
 - `err_class_mut_iface_self/` — class mutates, interface declares
   `self`; expects `ImplementsMutabilityMismatchError`.
 - `err_class_self_iface_mut/` — reverse, expects error.
-- `err_heuristic_source/` — class member name matches a tier-6
+- `err_heuristic_source/` — class member name matches a tier-7
   mutating prefix while interface declares `self`; expects error
   with the "add explicit signal" suggestion text.
 
@@ -2062,7 +2063,7 @@ Message:
 
 ```text
 warning: call to `foo.bar()` treats receiver as non-mutating based
-on a name heuristic (tier 6); add an override entry, `@esctype`
+on a name heuristic (tier 7); add an override entry, `@esctype`
 tag, or explicit `readonly this` to make this guarantee explicit
 ```
 
@@ -2086,7 +2087,7 @@ The warning must **not** fire when:
 
 `fixtures/interop_mutability/uncertain_warning/`:
 
-- `heuristic_warns/` — non-mutating call resolved by tier 6;
+- `heuristic_warns/` — non-mutating call resolved by tier 7;
   flag on → warning, flag off → silent. Compare diagnostic
   snapshots for both runs.
 - `override_silent/` — same call but a built-in override pins the
@@ -2096,7 +2097,7 @@ The warning must **not** fire when:
   → silent.
 
 Plus a checker unit test asserting `isHeuristicTier` returns true
-for exactly tiers 5 and 6 and false otherwise.
+for exactly tiers 6 and 7 and false otherwise.
 
 Exit criteria: warning fires only on heuristic-classified
 non-mutating calls; never fires on `@esctype`, strong signals, or

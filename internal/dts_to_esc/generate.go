@@ -44,6 +44,13 @@ type GenerateOptions struct {
 	// checking the recorded ones. It is how a contributor records what a
 	// new or revised overlay entry replaces.
 	RecordDigests bool
+
+	// Facts is the ECMA-262 receiver source the conversion classifies
+	// each emitted method's receiver from, ranked above the converter's
+	// name heuristics. A nil source leaves every receiver to those
+	// heuristics, which is not what a run producing the committed tree
+	// wants — see planning/ecma-262/implementation_plan.md §7.
+	Facts *ReceiverFacts
 }
 
 // GenerateResult reports what one run did, for the caller to print.
@@ -103,7 +110,7 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	mods, err := ConvertBuckets(partition)
+	mods, err := ConvertBuckets(partition, opts.Facts)
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ export declare class WeakRef<T: WeakKey> {
      * reclaimed.
      * In es2023 the value can be either a symbol or an object, in previous versions only object is permissible.
      */
-    deref(mut self) -> T | undefined,
+    deref(self) -> T | undefined,
     static readonly prototype: WeakRef<any>,
     /**
      * Creates a WeakRef instance for the given target value.

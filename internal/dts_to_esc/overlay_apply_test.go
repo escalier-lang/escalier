@@ -37,7 +37,7 @@ func applyOverlayIn(t *testing.T, dir, lib string, record bool) (map[string]*Sta
 	if err != nil {
 		return nil, err
 	}
-	mods, err := ConvertBuckets(res)
+	mods, err := ConvertBuckets(res, nil)
 	if err != nil {
 		return nil, err
 	}

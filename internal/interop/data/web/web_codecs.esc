@@ -398,7 +398,7 @@ export declare class ImageTrackList {
     readonly selectedIndex: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageTrackList/selectedTrack) */
     readonly selectedTrack: ImageTrack | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<ImageTrack>,
+    [Symbol.iterator](self) -> ArrayIterator<ImageTrack>,
     static prototype: ImageTrackList,
     constructor(mut self)
 }

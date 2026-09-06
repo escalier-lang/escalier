@@ -444,9 +444,9 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // view). `T[]` is already desugared to `Array<T>` by convertTypeAnn so
 // it flows through the same rewrite; `readonly T[]` is desugared to
 // `ReadonlyArray<T>` for the same reason.
-func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
+func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
-	return convertFusedBucket(stmts, twins, twins)
+	return convertFusedBucket(stmts, twins, twins, facts)
 }
 
 // convertFusedBucket converts one already-fused bucket. `own` are the
@@ -461,8 +461,9 @@ func ConvertBucket(stmts []dts_parser.Statement) (*StandaloneModule, error) {
 func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,
+	facts *ReceiverFacts,
 ) (*StandaloneModule, error) {
-	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts})
+	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts}, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -815,7 +816,7 @@ func astExprDottedName(e ast.Expr) string {
 // Callers that need the converted modules for something other than writing
 // them — the ECMA-262 join reads them for the members each package declares —
 // go through this instead of converting a second time.
-func ConvertBuckets(result *PartitionResult) (map[string]*StandaloneModule, error) {
+func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*StandaloneModule, error) {
 	// Fuse every bucket before converting any of it, so the reference
 	// rewrite below knows every twin name the tree declares and not
 	// just the ones its own bucket does. See convertFusedBucket.
@@ -837,7 +838,7 @@ func ConvertBuckets(result *PartitionResult) (map[string]*StandaloneModule, erro
 
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for _, uri := range uris {
-		mod, err := convertFusedBucket(fused[uri], own[uri], all)
+		mod, err := convertFusedBucket(fused[uri], own[uri], all, facts)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}

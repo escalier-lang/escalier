@@ -563,12 +563,11 @@ func TestClassifyMethodByName(t *testing.T) {
 	}
 }
 
-// TestReceiverMutates_ImmutableOwner covers the owner-wide tier. Every
-// instance method on a primitive wrapper leaves the receiver alone, and
-// the name-only tiers cannot say so: `strike` and `italics` match no
-// heuristic prefix, so they reach the mutating default. Naming the owner
-// is what answers them.
-func TestReceiverMutates_ImmutableOwner(t *testing.T) {
+// TestClassifyOwnerKeyedTiers covers tier 4, the hand-written tables keyed by
+// the owner rather than by the member. Every method of an ImmutableOwners type
+// takes `self`, whatever its name reads like, and nonMutatingOverrides answers
+// the members of other owners that the tiers below get wrong.
+func TestClassifyOwnerKeyedTiers(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
 		owner, method string
@@ -586,6 +585,10 @@ func TestReceiverMutates_ImmutableOwner(t *testing.T) {
 		{"Boolean", "valueOf", false},
 		{"Symbol", "toString", false},
 		{"BigInt", "toLocaleString", false},
+		// The override table answers a member of an owner no owner-wide
+		// rule covers. `propertyIsEnumerable` matches no prefix, so the
+		// name tiers would leave it to the mutating default.
+		{"Object", "propertyIsEnumerable", false},
 		// A mutable owner keeps the name-only answer.
 		{"Array", "push", true},
 		{"Array", "slice", false},
@@ -598,28 +601,43 @@ func TestReceiverMutates_ImmutableOwner(t *testing.T) {
 		{"Promise", "catch", false},
 		{"Promise", "finally", false},
 		// An owner with no rule and a name no tier matches falls to the
-		// mutating default.
+		// mutating default. The override table is keyed by owner, so an
+		// entry under `Object` says nothing about `Widget`.
 		{"Widget", "frobnicate", true},
+		{"Widget", "propertyIsEnumerable", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.owner+"."+tc.method, func(t *testing.T) {
 			t.Parallel()
-			require.Equal(t, tc.wantMut, ReceiverMutates(tc.owner, tc.method))
+			result := Classify(ClassifyContext{
+				Member:    makeMethodDecl(tc.method, nil),
+				ClassName: tc.owner,
+			})
+			require.Equal(t, tc.wantMut, result.Mut)
 		})
 	}
 }
 
-// TestReceiverMutates_ReadsNonMutatingOverrides covers the tier between
-// the owner-wide rule and the name-only heuristics. `propertyIsEnumerable`
-// matches no prefix, so the heuristics leave it to the mutating default,
-// and nonMutatingOverrides records the answer for it under Object.
-func TestReceiverMutates_ReadsNonMutatingOverrides(t *testing.T) {
+// Both tier-4 tables are keyed by a builtin's own name, so an imported
+// package's same-named class reaches the tiers below them instead.
+func TestClassifyOwnerKeyedTiersIgnoreAModulePath(t *testing.T) {
 	t.Parallel()
-	_, ok := ClassifyMethodByName("propertyIsEnumerable")
-	require.False(t, ok, "the name-only tiers should miss this name")
-	require.True(t, NonMutatingOverrides("Object").Contains("propertyIsEnumerable"))
 
-	require.False(t, ReceiverMutates("Object", "propertyIsEnumerable"))
-	// An owner with no entry keeps the name-only answer.
-	require.True(t, ReceiverMutates("Widget", "propertyIsEnumerable"))
+	// `strike` matches no prefix, so the mutating default answers it once
+	// ImmutableOwners is out of reach.
+	strike := Classify(ClassifyContext{
+		Member:     makeMethodDecl("strike", nil),
+		ClassName:  "String",
+		ModulePath: "some-string-lib",
+	})
+	require.True(t, strike.Mut)
+	require.Equal(t, TierDefault, strike.Source)
+
+	enumerable := Classify(ClassifyContext{
+		Member:     makeMethodDecl("propertyIsEnumerable", nil),
+		ClassName:  "Object",
+		ModulePath: "some-object-lib",
+	})
+	require.True(t, enumerable.Mut)
+	require.Equal(t, TierDefault, enumerable.Source)
 }

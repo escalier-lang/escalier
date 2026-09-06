@@ -64,7 +64,7 @@ export declare class FileList {
     readonly length: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileList/item) */
     item(mut self, index: number) -> File | null,
-    [Symbol.iterator](mut self) -> ArrayIterator<File>,
+    [Symbol.iterator](self) -> ArrayIterator<File>,
     static prototype: FileList,
     constructor(mut self)
 }
