@@ -299,3 +299,88 @@ func TestStdlibPackageParsesUnderItsOwnSourceID(t *testing.T) {
 	require.GreaterOrEqual(t, node.Node.Span().SourceID, stdlibSourceIDBase,
 		"a package's declarations should carry ids above every entry-module one")
 }
+
+// Every pseudo-package diagnostic points at the import statement that raised
+// it, so a reader is sent to the line they can act on.
+func TestStdlibImportDiagnosticsPointAtTheImport(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{"std/math.esc": `export val PI: number = 3`}
+	for name, src := range map[string]string{
+		"AnUnknownScheme":      `import "bogus:thing"`,
+		"NoPackageName":        `import "std:"`,
+		"AReservedScheme":      `import "node:fs"`,
+		"AnUnknownFlag":        `import "std:math?eager"`,
+		"ARepeatedFlag":        `import "std:math?local&local"`,
+		"ANamedImport":         `import { PI } from "std:math"`,
+		"AnInvalidPackageName": `import "std:Math"`,
+		"AMissingPackage":      `import "std:nonexistent"`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+
+			res := inferAgainstStdlib(t, src, files)
+			require.NotEmpty(t, res.Errors)
+			for _, e := range res.Errors {
+				require.Equal(t, 0, e.Span().SourceID,
+					"a diagnostic on an import carries the importing file's id")
+				require.Less(t, e.Span().Start.Offset, e.Span().End.Offset)
+				require.Empty(t, e.Related())
+				require.NotEmpty(t, e.Message())
+			}
+		})
+	}
+}
+
+// A `?` slot with nothing in it is its own diagnostic, distinct from a flag the
+// resolver does not recognize.
+func TestStdlibImportReportsAnEmptyFlag(t *testing.T) {
+	t.Parallel()
+
+	span := ast.Span{Start: ast.Location{Offset: 3}, End: ast.Location{Offset: 20}}
+	errs := validateStdlibFlags([]string{""}, span)
+	require.Len(t, errs, 1)
+	require.Equal(t, "empty flag in import specifier", errs[0].Message())
+	require.Equal(t, span, errs[0].Span())
+	require.Empty(t, errs[0].Related())
+}
+
+// The string rules the URI checks rest on, at the edges the resolver's own
+// paths do not reach.
+func TestStdlibURIStringRules(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, isASCIILower(""), "an empty scheme is not a scheme")
+	require.False(t, isValidPackagePath(""), "an empty package name is not one")
+	require.True(t, isValidPackagePath("typed_arrays"))
+	require.False(t, isValidPackagePath("typed-arrays"), "a hyphen is not allowed here")
+
+	// resolveStdlibPath is reachable on its own, so it re-checks the scheme
+	// rather than trusting that validation ran first.
+	_, err := resolveStdlibPath(t.TempDir(), "bogus:thing")
+	require.EqualError(t, err, `unrecognized scheme in "bogus:thing"`)
+	_, err = resolveStdlibPath(t.TempDir(), "nocolon")
+	require.EqualError(t, err, `unrecognized scheme in "nocolon"`)
+}
+
+// A file the resolver finds but cannot parse fails the load with the parser's
+// own complaint, rather than publishing a half-read package.
+func TestStdlibSourceReportsAParseError(t *testing.T) {
+	t.Parallel()
+
+	dir := seedStdlib(t, map[string]string{"std/broken.esc": `export val = = =`})
+	_, _, err := StdlibSource(dir)("std:broken")
+	require.ErrorContains(t, err, "parse errors in ")
+	require.ErrorContains(t, err, filepath.Join(dir, "std", "broken.esc"))
+}
+
+// A path that resolves to a directory rather than a file is not a package.
+func TestStdlibSourceRejectsADirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "std", "shaped.esc"), 0o755))
+
+	_, _, err := StdlibSource(dir)("std:shaped")
+	require.ErrorContains(t, err, `unknown package "shaped" in std: scheme`)
+}
