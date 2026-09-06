@@ -165,6 +165,15 @@ func fillContainer(c *Container, ns *type_system.Namespace) {
 // type-side sibling (`<name>Constructor`) is recorded in
 // consumedTypes and the value-side binding is recorded in
 // consumedValues so the caller's fall-through doesn't re-emit them.
+//
+// This is the type-level half of the rule detectTrios states over `.d.ts`
+// statements in internal/dts_to_esc/dts_to_esc.go. Both match on the three names
+// and the binding's type alone. What the constructor side declares does not enter
+// recognition: `SymbolConstructor`, `BigIntConstructor` and `IteratorConstructor`
+// declare no `new`, and each still fuses into a class that carries no
+// constructor, which is what makes `new Symbol()` unrepresentable. The other half
+// of the rule, a constructor side written inline on the binding rather than as a
+// named interface, is tryFuseEscalierClass below.
 func tryFuseTrio(
 	ns *type_system.Namespace,
 	name string,
@@ -213,6 +222,19 @@ func tryFuseTrio(
 // tryFuseEscalierClass recognises the Escalier-style class shape:
 // Values[name] is an ObjectType carrying a ConstructorElem. The
 // instance side, when present, is read from Types[name].
+//
+// It is also how the type level sees a constructor side written inline on the
+// binding, which is the form lib.dom.d.ts uses:
+//
+//	declare var AbortController: {
+//	    prototype: AbortController;
+//	    new (): AbortController;
+//	};
+//
+// Requiring a ConstructorElem matches constructorSide in
+// internal/dts_to_esc/dts_to_esc.go, which requires an inline object type to
+// carry a `new` returning the instance. The `new` is what ties an unnamed object
+// type to its interface, where the named form has the name to go on.
 //
 // Skips names whose value side already participated in a trio fusion
 // (in which case consumedValues[name] is set).

@@ -188,6 +188,82 @@ func TestPartitionLib_PinnedLibSet_RoutesConvertsAndWrites(t *testing.T) {
 	}
 }
 
+// A trio fuses on its three names alone, so a constructor side with no `new`
+// still produces a class. `SymbolConstructor`, `BigIntConstructor` and
+// `IteratorConstructor` are the pinned lib set's three, and the specification
+// forbids constructing all three: `new Symbol()` throws a TypeError. A class
+// with no `constructor` member is what makes that unrepresentable rather than
+// merely discouraged, and the call signature `SymbolConstructor` and
+// `BigIntConstructor` carry lands on the class as its `callable` member.
+//
+// The three names must also reach the tree as one declaration each. A surviving
+// `interface SymbolConstructor` or `declare var Symbol` beside the class would
+// mean the trio only half-fused.
+func TestPartitionLib_ConstructorlessTriosFuseIntoOneClass(t *testing.T) {
+	t.Parallel()
+
+	repoRoot, err := findRepoRoot()
+	require.NoError(t, err)
+	libDir := filepath.Join(repoRoot, "node_modules", "typescript", "lib")
+	if _, err := os.Stat(libDir); err != nil {
+		t.Skipf("pinned TypeScript lib set not present at %s: %v", libDir, err)
+	}
+
+	basenames, err := DiscoverLibFiles(libDir)
+	require.NoError(t, err)
+	inputs, err := ParseLibFiles(libDir, basenames)
+	require.NoError(t, err)
+	res, err := PartitionLibWithOverlay(inputs, committedOverlay(t))
+	require.NoError(t, err)
+	mods, err := ConvertBuckets(res)
+	require.NoError(t, err)
+
+	// name → how the tree declares it, keyed so a duplicate is visible.
+	kinds := map[string][]string{}
+	callables := set.NewSet[string]()
+	constructed := set.NewSet[string]()
+	for _, mod := range mods {
+		mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+			for _, decl := range ns.Decls {
+				switch d := decl.(type) {
+				case *ast.ClassDecl:
+					kinds[d.Name.Name] = append(kinds[d.Name.Name], "class")
+					for _, elem := range d.Body {
+						switch elem.(type) {
+						case *ast.ConstructorElem:
+							constructed.Add(d.Name.Name)
+						case *ast.CallableElem:
+							callables.Add(d.Name.Name)
+						}
+					}
+				case *ast.InterfaceDecl:
+					kinds[d.Name.Name] = append(kinds[d.Name.Name], "interface")
+				case *ast.VarDecl:
+					if ident, ok := d.Pattern.(*ast.IdentPat); ok {
+						kinds[ident.Name] = append(kinds[ident.Name], "var")
+					}
+				}
+			}
+			return true
+		})
+	}
+
+	for _, name := range []string{"Symbol", "BigInt", "Iterator"} {
+		require.Equal(t, []string{"class"}, kinds[name],
+			"%s must reach the tree as one class", name)
+		require.NotContains(t, constructed, name,
+			"%s must carry no constructor", name)
+		require.NotContains(t, kinds, name+"Constructor",
+			"%sConstructor must be consumed by the fusion", name)
+	}
+
+	// `IteratorConstructor` declares neither a `new` nor a call signature, so
+	// `Iterator` is the one of the three that stays uncallable.
+	require.Contains(t, callables, "Symbol")
+	require.Contains(t, callables, "BigInt")
+	require.NotContains(t, callables, "Iterator")
+}
+
 // TestPartitionLib_SingletonKeyDropsMatchAllowList is the gate for the
 // symbol-keyed-singleton policy. Flattening emits one top-level
 // declaration per member and needs a plain identifier for both the
