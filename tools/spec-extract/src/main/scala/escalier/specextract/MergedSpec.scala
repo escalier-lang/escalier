@@ -56,16 +56,18 @@ final class MergedSpec(specDir: String):
     * This is what `Extractor.from` does before it extracts, and reading the
     * file without it would build the graph from a different ECMA-262 than the
     * one `Main` serializes. ESMeta patches the file in place, reads it, and
-    * reverts it, so the read is forced while the patch is on disk. The patch is
-    * keyed by revision, so a bump that needs none finds none.
+    * reverts it, so the read is forced while the patch is on disk. The revert
+    * runs even when the read throws, since a patched `spec.html` left behind
+    * would change what the next run extracts, this build's and ESMeta's own.
+    * The patch is keyed by revision, so a bump that needs none finds none.
     */
   private def ecma262: (Spec.Version, Document) =
     Spec.getVersionWith(None) { version =>
       lazy val document = readFile(SPEC_HTML).toHtml
       for (patch <- ManualInfo.bugfixPatchMap.get(version.hash))
         Spec.applyPatch(patch)
-        document
-        Spec.clean
+        try document
+        finally Spec.clean
       document
     }
 
