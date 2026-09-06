@@ -83,10 +83,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 	// The enum's dep_graph-qualified name — the namespace joined to the local name, or the
 	// bare local name at the root namespace — mirroring the key dep_graph forms and the
 	// qualified names class registration uses.
-	qname := decl.Name.Name
-	if ns != "" {
-		qname = ns + "." + decl.Name.Name
-	}
+	qname := c.qualifyDecl(ns, decl.Name.Name)
 
 	// Resolve the enum's type parameters into a child scope so a variant parameter and a
 	// variant's own type arguments resolve the enum's T to one shared var, quantified at
@@ -139,7 +136,7 @@ func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns stri
 		Enum:       true,
 	})
 	enumType := soltype.Type(&soltype.AliasType{Name: qname, TypeArgs: typeArgs})
-	scope.defineType(qname, TypeBinding{
+	c.declTarget(scope).defineType(qname, TypeBinding{
 		Type:    enumType,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
@@ -192,7 +189,7 @@ func (c *checker) inferEnumBody(sh *enumShell) {
 			Sources: []provenance.Provenance{&ast.NodeProvenance{Node: variant}},
 		}
 	}
-	sh.scope.defineNamespace(sh.decl.Name.Name, &Namespace{
+	c.declTarget(sh.scope).defineNamespace(sh.decl.Name.Name, &Namespace{
 		Name:   sh.qname,
 		Values: nsValues,
 		Types:  nsTypes,

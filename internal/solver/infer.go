@@ -89,6 +89,38 @@ type checker struct {
 	// omits.
 	classNamespace string
 
+	// pkgURI is the URI of the package whose declarations are being inferred,
+	// empty while inferring the entry module. Every class, enum, and alias
+	// registered under it keys on the URI joined to the dep_graph-qualified name,
+	// so `std:array`'s `Array` and a user's `Array` are two entries in the one
+	// nominal registry a run shares.
+	//
+	// The separator is a dot, and a URI holds a colon that no identifier may, so
+	// `std:array.Array` splits back into its parts unambiguously and the display
+	// printers already strip it to `Array`.
+	pkgURI string
+
+	// moduleScope is the scope of the module currently being walked, set for the
+	// length of the dep-graph walk and nil outside one. declTarget returns it, and
+	// class, enum, and alias registration write their type binding there. A
+	// declaration is inferred under its own file's scope so that file's imports
+	// resolve, and a file scope is a child, so a binding written into one would be
+	// invisible to a sibling file and to the package's exported surface.
+	moduleScope *Scope
+
+	// fileScopes holds one scope per file of the module being inferred, keyed by
+	// source id, each carrying that file's import bindings.
+	fileScopes map[int]*Scope
+
+	// packages holds the surface of every package this run has loaded. A run
+	// shares one registry, so two modules importing the same package read the
+	// same declarations.
+	packages *PackageRegistry
+
+	// source resolves a package URI to the module to infer for it. A run given no
+	// source reports every import as unresolved rather than loading anything.
+	source ModuleSource
+
 	// inCondExtends is set while resolveCondTypeAnn resolves a conditional's Extends operand, the
 	// one position an `infer U` clause may appear in. resolveTypeAnn's InferTypeAnn arm consults it
 	// to tell a binder from a stray `infer` elsewhere in an annotation, which it rejects. It is
@@ -468,7 +500,13 @@ func (c *checker) popFuncCtx(saved *funcCtx) []soltype.Type {
 // iterator-result aliases, which the prelude scope binds by name and a generator's `next`
 // method returns.
 func newChecker() *checker {
-	c := &checker{ctx: &Context{}, info: NewInfo(), prov: Prov{}, varIDCounter: 1}
+	c := &checker{
+		ctx:          &Context{},
+		info:         NewInfo(),
+		prov:         Prov{},
+		varIDCounter: 1,
+		packages:     NewPackageRegistry(),
+	}
 	c.ctx.fusionRecorder = c.recordFusionEdge
 	registerIteratorResultAliases(c.ctx)
 	return c

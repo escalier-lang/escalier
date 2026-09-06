@@ -176,6 +176,22 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 	return TypeBinding{}, false
 }
 
+// getTypeUpTo resolves name in the type sort like GetType, but stops after
+// stop rather than walking the whole chain. It is how a lookup asks for a
+// binding the module or one of its files made, as opposed to one the prelude
+// seeded under the same name. A nil stop searches the whole chain.
+func (s *Scope) getTypeUpTo(name string, stop *Scope) (TypeBinding, bool) {
+	for cur := s; cur != nil; cur = cur.parent {
+		if b, ok := cur.types[name]; ok {
+			return b, true
+		}
+		if cur == stop {
+			break
+		}
+	}
+	return TypeBinding{}, false
+}
+
 // GetNamespace resolves name in the namespace sort by the same lexical walk.
 func (s *Scope) GetNamespace(name string) (*Namespace, bool) {
 	for cur := s; cur != nil; cur = cur.parent {

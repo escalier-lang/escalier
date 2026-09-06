@@ -140,10 +140,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	// The alias's dep_graph-qualified name is the namespace joined to the local name, or
 	// the bare local name at the root namespace, the same qualified key class and enum
 	// registration use, so the registry key and the AliasType handle match.
-	qname := decl.Name.Name
-	if ns != "" {
-		qname = ns + "." + decl.Name.Name
-	}
+	qname := c.qualifyDecl(ns, decl.Name.Name)
 
 	// Resolve the alias's parameters in a fresh named-lifetime scope so a lifetime parameter
 	// and every `&'a` in the body share one lifetime variable, and hand that scope to
@@ -169,7 +166,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 	c.ctx.registerAlias(qname, def)
 
 	t := &soltype.AliasType{Name: qname}
-	scope.defineType(qname, TypeBinding{
+	c.declTarget(scope).defineType(qname, TypeBinding{
 		Type:    t,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
