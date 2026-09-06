@@ -16,27 +16,18 @@ import (
 // loadPackage returns the exported surface of the package at uri, inferring it
 // on first request and reading the registry on every later one.
 //
-// A URI already being loaded further up this call chain returns nil with no
-// diagnostic. That is a cycle: A imports B, and B imports A while A's own
-// surface is still being assembled. The importing side binds nothing and carries
-// on, which is what terminates the walk.
+// A URI already loading further up this call chain closes a cycle: nothing is
+// bound and an ImportCycleError is reported, which is what terminates the walk.
+// A package that reports diagnostics of its own is still published, since its
+// declarations are the best answer an importer will get.
 //
-// B therefore sees none of A. A cyclic pair does not type-check against each
-// other's declarations; it finishes, and each name the cycle left unbound is
-// reported where it is used. Breaking that limit is a later phase.
-//
-// The package is inferred under this run's Context, so a class it declares and
-// a reference the importer writes to that class are one entry in one nominal
-// registry. What keeps that safe is the URI on every key the load registers.
-//
-// A package that reports diagnostics of its own is still published. Its
-// declarations are the best available answer for an importer, and re-loading it
-// on the next import would report the same errors again.
+// The URI on every key a load registers is what lets packages share this run's
+// Context without their declarations colliding.
 func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverError) {
 	if ns, found := c.packages.Lookup(uri); found {
 		if ns == nil {
-			// The URI is being loaded further up this call chain, so this import
-			// closes a cycle. Nothing is bound, which is what terminates the walk.
+			// Found with a nil surface is the loading sentinel: this import
+			// re-enters a package still being assembled.
 			return nil, []SolverError{&ImportCycleError{
 				Chain: c.cycleChain(uri),
 				span:  span,
@@ -77,10 +68,9 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 	return ns, nil
 }
 
-// cycleChain returns the packages a cycle runs through, from the one the cycle
-// re-enters round to itself: `pkg:a` importing `pkg:b` importing `pkg:a` gives
-// a, b, a. Anything loaded before the cycle opened is left out, since it is not
-// part of the loop.
+// cycleChain returns the packages the cycle runs through, starting and ending at
+// the re-entered URI: `pkg:a` importing `pkg:b` importing `pkg:a` gives a, b, a.
+// A package loaded before the cycle opened is not part of the loop.
 func (c *checker) cycleChain(uri string) []string {
 	start := 0
 	for i, loading := range c.loadStack {
@@ -94,12 +84,10 @@ func (c *checker) cycleChain(uri string) []string {
 	return append(chain, uri)
 }
 
-// ImportCycleError reports an import that closes a cycle between packages.
-//
-// A cycle is reported where it closes, so the diagnostic reaches the entry
-// module through the same wrapping every other package diagnostic takes. Each
-// package in the loop still publishes what it declared, so one cycle produces
-// one diagnostic rather than one per name the cycle left unbound.
+// ImportCycleError reports an import that closes a cycle between packages. It is
+// reported where the cycle closes, so it reaches the entry module through the
+// wrapping every package diagnostic takes, and one cycle gives one diagnostic
+// rather than one per name the cycle left unbound.
 type ImportCycleError struct {
 	// Chain is the packages the cycle runs through, opening and closing on the
 	// same URI.
@@ -129,10 +117,9 @@ func messagesOf(errs []SolverError) []string {
 
 // inferPackage infers one package's module and returns the surface it exports.
 //
-// The package's own declarations go into a scope of its own, a child of the
-// prelude rather than of the importer, so nothing the importer declares is
-// visible to it. pkgURI is set for the duration, which is what puts the URI on
-// every key the walk registers.
+// The package's declarations go into a child of the prelude rather than of the
+// importer, so nothing the importer declares is visible to it. pkgURI is set for
+// the duration, which puts the URI on every key the walk registers.
 func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []SolverError) {
 	prevURI := c.pkgURI
 	c.pkgURI = uri
@@ -153,12 +140,9 @@ func (c *checker) inferPackage(uri string, module *ast.Module) (*Namespace, []So
 }
 
 // exportedSurface copies the bindings of module's exported top-level
-// declarations out of scope and into a namespace an importer can read.
-//
-// An unexported declaration is left behind, so a consumer cannot name it. That
-// is the only thing separating a package's public surface from its internals:
-// the whole module was inferred into one scope, and this walk is what narrows
-// it.
+// declarations out of scope and into a namespace an importer can read. An
+// unexported declaration is left behind: the whole module was inferred into one
+// scope, and this walk is the only thing narrowing it to a public surface.
 func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 	surface := newNamespace(uri)
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
@@ -210,8 +194,7 @@ func newNamespace(name string) *Namespace {
 
 // nest returns the namespace at a dotted path under root, creating each level
 // that does not exist yet. A package declaring `Geo.Shapes.Point` reaches it
-// through two nested namespaces rather than through one dotted key, which is
-// what a member access walks.
+// through two nested namespaces, which is what a member access walks.
 func (n *Namespace) nest(path string) *Namespace {
 	cur := n
 	for _, segment := range strings.Split(path, ".") {
@@ -262,9 +245,8 @@ func exportedNames(decl ast.Decl) []string {
 }
 
 // patternNames returns every identifier a binding pattern introduces, in source
-// order. An extractor and an instance pattern bind through their sub-patterns,
-// which is why this reads the leaves through the shared walk rather than a
-// traversal of its own.
+// order. Extractor and instance patterns bind through their sub-patterns, so
+// this reads the leaves through the shared walk rather than its own traversal.
 func patternNames(pat ast.Pat) []string {
 	var names []string
 	ast.ForEachLeafBinding(pat, func(name string, _ int) {
@@ -276,10 +258,10 @@ func patternNames(pat ast.Pat) []string {
 // PackageInferenceError reports that a package failed to type-check, on the
 // import that pulled it in.
 //
-// The package's own diagnostics are carried as text rather than as errors. Each
-// one's span points into the package's source, whose ids belong to a different
-// module than the importer's, so re-reporting them directly would blame the
-// importing file at whatever offset the package's error happened to sit at.
+// The package's diagnostics are carried as text rather than as errors. Each span
+// points into the package's source, whose ids belong to a different module, so
+// re-reporting them directly would blame the importing file at an unrelated
+// offset.
 type PackageInferenceError struct {
 	// URI is the package that failed.
 	URI string
