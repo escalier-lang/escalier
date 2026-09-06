@@ -276,7 +276,7 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 // under the package URI while an importer names it bare, so the surface has to
 // re-key it.
 //
-// DISABLED until the solver resolves a dotted type annotation. Without named
+// DISABLED until #1474 resolves a dotted type annotation. Without named
 // imports there is no way to write an imported type in annotation position. A
 // bare import binds the package as a namespace, and an annotation naming
 // `geometry.Point` is reported as a type the solver cannot find. The shipped
@@ -388,7 +388,11 @@ func TestAFailingPackageStillPublishesItsSurface(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
-		parseModule(t, `import "partial"`),
+		parseModule(t, `
+			import "partial"
+			val g = partial.good
+			val b = partial.bad
+		`),
 		sourceOf(t, map[string]string{
 			"partial": `
 				export val good: number = 1
@@ -397,10 +401,21 @@ func TestAFailingPackageStillPublishesItsSurface(t *testing.T) {
 		}),
 	)
 
+	// The package's own diagnostic is the only one. Reading either member from
+	// the importer adds nothing, so the failure does not travel.
 	require.Len(t, res.Errors, 1)
+
+	// `bad` reaches the surface alongside `good`. Its initializer is what failed,
+	// and the surface takes the declared type rather than dropping the name, so a
+	// consumer types against the whole package instead of the prefix that
+	// happened to infer.
 	ns, ok := res.Packages.Lookup("partial")
 	require.True(t, ok)
 	require.Contains(t, ns.Values, "good")
+	require.Contains(t, ns.Values, "bad")
+
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "g")))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "b")))
 }
 
 // An exported enum arrives with its variant constructors. The type and the
@@ -456,6 +471,13 @@ func TestDeclarationsStayVisibleAcrossFiles(t *testing.T) {
 // A package resolves its own declaration of a name the prelude also seeds. The
 // prelude's placeholder is in the root scope and the package's declaration is in
 // its module scope, so the nearer one has to win.
+//
+// `Promise` is one of the five names `stdlibTypePlaceholders` seeds, and #1240
+// moves that whole set into `std:async` and its siblings. Once a name is
+// imported rather than seeded, this case has no prelude binding to outrank and
+// the test passes without exercising the ranking. Re-point it then at whatever
+// the root scope still seeds, or drop it if the root scope seeds no types at
+// all.
 func TestPackageDeclarationOutranksThePreludeSeed(t *testing.T) {
 	t.Parallel()
 
@@ -673,7 +695,7 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 // name. The import is bound in the file's own scope, nearer than the module
 // scope the package's declarations live in.
 //
-// DISABLED until the solver resolves a dotted type annotation. The case needs
+// DISABLED until #1474 resolves a dotted type annotation. The case needs
 // two declarations of one bare type name, one imported and one local, which
 // only a named import produces. A bare import binds a namespace, so the
 // imported one is written `inner.Widget` and never competes for `Widget`.
