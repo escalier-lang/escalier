@@ -69,8 +69,8 @@ const (
 	// it as a writer, and the spec algorithm returns a new string.
 	//
 	// Each one is still worth reading. A heuristic wrong on a spec method is
-	// wrong on every other type that spells a method the same way, which is
-	// how the `copyWithin` exact-name entry was found.
+	// wrong on every other type that spells a method the same way, and the
+	// fact tier answers only the spec method.
 	VerdictCorrected ReceiverVerdict = "corrected"
 	// VerdictDisagreement is a fact that a source above it contradicts, which
 	// is an override entry or a tier-3 convention. That source outranks the

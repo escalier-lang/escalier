@@ -198,8 +198,8 @@ func TestCommittedGraphLeavesNoReceiverDisagreement(t *testing.T) {
 // The heuristics the facts overrule over the committed graph. It reads empty
 // while the override entries stand, because an entry answers every method whose
 // heuristic a fact contradicts. A line appears here when an entry comes out, and
-// names a heuristic to re-read — that is how `copyWithin` was found. See
-// planning/ecma-262/validation_diff.md.
+// names a heuristic to re-read, since that heuristic classifies the same name on
+// every other type. See planning/ecma-262/validation_diff.md.
 func TestCommittedGraphCorrectedHeuristics(t *testing.T) {
 	t.Parallel()
 
