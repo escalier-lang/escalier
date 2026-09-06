@@ -142,9 +142,9 @@ func BenchmarkModuleWithImports(b *testing.B) {
 			ID:   0,
 			Path: "lib/main.esc",
 			Contents: `
-				import * as pkg1 from "package-1"
-				import * as pkg2 from "package-2"
-				import * as pkg3 from "package-3"
+				import "package-1" as pkg1
+				import "package-2" as pkg2
+				import "package-3" as pkg3
 
 				declare val v1: pkg1.Type1
 				declare val v2: pkg2.Type2
@@ -271,7 +271,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 			ID:   0,
 			Path: "lib/file1.esc",
 			Contents: `
-				import * as utils from "shared-utils"
+				import "shared-utils" as utils
 				declare val v1: utils.SharedType
 			`,
 		},
@@ -279,7 +279,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 			ID:   1,
 			Path: "lib/file2.esc",
 			Contents: `
-				import * as utils from "shared-utils"
+				import "shared-utils" as utils
 				declare val v2: utils.SharedType
 			`,
 		},
@@ -287,7 +287,7 @@ func BenchmarkFileScopedImports(b *testing.B) {
 			ID:   2,
 			Path: "lib/file3.esc",
 			Contents: `
-				import * as utils from "shared-utils"
+				import "shared-utils" as utils
 				declare val v3: utils.SharedType
 			`,
 		},
@@ -614,7 +614,7 @@ func BenchmarkComplexProject(b *testing.B) {
 			ID:   1,
 			Path: "lib/models/user.esc",
 			Contents: `
-				import * as validator from "validator"
+				import "validator" as validator
 				type User = BaseModel & { email: string, name: string }
 				type UserValidation = { emailValid: validator.Result, nameValid: validator.Result }
 			`,
@@ -637,7 +637,7 @@ func BenchmarkComplexProject(b *testing.B) {
 			ID:   4,
 			Path: "lib/services/user_service.esc",
 			Contents: `
-				import * as db from "database"
+				import "database" as db
 				type UserService = { db: db.Connection }
 				declare fn createUser(s: UserService, u: User) -> globalThis.Promise<User>
 				declare fn getUser(s: UserService, id: ID) -> globalThis.Promise<User>
@@ -647,7 +647,7 @@ func BenchmarkComplexProject(b *testing.B) {
 			ID:   5,
 			Path: "lib/services/post_service.esc",
 			Contents: `
-				import * as db from "database"
+				import "database" as db
 				type PostService = { db: db.Connection }
 				declare fn createPost(s: PostService, p: Post) -> globalThis.Promise<Post>
 				declare fn getPosts(s: PostService, userId: ID) -> globalThis.Promise<globalThis.Array<Post>>
@@ -657,7 +657,7 @@ func BenchmarkComplexProject(b *testing.B) {
 			ID:   6,
 			Path: "lib/app.esc",
 			Contents: `
-				import * as config from "config"
+				import "config" as config
 				type App = { config: config.Settings, userService: UserService, postService: PostService }
 				declare fn initApp(cfg: config.Settings) -> globalThis.Promise<App>
 			`,

@@ -59,7 +59,7 @@ func TestModuleFileImports(t *testing.T) {
 			Path: "lib/foo.esc",
 			// File with imports
 			Contents: `
-				import * as fde from "fast-deep-equal"
+				import "fast-deep-equal" as fde
 				fn compare(a: any, b: any) -> boolean { true }
 			`,
 		},
@@ -219,7 +219,7 @@ func TestFileScopedImportsBasic(t *testing.T) {
 			ID:   0,
 			Path: "lib/main.esc",
 			Contents: `
-				import * as utils from "test-utils"
+				import "test-utils" as utils
 				declare val result: utils.StringUtil
 			`,
 		},
@@ -283,7 +283,7 @@ func TestFileScopedImportsIsolation(t *testing.T) {
 			Path: "lib/file1.esc",
 			// This file imports a package
 			Contents: `
-				import * as pkg from "my-package"
+				import "my-package" as pkg
 				declare val value1: pkg.MyType
 			`,
 		},
@@ -346,7 +346,7 @@ func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
 			ID:   0,
 			Path: "lib/file1.esc",
 			Contents: `
-				import * as utils from "shared-utils"
+				import "shared-utils" as utils
 				declare val val1: utils.SharedType
 			`,
 		},
@@ -354,7 +354,7 @@ func TestFileScopedImportsSamePackageDifferentFiles(t *testing.T) {
 			ID:   1,
 			Path: "lib/file2.esc",
 			Contents: `
-				import * as utils from "shared-utils"
+				import "shared-utils" as utils
 				declare val val2: utils.SharedType
 			`,
 		},
@@ -407,7 +407,7 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 			ID:   0,
 			Path: "lib/file1.esc",
 			Contents: `
-				import * as foo from "my-lib"
+				import "my-lib" as foo
 				declare val val1: foo.LibType
 			`,
 		},
@@ -415,7 +415,7 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 			ID:   1,
 			Path: "lib/file2.esc",
 			Contents: `
-				import * as bar from "my-lib"
+				import "my-lib" as bar
 				declare val val2: bar.LibType
 			`,
 		},
@@ -462,79 +462,6 @@ func TestFileScopedImportsDifferentAliases(t *testing.T) {
 		// Check that each value has the correct type reference from its file's import alias
 		assert.Equal(t, "foo.LibType", val1.Type.String(), "val1 should use foo alias from file1")
 		assert.Equal(t, "bar.LibType", val2.Type.String(), "val2 should use bar alias from file2")
-	}
-}
-
-// TestNamedImportsFromPackage verifies that named imports (not namespace imports) work
-func TestNamedImportsFromPackage(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	sources := []*ast.Source{
-		{
-			ID:   0,
-			Path: "lib/main.esc",
-			Contents: `
-				import { myFunc, MyType } from "named-pkg"
-				declare val x: MyType
-			`,
-		},
-	}
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-	assert.Empty(t, parseErrors, "Should parse without errors")
-
-	c := NewChecker(ctx)
-
-	// Pre-populate PackageRegistry with mock package that has both values and types
-	mockPkg := createMockPackage(
-		map[string]type_system.Type{
-			"myFunc": type_system.NewFuncType(nil, nil,
-				[]*type_system.FuncParam{},
-				type_system.NewNumPrimType(nil),
-				type_system.NewNeverType(nil),
-			),
-		},
-		map[string]type_system.Type{
-			"MyType": type_system.NewNumPrimType(nil),
-		},
-	)
-	err := c.PackageRegistry.Register("named-pkg", mockPkg)
-	assert.NoError(t, err, "Should register mock package")
-
-	inferCtx := Context{
-		Scope:      Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-
-	_, inferErrors := c.InferModule(inferCtx, module)
-
-	for i, err := range inferErrors {
-		t.Logf("Error[%d]: %s", i, err.Message())
-	}
-	assert.Empty(t, inferErrors, "Should infer without errors")
-
-	// Verify the declaration uses the named import correctly
-	// Note: Named imports (myFunc, MyType) are file-scoped, so they won't appear in
-	// the module namespace directly. The test verifies that:
-	// 1. Inference succeeds (which means the import was resolved correctly)
-	// 2. The declaration x exists with the correct type reference
-	scope := inferCtx.Scope.Namespace
-
-	// Named imports are file-scoped, so they should NOT be in the module namespace
-	_, funcExists := scope.Values["myFunc"]
-	assert.False(t, funcExists, "myFunc should NOT be in module namespace (it's file-scoped)")
-
-	_, typeExists := scope.Types["MyType"]
-	assert.False(t, typeExists, "MyType should NOT be in module namespace (it's file-scoped)")
-
-	// Check x is declared with MyType reference
-	xBinding, xExists := scope.Values["x"]
-	assert.True(t, xExists, "x should be declared in module namespace")
-	if xExists {
-		// The type is stored as a reference to MyType
-		assert.Equal(t, "MyType", xBinding.Type.String())
 	}
 }
 
@@ -712,7 +639,7 @@ func TestCrossFileCyclesWithImports(t *testing.T) {
 			ID:   0,
 			Path: "lib/wrapper.esc",
 			Contents: `
-				import * as utils from "test-utils"
+				import "test-utils" as utils
 				type Wrapper = {
 					data: utils.DataType,
 					next: LinkedNode,
@@ -785,7 +712,7 @@ func TestCrossFileCyclesImportIsolation(t *testing.T) {
 			ID:   0,
 			Path: "lib/file_a.esc",
 			Contents: `
-				import * as pkg from "my-pkg"
+				import "my-pkg" as pkg
 				type TypeA = {
 					data: pkg.SomeType,
 					ref: TypeB,

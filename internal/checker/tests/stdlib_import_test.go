@@ -125,26 +125,6 @@ func TestStdlibImport_NodeSchemeReserved(t *testing.T) {
 	)
 }
 
-func TestStdlibImport_NamedImportFromSchemeURIRejected(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import { PI } from "std:math"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"named imports from pseudo-package \"std:math\" are not supported; "+
-			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
-		errs[0].Message(),
-	)
-}
-
-func TestStdlibImport_NamespaceImportFromSchemeURIRejected(t *testing.T) {
-	_, errs := inferStdlibImportSource(t, `import * as M from "std:math"`)
-	require.Len(t, errs, 1)
-	require.Equal(t,
-		"named imports from pseudo-package \"std:math\" are not supported; "+
-			"use a bare-string import (`import \"std:math\"`) and access members through the namespace",
-		errs[0].Message(),
-	)
-}
-
 func TestStdlibImport_UnknownFlag(t *testing.T) {
 	_, errs := inferStdlibImportSource(t, `import "std:math?wat"`)
 	require.Len(t, errs, 1)

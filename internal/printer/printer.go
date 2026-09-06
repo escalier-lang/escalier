@@ -252,6 +252,10 @@ func (p *Printer) printImportStmt(s *ast.ImportStmt) {
 	}
 	p.space()
 	p.writeString(strconv.Quote(spec.String()))
+	if s.Alias != "" {
+		p.writeString(" as ")
+		p.writeString(s.Alias)
+	}
 }
 
 // Declaration printing

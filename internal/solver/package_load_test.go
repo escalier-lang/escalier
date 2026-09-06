@@ -538,6 +538,45 @@ func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 	}
 }
 
+// A package whose name is not an identifier still binds a reachable namespace,
+// since the derived name maps every character an identifier cannot hold.
+func TestHyphenatedPackageBindsAWritableName(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "fast-deep-equal"
+			val n = fast_deep_equal.isEqual
+		`),
+		sourceOf(t, map[string]string{
+			"fast-deep-equal": `export val isEqual: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
+// `as` picks the name instead, which is how an author avoids a derived one.
+func TestImportAliasBindsUnderTheChosenName(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "fast-deep-equal" as fde
+			val n = fde.isEqual
+		`),
+		sourceOf(t, map[string]string{
+			"fast-deep-equal": `export val isEqual: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	_, derived := res.FileScopes[0].GetNamespace("fast_deep_equal")
+	require.False(t, derived, "an alias replaces the derived name rather than adding to it")
+}
+
 // A specifier whose scheme is not lowercase is not diverted to the
 // pseudo-package path, so it reaches the npm side with its colon intact and
 // binds what follows the colon.

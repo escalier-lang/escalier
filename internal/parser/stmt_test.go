@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseStmtNoErrors(t *testing.T) {
@@ -317,6 +318,9 @@ func TestParseStmtNoErrors(t *testing.T) {
 		"ImportAPath": {
 			input: `import "lodash/fp"`,
 		},
+		"ImportWithAlias": {
+			input: `import "fast-deep-equal" as fde`,
+		},
 		"ImportWithFlag": {
 			input: `import "std:math?nested"`,
 		},
@@ -518,6 +522,39 @@ func TestRetiredClassSyntax(t *testing.T) {
 				}
 				t.Errorf("expected an error matching %q, got %d error(s)", test.wantSubstring, len(errors))
 			}
+		})
+	}
+}
+
+// Escalier has one import form, `import "uri"`, so a binding clause is a parse
+// error. The message names the form that works, since the shapes rejected here
+// are the ones a reader arrives with from JavaScript or TypeScript.
+func TestParseImportBindingClauseErrors(t *testing.T) {
+	const expected = "Expected a string literal after 'import'; " +
+		"Escalier has only `import \"uri\"`, which binds the package as a namespace"
+
+	tests := map[string]struct {
+		input string
+	}{
+		"AMember":         {input: `import { foo } from "module"`},
+		"SeveralMembers":  {input: `import { foo, bar } from "module"`},
+		"AnAliasedMember": {input: `import { foo as bar } from "module"`},
+		"ANamespaceAlias": {input: `import * as ns from "module"`},
+		"APseudoPackage":  {input: `import { PI } from "std:math"`},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			_, errors := p.ParseScript()
+
+			require.NotEmpty(t, errors, "a binding clause should not parse")
+			require.Equal(t, expected, errors[0].Message)
 		})
 	}
 }

@@ -25,7 +25,7 @@ func TestPackageLoadAndRegister(t *testing.T) {
 	source := &ast.Source{
 		ID:       0,
 		Path:     "input.esc",
-		Contents: `import * as fde from "fast-deep-equal"`,
+		Contents: `import "fast-deep-equal" as fde`,
 	}
 
 	p := parser.NewParser(ctx, source)
@@ -71,14 +71,14 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 			ID:   0,
 			Path: "lib/file1.esc",
 			Contents: `
-				import * as utils from "test-utils"
+				import "test-utils" as utils
 			`,
 		},
 		{
 			ID:   1,
 			Path: "lib/file2.esc",
 			Contents: `
-				import * as utils from "test-utils"
+				import "test-utils" as utils
 			`,
 		},
 	}
@@ -93,150 +93,6 @@ func TestPackageReloadFromRegistry(t *testing.T) {
 
 	_, inferErrors := c.InferModule(inferCtx, module)
 	assert.Empty(t, inferErrors, "Should infer without errors")
-}
-
-// TestNamedImportFromRegisteredPackage verifies named imports work from pre-registered packages
-func TestNamedImportFromRegisteredPackage(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	c := NewChecker(ctx)
-
-	// Pre-register a mock package with both values and types
-	mockNs := type_system.NewNamespace()
-	mockNs.Values["myFunc"] = &type_system.Binding{
-		Type: type_system.NewFuncType(nil, nil,
-			[]*type_system.FuncParam{},
-			type_system.NewNumPrimType(nil),
-			type_system.NewNeverType(nil),
-		),
-		Mutable:  false,
-		Exported: true,
-	}
-	mockNs.Types["MyType"] = &type_system.TypeAlias{
-		Type:       type_system.NewStrPrimType(nil),
-		TypeParams: nil,
-		Exported:   true,
-	}
-
-	err := c.PackageRegistry.Register("test-pkg", mockNs)
-	require.NoError(t, err)
-
-	sources := []*ast.Source{
-		{
-			ID:   0,
-			Path: "lib/main.esc",
-			Contents: `
-				import { myFunc, MyType } from "test-pkg"
-				declare val x: MyType
-				val f = myFunc
-			`,
-		},
-	}
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-	require.Empty(t, parseErrors)
-
-	inferCtx := Context{
-		Scope:   Prelude(c),
-		IsAsync: false,
-	}
-
-	_, inferErrors := c.InferModule(inferCtx, module)
-
-	for _, err := range inferErrors {
-		t.Logf("Error: %s", err.Message())
-	}
-	assert.Empty(t, inferErrors, "Named imports should work from registered packages")
-}
-
-// TestNamedImportWithAlias verifies named imports with aliases work correctly
-func TestNamedImportWithAlias(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	c := NewChecker(ctx)
-
-	// Pre-register a mock package
-	mockNs := type_system.NewNamespace()
-	mockNs.Values["originalName"] = &type_system.Binding{
-		Type:     type_system.NewNumPrimType(nil),
-		Mutable:  false,
-		Exported: true,
-	}
-
-	err := c.PackageRegistry.Register("alias-pkg", mockNs)
-	require.NoError(t, err)
-
-	sources := []*ast.Source{
-		{
-			ID:   0,
-			Path: "lib/main.esc",
-			Contents: `
-				import { originalName as renamed } from "alias-pkg"
-				val x = renamed
-			`,
-		},
-	}
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-	require.Empty(t, parseErrors)
-
-	inferCtx := Context{
-		Scope:   Prelude(c),
-		IsAsync: false,
-	}
-
-	_, inferErrors := c.InferModule(inferCtx, module)
-
-	for _, err := range inferErrors {
-		t.Logf("Error: %s", err.Message())
-	}
-	assert.Empty(t, inferErrors, "Named imports with aliases should work")
-}
-
-// TestNamedImportNotFound verifies error is reported for non-existent export
-func TestNamedImportNotFound(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	c := NewChecker(ctx)
-
-	// Pre-register a mock package with limited exports
-	mockNs := type_system.NewNamespace()
-	mockNs.Values["exists"] = &type_system.Binding{
-		Type:     type_system.NewNumPrimType(nil),
-		Mutable:  false,
-		Exported: true,
-	}
-
-	err := c.PackageRegistry.Register("limited-pkg", mockNs)
-	require.NoError(t, err)
-
-	sources := []*ast.Source{
-		{
-			ID:   0,
-			Path: "lib/main.esc",
-			Contents: `
-				import { doesNotExist } from "limited-pkg"
-			`,
-		},
-	}
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-	require.Empty(t, parseErrors)
-
-	inferCtx := Context{
-		Scope:   Prelude(c),
-		IsAsync: false,
-	}
-
-	_, inferErrors := c.InferModule(inferCtx, module)
-
-	// Should have an error about the missing export
-	require.Len(t, inferErrors, 1, "Should have exactly one error")
-	assert.Contains(t, inferErrors[0].Message(), "doesNotExist",
-		"Error should mention the missing export")
 }
 
 // TestSubpathImportSeparateEntries verifies that different subpaths are separate registry entries
@@ -272,8 +128,8 @@ func TestSubpathImportSeparateEntries(t *testing.T) {
 			ID:   0,
 			Path: "lib/main.esc",
 			Contents: `
-				import * as lodash from "lodash"
-				import * as fp from "lodash/fp"
+				import "lodash" as lodash
+				import "lodash/fp" as fp
 				val main = lodash.mainExport
 				val fpVal = fp.fpExport
 			`,
@@ -340,7 +196,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 			ID:   0,
 			Path: "lib/good.esc",
 			Contents: `
-				import * as pkg from "mixed-exports-pkg"
+				import "mixed-exports-pkg" as pkg
 				val x = pkg.publicFunc
 				declare val y: pkg.PublicType
 			`,
@@ -368,7 +224,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 			ID:   0,
 			Path: "lib/bad_value.esc",
 			Contents: `
-				import * as pkg from "mixed-exports-pkg"
+				import "mixed-exports-pkg" as pkg
 				val x = pkg.internalHelper
 			`,
 		},
@@ -397,7 +253,7 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 			ID:   0,
 			Path: "lib/bad_type.esc",
 			Contents: `
-				import * as pkg from "mixed-exports-pkg"
+				import "mixed-exports-pkg" as pkg
 				declare val x: pkg.InternalType
 			`,
 		},
@@ -418,7 +274,9 @@ func TestNonExportedItemsAreFilteredFromNamespaceImport(t *testing.T) {
 }
 
 // TestNamespaceImportFromSubNamespace verifies importing a sub-namespace from a package
-func TestNamespaceImportFromSubNamespace(t *testing.T) {
+// A package's nested namespace is reached through the namespace the import
+// binds, one segment at a time.
+func TestNestedNamespaceReachedThroughTheImport(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -427,6 +285,7 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 	// Create a package with a nested namespace
 	mockNs := type_system.NewNamespace()
 	subNs := type_system.NewNamespace()
+	subNs.Exported = true
 	subNs.Values["nestedFunc"] = &type_system.Binding{
 		Type:     type_system.NewNumPrimType(nil),
 		Mutable:  false,
@@ -443,8 +302,8 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 			ID:   0,
 			Path: "lib/main.esc",
 			Contents: `
-				import { nested } from "nested-pkg"
-				val x = nested.nestedFunc
+				import "nested-pkg" as pkg
+				val x = pkg.nested.nestedFunc
 			`,
 		},
 	}
@@ -462,5 +321,5 @@ func TestNamespaceImportFromSubNamespace(t *testing.T) {
 	for _, err := range inferErrors {
 		t.Logf("Error: %s", err.Message())
 	}
-	assert.Empty(t, inferErrors, "Importing nested namespace should work")
+	assert.Empty(t, inferErrors, "a nested namespace should be reachable through the import")
 }

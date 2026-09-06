@@ -217,11 +217,12 @@ func (p *Parser) parseForInStmt() ast.Stmt {
 		ast.MergeSpans(startSpan, body.Span))
 }
 
-// importStmt = 'import' string
+// importStmt = 'import' string ('as' identifier)?
 //
-// One form, with no binding clause: `import "std:math"` binds the package as a
-// namespace under the last segment of its specifier, and members are reached
-// through it. The specifier may carry a `?flag1&flag2` suffix that the parser
+// One form: `import "std:math"` binds the package as a namespace, and members
+// are reached through it. The name comes from the specifier unless `as` gives
+// one, which is how a package whose name is not an identifier gets a readable
+// binding. The specifier may carry a `?flag1&flag2` suffix that the parser
 // splits off and stores in ImportStmt.Flags.
 func (p *Parser) importStmt() ast.Stmt {
 	importToken := p.lexer.next()
@@ -243,7 +244,20 @@ func (p *Parser) importStmt() ast.Stmt {
 
 	pkg, flags := splitImportFlags(moduleToken.Value)
 	span := ast.MergeSpans(importToken.Span, moduleToken.Span)
-	return ast.NewImportStmt(pkg, flags, span)
+
+	alias := ""
+	if next := p.lexer.peek(); next.Type == Identifier && next.Value == "as" {
+		p.lexer.consume()
+		aliasToken := p.lexer.next()
+		if aliasToken.Type != Identifier {
+			p.reportError(aliasToken.Span, "Expected identifier after 'as'")
+			return nil
+		}
+		alias = aliasToken.Value
+		span = ast.MergeSpans(importToken.Span, aliasToken.Span)
+	}
+
+	return ast.NewImportStmt(pkg, alias, flags, span)
 }
 
 // splitImportFlags splits a module specifier into the package portion and a

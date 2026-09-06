@@ -2185,6 +2185,7 @@ func TestPrintImportStmt(t *testing.T) {
 	}{
 		{"a package", `import "module"`},
 		{"a path", `import "lodash/fp"`},
+		{"with an alias", `import "fast-deep-equal" as fde`},
 		{"a pseudo-package", `import "std:math"`},
 		{"with a flag", `import "std:math?nested"`},
 		{"with flags", `import "std:math?flag1&flag2"`},
