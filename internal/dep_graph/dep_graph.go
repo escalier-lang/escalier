@@ -1018,8 +1018,34 @@ func collectNamespaces(module *ast.Module) []string {
 			// Add new namespace
 			namespaces = append(namespaces, nsName)
 		}
+		// A `namespace Foo { ... }` block is a namespace too. Registering it means a
+		// reference written inside the block carries the block's NamespaceID rather
+		// than the root's, which is what the emitted name is built from.
+		for _, decl := range nsIter.Value().Decls {
+			namespaces = appendBlockNamespaces(namespaces, nsName, decl)
+		}
 	}
 
+	return namespaces
+}
+
+// appendBlockNamespaces registers decl's qualified name when it is a namespace
+// block, and recurses into the blocks written inside it.
+func appendBlockNamespaces(namespaces []string, prefix string, decl ast.Decl) []string {
+	block, ok := decl.(*ast.NamespaceDecl)
+	if !ok || block.Name == nil || block.Name.Name == "" {
+		return namespaces
+	}
+	qname := block.Name.Name
+	if prefix != "" {
+		qname = prefix + "." + qname
+	}
+	if !slices.Contains(namespaces, qname) {
+		namespaces = append(namespaces, qname)
+	}
+	for _, inner := range block.Decls {
+		namespaces = appendBlockNamespaces(namespaces, qname, inner)
+	}
 	return namespaces
 }
 

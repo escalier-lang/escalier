@@ -2519,3 +2519,30 @@ func TestBuildDepGraphV2_LocalDeclShadowing(t *testing.T) {
 		})
 	}
 }
+
+// A reference written inside a namespace block carries that block's NamespaceID,
+// not the root's. The emitted name is built from that id, so a root id would emit
+// the reference unqualified.
+func TestNamespaceBlockRegistersItsOwnID(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	module, errors := parser.ParseLibFiles(ctx, []*ast.Source{{
+		ID:   0,
+		Path: "input.esc",
+		Contents: `
+			namespace geo {
+				val a: number = 1
+				namespace inner {
+					val b: number = 2
+				}
+			}
+		`,
+	}})
+	assert.Len(t, errors, 0, "Parser errors: %v", errors)
+
+	graph := BuildDepGraph(module)
+	assert.Contains(t, graph.Namespaces, "geo")
+	assert.Contains(t, graph.Namespaces, "geo.inner")
+}
