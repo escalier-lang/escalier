@@ -494,21 +494,19 @@ func TestInferModuleFunctionOverloadResolves(t *testing.T) {
 	}, values)
 }
 
-// A declaration kind the dep graph does not model — here a `namespace` block,
-// which BuildDepGraph produces no binding key for — must still report a clean
-// UnsupportedNodeError rather than vanishing silently. The reconciliation pass in
-// inferDepGraph walks the module's own declarations and flags any the SCC walk
-// never visited.
-func TestInferModuleNamespaceDeclUnsupported(t *testing.T) {
+// A `namespace` block binds its members under the block's name and no type binding
+// of its own. The block is a grouping, not a type, so `Foo` names a namespace an
+// access reaches through rather than something an annotation can write.
+func TestInferModuleNamespaceDeclBindsItsMembers(t *testing.T) {
 	values, types, errs := inferSource(t, `
 		namespace Foo {
 			val x = 5
 		}
+		val y = Foo.x
 	`)
-	require.Len(t, errs, 1)
-	require.Equal(t, "2:3-4:4: Unsupported: NamespaceDecl", msgWithSpan(t, errs[0]))
-	require.Empty(t, values)
-	// The unsupported decl must not leak a type binding for the namespace.
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "5", values["Foo.x"])
+	require.Equal(t, "5", values["y"])
 	require.NotContains(t, types, "Foo")
 }
 

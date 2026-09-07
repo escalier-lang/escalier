@@ -202,6 +202,19 @@ func (v *ModuleBindingVisitor) EnterDecl(decl ast.Decl) bool {
 			key := TypeBindingKey(qualName)
 			v.Graph.AddDecl(key, decl, v.currentNSName)
 		}
+	case *ast.NamespaceDecl:
+		// A `namespace Foo { ... }` block introduces no binding of its own. Its
+		// members are keyed under `Foo.name`, the same qualified shape a
+		// directory-derived namespace produces, so one set of qualified-name
+		// machinery serves both.
+		if d.Name != nil && d.Name.Name != "" {
+			saved := v.currentNSName
+			v.currentNSName = v.qualifyName(d.Name.Name)
+			for _, inner := range d.Decls {
+				v.EnterDecl(inner)
+			}
+			v.currentNSName = saved
+		}
 	case *ast.ClassDecl:
 		// Class declarations introduce both a type binding and a value binding (constructor)
 		if d.Name != nil && d.Name.Name != "" {

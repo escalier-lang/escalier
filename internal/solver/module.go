@@ -100,6 +100,10 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	defer func() { c.moduleScope = prevModuleScope }()
 
 	handled := set.NewSet[ast.Decl]()
+	// Bind an empty Namespace per `namespace` block before the walk, so a member of
+	// this module that writes `Foo.member` finds the binding while the walk is still
+	// running. populateNamespaces fills them through the same pointers afterwards.
+	nsShells := c.preBindNamespaceDecls(scope, module, handled)
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
 	// once, memoized here on the first leaf reached. Each leaf component then
@@ -107,6 +111,10 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
 	for _, component := range g.Components {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
+		// Components run in dependency order, so refreshing after each one means a
+		// later component reading `Foo.member` finds the member its own component
+		// already bound.
+		c.populateNamespaces(c.declTarget(scope), nsShells)
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
