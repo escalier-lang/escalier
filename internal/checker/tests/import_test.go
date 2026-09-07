@@ -18,7 +18,7 @@ func TestImportInferenceScript(t *testing.T) {
 	}{
 		"NamespaceImportOfPackageWithExportAssignment": {
 			input: `
-				import * as fde from "fast-deep-equal"
+				import "fast-deep-equal" as fde
 				val equal = fde.default
 			`,
 			expectedValues: map[string]string{
@@ -27,7 +27,7 @@ func TestImportInferenceScript(t *testing.T) {
 		},
 		"NamespaceImportCsstype": {
 			input: `
-				import * as CSS from "csstype"
+				import "csstype" as CSS
 				declare val alignItems: CSS.Property.AlignItems
 				declare val properties: CSS.Properties
 				// Access a property from StandardLonghandProperties (extended by StandardProperties, extended by Properties)
@@ -41,7 +41,7 @@ func TestImportInferenceScript(t *testing.T) {
 		},
 		"NamespaceImportReact": {
 			input: `
-				import * as React from "react"
+				import "react" as React
 				val useState = React.useState
 			`,
 			expectedValues: map[string]string{

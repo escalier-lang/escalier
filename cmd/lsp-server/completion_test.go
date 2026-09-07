@@ -1061,10 +1061,11 @@ fn foo(a: number) -> number {
 }
 
 func TestModuleImportVisibleInImportingFile(t *testing.T) {
-	// file1 imports "test-utils" as utils; file2 does not.
-	// The "utils" namespace should appear in file1's completions but not file2's.
+	// file1 imports "utils"; file2 does not. The namespace an import binds is
+	// the last segment of its specifier, so it should appear in file1's
+	// completions but not file2's.
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/file1.esc", Contents: `import * as utils from "test-utils"
+		{ID: 0, Path: "lib/file1.esc", Contents: `import "utils"
 declare val x: number`},
 		{ID: 1, Path: "lib/file2.esc", Contents: `declare val y: number`},
 	}
@@ -1077,7 +1078,7 @@ declare val x: number`},
 	}
 
 	packages := map[string]*type_system.Namespace{
-		"test-utils": mockPkg,
+		"utils": mockPkg,
 	}
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
@@ -1111,7 +1112,7 @@ func TestModuleImportValuesVisibleOnlyInImportingFile(t *testing.T) {
 	// file1 imports named values from "test-pkg"; file2 does not.
 	// The imported value bindings should appear only in file1's completions.
 	sources := []*ast.Source{
-		{ID: 0, Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+		{ID: 0, Path: "lib/file1.esc", Contents: `import "pkg"
 fn usePkg() -> number { 1 }`},
 		{ID: 1, Path: "lib/file2.esc", Contents: `fn other() -> number { 2 }`},
 	}
@@ -1136,7 +1137,7 @@ fn usePkg() -> number { 1 }`},
 	}
 
 	packages := map[string]*type_system.Namespace{
-		"test-pkg": mockPkg,
+		"pkg": mockPkg,
 	}
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, packages)
@@ -1568,7 +1569,7 @@ func TestModuleTypeAnnotationIncludesImportedNamespace(t *testing.T) {
 	// like `xpkg.SomeType`). We use "xpkg" to avoid colliding with the large
 	// number of prelude types that start with common prefixes.
 	sources := []*ast.Source{
-		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import * as xpkg from "test-pkg"
+		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import "xpkg"
 val x: xp`},
 	}
 
@@ -1580,7 +1581,7 @@ val x: xp`},
 	}
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
-		"test-pkg": mockPkg,
+		"xpkg": mockPkg,
 	})
 
 	s := testServer()
@@ -1625,7 +1626,7 @@ func TestModuleTypeAnnotationExcludesValues(t *testing.T) {
 	// itself should be visible (Module kind) but value-only bindings from it
 	// should not appear as bare completions in a type annotation position.
 	sources := []*ast.Source{
-		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import * as pkg from "test-pkg"
+		{ID: stableSourceID("lib/file1.esc"), Path: "lib/file1.esc", Contents: `import "pkg"
 fn usePkg() -> number { pkg.helper }
 val x: h`},
 	}
@@ -1638,7 +1639,7 @@ val x: h`},
 	}
 
 	module, moduleScope, fileScopes := parseModuleAndInferWithPackages(t, sources, map[string]*type_system.Namespace{
-		"test-pkg": mockPkg,
+		"pkg": mockPkg,
 	})
 
 	s := testServer()

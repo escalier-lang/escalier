@@ -11,6 +11,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/snapshot"
 	"github.com/gkampitakis/go-snaps/snaps"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestParseStmtNoErrors(t *testing.T) {
@@ -311,32 +312,20 @@ func TestParseStmtNoErrors(t *testing.T) {
 			// param.
 			input: "class Box { set value(value: number) { } }",
 		},
-		"ImportNamedSingle": {
-			input: `import { foo } from "module"`,
+		"Import": {
+			input: `import "module"`,
 		},
-		"ImportNamedMultiple": {
-			input: `import { foo, bar, baz } from "module"`,
+		"ImportAPath": {
+			input: `import "lodash/fp"`,
 		},
-		"ImportNamedWithAlias": {
-			input: `import { foo as bar } from "module"`,
+		"ImportWithAlias": {
+			input: `import "fast-deep-equal" as fde`,
 		},
-		"ImportNamedMixed": {
-			input: `import { foo, bar as baz, qux } from "module"`,
-		},
-		"ImportNamespace": {
-			input: `import * as ns from "module"`,
-		},
-		"ImportBare": {
-			input: `import "std:math"`,
-		},
-		"ImportBareWithFlag": {
+		"ImportWithFlag": {
 			input: `import "std:math?nested"`,
 		},
-		"ImportBareWithFlags": {
+		"ImportWithFlags": {
 			input: `import "std:math?flag1&flag2"`,
-		},
-		"ImportNamedWithFlag": {
-			input: `import { foo } from "std:math?local"`,
 		},
 		"ForInBasic": {
 			input: `for item in items { console.log(item) }`,
@@ -533,6 +522,55 @@ func TestRetiredClassSyntax(t *testing.T) {
 				}
 				t.Errorf("expected an error matching %q, got %d error(s)", test.wantSubstring, len(errors))
 			}
+		})
+	}
+}
+
+// `as` takes an identifier, so a literal after it is rejected rather than
+// becoming the name the import binds under.
+func TestParseImportAliasMustBeAnIdentifier(t *testing.T) {
+	t.Parallel()
+
+	source := &ast.Source{ID: 0, Path: "input.esc", Contents: `import "module" as 123`}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+	p := NewParser(ctx, source)
+	_, errors := p.ParseScript()
+
+	require.NotEmpty(t, errors, "a non-identifier alias should not parse")
+	require.Equal(t, "Expected identifier after 'as'", errors[0].Message)
+}
+
+// Escalier has one import form, `import "uri"`, so a binding clause is a parse
+// error. The message names the form that works, since the shapes rejected here
+// are the ones a reader arrives with from JavaScript or TypeScript.
+func TestParseImportBindingClauseErrors(t *testing.T) {
+	const expected = "Expected a string literal after 'import'; " +
+		"Escalier has only `import \"uri\"`, which binds the package as a namespace"
+
+	tests := map[string]struct {
+		input string
+	}{
+		"AMember":         {input: `import { foo } from "module"`},
+		"SeveralMembers":  {input: `import { foo, bar } from "module"`},
+		"AnAliasedMember": {input: `import { foo as bar } from "module"`},
+		"ANamespaceAlias": {input: `import * as ns from "module"`},
+		"APseudoPackage":  {input: `import { PI } from "std:math"`},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			source := &ast.Source{ID: 0, Path: "input.esc", Contents: test.input}
+
+			ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+			defer cancel()
+			p := NewParser(ctx, source)
+			_, errors := p.ParseScript()
+
+			require.NotEmpty(t, errors, "a binding clause should not parse")
+			require.Equal(t, expected, errors[0].Message)
 		})
 	}
 }

@@ -282,7 +282,8 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 // `geometry.Point` is reported as a type the solver cannot find. The shipped
 // `std/intl.esc` already writes annotations of that shape, so this has to work
 // before the committed tree can be ingested. Re-enable by removing the wrapper
-// and writing both annotations qualified.
+// and rewriting the body as a bare import with both annotations qualified; the
+// named form the body still holds is rejected outright since #1471.
 func TestImportResolvesAnExportedType(t *testing.T) {
 	t.Parallel()
 	/*
@@ -603,17 +604,61 @@ func TestExportedSurfaceCarriesEveryPatternLeaf(t *testing.T) {
 	}
 }
 
-// A `* as name` specifier binds the package under that name.
-func TestNamespaceSpecifierBindsUnderItsAlias(t *testing.T) {
+// A package whose name is not an identifier still binds a reachable namespace,
+// since the derived name maps every character an identifier cannot hold.
+func TestHyphenatedPackageBindsAWritableName(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import * as lib from "helpers"
-			val n = lib.value
+			import "fast-deep-equal"
+			val n = fast_deep_equal.isEqual
 		`),
 		sourceOf(t, map[string]string{
-			"helpers": `export val value: number = 1`,
+			"fast-deep-equal": `export val isEqual: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
+// `as` picks the name instead, which is how an author avoids a derived one.
+func TestImportAliasBindsUnderTheChosenName(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "fast-deep-equal" as fde
+			val n = fde.isEqual
+		`),
+		sourceOf(t, map[string]string{
+			"fast-deep-equal": `export val isEqual: number = 1`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	_, derived := res.FileScopes[0].GetNamespace("fast_deep_equal")
+	require.False(t, derived, "an alias replaces the derived name rather than adding to it")
+}
+
+// A specifier whose scheme is not lowercase is not diverted to the
+// pseudo-package path, so it reaches the npm side with its colon intact and
+// binds what follows the colon.
+func TestBareImportDropsANonSchemePrefix(t *testing.T) {
+	t.Parallel()
+
+	require.False(t, IsSchemePrefixedImport("HTTP:thing"),
+		"an uppercase scheme names no pseudo-package family")
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "HTTP:thing"
+			val n = thing.value
+		`),
+		sourceOf(t, map[string]string{
+			"HTTP:thing": `export val value: number = 1`,
 		}),
 	)
 
@@ -654,8 +699,10 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 // two declarations of one bare type name, one imported and one local, which
 // only a named import produces. A bare import binds a namespace, so the
 // imported one is written `inner.Widget` and never competes for `Widget`.
-// Re-enable by writing the annotation qualified, which turns this into a test
-// that the qualified name reaches the imported class rather than the local one.
+// Re-enable by rewriting the body as bare imports with the annotation
+// qualified, which turns this into a test that the qualified name reaches the
+// imported class rather than the local one. The named form the body still holds
+// is rejected outright since #1471.
 func TestAFileImportOutranksThePackagesOwnDeclaration(t *testing.T) {
 	t.Parallel()
 	/*

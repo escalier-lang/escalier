@@ -56,8 +56,8 @@ func TestE2E_FullWorkflow(t *testing.T) {
 			Path: "lib/utils.esc",
 			Contents: `
 				// Import a package and use qualified access
-				import * as lodash from "lodash"
-				import * as ramda from "ramda"
+				import "lodash" as lodash
+				import "ramda" as ramda
 
 				// Use local Array type (shadowed)
 				declare val localArr: Array<string>
@@ -197,7 +197,7 @@ func TestE2E_FileImportIsolation(t *testing.T) {
 			ID:   0,
 			Path: "lib/importer.esc",
 			Contents: `
-				import * as utils from "my-utils"
+				import "my-utils" as utils
 				declare val importerValue: utils.UtilType
 			`,
 		},
@@ -260,8 +260,8 @@ func TestE2E_MultiplePackagesWithSameSymbols(t *testing.T) {
 			ID:   0,
 			Path: "lib/main.esc",
 			Contents: `
-				import * as lodash from "lodash"
-				import * as ramda from "ramda"
+				import "lodash" as lodash
+				import "ramda" as ramda
 
 				// Both packages have 'map' function, but they're isolated via qualified access
 				val lodashMap = lodash.map
@@ -428,7 +428,7 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 			ID:   0,
 			Path: "lib/node.esc",
 			Contents: `
-				import * as utils from "tree-utils"
+				import "tree-utils" as utils
 
 				// Node references Tree (from tree.esc) and uses imported package
 				type Node<T> = {
@@ -454,7 +454,7 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 			ID:   2,
 			Path: "lib/forest.esc",
 			Contents: `
-				import * as utils from "tree-utils"
+				import "tree-utils" as utils
 
 				// Forest uses both Node and Tree (cross-file types)
 				// and has its own import of tree-utils
@@ -512,90 +512,6 @@ func TestE2E_CrossFileCyclicTypesWithImports(t *testing.T) {
 	assert.True(t, myForestExists, "myForest should exist")
 }
 
-// TestE2E_NamedImportsWithAliases tests named imports with aliasing across multiple files
-func TestE2E_NamedImportsWithAliases(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	sources := []*ast.Source{
-		{
-			ID:   0,
-			Path: "lib/file1.esc",
-			Contents: `
-				// Named imports with aliases
-				import { Helper as H1, HelperType as HT1 } from "my-pkg"
-				val helper1 = H1
-				declare val typed1: HT1
-			`,
-		},
-		{
-			ID:   1,
-			Path: "lib/file2.esc",
-			Contents: `
-				// Same named imports but different aliases (file-scoped)
-				import { Helper as H2, HelperType as HT2 } from "my-pkg"
-				val helper2 = H2
-				declare val typed2: HT2
-			`,
-		},
-	}
-
-	module, parseErrors := parser.ParseLibFiles(ctx, sources)
-	require.Empty(t, parseErrors, "Should parse without errors")
-
-	c := NewChecker(ctx)
-
-	// IMPORTANT: Call Prelude FIRST, then register packages.
-	inferCtx := Context{
-		Scope:      Prelude(c),
-		IsAsync:    false,
-		IsPatMatch: false,
-	}
-
-	// Register mock package
-	mockNs := createMockPackage(
-		map[string]type_system.Type{
-			"Helper": type_system.NewFuncType(nil, nil,
-				[]*type_system.FuncParam{},
-				type_system.NewStrPrimType(nil),
-				type_system.NewNeverType(nil),
-			),
-		},
-		map[string]type_system.Type{
-			"HelperType": type_system.NewNumPrimType(nil),
-		},
-	)
-	require.NoError(t, c.PackageRegistry.Register("my-pkg", mockNs))
-
-	_, inferErrors := c.InferModule(inferCtx, module)
-
-	for i, err := range inferErrors {
-		t.Logf("Error[%d]: %s", i, err.Message())
-	}
-
-	assert.Empty(t, inferErrors, "Should infer without errors")
-
-	scope := inferCtx.Scope.Namespace
-
-	// Verify all values exist
-	_, helper1Exists := scope.Values["helper1"]
-	_, helper2Exists := scope.Values["helper2"]
-	_, typed1Exists := scope.Values["typed1"]
-	_, typed2Exists := scope.Values["typed2"]
-
-	assert.True(t, helper1Exists, "helper1 should exist")
-	assert.True(t, helper2Exists, "helper2 should exist")
-	assert.True(t, typed1Exists, "typed1 should exist")
-	assert.True(t, typed2Exists, "typed2 should exist")
-
-	// The aliases (H1, H2, HT1, HT2) should NOT be in the module namespace
-	// because they're file-scoped imports
-	_, h1Exists := scope.Values["H1"]
-	_, h2Exists := scope.Values["H2"]
-	assert.False(t, h1Exists, "H1 alias should NOT be in module namespace")
-	assert.False(t, h2Exists, "H2 alias should NOT be in module namespace")
-}
-
 // TestE2E_SubpathImportsIsolation tests that subpath imports are separate entries
 func TestE2E_SubpathImportsIsolation(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -607,8 +523,8 @@ func TestE2E_SubpathImportsIsolation(t *testing.T) {
 			Path: "lib/main.esc",
 			Contents: `
 				// Import both main package and subpath
-				import * as lodash from "lodash"
-				import * as fp from "lodash/fp"
+				import "lodash" as lodash
+				import "lodash/fp" as fp
 
 				// Use values from each - they should be different
 				val mainMap = lodash.map
@@ -739,7 +655,7 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 			ID:   1,
 			Path: "lib/user.esc",
 			Contents: `
-				import * as validator from "validator"
+				import "validator" as validator
 
 				// User extends BaseModel (cross-file reference)
 				type User = BaseModel & {
@@ -780,8 +696,8 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 			ID:   3,
 			Path: "lib/user_service.esc",
 			Contents: `
-				import * as db from "database"
-				import * as validator from "validator"
+				import "database" as db
+				import "validator" as validator
 
 				// Service uses models from other files and imported packages
 				type UserService = {
@@ -798,7 +714,7 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 			ID:   4,
 			Path: "lib/post_service.esc",
 			Contents: `
-				import * as db from "database"
+				import "database" as db
 
 				type PostService = {
 					db: db.Connection,
@@ -813,8 +729,8 @@ func TestE2E_ComplexProjectSimulation(t *testing.T) {
 			ID:   5,
 			Path: "lib/app.esc",
 			Contents: `
-				import * as db from "database"
-				import * as config from "config"
+				import "database" as db
+				import "config" as config
 
 				// Application configuration
 				type App = {
@@ -963,7 +879,7 @@ func TestE2E_RealisticMonorepoStructure(t *testing.T) {
 			ID:   2,
 			Path: "lib/utils.esc",
 			Contents: `
-				import * as lodash from "lodash"
+				import "lodash" as lodash
 
 				// Utility functions using lodash
 				declare fn deepClone<T>(obj: T) -> T

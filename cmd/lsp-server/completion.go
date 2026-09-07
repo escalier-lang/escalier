@@ -1031,12 +1031,9 @@ func collectFileImportBindings(
 
 	ns := scope.Namespace
 	for _, importStmt := range file.Imports {
-		for _, spec := range importStmt.Specifiers {
-			localName := spec.Name
-			if spec.Alias != "" {
-				localName = spec.Alias
-			}
-			if localName == "" || localName == "*" || seen[localName] {
+		{
+			localName := importStmt.LocalName()
+			if localName == "" || seen[localName] {
 				continue
 			}
 
@@ -1085,12 +1082,9 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool
 		// Pass 1: imports and hoisted function declarations (always visible)
 		for _, stmt := range stmts {
 			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
-				for _, spec := range importStmt.Specifiers {
-					name := spec.Name
-					if spec.Alias != "" {
-						name = spec.Alias
-					}
-					if !seen[name] {
+				{
+					name := importStmt.LocalName()
+					if name != "" && !seen[name] {
 						seen[name] = true
 						kind := protocol.CompletionItemKindModule
 						*items = append(*items, protocol.CompletionItem{
@@ -1141,12 +1135,9 @@ func collectBlockBindings(stmts []ast.Stmt, cursor ast.Location, hoistFuncs bool
 		}
 		if !hoistFuncs {
 			if importStmt, ok := stmt.(*ast.ImportStmt); ok {
-				for _, spec := range importStmt.Specifiers {
-					name := spec.Name
-					if spec.Alias != "" {
-						name = spec.Alias
-					}
-					if !seen[name] {
+				{
+					name := importStmt.LocalName()
+					if name != "" && !seen[name] {
 						seen[name] = true
 						kind := protocol.CompletionItemKindModule
 						*items = append(*items, protocol.CompletionItem{

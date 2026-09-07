@@ -1,5 +1,7 @@
 package ast
 
+import "strings"
+
 //sumtype:decl
 type Stmt interface {
 	isStmt()
@@ -65,32 +67,68 @@ func (s *ReturnStmt) Accept(v Visitor) {
 // ImportSpecifier represents a single import specifier
 // For named imports: { foo, bar as baz }
 // For namespace imports: * as ns
-type ImportSpecifier struct {
-	Name  string // The name being imported (or "*" for namespace imports)
-	Alias string // The local name (optional for named imports, required for namespace imports)
-	span  Span
-	commentSlots
-}
-
-func NewImportSpecifier(name, alias string, span Span) *ImportSpecifier {
-	return &ImportSpecifier{Name: name, Alias: alias, span: span, commentSlots: commentSlots{}}
-}
-func (i *ImportSpecifier) Span() Span { return i.span }
-
+// ImportStmt is `import "uri"` with an optional `as name`, the one import form
+// Escalier has. It binds the package as a namespace and members are reached
+// through it. There is no named specifier: a member is never bound directly.
 type ImportStmt struct {
-	Specifiers  []*ImportSpecifier
 	PackageName string   // module specifier without the `?flag` suffix, e.g. "lodash", "std:math"
+	Alias       string   // the `as name` binding, or "" to derive one from PackageName
 	Flags       []string // `?flag1&flag2` suffix parsed into a list, preserving order; nil if none
 	span        Span
 	commentSlots
 }
 
-// Bare reports whether this import has no binding clause (no specifiers and no
-// namespace alias), as in `import "std:math"`.
-func (s *ImportStmt) Bare() bool { return len(s.Specifiers) == 0 }
+func NewImportStmt(packageName, alias string, flags []string, span Span) *ImportStmt {
+	return &ImportStmt{PackageName: packageName, Alias: alias, Flags: flags, span: span, commentSlots: commentSlots{}}
+}
 
-func NewImportStmt(specifiers []*ImportSpecifier, packageName string, flags []string, span Span) *ImportStmt {
-	return &ImportStmt{Specifiers: specifiers, PackageName: packageName, Flags: flags, span: span, commentSlots: commentSlots{}}
+// LocalName returns the name this import binds the package under: the alias
+// when one is written, and otherwise a name derived from the specifier.
+func (s *ImportStmt) LocalName() string {
+	if s.Alias != "" {
+		return s.Alias
+	}
+	return DeriveImportName(s.PackageName)
+}
+
+// DeriveImportName turns a module specifier into the name a bare import binds
+// it under: the last path segment, with any scheme dropped, mapped to an
+// identifier. `std:math` gives `math` and `lodash/fp` gives `fp`.
+//
+// An npm package name is not an identifier in general, so every character an
+// identifier cannot hold becomes an underscore and a leading digit gains one:
+// `fast-deep-equal` gives `fast_deep_equal` and `package-1` gives `package_1`.
+// Writing `as name` is how an author picks something else.
+func DeriveImportName(specifier string) string {
+	name := specifier
+	if _, pkg, ok := strings.Cut(name, ":"); ok {
+		name = pkg
+	}
+	if i := strings.LastIndex(name, "/"); i >= 0 {
+		name = name[i+1:]
+	}
+	if name == "" {
+		return ""
+	}
+
+	var b strings.Builder
+	for i := range len(name) {
+		c := name[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+			b.WriteByte(c)
+		case c >= '0' && c <= '9':
+			// A leading digit would not lex as an identifier, so the derived
+			// name opens with an underscore instead.
+			if b.Len() == 0 {
+				b.WriteByte('_')
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return b.String()
 }
 func (*ImportStmt) isStmt()      {}
 func (s *ImportStmt) Span() Span { return s.span }

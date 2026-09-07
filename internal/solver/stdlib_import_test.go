@@ -175,12 +175,11 @@ func TestStdlibImportRejectsMalformedURIs(t *testing.T) {
 			messages: nil, // filled in below, since the message names a temp dir
 		},
 		// Several problems at once, reported together.
-		"ANamedImportUnderAnUnknownScheme": {
-			src: `import { thing } from "bogus:pkg"`,
+		"AnUnknownSchemeAndARepeatedFlag": {
+			src: `import "bogus:pkg?local&local"`,
 			messages: []string{
 				`unknown import scheme "bogus"; recognized schemes: std, web, node`,
-				`named imports from pseudo-package "bogus:pkg" are not supported; ` +
-					"use a bare-string import (`import \"bogus:pkg\"`) and access members through the namespace",
+				`duplicate import flag "local"`,
 			},
 		},
 	}

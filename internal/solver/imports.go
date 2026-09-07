@@ -1,7 +1,6 @@
 package solver
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -41,10 +40,9 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 
 // bindImport loads the package an import names and binds it into fileScope.
 //
-// Three binding shapes, and the statement's specifiers pick between them. A
-// bare `import "std:math"` binds the package as a namespace under its last URI
-// segment. A `* as name` specifier binds it under that name. A named specifier
-// binds one member, under its alias when it has one.
+// One binding shape: the package becomes a namespace under the name the
+// statement binds it as, which is its alias when it wrote one and a name
+// derived from the specifier otherwise. Members are reached through it.
 func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	uri := stmt.PackageName
 	if IsSchemePrefixedImport(uri) {
@@ -59,78 +57,9 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 		return errs
 	}
 
-	if stmt.Bare() {
-		fileScope.defineNamespace(localName(uri), ns)
-		return errs
-	}
-
-	for _, spec := range stmt.Specifiers {
-		if spec.Name == "*" {
-			fileScope.defineNamespace(spec.Alias, ns)
-			continue
-		}
-		local := spec.Alias
-		if local == "" {
-			local = spec.Name
-		}
-		bound := false
-		if b, ok := ns.Values[spec.Name]; ok {
-			fileScope.defineValue(local, b)
-			bound = true
-		}
-		if b, ok := ns.Types[spec.Name]; ok {
-			fileScope.defineType(local, b)
-			bound = true
-		}
-		// A namespace is a third binding sort, so a specifier naming one binds it
-		// alongside. An enum arrives as a type and a namespace at once, and both
-		// halves are needed for `Color.Red()` to resolve.
-		if nested, ok := ns.Nested[spec.Name]; ok {
-			fileScope.defineNamespace(local, nested)
-			bound = true
-		}
-		if !bound {
-			errs = append(errs, &UnexportedMemberError{
-				URI:    uri,
-				Member: spec.Name,
-				span:   spec.Span(),
-			})
-		}
-	}
+	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
 }
-
-// localName returns the name a bare import binds a package under: the last
-// segment of its specifier, so `lodash/fp` binds `fp`. A scheme-prefixed URI
-// never reaches here, since bindImport diverts one to the pseudo-package path.
-func localName(uri string) string {
-	if _, pkg, ok := strings.Cut(uri, ":"); ok {
-		uri = pkg
-	}
-	if i := strings.LastIndex(uri, "/"); i >= 0 {
-		uri = uri[i+1:]
-	}
-	return uri
-}
-
-// UnexportedMemberError reports a named import of something the package does
-// not export. A package's surface holds only its exported declarations, so a
-// member that exists but is not exported reads the same as one that does not
-// exist, which is what the message says.
-type UnexportedMemberError struct {
-	// URI is the package the import named.
-	URI string
-	// Member is the name the specifier asked for.
-	Member string
-	span   ast.Span
-}
-
-func (e *UnexportedMemberError) Message() string {
-	return fmt.Sprintf("package %q exports no %q", e.URI, e.Member)
-}
-func (e *UnexportedMemberError) Span() ast.Span      { return e.span }
-func (e *UnexportedMemberError) Related() []ast.Span { return nil }
-func (e *UnexportedMemberError) isSolverError()      {}
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
 //
