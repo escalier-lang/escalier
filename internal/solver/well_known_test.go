@@ -97,3 +97,79 @@ func TestWellKnownOwnersAreComplete(t *testing.T) {
 	}
 	require.Len(t, wellKnownOwner, 6)
 }
+
+// Loading a handle's package mid-walk must leave the caller's file scopes in
+// place. bindFileImports installs the loaded module's over them, so without a
+// restore every later declaration would lose its own file's imports.
+func TestWellKnownTypeLeavesFileScopesAlone(t *testing.T) {
+	t.Parallel()
+
+	c := wellKnownChecker(t, map[string]string{
+		"std/array.esc": `
+			export declare class Array {
+				length: number,
+			}
+		`,
+	})
+	before := map[int]*Scope{7: nil}
+	c.fileScopes = before
+
+	_, ok := c.wellKnownType(wellKnownArray)
+	require.True(t, ok)
+	require.Equal(t, before, c.fileScopes, "the caller's file scopes survive the load")
+}
+
+// A consultation raised while the owning package is itself loading finds no
+// surface yet. That absence is temporary, so it must not be cached as a fact
+// about the tree.
+func TestWellKnownTypeDoesNotCacheACycleMiss(t *testing.T) {
+	t.Parallel()
+
+	c := wellKnownChecker(t, map[string]string{
+		"std/array.esc": `
+			export declare class Array {
+				length: number,
+			}
+		`,
+	})
+	// Mark the package as in flight, which is the state loadPackage reads to
+	// recognize a cycle.
+	c.packages.markLoading("std:array", "std/array.esc")
+	c.loadStack = append(c.loadStack, "std:array")
+
+	_, ok := c.wellKnownType(wellKnownArray)
+	require.False(t, ok)
+	require.NotContains(t, c.ctx.wellKnown, wellKnownArray,
+		"a cycle leaves the cache untouched so a later consultation can answer")
+
+	// With the load finished, the same consultation answers.
+	c.loadStack = c.loadStack[:len(c.loadStack)-1]
+	c.packages = NewPackageRegistry()
+	got, ok := c.wellKnownType(wellKnownArray)
+	require.True(t, ok)
+	require.Equal(t, "Array", soltype.Print(got))
+}
+
+// A trial's bounds are truncated when it is discarded, so a handle resolved under
+// one would cache a type whose bounds no longer exist. A trial answers nothing and
+// leaves the load to a consultation outside one.
+func TestWellKnownTypeAnswersNothingInsideAProbe(t *testing.T) {
+	t.Parallel()
+
+	c := wellKnownChecker(t, map[string]string{
+		"std/array.esc": `
+			export declare class Array {
+				length: number,
+			}
+		`,
+	})
+	p := c.openProbe()
+	_, ok := c.wellKnownType(wellKnownArray)
+	require.False(t, ok)
+	require.NotContains(t, c.ctx.wellKnown, wellKnownArray)
+	c.closeProbe(p, false)
+
+	got, ok := c.wellKnownType(wellKnownArray)
+	require.True(t, ok)
+	require.Equal(t, "Array", soltype.Print(got))
+}

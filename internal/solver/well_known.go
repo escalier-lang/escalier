@@ -57,7 +57,21 @@ func (c *checker) wellKnownType(name wellKnownName) (soltype.Type, bool) {
 		return nil, false
 	}
 
-	t, ok := c.readWellKnown(uri, name)
+	// A speculation trial journals every bound it appends and truncates them on a
+	// discard. Inferring a package under one would publish it to the registry and
+	// cache a handle whose bounds the discard then removes, so a trial answers
+	// nothing and leaves the load to a consultation outside one.
+	if c.ctx.probe != nil {
+		return nil, false
+	}
+
+	t, ok, retry := c.readWellKnown(uri, name)
+	if retry {
+		// The package is loading further up this call chain, so it has no surface to
+		// read yet. Leave the cache untouched: the load completes, and a later
+		// consultation answers from the finished package.
+		return nil, false
+	}
 	if c.ctx.wellKnown == nil {
 		c.ctx.wellKnown = map[wellKnownName]soltype.Type{}
 	}
@@ -72,15 +86,34 @@ func (c *checker) wellKnownType(name wellKnownName) (soltype.Type, bool) {
 // readWellKnown loads uri and reads name off the package's exported surface. The
 // span it reports against is empty, since a handle is reached by a rule rather
 // than by anything the user wrote.
-func (c *checker) readWellKnown(uri string, name wellKnownName) (soltype.Type, bool) {
+//
+// retry is true when the package is already loading further up the call chain,
+// which makes the absence temporary rather than a fact about the tree.
+func (c *checker) readWellKnown(uri string, name wellKnownName) (t soltype.Type, ok bool, retry bool) {
+	// bindFileImports installs the loaded module's file scopes over the caller's and
+	// does not put them back, since every other load runs before a walk starts
+	// rather than inside one. A handle is consulted by a rule mid-walk, so the
+	// caller's scopes are restored here or every later declaration loses its file's
+	// imports.
+	savedFileScopes := c.fileScopes
 	ns, errs := c.loadPackage(uri, ast.Span{})
+	c.fileScopes = savedFileScopes
+
 	if ns == nil {
+		if isCycleError(errs) {
+			return nil, false, true
+		}
 		c.report(&MissingWellKnownTypeError{
 			Name:   string(name),
 			URI:    uri,
 			Reason: firstMessage(errs),
 		})
-		return nil, false
+		return nil, false, false
+	}
+	// A package that published a surface may still have reported diagnostics of its
+	// own. Both import call sites pass those on, so a handle does too.
+	for _, err := range errs {
+		c.report(err)
 	}
 	b, found := ns.Types[string(name)]
 	if !found {
@@ -89,9 +122,20 @@ func (c *checker) readWellKnown(uri string, name wellKnownName) (soltype.Type, b
 			URI:    uri,
 			Reason: "the package declares no such type",
 		})
-		return nil, false
+		return nil, false, false
 	}
-	return b.Type, true
+	return b.Type, true, false
+}
+
+// isCycleError reports whether errs is the diagnostic loadPackage raises for a URI
+// already being loaded further up the call chain.
+func isCycleError(errs []SolverError) bool {
+	for _, err := range errs {
+		if _, isCycle := err.(*ImportCycleError); isCycle {
+			return true
+		}
+	}
+	return false
 }
 
 // firstMessage renders the first diagnostic in errs, or a fixed phrase when the
