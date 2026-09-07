@@ -23,9 +23,11 @@ which is also where the three curated `fresh` returns below already sit. A
 shape the generator cannot express costs an overlay `replace` under
 `internal/interop/overlay/`.
 
-§7 and §11 of the ecma-262 plan still describe the older routing, where a
-hand-curated override layer keyed by declaration carried these annotations.
-Reconciling those sections with §6.8 is outside this file.
+§7's receiver half is what landed, and §6.8 keeps it: receiver mutability is
+applied from the fact. What both it and §11 still describe for the other three
+determinations is the older routing, where a hand-curated override layer keyed
+by declaration carried them. Reconciling those sections with §6.8 is outside
+this file.
 
 The checker's lifetime inference and elision rules,
 [../lifetimes/requirements.md](../lifetimes/requirements.md), and the borrow
