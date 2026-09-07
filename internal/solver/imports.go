@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // imports.go binds what a file's `import` statements name.
@@ -46,6 +47,9 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 // binds one member, under its alias when it has one.
 func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	uri := stmt.PackageName
+	if IsSchemePrefixedImport(uri) {
+		return c.bindPseudoPackageImport(fileScope, stmt)
+	}
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		// Either the load failed, and errs says why, or the URI is being loaded
@@ -97,8 +101,8 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 }
 
 // localName returns the name a bare import binds a package under: the last
-// segment of its URI, so `std:math` binds `math` and a bare path binds its last
-// component.
+// segment of its specifier, so `lodash/fp` binds `fp`. A scheme-prefixed URI
+// never reaches here, since bindImport diverts one to the pseudo-package path.
 func localName(uri string) string {
 	if _, pkg, ok := strings.Cut(uri, ":"); ok {
 		uri = pkg
@@ -127,3 +131,67 @@ func (e *UnexportedMemberError) Message() string {
 func (e *UnexportedMemberError) Span() ast.Span      { return e.span }
 func (e *UnexportedMemberError) Related() []ast.Span { return nil }
 func (e *UnexportedMemberError) isSolverError()      {}
+
+// bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
+//
+// The URI is validated first and a malformed one binds nothing: there is no
+// package to load, and reporting a second failure from the load would bury the
+// diagnostic that says what to fix.
+//
+// The binding shape is the FR5 rule. A package whose sole class is named after
+// it binds that class under its own capitalization, so `import "std:array"`
+// gives `Array` rather than `array.Array`. Every other package binds as a
+// namespace under its lowercased package name.
+func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
+	if errs := validateStdlibImport(stmt); len(errs) > 0 {
+		return errs
+	}
+
+	uri := stmt.PackageName
+	ns, errs := c.loadPackage(uri, stmt.Span())
+	if ns == nil {
+		return errs
+	}
+
+	_, pkg, _ := splitScheme(uri)
+	if className, ok := singleClassShortcut(ns, pkg); ok {
+		fileScope.defineValue(className, ns.Values[className])
+		fileScope.defineType(className, ns.Types[className])
+	}
+	// The namespace is bound whether or not the shortcut fired. A package pairs
+	// its class with other exports — `std:array` ships `FlatArray` beside
+	// `Array` — and binding only the class would leave those unreachable under
+	// any name.
+	//
+	// FR5 asks for more than reachability: the other members belong on the class
+	// binding itself, with a static of the same name winning. That merge is #1466.
+	fileScope.defineNamespace(strings.ToLower(pkg), ns)
+	return errs
+}
+
+// singleClassShortcut returns the class name a package binds directly under,
+// and false when the package binds as a namespace instead.
+//
+// The shortcut fires when the package exports a class whose name matches its
+// own case-insensitively. The name comes back in its own capitalization, so
+// `std:array` binds `Array`.
+//
+// A value and a type under one name is not enough to go on. A package exporting
+// `fn array` beside `type array` has both, and binding the function directly
+// would shadow the namespace: a member access that finds a value resolves
+// through that value's type and never reaches a namespace of the same name, so
+// every other export would become unreachable. Only a `ClassType` binding says
+// a class is what produced the pair.
+func singleClassShortcut(ns *Namespace, pkg string) (string, bool) {
+	for name := range ns.Values {
+		if !strings.EqualFold(name, pkg) {
+			continue
+		}
+		if b, hasType := ns.Types[name]; hasType {
+			if _, isClass := b.Type.(*soltype.ClassType); isClass {
+				return name, true
+			}
+		}
+	}
+	return "", false
+}

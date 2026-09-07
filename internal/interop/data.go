@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+
+	"github.com/escalier-lang/escalier/internal/stdlibdir"
 )
 
 // BuiltinsDir resolves the on-disk directory that holds the built-in
@@ -33,7 +35,7 @@ func BuiltinsDir() (string, error) {
 		return env, nil
 	}
 	if exe, err := os.Executable(); err == nil {
-		if root := findEscalierRoot(filepath.Dir(exe)); root != "" {
+		if root := stdlibdir.FindEscalierRoot(filepath.Dir(exe)); root != "" {
 			return filepath.Join(root, "internal", "interop", "data"), nil
 		}
 	}
@@ -54,29 +56,11 @@ func SetBuiltinsDirForTest() error {
 	if err != nil {
 		return err
 	}
-	root := findEscalierRoot(cwd)
+	root := stdlibdir.FindEscalierRoot(cwd)
 	if root == "" {
 		return fmt.Errorf("could not locate Escalier repo root from %s", cwd)
 	}
 	return os.Setenv("ESCALIER_BUILTINS_DIR", filepath.Join(root, "internal", "interop", "data"))
-}
-
-// findEscalierRoot walks up from start looking for a directory that
-// contains `internal/interop/data`. Returns "" if no such directory
-// is found before reaching the filesystem root.
-func findEscalierRoot(start string) string {
-	dir := start
-	for {
-		info, err := os.Stat(filepath.Join(dir, "internal", "interop", "data"))
-		if err == nil && info.IsDir() {
-			return dir
-		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			return ""
-		}
-		dir = parent
-	}
 }
 
 // BuildBuiltinStore is the production entry point that turns the
