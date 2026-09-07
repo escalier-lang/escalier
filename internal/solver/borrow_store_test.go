@@ -690,10 +690,10 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	}
 }
 
-// TestCallStoreEdgeTruncatedWalkStaysSound covers what a walk that spends its alias depth records.
-// The borrow sits deeper in the chain than the fuel reaches, so the exact field path is
-// unknown; recording no store would drop the escape that borrow raises. The store lands at
-// the whole target instead, which every field read through it follows.
+// TestCallStoreEdgeTruncatedWalkStaysSound covers what a walk records once it spends its
+// alias depth. The borrow sits deeper in the chain than maxAliasExpansionDepth reaches, so
+// the exact field path is unknown. Recording no store would drop the escape that borrow
+// raises, so the store lands at the whole target, which every field read through it follows.
 //
 // The observable is the escape the store reports into an owned parameter target. #1262 will
 // stop reporting that, correctly, so this test needs a different observable when it lands.
