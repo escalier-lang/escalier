@@ -25,11 +25,18 @@ import (
 // since the two are spelled alike. That can record an alias the call never forms, reporting an
 // escape the program does not have. The opposite reading would miss a real dangling borrow.
 //
-// `a.peers.push(&mut b)`, the container case this exists for, is not covered. It needs an
+// A method call reaches this recorder through its explicit parameters. freezeClassBody
+// coalesces each member's signature into the class body, and a lifetime written at two
+// borrows survives that pass, so the two sides still share a variable at the call site.
+//
+// Two method shapes miss it. A store into the `self` receiver does not reach the recorder,
+// since memberValue strips the receiver off the signature it hands the call. An overloaded
+// method call does not either, since inferMethodOverloadCall resolves its arm and returns
+// before the recorder runs.
+//
+// So `a.peers.push(&mut b)`, the container case this exists for, is not covered. It needs an
 // `Array` type with a method surface, a lifetime parameter on the container tying the element
-// borrow to the receiver, the receiver's type at the call site, and named lifetimes on a
-// method signature. The last is why no method call records a store today: a method's
-// lifetimes reach the call site anonymized, so the two sides share nothing to match.
+// borrow to the receiver, and the receiver's type at the call site.
 type storeEdge struct {
 	// arg is the index of the argument whose borrow the call stores.
 	arg int

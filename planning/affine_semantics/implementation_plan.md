@@ -1081,21 +1081,19 @@ places), PR 14 (the C2 mut-context flag the borrow-leaf upgrade's invariance rid
 
   records a → b at [peer], so the escape check and the connected-component move see the alias.
 
-  `a.peers.push(&mut b)`, the canonical container case, is not covered. No method call records
-  a store today, and four pieces are missing. First, `Array<T>` and its method surface:
-  `internal/solver` has no `Array` type and no array/tuple method calls, and both arrive with
-  the M7.5 library-type ingestion
+  A method call records a store through its explicit parameters, since a lifetime written at
+  two borrows survives the coalescing `freezeClassBody` applies to each member's signature.
+  `a.peers.push(&mut b)`, the canonical container case, is still not covered, because it
+  stores into the `self` receiver. Three pieces are missing. First, `Array<T>` and its method
+  surface: `internal/solver` has no `Array` type and no array/tuple method calls, and both
+  arrive with the M7.5 library-type ingestion
   ([planning/simple_sub/01-milestones.md](../simple_sub/01-milestones.md) §M7.5). Second, a
-  lifetime parameter on the container type, so `Array<'a, T>` can tie the element borrow to the
-  receiver; a class declares no lifetime parameters today, and neither can an object type's
-  method signature name a lifetime its enclosing signature binds. Third, the receiver type at
-  the call site: `memberValue` hands the call a signature with its `SelfParam` stripped, so
-  the recorder has no receiver to search for the shared lifetime. Fourth, named lifetimes on a
-  method signature at all: a method reaches the call site with its lifetimes coalesced to the
-  anonymous display lifetime, so the two sides of a store share nothing the search can match,
-  which is why even a store through a method's explicit parameter goes unrecorded. This is what
-  keeps the requirements' canonical cyclic `build()` from being expressible as written: the
-  `.push` edges that wire the graph are never recorded, so the escape check sees no borrows to
+  lifetime parameter on the container type, so `Array<'a, T>` can tie the element borrow to
+  the receiver; a class declares no lifetime parameters today. Third, the receiver type at the
+  call site: `memberValue` hands the call a signature with its `SelfParam` stripped, so the
+  recorder has no receiver to search for the shared lifetime. This is what keeps the
+  requirements' canonical cyclic `build()` from being expressible as written: the `.push`
+  edges that wire the graph are never recorded, so the escape check sees no borrows to
   co-move.
 
 ## Testing approach
