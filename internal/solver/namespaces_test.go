@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,4 +99,24 @@ func TestNamespaceBlocksInSiblingDirectoriesStayDistinct(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "number", values["geo.util.gv"])
 	require.Equal(t, "string", values["math.util.mv"])
+}
+
+// An exported namespace block reaches a package's surface whole, so an importer
+// reads its members through it.
+func TestExportedNamespaceBlockReachesTheSurface(t *testing.T) {
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "geo"
+			val o = geo.shapes.origin
+		`),
+		sourceOf(t, map[string]string{
+			"geo": `
+				export namespace shapes {
+					export val origin: number = 0
+				}
+			`,
+		}),
+	)
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "o")))
 }

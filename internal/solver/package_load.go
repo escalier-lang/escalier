@@ -154,6 +154,17 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 			if !decl.Export() {
 				continue
 			}
+			// A `namespace` block carries its whole Namespace onto the surface, since
+			// its members are reached through it rather than named beside it.
+			// exportedNames answers nothing for a block, so it is taken here instead.
+			if nsDecl, isNS := decl.(*ast.NamespaceDecl); isNS {
+				if nsDecl.Name != nil && nsDecl.Name.Name != "" {
+					if bound, ok := scope.GetNamespace(qualify(nsPath, nsDecl.Name.Name)); ok {
+						target.Nested[nsDecl.Name.Name] = bound
+					}
+				}
+				continue
+			}
 			for _, name := range exportedNames(decl) {
 				// A value binds under the plain namespace-qualified name the dep-graph
 				// walk defined it under. A type binds under the key its registration
