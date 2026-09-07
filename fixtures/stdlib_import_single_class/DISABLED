@@ -1,9 +1,8 @@
-DISABLED until SimpleSub M7.5.
+DISABLED until #1457.
 
-The §2-era std:array and std:math stubs this fixture was written
-against are gone; #1232 committed the real generated packages. The
-prelude loads the ES2015 lib subset (internal/checker/prelude.go,
-targetVersion) while `generate` reads all 88 lib files, so every
-post-ES2015 global the tree declares fails the §3.4(4) `@js` target
-check and the package fails to load. Re-enable by deleting this file
-once M7.5 ingests the committed tree. See #1402.
+Importing `std:array` panics the compiler before this fixture reaches a
+diagnostic. The class's instance alias prunes to a RestSpreadType and
+InferComponent asserts an *ObjectType on it, at the typeAlias.Type
+assertion in internal/checker/infer_module.go.
+
+Re-enable by deleting this file once `import "std:array"` loads.

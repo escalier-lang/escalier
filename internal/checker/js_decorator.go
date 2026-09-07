@@ -2,10 +2,8 @@ package checker
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // declName returns a printable name for decl used in loader diagnostics.
@@ -93,28 +91,27 @@ func declKindLabel(decl ast.Decl) string {
 //     share-by-pointer model safe; the `@js` decorator is forbidden
 //     on type-level decls at parse time, so we don't need to check it
 //     here.
-//  4. The `@js` argument names a known JS runtime path — a top-level
-//     global from the pinned TS lib (e.g. `Math.sin`, `parseInt`) or
-//     an entry in the hand-authored allow-list
-//     (e.g. `Symbol.customMatcher`). Typos surface here rather than at
-//     a downstream `ReferenceError` in generated JS.
+//
+// Whether the `@js` argument names a real JS runtime path is settled
+// where the decorator is written, not here. `dts_to_esc.ValidateJSTargets`
+// answers it against the pinned `.d.ts` set the tree is generated from,
+// which is the only source that agrees with the tree by construction.
 //
 // Each diagnostic names the file (via the importing-file `span`), the
 // declaration, and the rule that fired so the user can act on it
 // without leaving their project.
 func (c *Checker) validateJsDecorators(filePath string, mod *ast.Module, importSpan ast.Span) []Error {
 	var errs []Error
-	globals := c.knownJSGlobals()
 	mod.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
-			errs = append(errs, validateJsDecorator(filePath, decl, importSpan, globals)...)
+			errs = append(errs, validateJsDecorator(filePath, decl, importSpan)...)
 		}
 		return true
 	})
 	return errs
 }
 
-func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, globals set.Set[string]) []Error {
+func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span) []Error {
 	switch decl.(type) {
 	case *ast.VarDecl, *ast.FuncDecl, *ast.ClassDecl:
 		// fall through — value-level decl handled below
@@ -136,7 +133,7 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, gl
 		return nil
 	}
 
-	jsDec, jsArg, jsOK := ast.FindJsDecorator(decl)
+	jsDec, _, jsOK := ast.FindJsDecorator(decl)
 	name := declNameOrPlaceholder(decl)
 	kindLabel := declKindLabel(decl)
 
@@ -168,31 +165,6 @@ func validateJsDecorator(filePath string, decl ast.Decl, importSpan ast.Span, gl
 			message: fmt.Sprintf(
 				"`@js` decorator on %s %q in pseudo-package file %s must take a single string-literal argument",
 				kindLabel, name, filePath),
-			span: importSpan,
-		}}
-	}
-	// Rule 4: the `@js` argument must name a known JS runtime path —
-	// either a top-level global from the pinned TS lib (with at most one
-	// `.member` segment) or an entry in the hand-authored allow-list.
-	// `globals` may be nil if the caller couldn't materialise it (e.g.
-	// no prelude); skip the check rather than false-positive in that
-	// case.
-	if globals != nil && !globals.Contains(jsArg) {
-		// For a dotted arg, point at whichever side is unknown — the
-		// prefix or the member — so the user doesn't have to guess
-		// which segment they typo'd.
-		detail := ""
-		if prefix, member, ok := strings.Cut(jsArg, "."); ok {
-			if !globals.Contains(prefix) {
-				detail = fmt.Sprintf(" (prefix %q is not a known top-level global)", prefix)
-			} else {
-				detail = fmt.Sprintf(" (%q has no known runtime member %q)", prefix, member)
-			}
-		}
-		return []Error{&GenericError{
-			message: fmt.Sprintf(
-				"`@js(%q)` on %s %q in pseudo-package file %s does not name a known JS runtime global%s",
-				jsArg, kindLabel, name, filePath, detail),
 			span: importSpan,
 		}}
 	}
