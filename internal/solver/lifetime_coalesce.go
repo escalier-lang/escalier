@@ -91,7 +91,7 @@ func coalesceLifetimes(t soltype.Type, pol soltype.Polarity) soltype.Type {
 // output and still have to keep their name.
 //
 // A complement encloses the first kind. A complemented borrow reaching no output is
-// genuinely connect-nothing, and the elision rule above drops those. Eliding under a
+// genuinely connect-nothing, and a lifetime reaching no output is dropped. Eliding under a
 // complement changes the type rather than merely dropping a name, since `~(&'a T)` rendered
 // as `~(&T)` is the complement of any borrow of T rather than of the `'a` one.
 //

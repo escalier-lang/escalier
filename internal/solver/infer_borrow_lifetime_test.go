@@ -66,7 +66,8 @@ func TestInferSharedParamLifetimeIsNamed(t *testing.T) {
 			want:    "fn <'a>(x: &'a mut {peer: &'a mut {x: number}}) -> undefined",
 		},
 		// A lifetime written at one borrow and reaching no output constrains nothing, so it
-		// still elides to a bare `&mut`. This is the case the rule above must not swallow.
+		// still elides to a bare `&mut`. Counting a single write as shared would name every
+		// borrow in every signature.
 		"SingleBorrowStillElides": {
 			src:     `declare fn drop<'a>(x: &'a mut {x: number}) -> undefined`,
 			binding: "drop",
