@@ -9,23 +9,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestReturnEscape covers the return-escape rule: a value flowing out of the frame
-// may not borrow a function-local, since the local dies when the frame returns. A borrow
-// of a parameter is exempt, because its lifetime is supplied by the caller and already
-// outlives the return. Each case also pins the function's inferred type, since the escape
-// is reported alongside ordinary inference rather than replacing it.
+// TestReturnValueBorrows covers what a `return` may carry out of the frame. A borrow of a
+// function-local is allowed to leave: the frame is gone afterwards, so the borrow the caller
+// receives is the only path left to the value, and the runtime keeps that value alive because
+// it is garbage collected. The return is then re-typed to own what it borrowed, since owning
+// is what the caller actually holds.
 //
-// Every case here is a bare borrow flowing out: the outgoing value IS a borrow, so it has
-// no owned graph to re-anchor and stays an escape. An owned value carrying a self-contained
-// graph of borrowed locals is a connected-component move instead, covered by
-// TestConnectedComponentMove.
-func TestReturnEscape(t *testing.T) {
+// Each case pins the function's inferred type, which is where the re-typing shows. An
+// unannotated `return &mut b` over `val mut b` comes out as `mut {value: number}`. A signature
+// that annotates its return keeps the annotation, since an owned value satisfies a borrow
+// destination.
+//
+// A borrow of a parameter is a separate exemption and predates this one: its lifetime comes
+// from the caller and already outlives the return, so nothing is re-typed.
+//
+// Re-typing needs the borrow graph reachable from the return to be a tree, meaning no local is
+// reached twice. A case that reaches one twice keeps its borrow in the type. TestConnectedComponentMove
+// covers the same rule for a return that carries an owned aggregate holding borrows.
+func TestReturnValueBorrows(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// Returning the borrow itself, `return &mut b`, escapes the local b.
+		// The bare borrow `return &mut b` leaves as the only path to b, so the return owns
+		// what it borrowed. The owned form keeps the borrow's mutability.
 		"ReturnDirectBorrowOfLocal": {
 			src: `
 				fn build() {
@@ -33,13 +41,50 @@ func TestReturnEscape(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want:  []string{"4:13-4:19: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"build": "fn () -> &mut {value: number}"},
+			want:  nil,
+			types: map[string]string{"build": "fn () -> mut {value: number}"},
 		},
-		// Returning the borrow field itself escapes the local it holds: `a.peer` is the
-		// `&mut b` borrow, so returning it leaves b dangling. The field-granular edge at
-		// [peer] is followed for the field return.
-		"ReturnBorrowFieldEscapes": {
+		// The first repro in #1264. A signature that annotates its return as a borrow still
+		// checks: the body's inferred `mut {value: number}` satisfies `&mut {value: number}`,
+		// because an owned source fills a borrow destination with no lifetime to relate.
+		"ReturnDirectBorrowUnderABorrowAnnotation": {
+			src: `
+				fn f() -> &mut {value: number} {
+					val mut q = {value: 1}
+					return &mut q
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn () -> &mut {value: number}"},
+		},
+		// The second repro in #1264. The store puts b at a.peer, and a and b are both dead at
+		// the return, so `a.peer` is again the only path out. A field read is not re-typed:
+		// the property's type is a variable the evaluator settles after the strip runs, so
+		// there is no borrow in hand to rewrite. The move still consumes b.
+		"ReturnStoredBorrowThroughACarrierField": {
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+
+				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut p, spare: &mut q}
+					store(&mut a, &mut b)
+					return a.peer
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
+					"item: &'a mut {value: number}) -> undefined",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+			},
+		},
+		// Returning the borrow field `a.peer` hands out the only path to b, since a dies with
+		// the frame. The field-granular edge at [peer] is what finds b.
+		"ReturnBorrowField": {
 			src: `
 				fn build() -> &mut {value: number} {
 					val mut b = {value: 2}
@@ -47,14 +92,13 @@ func TestReturnEscape(t *testing.T) {
 					return a.peer
 				}
 			`,
-			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
-		// Reading a field through a whole-binding borrow escapes the borrowed local: `a`
-		// borrows all of b, so `a.peer` projects into b and returning it leaves b dangling.
-		// The edge a → b sits at path [], above the read path [peer], so the field return
-		// still follows it.
-		"ReturnFieldThroughWholeBorrowEscapes": {
+		// Reading a field through a whole-binding borrow reaches the same place: a borrows all
+		// of b, so `a.peer` projects into b. The edge a → b sits at path [], above the read
+		// path [peer], so the field return still follows it.
+		"ReturnFieldThroughWholeBorrow": {
 			src: `
 				fn build() -> &mut {value: number} {
 					val mut b = {peer: {value: 0}}
@@ -62,24 +106,25 @@ func TestReturnEscape(t *testing.T) {
 					return a.peer
 				}
 			`,
-			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
-		// A borrow of a local written inside a control-flow carrier escapes the same as one
-		// written directly: the scan descends the if/else branches to find the `&mut b`.
-		"ReturnBorrowInIfBranchEscapes": {
+		// Both branches of the carrier borrow b, so the walk reaches b twice and the graph is
+		// not a tree. Only one branch runs, so the escape is still the only path out and the
+		// return is accepted; the graph cannot tell the branches apart, so the type keeps its
+		// borrow rather than claiming ownership the checker has not proven.
+		"ReturnBorrowInIfBranchKeepsItsBorrow": {
 			src: `
 				fn build() -> &mut {value: number} {
 					val mut b = {value: 0}
 					return if true { &mut b } else { &mut b }
 				}
 			`,
-			want:  []string{"4:12-4:47: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
-		// Returning a disjoint owned field of a binding that also has a borrow field does
-		// not escape: `a.data` carries none of a's borrow of b. The field return follows
-		// only the edges at [data], finds none, and reports no spurious escape.
+		// Returning a disjoint owned field carries no borrow at all: `a.data` follows the
+		// edges at [data], finds none, and never reaches the escape decision.
 		"ReturnDisjointFieldOk": {
 			src: `
 				fn build() -> {value: number} {
@@ -91,8 +136,9 @@ func TestReturnEscape(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"build": "fn () -> {value: number}"},
 		},
-		// Returning a parameter borrow is sound: the borrow carries the caller's lifetime,
-		// which outlives the call.
+		// Returning a parameter borrow is sound for a different reason: the borrow carries the
+		// caller's lifetime, which outlives the call. Nothing is re-typed, since the caller
+		// still holds its own path to the value.
 		"ReturnParamBorrowOk": {
 			src: `
 				fn pass(p: &mut {x: number}) {
@@ -102,7 +148,7 @@ func TestReturnEscape(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"pass": "fn <'a>(p: &'a mut {x: number}) -> &'a mut {x: number}"},
 		},
-		// Borrowing a parameter and returning the borrow is sound for the same reason.
+		// Borrowing a parameter and returning the borrow keeps the parameter's lifetime too.
 		"ReturnBorrowOfParamOk": {
 			src: `
 				fn pass(p: mut {x: number}) {
@@ -112,8 +158,8 @@ func TestReturnEscape(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"pass": "fn (p: mut {x: number}) -> &mut {x: number}"},
 		},
-		// A local that only borrows a parameter is returnable: the edge to the parameter
-		// is never recorded, so returning the local raises no escape.
+		// A local that only borrows a parameter records no edge, so the return carries nothing
+		// the escape check tracks and the parameter's lifetime reaches the result.
 		"LocalBorrowsParamThenReturnOk": {
 			src: `
 				fn pass(p: &mut {x: number}) {
@@ -124,10 +170,9 @@ func TestReturnEscape(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"pass": "fn <'a>(p: &'a mut {x: number}) -> {peer: &'a mut {x: number}}"},
 		},
-		// A borrow projected into a destructuring leaf escapes: `val {peer} = {peer: &mut
-		// b}` binds peer to the borrow of the local b, so returning peer escapes b. The
-		// pattern leaf is matched to its initializer property and its edge recorded.
-		"ReturnDestructuredBorrowLeafEscapes": {
+		// A borrow projected into a destructuring leaf leaves the same way: `val {peer} =
+		// {peer: &mut b}` binds peer to the borrow of b, and peer is the only path out.
+		"ReturnDestructuredBorrowLeaf": {
 			src: `
 				fn f() -> &mut {value: number} {
 					val mut b = {value: 0}
@@ -135,13 +180,12 @@ func TestReturnEscape(t *testing.T) {
 					return peer
 				}
 			`,
-			want:  []string{"5:13-5:17: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"f": "fn () -> &mut {value: number}"},
 		},
 		// Destructuring from a place carries the place's field edges into the leaf: `val
-		// {peer} = a` binds peer to a.peer, so peer inherits a's borrow of b at [peer] and
-		// returning peer escapes b.
-		"ReturnDestructuredFromPlaceEscapes": {
+		// {peer} = a` binds peer to a.peer, so peer inherits a's borrow of b at [peer].
+		"ReturnDestructuredFromPlace": {
 			src: `
 				fn build() -> &mut {value: number} {
 					val mut b = {value: 0}
@@ -150,13 +194,12 @@ func TestReturnEscape(t *testing.T) {
 					return peer
 				}
 			`,
-			want:  []string{"6:13-6:17: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"build": "fn () -> &mut {value: number}"},
 		},
-		// A shorthand destructuring default escapes: when `obj` may lack peer, `val {peer =
-		// &mut b} = obj` binds peer to the default `&mut b` on the absent-property path, so
-		// returning peer escapes the local b.
-		"ReturnShorthandDefaultEscapes": {
+		// A shorthand destructuring default reaches the local on the absent-property path:
+		// when `obj` lacks peer, `val {peer = &mut b} = obj` binds peer to `&mut b`.
+		"ReturnShorthandDefault": {
 			src: `
 				fn f(obj: {peer?: &mut {value: number}}) -> &mut {value: number} {
 					val mut b = {value: 0}
@@ -164,15 +207,13 @@ func TestReturnEscape(t *testing.T) {
 					return peer
 				}
 			`,
-			want:  []string{"5:13-5:17: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"f": "fn <'a>(obj: {peer?: &'a mut {value: number}}) -> &'a mut {value: number}"},
 		},
-		// A borrow introduced by reassigning a `var` escapes: `a = &mut b` records the edge
-		// a → b, so returning a escapes the local b. The flow-sensitive graph strong-updates a
-		// at the reassignment, clearing its prior edges and setting a → b. Here a's prior
-		// referent was the parameter seed, which records no edge, so the clear removes nothing
-		// and only a → b reaches the return.
-		"ReturnVarReassignedToBorrowEscapes": {
+		// A borrow introduced by reassigning a `var` reaches the return through the
+		// flow-sensitive graph: `a = &mut b` strong-updates a to a → b, clearing the parameter
+		// seed that recorded no edge.
+		"ReturnVarReassignedToBorrow": {
 			src: `
 				fn f(seed: &mut {value: number}) {
 					var a = seed
@@ -181,7 +222,7 @@ func TestReturnEscape(t *testing.T) {
 					return a
 				}
 			`,
-			want:  []string{"6:13-6:14: borrowed value 'b' does not live long enough to escape the function"},
+			want:  nil,
 			types: map[string]string{"f": "fn <'a>(seed: &'a mut {value: number}) -> &'a mut {value: number}"},
 		},
 	}
@@ -330,7 +371,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
 		// {a, b} component references either node, so returning a moves the whole component
 		// out. No escape, and a and b are both consumed. b is reached once, so borrow-stripping
-		// rewrites the return to the owned `{peer: {value: number}}`.
+		// rewrites the return to the owned `mut {peer: {value: number}}`.
 		"ReturnSelfContainedComponent": {
 			src: `
 				fn build() {
@@ -340,12 +381,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
 		},
 		// A component with two borrowed locals moves as a unit just the same: both b and c
 		// are reachable only through a, so returning a co-moves all three. b and c are each
-		// reached once, so borrow-stripping rewrites the return to the owned `{p: {x: number},
-		// q: {x: number}}`.
+		// reached once, so borrow-stripping rewrites the return to the owned
+		// `mut {p: {x: number}, q: {x: number}}`.
 		"ReturnComponentTwoLocals": {
 			src: `
 				fn build() {
@@ -356,11 +397,11 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> {p: {x: number}, q: {x: number}}"},
+			types: map[string]string{"build": "fn () -> mut {p: {x: number}, q: {x: number}}"},
 		},
 		// The owned carrier may be a fresh literal with no intervening binding: the returned
 		// object owns the borrow of b, and b is reachable only through it. b is reached once,
-		// so borrow-stripping rewrites the return to the owned `{peer: {value: number}}`.
+		// so borrow-stripping rewrites the return to the owned `mut {peer: {value: number}}`.
 		"ReturnInlineLiteralComponent": {
 			src: `
 				fn build() {
@@ -369,12 +410,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
 		},
 		// A whole-binding move carries the graph forward: `val a2 = a` moves a, borrow and
 		// all, into a2. The dead a is not a live external reference to b, so returning a2
 		// still moves the {a2, b} component out. b is reached once, so borrow-stripping
-		// rewrites the return to the owned `{peer: {value: number}}`.
+		// rewrites the return to the owned `mut {peer: {value: number}}`.
 		"ReturnMovedCarrierComponent": {
 			src: `
 				fn build() {
@@ -385,12 +426,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
 		},
 		// An acyclic shared graph moves out the same way: a holds `&b`, and b is reachable
 		// only through a. b is reached once, so borrow-stripping rewrites the return to the
-		// owned `{peer: {value: number}}` — stripping covers shared `&` borrows as well as
-		// `&mut`.
+		// owned `{peer: {value: number}}`. Stripping covers shared `&` borrows as well as
+		// `&mut`, and a shared borrow leaves the owned form immutable.
 		"ReturnSharedComponent": {
 			src: `
 				fn build() {
@@ -588,8 +629,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
 		// two-local case, since every node is reachable only through a. Every node is reached
-		// once, so borrow-stripping rewrites the return to the owned `{b1: {x: number}, …}` with
-		// all five fields owned.
+		// once, so borrow-stripping rewrites the return to the owned `mut {b1: {x: number}, …}`
+		// with all five fields owned.
 		"ReturnLargeStar": {
 			src: `
 				fn build() {
@@ -604,7 +645,7 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"build": "fn () -> {b1: {x: number}, c1: {x: number}, d1: {x: number}, e1: {x: number}, g1: {x: number}}",
+				"build": "fn () -> mut {b1: {x: number}, c1: {x: number}, d1: {x: number}, e1: {x: number}, g1: {x: number}}",
 			},
 		},
 		// The co-move reaches the deepest transitive node: storing the chain a → b → c → d

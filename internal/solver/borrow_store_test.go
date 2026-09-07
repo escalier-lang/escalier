@@ -22,20 +22,21 @@ import (
 // field's own lifetime, and 'c is target's own borrow lifetime, so only peer takes the
 // stored borrow and spare is a sibling position the store must miss.
 //
-// The edge is observed through the two rules that read the borrow-edge graph: the
-// return-escape check, which reports a local a returned value still borrows, and the
-// connected-component move, which co-moves the locals an escaping owned carrier owns. Each
-// case builds its target's fields from parameter borrows, which the graph exempts, so the
-// store call is the sole source of any edge to a local.
+// The edge is observed by storing the target's borrowed field into a parameter's field.
+// That flow-out reports the local the stored value still borrows, so the diagnostic names
+// what the call aliased. A `return` would not: the frame is gone afterwards, so a borrow
+// leaving through one is accepted. Each case builds its target's fields from parameter
+// borrows, which the graph exempts, so the store call is the sole source of any edge to a
+// local.
 func TestCallStoreEdge(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// The call is the only thing that aliases a to b, and returning a.peer carries that
-		// borrow out of the frame. Without the store edge the escape check finds no borrow
-		// under [peer] and reports nothing.
+		// The call is the only thing that aliases a to b, and storing a.peer into out carries
+		// that borrow into the caller's object. Without the store edge the escape check finds
+		// no borrow under [peer] and reports nothing.
 		"StoredBorrowEscapes": {
 			src: `
 				declare fn store<'a, 'b, 'c>(
@@ -43,18 +44,18 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p, spare: &mut q}
 					store(&mut a, &mut b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{"11:13-11:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:17-11:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The edge lands at [peer], so returning the disjoint [spare] field follows no edge
@@ -82,7 +83,7 @@ func TestCallStoreEdge(t *testing.T) {
 			},
 		},
 		// The target's own place prefixes the store's field path, so storing into a field of
-		// the target records the edge at [inner, peer] and returning that nested field
+		// the target records the edge at [inner, peer] and a flow-out of that nested field
 		// follows it.
 		"StoreThroughTargetFieldPlace": {
 			src: `
@@ -91,18 +92,18 @@ func TestCallStoreEdge(t *testing.T) {
 					item: &'a mut {value: number},
 				) -> undefined
 
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {inner: {peer: &mut p, spare: &mut q}}
 					store(&mut a.inner, &mut b)
-					return a.inner.peer
+					out.slot = a.inner.peer
 				}
 			`,
-			want: []string{"11:13-11:25: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:17-11:29: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The edge reaches the connected-component move as well as the escape check: passing
@@ -269,36 +270,40 @@ func TestCallStoreEdge(t *testing.T) {
 
 // TestCallStoreEdgePositions covers the store positions inside a target's referent that are
 // not a named object field, and the argument forms the recorder reads a place off. Each
-// records an edge the return-escape check then reports.
+// records an edge a later flow-out then reports.
 func TestCallStoreEdgePositions(t *testing.T) {
 	tests := map[string]struct {
 		src   string
 		want  []string
 		types map[string]string
 	}{
-		// A tuple element contributes no field segment, so a store into one lands at the
-		// tuple itself and returning the whole tuple follows the edge.
+		// A tuple element contributes no field segment, so a store into one lands at the tuple
+		// itself and passing the whole tuple to a consuming call follows the edge. The probe is
+		// a consuming argument rather than a parameter store, because assigning a tuple into a
+		// parameter's field trips the deep-mut limitation #1270 describes.
 		"StoreIntoTupleElement": {
 			src: `
 				declare fn store<'a, 'c>(
 					target: &'c mut [&'a mut {value: number}],
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}) -> [&mut {value: number}] {
+				declare fn take(x: [&mut {value: number}]) -> undefined
+				fn build(p: mut {value: number}) {
 					val mut b = {value: 2}
 					val mut a = [&mut p]
 					store(&mut a, &mut b)
-					return a
+					take(a)
 				}
 			`,
-			want: []string{"10:13-10:14: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:11-11:12: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut [&'a mut {value: number}], item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> [&mut {value: number}]",
+				"take":  "fn (x: [&mut {value: number}]) -> undefined",
+				"build": "fn (p: mut {value: number}) -> undefined",
 			},
 		},
 		// A class type argument is not addressable as a field either, so a store into a
-		// borrowed `Box<&'a mut B>` field lands at that field and returning it follows the
+		// borrowed `Box<&'a mut B>` field lands at that field and a flow-out of it follows the
 		// edge. This is the shape a borrow-holding container takes.
 		"StoreIntoClassTypeArgument": {
 			src: `
@@ -307,18 +312,18 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {box: &'d mut Box<&'a mut {value: number}>},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(seeded: mut Box<&mut {value: number}>) -> &mut Box<&mut {value: number}> {
+				fn build(seeded: mut Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) {
 					val mut b = {value: 2}
 					val mut a = {box: &mut seeded}
 					store(&mut a, &mut b)
-					return a.box
+					out.slot = a.box
 				}
 			`,
-			want: []string{"11:13-11:18: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:17-11:22: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"Box":   "<T> {new (value: T) -> Box<T>}",
 				"store": "fn <'a>(target: &mut {box: &mut Box<&'a mut {value: number}>}, item: &'a mut {value: number}) -> undefined",
-				"build": "fn <'a>(seeded: mut Box<&'a mut {value: number}>) -> &mut Box<&'a mut {value: number}>",
+				"build": "fn (seeded: mut Box<&mut {value: number}>, out: &mut {slot: &mut Box<&mut {value: number}>}) -> undefined",
 			},
 		},
 		// An alias is transparent, so a target's referent written under an alias name is
@@ -327,17 +332,17 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			src: `
 				type Holder<'a> = {peer: &'a mut {value: number}}
 				declare fn store<'a, 'c>(target: &'c mut Holder<'a>, item: &'a mut {value: number}) -> undefined
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{"8:13-8:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"8:17-8:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// The stored argument's own outer lifetime is not the only one that counts: a lifetime
@@ -349,17 +354,17 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(p: mut {value: number}, q: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {inner: &mut q}
 					val mut a = {peer: &mut p}
 					store(&mut a, &b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"10:17-10:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: mut {value: number}, q: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// A union member holds a borrow the whole union exposes, so a store into one is found
@@ -377,22 +382,18 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number} | &'a mut {other: number}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(p: mut {value: number}) -> &mut {value: number} | &mut {other: number} {
+				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &mut b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{
-				"6:29-6:35: object is missing property: value",
-				"3:71-3:77: object has extra property: other",
-				"10:13-10:19: borrowed value 'b' does not live long enough to escape the function",
-			},
+			want: []string{"6:29-6:35: object is missing property: value", "3:71-3:77: object has extra property: other", "10:17-10:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {other: number} | &'a mut {value: number}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> &mut {value: number} | &mut {other: number}",
+				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number} | &mut {other: number}}) -> undefined",
 			},
 		},
 		// An argument that builds its carrier inline names no place, so the referents come
@@ -403,17 +404,17 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a mut {value: number}},
 					item: &'d {inner: &'a mut {value: number}},
 				) -> undefined
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					store(&mut a, &{inner: &mut b})
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"10:17-10:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}}, item: &{inner: &'a mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build": "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// An index signature names no single field, so a store into one lands at the object
@@ -424,19 +425,19 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peers: &'d mut {[key: string]?: &'a mut {value: number}}},
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(seeded: mut {[key: string]?: &mut {value: number}}) -> &mut {[key: string]?: &mut {value: number}} {
+				fn build(seeded: mut {[key: string]?: &mut {value: number}}, out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) {
 					val mut b = {value: 2}
 					val mut a = {peers: &mut seeded}
 					store(&mut a, &mut b)
-					return a.peers
+					out.slot = a.peers
 				}
 			`,
-			want: []string{"10:13-10:20: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"10:17-10:24: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peers: &mut {[key: string]?: &'a mut {value: number}}}, " +
 					"item: &'a mut {value: number}) -> undefined",
-				"build": "fn <'a>(seeded: mut {[key: string]?: &'a mut {value: number}}) " +
-					"-> &mut {[key: string]?: &'a mut {value: number}}",
+				"build": "fn (seeded: mut {[key: string]?: &mut {value: number}}, " +
+					"out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) -> undefined",
 			},
 		},
 		// A shared-borrow parameter auto-borrows the place passed to it, so the stored
@@ -448,17 +449,17 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					target: &'c mut {peer: &'a {value: number}},
 					item: &'a {value: number},
 				) -> undefined
-				fn build(p: {value: number}) -> &{value: number} {
+				fn build(p: {value: number}, out: &mut {slot: &{value: number}}) {
 					val b = {value: 2}
 					val mut a = {peer: &p}
 					store(&mut a, b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want: []string{"10:13-10:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"10:17-10:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
-				"build": "fn (p: {value: number}) -> &{value: number}",
+				"build": "fn (p: {value: number}, out: &mut {slot: &{value: number}}) -> undefined",
 			},
 		},
 	}
@@ -475,7 +476,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 // TestCallStoreEdgePayloadPositions covers the three payload positions that hold a borrow
 // without naming a field: an array element, a promise's resolved value, and a generator's
 // yield. Each stores at the container holding it, so the store lands at the tuple slot the
-// payload sits in and returning that tuple follows the edge.
+// payload sits in and passing that tuple to a consuming call follows the edge.
 //
 // Every case also reports one constrain error unrelated to the store. `&mut a` over a tuple
 // literal whose element is a bare name does not read as a mutable tuple, a pre-existing
@@ -499,17 +500,18 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 					target: &'c mut [%s],
 					item: &'a mut {value: number},
 				) -> undefined
-				fn build(seeded: %s) -> [%s] {
+				declare fn take(x: [%s]) -> undefined
+				fn build(seeded: %s) {
 					val mut b = {value: 2}
 					val mut a = [seeded]
 					store(&mut a, &mut b)
-					return a
+					take(a)
 				}
 			`, tc.payload, tc.declared, tc.declared)
 			_, _, errs := inferSource(t, src)
 			require.Equal(t, []string{
-				"9:12-9:18: cannot constrain immutable tuple <: mutable tuple",
-				"10:13-10:14: borrowed value 'b' does not live long enough to escape the function",
+				"10:12-10:18: cannot constrain immutable tuple <: mutable tuple",
+				"11:11-11:12: borrowed value 'b' does not live long enough to escape the function",
 			}, messagesWithSpan(t, errs))
 		})
 	}
@@ -552,19 +554,19 @@ func TestMethodCallStoreEdge(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// The method call is the only thing that aliases a to b, so returning a.peer reports
+		// The method call is the only thing that aliases a to b, so storing a.peer out reports
 		// the escape it would report for the equivalent free function.
 		"MethodStoreEscapes": {
 			src: decls + `
-				fn build(s: Store, p: mut {value: number}) -> &mut {value: number} {
+				fn build(s: Store, p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut p}
 					s.put(&mut a, &mut b)
-					return a.peer
+					out.slot = a.peer
 				}
 			`,
-			want:  []string{"17:13-17:19: borrowed value 'b' does not live long enough to escape the function"},
-			types: withTypes("fn (s: Store, p: mut {value: number}) -> &mut {value: number}"),
+			want:  []string{"17:17-17:23: borrowed value 'b' does not live long enough to escape the function"},
+			types: withTypes("fn (s: Store, p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined"),
 		},
 		// Dropping the call isolates its effect: with no edge from a to b, the same return
 		// reports nothing.
