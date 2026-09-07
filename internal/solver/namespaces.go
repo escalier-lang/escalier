@@ -14,10 +14,12 @@ import (
 // resolve rather than reading as an unknown identifier.
 
 // preBindNamespaceDecls binds one empty Namespace per `namespace` block before the
-// component walk, and returns each block paired with the object to fill. Binding
-// the name first is what lets a member of the same module write `Foo.member`: the
-// walk reads the binding while populateNamespaces is still to run, and the maps it
-// reads are the ones that call fills through the same pointer.
+// component walk, and returns each block paired with the object to fill.
+//
+// Binding the name first is what lets a member of the same module write
+// `Foo.member`. The walk reads that binding while populateNamespaces is still to
+// run, and the maps it reads are the ones that call fills through the same
+// pointer.
 //
 // Each block is marked handled, since it introduces no binding of its own and would
 // otherwise be reported as a declaration the dep graph did not model.
@@ -116,8 +118,8 @@ func (c *checker) fillNamespace(scope *Scope, sh *namespaceShell) {
 			}
 			// Every other kind was keyed under `qname.member` and bound by the walk, so
 			// its names are read back rather than re-inferred here. exportedNames answers
-			// what a declaration introduces; the export flag gates a package's surface,
-			// not what its own namespace holds.
+			// what a declaration introduces. Its export flag is not consulted, since that
+			// flag gates a package's surface rather than what a block holds.
 			for _, name := range exportedNames(inner) {
 				key := qualify(sh.qname, name)
 				if b, found := scope.GetValue(key); found {
