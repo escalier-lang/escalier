@@ -236,6 +236,10 @@ func exportedNames(decl ast.Decl) []string {
 		if d.Name != nil {
 			return []string{d.Name.Name}
 		}
+	case *ast.InterfaceDecl:
+		if d.Name != nil {
+			return []string{d.Name.Name}
+		}
 	case *ast.EnumDecl:
 		if d.Name != nil {
 			return []string{d.Name.Name}

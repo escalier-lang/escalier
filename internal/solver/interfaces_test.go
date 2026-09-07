@@ -48,3 +48,23 @@ func TestInterfaceExtendsCarriesMembers(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "{w: number, s: number}", types["Sq"])
 }
+
+// An exported interface reaches a package's surface, so an importer can name it
+// in an annotation.
+func TestExportedInterfaceReachesTheSurface(t *testing.T) {
+	res := InferModuleWithSource(
+		parseModule(t, `import "shapes"`),
+		sourceOf(t, map[string]string{
+			"shapes": `
+				export declare interface Point {
+					x: number,
+				}
+			`,
+		}),
+	)
+	require.Empty(t, errorMessagesOf(res.Errors))
+
+	ns, ok := res.Packages.Lookup("shapes")
+	require.True(t, ok)
+	require.Contains(t, ns.Types, "Point")
+}
