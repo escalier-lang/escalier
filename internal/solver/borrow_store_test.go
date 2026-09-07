@@ -584,7 +584,7 @@ func TestMethodCallStoreEdge(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
