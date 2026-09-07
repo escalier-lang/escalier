@@ -190,7 +190,7 @@ func TestAliasFuncBodySeesTheAliasLifetime(t *testing.T) {
 		`type Box<'a> = fn (x: &'a {v: number}) -> &'a {v: number}
 		 declare fn call<'q>(b: Box<'q>, p: &'q {v: number}) -> &'q {v: number}`,
 	)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "fn (x: &'a {v: number}) -> &'a {v: number}", types["Box"])
 	require.Equal(t, "fn <'a>(b: Box<'a>, p: &'a {v: number}) -> &'a {v: number}", values["call"])
 }
@@ -202,6 +202,6 @@ func TestAliasFuncBodyBinderShadows(t *testing.T) {
 	_, types, errs := inferSource(t,
 		`type Box<'a> = fn <'a>(x: &'a {v: number}) -> &'a {v: number}`,
 	)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "fn (x: &{v: number}) -> &{v: number}", types["Box"])
 }

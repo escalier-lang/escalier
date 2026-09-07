@@ -123,7 +123,7 @@ func TestInferClassLifetimeParams(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, types, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			for name, want := range tc.types {
 				require.Equal(t, want, values[name], "value binding %s", name)
 			}
@@ -144,7 +144,7 @@ func TestClassLifetimeParamsRenderUnderSourceNames(t *testing.T) {
 		}
 	`
 	values, types, errs := inferSource(t, src)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"<'x, 'y> {new (a: &'x mut {value: number}, b: &'y mut {value: number}) -> Pair<'x, 'y>}",
 		values["Pair"],
@@ -183,7 +183,7 @@ func TestClassLifetimeSubtyping(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tc.want, values["launder"])
 		})
 	}
@@ -208,7 +208,7 @@ func TestClassLifetimeScopeIsTheDeclaredParameters(t *testing.T) {
 	require.Equal(t, []string{
 		"4:12-4:14: lifetime 'z is used but not declared; did you mean 'a?",
 		"5:22-5:24: lifetime 'z is used but not declared; add `<'z>` to the enclosing function signature",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestClassFieldLifetimeIsChecked covers the field scan on its own. A class with no `<…>`
@@ -225,7 +225,7 @@ func TestClassFieldLifetimeIsChecked(t *testing.T) {
 	require.Equal(t, []string{
 		"3:8-3:10: lifetime 'z is used but not declared; add `<'z>` to the enclosing class declaration",
 		"4:8-4:10: lifetime 'z is used but not declared; add `<'z>` to the enclosing class declaration",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestClassLifetimeClauseErrors covers what the class's own `<…>` clause and the body
@@ -265,7 +265,7 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -278,7 +278,7 @@ func TestClassLifetimeClauseErrors(t *testing.T) {
 func TestClassTypeParamBoundSeesTheClassLifetime(t *testing.T) {
 	src := `class Holder<'a, T: &'a {value: number}> { peer: T }`
 	values, _, errs := inferSource(t, src)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"<T, 'a> {new (peer: T & &'a {value: number}) -> Holder<'a, T>}",
 		values["Holder"],
@@ -296,7 +296,7 @@ func TestClassLifetimeBinderOrderFollowsTheDeclaration(t *testing.T) {
 		}
 	`
 	values, _, errs := inferSource(t, src)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"<'x, 'y> {new (b: &'y mut {value: number}, a: &'x mut {value: number}) -> Pair<'x, 'y>}",
 		values["Pair"],
@@ -317,7 +317,7 @@ func TestClassLifetimeBoundNameIsNotABinder(t *testing.T) {
 	_, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"4:22-4:24: lifetime 'b is used but not declared; add `<'b>` to the enclosing function signature",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestClassLifetimeShadowing covers a member signature written against the class's lifetime
@@ -395,7 +395,7 @@ func TestClassLifetimeShadowing(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Empty(t, messagesWithSpan(errs))
+			require.Empty(t, messagesWithSpan(t, errs))
 			require.Equal(t, tc.want, values["g"])
 		})
 	}
@@ -413,7 +413,7 @@ func TestFuncAnnLifetimeShadowing(t *testing.T) {
 		fn g<'y>(h: Holder<'static>, o: &'y mut {value: number}) -> undefined { h.cb(o) }
 	`
 	values, _, errs := inferSource(t, src)
-	require.Empty(t, messagesWithSpan(errs))
+	require.Empty(t, messagesWithSpan(t, errs))
 	require.Equal(t, "fn (h: Holder<'static>, o: &mut {value: number}) -> undefined", values["g"])
 }
 
@@ -435,7 +435,7 @@ func TestClassLifetimeStoreEdge(t *testing.T) {
 	values, _, errs := inferSource(t, src)
 	require.Equal(t, []string{
 		"7:18-7:24: borrowed value 'b' does not live long enough to escape the function",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 	require.Equal(t,
 		"fn <'a>(target: &mut Holder<'a>, item: &'a mut {value: number}) -> undefined",
 		values["store"],
