@@ -23,6 +23,12 @@ type Context struct {
 	varCounter int
 	probe      *Probe
 
+	// wellKnown caches the handle for each type the checker's own rules name, so a
+	// rule reaches `Promise` or `Array` without the file under inference importing
+	// it. A nil entry records a name whose package did not supply it, which keeps
+	// the diagnostic to one per run. well_known.go holds the closed set.
+	wellKnown map[wellKnownName]soltype.Type
+
 	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
 	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
 	// gets the next id here, its bounds are extended only through
