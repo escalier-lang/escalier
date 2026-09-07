@@ -10,6 +10,8 @@ import (
 // A type a namespace declares is named through that namespace in annotation
 // position, the same way a value is in expression position.
 func TestQualifiedTypeAnnotationResolvesThroughANamespace(t *testing.T) {
+	t.Parallel()
+
 	values, _, errs := inferSource(t, `
 		namespace geo {
 			type Num = number
@@ -20,32 +22,37 @@ func TestQualifiedTypeAnnotationResolvesThroughANamespace(t *testing.T) {
 	require.Equal(t, "Num", values["n"])
 }
 
-// A type an imported package exports is named through the import's binding.
-func TestQualifiedTypeAnnotationResolvesThroughAnImport(t *testing.T) {
+// A `namespace` block keeps its own name against an import of the same name. The
+// block's members hold flat qualified keys, so they answer ahead of the namespace
+// walk an import binding is reached through.
+func TestLocalNamespaceBlockOutranksASameNamedImport(t *testing.T) {
+	t.Parallel()
+
 	res := InferModuleWithSource(
 		parseModule(t, `
-			import "geometry"
-			val p: geometry.Point = geometry.Point(1, 2)
-			val n: geometry.Num = 3
+			import "inner"
+			namespace inner {
+				type Widget = string
+			}
+			val w: inner.Widget = "hi"
 		`),
 		sourceOf(t, map[string]string{
-			"geometry": `
-				export type Num = number
-				export class Point {
-					x: number,
-					y: number,
+			"inner": `
+				export class Widget {
+					fromInner: number,
 				}
 			`,
 		}),
 	)
 	require.Empty(t, errorMessagesOf(res.Errors))
-	require.Equal(t, "Point", soltype.Print(inferredValueType(t, res.Scope, "p")))
-	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	require.Equal(t, "Widget", soltype.Print(inferredValueType(t, res.Scope, "w")))
 }
 
 // A member the namespace does not declare is reported against the qualified name
 // as written.
 func TestQualifiedTypeAnnotationReportsAnUnknownMember(t *testing.T) {
+	t.Parallel()
+
 	_, _, errs := inferSource(t, `
 		namespace geo {
 			type Num = number

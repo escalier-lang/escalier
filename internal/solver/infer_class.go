@@ -481,14 +481,10 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 //  3. A bare class binding is the fallback — a root-namespace class referenced bare, or
 //     an already-qualified `Geometry.Point` reference written from another namespace,
 //     whose doubly-qualified probe in step 2 missed.
+//  4. A dotted name no flat key holds is walked through namespace bindings, which is
+//     how a member of an imported package is reached. It runs last so a name a flat
+//     key does hold keeps its answer.
 func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bool) {
-	// A name whose leading segments walk to a namespace binding is answered there.
-	// `import "geometry"` binds a Namespace rather than a key per member, so
-	// `geometry.Point` reaches the package's type through that binding and not
-	// through the flat lookups below.
-	if b, ok := lookupTypeThroughNamespace(scope, name); ok {
-		return b, true
-	}
 	// Inside a package, three sources can answer one bare name, and they rank by
 	// how near they are to the reference.
 	//
@@ -526,7 +522,15 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 			return b, true
 		}
 	}
-	return bare, bareOK
+	if bareOK {
+		return bare, true
+	}
+	// No flat key holds the name, so walk its leading segments through namespace
+	// bindings. `import "geometry"` binds a Namespace rather than a key per member,
+	// so `geometry.Point` is only reachable this way. Trying it last leaves a
+	// `namespace inner { ... }` block, whose members do hold flat keys, answering
+	// `inner.Widget` even when the file also imports a package named `inner`.
+	return lookupTypeThroughNamespace(scope, name)
 }
 
 // resolveScopedTypeRef resolves a type reference through lookupClassBinding, covering a

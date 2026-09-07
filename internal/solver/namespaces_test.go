@@ -120,3 +120,23 @@ func TestExportedNamespaceBlockReachesTheSurface(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "o")))
 }
+
+// A type an exported namespace block declares reaches the surface alongside its
+// values, so an importer can name it in an annotation.
+func TestExportedNamespaceBlockCarriesItsTypes(t *testing.T) {
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "geometry"
+			val n: geometry.shapes.Num = 3
+		`),
+		sourceOf(t, map[string]string{
+			"geometry": `
+				export namespace shapes {
+					export type Num = number
+				}
+			`,
+		}),
+	)
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}

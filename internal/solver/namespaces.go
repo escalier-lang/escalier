@@ -127,6 +127,12 @@ func (c *checker) fillNamespace(scope *Scope, sh *namespaceShell) {
 				}
 				if b, found := scope.GetType(key); found {
 					out.Types[name] = b
+				} else if b, found := scope.GetType(qualify(packageKeyPrefix(c.pkgURI), key)); found {
+					// A type declared inside a package registers under a key carrying the
+					// package URI, which is what keeps two packages' same-named classes
+					// apart. The member is re-keyed to its bare name here, the way
+					// exportedSurface re-keys a package's top-level types.
+					out.Types[name] = b
 				}
 			}
 		}
