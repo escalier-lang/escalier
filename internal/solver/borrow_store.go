@@ -91,7 +91,8 @@ func callStoreEdges(ctx *Context, fn *soltype.FuncType) []storeEdge {
 				continue
 			}
 			// An unnamed path is the widest position the recorder can name, and every field
-			// read through the target follows it. See the truncation rule above.
+			// read through the target follows it. This function's doc comment says why a
+			// truncated walk takes a store rather than none.
 			if targetTruncated || sourceTruncated[i] {
 				out = append(out, storeEdge{arg: i, target: j})
 				continue
