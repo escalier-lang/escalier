@@ -9,21 +9,27 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// Escape forcing. A value flowing out of the function frame must not carry a borrow of a
-// function-local, since the local does not outlive the frame. This pass reports such an
-// escape at three sites: a `return`, a field store into a parameter, and a consuming
-// argument.
+// Escape forcing. A value flowing out of the function frame may carry a borrow of a
+// function-local only when nothing else can still reach that local. This pass decides three
+// flow-out sites: a `return`, a field store into a parameter, and a consuming argument.
 //
-// The rejection is conservative. The runtime is garbage-collected, so a returned value
-// that references a local keeps it reachable rather than dangling. Returning a
-// self-contained graph is therefore sound. A graph is self-contained when an owned value's
-// internal `&mut` edges reach only locals that nothing outside the graph references. The
-// connected-component move re-anchors that case: when the flowed-out value owns a graph
-// whose borrowed locals are reachable only through the graph, the escape becomes a move of
-// the whole component — every binding in it is consumed, and a later use of any of them is
-// a use-after-move. A bare `return &mut b` has no owned carrier and stays rejected, since
-// the move re-anchors a graph's internal edges, not a borrow that is itself the returned
-// value. See resolveComponentEscapes.
+// The runtime is garbage collected, so a local a flowed-out value references stays alive
+// rather than dangling. What makes an escape unsafe is a second live path to the same value,
+// not the storage going away. So the rule asks whether the flowed-out value is the only way
+// back to the locals it carries.
+//
+// A self-contained graph answers yes. A graph is self-contained when the locals its `&mut`
+// edges reach are referenced by nothing outside it. The connected-component move re-anchors
+// that case: the escape becomes a move of the whole component, every binding in it is
+// consumed, and a later use of any of them is a use-after-move. See resolveComponentEscapes.
+//
+// A `return` answers yes on its own. The frame does not survive it, so every local dies and
+// the borrow the caller receives is the only path left. A store or a consuming argument
+// leaves the frame running, so a bare borrow flowing out either of those still has a second
+// path through the local it names, and stays an escape. See componentMoveCovers.
+//
+// Two borrows of one local can leave together in a single returned value, which no rule here
+// reports. #1263 covers that.
 //
 // A field-granular borrow-edge graph drives the check, over the move engine's borrow
 // tracking rather than the lifetime sort. recordBorrowEdges records which locals each
@@ -84,6 +90,11 @@ func (e *EscapingBorrowError) Message() string {
 type escapeSite struct {
 	expr    ast.Expr
 	stmtRef liveness.StmtRef
+	// isReturn marks a value leaving through a `return`, the one flow-out whose frame is
+	// gone afterwards. componentMoveCovers reads it to decide whether a bare borrow may
+	// re-anchor: nothing in the frame can reach the value again, so the borrow the caller
+	// receives is the only path to it.
+	isReturn bool
 }
 
 // resolveComponentEscapes decides every recorded escape site once the body is fully walked,
@@ -107,7 +118,7 @@ func (c *checker) resolveComponentEscapes(
 		if escaping.Len() == 0 {
 			continue
 		}
-		if c.componentMoveCovers(es.expr, escaping, es.stmtRef, info, fieldBorrowGraph) {
+		if c.componentMoveCovers(es, escaping, info, fieldBorrowGraph) {
 			// Co-move the component: consume every borrowed local, so a later use of any of
 			// them is a use-after-move. The escaping value's own root is consumed at the flow
 			// site already, so it is skipped here — a borrow cycle can route an edge back to
@@ -137,15 +148,27 @@ func (c *checker) resolveComponentEscapes(
 	return consumed
 }
 
-// componentMoveCovers reports whether the escape of e is a self-contained connected-component
+// componentMoveCovers reports whether the escape of es is a self-contained connected-component
 // move rather than an ordinary escape. It holds when two conditions are met:
 //
-//   - e is an owned carrier, not a bare borrow. A borrow that is itself the outgoing value —
-//     `return &mut b`, a borrowed field, a borrow-typed binding — has no graph to re-anchor.
+//   - es carries an owned aggregate, or it is a return. An owned aggregate has internal edges
+//     for the move to re-anchor. A bare borrow — `&mut b`, a borrowed field, a borrow-typed
+//     binding — has none, so away from a return it stays an escape.
 //   - The component is self-contained: no live binding outside it borrows a node inside it.
-//     The component is e's root together with every local it transitively borrows. A binding
-//     dead at ref does not count as an external reference, so a stray unused borrow before a
-//     return does not block the move. The loop below explains what "dead" covers.
+//     The component is the outgoing value's root together with every local it transitively
+//     borrows. A binding dead at ref does not count as an external reference, so a stray
+//     unused borrow before a return does not block the move. The loop below explains what
+//     "dead" covers.
+//
+// A return needs no aggregate because the frame does not survive it. Every local dies with the
+// frame, so the borrow the caller receives is the only path left to the value, and handing
+// ownership out states what the caller actually holds. A store or a consuming argument leaves
+// the frame running, and the local the borrow names is still reachable from it, so the value is
+// not the caller's alone and the aggregate requirement stands.
+//
+// Two borrows of one local CAN leave together in a single returned value, which the move
+// accepts and stripReturnBorrowsIfTree then declines to re-type, leaving both borrowed. #1263
+// covers reporting that.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees every alias the recording sites listed at the top of this file record. An alias
@@ -155,12 +178,12 @@ func (c *checker) resolveComponentEscapes(
 // method surface to declare the store on. Until then the same call against a hand-written
 // container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
-	e ast.Expr, escaping set.Set[liveness.VarID],
-	stmtRef liveness.StmtRef,
+	es escapeSite, escaping set.Set[liveness.VarID],
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
-	if !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
+	e, stmtRef := es.expr, es.stmtRef
+	if !es.isReturn && !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
 		return false
 	}
 	component := escaping.Clone()
@@ -195,9 +218,10 @@ func (c *checker) componentMoveCovers(
 }
 
 // escapesAsOwnedCarrier reports whether the outgoing value e is an owned aggregate holding
-// borrows of locals in its fields, rather than being a borrow itself. Only an owned carrier
-// re-anchors an internal graph. When e is itself a borrow — `&mut b`, a borrow-typed binding,
-// a borrowed field — there is no graph to re-anchor and it stays an escape. The recorded type
+// borrows of locals in its fields, rather than being a borrow itself. Only an owned aggregate
+// has an internal graph to re-anchor. When e is itself a borrow — `&mut b`, a borrow-typed
+// binding, a borrowed field — there is none, and away from a return it stays an escape. A
+// return does not consult this at all, since the frame it leaves is gone. The recorded type
 // of e cannot make this call: a field read auto-derefs a borrow field to its owned inner, so
 // a borrow read back reads as owned. The borrow-edge graph drives the decision instead.
 //
@@ -505,17 +529,24 @@ func (c *checker) reportEscapingLocals(escaping set.Set[liveness.VarID], blame a
 // post-pass needs the complete borrow-edge graph and the consumed lattice, neither of which
 // is final mid-walk, so it cannot decide a self-contained component move inline.
 func (c *checker) recordEscapeSite(e ast.Expr, stmtRef liveness.StmtRef) {
+	c.recordEscapeSiteKind(e, stmtRef, false)
+}
+
+// recordEscapeSiteKind is recordEscapeSite with the site kind spelled out. isReturn marks a
+// `return`, which resolveComponentEscapes decides under a weaker rule than a store or an
+// argument.
+func (c *checker) recordEscapeSiteKind(e ast.Expr, stmtRef liveness.StmtRef, isReturn bool) {
 	if c.fn == nil || e == nil {
 		return
 	}
-	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: e, stmtRef: stmtRef})
+	c.fn.escapeSites = append(c.fn.escapeSites, escapeSite{expr: e, stmtRef: stmtRef, isReturn: isReturn})
 }
 
 // checkReturnEscape records the return value as an escape site. `return a` where a borrows
 // b, `return &mut b`, and `return {peer: &mut b}` all carry a borrow of b out of the frame;
 // resolveComponentEscapes later decides each as a component move or an escape.
 func (c *checker) checkReturnEscape(retExpr ast.Expr, stmtRef liveness.StmtRef) {
-	c.recordEscapeSite(retExpr, stmtRef)
+	c.recordEscapeSiteKind(retExpr, stmtRef, true)
 }
 
 // checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that

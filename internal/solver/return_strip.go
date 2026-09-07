@@ -12,9 +12,20 @@ import (
 
 // Return borrow-stripping rewrites a returned borrow of a self-contained local graph into the
 // owned pointee. The connected-component move has already re-anchored the nodes and consumed the
-// locals, so the return value is their sole owner, and owning them in the type is honest. `return
-// a` over `val a = {peer: &mut d}` then returns `{peer: {value: number}}` rather than `{peer:
-// &mut {value: number}}`.
+// locals, so the return value is their sole owner, and owning them in the type is honest.
+// `return a` over `val a = {peer: &mut d}` returns `{peer: mut {value: number}}` rather than
+// `{peer: &mut {value: number}}`, and `return &mut d` returns `mut {value: number}`.
+//
+// The owned form keeps the borrow's mutability. A reader of the `&mut` could write through it
+// and so can the owner, so dropping the `mut` would hand back less than the borrow offered. It
+// would also make a function annotated `-> &mut T` reject its own body, since an owned
+// IMMUTABLE value does not fill a mutable borrow.
+//
+// A field cannot carry its own owned `mut` in Escalier, where the enclosing context decides
+// mutability, so stripping a `&mut` field makes the whole object mutable. `{peer: &mut B, data:
+// D}` strips to `mut {peer: B, data: D}`, which makes data writable too. That grants more than
+// the borrow did. It stays sound, since a write still has to satisfy the field's own type, and
+// a readonly field keeps its flag through the rebuild.
 //
 // The reachable shape from the return decides whether a borrow is stripped:
 //
@@ -63,17 +74,24 @@ func (c *checker) returnIndexOf(e ast.Expr) int {
 	return -1
 }
 
-// carrierGraph returns the borrow-edge graph and the carrier root for e's borrow fields, drawing
-// from snapshot, the per-program-point graph. A whole-binding place is already a node in snapshot,
-// so it returns snapshot and the binding's own VarID directly, no cloning needed. An object or
-// tuple literal has no binding node, so it is walked into a private clone of snapshot under a
-// synthetic root. Any other carrier reports ok=false.
+// carrierGraph returns the borrow-edge graph for e's borrows and the root its edges hang off,
+// drawing from snapshot, the per-program-point graph. e's own type starts at that root, so the
+// strip walks from the root path down.
+//
+//   - A whole-binding place is already a node in snapshot, so it returns snapshot and the
+//     binding's own VarID, no cloning needed.
+//   - An object literal, a tuple literal, and a `&mut b` borrow have no binding node, so each is
+//     walked into a private clone of snapshot under a synthetic root.
+//   - Any other carrier reports ok=false, a field read among them. `return a.peer` records the
+//     property's type as a variable the evaluator settles later, so there is no RefType here to
+//     rewrite. The component move still consumes the borrowed local; only the type keeps its
+//     borrow.
 func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) (map[liveness.VarID][]fieldBorrow, liveness.VarID, bool) {
 	if p, ok := exprPlace(e); ok && p.root > 0 && len(p.path) == 0 {
 		return snapshot, p.root, true
 	}
 	switch e.(type) {
-	case *ast.ObjectExpr, *ast.TupleExpr:
+	case *ast.ObjectExpr, *ast.TupleExpr, *ast.BorrowExpr:
 		// Walk the literal into a private clone of snapshot under a synthetic root drawn from the
 		// module-wide counter so it never collides with a binding. The clone goes through the
 		// eagerBorrowGraph field because recordBorrowSources and addBorrowEdge write there; the
@@ -84,9 +102,10 @@ func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBo
 		c.fn.eagerBorrowGraph = maps.Clone(snapshot)
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
-		// The literal has no binding, so nothing in the graph describes its borrows. Record the
+		// The carrier has no binding, so nothing in the graph describes its borrows. Record the
 		// edges it carries under the synthetic root, so stripReturnBorrowsIfTree can treat it like
-		// a binding whose edges the eager walk had recorded.
+		// a binding whose edges the eager walk had recorded. A `&mut b` borrow records one edge
+		// at the root path, which is what makes `return &mut b` strip to b's owned type.
 		c.recordBorrowSources(root, nil, e)
 		graph := c.fn.eagerBorrowGraph
 		c.fn.eagerBorrowGraph = saved
@@ -145,7 +164,16 @@ func stripBorrowTree(
 			if !ok {
 				return t
 			}
-			return stripBorrowTree(t.Inner, referent, nil, graph)
+			stripped := stripBorrowTree(t.Inner, referent, nil, graph)
+			// Owning the pointee keeps the write access the borrow carried. A `&mut` reader could
+			// write through it, and the owner of the same value can too, so the owned form is
+			// mutable exactly when the borrow was. Dropping the mut would hand back less than the
+			// borrow offered, and a declared `-> &mut T` return would then reject its own body.
+			inner, ok := stripped.(soltype.RefInner)
+			if !ok {
+				return stripped
+			}
+			return soltype.NewRef(t.Mut, nil, inner)
 		}
 		// An owned-mutable cell rebuilds around its walked inner. The inner is an object or
 		// tuple, so its strip stays a RefInner; keep the cell unchanged if that ever fails to
