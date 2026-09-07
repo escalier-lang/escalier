@@ -1364,16 +1364,16 @@ a desugaring rule — rather than opaque placeholders.
   parameters, driven by a lifetime the argument-borrow shares with a position inside another
   parameter's referent
   ([internal/solver/borrow_store.go](../../internal/solver/borrow_store.go)). A borrow stored
-  into a container by a method call — `a.peers.push(&mut b)` — is still invisible, since it
-  stores into the `self` receiver rather than a parameter. That is why the affine
-  requirements' canonical cyclic `build()`, which wires the graph with `.push`, is not yet
-  expressible. This milestone is the prerequisite: it resolves `Array<T>` and its method
-  surface (`push`, …), which `internal/solver` has no representation for today — there is no
-  `Array` type and no array/tuple method call. What remains after it — the receiver's own type
-  at the call site, which `memberValue` strips — is affine work tracked under "Deferred and
-  out of scope" in
-  [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md).
-  Recorded here so the dependency is visible from the milestone that unblocks it.
+  into a container by a method call — `a.peers.push(&mut b)` — is invisible only because
+  `Array` is not a type the solver has. The recorder covers a store into a method's `self`
+  receiver, and the same call against a hand-written container records its edge today. That is
+  why the affine requirements' canonical cyclic `build()`, which wires the graph with `.push`,
+  is not yet expressible. This milestone is the whole remaining prerequisite: it resolves
+  `Array<T>` and its method surface (`push`, …), which `internal/solver` has no representation
+  for — there is no `Array` type and no array/tuple method call. Nothing in
+  [affine_semantics/implementation_plan.md](../affine_semantics/implementation_plan.md) is
+  waiting behind it. Recorded here so the dependency is visible from the milestone that
+  unblocks it.
 
 **Accept:** real source that **imports** core lib types (`import { Array } from
 "std:array"`, `Promise`, `Map<K, V>`, `Iterable<T>`/`Iterator<T>`/

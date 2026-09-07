@@ -150,10 +150,10 @@ func (c *checker) resolveComponentEscapes(
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees every alias the recording sites listed at the top of this file record. An alias
 // formed by a path none of them covers is invisible here exactly as it is to the escape check.
-// `a.peers.push(&mut b)` is such a path. The store recorder reads a callee's explicit
-// parameters, and `.push` stores into the receiver, which memberValue strips off the
-// signature the call site sees. It is tracked under "Deferred and out of scope" in
-// planning/affine_semantics/implementation_plan.md.
+// The store recorder covers a call that writes an argument-borrow into another argument or
+// into a method's receiver, so `a.peers.push(&mut b)` records its edge once `Array` has a
+// method surface to declare the store on. Until then the same call against a hand-written
+// container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
 	e ast.Expr, escaping set.Set[liveness.VarID],
 	stmtRef liveness.StmtRef,
