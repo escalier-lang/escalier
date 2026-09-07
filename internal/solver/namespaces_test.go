@@ -61,3 +61,41 @@ func TestNamespaceBindsItsTypes(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "number", types["geo.Num"])
 }
+
+// Two blocks of one name contribute to one namespace, the way two interfaces of
+// one name contribute to one type.
+func TestNamespaceBlocksOfOneNameMerge(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		namespace geo {
+			val a: number = 1
+		}
+		namespace geo {
+			val b: number = 2
+		}
+		val x = geo.a
+		val y = geo.b
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "number", values["x"])
+	require.Equal(t, "number", values["y"])
+}
+
+// A block is bound under the name its enclosing directory namespace qualifies it
+// with, so same-named blocks in sibling directories stay apart.
+func TestNamespaceBlocksInSiblingDirectoriesStayDistinct(t *testing.T) {
+	values, _, errs := inferSources(t, map[string]string{
+		"geo/shapes.esc": `
+			namespace util {
+				val gv: number = 1
+			}
+		`,
+		"math/ops.esc": `
+			namespace util {
+				val mv: string = "s"
+			}
+		`,
+	})
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "number", values["geo.util.gv"])
+	require.Equal(t, "string", values["math.util.mv"])
+}

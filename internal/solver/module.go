@@ -335,8 +335,19 @@ func (c *checker) inferComponent(
 			}
 		}
 		if len(interfaceDecls) > 0 {
-			interfaceShells = append(interfaceShells, c.preBindInterface(
-				c.lookupScope(scope, interfaceDecls[0]), inner, interfaceDecls, g.GetNamespace(key)))
+			// One type key holding both an interface and a declaration of another kind
+			// means one name was declared twice in ways that cannot merge. Binding the
+			// interface here would overwrite the alias registry entry and the type
+			// binding the other kind made, so report and leave that binding in place.
+			if other, clash := nonInterfaceTypeDecl(g.GetDecls(key)); clash {
+				c.report(&ConflictingTypeDeclarationError{
+					Name: interfaceDecls[0].Name.Name,
+					span: other.Span(),
+				})
+			} else {
+				interfaceShells = append(interfaceShells, c.preBindInterface(
+					c.lookupScope(scope, interfaceDecls[0]), inner, interfaceDecls, g.GetNamespace(key)))
+			}
 		}
 	}
 	// The loops below run while sibling alias and enum bodies are still nil, so a bound check
@@ -960,3 +971,33 @@ func (c *checker) lookupScope(module *Scope, decl ast.Decl) *Scope {
 	}
 	return module
 }
+
+// nonInterfaceTypeDecl returns the first declaration in decls that introduces a
+// type under a kind other than InterfaceDecl. Several interfaces of one name merge,
+// but an interface sharing its name with an alias, a class, or an enum does not.
+func nonInterfaceTypeDecl(decls []ast.Decl) (ast.Decl, bool) {
+	for _, d := range decls {
+		switch d.(type) {
+		case *ast.TypeDecl, *ast.ClassDecl, *ast.EnumDecl:
+			return d, true
+		}
+	}
+	return nil, false
+}
+
+// ConflictingTypeDeclarationError reports one name declared both as an interface
+// and as a kind that cannot merge with one. Interfaces merge with each other, so a
+// repeated interface is legal, while an alias, a class, or an enum under the same
+// name gives that name two definitions.
+type ConflictingTypeDeclarationError struct {
+	// Name is the name declared twice.
+	Name string
+	span ast.Span
+}
+
+func (e *ConflictingTypeDeclarationError) Message() string {
+	return "cannot declare " + e.Name + " as both an interface and another type"
+}
+func (e *ConflictingTypeDeclarationError) Span() ast.Span      { return e.span }
+func (e *ConflictingTypeDeclarationError) Related() []ast.Span { return nil }
+func (e *ConflictingTypeDeclarationError) isSolverError()      {}

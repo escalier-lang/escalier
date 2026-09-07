@@ -44,9 +44,10 @@ type interfaceShell struct {
 // the name before any body resolves is what lets a sibling interface, or this one,
 // name it while its own body is still being walked.
 //
-// The type parameters come from the first declaration. A group whose declarations
-// disagree on their parameter lists is rejected by reportInterfaceParamMismatch
-// rather than merged under one of them.
+// The type parameters come from the first declaration, and every later one must
+// write the same list. A declaration that disagrees reports
+// InterfaceTypeParamMismatchError and contributes no members, since its body reads
+// parameter names the shared list does not bind.
 func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.InterfaceDecl, ns string) *interfaceShell {
 	first := decls[0]
 
@@ -62,6 +63,22 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 		declScope = scope.Child()
 		typeParams = c.resolveTypeParams(declScope, lvl, first.TypeParams)
 	}
+
+	// Every declaration's body resolves against the one parameter list above, so a
+	// declaration writing different parameter names would read them as unbound. Drop
+	// it here rather than let its body report a missing type for each use.
+	merged := decls[:1]
+	for _, d := range decls[1:] {
+		if sameTypeParamNames(first.TypeParams, d.TypeParams) {
+			merged = append(merged, d)
+			continue
+		}
+		c.report(&InterfaceTypeParamMismatchError{
+			Name: first.Name.Name,
+			span: d.Span(),
+		})
+	}
+	decls = merged
 
 	def := &AliasDef{TypeParams: typeParams, Level: lvl - 1}
 	c.ctx.registerAlias(qname, def)
@@ -97,12 +114,20 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
 
-	var elems []soltype.ObjTypeElem
+	// The shared object-member builder decides what a later member does to an
+	// earlier one of the same name. It appends a method's signatures rather than
+	// replacing it, so overloads split across declarations accumulate, and it
+	// tracks the read and write accesses separately, so a getter in one
+	// declaration and a setter in another form a pair rather than one dropping
+	// the other.
+	b := newObjElemBuilder(0)
 	inexact := false
 	for _, decl := range sh.decls {
 		for _, ext := range decl.Extends {
 			if obj, ok := c.resolveInterfaceParent(sh.declScope, ext, sh.lvl); ok {
-				elems = mergeObjElems(elems, obj.Elems)
+				for _, elem := range obj.Elems {
+					b.addElem(copyMergeableElem(elem))
+				}
 				inexact = inexact || obj.Inexact
 			}
 		}
@@ -117,16 +142,30 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 		}
 		obj, isObj := resolved.(*soltype.ObjectType)
 		if !isObj {
-			// resolveObjectTypeAnn answers with a residual type for a body holding a
-			// spread or a mapped member, which has no member list to merge. Bind the
-			// residual alone, since merging a group is only defined over member lists.
-			sh.def.Body = resolved
-			return
+			continue
 		}
-		elems = mergeObjElems(elems, obj.Elems)
+		for _, elem := range obj.Elems {
+			b.addElem(elem)
+		}
 		inexact = inexact || obj.Inexact
 	}
-	sh.def.Body = &soltype.ObjectType{Elems: elems, Inexact: inexact}
+	sh.def.Body = &soltype.ObjectType{Elems: b.result(), Inexact: inexact}
+}
+
+// copyMergeableElem returns a member safe to hand to an objElemBuilder that may
+// merge into it. The builder appends to a MethodElem's signature list in place, so
+// a method taken from a parent interface's stored body is copied first, leaving the
+// parent's own type unchanged.
+func copyMergeableElem(elem soltype.ObjTypeElem) soltype.ObjTypeElem {
+	m, isMethod := elem.(*soltype.MethodElem)
+	if !isMethod {
+		return elem
+	}
+	sigs := make([]*soltype.FuncType, len(m.Signatures))
+	copy(sigs, m.Signatures)
+	dup := *m
+	dup.Signatures = sigs
+	return &dup
 }
 
 // resolveInterfaceParent resolves one `extends` target to the object type whose
@@ -141,11 +180,12 @@ func (c *checker) resolveInterfaceParent(scope *Scope, ref *ast.TypeRefTypeAnn, 
 	if obj, isObj := expanded.(*soltype.ObjectType); isObj {
 		return obj, true
 	}
-	// An unfilled body expands to ErrorType, which happens when the target is a
-	// sibling in this same recursive group. Its members are not available yet and
-	// an interface cycle has no flattened surface to compute, so contribute
-	// nothing and leave the diagnostic to the reference that failed.
+	// The reference resolved, so an ErrorType here is an unfilled body: the target
+	// is a sibling in this same recursive group. An interface flattens its parents'
+	// members into its own, which a cycle gives no way to compute, so report it
+	// rather than silently binding the subset that happened to resolve.
 	if _, isErr := expanded.(*soltype.ErrorType); isErr {
+		c.report(&InterfaceExtendsCycleError{Name: soltype.Print(resolved), span: ref.Span()})
 		return nil, false
 	}
 	c.report(&InterfaceExtendsNonObjectError{Name: soltype.Print(resolved), span: ref.Span()})
@@ -168,31 +208,49 @@ func (e *InterfaceExtendsNonObjectError) Span() ast.Span      { return e.span }
 func (e *InterfaceExtendsNonObjectError) Related() []ast.Span { return nil }
 func (e *InterfaceExtendsNonObjectError) isSolverError()      {}
 
-// mergeObjElems appends src's members to dst, with a later member replacing an
-// earlier one of the same name in place. Keeping the earlier position means
-// `interface P {x: number}` followed by `interface P {y: string, x: 1}` renders as
-// `{x: 1, y: string}`, so a reader sees the order the name was introduced in.
-//
-// An unnamed member, such as a call or construct signature, has no name to match
-// on and is appended.
-func mergeObjElems(dst, src []soltype.ObjTypeElem) []soltype.ObjTypeElem {
-	for _, elem := range src {
-		name := soltype.ObjElemName(elem)
-		if name == "" {
-			dst = append(dst, elem)
-			continue
-		}
-		replaced := false
-		for i, existing := range dst {
-			if soltype.ObjElemName(existing) == name {
-				dst[i] = elem
-				replaced = true
-				break
-			}
-		}
-		if !replaced {
-			dst = append(dst, elem)
+// sameTypeParamNames reports whether two declarations of one interface write the
+// same type-parameter names in the same order. Bounds and defaults are not
+// compared, so a mismatch in those is left for the shared list to decide.
+func sameTypeParamNames(a, b []*ast.TypeParam) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i].Name != b[i].Name {
+			return false
 		}
 	}
-	return dst
+	return true
 }
+
+// InterfaceTypeParamMismatchError reports a declaration whose type-parameter list
+// differs from the first declaration of the same interface. One name binds one
+// parameter list, so the declarations have to agree on it.
+type InterfaceTypeParamMismatchError struct {
+	// Name is the interface every declaration in the group declares.
+	Name string
+	span ast.Span
+}
+
+func (e *InterfaceTypeParamMismatchError) Message() string {
+	return "every declaration of interface " + e.Name + " must write the same type parameters"
+}
+func (e *InterfaceTypeParamMismatchError) Span() ast.Span      { return e.span }
+func (e *InterfaceTypeParamMismatchError) Related() []ast.Span { return nil }
+func (e *InterfaceTypeParamMismatchError) isSolverError()      {}
+
+// InterfaceExtendsCycleError reports an `extends` target that is part of the same
+// recursive group as the interface extending it. Flattening the parent's members
+// requires those members, which a cycle never finishes producing.
+type InterfaceExtendsCycleError struct {
+	// Name is the target as written, rendered.
+	Name string
+	span ast.Span
+}
+
+func (e *InterfaceExtendsCycleError) Message() string {
+	return "an interface cannot extend " + e.Name + ", which is part of the same recursive group"
+}
+func (e *InterfaceExtendsCycleError) Span() ast.Span      { return e.span }
+func (e *InterfaceExtendsCycleError) Related() []ast.Span { return nil }
+func (e *InterfaceExtendsCycleError) isSolverError()      {}

@@ -68,3 +68,98 @@ func TestExportedInterfaceReachesTheSurface(t *testing.T) {
 	require.True(t, ok)
 	require.Contains(t, ns.Types, "Point")
 }
+
+// Overloads split across declarations accumulate rather than replacing one
+// another, matching what two signatures in one declaration give.
+func TestInterfaceMergeAccumulatesOverloads(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface F {
+			m(a: number) -> number,
+		}
+		declare interface F {
+			m(a: string) -> string,
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{m(a: number) -> number; m(a: string) -> string}", types["F"])
+}
+
+// A getter in one declaration and a setter in another form a pair, so the name
+// stays both readable and writable.
+func TestInterfaceMergePairsAccessors(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface A {
+			get x() -> number,
+		}
+		declare interface A {
+			set x(value: number),
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{get x() -> number, set x(value: number)}", types["A"])
+}
+
+// An interface's members are copied out of a parent's stored type, so extending it
+// leaves the parent unchanged for every other reader.
+func TestInterfaceExtendsLeavesTheParentAlone(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface Base {
+			m(a: number) -> number,
+		}
+		declare interface Child extends Base {
+			m(a: string) -> string,
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{m(a: number) -> number}", types["Base"])
+	require.Equal(t, "{m(a: number) -> number; m(a: string) -> string}", types["Child"])
+}
+
+// Declarations of one interface must agree on their type parameters, since the
+// group binds one list and every body resolves against it.
+func TestInterfaceRejectsMismatchedTypeParams(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface Box<T> {
+			a: T,
+		}
+		declare interface Box<U> {
+			b: U,
+		}
+	`)
+	require.Equal(t,
+		[]string{"every declaration of interface Box must write the same type parameters"},
+		errorMessagesOf(errs))
+	// The rejected declaration contributes nothing, so no unresolved parameter
+	// leaks into the bound type.
+	require.Equal(t, "{a: T}", types["Box"])
+}
+
+// One name declared both as an interface and as another kind of type has two
+// definitions that cannot merge.
+func TestInterfaceConflictingWithAnAliasReports(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		type Bar = number
+		declare interface Bar {
+			y: number,
+		}
+	`)
+	require.Equal(t,
+		[]string{"cannot declare Bar as both an interface and another type"},
+		errorMessagesOf(errs))
+}
+
+// An `extends` target in the interface's own recursive group has no finished
+// member list to flatten.
+func TestInterfaceExtendsCycleReports(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare interface A {
+			b: B,
+		}
+		declare interface B extends A {
+			x: number,
+		}
+	`)
+	require.Equal(t,
+		[]string{"an interface cannot extend A, which is part of the same recursive group"},
+		errorMessagesOf(errs))
+}
