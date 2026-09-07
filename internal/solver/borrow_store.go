@@ -324,66 +324,43 @@ func (w *lifetimeWalk) walkObjElem(elem soltype.ObjTypeElem, base []placeSeg) {
 	}
 }
 
-// recordCallStoreEdges handles each store fn declares at the call e. Where the borrow lands
-// decides what happens, the same split a field store makes between recordFieldStoreEdges and
-// checkParamFieldStoreEscape:
-//
-//   - Into a local, the call records a borrow edge, so a later flow-out of that local finds
-//     the borrow. The target's own place is the prefix, so `store(&mut a.slot, &mut b)`
-//     records at [slot, peer] rather than at [peer].
-//   - Into a parameter, the locals the argument carries are reported at once, since the
-//     parameter's referent belongs to the caller and outlives the frame. Reporting here
-//     rather than deferring to the escape post-pass is what keeps the callee's borrow from
-//     being weighed as a move, which would consume the locals.
-//
-// Both read against the signature in this file's opening comment. A local target:
-//
-//	fn build(p: mut {value: number}) -> &mut {value: number} {
-//		val mut b = {value: 2}
-//		val mut a = {peer: &mut p}
-//		store(&mut a, &mut b)   // records a → b at [peer]
-//		return a.peer           // follows that edge and reports b
-//	}
-//
-// A parameter target, where nothing is recorded and b is reported at the call:
-//
-//	fn build(p: &mut {peer: &mut {value: number}}) -> undefined {
-//		val mut b = {value: 2}
-//		store(p, &mut b)
-//	}
-//
-// A store is skipped when the argument carries no function-local, when the target names no
-// binding, or when the two are the same binding, which would make an unusable self-loop.
-//
-// An edge is added to what the target already holds rather than replacing it, since a
-// signature says where a borrow lands and not whether the callee overwrites what was there.
-// This models a container that accumulates, and keeps the sound reading for one that
-// overwrites.
-//
-// The escape check reads the per-program-point graph rather than the eager one, so a call that
-// recorded an edge flushes the roots it dirtied into this statement's borrowGens, the same
-// handoff a `val` initializer makes.
+// recordCallStoreEdges records the stores fn declares at the call e. A store into a local
+// records a borrow edge, so a later flow-out of that local finds the borrow. A store into a
+// parameter escapes instead, since the parameter's referent belongs to the caller. It is the
+// call-site twin of the split recordFieldStoreEdges and checkParamFieldStoreEscape make for a
+// field store.
 func (c *checker) recordCallStoreEdges(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
 	}
 	recorded := false
-	// A signature can write one argument to several positions in the target, so its escape
-	// reaches this loop once per position. Collecting per argument and emitting after the loop
-	// keeps one diagnostic per escaping local, blamed on the argument that carries it.
+	// A signature can write one argument into several positions of the target, so an escaping
+	// argument reaches the loop once per position. Collecting per argument and reporting after
+	// the loop keeps that to one diagnostic, blamed on the argument carrying the local.
 	escaping := map[int]set.Set[liveness.VarID]{}
 	for _, edge := range callStoreEdges(c.ctx, fn) {
+		// A call whose argument count does not match the signature is reported elsewhere and
+		// still reaches here, so the positions are bounds-checked before use.
 		if edge.arg >= len(e.Args) || edge.target >= len(e.Args) {
 			continue
 		}
+		// Only a borrow of a function-local can dangle. An argument carrying none of those
+		// stores nothing the graph needs to know about.
 		referents := c.storedReferents(e.Args[edge.arg])
 		if len(referents) == 0 {
 			continue
 		}
+		// An edge hangs off a binding, so the target has to name one. An argument built inline
+		// names no place and leaves nothing to root the edge at.
 		target, isPlace := exprPlace(borrowOperand(e.Args[edge.target]))
 		if !isPlace || target.root <= 0 {
 			continue
 		}
+		// A parameter's referent belongs to the caller and outlives the frame, so a borrow of
+		// a local written into it dangles. Reporting it here rather than recording an edge is
+		// what keeps the escape post-pass out of it. The callee borrows this argument instead
+		// of taking it, and the post-pass would weigh an owned-looking argument as a
+		// connected-component move and consume the locals it borrows.
 		if c.fn.paramVarIDs.Contains(target.root) {
 			carried, seen := escaping[edge.arg]
 			if !seen {
@@ -396,9 +373,14 @@ func (c *checker) recordCallStoreEdges(e *ast.CallExpr, fn *soltype.FuncType, re
 			continue
 		}
 		for _, referent := range referents {
+			// An edge from a binding to itself tells no reader of the graph anything.
 			if target.root == referent {
 				continue
 			}
+			// The target's own place prefixes the store's path, so `store(&mut a.slot, &mut b)`
+			// against a signature storing at [peer] records at [slot, peer]. The edge is added
+			// to what the target already holds rather than replacing it, since a signature says
+			// where a borrow lands and not whether the callee overwrites what was there.
 			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent)
 			recorded = true
 		}
@@ -408,6 +390,9 @@ func (c *checker) recordCallStoreEdges(e *ast.CallExpr, fn *soltype.FuncType, re
 			c.reportEscapingLocals(carried, e.Args[arg])
 		}
 	}
+	// The escape check reads the per-program-point graph rather than the eager one, so the
+	// roots this call dirtied have to reach the statement's borrowGens. A `val` initializer
+	// makes the same handoff.
 	if recorded {
 		c.flushBorrowDirty(ref)
 	}
