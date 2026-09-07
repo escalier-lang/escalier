@@ -13,7 +13,7 @@ import (
 // Return borrow-stripping rewrites a returned borrow of a self-contained local graph into the
 // owned pointee. The connected-component move has already re-anchored the nodes and consumed the
 // locals, so the return value is their sole owner, and owning them in the type is honest.
-// `return a` over `val a = {peer: &mut d}` returns `{peer: mut {value: number}}` rather than
+// `return a` over `val a = {peer: &mut d}` returns `mut {peer: {value: number}}` rather than
 // `{peer: &mut {value: number}}`, and `return &mut d` returns `mut {value: number}`.
 //
 // The owned form keeps the borrow's mutability. A reader of the `&mut` could write through it
@@ -42,24 +42,64 @@ import (
 //     the call boundary. This is sound. The component move already keeps the nodes alive.
 //   - A parameter borrow is never stripped, since it carries no local edge.
 
-// stripReturnBorrowsIfTree rewrites the return type of the return whose value is e to own the
-// data when e's reachable borrow graph is a tree. It is a no-op when e is not a return value,
-// when the carrier is not a direct place or literal, or when the graph is not a tree. snapshot is
-// the flow-sensitive borrow-edge graph at this return's program point, which resolveComponentEscapes
-// reads from the dataflow and passes in.
-func (c *checker) stripReturnBorrowsIfTree(e ast.Expr, snapshot map[liveness.VarID][]fieldBorrow) {
+// returnStripFor returns the index of the return whose value is e and the owned type its
+// borrows strip to, when e's reachable borrow graph is a tree. ok is false when e is not a
+// return value, when the carrier is not a direct place, literal, or borrow, when the graph is
+// not a tree, or when the walk changes nothing. snapshot is the flow-sensitive borrow-edge
+// graph at this return's program point, which resolveComponentEscapes reads from the dataflow
+// and passes in.
+func (c *checker) returnStripFor(
+	e ast.Expr,
+	snapshot map[liveness.VarID][]fieldBorrow,
+) (int, soltype.Type, bool) {
 	idx := c.returnIndexOf(e)
 	if idx < 0 {
-		return
+		return 0, nil, false
 	}
 	graph, root, ok := c.carrierGraph(e, snapshot)
 	if !ok {
-		return
+		return 0, nil, false
 	}
 	if !isTreeReachable(graph, root) {
+		return 0, nil, false
+	}
+	stripped := stripBorrowTree(c.fn.returns[idx], root, nil, graph, true)
+	if stripped == c.fn.returns[idx] {
+		return 0, nil, false
+	}
+	return idx, stripped, true
+}
+
+// applyReturnStrips writes the collected rewrites onto the function's return types, or writes
+// none of them.
+//
+// A function's returns are unioned, and Escalier rejects a union that mixes an owned member
+// with a borrowed one. Rewriting only some of them builds exactly that. In
+//
+//	fn f(p: &mut B, cond: boolean) {
+//		val mut b = {value: 0}
+//		if cond { return &mut b }
+//		return p
+//	}
+//
+// only the first return strips, since a parameter borrow carries no local edge. Owning that one
+// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
+// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
+func (c *checker) applyReturnStrips(strips map[int]soltype.Type) {
+	if len(strips) == 0 {
 		return
 	}
-	c.fn.returns[idx] = stripBorrowTree(c.fn.returns[idx], root, nil, graph)
+	for i, t := range c.fn.returns {
+		if _, rewritten := strips[i]; rewritten {
+			continue
+		}
+		if ref, isRef := t.(*soltype.RefType); isRef && ref.Lt != nil {
+			return
+		}
+	}
+	for i, t := range strips {
+		c.fn.returns[i] = t
+	}
 }
 
 // returnIndexOf returns the index of the return whose operand is e, or -1 when e is not a
@@ -103,7 +143,7 @@ func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBo
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
 		// The carrier has no binding, so nothing in the graph describes its borrows. Record the
-		// edges it carries under the synthetic root, so stripReturnBorrowsIfTree can treat it like
+		// edges it carries under the synthetic root, so returnStripFor can treat it like
 		// a binding whose edges the eager walk had recorded. A `&mut b` borrow records one edge
 		// at the root path, which is what makes `return &mut b` strip to b's owned type.
 		c.recordBorrowSources(root, nil, e)
@@ -151,11 +191,17 @@ func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID
 //   - An owned-mutable cell is rebuilt around its walked inner at the same root and path.
 //   - An object descends each property at the path extended by the property name; a tuple
 //     descends each element at the same path, since a tuple index contributes no field segment.
+//
+// writable says whether the enclosing context permits writing. It starts true at the return and
+// turns false under a shared borrow, so a `&mut` field nested inside a `&` strips to an
+// immutable owned value. Without it that field's `mut` would hoist onto the whole object and
+// hand back write access the outer shared borrow never carried.
 func stripBorrowTree(
 	t soltype.Type,
 	root liveness.VarID,
 	path []placeSeg,
 	graph map[liveness.VarID][]fieldBorrow,
+	writable bool,
 ) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.RefType:
@@ -164,25 +210,27 @@ func stripBorrowTree(
 			if !ok {
 				return t
 			}
-			stripped := stripBorrowTree(t.Inner, referent, nil, graph)
 			// Owning the pointee keeps the write access the borrow carried. A `&mut` reader could
 			// write through it, and the owner of the same value can too, so the owned form is
 			// mutable exactly when the borrow was. Dropping the mut would hand back less than the
 			// borrow offered, and a declared `-> &mut T` return would then reject its own body.
+			mutable := t.Mut && writable
+			stripped := stripBorrowTree(t.Inner, referent, nil, graph, mutable)
 			inner, ok := stripped.(soltype.RefInner)
 			if !ok {
 				return stripped
 			}
-			return soltype.NewRef(t.Mut, nil, inner)
+			return soltype.NewRef(mutable, nil, inner)
 		}
 		// An owned-mutable cell rebuilds around its walked inner. The inner is an object or
 		// tuple, so its strip stays a RefInner; keep the cell unchanged if that ever fails to
 		// hold rather than panicking.
-		inner, ok := stripBorrowTree(t.Inner, root, path, graph).(soltype.RefInner)
+		mutable := t.Mut && writable
+		inner, ok := stripBorrowTree(t.Inner, root, path, graph, mutable).(soltype.RefInner)
 		if !ok {
 			return t
 		}
-		return soltype.NewRef(t.Mut, nil, inner)
+		return soltype.NewRef(mutable, nil, inner)
 	case *soltype.ObjectType:
 		// A residual object has no settled property list to walk, the same guard stripOwnedMut
 		// applies. Its borrows are reached once the evaluator reduces it.
@@ -200,7 +248,7 @@ func stripBorrowTree(
 			}
 			elems[i] = &soltype.PropertyElem{
 				Name:     p.Name,
-				Type:     stripBorrowTree(p.Type, root, propPath, graph),
+				Type:     stripBorrowTree(p.Type, root, propPath, graph, writable),
 				Optional: p.Optional,
 				Readonly: p.Readonly,
 			}

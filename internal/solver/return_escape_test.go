@@ -210,6 +210,98 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn <'a>(obj: {peer?: &'a mut {value: number}}) -> &'a mut {value: number}"},
 		},
+		// A local this frame also sends out another way is not the return's alone. The store
+		// puts a borrow of b in the caller's object, so the caller reaches b through p.node.peer
+		// AND through the return: two live mutable paths to one value. The return takes no
+		// exemption and reports.
+		"ReturnOfALocalAlsoStoredIntoAParam": {
+			src: `
+				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					p.node = {peer: &mut b}
+					return &mut b
+				}
+			`,
+			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
+		},
+		// A consuming argument leaves the same second path behind, so returning the same local
+		// reports for the same reason.
+		"ReturnOfALocalAlsoPassedToAConsumingCall": {
+			src: `
+				declare fn take(x: {peer: &mut {value: number}}) -> undefined
+				fn f() {
+					val mut b = {value: 0}
+					take({peer: &mut b})
+					return &mut b
+				}
+			`,
+			want: []string{"6:13-6:19: borrowed value 'b' does not live long enough to escape the function"},
+			types: map[string]string{
+				"take": "fn (x: {peer: &mut {value: number}}) -> undefined",
+				"f":    "fn () -> &mut {value: number}",
+			},
+		},
+		// A store of a DIFFERENT local leaves no path to this one, so the return keeps its
+		// exemption. This is the case the previous two must not over-report.
+		"ReturnOfALocalWhileAnotherIsStoredOut": {
+			src: `
+				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+					val mut b = {value: 0}
+					val mut d = {value: 1}
+					p.node = {peer: &mut d}
+					return &mut b
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> mut {value: number}"},
+		},
+		// Two returns of one local on exclusive branches are each the only path, since only one
+		// of them runs. Neither is a flow-out the other has to account for.
+		"TwoExclusiveReturnsOfOneLocal": {
+			src: `
+				fn f(cond: boolean) {
+					val mut b = {value: 0}
+					if cond {
+						return &mut b
+					}
+					return &mut b
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn (cond: boolean) -> mut {value: number}"},
+		},
+		// A function returning a local borrow on one path and a parameter borrow on another
+		// keeps both borrowed. A parameter borrow carries no local edge, so it never strips,
+		// and owning only the first would union `mut B` with `&'a mut B`, which Escalier
+		// rejects for mixing ownership. Holding the rewrite back leaves the function uniform.
+		"MixedLocalAndParamReturnsStayBorrowed": {
+			src: `
+				fn f(p: &mut {value: number}, cond: boolean) {
+					val mut b = {value: 0}
+					if cond {
+						return &mut b
+					}
+					return p
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn <'a>(p: &'a mut {value: number}, cond: boolean) -> &'a mut {value: number}"},
+		},
+		// A shared borrow of a carrier holding a `&mut` field hands out no write access, so the
+		// owned form stays immutable. A field cannot carry its own owned `mut`, so letting the
+		// field's mut through would hoist it onto the whole object and make data writable too.
+		"SharedBorrowOfAMutableCarrierOwnsImmutably": {
+			src: `
+				fn f() {
+					val mut c = {value: 1}
+					val mut a = {peer: &mut c, data: {n: 1}}
+					return &a
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn () -> {peer: {value: number}, data: {n: number}}"},
+		},
 		// A borrow introduced by reassigning a `var` reaches the return through the
 		// flow-sensitive graph: `a = &mut b` strong-updates a to a → b, clearing the parameter
 		// seed that recorded no edge.
