@@ -482,6 +482,13 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 //     an already-qualified `Geometry.Point` reference written from another namespace,
 //     whose doubly-qualified probe in step 2 missed.
 func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bool) {
+	// A name whose leading segments walk to a namespace binding is answered there.
+	// `import "geometry"` binds a Namespace rather than a key per member, so
+	// `geometry.Point` reaches the package's type through that binding and not
+	// through the flat lookups below.
+	if b, ok := lookupTypeThroughNamespace(scope, name); ok {
+		return b, true
+	}
 	// Inside a package, three sources can answer one bare name, and they rank by
 	// how near they are to the reference.
 	//
@@ -1158,5 +1165,35 @@ func (c *checker) freezeClassBody(obj *soltype.ObjectType, keep set.Set[*soltype
 			}
 			obj.Elems[i] = &soltype.MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
 		}
+	}
+}
+
+// lookupTypeThroughNamespace answers a dotted name by walking its leading segments
+// through namespace bindings and reading the last segment from the namespace it
+// arrives at. `a.b.T` walks `a` then `b` and reads `T`.
+//
+// It answers nothing for a name with no dot, and nothing when a segment names no
+// namespace, which leaves the flat lookups to try the whole dotted string as one
+// key. That is what a declaration inside a `namespace` block is bound under.
+func lookupTypeThroughNamespace(scope *Scope, name string) (TypeBinding, bool) {
+	head, rest, dotted := strings.Cut(name, ".")
+	if !dotted {
+		return TypeBinding{}, false
+	}
+	ns, ok := scope.GetNamespace(head)
+	if !ok {
+		return TypeBinding{}, false
+	}
+	for {
+		segment, tail, more := strings.Cut(rest, ".")
+		if !more {
+			b, found := ns.Types[segment]
+			return b, found
+		}
+		ns, ok = ns.Nested[segment]
+		if !ok {
+			return TypeBinding{}, false
+		}
+		rest = tail
 	}
 }
