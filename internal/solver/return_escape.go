@@ -7,6 +7,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // Escape forcing. A value flowing out of the function frame may carry a borrow of a
@@ -108,6 +109,9 @@ func (c *checker) resolveComponentEscapes(
 	flowBorrowGraph *flowBorrowGraph,
 ) bool {
 	consumed := false
+	outOfFrame := c.localsLeavingOutsideAReturn(flowBorrowGraph)
+	// Return index to the owned type its borrows strip to. Applied after every site is decided.
+	strips := map[int]soltype.Type{}
 	for _, es := range c.fn.escapeSites {
 		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
 		// earlier reassignment is gone here, and one set on a reaching branch is joined in. Passed
@@ -118,7 +122,7 @@ func (c *checker) resolveComponentEscapes(
 		if escaping.Len() == 0 {
 			continue
 		}
-		if c.componentMoveCovers(es, escaping, info, fieldBorrowGraph) {
+		if c.componentMoveCovers(es, escaping, outOfFrame, info, fieldBorrowGraph) {
 			// Co-move the component: consume every borrowed local, so a later use of any of
 			// them is a use-after-move. The escaping value's own root is consumed at the flow
 			// site already, so it is skipped here — a borrow cycle can route an edge back to
@@ -137,23 +141,60 @@ func (c *checker) resolveComponentEscapes(
 			}
 			// When the moved graph is a tree — every borrowed local reached exactly once with
 			// no cycle — the return value is the sole owner of each node, so owning them in the
-			// type is honest. Strip the borrows from this return's type.
-			c.stripReturnBorrowsIfTree(es.expr, fieldBorrowGraph)
+			// type is honest. The rewrites are collected here and applied together, since one
+			// return left borrowed holds back the rest.
+			if idx, stripped, ok := c.returnStripFor(es.expr, fieldBorrowGraph); ok {
+				strips[idx] = stripped
+			}
 			consumed = true
 			continue
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
+	c.applyReturnStrips(strips)
 	c.fn.escapeSites = nil
 	return consumed
+}
+
+// localsLeavingOutsideAReturn returns the function-locals that flow out somewhere other than a
+// return: a field store into a parameter, or a consuming argument. Both hand a path to the local
+// that outlives the frame, one to the caller's object and one to the callee.
+//
+// A return's exemption rests on the frame being gone, so nothing can reach the local again. That
+// is false for a local already on this list, since the earlier flow-out left a path behind. In
+//
+//	fn f(p: mut {node: {peer: &mut B}}) {
+//		val mut b = {value: 0}
+//		p.node = {peer: &mut b}
+//		return &mut b
+//	}
+//
+// the caller ends up holding b through p.node.peer AND through the return, which is two live
+// mutable paths to one value.
+//
+// Every site is scanned before any is decided, so a store written after the return in the source
+// counts the same as one written before it.
+func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) set.Set[liveness.VarID] {
+	out := set.NewSet[liveness.VarID]()
+	for _, es := range c.fn.escapeSites {
+		if es.isReturn {
+			continue
+		}
+		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
+		for _, id := range c.escapingLocalsOf(es.expr, graph).ToSlice() {
+			out.Add(id)
+		}
+	}
+	return out
 }
 
 // componentMoveCovers reports whether the escape of es is a self-contained connected-component
 // move rather than an ordinary escape. It holds when two conditions are met:
 //
-//   - es carries an owned aggregate, or it is a return. An owned aggregate has internal edges
-//     for the move to re-anchor. A bare borrow — `&mut b`, a borrowed field, a borrow-typed
-//     binding — has none, so away from a return it stays an escape.
+//   - es carries an owned aggregate, or it is a return whose locals leave nowhere else. An
+//     owned aggregate has internal edges for the move to re-anchor. A bare borrow has none, so
+//     away from a return it stays an escape. A bare borrow is `&mut b`, a borrowed field, or a
+//     borrow-typed binding. outOfFrame is what localsLeavingOutsideAReturn found.
 //   - The component is self-contained: no live binding outside it borrows a node inside it.
 //     The component is the outgoing value's root together with every local it transitively
 //     borrows. A binding dead at ref does not count as an external reference, so a stray
@@ -161,14 +202,17 @@ func (c *checker) resolveComponentEscapes(
 //     "dead" covers.
 //
 // A return needs no aggregate because the frame does not survive it. Every local dies with the
-// frame, so the borrow the caller receives is the only path left to the value, and handing
-// ownership out states what the caller actually holds. A store or a consuming argument leaves
-// the frame running, and the local the borrow names is still reachable from it, so the value is
-// not the caller's alone and the aggregate requirement stands.
+// frame, so the borrow the caller receives is the only path left to the value. Handing ownership
+// out then states what the caller actually holds. The outOfFrame test is what limits this to a
+// local the frame does not also send out another way.
 //
-// Two borrows of one local CAN leave together in a single returned value, which the move
-// accepts and stripReturnBorrowsIfTree then declines to re-type, leaving both borrowed. #1263
-// covers reporting that.
+// A store or a consuming argument leaves the frame running. The local a bare borrow names is
+// still reachable from the frame, so the value is not the caller's alone, and the aggregate
+// requirement stands.
+//
+// Two borrows of one local CAN leave together in a single returned value. The move accepts it,
+// and returnStripFor then declines to re-type it, so both stay borrowed. #1263 covers reporting
+// that.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees every alias the recording sites listed at the top of this file record. An alias
@@ -179,11 +223,15 @@ func (c *checker) resolveComponentEscapes(
 // container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
 	es escapeSite, escaping set.Set[liveness.VarID],
+	outOfFrame set.Set[liveness.VarID],
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
 	e, stmtRef := es.expr, es.stmtRef
-	if !es.isReturn && !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
+	// A return earns the exemption when none of the locals it carries leaves the frame
+	// elsewhere. Any other site has to carry an owned aggregate.
+	exemptAsReturn := es.isReturn && escaping.Intersection(outOfFrame).Len() == 0
+	if !exemptAsReturn && !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
 		return false
 	}
 	component := escaping.Clone()

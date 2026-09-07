@@ -165,8 +165,7 @@ func TestInferValMutConstructedAllowsFieldWrite(t *testing.T) {
 
 // A constructed owned-mutable value can be borrowed `&mut`. The mutable cell fills the
 // mutable borrow destination, so `&mut q` checks where an owned-immutable q would fail the
-// mutability gate. The borrow itself is legal, but returning it escapes the local q, which
-// dies at the frame end, so the return is rejected while the borrow stands.
+// mutability gate.
 func TestInferValMutConstructedBorrowsMut(t *testing.T) {
 	values, _, errs := inferSource(t, `fn f() {
   val mut q = {x: 0}
