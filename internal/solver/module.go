@@ -272,12 +272,18 @@ func (c *checker) inferComponent(
 	//     no-op whose pre-bound value var is retracted in phase 3.
 	var enumShells []*enumShell
 	var aliasShells []*aliasShell
+	var interfaceShells []*interfaceShell
 	var classDecls []*ast.ClassDecl
 	var classNamespaces []string
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
 		}
+		// Every `interface Point` in the module shares one type key, so the group is
+		// collected here and pre-bound once. The bound type is their merged member
+		// list, which is what makes declaration merging a property of the binding
+		// rather than of any one declaration.
+		var interfaceDecls []*ast.InterfaceDecl
 		for _, d := range g.GetDecls(key) {
 			if handled.Contains(d) {
 				continue
@@ -310,7 +316,19 @@ func (c *checker) inferComponent(
 					aliasShells = append(aliasShells, sh)
 				}
 				handled.Add(d)
+			case *ast.InterfaceDecl:
+				// An interface binds at its type key like an alias, so its value key is
+				// a no-op. The group is pre-bound after this loop, once every
+				// declaration of the name is collected.
+				if decl.Name != nil && decl.Name.Name != "" {
+					interfaceDecls = append(interfaceDecls, decl)
+				}
+				handled.Add(d)
 			}
+		}
+		if len(interfaceDecls) > 0 {
+			interfaceShells = append(interfaceShells, c.preBindInterface(
+				c.lookupScope(scope, interfaceDecls[0]), inner, interfaceDecls, g.GetNamespace(key)))
 		}
 	}
 	// The loops below run while sibling alias and enum bodies are still nil, so a bound check
@@ -334,6 +352,11 @@ func (c *checker) inferComponent(
 	// is bound, so a body naming a sibling type — or the alias itself — resolves.
 	for _, sh := range aliasShells {
 		c.inferAliasBody(sh)
+	}
+	// Each interface's members resolve last, so an `extends` target declared as an
+	// alias or a class in this component is already filled.
+	for _, sh := range interfaceShells {
+		c.inferInterfaceBody(sh)
 	}
 	c.deferArgBounds = false
 	// Every body in the component is resolved, so the alias reference graph the productivity
