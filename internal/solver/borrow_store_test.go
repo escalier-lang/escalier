@@ -261,7 +261,7 @@ func TestCallStoreEdge(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -462,7 +462,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -506,7 +506,7 @@ func TestCallStoreEdgePayloadPositions(t *testing.T) {
 			require.Equal(t, []string{
 				"9:12-9:18: cannot constrain immutable tuple <: mutable tuple",
 				"10:13-10:14: borrowed value 'b' does not live long enough to escape the function",
-			}, messagesWithSpan(errs))
+			}, messagesWithSpan(t, errs))
 		})
 	}
 }
@@ -639,7 +639,7 @@ func TestCallStoreEdgeNonStores(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -680,7 +680,7 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	case errs := <-done:
 		require.Equal(t, []string{
 			"20:16-20:22: borrowed value 'b' does not live long enough to escape the function",
-		}, messagesWithSpan(errs))
+		}, messagesWithSpan(t, errs))
 	case <-time.After(30 * time.Second):
 		t.Fatal("inference did not finish: the lifetime walk did not stay within its node budget")
 	}
@@ -711,5 +711,5 @@ func TestCallStoreEdgeTruncatedWalkStaysSound(t *testing.T) {
 	_, _, errs := inferSource(t, b.String())
 	require.Equal(t, []string{
 		"20:16-20:22: borrowed value 'b' does not live long enough to escape the function",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
