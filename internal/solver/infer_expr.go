@@ -1767,11 +1767,12 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltyp
 	return args
 }
 
-// recordCallArgEffects moves the arguments a call consumes and records the borrow edges its
-// signature stores, through consumeCallArgs and recordCallStoreEdges. It is the ONE place both
-// call paths run those two, against whichever signature the call resolved to: the shape inferCall
-// read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one
-// path from forgetting them, which is how #1508 came about.
+// recordCallArgEffects moves the arguments a call consumes, records the borrow edges its
+// signature stores, and checks its borrow arguments against each other, through consumeCallArgs,
+// recordCallStoreEdges and checkCallBorrowExclusivity. It is the ONE place both call paths run
+// those three, against whichever signature the call resolved to: the shape inferCall read off
+// the callee, or the arm resolveOverload picked. Keeping them here is what stops one path from
+// forgetting them, which is how #1508 came about.
 //
 // fn is nil when no arm accepted the call. Nothing is moved then, since no signature says which
 // arguments a call that does not type-check would have consumed.
@@ -1782,8 +1783,14 @@ func (c *checker) recordCallArgEffects(
 		return
 	}
 	c.consumeCallArgs(e, fn, consumeRef)
+	// A borrow argument the signature stores into another argument, or into a method's
+	// receiver, aliases the two for as long as the target lives. Record that edge here rather
+	// than leaving the alias invisible to the escape check and the component move.
 	recv, self := c.calleeReceiver(e.Callee)
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
+	// Every argument of a call is live at once, so two that borrow overlapping data break
+	// exclusivity when the two parameters disagree about whether the data can change.
+	c.checkCallBorrowExclusivity(e, fn, consumeRef)
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class

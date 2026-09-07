@@ -430,6 +430,9 @@ type funcCtx struct {
 	// the consumed lattice is available. A self-contained connected component re-anchors
 	// and co-moves; anything else reports an EscapingBorrowError.
 	escapeSites []escapeSite
+	// loans holds every borrow bound to a name in this body, in source order. The exclusivity
+	// check compares each new borrow against the ones still live. See borrow_exclusivity.go.
+	loans []loan
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow
