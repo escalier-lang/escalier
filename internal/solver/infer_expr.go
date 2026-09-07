@@ -2103,6 +2103,9 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			c.recordBorrowEdges(target.VarID, e.Right)
 			if ref, ok := c.fn.stmtToRef[assignStmt]; ok {
 				c.flushBorrowDirty(ref)
+				// The reassignment repoints the binding, so the loan it held is gone and the
+				// borrow it now holds takes its place.
+				c.recordBorrowLoan(target.VarID, e.Right, ref)
 			}
 		}
 	}

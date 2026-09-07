@@ -45,6 +45,9 @@ import (
 //   - Loans crossing a loop back edge. Each loan is checked against the loans recorded before
 //     it in source order, so a borrow created late in a body is not checked against one the
 //     next iteration would still hold.
+//   - Anything rooted at a method's receiver. A `self` reference carries VarID 0, so
+//     `&mut self.p` names no binding and records no loan. #1486 covers that, and it reaches
+//     further than this check: every analysis built on places sees the same 0.
 
 // BorrowAliasError reports two borrows of overlapping data live at once where at least one can
 // write through its view.
@@ -137,8 +140,13 @@ func (c *checker) reportBorrowConflict(first, second loan) {
 }
 
 // liveAt reports whether l is still usable at ref. A loan bound to a binding lasts while that
-// binding is live, so one whose binding is never read after ref constrains nothing. A loan with
-// no holder belongs to a call argument and lasts only for its own statement.
+// binding is live, so one whose binding is never read again constrains nothing. A loan with no
+// holder belongs to a call argument and lasts only for its own statement.
+//
+// The test is liveness ENTERING ref, not after it. A binding the statement at ref reads is live
+// entering it and dead leaving it, and that read is exactly the use the loan has to be checked
+// against. Asking IsLiveAfter would miss `readWrite(&x, b)`, where b's last use is the call
+// being checked.
 func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
 	if l.holder <= 0 {
 		return l.ref == ref
@@ -146,7 +154,7 @@ func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
 	if c.fn.liveness == nil {
 		return true
 	}
-	return c.fn.liveness.IsLiveAfter(ref, l.holder)
+	return c.fn.liveness.IsLiveBefore(ref, l.holder)
 }
 
 // checkAgainstHeldLoans reports a conflict between fresh and any loan already live at fresh's
@@ -169,6 +177,10 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	if c.fn == nil || holder <= 0 || init == nil {
 		return
 	}
+	// A reassignment repoints the binding, so whatever it borrowed before is unreachable
+	// through it. `var a = &mut x` followed by `a = &mut y` leaves no loan of x behind. This
+	// is the strong update the flow-sensitive borrow graph makes for the same statement.
+	c.dropLoansHeldBy(liveness.VarID(holder))
 	borrow, ok := init.(*ast.BorrowExpr)
 	if !ok {
 		return
@@ -186,6 +198,18 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
+}
+
+// dropLoansHeldBy removes the loans bound to holder, which a reassignment of that binding has
+// made unreachable.
+func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
+	kept := c.fn.loans[:0]
+	for _, l := range c.fn.loans {
+		if l.holder != holder {
+			kept = append(kept, l)
+		}
+	}
+	c.fn.loans = kept
 }
 
 // checkCallBorrowExclusivity reports two arguments of one call that borrow overlapping data

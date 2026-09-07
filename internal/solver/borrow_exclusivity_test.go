@@ -12,6 +12,7 @@ const exclusivityDecls = `
 	declare fn readWrite(a: &{v: number}, b: &mut {v: number}) -> undefined
 	declare fn writeWrite(a: &mut {v: number}, b: &mut {v: number}) -> undefined
 	declare fn readRead(a: &{v: number}, b: &{v: number}) -> undefined
+	declare fn write(a: &mut {v: number}) -> undefined
 `
 
 // TestBorrowExclusivity covers the mutable-XOR-shared rule: data one borrow can write through
@@ -33,7 +34,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(&x, &mut x)
 				}
 			`,
-			want: []string{"8:20-8:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"9:20-9:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		// Two writable views of one value disagree the moment either writes.
 		"TwoMutableOfOnePlace": {
@@ -43,7 +44,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					writeWrite(&mut x, &mut x)
 				}
 			`,
-			want: []string{"8:25-8:31: cannot borrow 'x' as mutable more than once at a time"},
+			want: []string{"9:25-9:31: cannot borrow 'x' as mutable more than once at a time"},
 		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoSharedOfOnePlaceOk": {
@@ -85,7 +86,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(&x.p, &mut x.p)
 				}
 			`,
-			want: []string{"8:22-8:30: cannot borrow 'x.p' as mutable while it is borrowed as immutable"},
+			want: []string{"9:22-9:30: cannot borrow 'x.p' as mutable while it is borrowed as immutable"},
 		},
 		// A whole binding contains its fields, so borrowing x.p and then x reaches overlapping
 		// data even though the paths differ in length.
@@ -119,7 +120,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(m, m)
 				}
 			`,
-			want: []string{"7:19-7:20: cannot borrow 'm' as mutable while it is borrowed as immutable"},
+			want: []string{"8:19-8:20: cannot borrow 'm' as mutable while it is borrowed as immutable"},
 		},
 		// The same borrow filling two shared parameters is two readers.
 		"OneBorrowFillingTwoSharedParamsOk": {
@@ -141,20 +142,59 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWrite(a, b)
 				}
 			`,
-			want: []string{"9:14-9:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"10:14-10:20: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
 		// A borrow nothing reads again constrains nothing, which is the NLL rule. Here a is
-		// never read after b is created, so the two are not live at once.
-		"DeadFirstBorrowOk": {
+		// never read at all, so it and b are never live at once.
+		"UnreadFirstBorrowOk": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
 					val a = &x
 					val b = &mut x
-					readWrite(&x, b)
+					write(b)
 				}
 			`,
 			want: nil,
+		},
+		// A loan is live AT the statement that reads it, not only beyond it. b's last use is
+		// the call, and the fresh `&x` in the same call is a second view of x while b can
+		// still write. Asking only whether b outlives the call would miss this.
+		"FreshBorrowBesideALoanOnItsLastUse": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val b = &mut x
+					readWrite(&x, b)
+				}
+			`,
+			want: []string{"10:16-10:18: cannot borrow 'x' as immutable while it is borrowed as mutable"},
+		},
+		// A reassignment repoints the binding, so the loan it held is gone. a borrows y by the
+		// time b is created, and nothing then reaches x twice.
+		"ReassignedBorrowDropsItsOldLoanOk": {
+			src: exclusivityDecls + `
+				fn g(x: mut {v: number}, y: mut {v: number}) {
+					var a = &mut x
+					a = &mut y
+					val b = &mut x
+					write(a)
+				}
+			`,
+			want: nil,
+		},
+		// The reassignment does not silence a real conflict: a borrows x after it, so b is a
+		// second mutable view of x.
+		"ReassignedBorrowStillConflicts": {
+			src: exclusivityDecls + `
+				fn g(x: mut {v: number}, y: mut {v: number}) {
+					var a = &mut y
+					a = &mut x
+					val b = &mut x
+					write(a)
+				}
+			`,
+			want: []string{"10:14-10:20: cannot borrow 'x' as mutable more than once at a time"},
 		},
 		// Two bound borrows of disjoint fields stay apart across statements too.
 		"BorrowsBoundToNamesOfDisjointFieldsOk": {
