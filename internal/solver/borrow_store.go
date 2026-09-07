@@ -328,14 +328,29 @@ func (w *lifetimeWalk) walkObjElem(elem soltype.ObjTypeElem, base []placeSeg) {
 // decides what happens, the same split a field store makes between recordFieldStoreEdges and
 // checkParamFieldStoreEscape:
 //
-//   - Into a local, the call records a borrow edge. `store(&mut a, &mut b)` against the
-//     signature in this file's opening comment records a → b at [peer], so a later flow-out of
-//     a finds b. The target's own place is the prefix, so `store(&mut a.slot, &mut b)` records
-//     at [slot, peer].
-//   - Into a parameter, the locals the argument carries are reported at once. The parameter's
-//     referent belongs to the caller and outlives the frame, so a borrow of a local written
-//     into it dangles. Reporting here rather than deferring to the escape post-pass is what
-//     keeps the callee's borrow from being weighed as a move, which would consume the locals.
+//   - Into a local, the call records a borrow edge, so a later flow-out of that local finds
+//     the borrow. The target's own place is the prefix, so `store(&mut a.slot, &mut b)`
+//     records at [slot, peer] rather than at [peer].
+//   - Into a parameter, the locals the argument carries are reported at once, since the
+//     parameter's referent belongs to the caller and outlives the frame. Reporting here
+//     rather than deferring to the escape post-pass is what keeps the callee's borrow from
+//     being weighed as a move, which would consume the locals.
+//
+// Both read against the signature in this file's opening comment. A local target:
+//
+//	fn build(p: mut {value: number}) -> &mut {value: number} {
+//		val mut b = {value: 2}
+//		val mut a = {peer: &mut p}
+//		store(&mut a, &mut b)   // records a → b at [peer]
+//		return a.peer           // follows that edge and reports b
+//	}
+//
+// A parameter target, where nothing is recorded and b is reported at the call:
+//
+//	fn build(p: &mut {peer: &mut {value: number}}) -> undefined {
+//		val mut b = {value: 2}
+//		store(p, &mut b)
+//	}
 //
 // A store is skipped when the argument carries no function-local, when the target names no
 // binding, or when the two are the same binding, which would make an unusable self-loop.
