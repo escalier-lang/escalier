@@ -171,6 +171,9 @@ func (c *checker) inferStmt(scope *Scope, lvl int, s ast.Stmt) soltype.Type {
 				c.recordBorrowEdges(b.VarID, vd.Init)
 				if ref, ok := c.fn.stmtToRef[s]; ok {
 					c.flushBorrowDirty(ref)
+					// An initializer that borrows a place binds a loan of it to this binding,
+					// which then has to stay exclusive for as long as the binding is read.
+					c.recordBorrowLoan(b.VarID, vd.Init, ref)
 				}
 			}
 		}
