@@ -35,10 +35,47 @@ import (
 // namespace-member access (`Foo.bar`) is M4, and third-party `@types`/`.d.ts`
 // ingestion (internal/resolver) is M7 — M2 engages neither.
 func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
+	res := InferModuleWithSource(module, nil)
+	return res.Scope, res.Info, res.Errors
+}
+
+// ModuleResult is everything one inference run produced.
+type ModuleResult struct {
+	// Scope holds the module's own top-level declarations.
+	Scope *Scope
+	// FileScopes holds one scope per file, keyed by source id, each carrying that
+	// file's import bindings and parented to Scope.
+	FileScopes map[int]*Scope
+	// Info is the node-to-type side table.
+	Info *Info
+	// Packages holds the surface of every package the run loaded.
+	Packages *PackageRegistry
+	// Errors are the run's diagnostics, the imported packages' included.
+	Errors []SolverError
+}
+
+// InferModuleWithSource infers module, resolving its imports through source.
+//
+// Imports are bound before the dep-graph walk, so a declaration referring to an
+// imported name resolves it. Each file's imports go into that file's own scope,
+// so they do not leak to a sibling file.
+//
+// A nil source resolves nothing and reports every import as unresolved. That is
+// what InferModule passes, since a run over one module has no second module to
+// reach.
+func InferModuleWithSource(module *ast.Module, source ModuleSource) *ModuleResult {
 	c := newChecker()
+	c.source = source
 	scope := sharedPrelude().Child()
+	fileScopes := c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
-	return scope, c.info, c.errs
+	return &ModuleResult{
+		Scope:      scope,
+		FileScopes: fileScopes,
+		Info:       c.info,
+		Packages:   c.packages,
+		Errors:     c.errs,
+	}
 }
 
 // inferDepGraph infers every component of g into scope. BuildDepGraph returns
@@ -51,6 +88,17 @@ func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
 // drives the reconciliation pass that reports any top-level declaration the dep
 // graph did not model.
 func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *dep_graph.DepGraph) {
+	// Saving the previous scope is defensive. A walk cannot start while another
+	// is in progress: bindImport is the only caller of loadPackage, and both
+	// call sites bind every import before walking anything, so a package is
+	// fully inferred before the module importing it begins. The save costs
+	// nothing and keeps this correct if that ever stops holding. #1476 makes
+	// the ordering explicit and enforces the invariant, at which point this
+	// goes away.
+	prevModuleScope := c.moduleScope
+	c.moduleScope = scope
+	defer func() { c.moduleScope = prevModuleScope }()
+
 	handled := set.NewSet[ast.Decl]()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
@@ -192,7 +240,7 @@ func (c *checker) inferComponent(
 				// discarding keeps phase 2's inferFunc — which re-derives the signature
 				// while checking the body — the single reporter of any signature error.
 				p := c.openProbe()
-				sig := c.inferFunc(scope, inner, fd.FuncSig, nil, fd, true)
+				sig := c.inferFunc(c.lookupScope(scope, fd), inner, fd.FuncSig, nil, fd, true)
 				c.closeProbe(p, false)
 				arms[i] = overloadArm{decl: fd, t: sig}
 				schemes[i] = monoScheme(sig)
@@ -236,7 +284,7 @@ func (c *checker) inferComponent(
 			}
 			switch decl := d.(type) {
 			case *ast.EnumDecl:
-				enumShells = append(enumShells, c.preBindEnum(scope, inner, decl, g.GetNamespace(key)))
+				enumShells = append(enumShells, c.preBindEnum(c.lookupScope(scope, decl), inner, decl, g.GetNamespace(key)))
 				handled.Add(d)
 			case *ast.ClassDecl:
 				// A type-key component is the SCC condensation of mutually-recursive classes,
@@ -258,7 +306,7 @@ func (c *checker) inferComponent(
 				// {b: B}` / `type B = {a: A}` pair — find its target already bound.
 				// preBindAlias returns nil for a reserved built-in name it rejected, which is not
 				// bound and has no body to resolve, so skip appending it.
-				if sh := c.preBindAlias(scope, inner, decl, g.GetNamespace(key)); sh != nil {
+				if sh := c.preBindAlias(c.lookupScope(scope, decl), inner, decl, g.GetNamespace(key)); sh != nil {
 					aliasShells = append(aliasShells, sh)
 				}
 				handled.Add(d)
@@ -275,7 +323,7 @@ func (c *checker) inferComponent(
 	// fills omitted arguments from and the bounds its arguments are checked against — is
 	// final from here on.
 	for i, decl := range classDecls {
-		c.preBindClassTypeParams(scope, inner, decl, classNamespaces[i])
+		c.preBindClassTypeParams(c.lookupScope(scope, decl), inner, decl, classNamespaces[i])
 	}
 	// Every enum body resolves its variant parameters against the fully pre-bound
 	// identities above, so a parameter naming a sibling enum or class resolves.
@@ -352,7 +400,7 @@ func (c *checker) inferComponent(
 			for _, arm := range b.arms {
 				handled.Add(arm.decl)
 				b.sources = append(b.sources, &ast.NodeProvenance{Node: arm.decl})
-				c.inferFunc(scope, inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
+				c.inferFunc(c.lookupScope(scope, arm.decl), inner, arm.decl.FuncSig, arm.decl.Body, arm.decl, true)
 			}
 			continue
 		}
@@ -369,7 +417,7 @@ func (c *checker) inferComponent(
 			// leaves and the collision reports as a duplicate rather than as an
 			// unsupported pattern.
 			if vd := asDestructureDecl(d); vd != nil {
-				c.bindModuleDestructureLeaf(scope, inner, vd, g, key, b, handled, destructured)
+				c.bindModuleDestructureLeaf(c.lookupScope(scope, vd), inner, vd, g, key, b, handled, destructured)
 				continue
 			}
 			if handled.Contains(d) {
@@ -382,7 +430,7 @@ func (c *checker) inferComponent(
 			// A class decl is keyed by its dep_graph-qualified name, so pass the key's
 			// namespace down for inferClassDecl to reconstruct it. Every other decl
 			// kind ignores it.
-			t, src, ok := c.inferDeclDef(scope, inner, d, g.GetNamespace(key))
+			t, src, ok := c.inferDeclDef(c.lookupScope(scope, d), inner, d, g.GetNamespace(key))
 			if !ok {
 				continue
 			}
@@ -852,4 +900,32 @@ func sortArms(module *ast.Module, arms []overloadArm) {
 	sort.SliceStable(arms, func(i, j int) bool {
 		return armPosLess(module, arms[i].decl, arms[j].decl)
 	})
+}
+
+// declTarget returns the scope a top-level declaration's own binding belongs
+// in: the module scope for the length of the dep-graph walk.
+//
+// Inference runs under the declaration's file scope so that file's imports
+// resolve, and a file scope is a child. A binding written into one would be
+// invisible to a sibling file and to the package's exported surface, so the
+// registration sites write here instead.
+func (c *checker) declTarget(scope *Scope) *Scope {
+	if c.moduleScope != nil {
+		return c.moduleScope
+	}
+	return scope
+}
+
+// lookupScope returns the scope names inside decl resolve through. That is the
+// scope of the file decl was written in when the run bound imports for it, and
+// the module scope otherwise.
+//
+// A file scope is a child of the module scope, so resolution reaches every
+// module-level declaration through it. What it adds is that file's imports, and
+// only that file's.
+func (c *checker) lookupScope(module *Scope, decl ast.Decl) *Scope {
+	if fileScope, ok := c.fileScopes[decl.Span().SourceID]; ok {
+		return fileScope
+	}
+	return module
 }

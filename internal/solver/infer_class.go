@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"strings"
+
 	"fmt"
 	"sort"
 
@@ -245,7 +247,7 @@ func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) 
 // it. No placeholder-patch phase is needed: the handle a sibling captured is the one that
 // carries the finished body.
 func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string) (*soltype.ClassType, *ClassDef) {
-	qname := qualifyClassName(ns, decl)
+	qname := c.qualifyClassName(ns, decl)
 	if def, ok := c.ctx.classDef(qname); ok {
 		if b, found := scope.GetType(qname); found {
 			if self, ok := b.Type.(*soltype.ClassType); ok && self.Name == qname {
@@ -272,7 +274,7 @@ func (c *checker) getOrCreateClass(scope *Scope, decl *ast.ClassDecl, ns string)
 	// resolves it and a self-referential type in the body resolves to this class rather
 	// than falling through as unknown. A bare sibling reference resolves through the
 	// checker's classNamespace, which reconstructs this qualified key.
-	scope.defineType(qname, TypeBinding{
+	c.declTarget(scope).defineType(qname, TypeBinding{
 		Type:    self,
 		Sources: []provenance.Provenance{&ast.NodeProvenance{Node: decl}},
 	})
@@ -330,7 +332,7 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 	}
 	c.classShells[decl] = &classShell{declScope: declScope, typeParams: typeParams, paramsClean: quiet()}
 
-	if def, ok := c.ctx.classDef(qualifyClassName(ns, decl)); ok {
+	if def, ok := c.ctx.classDef(c.qualifyClassName(ns, decl)); ok {
 		def.TypeParams = typeParams
 	}
 }
@@ -339,11 +341,33 @@ func (c *checker) preBindClassTypeParams(scope *Scope, lvl int, decl *ast.ClassD
 // to the local name with a dot, or the bare local name at the root namespace. This is
 // the same `CurrentNamespace + "." + name` rule dep_graph forms binding keys with, so
 // the registry key and the ClassType handle match the value binding's qualified key.
-func qualifyClassName(ns string, decl *ast.ClassDecl) string {
-	if ns == "" {
-		return decl.Name.Name
+func (c *checker) qualifyClassName(ns string, decl *ast.ClassDecl) string {
+	return c.qualifyDecl(ns, decl.Name.Name)
+}
+
+// qualifyDecl builds the key a declaration's definition is registered under:
+// the package URI, the dep_graph namespace, and the local name, joined by dots
+// and each omitted when empty. A root-namespace class in the entry module keys
+// on its bare name.
+func (c *checker) qualifyDecl(ns, name string) string {
+	return qualify(packageKeyPrefix(c.pkgURI), qualify(ns, name))
+}
+
+// packageKeyPrefix is the first segment of every key a package's declarations
+// register under, or "" for the entry module.
+//
+// Two things make a URI unusable as that segment on its own. A bare specifier
+// such as "lodash" carries no colon, so `lodash.Point` would name both that
+// package's class and a class in a `lodash/` directory namespace. And a URI may
+// hold a dot, so `npm:a.b`'s `D` and `npm:a`'s `b.D` would read the same. The
+// `import:` marker answers the first, since no namespace segment holds a colon,
+// and escaping the dots answers the second, since the escaped prefix holds none.
+func packageKeyPrefix(uri string) string {
+	if uri == "" {
+		return ""
 	}
-	return ns + "." + decl.Name.Name
+	escaped := strings.ReplaceAll(uri, "%", "%25")
+	return "import:" + strings.ReplaceAll(escaped, ".", "%2E")
 }
 
 // typeParamVars returns each type parameter's var, the arguments a class's own
@@ -458,6 +482,32 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 //     an already-qualified `Geometry.Point` reference written from another namespace,
 //     whose doubly-qualified probe in step 2 missed.
 func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bool) {
+	// Inside a package, three sources can answer one bare name, and they rank by
+	// how near they are to the reference.
+	//
+	//  1. An import the file wrote, bound in that file's own scope.
+	//  2. A declaration the package made, bound in the module scope under a key
+	//     carrying the package prefix.
+	//  3. A prelude seed, bound in the root scope under the bare name.
+	//
+	// The bare walk below reaches the third without distinguishing it from the
+	// first, so a package declaring `Promise` would resolve its own references to
+	// the prelude's placeholder. Ranking the first two ahead of it is what stops
+	// that.
+	if c.pkgURI != "" {
+		if b, ok := scope.getTypeUpTo(name, c.moduleScope); ok {
+			return b, true
+		}
+		if c.classNamespace != "" {
+			if b, ok := scope.GetType(c.qualifyDecl(c.classNamespace, name)); ok {
+				return b, true
+			}
+		}
+		if b, ok := scope.GetType(c.qualifyDecl("", name)); ok {
+			return b, true
+		}
+	}
+
 	bare, bareOK := scope.GetType(name)
 	if bareOK {
 		if _, isClass := bare.Type.(*soltype.ClassType); !isClass {
@@ -465,7 +515,7 @@ func (c *checker) lookupClassBinding(scope *Scope, name string) (TypeBinding, bo
 		}
 	}
 	if c.classNamespace != "" {
-		if b, ok := scope.GetType(c.classNamespace + "." + name); ok {
+		if b, ok := scope.GetType(c.qualifyDecl(c.classNamespace, name)); ok {
 			return b, true
 		}
 	}
