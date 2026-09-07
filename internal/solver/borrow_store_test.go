@@ -363,10 +363,14 @@ func TestCallStoreEdgePositions(t *testing.T) {
 			},
 		},
 		// A union member holds a borrow the whole union exposes, so a store into one is found
-		// at the union's own path. The two constrain errors are unrelated to the store: a
-		// `&mut` field is invariant, so the argument's `&mut {value: number}` does not satisfy
-		// a field declared as a union of borrows. They pin that limitation alongside the edge
-		// the walk still records through the union.
+		// at the union's own path. The two constrain errors are unrelated to the store. The
+		// target is a `&mut` to the container, which makes its `peer` field read-write and so
+		// invariant. Invariance runs the comparison in both directions, and the reverse one has
+		// to hold against every arm rather than picking the one that fits. The same signature
+		// without the outer `&mut` selects the matching arm and reports nothing.
+		//
+		// Their spans point at a `number` on the declaration line and a `number` on the `build`
+		// line, neither of which is the `store` call between them. #1481 covers that.
 		"StoreIntoUnionMember": {
 			src: `
 				declare fn store<'a, 'c>(
