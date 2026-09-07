@@ -113,7 +113,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			values, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 			require.Equal(t, tc.types, values)
 		})
 	}
@@ -145,7 +145,7 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	`)
 	require.Equal(t, []string{
 		"12:11-12:17: borrowed value 'h' does not live long enough to escape the function",
-	}, messagesWithSpan(errs))
+	}, messagesWithSpan(t, errs))
 }
 
 // TestIndirectStoreIntoParameterEscapes covers what escapes when the shared lifetime sits
@@ -213,7 +213,7 @@ func TestIndirectStoreIntoParameterEscapes(t *testing.T) {
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
 			_, _, errs := inferSource(t, tc.src)
-			require.Equal(t, tc.want, messagesWithSpan(errs))
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
 		})
 	}
 }
