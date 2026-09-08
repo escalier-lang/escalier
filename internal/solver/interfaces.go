@@ -65,18 +65,21 @@ func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.Interface
 	}
 
 	// Every declaration's body resolves against the one parameter list above, so a
-	// declaration writing different parameter names would read them as unbound. Drop
-	// it here rather than let its body report a missing type for each use.
+	// declaration writing different parameter names would read them as unbound, and
+	// a bound or default it writes would be ignored. Drop it here rather than let
+	// its body report a missing type for each use, or merge under a bound the source
+	// never agreed on.
 	merged := decls[:1]
 	for _, d := range decls[1:] {
-		if sameTypeParamNames(first.TypeParams, d.TypeParams) {
-			merged = append(merged, d)
+		if reason, mismatch := typeParamMismatch(first.TypeParams, d.TypeParams); mismatch {
+			c.report(&InterfaceTypeParamMismatchError{
+				Name:   first.Name.Name,
+				Reason: reason,
+				span:   d.Span(),
+			})
 			continue
 		}
-		c.report(&InterfaceTypeParamMismatchError{
-			Name: first.Name.Name,
-			span: d.Span(),
-		})
+		merged = append(merged, d)
 	}
 	decls = merged
 
@@ -208,19 +211,32 @@ func (e *InterfaceExtendsNonObjectError) Span() ast.Span      { return e.span }
 func (e *InterfaceExtendsNonObjectError) Related() []ast.Span { return nil }
 func (e *InterfaceExtendsNonObjectError) isSolverError()      {}
 
-// sameTypeParamNames reports whether two declarations of one interface write the
-// same type-parameter names in the same order. Bounds and defaults are not
-// compared, so a mismatch in those is left for the shared list to decide.
-func sameTypeParamNames(a, b []*ast.TypeParam) bool {
-	if len(a) != len(b) {
-		return false
+// typeParamMismatch reports whether a later declaration's type parameters can
+// merge under the first declaration's list, and why not when they cannot.
+//
+// The first declaration's list is the one every body resolves against, so a later
+// declaration writing a bound or a default is writing something nothing reads.
+// Rejecting that is what stops `Box<T: string>` and `Box<T: number>` merging under
+// whichever came first.
+func typeParamMismatch(first, later []*ast.TypeParam) (string, bool) {
+	if len(first) != len(later) {
+		return "they differ in how many it writes", true
 	}
-	for i := range a {
-		if a[i].Name != b[i].Name {
-			return false
+	for i := range later {
+		if first[i].Name != later[i].Name {
+			return "they differ in the names they write", true
+		}
+		if later[i].Variance != first[i].Variance {
+			return "they differ in variance", true
+		}
+		if later[i].Constraint != nil {
+			return "only the first declaration may write a bound", true
+		}
+		if later[i].Default != nil {
+			return "only the first declaration may write a default", true
 		}
 	}
-	return true
+	return "", false
 }
 
 // InterfaceTypeParamMismatchError reports a declaration whose type-parameter list
@@ -229,11 +245,13 @@ func sameTypeParamNames(a, b []*ast.TypeParam) bool {
 type InterfaceTypeParamMismatchError struct {
 	// Name is the interface every declaration in the group declares.
 	Name string
-	span ast.Span
+	// Reason says how this declaration's list differs from the first's.
+	Reason string
+	span   ast.Span
 }
 
 func (e *InterfaceTypeParamMismatchError) Message() string {
-	return "every declaration of interface " + e.Name + " must write the same type parameters"
+	return "declarations of interface " + e.Name + " must agree on their type parameters: " + e.Reason
 }
 func (e *InterfaceTypeParamMismatchError) Span() ast.Span      { return e.span }
 func (e *InterfaceTypeParamMismatchError) Related() []ast.Span { return nil }

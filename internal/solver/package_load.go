@@ -160,7 +160,7 @@ func exportedSurface(uri string, module *ast.Module, scope *Scope) *Namespace {
 			if nsDecl, isNS := decl.(*ast.NamespaceDecl); isNS {
 				if nsDecl.Name != nil && nsDecl.Name.Name != "" {
 					if bound, ok := scope.GetNamespace(qualify(nsPath, nsDecl.Name.Name)); ok {
-						target.Nested[nsDecl.Name.Name] = bound
+						target.Nested[nsDecl.Name.Name] = exportedMembers(nsDecl, bound)
 					}
 				}
 				continue
@@ -310,3 +310,36 @@ func (e *UnresolvedPackageError) Message() string {
 func (e *UnresolvedPackageError) Span() ast.Span      { return e.span }
 func (e *UnresolvedPackageError) Related() []ast.Span { return nil }
 func (e *UnresolvedPackageError) isSolverError()      {}
+
+// exportedMembers returns a copy of ns holding only what decl exports, recursing
+// into the blocks written inside it.
+//
+// A block's own `export` says the block is part of the package's surface. It says
+// nothing about the members inside it, each of which carries its own flag, so
+// handing the bound Namespace over whole would publish a package's internals.
+func exportedMembers(decl *ast.NamespaceDecl, ns *Namespace) *Namespace {
+	out := newNamespace(ns.Name)
+	for _, inner := range decl.Decls {
+		if nested, isNS := inner.(*ast.NamespaceDecl); isNS {
+			if !nested.Export() || nested.Name == nil || nested.Name.Name == "" {
+				continue
+			}
+			if child, held := ns.Nested[nested.Name.Name]; held {
+				out.Nested[nested.Name.Name] = exportedMembers(nested, child)
+			}
+			continue
+		}
+		if !inner.Export() {
+			continue
+		}
+		for _, name := range exportedNames(inner) {
+			if b, held := ns.Values[name]; held {
+				out.Values[name] = b
+			}
+			if b, held := ns.Types[name]; held {
+				out.Types[name] = b
+			}
+		}
+	}
+	return out
+}
