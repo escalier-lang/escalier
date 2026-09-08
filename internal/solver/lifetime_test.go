@@ -14,7 +14,7 @@ import (
 // upper bounds, and 'static is the bottom, so it absorbs that meet and a resolves to
 // 'static regardless of any other upper bound.
 func TestConstrainLtVarOutlivesStatic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	static := &soltype.StaticLifetime{}
 
@@ -28,7 +28,7 @@ func TestConstrainLtVarOutlivesStatic(t *testing.T) {
 // A var-to-var constraint records BOTH directions so each variable sees the full
 // relationship at coalescing.
 func TestConstrainLtVarToVarRecordsBothDirections(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -43,7 +43,7 @@ func TestConstrainLtVarToVarRecordsBothDirections(t *testing.T) {
 // Transitivity: with a <: b already recorded, constraining x <: a propagates
 // through a's existing upper bounds so x <: b is recorded too.
 func TestConstrainLtPropagatesTransitively(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	x := c.ctx.freshLifetime(0)
@@ -60,7 +60,7 @@ func TestConstrainLtPropagatesTransitively(t *testing.T) {
 // value, not pointer. Origination sites mint a fresh &StaticLifetime{} per call, so
 // pointer-identity dedup would wrongly pile up duplicate 'static bounds.
 func TestConstrainLtStaticDedupsByValue(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, &soltype.StaticLifetime{})
@@ -73,7 +73,7 @@ func TestConstrainLtStaticDedupsByValue(t *testing.T) {
 
 // A repeated outlives constraint does not re-append a bound already present.
 func TestConstrainLtDedupsBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -87,7 +87,7 @@ func TestConstrainLtDedupsBounds(t *testing.T) {
 // A transitive cycle terminates: 'a <: 'b together with 'b <: 'a must not loop,
 // and each direction is recorded exactly once.
 func TestConstrainLtCycleTerminates(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -104,7 +104,7 @@ func TestConstrainLtCycleTerminates(t *testing.T) {
 
 // Constraining a lifetime against ITSELF is a no-op — neither a bound nor a loop.
 func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 
 	c.ctx.constrainLt(a, a)
@@ -120,7 +120,7 @@ func TestConstrainLtReflexiveIsNoOp(t *testing.T) {
 // construct routes a borrow into static storage yet, since a borrow originates only
 // at a parameter, so this exercises the rule's mechanism directly.
 func TestEscapingRefIntoStatic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(0)
 	ref := &soltype.RefType{
 		Mut: true,
@@ -141,7 +141,7 @@ func TestEscapingRefIntoStatic(t *testing.T) {
 // escapes. constrainEscape walks the structural carriers, so the property's borrow
 // is constrained alongside any top-level one.
 func TestEscapingNestedRefIntoStatic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	inner := c.ctx.freshLifetime(0)
 	stored := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
 		&soltype.PropertyElem{Name: "p", Type: &soltype.RefType{
@@ -193,7 +193,7 @@ func borrowFn(ret soltype.Type, paramLts ...soltype.Lifetime) *soltype.FuncType 
 // `<: 'static`, which propagates through its lower bounds to each member, and
 // coalesceLifetimes then absorbs every member to 'static rather than naming it.
 func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	join := c.ctx.freshJoinLifetime(0)
@@ -225,7 +225,7 @@ func TestEscapingJoinedBorrowCollapsesToStatic(t *testing.T) {
 // distinct bounded lifetime. Without excluding the 'static-forced source, the join
 // would keep its own name and render the weaker `<'b: 'c, 'c>`.
 func TestJoinWithOneStaticSourceCollapsesToRemaining(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	join := c.ctx.freshJoinLifetime(0)
@@ -244,7 +244,7 @@ func TestJoinWithOneStaticSourceCollapsesToRemaining(t *testing.T) {
 // still renders as `&{x}` rather than collapsing to the bare inner. The mutable
 // case keeps the `&mut` form for the same reason.
 func TestImmutableConnectNothingBorrowKeepsRef(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(0)
 	param := &soltype.RefType{
 		Mut: false,
@@ -267,7 +267,7 @@ func TestImmutableConnectNothingBorrowKeepsRef(t *testing.T) {
 // by SCC representative, so a lifetime reaching the top join through two sub-joins
 // yields one `'a: 'd` bound. Without that dedup 'a would carry the bound twice.
 func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	d := c.ctx.freshLifetime(0)
@@ -293,7 +293,7 @@ func TestNestedJoinDedupsSharedLifetime(t *testing.T) {
 // directly, while 'b and 'c reach the second join only through the shared component.
 // Each param therefore carries `: 'd & 'e`.
 func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	d := c.ctx.freshLifetime(0)
@@ -316,7 +316,7 @@ func TestParamFeedingTwoJoinsRendersMeetBound(t *testing.T) {
 // The params keep their own names 'a and 'b from the borrows they originate on; only
 // the join lifetime resolves to the representative.
 func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	join := c.ctx.freshJoinLifetime(0)
@@ -353,7 +353,7 @@ func TestJoinOverMutualOutlivesCollapsesToOne(t *testing.T) {
 // the non-param minted first, which a freshener or extruder can do but top-level
 // inference cannot, so `m` is minted before `p` here.
 func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	m := c.ctx.freshJoinLifetime(0) // non-param, minted first so it holds the smaller ID
 	p := c.ctx.freshLifetime(0)     // param lifetime, larger ID
 	c.ctx.constrainLt(p, m)         // p outlives m
@@ -369,7 +369,7 @@ func TestJoinRepresentativeIsNonParamRendersParamName(t *testing.T) {
 // pre-probe length, exactly as it does for type-variable bounds — the second sort
 // rides the same journal discipline. Bounds added before the probe survive.
 func TestProbeDiscardRestoresLifetimeBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -394,7 +394,7 @@ func TestProbeDiscardRestoresLifetimeBounds(t *testing.T) {
 // A committed lifetime-bound mutation survives — discard is what reverts, not the
 // journal's existence.
 func TestProbeCommitKeepsLifetimeBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -409,7 +409,7 @@ func TestProbeCommitKeepsLifetimeBounds(t *testing.T) {
 // A committed child hands its lifetime-bound rollback obligation up to the parent,
 // so the parent's later discard still reverts the committed child's lifetime work.
 func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -429,7 +429,7 @@ func TestProbeLifetimeCommittedChildCoveredByParentDiscard(t *testing.T) {
 // distinct `subVar.LowerBounds` loop: with lb <: a already recorded, constraining
 // a <: super must propagate lb <: super through a's existing lower bound.
 func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lb := c.ctx.freshLifetime(0)
 	a := c.ctx.freshLifetime(0)
 	super := c.ctx.freshLifetime(0)
@@ -447,7 +447,7 @@ func TestConstrainLtPropagatesThroughLowerBounds(t *testing.T) {
 // constrainLt(x, a) under the probe touches x, a, AND b (x <: a <: b), and the
 // discard must truncate every probe-era bound while leaving the pre-probe ones.
 func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -478,7 +478,7 @@ func TestProbeDiscardRollsBackTransitivelyTouchedLifetimes(t *testing.T) {
 // constrainLt(a, …) also touches its super var, so the probe holds three entries
 // total; the point is that `a` appears in exactly one of them.
 func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	d := c.ctx.freshLifetime(0)
@@ -504,7 +504,7 @@ func TestProbeRecordLtDedupsPerLifetimeVar(t *testing.T) {
 // lifetime sort too: ltTouched is lazily created on first recordLt, so there is no
 // nil-map panic. Mirrors the type sort's TestProbeBareLiteralIsNilMapSafe.
 func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -523,7 +523,7 @@ func TestProbeBareLiteralLifetimeIsNilMapSafe(t *testing.T) {
 // parent's journal and the var's parent-era bounds intact. Mirrors the type sort's
 // TestDiscardedChildLeavesParentJournalIntact.
 func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	d := c.ctx.freshLifetime(0)
@@ -547,7 +547,7 @@ func TestProbeLifetimeDiscardedChildLeavesParentJournalIntact(t *testing.T) {
 // the child's snapshot is inherited so the parent discard reverts the child's bound
 // to the var's pre-child length. Mirrors TestCommittedChildInheritsUntouchedVarSnapshot.
 func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -567,7 +567,7 @@ func TestProbeLifetimeCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
 // clean no-op that leaves the pre-probe bound untouched. This verifies the
 // "no journal entry without an append" invariant for the lifetime sort.
 func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 
@@ -590,7 +590,7 @@ func TestProbeReconstrainingPresentLifetimeBoundJournalsNothing(t *testing.T) {
 // speculation discipline as a direct constrainLt call. Without journaling here, a
 // failed overload trial that constrained two borrows would leak a lifetime bound.
 func TestProbeRollsBackLifetimeBoundFromRefArm(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 

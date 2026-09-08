@@ -431,7 +431,7 @@ func TestInferValElseRecordsTheJoinedLeafType(t *testing.T) {
 			val {x: v} = p else { {x: "s"} }
 			return v
 		}`)
-	c := newChecker()
+	c := newTestChecker()
 	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
 	require.Empty(t, c.errs)
 	leaf := findIdentPat(module, "v")
@@ -508,7 +508,7 @@ func TestInferValElseChecksAnAnnotatedLeafOfABorrowedUnion(t *testing.T) {
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
 			module := parseModule(t, tt.src)
-			c := newChecker()
+			c := newTestChecker()
 			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
 			require.Equal(t, tt.wantErrs, messagesWithSpan(t, c.errs))
 			leaf := findIdentPat(module, "v")

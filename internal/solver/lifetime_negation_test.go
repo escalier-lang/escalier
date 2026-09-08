@@ -100,7 +100,7 @@ func TestComplementedBorrowKeepsLifetimeName(t *testing.T) {
 // reaches no output. The assertion below carries one lifetime across both positions, so
 // the parameter keeps its name. That shared lifetime is the shape under test.
 func TestNestedComplementsKeepLifetimeName(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	num := &soltype.PrimType{Prim: soltype.NumPrim}
 	inner := &soltype.FuncType{
@@ -123,7 +123,7 @@ func TestNestedComplementsKeepLifetimeName(t *testing.T) {
 // coalescer the doubled form this test is about, and would pass whatever the coalescer
 // did with it.
 func TestDoubleComplementFoldsBeforeLifetimePass(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	fn := borrowFn(&soltype.NegationType{Inner: negRef(a)}, a)
 
@@ -158,7 +158,7 @@ func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			a := c.ctx.freshLifetime(5)
 			var ty soltype.Type = mutPointRef(a)
 			if tt.complemented {
@@ -197,7 +197,7 @@ func TestComplementFlipsExtrudedLifetimeDirection(t *testing.T) {
 // instantiating a borrow-passing function at a call site, which would make this a test
 // about inference rather than about the classifier.
 func TestComplementedBorrowAssertsNoOutlivesRelation(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
@@ -254,7 +254,7 @@ func TestComplementedBorrowGroupsLikeAnOrdinaryParam(t *testing.T) {
 	// build wires the graph above and returns the signature, wrapping the second
 	// parameter's borrow in a complement when complemented is set.
 	build := func(complemented bool) *soltype.FuncType {
-		c := newChecker()
+		c := newTestChecker()
 		m := c.ctx.freshJoinLifetime(0) // minted first so it holds the smallest ID
 		a := c.ctx.freshLifetime(0)
 		b := c.ctx.freshLifetime(0)

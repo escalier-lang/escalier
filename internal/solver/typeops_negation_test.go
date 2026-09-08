@@ -602,30 +602,38 @@ func TestInferMatchesPositiveSkeleton(t *testing.T) {
 	const src = `
 		type Elem<T> = if T : Array<infer R> { R } else { never }
 	`
+	// `Array` is a nominal class the run resolves, so a scrutinee naming one is built
+	// from the class name that run settled on rather than from a literal.
+	arrayOfNum := func(t *testing.T, ctx *Context) soltype.Type {
+		t.Helper()
+		at, ok := ctx.arrayOf(num())
+		require.True(t, ok, "the test stdlib supplies Array")
+		return at
+	}
 	tests := []struct {
 		name  string
-		scrut soltype.Type
+		scrut func(t *testing.T, ctx *Context) soltype.Type
 		want  string
 	}{
 		{
 			// `Elem<Array<number> & ~string>`. The positive member is what the pattern aligns
 			// with, so the capture binds the element type of the array the meet carries.
 			name:  "ComplementMemberIsSkipped",
-			scrut: meet(&soltype.ArrayType{Elem: num()}, negate(str())),
+			scrut: func(t *testing.T, ctx *Context) soltype.Type { return meet(arrayOfNum(t, ctx), negate(str())) },
 			want:  "number",
 		},
 		{
 			// `Elem<~Array<number>>`. A scrutinee that is nothing but a complement has no
 			// skeleton to align, so the match fails and the conditional takes its Else branch.
 			name:  "BareComplementMatchesNothing",
-			scrut: negate(&soltype.ArrayType{Elem: num()}),
+			scrut: func(t *testing.T, ctx *Context) soltype.Type { return negate(arrayOfNum(t, ctx)) },
 			want:  "never",
 		},
 		{
 			// `Elem<number & ~string>`. The positive part is what decides a failed match too. No
 			// array is a number, so the pattern rejects the meet whatever it excludes.
 			name:  "PositivePartStillDecidesAFailedMatch",
-			scrut: meet(num(), negate(str())),
+			scrut: func(_ *testing.T, _ *Context) soltype.Type { return meet(num(), negate(str())) },
 			want:  "never",
 		},
 	}
@@ -633,7 +641,7 @@ func TestInferMatchesPositiveSkeleton(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, ctx, errs := inferTypeNodes(t, src)
 			require.Empty(t, errs)
-			inst := &soltype.AliasType{Name: "Elem", TypeArgs: []soltype.Type{tt.scrut}}
+			inst := &soltype.AliasType{Name: "Elem", TypeArgs: []soltype.Type{tt.scrut(t, ctx)}}
 			require.Equal(t, tt.want, soltype.Print(expandAliasResidual(ctx, inst)))
 		})
 	}

@@ -45,6 +45,15 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
+		// A written `Array` settles the well-known class name before anything is resolved,
+		// so the subtyping rules that single an array out compare against a name that is
+		// already cached. It runs ahead of the scope lookup because both outcomes need it:
+		// an imported `Array` resolves below and is the same ingested class, and the
+		// fallback further down instantiates the handle directly. Warming here rather than
+		// once per run keeps a program that never writes `Array` from loading the package.
+		if namesArray(ta.Name) {
+			c.warmArrayClass()
+		}
 		// Resolve through the type scope first so a user-defined alias, class, or type
 		// parameter takes precedence over the built-in Promise stub below. A bare alias or
 		// class reference resolves here; the prelude Promise placeholder is not a class, so
@@ -137,12 +146,12 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
-		// The built-in Array<T>, the element-typed sequence a rest parameter binds its trailing
-		// arguments into. It is minimal by design: it carries the element type and nothing else, so
-		// `xs.length` and `xs[0]` do not resolve. A local `Array` shadows the stub today, since
-		// resolution reaches here only after resolveScopedTypeRef finds nothing. That ends once
-		// `Array` and `Promise` are imported from the `std:collection` and `std:async` pseudo-packages.
-		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 {
+		// A written `Array<T>` the file did not import. Resolution reaches here only
+		// after resolveScopedTypeRef finds nothing, so an imported or locally declared
+		// Array has already answered and this is the stdlib one. It resolves to the same
+		// ingested class either way, so `xs.length` and `xs.push(v)` read off the
+		// declaration rather than off a wrapper carrying only an element type.
+		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 && c.ctx.arrayClass != "" {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
 				return c.reportUnsupportedFeature(ta, "lifetime annotation on Array"), false
 			}
@@ -153,7 +162,7 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 				// is cascade-safe where `never` or `unknown` would provoke a second failure.
 				elem = c.freshAt(lvl)
 			}
-			t := &soltype.ArrayType{Elem: elem}
+			t, _ := c.ctx.arrayOf(elem)
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
@@ -163,12 +172,15 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
-		// Nothing claimed the name. Either it names no declaration at all, or it names one of
-		// the two built-in stubs above with an argument count neither accepts. Those stubs take
-		// exactly one, and a user-defined Promise or Array would have resolved through the scope
-		// before reaching here, so the name here is the built-in.
+		// Nothing claimed the name. Either it names no declaration at all, or it names a
+		// built-in above with an argument count that one does not accept. Promise takes
+		// exactly one, and a user-defined Promise would have resolved through the scope
+		// before reaching here, so the name here is the built-in. Array reports the same
+		// way, but only when the run resolved one: without a stdlib the name is simply
+		// unknown, and claiming an arity for a declaration nothing supplies would say the
+		// wrong thing.
 		name := ast.QualIdentToString(ta.Name)
-		if name == "Promise" || name == "Array" {
+		if name == "Promise" || (name == "Array" && c.ctx.arrayClass != "") {
 			c.report(&TypeArgArityMismatchError{
 				Ref: ta, Kind: BuiltinDeclKind, Name: name,
 				Required: 1, Total: 1, Got: len(ta.TypeArgs),

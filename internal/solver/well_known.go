@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"strings"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
@@ -167,3 +169,59 @@ func (e *MissingWellKnownTypeError) Message() string {
 func (e *MissingWellKnownTypeError) Span() ast.Span      { return e.span }
 func (e *MissingWellKnownTypeError) Related() []ast.Span { return nil }
 func (e *MissingWellKnownTypeError) isSolverError()      {}
+
+// warmArrayClass resolves the well-known `Array` once and records its qualified
+// class name on the Context, leaving the name empty when the run supplies no
+// `Array`.
+//
+// The rules that single an array out run deep inside constraint solving, where a
+// package load would be unsafe: a speculation trial truncates every bound it
+// journals, so a load raised under one would publish a package whose bounds the
+// discard then removes. Resolving here, before the walk, keeps those rules to a
+// string comparison over a name that is already settled.
+//
+// Diagnostics are dropped. A tree without a stdlib supplies no `Array` and needs
+// no report for one it never mentions. A program that does mention `Array` gets
+// the ordinary unknown-type diagnostic at the reference instead.
+func (c *checker) warmArrayClass() {
+	saved := c.errs
+	t, ok := c.wellKnownType(wellKnownArray)
+	c.errs = saved
+	if !ok {
+		return
+	}
+	if cls, isClass := t.(*soltype.ClassType); isClass {
+		c.ctx.arrayClass = cls.Name
+	}
+}
+
+// arrayElem returns the element type of t when t is an instance of the well-known
+// `Array`, and false otherwise. It lives on Context rather than on the checker
+// because the subtyping core does, and that is where the rest-parameter rules read
+// it.
+func (c *Context) arrayElem(t soltype.Type) (soltype.Type, bool) {
+	cls, isClass := t.(*soltype.ClassType)
+	if !isClass || c.arrayClass == "" || cls.Name != c.arrayClass {
+		return nil, false
+	}
+	if len(cls.TypeArgs) != 1 {
+		return nil, false
+	}
+	return cls.TypeArgs[0], true
+}
+
+// arrayOf returns an instance of the well-known `Array` over elem, and false when
+// the run resolved no `Array` to instantiate.
+func (c *Context) arrayOf(elem soltype.Type) (soltype.Type, bool) {
+	if c.arrayClass == "" {
+		return nil, false
+	}
+	return &soltype.ClassType{Name: c.arrayClass, TypeArgs: []soltype.Type{elem}}, true
+}
+
+// namesArray reports whether a written type reference names `Array`, bare or
+// qualified by the namespace an import bound it under.
+func namesArray(name ast.QualIdent) bool {
+	written := ast.QualIdentToString(name)
+	return written == "Array" || strings.HasSuffix(written, ".Array")
+}

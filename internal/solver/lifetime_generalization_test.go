@@ -54,7 +54,7 @@ func freshenLtOf(t *testing.T, out soltype.Type) (paramLt, retLt soltype.Lifetim
 // independently and the returned borrow would no longer carry the parameter's
 // lifetime.
 func TestFreshenSharesParamLifetimeAcrossOccurrences(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(1) // above the generalize-level (lim = 0)
 	body := identRefScheme(lt)
 
@@ -69,7 +69,7 @@ func TestFreshenSharesParamLifetimeAcrossOccurrences(t *testing.T) {
 // cross-site non-contamination property. Each call site gets its own cache, exactly
 // as instantiate allocates one per use.
 func TestFreshenTwoInstantiationsGetDistinctLifetimes(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(1)
 	body := identRefScheme(lt)
 
@@ -86,7 +86,7 @@ func TestFreshenTwoInstantiationsGetDistinctLifetimes(t *testing.T) {
 // shared LifetimeVar would have caused — before D2.5 both call sites aliased the
 // scheme's one lifetime var, so a bound from one site leaked into the other.
 func TestFreshenInstantiationsAreNonContaminating(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(1)
 	body := identRefScheme(lt)
 
@@ -106,7 +106,7 @@ func TestFreshenInstantiationsAreNonContaminating(t *testing.T) {
 // SHARED, not freshened — the lifetime-sort analogue of a captured type variable.
 // Only lifetimes minted above the scheme's level are quantified.
 func TestFreshenSharesCapturedLifetime(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	captured := c.ctx.freshLifetime(0) // at the generalize-level: not quantified
 	body := identRefScheme(captured)
 
@@ -121,7 +121,7 @@ func TestFreshenSharesCapturedLifetime(t *testing.T) {
 // probe is discarded the fresh var is unreachable, so there is nothing to roll back:
 // the probe journals nothing for it, and the original's bounds stay untouched.
 func TestFreshenCopiesLifetimeBoundsUnderProbe(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(1)
 	// 'static is the lattice bottom — a level-free bound, so recording lt <: 'static
 	// does not trip the level-extrusion the var-to-var case would.
@@ -193,7 +193,7 @@ func getRefScheme(lt *soltype.LifetimeVar) *soltype.FuncType {
 // freshening the LifetimeParams field exists to carry, the lifetime-sort twin of
 // TestFreshenAboveGenericFunc.
 func TestFreshenAboveFuncLifetimeParam(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	la := c.ctx.freshLifetime(1) // above the generalize-level (lim = 0)
 
 	out := c.freshenAbove(0, getRefScheme(la), 1, map[*soltype.TypeVarType]*soltype.TypeVarType{})
@@ -212,7 +212,7 @@ func TestFreshenAboveFuncLifetimeParam(t *testing.T) {
 // lifetimes, so a method's `<'a>` is fresh per call — the same non-contamination the
 // ordinary borrow-passing case relies on, here for an explicit lifetime parameter.
 func TestFreshenFuncLifetimeParamDistinctPerInstantiation(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	la := c.ctx.freshLifetime(1)
 	body := getRefScheme(la)
 
@@ -228,7 +228,7 @@ func TestFreshenFuncLifetimeParamDistinctPerInstantiation(t *testing.T) {
 // binder, and a `<'b: 'a>` bound resolves to the fresh 'a of the same instantiation, so
 // the outlives relation survives the copy intact.
 func TestFreshenFuncLifetimeParamBound(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	la := c.ctx.freshLifetime(1)
 	lb := c.ctx.freshLifetime(1)
 	body := &soltype.FuncType{
@@ -262,7 +262,7 @@ func TestFreshenFuncLifetimeParamBound(t *testing.T) {
 // ABOVE the fresh var (original <: fresh), mirroring the type-var extrude's
 // addUpperBound.
 func TestExtrudeFreshensHigherLevelLifetimePositive(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(2) // above the extrusion target (lvl = 1)
 
 	out := c.ctx.extrude(mutObjAt(lt), soltype.Positive, 1, map[extrudeKey]*soltype.TypeVarType{})
@@ -280,7 +280,7 @@ func TestExtrudeFreshensHigherLevelLifetimePositive(t *testing.T) {
 // addLowerBound. A var reached in both polarities therefore yields two distinct
 // fresh vars with opposite wiring — the reason the cache is keyed by polarity.
 func TestExtrudeFreshensHigherLevelLifetimeNegative(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(2)
 
 	out := c.ctx.extrude(mutObjAt(lt), soltype.Negative, 1, map[extrudeKey]*soltype.TypeVarType{})
@@ -293,7 +293,7 @@ func TestExtrudeFreshensHigherLevelLifetimeNegative(t *testing.T) {
 // A borrow whose lifetime is at or below the target level is extruded to itself:
 // the whole RefType is shared, since nothing in it outranks the level.
 func TestExtrudeSharesBelowLevelBorrow(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(1) // at the target level
 
 	out := c.ctx.extrude(mutObjAt(lt), soltype.Positive, 1, map[extrudeKey]*soltype.TypeVarType{})
@@ -307,7 +307,7 @@ func TestExtrudeSharesBelowLevelBorrow(t *testing.T) {
 // journaled bound write. Without this a failed overload trial that extruded a borrow
 // lifetime would leak a bound.
 func TestExtrudeLifetimeBoundRolledBackOnDiscard(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(2)
 
 	p := c.openProbe()
@@ -324,7 +324,7 @@ func TestExtrudeLifetimeBoundRolledBackOnDiscard(t *testing.T) {
 // it down first, so a variable's bound never outranks its own level — the invariant
 // the freshener/extruder level prune over the lifetime sort relies on.
 func TestConstrainLtMaintainsLevelInvariant(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	low := c.ctx.freshLifetime(0)
 	high := c.ctx.freshLifetime(2)
 
@@ -342,7 +342,7 @@ func TestConstrainLtMaintainsLevelInvariant(t *testing.T) {
 // level is strictly BELOW the variable's own. This exercises the strict side of the
 // invariant — a bound may rank lower than its variable, only never higher.
 func TestConstrainLtRecordsLowerLevelBoundDirectly(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	high := c.ctx.freshLifetime(2)
 	low := c.ctx.freshLifetime(0)
 
@@ -366,7 +366,7 @@ func TestConstrainLtRecordsLowerLevelBoundDirectly(t *testing.T) {
 // first proxy, so the bound count stays 1 across repeats — the lifetime-sort
 // analogue of the same-level dedup, restored for the cross-level path.
 func TestConstrainLtCrossLevelDoesNotAccumulateDuplicates(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	low := c.ctx.freshLifetime(0)
 	high := c.ctx.freshLifetime(2)
 
@@ -386,7 +386,7 @@ func TestConstrainLtCrossLevelDoesNotAccumulateDuplicates(t *testing.T) {
 // rolled-back one. This guards the probe-safety of the proxy-reuse dedup: the reuse
 // scan reads live bounds, so a proxy whose wiring a Discard reverted is never found.
 func TestConstrainLtProxyReuseIsProbeSafe(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	low := c.ctx.freshLifetime(0)
 	high := c.ctx.freshLifetime(2)
 
@@ -409,7 +409,7 @@ func TestConstrainLtProxyReuseIsProbeSafe(t *testing.T) {
 // scheme lifetime and the reassignment constraint would mutate it, contaminating
 // later uses. inferAssign relies on this isolation.
 func TestFreshenAllFreshensBorrowLifetime(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(3)
 	ref := mutObjAt(lt)
 
@@ -423,7 +423,7 @@ func TestFreshenAllFreshensBorrowLifetime(t *testing.T) {
 // target level, which freshenAbove would share. This is the lifetime-sort analogue
 // of allFreshener's no-prune treatment of type vars (lim = math.MinInt).
 func TestFreshenAllFreshensLowLevelBorrowLifetime(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	lt := c.ctx.freshLifetime(0) // freshenAbove(lim=0) would share this; freshenAll must not
 	ref := mutObjAt(lt)
 
@@ -441,7 +441,7 @@ func TestFreshenAllFreshensLowLevelBorrowLifetime(t *testing.T) {
 // rebuilds Inner — which the all-concrete-inner cases never reach (they are pruned
 // whole before the arm runs).
 func TestFreshenSharesCapturedLifetimeWhileFresheningInner(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	captured := c.ctx.freshLifetime(0) // captured: shared across instantiations
 	innerVar := c.freshAt(1)           // quantified inner type var: per-use fresh
 	ref := &soltype.RefType{

@@ -29,6 +29,14 @@ type Context struct {
 	// the diagnostic to one per run. well_known.go holds the closed set.
 	wellKnown map[wellKnownName]soltype.Type
 
+	// arrayClass is the qualified class name the well-known `Array` binds to, read
+	// off the handle once per run. The subtyping and iteration rules that single an
+	// array out compare against it, so they cost a string comparison rather than a
+	// package load and answer the same inside a speculation trial as outside one.
+	// It is empty when the run resolved no `Array`, in which case no type in play is
+	// one and every such rule declines.
+	arrayClass string
+
 	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
 	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
 	// gets the next id here, its bounds are extended only through

@@ -204,7 +204,7 @@ func TestInferAssignUnionTargetVarRHSWidensToUnion(t *testing.T) {
 // namespace declarations are themselves unsupported in M3, so a namespace never
 // enters scope via real source — same construction as TestInferIdentNamespaceUsedAsValue.
 func TestInferAssignNamespaceTarget(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{Name: "Foo"})
 	e := ast.NewBinary(identExpr("Foo"), numExpr(5), ast.Assign, testSpan())
@@ -250,7 +250,7 @@ func TestInferAssignImmutableWithBadRHSReportsBoth(t *testing.T) {
 // A malformed assignment node with a nil operand (hand-built; the real parser
 // substitutes ast.NewError) must not panic — it blames the whole expression.
 func TestInferAssignNilOperandDoesNotPanic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := ast.NewBinary(nil, numExpr(5), ast.Assign, testSpan())
 	require.NotPanics(t, func() {
 		c.inferExpr(NewScope(), 0, e)

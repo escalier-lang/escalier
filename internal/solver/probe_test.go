@@ -14,7 +14,7 @@ import (
 // bounds flow through the real constrain path (the append sites that call
 // recordMutation), not hand-appends, so this also proves the wiring.
 func TestProbeDiscardRestoresBoundLengths(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 	b := c.freshAt(0)
 
@@ -39,7 +39,7 @@ func TestProbeDiscardRestoresBoundLengths(t *testing.T) {
 // A committed top-level probe keeps every mutation: discard is what reverts, not
 // the journal's existence.
 func TestProbeCommitKeepsBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 
 	p := c.openProbe()
@@ -54,7 +54,7 @@ func TestProbeCommitKeepsBounds(t *testing.T) {
 // record snapshots a variable at most once per probe (first touch), so repeated
 // appends to the same var all roll back to the single pre-touch length.
 func TestProbeRecordDedupsPerVariable(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 
 	p := c.openProbe()
@@ -72,7 +72,7 @@ func TestProbeRecordDedupsPerVariable(t *testing.T) {
 // Prov keeps a stray entry from a losing trial — covering both the "node had no
 // prior entry" (delete) and "node had a prior entry" (restore) cases.
 func TestProbeDiscardRunsSideTableCleanups(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	fresh := &ast.IdentExpr{Name: "fresh"}
 	existing := &ast.IdentExpr{Name: "existing"}
 
@@ -106,7 +106,7 @@ func TestProbeDiscardRunsSideTableCleanups(t *testing.T) {
 
 // A committed probe's side-table writes survive — only a discard reverts them.
 func TestProbeCommitKeepsSideTableWrites(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	n := &ast.IdentExpr{Name: "x"}
 
 	p := c.openProbe()
@@ -122,7 +122,7 @@ func TestProbeCommitKeepsSideTableWrites(t *testing.T) {
 // A nested probe that COMMITS hands its rollback obligation up to its parent, so
 // the parent's later DISCARD still reverts the committed child's mutations.
 func TestCommittedChildCoveredByParentDiscard(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 
 	parent := c.openProbe()
@@ -143,7 +143,7 @@ func TestCommittedChildCoveredByParentDiscard(t *testing.T) {
 // snapshot is inherited so the parent discard reverts the child's bounds to the
 // var's pre-child length (here: empty).
 func TestCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0) // only the child will touch a
 
 	parent := c.openProbe()
@@ -159,7 +159,7 @@ func TestCommittedChildInheritsUntouchedVarSnapshot(t *testing.T) {
 // A discarded child leaves the parent's own journal — and the variable's
 // parent-era bounds — intact; only the child's appends are reverted.
 func TestDiscardedChildLeavesParentJournalIntact(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 
 	parent := c.openProbe()
@@ -177,7 +177,7 @@ func TestDiscardedChildLeavesParentJournalIntact(t *testing.T) {
 // The active-probe pointer follows the open/close stack exactly: nil → p1 → p2 →
 // back to p1 → back to nil, regardless of commit/discard outcome.
 func TestProbePointerFollowsOpenCloseStack(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	require.Nil(t, c.ctx.probe)
 
 	p1 := c.openProbe()
@@ -198,7 +198,7 @@ func TestProbePointerFollowsOpenCloseStack(t *testing.T) {
 // Commit and Discard are idempotent and mutually exclusive: a second outcome call
 // is a no-op, so a double-close (or commit-then-discard) can't double-truncate.
 func TestProbeOutcomeIsIdempotent(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.freshAt(0)
 
 	p := c.openProbe()
@@ -224,7 +224,7 @@ func TestProbeOutcomeIsIdempotent(t *testing.T) {
 // discard must truncate those back. Constraining a low-level var against a
 // higher-level var forces extrusion through the recorded append sites.
 func TestProbeRollsBackExtrudeBounds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	low := c.freshAt(0)
 	high := c.freshAt(1) // higher level ⇒ constraining low <: high extrudes high down
 
@@ -244,7 +244,7 @@ func TestProbeRollsBackExtrudeBounds(t *testing.T) {
 // error-collecting walk (c.report / c.constrain), so a losing speculative
 // candidate leaves no spurious errors behind; a committed probe keeps them.
 func TestProbeRollsBackErrs(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	n := &ast.IdentExpr{Name: "boom"}
 
 	// A pre-probe diagnostic stays regardless of the trial's outcome.
@@ -266,7 +266,7 @@ func TestProbeRollsBackErrs(t *testing.T) {
 // A committed child's diagnostics are covered by a later parent discard, exactly
 // like its bound mutations — the errs snapshot rides the same nesting handoff.
 func TestProbeErrsCommittedChildCoveredByParentDiscard(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	n := &ast.IdentExpr{Name: "boom"}
 
 	parent := c.openProbe()
@@ -284,7 +284,7 @@ func TestProbeErrsCommittedChildCoveredByParentDiscard(t *testing.T) {
 // A probe built directly as &Probe{} (bypassing newProbe) is still safe: touched
 // is lazily created on first record, so there is no nil-map panic.
 func TestProbeBareLiteralIsNilMapSafe(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	v := c.freshAt(0)
 
 	c.ctx.probe = &Probe{} // deliberately skip newProbe

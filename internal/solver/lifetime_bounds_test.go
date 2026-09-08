@@ -230,7 +230,7 @@ func TestLtBoundSetSubsumesChecksStaticForcing(t *testing.T) {
 // sharing one lifetime between its parameter and return, but their lifetime variables are
 // distinct identities, so only alphaEqualTypes sees them as equal.
 func TestAlphaEqualTypesBorrowsAcrossSchemes(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	fnA := borrowFn(mutPointRef(a), a)
@@ -247,7 +247,7 @@ func TestAlphaEqualTypesBorrowsAcrossSchemes(t *testing.T) {
 // borrows but return the FIRST versus the SECOND are not alpha-equivalent, even though
 // both carry exactly two lifetimes.
 func TestAlphaEqualTypesPairingIsBijection(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
 	fnRetFirst := &soltype.FuncType{
 		Params: borrowFn(num(), a, b).Params, // p: &'a mut {x}, q: &'b mut {x}
@@ -275,7 +275,7 @@ func TestAlphaEqualTypesPairingIsBijection(t *testing.T) {
 // single borrow for both parameters. The bijection refuses to bind the reused lifetime
 // to two different partners.
 func TestAlphaEqualTypesIndependenceWithinScheme(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
 	distinct := borrowFn(num(), a, b) // two independent borrows
 	shared := borrowFn(num(), a, a)   // one borrow used for both parameters
@@ -288,7 +288,7 @@ func TestAlphaEqualTypesIndependenceWithinScheme(t *testing.T) {
 // two-borrow signatures are alpha-equivalent only when they carry the same outlives
 // bound; adding `'a: 'b` to one side breaks the equality.
 func TestAlphaEqualTypesComparesOutlivesRelation(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
 	c.ctx.constrainLt(a, b) // 'a outlives 'b
 	bound := borrowFn(num(), a, b)
@@ -311,7 +311,7 @@ func TestAlphaEqualTypesComparesOutlivesRelation(t *testing.T) {
 // name. equalType already treats objects as equal up to property order, and
 // alpha-equivalence must not regress that for borrow-typed fields.
 func TestAlphaEqualTypesObjectPropertyOrderInsensitive(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
 	objMN := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
 		&soltype.PropertyElem{Name: "m", Type: mutPointRef(a)},
@@ -334,7 +334,7 @@ func TestAlphaEqualTypesObjectPropertyOrderInsensitive(t *testing.T) {
 // with two independent borrows. The outlives comparison reads this equality through
 // implies, which reports a condensed cycle as equality in both directions.
 func TestAlphaEqualTypesMutualOutlivesSharesLifetime(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a, b := c.ctx.freshLifetime(0), c.ctx.freshLifetime(0)
 	c.ctx.constrainLt(a, b)
 	c.ctx.constrainLt(b, a) // 'a and 'b mutually outlive, hence are equal

@@ -10,7 +10,7 @@ import (
 // A MonoScheme instantiates to its exact type — same pointer, no freshening — so a
 // monomorphic binding behaves as M2's plain type did.
 func TestInstantiateMonoSchemeReturnsSameType(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	ty := &soltype.PrimType{Prim: soltype.NumPrim}
 	got := c.instantiate(monoScheme(ty), 0)
 	require.Same(t, ty, got)
@@ -20,7 +20,7 @@ func TestInstantiateMonoSchemeReturnsSameType(t *testing.T) {
 // FRESH variable, so two uses never share a variable; the freshened function keeps
 // the same shape (param var == return var for identity).
 func TestInstantiatePolySchemeFreshensQuantifiedVars(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// A generalized identity: fn(a) -> a, with `a` quantifiable (Level 1 > 0).
 	a := &soltype.TypeVarType{ID: 100, Level: 1}
 	body := &soltype.FuncType{
@@ -46,7 +46,7 @@ func TestInstantiatePolySchemeFreshensQuantifiedVars(t *testing.T) {
 // while freshening those above it — the level discipline that keeps a captured
 // param monomorphic when an inner function is instantiated.
 func TestFreshenAboveSharesCapturedVars(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	captured := &soltype.TypeVarType{ID: 1, Level: 1}   // at the limit → shared
 	quantified := &soltype.TypeVarType{ID: 2, Level: 2} // above the limit → freshened
 	body := &soltype.TupleType{Elems: []soltype.Type{captured, quantified}}
@@ -61,7 +61,7 @@ func TestFreshenAboveSharesCapturedVars(t *testing.T) {
 // freshenAbove freshens a variable's BOUNDS too, and terminates on a cyclic bound
 // graph (the fresh var is cached before its bounds are freshened).
 func TestFreshenAboveFreshensBoundsAndHandlesCycles(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	v := &soltype.TypeVarType{ID: 1, Level: 2}
 	v.LowerBounds = []soltype.Type{&soltype.PrimType{Prim: soltype.NumPrim}}
 	v.UpperBounds = []soltype.Type{v} // self-referential bound
@@ -82,7 +82,7 @@ func TestFreshenAboveFreshensBoundsAndHandlesCycles(t *testing.T) {
 // each instantiation of the generic gets its own U. This is the per-method
 // generalization the FuncType.TypeParams field exists to carry.
 func TestFreshenAboveGenericFunc(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	u := c.freshAt(2) // deeper than the limit 1, so it is a quantified parameter
 	u.UpperBounds = []soltype.Type{&soltype.PrimType{Prim: soltype.NumPrim}}
 	fn := &soltype.FuncType{
@@ -106,7 +106,7 @@ func TestFreshenAboveGenericFunc(t *testing.T) {
 // Origin (M3, PR1). A MonoScheme instantiation records nothing (it freshens no
 // variable).
 func TestInstantiateRecordsFromInstantiation(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := &soltype.TypeVarType{ID: 1, Level: 1}
 	scheme := &PolyScheme{Level: 0, Body: a}
 
@@ -125,7 +125,7 @@ func TestInstantiateRecordsFromInstantiation(t *testing.T) {
 // generalize wraps a type in a PolyScheme at the given level; the body is kept RAW
 // (the same variables, for instantiation) rather than coalesced.
 func TestGeneralizeWrapsRawBody(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := &soltype.TypeVarType{ID: 1, Level: 1}
 	scheme := c.generalize(a, 0)
 	ps, ok := scheme.(*PolyScheme)

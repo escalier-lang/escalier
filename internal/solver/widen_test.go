@@ -284,7 +284,7 @@ func TestWidenVar(t *testing.T) {
 // it is pinned here directly as the defensive contract that keeps Widenable
 // parallel to Open. See the freshener note in poly.go.
 func TestFreshenCopiesWidenable(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	v := c.freshAt(1)
 	v.Widenable = true
 	out := c.freshenAbove(0, v, 0, map[*soltype.TypeVarType]*soltype.TypeVarType{})

@@ -54,7 +54,7 @@ func TestInferAliasInferredBorrowElidesLifetime(t *testing.T) {
 // borrow at the concrete argument the reference supplies. The parser does not yet bind a
 // lifetime parameter on a `type` declaration, so the def is built directly.
 func TestExpandAliasSubstitutesLifetimeArg(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	param := &soltype.LifetimeVar{ID: 0, Level: 1}
 	body := &soltype.RefType{Mut: true, Lt: param, Inner: objT()}
 	c.ctx.registerAlias("Borrow", &AliasDef{

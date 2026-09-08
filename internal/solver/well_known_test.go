@@ -11,7 +11,7 @@ import (
 // reaches a handle without inferring a module that imports anything.
 func wellKnownChecker(t *testing.T, files map[string]string) *checker {
 	t.Helper()
-	c := newChecker()
+	c := newTestChecker()
 	c.source = StdlibSource(seedStdlib(t, files))
 	return c
 }

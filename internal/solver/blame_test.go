@@ -274,7 +274,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 	node := ast.NewIdent("site", tspan(40, 44))
 
 	t.Run("ExtraPropertyError", func(t *testing.T) {
-		c := newChecker()
+		c := newTestChecker()
 		// exact {x, y} <: exact {x}: y is an extra property on the source.
 		c.constrain(node, exactObj(propElem("x", num()), propElem("y", num())), exactObj(propElem("x", num())))
 		require.Len(t, c.errs, 1)
@@ -284,7 +284,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 	})
 
 	t.Run("InexactIntoExactError", func(t *testing.T) {
-		c := newChecker()
+		c := newTestChecker()
 		// inexact {x, ...} <: exact {x}: an inexact source cannot fill an exact sink.
 		c.constrain(node, inexactObj(propElem("x", num())), exactObj(propElem("x", num())))
 		require.Len(t, c.errs, 1)
@@ -294,7 +294,7 @@ func TestConstrainStampsObjectExactnessErrors(t *testing.T) {
 	})
 
 	t.Run("OptionalPropertyError", func(t *testing.T) {
-		c := newChecker()
+		c := newTestChecker()
 		// {x?: number} <: {x: number}: an optional source cannot fill a required property.
 		c.constrain(node,
 			exactObj(&soltype.PropertyElem{Name: "x", Type: num(), Optional: true}),
@@ -338,7 +338,7 @@ func TestUnsupportedAnnotationRecovers(t *testing.T) {
 // panicking — honoring M2's "never a panic" guarantee now that Span() is lazy
 // (it derefs the stored node on demand). Mirrors inferFunc's nil-param fallback.
 func TestNilVarDeclPatternBlamesDeclWithoutPanic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	d := ast.NewVarDecl(ast.ValKind, nil, nil, numExpr(5), false, false, testSpan())
 	require.NotPanics(t, func() {
 		_, _, ok := c.inferDeclDef(NewScope(), 0, d, "")

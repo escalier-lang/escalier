@@ -210,7 +210,7 @@ func (v *unguardedRefCollector) ExitType(t soltype.Type, _ soltype.Polarity) sol
 func guardsEveryOperand(t soltype.Type) bool {
 	switch t.(type) {
 	case *soltype.FuncType, *soltype.RefType, *soltype.PromiseType, *soltype.GeneratorType,
-		*soltype.ArrayType, *soltype.TemplateLitType, *soltype.ClassType, *soltype.AliasType:
+		*soltype.TemplateLitType, *soltype.ClassType, *soltype.AliasType:
 		return true
 	default:
 		return false
