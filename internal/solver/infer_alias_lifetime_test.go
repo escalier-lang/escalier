@@ -117,6 +117,11 @@ func TestInferLifetimeGenericAliasKeepsLifetimesDistinct(t *testing.T) {
 // expanded borrow are interchangeable under subtyping. A `Ref<'a, {x: number}>` value flows
 // into a plain `&'a {x: number}` target, and a plain borrow flows back into the alias, so the
 // alias expands to exactly the borrow its body writes.
+//
+// Both signatures write `'a` twice, once at a borrow and once as the alias's lifetime
+// argument, so the name survives on both sides. Counting only the borrow would leave `'a`
+// quantified while eliding it from the half that wrote it as an alias argument, rendering an
+// `f` whose return names no lifetime its parameter supplies.
 func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
 	src := `
 		type Ref<'a, T> = &'a T
@@ -125,8 +130,8 @@ func TestInferLifetimeGenericAliasIsTransparent(t *testing.T) {
 	`
 	values, _, errs := inferSource(t, src)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> &{x: number}", values["f"])
-	require.Equal(t, "fn <'a>(p: &{x: number}) -> Ref<'a, {x: number}>", values["g"])
+	require.Equal(t, "fn <'a>(p: Ref<'a, {x: number}>) -> &'a {x: number}", values["f"])
+	require.Equal(t, "fn <'a>(p: &'a {x: number}) -> Ref<'a, {x: number}>", values["g"])
 }
 
 // TestInferLifetimeGenericAliasArityErrors covers the lifetime-argument arity checks. A
@@ -174,4 +179,29 @@ func TestInferLifetimeGenericAliasArityErrors(t *testing.T) {
 			require.Contains(t, msgs, tt.want)
 		})
 	}
+}
+
+// TestAliasFuncBodySeesTheAliasLifetime covers a function type written as an alias body. The
+// body binds its own lifetimes, so without the alias's parameters in scope its `&'a` would
+// mint a lifetime of its own and the alias's `<'a>` would name nothing — the same seeding a
+// class body gives its member signatures.
+func TestAliasFuncBodySeesTheAliasLifetime(t *testing.T) {
+	values, types, errs := inferSource(t,
+		`type Box<'a> = fn (x: &'a {v: number}) -> &'a {v: number}
+		 declare fn call<'q>(b: Box<'q>, p: &'q {v: number}) -> &'q {v: number}`,
+	)
+	require.Empty(t, messagesWithSpan(t, errs))
+	require.Equal(t, "fn (x: &'a {v: number}) -> &'a {v: number}", types["Box"])
+	require.Equal(t, "fn <'a>(b: Box<'a>, p: &'a {v: number}) -> &'a {v: number}", values["call"])
+}
+
+// TestAliasFuncBodyBinderShadows covers a body that rebinds the alias's name. The nested
+// binder wins, so its `'a` is a lifetime of its own and the alias's parameter reaches nothing
+// in the body — the shadowing rule a class member follows.
+func TestAliasFuncBodyBinderShadows(t *testing.T) {
+	_, types, errs := inferSource(t,
+		`type Box<'a> = fn <'a>(x: &'a {v: number}) -> &'a {v: number}`,
+	)
+	require.Empty(t, messagesWithSpan(t, errs))
+	require.Equal(t, "fn (x: &{v: number}) -> &{v: number}", types["Box"])
 }

@@ -44,12 +44,14 @@ import (
 //   - A disjoint field return `return a.data` follows the edges on the [data] path, finds
 //     none, and is sound with no false positive.
 //
-// Edges are recorded at four sites:
+// Edges are recorded at five sites:
 //
 //   - a `val`/`var` initializer,
 //   - a `var` reassignment,
 //   - a field store into a local receiver,
-//   - a destructuring leaf.
+//   - a destructuring leaf,
+//   - a call whose signature stores an argument-borrow into another argument. See
+//     borrow_store.go for how a signature spells that store.
 //
 // The graph is flow-sensitive. Each recording strong-updates the binding, clearing the replaced
 // subtree before adding the new edges. analyzeBorrows folds the per-statement edge sets
@@ -146,12 +148,12 @@ func (c *checker) resolveComponentEscapes(
 //     return does not block the move. The loop below explains what "dead" covers.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
-// so it sees the aliases recorded at a `val`/`var` initializer, a `var` reassignment, and a
-// destructuring leaf. An alias formed by a path the graph does not record, such as a `.push`
-// of a borrow into a container, is invisible here exactly as it is to the escape check, the
-// shared limitation the graph's three recording sites impose. Recording a container-method
-// borrow needs `Array` and method-call support the solver lacks today; it is tracked as a
-// post-M7 item under "Deferred and out of scope" in planning/affine_semantics/implementation_plan.md.
+// so it sees every alias the recording sites listed at the top of this file record. An alias
+// formed by a path none of them covers is invisible here exactly as it is to the escape check.
+// The store recorder covers a call that writes an argument-borrow into another argument or
+// into a method's receiver, so `a.peers.push(&mut b)` records its edge once `Array` has a
+// method surface to declare the store on. Until then the same call against a hand-written
+// container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
 	e ast.Expr, escaping set.Set[liveness.VarID],
 	stmtRef liveness.StmtRef,

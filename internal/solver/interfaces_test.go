@@ -116,17 +116,54 @@ func TestInterfaceExtendsLeavesTheParentAlone(t *testing.T) {
 }
 
 // One name declared both as an interface and as another kind of type has two
-// definitions that cannot merge.
-func TestInterfaceConflictingWithAnAliasReports(t *testing.T) {
-	_, _, errs := inferSource(t, `
-		type Bar = number
-		declare interface Bar {
-			y: number,
-		}
-	`)
-	require.Equal(t,
-		[]string{"cannot declare Bar as both an interface and another type"},
-		errorMessagesOf(errs))
+// definitions that cannot merge. What is checked is that every declaration under the
+// name's type key is an interface, rather than a list of the kinds that conflict, so
+// a declaration kind added later is caught without revisiting the check.
+//
+// A value sharing the name is not a conflict. It binds under the name's value key,
+// which the type key holds nothing of, so `fn Bar()` beside `interface Bar` declares
+// one type and one value rather than one name twice.
+func TestInterfaceConflictingWithAnotherTypeReports(t *testing.T) {
+	const iface = "declare interface Bar { y: number }\n"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "Alias",
+			src:  iface + "type Bar = number",
+			want: []string{"cannot declare Bar as both an interface and another type"},
+		},
+		{
+			name: "Class",
+			src:  iface + "class Bar { y: number }",
+			want: []string{"cannot declare Bar as both an interface and another type"},
+		},
+		{
+			name: "Enum",
+			src:  iface + "enum Bar { A }",
+			want: []string{"cannot declare Bar as both an interface and another type"},
+		},
+		{
+			name: "TwoInterfacesMerge",
+			src:  iface + "declare interface Bar { z: string }",
+		},
+		{
+			name: "AFunctionOfTheSameNameIsNotAConflict",
+			src:  iface + "fn Bar() -> number { return 1 }",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
 }
 
 // A parent is referenced rather than read, so an interface naming a sibling that
