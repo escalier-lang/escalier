@@ -445,7 +445,7 @@ func (c *checker) recordCallStoreEdges(
 		// what keeps the escape post-pass out of it. The callee borrows this argument instead
 		// of taking it, and the post-pass would weigh an owned-looking argument as a
 		// connected-component move and consume the locals it borrows.
-		if c.fn.paramVarIDs.Contains(target.root) {
+		if c.paramReferentOutlivesFrame(target.root) {
 			carried, seen := escaping[edge.arg]
 			if !seen {
 				carried = set.NewSet[liveness.VarID]()
