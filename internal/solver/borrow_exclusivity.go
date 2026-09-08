@@ -42,6 +42,11 @@ import (
 //     c untracked, so a conflict against c is missed.
 //   - A borrow stored into a container and read back out. The place a loan names is the one
 //     written at the borrow site.
+//   - A trailing argument absorbed by a rest parameter. checkCallBorrowExclusivity pairs each
+//     argument with the parameter at its own index and stops past the last one, so a call that
+//     passes more arguments than the signature declares leaves the extras unchecked. Reaching
+//     them means reading the rest parameter's ELEMENT type, which the arity-only model of
+//     FuncParam.Rest does not settle yet.
 //   - Loans crossing a loop back edge. Each loan is checked against the loans recorded before
 //     it in source order, so a borrow created late in a body is not checked against one the
 //     next iteration would still hold.
