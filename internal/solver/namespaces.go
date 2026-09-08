@@ -109,6 +109,16 @@ func (c *checker) preBindNestedBlocks(qname string, decl *ast.NamespaceDecl, han
 	}
 }
 
+// refreshNamespaces fills every namespace pre-bound for the module under
+// inference. It runs whenever new bindings have landed, so a member reached
+// through `Foo.member` sees what the walk has bound so far.
+func (c *checker) refreshNamespaces(scope *Scope) {
+	if len(c.nsShells) == 0 {
+		return
+	}
+	c.populateNamespaces(c.declTarget(scope), c.nsShells)
+}
+
 // populateNamespaces fills each pre-bound Namespace with the bindings the walk
 // placed under its qualified prefix. A nested block is filled through the same
 // pointer its parent already holds, so `namespace a { namespace b { val x } }`

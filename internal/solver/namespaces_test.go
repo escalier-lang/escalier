@@ -140,3 +140,47 @@ func TestExportedNamespaceBlockCarriesItsTypes(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
+
+// Two functions in one namespace calling each other land in one component, and
+// each body reads the other through `Foo.member` while both are still being
+// inferred. The namespace has to answer for a member whose binding var exists but
+// whose body has not been walked.
+func TestMutuallyRecursiveFunctionsInOneNamespace(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		namespace Foo {
+			fn left(n: number) -> number {
+				return Foo.right(n)
+			}
+			fn right(n: number) -> number {
+				return Foo.left(n)
+			}
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn (n: number) -> number", values["Foo.left"])
+	require.Equal(t, "fn (n: number) -> number", values["Foo.right"])
+}
+
+// A block's own `export` puts the block on the package's surface and says nothing
+// about the members inside it. Each carries its own flag, so an unexported one
+// stays internal.
+func TestExportedNamespaceHidesItsUnexportedMembers(t *testing.T) {
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "geo"
+			val s = geo.shapes.shown
+			val h = geo.shapes.hidden
+		`),
+		sourceOf(t, map[string]string{
+			"geo": `
+				export namespace shapes {
+					export val shown: number = 1
+					val hidden: number = 2
+				}
+			`,
+		}),
+	)
+	require.Equal(t, []string{"Namespace shapes has no member: hidden"},
+		errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "s")))
+}

@@ -127,7 +127,8 @@ func TestInterfaceRejectsMismatchedTypeParams(t *testing.T) {
 		}
 	`)
 	require.Equal(t,
-		[]string{"every declaration of interface Box must write the same type parameters"},
+		[]string{"declarations of interface Box must agree on their type parameters: " +
+			"they differ in the names they write"},
 		errorMessagesOf(errs))
 	// The rejected declaration contributes nothing, so no unresolved parameter
 	// leaks into the bound type.
@@ -162,4 +163,55 @@ func TestInterfaceExtendsCycleReports(t *testing.T) {
 	require.Equal(t,
 		[]string{"an interface cannot extend A, which is part of the same recursive group"},
 		errorMessagesOf(errs))
+}
+
+// The first declaration's parameter list is what every body resolves against, so a
+// bound a later declaration writes would be ignored. Merging under one of two
+// disagreeing bounds is what the report prevents.
+func TestInterfaceRejectsAConflictingTypeParamBound(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface Box<T: string> {
+			a: T,
+		}
+		declare interface Box<T: number> {
+			b: T,
+		}
+	`)
+	require.Equal(t,
+		[]string{"declarations of interface Box must agree on their type parameters: " +
+			"only the first declaration may write a bound"},
+		errorMessagesOf(errs))
+	require.Equal(t, "{a: T}", types["Box"])
+}
+
+// A default is rejected for the same reason a bound is: an omitted argument is
+// filled from the first declaration's list, so a later default names nothing.
+func TestInterfaceRejectsAConflictingTypeParamDefault(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare interface Box<T = string> {
+			a: T,
+		}
+		declare interface Box<T = number> {
+			b: T,
+		}
+	`)
+	require.Equal(t,
+		[]string{"declarations of interface Box must agree on their type parameters: " +
+			"only the first declaration may write a default"},
+		errorMessagesOf(errs))
+}
+
+// A later declaration that writes the same names and no bound merges, which is the
+// ordinary case a generic interface split across declarations takes.
+func TestInterfaceMergesWhenLaterDeclarationsOmitBounds(t *testing.T) {
+	_, types, errs := inferSource(t, `
+		declare interface Box<T: string> {
+			a: T,
+		}
+		declare interface Box<T> {
+			b: T,
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{a: T, b: T}", types["Box"])
 }
