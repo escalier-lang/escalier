@@ -476,6 +476,9 @@ func (c *checker) recordCallStoreEdges(
 			// to what the target already holds rather than replacing it, since a signature says
 			// where a borrow lands and not whether the callee overwrites what was there.
 			c.addBorrowEdge(target.root, appendPath(target.path, edge.path), referent)
+			// The target reaches the referent from here on, so it holds a borrow of it that a
+			// second borrow or a read of the referent has to respect.
+			c.recordStoreEdgeLoan(target.root, referent, ref, argExpr)
 			recorded = true
 		}
 	}
