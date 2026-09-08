@@ -98,6 +98,48 @@ func TestWellKnownOwnersAreComplete(t *testing.T) {
 	require.Len(t, wellKnownOwner, 6)
 }
 
+// The set is closed, so a name outside it names no package and is unreachable this
+// way. It reports nothing, since no tree could have supplied it and the caller asked
+// for something that does not exist.
+func TestWellKnownTypeDeclinesANameOutsideTheSet(t *testing.T) {
+	t.Parallel()
+
+	c := wellKnownChecker(t, map[string]string{
+		"std/array.esc": `
+			export declare class Array {
+				length: number,
+			}
+		`,
+	})
+	_, ok := c.wellKnownType(wellKnownName("Bogus"))
+	require.False(t, ok)
+	require.Empty(t, errorMessagesOf(c.errs))
+}
+
+// A package that published a surface may still have reported diagnostics of its own.
+// Both import call sites pass those on, so a handle does too: the type resolves and
+// the package's own diagnostic is not swallowed.
+func TestWellKnownTypeReportsThePackagesOwnDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	c := wellKnownChecker(t, map[string]string{
+		"std/array.esc": `
+			export declare class Array {
+				length: number,
+			}
+			export val broken: number = "not a number"
+		`,
+	})
+	got, ok := c.wellKnownType(wellKnownArray)
+	require.True(t, ok)
+	require.Equal(t, "Array", soltype.Print(got))
+	// The package wraps its diagnostics in one that names the file it loaded, whose
+	// path is a temp directory, so the two stable halves are matched separately.
+	require.Len(t, c.errs, 1)
+	require.Contains(t, c.errs[0].Message(), `package "std:array"`)
+	require.Contains(t, c.errs[0].Message(), `has 1 error(s):`+"\n"+`  cannot constrain "not a number" <: number`)
+}
+
 // Loading a handle's package mid-walk must leave the caller's file scopes in
 // place. bindFileImports installs the loaded module's over them, so without a
 // restore every later declaration would lose its own file's imports.
