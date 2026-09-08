@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/dep_graph"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,6 +152,39 @@ func TestArrayResolvesFromInsideAnOverloadTrial(t *testing.T) {
 
 	require.Empty(t, errorMessagesOf(c.errs))
 	require.NotEmpty(t, c.ctx.arrayClass)
+}
+
+// arrayElem and arrayOf both answer against the class name the run settled on, so
+// both decline when there is nothing to compare against. arrayElem also declines an
+// instance of that class carrying the wrong number of arguments, which is not an
+// array whatever its name says.
+func TestArrayHelpersDeclineWhatIsNotAnArray(t *testing.T) {
+	t.Parallel()
+
+	t.Run("NoArrayResolved", func(t *testing.T) {
+		t.Parallel()
+		c := &Context{}
+		_, ok := c.arrayOf(num())
+		require.False(t, ok)
+		_, ok = c.arrayElem(&soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{num()}})
+		require.False(t, ok)
+	})
+	t.Run("AnotherClassOfTheSameShape", func(t *testing.T) {
+		t.Parallel()
+		c := &Context{arrayClass: "Array"}
+		_, ok := c.arrayElem(&soltype.ClassType{Name: "List", TypeArgs: []soltype.Type{num()}})
+		require.False(t, ok)
+	})
+	t.Run("WrongArgumentCount", func(t *testing.T) {
+		t.Parallel()
+		c := &Context{arrayClass: "Array"}
+		_, ok := c.arrayElem(&soltype.ClassType{Name: "Array"})
+		require.False(t, ok)
+		_, ok = c.arrayElem(&soltype.ClassType{
+			Name: "Array", TypeArgs: []soltype.Type{num(), num()},
+		})
+		require.False(t, ok)
+	})
 }
 
 // Without a stdlib supplying `Array`, the name is simply unknown. Nothing claims an
