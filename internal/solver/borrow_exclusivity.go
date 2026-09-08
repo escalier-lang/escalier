@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
@@ -56,9 +57,11 @@ import (
 //     stops past the last one. A tuple-typed rest is fine, since expandTupleRest turns it into
 //     ordinary positions before the walk runs. An `Array<E>` slot has none to expand into, so
 //     `f(&mut x, &x)` against `fn(a: &mut T, ...rest: Array<&T>)` reports nothing.
-//   - #1529: loans crossing a loop back edge. Each loan is checked against the loans recorded
-//     before it in source order, so a borrow created late in a body is not checked against one
-//     the next iteration would still hold.
+//   - #1529: branches and loop back edges. Each loan is checked against the loans recorded
+//     before it in source order, so a borrow on one arm of an `if` is weighed against a use on
+//     the other, and a borrow late in a loop body is not weighed against the one the next
+//     iteration still holds. Holder liveness rules out the common branch shapes, since a
+//     binding scoped to one arm is dead on the other.
 //   - #1486: anything rooted at a method's receiver. A `self` reference carries VarID 0, so
 //     `&mut self.p` names no binding and records no loan. That one reaches further than this
 //     check, since every analysis built on places sees the same 0.
@@ -275,33 +278,45 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 // against a signature that writes its second argument into the first leaves p reaching b, so
 // from that point p holds a mutable borrow of b and a second borrow of b conflicts with it.
 //
-// The loan is mutable because a store target is a mutable borrow. A shared borrow takes no
-// write, so callStoreEdges never yields an edge into one.
+// Whether a write can go through the loan comes from the SOURCE parameter, since that is the
+// view the target ends up holding. A signature storing a `&'a B` leaves the target able to read
+// the item and not to write it, even though the target itself is a mutable borrow.
 //
 // target is the binding the borrow lands in and referent is the local it reaches, so the loan
 // is a borrow of referent held by target. It lasts as long as target is live, the same rule a
 // borrow bound to a name follows.
-func (c *checker) recordStoreEdgeLoan(target, referent liveness.VarID, ref liveness.StmtRef, blame ast.Node) {
-	if c.fn == nil || target <= 0 || referent <= 0 {
+func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness.VarID, ref liveness.StmtRef, blame ast.Node) {
+	if c.fn == nil || target <= 0 || place.root <= 0 {
 		return
 	}
-	c.fn.loans = append(c.fn.loans, loan{
-		place:     movePlace{root: referent},
-		mut:       true,
-		holder:    target,
-		ref:       ref,
-		node:      blame,
-		fromStore: true,
-	})
+	fresh := loan{place: place, mut: mut, holder: target, ref: ref, node: blame, fromStore: true}
+	// One signature can write an argument into several positions of the target, so the same
+	// loan reaches here once per position. Recording it once keeps a later conflict to one
+	// diagnostic instead of one per position.
+	for _, l := range c.fn.loans {
+		if l.fromStore && l.holder == fresh.holder && l.ref == fresh.ref &&
+			l.mut == fresh.mut && placesEqual(l.place, fresh.place) {
+			return
+		}
+	}
+	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// checkUseAgainstLoans reports a read of data some live borrow can write through. Two readers
+// placesEqual reports whether two places name the same data, root and full field path alike.
+func placesEqual(a, b movePlace) bool {
+	return a.root == b.root && slices.Equal(a.path, b.path)
+}
+
+// checkUsesAgainstLoans reports a read of data some live borrow can write through. Two readers
 // are fine, so only a mutable loan conflicts with a use.
 //
 // The read a borrow performs to take its own loan is skipped. `&mut b` reads b, and that read
 // is what creates the loan rather than a second path to it. The loan-against-loan check is what
 // compares one borrow with another.
-func (c *checker) checkUsesAgainstLoans() {
+//
+// A read the use-after-move scan already reported is skipped too, so one bad read yields one
+// diagnostic rather than two.
+func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 	if c.fn == nil || len(c.fn.loans) == 0 || len(c.fn.useSites) == 0 {
 		return
 	}
@@ -309,10 +324,12 @@ func (c *checker) checkUsesAgainstLoans() {
 		c.fn.loanReads = set.NewSet[ast.Node]()
 	}
 	for _, u := range c.fn.useSites {
-		if c.fn.loanReads.Contains(u.node) {
+		if c.fn.loanReads.Contains(u.node) || reported.Contains(u.node) {
 			continue
 		}
-		for _, l := range c.fn.loans {
+		// Only the loans that existed when this read was walked. A borrow written later in the
+		// source has not taken hold at the read, and on the other arm of a branch it never does.
+		for _, l := range c.fn.loans[:min(u.loansAt, len(c.fn.loans))] {
 			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
 				continue
 			}
