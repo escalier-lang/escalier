@@ -5,6 +5,7 @@ import (
 	"github.com/escalier-lang/escalier/internal/liveness"
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
+	"slices"
 )
 
 // A call stores one argument's borrow into another when the two share a lifetime and that
@@ -432,6 +433,12 @@ func (c *checker) recordCallStoreEdges(
 		// stores nothing the graph needs to know about.
 		referents := c.storedReferents(argExpr)
 		if len(referents) == 0 {
+			// An argument that borrows no local outright may still REACH one through its own
+			// edges. `p.peer` over a parameter p holding p → b carries b into the target, and
+			// isLocalReferent skips a param-rooted place by design, so the edges find b.
+			referents = c.placeReferents(argExpr)
+		}
+		if len(referents) == 0 {
 			continue
 		}
 		// An edge hangs off a binding, so the target has to name one. An argument built inline
@@ -440,8 +447,9 @@ func (c *checker) recordCallStoreEdges(
 		if !isPlace || target.root <= 0 {
 			continue
 		}
-		// A parameter's referent belongs to the caller and outlives the frame, so a borrow of
-		// a local written into it dangles. Reporting it here rather than recording an edge is
+		// A BORROW parameter's referent belongs to the caller and outlives the frame, so a
+		// borrow of a local written into it dangles. An owned parameter is moved into the
+		// frame and dies with it, so it takes an edge like a local does. Reporting it here rather than recording an edge is
 		// what keeps the escape post-pass out of it. The callee borrows this argument instead
 		// of taking it, and the post-pass would weigh an owned-looking argument as a
 		// connected-component move and consume the locals it borrows.
@@ -547,6 +555,21 @@ func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
 		out = append(out, referent)
 	}
 	return out
+}
+
+// placeReferents returns the function-locals the place an argument names reaches through the
+// borrow-edge graph, which is how a borrow that arrived by an earlier store is found. It reads
+// the whole-body graph, since the per-point one belongs to the escape post-pass.
+func (c *checker) placeReferents(arg ast.Expr) []liveness.VarID {
+	pl, ok := exprPlace(borrowOperand(arg))
+	if !ok || pl.root <= 0 {
+		return nil
+	}
+	out := set.NewSet[liveness.VarID]()
+	c.collectBorrowedFrom(pl.root, pl.path, out, set.NewSet[liveness.VarID](), c.fn.eagerBorrowGraph)
+	ids := out.ToSlice()
+	slices.Sort(ids)
+	return ids
 }
 
 // storeSourceMut reports whether a write can go through what the store puts in the target. It
