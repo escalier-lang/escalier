@@ -320,8 +320,6 @@ func (w *lifetimeWalk) walk(t soltype.Type, base []placeSeg) {
 		for _, elem := range t.Elems {
 			w.walk(elem, base)
 		}
-	case *soltype.ArrayType:
-		w.walk(t.Elem, base)
 	case *soltype.PromiseType:
 		w.walk(t.Inner, base)
 		w.walk(t.Err, base)
