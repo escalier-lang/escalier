@@ -295,6 +295,59 @@ func TestStoreEffectLoans(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// What the store puts in the target decides whether a write can go through it. A
+		// signature storing a shared `&'a B` leaves the target able to read the item and not to
+		// write it, so a second shared borrow is two readers of one value.
+		"SharedItemStoredLeavesItReadableOk": {
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a {value: number}, spare: &'b mut {value: number}},
+					item: &'a {value: number},
+				) -> undefined
+				declare fn readShared(x: &{value: number}) -> undefined
+				declare fn hold<'d>(x: &'d mut {peer: &{value: number}, spare: &mut {value: number}}) -> undefined
+				fn f(q: {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &q, spare: &mut r}
+					store(&mut a, &b)
+					readShared(&b)
+					hold(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A direct store puts the argument's own place in the target, field path and all, so
+		// the target reaches b.inner and nothing else of b. Borrowing the disjoint b.other
+		// reaches data the target cannot write.
+		"StoreOfOneFieldLeavesItsSiblingFreeOk": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {inner: {value: 1}, other: {value: 2}}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b.inner)
+					readBorrow(&mut b.other)
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A read is weighed against the borrows that existed when it was walked. The borrow on
+		// the else arm comes later in the source, so it never reaches the read on the then arm.
+		"ABorrowOnOneArmDoesNotReachTheOtherOk": {
+			src: `
+				declare fn readBorrow(x: &mut {value: number}) -> undefined
+				fn f(cond: boolean, x: mut {value: number}) -> undefined {
+					var a = &mut x
+					if cond {
+						val y = x
+					} else {
+						a = &mut x
+						readBorrow(a)
+					}
+				}
+			`,
+			want: nil,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
