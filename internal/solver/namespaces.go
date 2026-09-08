@@ -109,17 +109,18 @@ func (c *checker) refreshNamespaces(scope *Scope) {
 	c.populateNamespaces(c.declTarget(scope), c.nsShells)
 }
 
-// populateNamespaces fills each pre-bound Namespace with the bindings the walk
-// placed under its qualified prefix. A nested block is filled through the same
-// pointer its parent already holds, so `namespace a { namespace b { val x } }`
-// gives `a.b.x`.
+// populateNamespaces populates each pre-bound Namespace in shells.
 func (c *checker) populateNamespaces(scope *Scope, shells []*namespaceShell) {
 	for _, sh := range shells {
-		c.fillNamespace(scope, sh)
+		c.populateNamespace(scope, sh)
 	}
 }
 
-func (c *checker) fillNamespace(scope *Scope, sh *namespaceShell) {
+// populateNamespace copies the bindings the walk placed under sh's qualified
+// prefix into the Namespace pre-bound for it, then does the same for the blocks
+// nested inside it. A nested block is populated through the same pointer its
+// parent already holds, so `namespace a { namespace b { val x } }` gives `a.b.x`.
+func (c *checker) populateNamespace(scope *Scope, sh *namespaceShell) {
 	out := sh.ns
 	for _, decl := range sh.decls {
 		for _, inner := range decl.Decls {
