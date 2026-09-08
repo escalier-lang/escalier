@@ -441,6 +441,34 @@ func borrowsIn(e ast.Expr) []*ast.BorrowExpr {
 	return found
 }
 
+// paramReferentOutlivesFrame reports whether root names a parameter whose referent belongs to
+// the caller and so survives the call.
+//
+// Only a BORROW parameter does. `&T` and `&mut T` name data the caller still holds, so a borrow
+// of a local written into one dangles once the frame goes. An owned parameter, `mut T` or plain
+// `T`, is MOVED into the frame. The caller gave up every handle at the call, and the value dies
+// with the frame, so nothing written into it can outlive anything.
+//
+// A parameter whose type the bridge does not carry is treated as caller-owned, which keeps the
+// stricter answer for a leaf the seed did not reach.
+func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
+	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
+		return false
+	}
+	if c.fn.varIDTypes == nil {
+		return true
+	}
+	t, ok := c.fn.varIDTypes[root]
+	if !ok {
+		return true
+	}
+	ref, isRef := t.(*soltype.RefType)
+	if !isRef {
+		return true
+	}
+	return ref.Lt != nil
+}
+
 // isLocalReferent reports whether the borrow operand names a function-local place, one
 // rooted at a real binding that is not a parameter. A parameter referent is exempt, and a
 // non-place operand names no tracked binding.
@@ -687,7 +715,7 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef live
 		return
 	}
 	rp, ok := exprPlace(recv)
-	if !ok || rp.root <= 0 || !c.fn.paramVarIDs.Contains(rp.root) {
+	if !ok || rp.root <= 0 || !c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
 	c.recordEscapeSite(source, stmtRef)
@@ -711,7 +739,7 @@ func (c *checker) recordFieldStoreEdges(
 		return
 	}
 	rp, ok := exprPlace(recv)
-	if !ok || rp.root <= 0 || c.fn.paramVarIDs.Contains(rp.root) {
+	if !ok || rp.root <= 0 || c.paramReferentOutlivesFrame(rp.root) {
 		return
 	}
 	base := appendSeg(rp.path, field)

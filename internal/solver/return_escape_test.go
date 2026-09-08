@@ -239,14 +239,14 @@ func TestReturnValueBorrows(t *testing.T) {
 		// so the message names the second path rather than claiming b does not live long enough.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
-				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
 					val mut b = {value: 0}
 					p.node = {peer: &mut b}
 					return &mut b
 				}
 			`,
 			want:  []string{"5:13-5:19: 'b' leaves the function at another point too, so the return is not the only path to it"},
-			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
+			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
 		},
 		// A consuming argument leaves a second path behind too, and returning the same local
 		// reports the same way. Here the path belongs to the callee rather than the caller: an
@@ -372,13 +372,13 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// object outlives the frame, so the stored local would dangle in the caller.
 		"StoreLocalBorrowIntoParamField": {
 			src: `
-				fn f(p: mut {peer: &mut {value: number}}) {
+				fn f(p: &mut {peer: &mut {value: number}}) {
 					val mut b = {value: 0}
 					p.peer = &mut b
 				}
 			`,
 			want:  []string{"4:15-4:21: borrowed value 'b' does not live long enough to escape the function"},
-			types: map[string]string{"f": "fn (p: mut {peer: &mut {value: number}}) -> undefined"},
+			types: map[string]string{"f": "fn (p: &mut {peer: &mut {value: number}}) -> undefined"},
 		},
 		// Storing a parameter borrow into a parameter's field is sound: the stored borrow
 		// carries the caller's lifetime, which outlives the frame.
@@ -400,14 +400,14 @@ func TestEscapeAtStoreAndArgSites(t *testing.T) {
 		// re-anchor and escaped.
 		"StoreCarrierIntoParamFieldMovesComponent": {
 			src: `
-				fn f(p: mut {node: {peer: &mut {value: number}}}) {
+				fn f(p: &mut {node: {peer: &mut {value: number}}}) {
 					val mut b = {value: 0}
 					p.node = {peer: &mut b}
 					val y = b
 				}
 			`,
 			want:  []string{"5:14-5:15: use of moved value 'b'"},
-			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> undefined"},
+			types: map[string]string{"f": "fn (p: &mut {node: {peer: &mut {value: number}}}) -> undefined"},
 		},
 		// Auto-borrowing a local into a `&mut` parameter is sound: the parameter borrows
 		// for the call rather than consuming, so the local outlives the borrow.

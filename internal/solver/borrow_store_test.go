@@ -718,9 +718,9 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	}
 	fmt.Fprintf(&b, "type A%d<'a> = {peer: &'a mut {value: number}}\n", depth)
 	b.WriteString("declare fn store<'a, 'c>(target: &'c mut A1<'a>, item: &'a mut {value: number}) -> undefined\n")
-	b.WriteString("fn build(t: mut A1<'static>) -> undefined {\n")
+	b.WriteString("fn build(t: &mut A1<'static>) -> undefined {\n")
 	b.WriteString("\tval mut b = {value: 2}\n")
-	b.WriteString("\tstore(&mut t, &mut b)\n")
+	b.WriteString("\tstore(t, &mut b)\n")
 	b.WriteString("}\n")
 
 	// Parsing stays on the test goroutine, since parseModule asserts through require and a
@@ -735,7 +735,7 @@ func TestCallStoreEdgeAliasChainTerminates(t *testing.T) {
 	select {
 	case errs := <-done:
 		require.Equal(t, []string{
-			"20:16-20:22: borrowed value 'b' does not live long enough to escape the function",
+			"20:11-20:17: borrowed value 'b' does not live long enough to escape the function",
 		}, messagesWithSpan(t, errs))
 	case <-time.After(30 * time.Second):
 		t.Fatal("inference did not finish: the lifetime walk did not stay within its node budget")
@@ -759,13 +759,13 @@ func TestCallStoreEdgeTruncatedWalkStaysSound(t *testing.T) {
 	}
 	fmt.Fprintf(&b, "type A%d<'a> = {peer: &'a mut {value: number}}\n", depth)
 	b.WriteString("declare fn store<'a, 'c>(target: &'c mut A1<'a>, item: &'a mut {value: number}) -> undefined\n")
-	b.WriteString("fn build(t: mut A1<'static>) -> undefined {\n")
+	b.WriteString("fn build(t: &mut A1<'static>) -> undefined {\n")
 	b.WriteString("\tval mut b = {value: 2}\n")
-	b.WriteString("\tstore(&mut t, &mut b)\n")
+	b.WriteString("\tstore(t, &mut b)\n")
 	b.WriteString("}\n")
 
 	_, _, errs := inferSource(t, b.String())
 	require.Equal(t, []string{
-		"20:16-20:22: borrowed value 'b' does not live long enough to escape the function",
+		"20:11-20:17: borrowed value 'b' does not live long enough to escape the function",
 	}, messagesWithSpan(t, errs))
 }
