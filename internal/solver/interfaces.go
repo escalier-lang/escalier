@@ -117,21 +117,18 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 	c.classNamespace = sh.ns
 	defer func() { c.classNamespace = prevNS }()
 
-	// The shared object-member builder decides what a later member does to an
+	// The shared object-member builder decides what a later declaration does to an
 	// earlier one of the same name. It appends a method's signatures rather than
 	// replacing it, so overloads split across declarations accumulate, and it
 	// tracks the read and write accesses separately, so a getter in one
 	// declaration and a setter in another form a pair rather than one dropping
 	// the other.
 	b := newObjElemBuilder(0)
-	inexact := false
+	var parents []soltype.Type
 	for _, decl := range sh.decls {
 		for _, ext := range decl.Extends {
-			if obj, ok := c.resolveInterfaceParent(sh.declScope, ext, sh.lvl); ok {
-				for _, elem := range obj.Elems {
-					b.addElem(copyMergeableElem(elem))
-				}
-				inexact = inexact || obj.Inexact
+			if parent, ok := c.resolveTypeAnn(sh.declScope, ext, sh.lvl); ok {
+				parents = append(parents, parent)
 			}
 		}
 		// A nil TypeAnn is parser error recovery for a body that failed to parse,
@@ -150,66 +147,25 @@ func (c *checker) inferInterfaceBody(sh *interfaceShell) {
 		for _, elem := range obj.Elems {
 			b.addElem(elem)
 		}
-		inexact = inexact || obj.Inexact
 	}
-	sh.def.Body = &soltype.ObjectType{Elems: b.result(), Inexact: inexact}
-}
 
-// copyMergeableElem returns a member safe to hand to an objElemBuilder that may
-// merge into it. The builder appends to a MethodElem's signature list in place, so
-// a method taken from a parent interface's stored body is copied first, leaving the
-// parent's own type unchanged.
-func copyMergeableElem(elem soltype.ObjTypeElem) soltype.ObjTypeElem {
-	m, isMethod := elem.(*soltype.MethodElem)
-	if !isMethod {
-		return elem
+	// An interface is inexact. It describes the members a value has to carry, not
+	// the members it may carry, so a value with more than the interface names still
+	// satisfies it.
+	own := &soltype.ObjectType{Elems: b.result(), Inexact: true}
+	if len(parents) == 0 {
+		sh.def.Body = own
+		return
 	}
-	sigs := make([]*soltype.FuncType, len(m.Signatures))
-	copy(sigs, m.Signatures)
-	dup := *m
-	dup.Signatures = sigs
-	return &dup
+	// An `extends` clause meets the parents with the body rather than copying their
+	// members in. Both halves are inexact, so the meet requires every member either
+	// side names and admits the rest, which is what member inheritance means here.
+	//
+	// The parents stay as the references they resolved to, so a parent still being
+	// built is named rather than read. That is what lets `interface A {b: B}` and
+	// `interface B extends A {x}` resolve each other.
+	sh.def.Body = &soltype.IntersectionType{Types: append(parents, own)}
 }
-
-// resolveInterfaceParent resolves one `extends` target to the object type whose
-// members it contributes. A target naming something other than an object reports
-// InterfaceExtendsNonObjectError and contributes nothing.
-func (c *checker) resolveInterfaceParent(scope *Scope, ref *ast.TypeRefTypeAnn, lvl int) (*soltype.ObjectType, bool) {
-	resolved, ok := c.resolveTypeAnn(scope, ref, lvl)
-	if !ok {
-		return nil, false
-	}
-	expanded := c.expandAliasChain(resolved)
-	if obj, isObj := expanded.(*soltype.ObjectType); isObj {
-		return obj, true
-	}
-	// The reference resolved, so an ErrorType here is an unfilled body: the target
-	// is a sibling in this same recursive group. An interface flattens its parents'
-	// members into its own, which a cycle gives no way to compute, so report it
-	// rather than silently binding the subset that happened to resolve.
-	if _, isErr := expanded.(*soltype.ErrorType); isErr {
-		c.report(&InterfaceExtendsCycleError{Name: soltype.Print(resolved), span: ref.Span()})
-		return nil, false
-	}
-	c.report(&InterfaceExtendsNonObjectError{Name: soltype.Print(resolved), span: ref.Span()})
-	return nil, false
-}
-
-// InterfaceExtendsNonObjectError reports an `extends` target that is not an object
-// type. An interface flattens its parents' members into its own, so a parent with
-// no member list has nothing to contribute.
-type InterfaceExtendsNonObjectError struct {
-	// Name is the target as written, rendered.
-	Name string
-	span ast.Span
-}
-
-func (e *InterfaceExtendsNonObjectError) Message() string {
-	return "an interface can only extend an object type, not " + e.Name
-}
-func (e *InterfaceExtendsNonObjectError) Span() ast.Span      { return e.span }
-func (e *InterfaceExtendsNonObjectError) Related() []ast.Span { return nil }
-func (e *InterfaceExtendsNonObjectError) isSolverError()      {}
 
 // typeParamMismatch reports whether a later declaration's type parameters can
 // merge under the first declaration's list, and why not when they cannot.
