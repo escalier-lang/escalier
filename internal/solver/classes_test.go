@@ -112,8 +112,9 @@ func TestConstrainNominalArgVariance(t *testing.T) {
 // invariant.
 //
 // Each case asserts both measured vectors. want is the immutable view and wantMut the
-// mutable view, and they differ only where a non-`readonly` field's write view adds an
-// input position the immutable view does not have.
+// mutable view, and they differ where a member an immutable reference cannot reach adds a
+// position only the mutable view has: a non-`readonly` field's write, a setter, and a
+// `mut self` method.
 func TestInferBodyVariance(t *testing.T) {
 	// selfMethod builds a method whose receiver is the class instance at its own type
 	// parameter, plus one value parameter and a return, so the walk sees a genuine `self`
@@ -143,6 +144,18 @@ func TestInferBodyVariance(t *testing.T) {
 	// view never reaches the mutable-view vector.
 	readonlyProp := func(name string, t soltype.Type) *soltype.PropertyElem {
 		return &soltype.PropertyElem{Name: name, Type: t, Readonly: true}
+	}
+	// mutSelfMethod builds a `mut self` method, which only a mutable reference reaches.
+	// The receiver is a mutable borrow of the class instance, the shape `mut self`
+	// desugars to.
+	mutSelfMethod := func(name, cls string, tv *soltype.TypeVarType, param soltype.Type) *soltype.MethodElem {
+		self := mutRef(&soltype.ClassType{Name: cls, TypeArgs: []soltype.Type{tv}})
+		sig := &soltype.FuncType{
+			SelfParam: &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}, Type: self},
+			Params:    []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: param}},
+			Ret:       &soltype.UndefinedType{},
+		}
+		return &soltype.MethodElem{Name: name, Signatures: []*soltype.FuncType{sig}}
 	}
 	tests := []struct {
 		name    string
@@ -222,6 +235,59 @@ func TestInferBodyVariance(t *testing.T) {
 			}),
 			want:    []Variance{Bivariant},
 			wantMut: []Variance{Bivariant},
+		},
+		{
+			// The shape `Array<T>` has. `at(self, index) -> T | undefined` is an output
+			// position both views reach, and `push(mut self, item: T)` an input position
+			// only a mutable reference reaches. Folding the mutator into both views would
+			// measure T invariant and leave `Array<1> <: Array<number>` rejected.
+			name: "a mut self parameter drags a covariant return to invariant under mut only",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(
+					selfMethod("at", "Array", tv, num(), tv),
+					mutSelfMethod("push", "Array", tv, tv),
+				), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
+		},
+		{
+			// One name may hold arms taking different receivers, so the split is per
+			// signature. The `self` arm returns T and the `mut self` arm consumes it.
+			name: "an overload set splits its arms by receiver",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				read := selfMethod("slot", "Cell", tv, num(), tv)
+				write := mutSelfMethod("slot", "Cell", tv, tv)
+				return exactObj(&soltype.MethodElem{
+					Name:       read.Name,
+					Signatures: []*soltype.FuncType{read.Signatures[0], write.Signatures[0]},
+				}), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
+		},
+		{
+			// A setter is a write, so no immutable reference reaches it. A getter is a read
+			// and both views do.
+			name: "a setter is an input position only the mutable view has",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(
+					&soltype.GetterElem{Name: "value", Type: tv},
+					&soltype.SetterElem{Name: "value", Param: tv},
+				), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Invariant},
+		},
+		{
+			// A parameter reachable only through a mutator is inert in the immutable view,
+			// which reads as bivariant. Nothing an immutable reference can call names it.
+			name: "a parameter only a mut self method names is bivariant in the immutable view",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				return exactObj(mutSelfMethod("push", "Sink", tv, tv)), nil
+			}),
+			want:    []Variance{Bivariant},
+			wantMut: []Variance{Contravariant},
 		},
 		{
 			name: "parameter reaching a super is invariant",

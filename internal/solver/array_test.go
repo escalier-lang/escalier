@@ -74,6 +74,43 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 	}
 }
 
+// `Array<T>` is covariant in T and `mut Array<T>` is invariant. `at(self, index)` is an
+// output position both views reach, and `push(mut self, item: T)` an input position only a
+// mutable reference reaches, so the widening holds for a shared array while two mutable
+// ones over different elements stay unrelated.
+func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "SharedArrayWidens",
+			src: `fn take(xs: Array<number>) -> number { return 1 }
+				fn give(ys: Array<1>) { return take(ys) }`,
+		},
+		{
+			name: "MutArrayDoesNotWiden",
+			src: `fn take(xs: mut Array<number>) -> number { return 1 }
+				fn give(ys: mut Array<1>) { return take(ys) }`,
+			want: []string{"cannot constrain number <: 1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
+}
+
 // A wrong element is rejected against the declaration's own signature, with the
 // message that signature produces.
 func TestArrayMethodRejectsAWrongElement(t *testing.T) {

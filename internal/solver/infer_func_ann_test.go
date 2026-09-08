@@ -554,12 +554,11 @@ func TestInferArrayRestParamFuncAnnotation(t *testing.T) {
 		},
 		{
 			// Two array rest parameters pair as ordinary positions and compare element to
-			// element. `Array` declares `push(mut self, item: T)`, which puts `T` in an input
-			// position and makes it invariant, so the pair is checked in both directions and
-			// each direction reports its own failure.
+			// element. The pairing is contravariant and the array is covariant in its element,
+			// so the super's `string` is checked against the sub's `number`.
 			name: "ArrayRestAgainstArrayRest",
 			src:  `val a: fn(...xs: Array<number>) -> number = fn (...) { return 1 }` + "\n" + `val b: fn(...ys: Array<string>) -> number = a`,
-			want: []string{"cannot constrain string <: number", "cannot constrain number <: string"},
+			want: []string{"cannot constrain string <: number"},
 		},
 	}
 	for _, tt := range tests {
