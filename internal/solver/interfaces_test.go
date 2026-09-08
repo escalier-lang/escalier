@@ -228,3 +228,64 @@ func TestInterfaceExtendsMembersAreReadable(t *testing.T) {
 	require.Equal(t, "number", values["inherited"])
 	require.Equal(t, "number", values["own"])
 }
+
+// One name binds one type-parameter list, so every declaration of an interface has to
+// write the same one. A later declaration that disagrees is reported and contributes no
+// members, since its body reads against parameters the group does not have.
+//
+// A bound and a default are the asymmetric cases: only the first declaration may write
+// either, so a later declaration repeating a bound is rejected even when the bound is the
+// one already in force.
+func TestInterfaceTypeParamMismatchReports(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "Arity",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T, U> { w: U }",
+			want: []string{"declarations of interface Box must agree on their type parameters: they differ in how many it writes"},
+		},
+		{
+			name: "Names",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<U> { w: U }",
+			want: []string{"declarations of interface Box must agree on their type parameters: they differ in the names they write"},
+		},
+		{
+			name: "Variance",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<out T> { w: T }",
+			want: []string{"declarations of interface Box must agree on their type parameters: they differ in variance"},
+		},
+		{
+			name: "ALaterBound",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T: string> { w: T }",
+			want: []string{"declarations of interface Box must agree on their type parameters: only the first declaration may write a bound"},
+		},
+		{
+			name: "ALaterDefault",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T = string> { w: T }",
+			want: []string{"declarations of interface Box must agree on their type parameters: only the first declaration may write a default"},
+		},
+		{
+			name: "MatchingListsMerge",
+			src:  "declare interface Box<T> { v: T }\ndeclare interface Box<T> { w: T }",
+		},
+		{
+			// The bound belongs to the first declaration, which is the one that may write
+			// it, so the group merges and both members land.
+			name: "ABoundOnTheFirstDeclarationIsKept",
+			src:  "declare interface Box<T: string> { v: T }\ndeclare interface Box<T> { w: T }",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errorMessagesOf(errs))
+				return
+			}
+			require.Equal(t, tt.want, errorMessagesOf(errs))
+		})
+	}
+}
