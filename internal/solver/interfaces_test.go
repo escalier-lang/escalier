@@ -16,7 +16,7 @@ func TestInterfaceBindsAStructuralType(t *testing.T) {
 		val p: Point = {x: 1}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{x: number}", types["Point"])
+	require.Equal(t, "{x: number, ...}", types["Point"])
 	require.Equal(t, "Point", values["p"])
 }
 
@@ -31,7 +31,7 @@ func TestInterfaceDeclarationsMerge(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{x: number, y: number}", types["Point"])
+	require.Equal(t, "{x: number, y: number, ...}", types["Point"])
 }
 
 // An `extends` clause prepends the referenced interface's members, so the bound
@@ -46,7 +46,7 @@ func TestInterfaceExtendsCarriesMembers(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{w: number, s: number}", types["Sq"])
+	require.Equal(t, "Rect & {s: number, ...}", types["Sq"])
 }
 
 // An exported interface reaches a package's surface, so an importer can name it
@@ -81,7 +81,7 @@ func TestInterfaceMergeAccumulatesOverloads(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{m(a: number) -> number; m(a: string) -> string}", types["F"])
+	require.Equal(t, "{m(a: number) -> number; m(a: string) -> string, ...}", types["F"])
 }
 
 // A getter in one declaration and a setter in another form a pair, so the name
@@ -96,11 +96,11 @@ func TestInterfaceMergePairsAccessors(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{get x() -> number, set x(value: number)}", types["A"])
+	require.Equal(t, "{get x() -> number, set x(value: number), ...}", types["A"])
 }
 
-// An interface's members are copied out of a parent's stored type, so extending it
-// leaves the parent unchanged for every other reader.
+// A parent is named rather than copied, so extending it cannot change what the
+// parent means for any other reader.
 func TestInterfaceExtendsLeavesTheParentAlone(t *testing.T) {
 	_, types, errs := inferSource(t, `
 		declare interface Base {
@@ -111,28 +111,8 @@ func TestInterfaceExtendsLeavesTheParentAlone(t *testing.T) {
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{m(a: number) -> number}", types["Base"])
-	require.Equal(t, "{m(a: number) -> number; m(a: string) -> string}", types["Child"])
-}
-
-// Declarations of one interface must agree on their type parameters, since the
-// group binds one list and every body resolves against it.
-func TestInterfaceRejectsMismatchedTypeParams(t *testing.T) {
-	_, types, errs := inferSource(t, `
-		declare interface Box<T> {
-			a: T,
-		}
-		declare interface Box<U> {
-			b: U,
-		}
-	`)
-	require.Equal(t,
-		[]string{"declarations of interface Box must agree on their type parameters: " +
-			"they differ in the names they write"},
-		errorMessagesOf(errs))
-	// The rejected declaration contributes nothing, so no unresolved parameter
-	// leaks into the bound type.
-	require.Equal(t, "{a: T}", types["Box"])
+	require.Equal(t, "{m(a: number) -> number, ...}", types["Base"])
+	require.Equal(t, "Base & {m(a: string) -> string, ...}", types["Child"])
 }
 
 // One name declared both as an interface and as another kind of type has two
@@ -149,10 +129,11 @@ func TestInterfaceConflictingWithAnAliasReports(t *testing.T) {
 		errorMessagesOf(errs))
 }
 
-// An `extends` target in the interface's own recursive group has no finished
-// member list to flatten.
-func TestInterfaceExtendsCycleReports(t *testing.T) {
-	_, _, errs := inferSource(t, `
+// A parent is referenced rather than read, so an interface naming a sibling that
+// extends it back resolves. Nothing has to be flattened, which is what a cycle
+// makes impossible.
+func TestInterfaceExtendsResolvesARecursiveGroup(t *testing.T) {
+	_, types, errs := inferSource(t, `
 		declare interface A {
 			b: B,
 		}
@@ -160,58 +141,53 @@ func TestInterfaceExtendsCycleReports(t *testing.T) {
 			x: number,
 		}
 	`)
-	require.Equal(t,
-		[]string{"an interface cannot extend A, which is part of the same recursive group"},
-		errorMessagesOf(errs))
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{b: B, ...}", types["A"])
+	require.Equal(t, "A & {x: number, ...}", types["B"])
 }
 
-// The first declaration's parameter list is what every body resolves against, so a
-// bound a later declaration writes would be ignored. Merging under one of two
-// disagreeing bounds is what the report prevents.
-func TestInterfaceRejectsAConflictingTypeParamBound(t *testing.T) {
-	_, types, errs := inferSource(t, `
-		declare interface Box<T: string> {
-			a: T,
-		}
-		declare interface Box<T: number> {
-			b: T,
-		}
-	`)
-	require.Equal(t,
-		[]string{"declarations of interface Box must agree on their type parameters: " +
-			"only the first declaration may write a bound"},
-		errorMessagesOf(errs))
-	require.Equal(t, "{a: T}", types["Box"])
-}
-
-// A default is rejected for the same reason a bound is: an omitted argument is
-// filled from the first declaration's list, so a later default names nothing.
-func TestInterfaceRejectsAConflictingTypeParamDefault(t *testing.T) {
+// An interface is inexact: it names the members a value must carry, not the
+// members it may carry.
+func TestInterfaceIsInexact(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		declare interface Box<T = string> {
-			a: T,
+		declare interface Rect {
+			w: number,
 		}
-		declare interface Box<T = number> {
-			b: T,
-		}
-	`)
-	require.Equal(t,
-		[]string{"declarations of interface Box must agree on their type parameters: " +
-			"only the first declaration may write a default"},
-		errorMessagesOf(errs))
-}
-
-// A later declaration that writes the same names and no bound merges, which is the
-// ordinary case a generic interface split across declarations takes.
-func TestInterfaceMergesWhenLaterDeclarationsOmitBounds(t *testing.T) {
-	_, types, errs := inferSource(t, `
-		declare interface Box<T: string> {
-			a: T,
-		}
-		declare interface Box<T> {
-			b: T,
-		}
+		val extra: Rect = {w: 1, other: 2}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{a: T, b: T}", types["Box"])
+}
+
+// A member the parent names is still required, so `extends` is inheritance rather
+// than a hint.
+func TestInterfaceExtendsStillRequiresTheParentsMembers(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare interface Rect {
+			w: number,
+		}
+		declare interface Sq extends Rect {
+			s: number,
+		}
+		val ok: Sq = {w: 1, s: 2}
+		val missing: Sq = {s: 2}
+	`)
+	require.Equal(t, []string{"object is missing property: w"}, errorMessagesOf(errs))
+}
+
+// A member a parent declares is readable through a value the child types.
+func TestInterfaceExtendsMembersAreReadable(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare interface Rect {
+			w: number,
+		}
+		declare interface Sq extends Rect {
+			s: number,
+		}
+		val q: Sq = {w: 1, s: 2}
+		val inherited = q.w
+		val own = q.s
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "number", values["inherited"])
+	require.Equal(t, "number", values["own"])
 }
