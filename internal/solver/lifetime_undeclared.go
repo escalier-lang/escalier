@@ -23,6 +23,10 @@ import (
 // signature's binders. An enclosing function's lifetimes are not visible to a nested one,
 // so a nested function is judged only by its own clause.
 //
+// A lifetime an enclosing class binds is in scope with no clause of this signature's own, and
+// c.declLifetimes holds those names. A class member writing the class's `'a` is the case
+// that needs it.
+//
 // Recovery is left to namedLifetime, which mints a fresh lifetime for an undeclared name
 // so the signature stays well-formed. This scan only reports; it changes no resolution.
 func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam, params []*ast.Param, ret, throws ast.TypeAnn) {
@@ -77,6 +81,14 @@ func (c *checker) checkLifetimeDeclarations(lifetimeParams []*ast.LifetimeParam,
 	for _, u := range col.uses {
 		used.Add(u.Name)
 		if _, ok := declared[u.Name]; ok {
+			continue
+		}
+		// A name the enclosing class binds is in scope here without a clause of this
+		// signature's own. The binder sits on `class Holder<'a>`, so a member writing `&'a`
+		// is declared even though the member binds nothing. It marks no binder of this
+		// signature used, since a member that rebinds the name lands in the declared map
+		// above instead.
+		if _, ok := c.declLifetimes[u.Name]; ok {
 			continue
 		}
 		c.report(&UndeclaredLifetimeError{
