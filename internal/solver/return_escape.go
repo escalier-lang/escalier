@@ -222,7 +222,11 @@ func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) 
 			continue
 		}
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
-		for _, id := range c.escapingLocalsOf(es.expr, graph).ToSlice() {
+		// Closed over the graph for the reason the return side closes its own set: a value
+		// flowing out reaches more than the locals it borrows directly, and a local it reaches
+		// only through another local's edges leaves the frame just the same.
+		leaving := reachableLocals(c.escapingLocalsOf(es.expr, graph), graph)
+		for _, id := range leaving.ToSlice() {
 			// The first site wins, so a local leaving twice blames the earliest one rather
 			// than whichever the walk reached last.
 			if _, seen := out[id]; !seen {

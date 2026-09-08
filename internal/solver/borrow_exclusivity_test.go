@@ -194,6 +194,21 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
+		// A reassignment ends the binding's loan from that point on, and no further back. The
+		// read of x sits before it, while a still borrows x, so it reports even though a is
+		// repointed later in the body.
+		"AReassignmentDoesNotSilenceAnEarlierRead": {
+			src: exclusivityDecls + `
+				fn g(x: mut {v: number}, y: mut {v: number}) -> undefined {
+					var a = &mut x
+					val w = x
+					write(a)
+					a = &mut y
+					write(a)
+				}
+			`,
+			want: []string{"9:14-9:15: cannot use 'x' while it is borrowed as mutable"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
