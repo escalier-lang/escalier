@@ -356,3 +356,37 @@ func TestStoreEffectLoans(t *testing.T) {
 		})
 	}
 }
+
+// TestMutSelfIsAMutableStoreSource covers the loan a method's own receiver creates when the
+// method drains it into a parameter.
+//
+// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
+// owned-mutable parameter takes, so the lifetime test that decides an ordinary parameter's
+// mutability does not describe it. Reading it as shared would let the target hold a writable
+// view while the check believed it held a read-only one.
+//
+// The wording is what pins this. A shared loan of h would report `as mutable while it is
+// borrowed as immutable`; a mutable one reports `more than once at a time`.
+func TestMutSelfIsAMutableStoreSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Holder<'a> {
+			peer: &'a mut {value: number},
+			drain(mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
+		}
+		declare fn touch<'e>(x: &'e mut {slot: &mut {value: number}}) -> undefined
+		fn build(p: mut {value: number}) -> undefined {
+			val mut h = Holder(&mut p)
+			val mut o = {slot: &mut p}
+			h.drain(&mut o)
+			val again = &mut h
+			touch(&mut o)
+		}
+	`)
+	// The two constrain errors are unrelated to the store. Borrowing a class instance that
+	// carries a lifetime parameter reports them on its own, with or without the drain.
+	require.Equal(t, []string{
+		"11:16-11:22: cannot constrain immutable Holder<'l12> <: mutable Holder<'l12>",
+		"11:16-11:22: cannot constrain immutable Holder<'l12> <: mutable Holder<'l12>",
+		"11:16-11:22: cannot borrow 'h' as mutable more than once at a time",
+	}, messagesWithSpan(t, errs))
+}
