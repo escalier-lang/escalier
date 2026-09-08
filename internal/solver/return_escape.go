@@ -449,8 +449,11 @@ func borrowsIn(e ast.Expr) []*ast.BorrowExpr {
 // `T`, is MOVED into the frame. The caller gave up every handle at the call, and the value dies
 // with the frame, so nothing written into it can outlive anything.
 //
-// A parameter whose type the bridge does not carry is treated as caller-owned, which keeps the
-// stricter answer for a leaf the seed did not reach.
+// A parameter the bridge cannot describe as a borrow or an owned value is treated as
+// caller-owned, the stricter answer. That covers a leaf the seed did not reach and an
+// UNANNOTATED parameter, whose recorded type is an inference variable this reads as a leaf
+// rather than following its bounds. So an unannotated owned parameter keeps reporting a store
+// into it, where the same parameter written `mut T` does not.
 func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
 		return false
@@ -708,8 +711,9 @@ func (c *checker) checkReturnEscape(retExpr ast.Expr, stmtRef liveness.StmtRef) 
 }
 
 // checkParamFieldStoreEscape handles a field store `recv.f = source`. Storing a value that
-// borrows a local into a parameter's field escapes, since the parameter's object outlives
-// the frame. A store into a local receiver does not escape and is not tracked.
+// borrows a local into a BORROW parameter's field escapes, since the object that parameter
+// names belongs to the caller and outlives the frame. A store into a receiver that dies with
+// the frame, a local or an owned parameter, does not escape and is not tracked here.
 func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef liveness.StmtRef) {
 	if c.fn == nil || c.fn.eagerBorrowGraph == nil {
 		return
@@ -722,10 +726,10 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef live
 }
 
 // recordFieldStoreEdges records a borrow edge for a field store `recv.f = source` into a
-// LOCAL receiver, rooted at recv's place extended by f. A store `b.peer = &mut d` records b →
-// d at [peer], so a later flow-out of b finds the borrow of d. The store into a local does
-// not escape until b itself flows out, unlike the store into a parameter's field, which
-// checkParamFieldStoreEscape reports at once. It is a strong update on the stored field's
+// receiver that dies with the frame, a local or an owned parameter, rooted at recv's place
+// extended by f. A store `b.peer = &mut d` records b → d at [peer], so a later flow-out of b
+// finds the borrow of d. Such a store does not escape until b itself flows out, unlike a store
+// into a BORROW parameter's field, which checkParamFieldStoreEscape reports at once. It is a strong update on the stored field's
 // subtree: it clears the [f] subtree before recording, so a repoint `b.peer = &mut e` after
 // `b.peer = &mut d` leaves only b → e at [peer] while a sibling edge b → x at [data] survives.
 // It then flushes the dirtied root into borrowGens at stmtRef.
@@ -746,6 +750,14 @@ func (c *checker) recordFieldStoreEdges(
 	c.clearEagerSubtree(rp.root, base)
 	c.recordBorrowSources(rp.root, base, source)
 	c.flushBorrowDirty(stmtRef)
+	// The receiver reaches the stored place from here on, so it holds a borrow of it that a
+	// second borrow or a read has to respect. This is the field-store twin of the loan
+	// recordCallStoreEdges derives from a call's store effect.
+	if borrow, ok := source.(*ast.BorrowExpr); ok {
+		if place, ok := loanPlace(borrow); ok {
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, stmtRef, borrow)
+		}
+	}
 }
 
 // collectBorrowedFrom adds to out every function-local the read place rooted at root, with
