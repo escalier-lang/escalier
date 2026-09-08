@@ -978,13 +978,17 @@ func (c *checker) lookupScope(module *Scope, decl ast.Decl) *Scope {
 	return module
 }
 
-// nonInterfaceTypeDecl returns the first declaration in decls that introduces a
-// type under a kind other than InterfaceDecl. Several interfaces of one name merge,
-// but an interface sharing its name with an alias, a class, or an enum does not.
+// nonInterfaceTypeDecl returns the first declaration in decls that is not an
+// InterfaceDecl. Several interfaces of one name merge, so a group of them is legal,
+// while anything else under the same type key gives that name two definitions.
+//
+// decls comes from a type key, so every declaration in it introduces a type. The
+// test is therefore what an interface is not, rather than a list of the kinds it
+// conflicts with: a declaration kind added later is caught without this being
+// revisited.
 func nonInterfaceTypeDecl(decls []ast.Decl) (ast.Decl, bool) {
 	for _, d := range decls {
-		switch d.(type) {
-		case *ast.TypeDecl, *ast.ClassDecl, *ast.EnumDecl:
+		if _, isInterface := d.(*ast.InterfaceDecl); !isInterface {
 			return d, true
 		}
 	}
