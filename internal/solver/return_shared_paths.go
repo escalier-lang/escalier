@@ -1,0 +1,275 @@
+package solver
+
+import (
+	"fmt"
+	"slices"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+)
+
+// Two paths out of one return. A returned value may reach a function-local more than once, and
+// when a write can go through one of those paths the caller ends up holding two disagreeing
+// views of one object. `return [a.peer, &mut b]` over `val a = {peer: &mut b}` hands out two
+// mutable handles to b.
+//
+// Two SHARED paths are fine, since two readers see the same value. What makes the pair a hazard
+// is that one of them can write.
+//
+// The borrow-edge graph cannot answer this on its own. addBorrowEdge keeps one edge per
+// (path, referent) pair, so the two borrows of b in that tuple collapse to a single edge and
+// the graph reads the same as a single path. The RETURN TYPE is what still distinguishes them,
+// because it carries one borrow position per path. So the count comes from the type and the
+// referent each position reaches comes from the graph.
+//
+// Pairing a position with an edge is exact only where a field path names it. An object's
+// properties each extend the path, so `{p: &mut b, q: &mut b}` gives two positions at two
+// paths, both resolving to b. A tuple's elements all sit at the container path, since placeSeg
+// has no tuple-index kind, so the pairing there is by count: two positions over one edge means
+// both reach that edge's referent.
+//
+// What this does NOT cover: a path group holding more positions than edges when several edges
+// share it. Which position reaches which referent is unknown there, so the group is skipped
+// rather than guessed at.
+
+// SharedReturnPathsError reports a returned value that reaches one local through two paths
+// where a write can go through at least one of them.
+type SharedReturnPathsError struct {
+	// LocalName is the local reached twice, for the message.
+	LocalName string
+	// node is the returned expression, which is where both paths leave together.
+	node ast.Node
+}
+
+func (*SharedReturnPathsError) isSolverError()        {}
+func (e *SharedReturnPathsError) Span() ast.Span      { return e.node.Span() }
+func (e *SharedReturnPathsError) Related() []ast.Span { return nil }
+func (e *SharedReturnPathsError) Message() string {
+	return fmt.Sprintf("returned value reaches '%s' through two paths while one of them can write", e.LocalName)
+}
+
+// borrowPosition is one borrow the return type carries: the field path within the carrier where
+// it sits, and whether a write can go through it.
+type borrowPosition struct {
+	path []placeSeg
+	mut  bool
+}
+
+// reportSharedReturnPaths reports each local the returned value reaches more than once with a
+// write available through one of those paths. root is the carrier the graph's edges hang off,
+// and blame is the returned expression both paths leave through.
+func (c *checker) reportSharedReturnPaths(
+	ret soltype.Type,
+	root liveness.VarID,
+	graph map[liveness.VarID][]fieldBorrow,
+	blame ast.Expr,
+) {
+	reaches := map[liveness.VarID]int{}
+	writable := map[liveness.VarID]bool{}
+	// A literal carrier is counted from its own elements, which name their referents whether or
+	// not the evaluator has settled their types. A place carrier has no elements to walk, so
+	// its count comes from the type below.
+	if c.countLiteralPaths(blame, graph, reaches, writable) {
+		c.reportReachedTwice(reaches, writable, blame)
+		return
+	}
+	var positions []borrowPosition
+	collectBorrowPositions(ret, nil, &positions)
+	if len(positions) < 2 {
+		return
+	}
+	for _, group := range groupByPath(positions) {
+		edges := referentsAt(graph, root, group.path)
+		// A group with no edge names no tracked local, a parameter borrow among them.
+		if len(edges) == 0 {
+			continue
+		}
+		if len(edges) > 1 && len(group.positions) > len(edges) {
+			// Which position reaches which referent is unknown, so this group is left alone.
+			continue
+		}
+		anyMut := slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return p.mut })
+		if len(edges) == 1 {
+			// Every position at this path reaches the one referent the path holds.
+			reaches[edges[0]] += len(group.positions)
+			writable[edges[0]] = writable[edges[0]] || anyMut
+			continue
+		}
+		// The positions pair off one to one with the edges, so each referent is reached once.
+		for _, referent := range edges {
+			reaches[referent]++
+			writable[referent] = writable[referent] || anyMut
+		}
+	}
+	c.reportReachedTwice(reaches, writable, blame)
+}
+
+// reportReachedTwice reports each local reached at least twice with a write available through
+// one of those paths, in VarID order so a value reached from several places reads the same way
+// every run.
+func (c *checker) reportReachedTwice(
+	reaches map[liveness.VarID]int,
+	writable map[liveness.VarID]bool,
+	blame ast.Expr,
+) {
+	shared := make([]liveness.VarID, 0, len(reaches))
+	for referent, n := range reaches {
+		if n >= 2 && writable[referent] {
+			shared = append(shared, referent)
+		}
+	}
+	slices.Sort(shared)
+	if len(shared) > 0 && c.fn.sharedPathLocals == nil {
+		c.fn.sharedPathLocals = set.NewSet[liveness.VarID]()
+	}
+	for _, referent := range shared {
+		c.fn.sharedPathLocals.Add(referent)
+		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), node: blame})
+	}
+}
+
+// countLiteralPaths counts the locals a returned object or tuple literal reaches, one element at
+// a time. ok is false for any other carrier, which the type walk counts instead.
+//
+// Each element names its referents directly, so this does not depend on the evaluator having
+// settled the element's type. That matters because a field read such as `a.peer` records its
+// type as a variable the evaluator settles after this pass runs, which leaves the type walk
+// seeing one borrow where the literal has two.
+//
+// An element that is an explicit `&mut` marks its referents writable. Any other element counts
+// toward the reach without claiming a write, so a pair of reads is not reported and a pair whose
+// writability is unknown is reported only when the other path is a written `&mut`.
+func (c *checker) countLiteralPaths(
+	e ast.Expr,
+	graph map[liveness.VarID][]fieldBorrow,
+	reaches map[liveness.VarID]int,
+	writable map[liveness.VarID]bool,
+) bool {
+	var elems []ast.Expr
+	switch e := e.(type) {
+	case *ast.TupleExpr:
+		elems = e.Elems
+	case *ast.ObjectExpr:
+		for _, elem := range e.Elems {
+			if prop, isProp := elem.(*ast.PropertyExpr); isProp && prop.Value != nil {
+				elems = append(elems, prop.Value)
+			}
+		}
+	default:
+		return false
+	}
+	for _, elem := range elems {
+		mut := false
+		if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
+			mut = borrow.Mut
+		}
+		for _, referent := range c.elementReferents(elem, graph) {
+			reaches[referent]++
+			writable[referent] = writable[referent] || mut
+		}
+	}
+	return true
+}
+
+// elementReferents returns the locals one element of a returned literal reaches.
+//
+// A `&mut b` element reaches b outright, and whatever b itself borrows beyond that. A plain
+// place reaches only what its edges lead to: `a.peer` over `val a = {peer: &mut b}` reaches b,
+// not a. Reading a as the referent would miss the pair in `[a.peer, &mut b]`, where both
+// elements lead to the same b.
+func (c *checker) elementReferents(
+	elem ast.Expr,
+	graph map[liveness.VarID][]fieldBorrow,
+) []liveness.VarID {
+	out := set.NewSet[liveness.VarID]()
+	seen := set.NewSet[liveness.VarID]()
+	if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
+		referent, ok := c.isLocalReferent(borrow.Arg)
+		if !ok {
+			return nil
+		}
+		out.Add(referent)
+		c.collectBorrowedFrom(referent, nil, out, seen, graph)
+	} else {
+		pl, ok := exprPlace(elem)
+		if !ok || pl.root <= 0 {
+			return nil
+		}
+		c.collectBorrowedFrom(pl.root, pl.path, out, seen, graph)
+	}
+	ids := out.ToSlice()
+	slices.Sort(ids)
+	return ids
+}
+
+// pathGroup is the borrow positions sharing one field path.
+type pathGroup struct {
+	path      []placeSeg
+	positions []borrowPosition
+}
+
+// groupByPath gathers the positions that sit at the same field path, in first-seen order so the
+// grouping does not depend on map iteration.
+func groupByPath(positions []borrowPosition) []pathGroup {
+	var groups []pathGroup
+	for _, p := range positions {
+		i := slices.IndexFunc(groups, func(g pathGroup) bool { return slices.Equal(g.path, p.path) })
+		if i < 0 {
+			groups = append(groups, pathGroup{path: p.path, positions: []borrowPosition{p}})
+			continue
+		}
+		groups[i].positions = append(groups[i].positions, p)
+	}
+	return groups
+}
+
+// referentsAt returns the distinct locals the carrier's edges at path reach. A borrow the graph
+// records twice at one path is one edge, since addBorrowEdge keeps one per (path, referent).
+func referentsAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path []placeSeg) []liveness.VarID {
+	var out []liveness.VarID
+	for _, e := range graph[root] {
+		if slices.Equal(e.path, path) && !slices.Contains(out, e.referent) {
+			out = append(out, e.referent)
+		}
+	}
+	return out
+}
+
+// collectBorrowPositions gathers every borrow the type carries, with the field path it sits at.
+// It mirrors stripBorrowTree's descent so the paths it produces match the ones the graph's edges
+// are keyed on.
+//
+//   - A borrow carrying a lifetime is a position and is not descended into. What it points at
+//     belongs to the referent, not to this carrier.
+//   - An owned-mutable cell descends at the same path, since the cell names no field.
+//   - An object descends each property at the path extended by its name.
+//   - A tuple descends each element at the same path, since a tuple index contributes no
+//     field segment.
+func collectBorrowPositions(t soltype.Type, path []placeSeg, out *[]borrowPosition) {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		if t.Lt != nil {
+			*out = append(*out, borrowPosition{path: path, mut: t.Mut})
+			return
+		}
+		collectBorrowPositions(t.Inner, path, out)
+	case *soltype.ObjectType:
+		if soltype.HasResidualElem(t.Elems) {
+			return
+		}
+		for _, e := range t.Elems {
+			p := soltype.AsProperty(e)
+			propPath := path
+			if isDotPlaceSegment(p.Name) {
+				propPath = appendSeg(path, p.Name)
+			}
+			collectBorrowPositions(p.Type, propPath, out)
+		}
+	case *soltype.TupleType:
+		for _, elem := range t.Elems {
+			collectBorrowPositions(elem, path, out)
+		}
+	}
+}

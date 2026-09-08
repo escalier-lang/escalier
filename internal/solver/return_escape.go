@@ -29,8 +29,9 @@ import (
 // leaves the frame running, so a bare borrow flowing out either of those still has a second
 // path through the local it names, and stays an escape. See componentMoveCovers.
 //
-// Two borrows of one local can leave together in a single returned value, which no rule here
-// reports. #1263 covers that.
+// A returned value that reaches one local twice hands the caller two views of it. That is a
+// hazard once a write can go through either, and reportSharedReturnPaths reports it. See
+// return_shared_paths.go.
 //
 // A field-granular borrow-edge graph drives the check, over the move engine's borrow
 // tracking rather than the lifetime sort. recordBorrowEdges records which locals each
@@ -162,12 +163,17 @@ func (c *checker) resolveComponentEscapes(
 				}
 				c.recordMove(id, es.expr, es.stmtRef)
 			}
-			// When the moved graph is a tree — every borrowed local reached exactly once with
-			// no cycle — the return value is the sole owner of each node, so owning them in the
-			// type is honest. The rewrites are collected here and committed together, since one
-			// return left borrowed holds back the rest.
-			if idx, owned, ok := c.ownedReturnType(es.expr, fieldBorrowGraph); ok {
-				ownedReturns[idx] = owned
+			if idx, graph, root, ok := c.returnCarrier(es.expr, fieldBorrowGraph); ok {
+				// A returned value that reaches one local twice hands the caller two views of it,
+				// which is a hazard as soon as a write can go through either.
+				c.reportSharedReturnPaths(c.fn.returns[idx], root, graph, es.expr)
+				// When the moved graph is a tree — every borrowed local reached exactly once with
+				// no cycle — the return value is the sole owner of each node, so owning them in
+				// the type is honest. The rewrites are collected here and committed together,
+				// since one return left borrowed holds back the rest.
+				if owned, ok := c.ownedReturnType(es.expr, idx, graph, root); ok {
+					ownedReturns[idx] = owned
+				}
 			}
 			consumed = true
 			continue

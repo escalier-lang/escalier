@@ -436,6 +436,10 @@ type funcCtx struct {
 	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
 	// borrow rather than being a second path to the data, so the use check skips it.
 	loanReads set.Set[ast.Node]
+	// sharedPathLocals holds the locals a return was reported for reaching twice. The use check
+	// skips them, so one value with two escaping paths yields the diagnostic that names the
+	// return rather than a second one naming a read of the same local.
+	sharedPathLocals set.Set[liveness.VarID]
 	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
 	// a read can name the loans that existed when it was walked without depending on their
 	// positions, which dropLoansHeldBy shifts.
