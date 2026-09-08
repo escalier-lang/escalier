@@ -89,3 +89,56 @@ func TestQualifiedTypeAnnotationReportsAnUnknownMember(t *testing.T) {
 	`)
 	require.Equal(t, []string{"cannot find type `geo.Nope`"}, errorMessagesOf(errs))
 }
+
+// The walk gives up at the first segment that names no namespace, which leaves the
+// flat lookups to try the whole dotted string as one key. Nothing binds that key
+// either, so each case reports the name as written.
+//
+// The two shapes fail at different points: a head that names nothing never enters
+// the walk, and a middle segment that names no nested namespace stops it partway.
+func TestQualifiedTypeAnnotationReportsAnUnknownSegment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "UnknownHead",
+			src:  "val n: nope.Num = 3",
+			want: "cannot find type `nope.Num`",
+		},
+		{
+			name: "UnknownNestedSegment",
+			src: `
+				namespace geo {
+					type Num = number
+				}
+				val n: geo.nope.Num = 3
+			`,
+			want: "cannot find type `geo.nope.Num`",
+		},
+		{
+			// The head names a namespace and the middle segment names a nested one, so
+			// the walk reaches the last segment and reports only that.
+			name: "NestedSegmentsResolve",
+			src: `
+				namespace geo {
+					namespace inner {
+						type Num = number
+					}
+				}
+				val n: geo.inner.Nope = 3
+			`,
+			want: "cannot find type `geo.inner.Nope`",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, []string{tt.want}, errorMessagesOf(errs))
+		})
+	}
+}
