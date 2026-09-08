@@ -52,7 +52,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build<'x>(h: mut Holder<'x>) -> undefined {
+				fn build<'x>(h: &mut Holder<'x>) -> undefined {
 					val mut b = {value: 2}
 					h.put(&mut b)
 				}
@@ -60,7 +60,7 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 			want: []string{"9:12-9:18: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn <'a>(h: mut Holder<'a>) -> undefined",
+				"build":  "fn <'a>(h: &mut Holder<'a>) -> undefined",
 			},
 		},
 		// A shared receiver takes no write, so a lifetime it shares with the argument
