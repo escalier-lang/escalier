@@ -22,10 +22,10 @@ func TestQualifiedTypeAnnotationResolvesThroughANamespace(t *testing.T) {
 	require.Equal(t, "Num", values["n"])
 }
 
-// A `namespace` block keeps its own name against an import of the same name. The
-// block's members hold flat qualified keys, so they answer ahead of the namespace
-// walk an import binding is reached through.
-func TestLocalNamespaceBlockOutranksASameNamedImport(t *testing.T) {
+// A `namespace` block whose name a file also imports a package under is a
+// collision, since `inner.Widget` would stand for two different namespaces.
+// Neither is chosen; the source has to give one of them another name.
+func TestNamespaceCollidingWithAnImportReports(t *testing.T) {
 	t.Parallel()
 
 	res := InferModuleWithSource(
@@ -34,7 +34,34 @@ func TestLocalNamespaceBlockOutranksASameNamedImport(t *testing.T) {
 			namespace inner {
 				type Widget = string
 			}
-			val w: inner.Widget = "hi"
+		`),
+		sourceOf(t, map[string]string{
+			"inner": `
+				export class Widget {
+					fromInner: number,
+				}
+			`,
+		}),
+	)
+	require.Equal(t, []string{
+		"namespace inner has the name an import already binds; " +
+			"rename the block or write `as` on the import",
+	}, errorMessagesOf(res.Errors))
+}
+
+// Writing `as` on the import settles the collision, and each namespace is then
+// reachable under its own name.
+func TestAnAliasedImportClearsTheCollision(t *testing.T) {
+	t.Parallel()
+
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "inner" as pkg
+			namespace inner {
+				type Widget = string
+			}
+			val local: inner.Widget = "hi"
+			val imported = pkg.Widget(1)
 		`),
 		sourceOf(t, map[string]string{
 			"inner": `
@@ -45,7 +72,8 @@ func TestLocalNamespaceBlockOutranksASameNamedImport(t *testing.T) {
 		}),
 	)
 	require.Empty(t, errorMessagesOf(res.Errors))
-	require.Equal(t, "Widget", soltype.Print(inferredValueType(t, res.Scope, "w")))
+	require.Equal(t, "Widget", soltype.Print(inferredValueType(t, res.Scope, "local")))
+	require.Equal(t, "Widget", soltype.Print(inferredValueType(t, res.Scope, "imported")))
 }
 
 // A member the namespace does not declare is reported against the qualified name
