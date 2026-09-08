@@ -95,6 +95,27 @@ func TestArrayRestParamSurvivedTheRetirement(t *testing.T) {
 	require.Equal(t, []string{`cannot constrain "a" <: number`}, errorMessagesOf(errs))
 }
 
+// The handle refuses to load inside a speculation trial, since a discard truncates
+// every bound the load journaled. A written `Array` settles the name before the
+// reference resolves, so an annotation reached only through a trial still resolves —
+// here the sole `Array` in the module sits in a lambda an overload call speculates on.
+func TestArrayResolvesFromInsideAnOverloadTrial(t *testing.T) {
+	t.Parallel()
+
+	c := newTestChecker()
+	module := parseModuleFiles(t, map[string]string{
+		"input.esc": `
+			declare fn pick(f: fn (xs: Array<number>) -> number) -> number
+			declare fn pick(f: fn (s: string) -> number) -> number
+			val r = pick(fn (xs: Array<number>) { return xs.length })
+		`,
+	})
+	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+
+	require.Empty(t, errorMessagesOf(c.errs))
+	require.NotEmpty(t, c.ctx.arrayClass)
+}
+
 // Without a stdlib supplying `Array`, the name is simply unknown. Nothing claims an
 // arity for a declaration nothing provides, and no handle is cached.
 func TestArrayIsUnknownWithoutAStdlib(t *testing.T) {
