@@ -12,6 +12,11 @@ import (
 // so the members are inferred and bound by the ordinary component walk. What is
 // left is collecting them under one Namespace, which is what makes `Foo.member`
 // resolve rather than reading as an unknown identifier.
+//
+// Only a written block reaches this file. A namespace whose prefix comes from a
+// subdirectory of `lib/` gets no shell, so nothing binds the prefix and a sibling
+// file cannot name it. #1494 covers extending the pre-bind pass to every non-empty
+// prefix in module.Namespaces rather than only the ones a NamespaceDecl introduces.
 
 // preBindNamespaceDecls binds one empty Namespace per `namespace` block before the
 // component walk, and returns each block paired with the object to fill.
@@ -112,6 +117,10 @@ func (c *checker) preBindNestedBlocks(qname string, decl *ast.NamespaceDecl, han
 // refreshNamespaces fills every namespace pre-bound for the module under
 // inference. It runs whenever new bindings have landed, so a member reached
 // through `Foo.member` sees what the walk has bound so far.
+//
+// Re-scanning every shell per component costs O(members) each time, which is
+// quadratic over a module of one component per member. #1493 replaces it with a
+// prefix-to-shell index the walk pushes each binding into as it defines it.
 func (c *checker) refreshNamespaces(scope *Scope) {
 	if len(c.nsShells) == 0 {
 		return
