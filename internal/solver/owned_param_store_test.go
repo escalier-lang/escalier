@@ -104,6 +104,49 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: []string{"13:14-13:15: use of moved value 'b'"},
 		},
+		// An owned parameter takes borrow edges like a local, so an argument that reaches a
+		// local only through those edges still carries it into a caller-owned target. Here
+		// p.peer reaches b, and out is a borrow parameter, so storing into it escapes.
+		"AnOwnedParameterCarriesItsEdgesIntoAStore": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut {slot: &'a mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				fn f(p: mut {peer: &mut {value: number}}, out: &mut {slot: &mut {value: number}}) -> undefined {
+					val mut b = {value: 0}
+					p.peer = &mut b
+					store(out, p.peer)
+				}
+			`,
+			want: []string{"9:17-9:23: borrowed value 'b' does not live long enough to escape the function"},
+		},
+		// A field store creates the same borrow a call's store effect does, so reading the stored
+		// local while the receiver is still read reports the same conflict.
+		"ReadingAfterAFieldStoreConflicts": {
+			src: `
+				declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}}) -> undefined
+				fn f(p: mut {peer: &mut {value: number}}) -> undefined {
+					val mut b = {value: 0}
+					p.peer = &mut b
+					val y = b
+					touch(&mut p)
+				}
+			`,
+			want: []string{"6:14-6:15: cannot use 'b' while it is borrowed as mutable"},
+		},
+		// Nothing reads the receiver after the field store, so its borrow of b is dead and b is
+		// reachable one way again.
+		"FieldStoreWithADeadReceiverOk": {
+			src: `
+				fn f(p: mut {peer: &mut {value: number}}) -> undefined {
+					val mut b = {value: 0}
+					p.peer = &mut b
+					val y = b
+				}
+			`,
+			want: nil,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
