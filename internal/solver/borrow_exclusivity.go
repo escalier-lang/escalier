@@ -136,8 +136,12 @@ type loan struct {
 	// is not yet reaching data through it.
 	fromStore bool
 	// seq orders this loan against the reads walked around it. It counts up and is never
-	// reused, so it survives dropLoansHeldBy compacting the slice, where a position would not.
+	// reused, so it survives the loan list changing shape, where a position would not.
 	seq int
+	// endSeq is the sequence at which a reassignment of the holder ended this loan, and 0 while
+	// it still holds. The loan stays in the list so a read walked BEFORE that point is still
+	// weighed against it; erasing it would let a later reassignment silence an earlier read.
+	endSeq int
 }
 
 // nextLoanSeq returns the sequence number the next loan takes. It counts up across the whole
@@ -232,6 +236,10 @@ func (c *checker) liveAt(l loan, ref liveness.StmtRef) bool {
 // statement.
 func (c *checker) checkAgainstHeldLoans(fresh loan) {
 	for _, held := range c.fn.loans {
+		// A loan the holder's reassignment ended reaches nothing from here on.
+		if held.endSeq != 0 {
+			continue
+		}
 		if !c.liveAt(held, fresh.ref) {
 			continue
 		}
@@ -273,16 +281,16 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	c.fn.loans = append(c.fn.loans, fresh)
 }
 
-// dropLoansHeldBy removes the loans bound to holder, which a reassignment of that binding has
-// made unreachable.
+// dropLoansHeldBy ends the loans bound to holder, which a reassignment of that binding has made
+// unreachable from here on. They stay in the list carrying the sequence they ended at, so a read
+// walked before the reassignment is still weighed against them.
 func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
-	kept := c.fn.loans[:0]
-	for _, l := range c.fn.loans {
-		if l.holder != holder {
-			kept = append(kept, l)
+	ended := c.nextLoanSeq()
+	for i := range c.fn.loans {
+		if c.fn.loans[i].holder == holder && c.fn.loans[i].endSeq == 0 {
+			c.fn.loans[i].endSeq = ended
 		}
 	}
-	c.fn.loans = kept
 }
 
 // recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
@@ -349,6 +357,12 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			// the source has not taken hold at the read, and on the other arm of a branch it
 			// never does.
 			if l.seq >= u.loanSeqAt {
+				continue
+			}
+			// A loan ended before this read was walked reaches nothing at it. One ended after it
+			// still does, which is what keeps a later reassignment from silencing an earlier
+			// read.
+			if l.endSeq != 0 && l.endSeq < u.loanSeqAt {
 				continue
 			}
 			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {

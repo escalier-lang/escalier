@@ -71,8 +71,7 @@ func (c *checker) reportSharedReturnPaths(
 	// A literal carrier is counted from its own elements, which name their referents whether or
 	// not the evaluator has settled their types. A place carrier has no elements to walk, so
 	// its count comes from the type below.
-	if c.countLiteralPaths(blame, graph, reaches, writable) {
-		c.reportReachedTwice(reaches, writable, blame)
+	if c.reportLiteralSharedPaths(blame, graph) {
 		return
 	}
 	var positions []borrowPosition
@@ -121,11 +120,8 @@ func (c *checker) reportReachedTwice(
 		}
 	}
 	slices.Sort(shared)
-	if len(shared) > 0 && c.fn.sharedPathLocals == nil {
-		c.fn.sharedPathLocals = set.NewSet[liveness.VarID]()
-	}
 	for _, referent := range shared {
-		c.fn.sharedPathLocals.Add(referent)
+		c.noteSharedPathLocal(referent)
 		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), node: blame})
 	}
 }
@@ -141,11 +137,9 @@ func (c *checker) reportReachedTwice(
 // An element that is an explicit `&mut` marks its referents writable. Any other element counts
 // toward the reach without claiming a write, so a pair of reads is not reported and a pair whose
 // writability is unknown is reported only when the other path is a written `&mut`.
-func (c *checker) countLiteralPaths(
+func (c *checker) reportLiteralSharedPaths(
 	e ast.Expr,
 	graph map[liveness.VarID][]fieldBorrow,
-	reaches map[liveness.VarID]int,
-	writable map[liveness.VarID]bool,
 ) bool {
 	var elems []ast.Expr
 	switch e := e.(type) {
@@ -160,17 +154,50 @@ func (c *checker) countLiteralPaths(
 	default:
 		return false
 	}
+	// One reach per element, keeping the field path so two disjoint fields of one local stay
+	// apart. `[&mut b.x, &mut b.y]` names b twice and reaches nothing twice.
+	type reach struct {
+		place movePlace
+		mut   bool
+	}
+	var reaches []reach
 	for _, elem := range elems {
 		mut := false
 		if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
 			mut = borrow.Mut
 		}
-		for _, referent := range c.elementReferents(elem, graph) {
-			reaches[referent]++
-			writable[referent] = writable[referent] || mut
+		for _, pl := range c.elementReferents(elem, graph) {
+			reaches = append(reaches, reach{place: pl, mut: mut})
+		}
+	}
+	seen := set.NewSet[liveness.VarID]()
+	for i := range reaches {
+		for j := i + 1; j < len(reaches); j++ {
+			if !placesOverlap(reaches[i].place, reaches[j].place) {
+				continue
+			}
+			if !reaches[i].mut && !reaches[j].mut {
+				continue
+			}
+			root := reaches[i].place.root
+			if seen.Contains(root) {
+				continue
+			}
+			seen.Add(root)
+			c.noteSharedPathLocal(root)
+			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), node: e})
 		}
 	}
 	return true
+}
+
+// noteSharedPathLocal records that a return was reported for reaching this local twice, so the
+// use check does not add a second diagnostic naming a read of the same value.
+func (c *checker) noteSharedPathLocal(referent liveness.VarID) {
+	if c.fn.sharedPathLocals == nil {
+		c.fn.sharedPathLocals = set.NewSet[liveness.VarID]()
+	}
+	c.fn.sharedPathLocals.Add(referent)
 }
 
 // elementReferents returns the locals one element of a returned literal reaches.
@@ -182,26 +209,35 @@ func (c *checker) countLiteralPaths(
 func (c *checker) elementReferents(
 	elem ast.Expr,
 	graph map[liveness.VarID][]fieldBorrow,
-) []liveness.VarID {
-	out := set.NewSet[liveness.VarID]()
-	seen := set.NewSet[liveness.VarID]()
+) []movePlace {
+	var out []movePlace
+	reached := set.NewSet[liveness.VarID]()
 	if borrow, isBorrow := elem.(*ast.BorrowExpr); isBorrow {
-		referent, ok := c.isLocalReferent(borrow.Arg)
-		if !ok {
+		// The borrow names the place outright, field path and all, so `&mut b.x` reaches b.x.
+		if _, ok := c.isLocalReferent(borrow.Arg); !ok {
 			return nil
 		}
-		out.Add(referent)
-		c.collectBorrowedFrom(referent, nil, out, seen, graph)
+		pl, ok := exprPlace(borrow.Arg)
+		if !ok || pl.root <= 0 {
+			return nil
+		}
+		out = append(out, pl)
+		c.collectBorrowedFrom(pl.root, pl.path, reached, set.NewSet[liveness.VarID](), graph)
 	} else {
 		pl, ok := exprPlace(elem)
 		if !ok || pl.root <= 0 {
 			return nil
 		}
-		c.collectBorrowedFrom(pl.root, pl.path, out, seen, graph)
+		c.collectBorrowedFrom(pl.root, pl.path, reached, set.NewSet[liveness.VarID](), graph)
 	}
-	ids := out.ToSlice()
+	// An edge names the whole local it reaches, since fieldBorrow records no path within the
+	// referent. Those come back as whole-binding places.
+	ids := reached.ToSlice()
 	slices.Sort(ids)
-	return ids
+	for _, id := range ids {
+		out = append(out, movePlace{root: id})
+	}
+	return out
 }
 
 // pathGroup is the borrow positions sharing one field path.
@@ -260,12 +296,18 @@ func collectBorrowPositions(t soltype.Type, path []placeSeg, out *[]borrowPositi
 			return
 		}
 		for _, e := range t.Elems {
-			p := soltype.AsProperty(e)
-			propPath := path
-			if isDotPlaceSegment(p.Name) {
-				propPath = appendSeg(path, p.Name)
+			// Only a plain property names a field path a borrow edge can be keyed on. A getter,
+			// setter, method, or index signature carries no such path, and asserting one here
+			// would panic on the element kind rather than skipping it.
+			prop, isProp := e.(*soltype.PropertyElem)
+			if !isProp {
+				continue
 			}
-			collectBorrowPositions(p.Type, propPath, out)
+			propPath := path
+			if isDotPlaceSegment(prop.Name) {
+				propPath = appendSeg(path, prop.Name)
+			}
+			collectBorrowPositions(prop.Type, propPath, out)
 		}
 	case *soltype.TupleType:
 		for _, elem := range t.Elems {

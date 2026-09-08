@@ -116,6 +116,17 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: []string{"10:13-10:29: returned value reaches 'b' through two paths while one of them can write"},
 		},
+		// Two DISJOINT fields of one local are two objects, so neither path can observe the
+		// other's write. The count keeps the field path for exactly this.
+		"DisjointFieldsOfOneLocalOk": {
+			src: `
+				fn build() -> [&mut {v: number}, &mut {v: number}] {
+					val mut b = {x: {v: 1}, y: {v: 2}}
+					return [&mut b.x, &mut b.y]
+				}
+			`,
+			want: nil,
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
