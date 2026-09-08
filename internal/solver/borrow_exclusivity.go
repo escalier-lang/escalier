@@ -135,6 +135,16 @@ type loan struct {
 	// writes. It takes hold only once that call returns, so a read in the call's own statement
 	// is not yet reaching data through it.
 	fromStore bool
+	// seq orders this loan against the reads walked around it. It counts up and is never
+	// reused, so it survives dropLoansHeldBy compacting the slice, where a position would not.
+	seq int
+}
+
+// nextLoanSeq returns the sequence number the next loan takes. It counts up across the whole
+// body, so a number handed out once is never handed out again.
+func (c *checker) nextLoanSeq() int {
+	c.fn.loanSeq++
+	return c.fn.loanSeq
 }
 
 // noteLoanRead records that e is the read a borrow performs to take its own loan. Reading a
@@ -257,6 +267,7 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 		holder: liveness.VarID(holder),
 		ref:    ref,
 		node:   borrow,
+		seq:    c.nextLoanSeq(),
 	}
 	c.checkAgainstHeldLoans(fresh)
 	c.fn.loans = append(c.fn.loans, fresh)
@@ -289,7 +300,7 @@ func (c *checker) recordStoreEdgeLoan(place movePlace, mut bool, target liveness
 	if c.fn == nil || target <= 0 || place.root <= 0 {
 		return
 	}
-	fresh := loan{place: place, mut: mut, holder: target, ref: ref, node: blame, fromStore: true}
+	fresh := loan{place: place, mut: mut, holder: target, ref: ref, node: blame, fromStore: true, seq: c.nextLoanSeq()}
 	// One signature can write an argument into several positions of the target, so the same
 	// loan reaches here once per position. Recording it once keeps a later conflict to one
 	// diagnostic instead of one per position.
@@ -327,9 +338,13 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 		if c.fn.loanReads.Contains(u.node) || reported.Contains(u.node) {
 			continue
 		}
-		// Only the loans that existed when this read was walked. A borrow written later in the
-		// source has not taken hold at the read, and on the other arm of a branch it never does.
-		for _, l := range c.fn.loans[:min(u.loansAt, len(c.fn.loans))] {
+		for _, l := range c.fn.loans {
+			// Only the loans that existed when this read was walked. A borrow written later in
+			// the source has not taken hold at the read, and on the other arm of a branch it
+			// never does.
+			if l.seq >= u.loanSeqAt {
+				continue
+			}
 			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
 				continue
 			}

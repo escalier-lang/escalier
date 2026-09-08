@@ -100,10 +100,10 @@ type moveUse struct {
 	place movePlace
 	ref   liveness.StmtRef
 	node  ast.Node
-	// loansAt is how many loans had been recorded when this read was walked. The borrow
-	// exclusivity check weighs the read against those loans alone, so a borrow written later
-	// in the source, on the other arm of an `if` among others, does not reach back to it.
-	loansAt int
+	// loanSeqAt is the sequence the next loan would have taken when this read was walked. The
+	// borrow exclusivity check weighs the read against the loans below it, so a borrow written
+	// later in the source, on the other arm of an `if` among others, does not reach back to it.
+	loanSeqAt int
 }
 
 // isBorrowType reports whether t is a borrow — a RefType carrying a lifetime.
@@ -376,7 +376,7 @@ func (c *checker) recordUse(e *ast.IdentExpr, t soltype.Type) {
 		return
 	}
 	p := movePlace{root: liveness.VarID(e.VarID)}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loansAt: len(c.fn.loans)})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 }
 
 // recordMemberUse records a read of a field place so the use-after-move scan can
@@ -397,7 +397,7 @@ func (c *checker) recordMemberUse(e ast.Expr) {
 	if !ok {
 		return
 	}
-	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loansAt: len(c.fn.loans)})
+	c.fn.useSites = append(c.fn.useSites, moveUse{place: p, ref: ref, node: e, loanSeqAt: c.fn.loanSeq + 1})
 }
 
 // consumeOwned records a move of the owned place the source expression names, at the
