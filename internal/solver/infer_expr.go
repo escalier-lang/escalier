@@ -1783,14 +1783,16 @@ func (c *checker) recordCallArgEffects(
 		return
 	}
 	c.consumeCallArgs(e, fn, consumeRef)
+	// Every argument of a call is live at once, so two that borrow overlapping data break
+	// exclusivity when the two parameters disagree about whether the data can change. This runs
+	// before the store edges are recorded, so an argument is compared against the loans that
+	// existed before the call rather than against the one its own store creates.
+	c.checkCallBorrowExclusivity(e, fn, consumeRef)
 	// A borrow argument the signature stores into another argument, or into a method's
 	// receiver, aliases the two for as long as the target lives. Record that edge here rather
 	// than leaving the alias invisible to the escape check and the component move.
 	recv, self := c.calleeReceiver(e.Callee)
 	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
-	// Every argument of a call is live at once, so two that borrow overlapping data break
-	// exclusivity when the two parameters disagree about whether the data can change.
-	c.checkCallBorrowExclusivity(e, fn, consumeRef)
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
