@@ -436,6 +436,10 @@ type funcCtx struct {
 	// loanReads holds the expressions a borrow reads to take its loan. That read creates the
 	// borrow rather than being a second path to the data, so the use check skips it.
 	loanReads set.Set[ast.Node]
+	// loanSeq is the last sequence number handed to a loan. Each loan takes the next one, so
+	// a read can name the loans that existed when it was walked without depending on their
+	// positions, which dropLoansHeldBy shifts.
+	loanSeq int
 	// varIDTypes maps each tracked variable's VarID to its soltype. It is the bridge
 	// the transition checker uses to query the lifetime sort for a `'static` escape in
 	// M4 G2. It replaces the dropped HasStatic{Mut,Imm}Alias bits. A value whose borrow

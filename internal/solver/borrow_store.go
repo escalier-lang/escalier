@@ -550,17 +550,26 @@ func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
 }
 
 // storeSourceMut reports whether a write can go through what the store puts in the target. It
-// reads the SOURCE parameter, since that is the view the target ends up holding. A signature
+// reads the SOURCE position, since that is the view the target ends up holding. A signature
 // storing a `&'a B` leaves the target able to read the item and not to write it, even though
 // the target itself is a mutable borrow.
 func storeSourceMut(fn *soltype.FuncType, self *soltype.FuncParam, arg int) bool {
-	param := self
-	if arg != selfIndex {
-		if arg < 0 || arg >= len(fn.Params) {
+	if arg == selfIndex {
+		// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
+		// owned-mutable parameter takes. The lifetime test that rules a parameter out does not
+		// apply here, since the receiver is borrowed for the call rather than moved. This is
+		// the source-side twin of the test callStoreEdges makes when it classifies the
+		// receiver as a target.
+		if self == nil {
 			return false
 		}
-		param = fn.Params[arg]
+		ref, isRef := self.Type.(*soltype.RefType)
+		return isRef && ref.Mut
 	}
+	if arg < 0 || arg >= len(fn.Params) {
+		return false
+	}
+	param := fn.Params[arg]
 	if param == nil {
 		return false
 	}
