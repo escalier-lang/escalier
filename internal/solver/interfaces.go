@@ -212,19 +212,3 @@ func (e *InterfaceTypeParamMismatchError) Message() string {
 func (e *InterfaceTypeParamMismatchError) Span() ast.Span      { return e.span }
 func (e *InterfaceTypeParamMismatchError) Related() []ast.Span { return nil }
 func (e *InterfaceTypeParamMismatchError) isSolverError()      {}
-
-// InterfaceExtendsCycleError reports an `extends` target that is part of the same
-// recursive group as the interface extending it. Flattening the parent's members
-// requires those members, which a cycle never finishes producing.
-type InterfaceExtendsCycleError struct {
-	// Name is the target as written, rendered.
-	Name string
-	span ast.Span
-}
-
-func (e *InterfaceExtendsCycleError) Message() string {
-	return "an interface cannot extend " + e.Name + ", which is part of the same recursive group"
-}
-func (e *InterfaceExtendsCycleError) Span() ast.Span      { return e.span }
-func (e *InterfaceExtendsCycleError) Related() []ast.Span { return nil }
-func (e *InterfaceExtendsCycleError) isSolverError()      {}
