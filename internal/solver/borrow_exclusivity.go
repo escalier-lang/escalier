@@ -5,6 +5,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/liveness"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -98,6 +99,21 @@ func (e *BorrowAliasError) Message() string {
 	return fmt.Sprintf("cannot borrow '%s' as immutable while %s borrowed as mutable", e.Place, held)
 }
 
+// BorrowedValueUseError reports a read of data a live borrow can write through.
+type BorrowedValueUseError struct {
+	// Place names the data read, `x` for a whole binding and `x.a` for a field.
+	Place  string
+	use    ast.Node
+	borrow ast.Span
+}
+
+func (*BorrowedValueUseError) isSolverError()        {}
+func (e *BorrowedValueUseError) Span() ast.Span      { return e.use.Span() }
+func (e *BorrowedValueUseError) Related() []ast.Span { return []ast.Span{e.borrow} }
+func (e *BorrowedValueUseError) Message() string {
+	return fmt.Sprintf("cannot use '%s' while it is borrowed as mutable", e.Place)
+}
+
 // loan is one borrow the exclusivity check tracks.
 type loan struct {
 	// place is the data the borrow reaches.
@@ -112,6 +128,23 @@ type loan struct {
 	ref liveness.StmtRef
 	// node is the expression the diagnostic blames.
 	node ast.Node
+	// fromStore marks a loan a callee's store effect creates rather than one the program
+	// writes. It takes hold only once that call returns, so a read in the call's own statement
+	// is not yet reaching data through it.
+	fromStore bool
+}
+
+// noteLoanRead records that e is the read a borrow performs to take its own loan. Reading a
+// place is how a borrow of it is created, so that one read is not a second path to the data.
+// Without this `val a = &mut x` would report x against the loan it just created.
+func (c *checker) noteLoanRead(e ast.Expr) {
+	if c.fn == nil || e == nil {
+		return
+	}
+	if c.fn.loanReads == nil {
+		c.fn.loanReads = set.NewSet[ast.Node]()
+	}
+	c.fn.loanReads.Add(e)
 }
 
 // loanPlace returns the place a borrow argument reaches. `&mut x.a` reaches x.a, and a bare
@@ -214,6 +247,7 @@ func (c *checker) recordBorrowLoan(holder int, init ast.Expr, ref liveness.StmtR
 	if !ok {
 		return
 	}
+	c.noteLoanRead(borrowOperand(borrow))
 	fresh := loan{
 		place:  place,
 		mut:    borrow.Mut,
@@ -235,6 +269,68 @@ func (c *checker) dropLoansHeldBy(holder liveness.VarID) {
 		}
 	}
 	c.fn.loans = kept
+}
+
+// recordStoreEdgeLoan records the loan a call's store effect creates. `store(&mut p, &mut b)`
+// against a signature that writes its second argument into the first leaves p reaching b, so
+// from that point p holds a mutable borrow of b and a second borrow of b conflicts with it.
+//
+// The loan is mutable because a store target is a mutable borrow. A shared borrow takes no
+// write, so callStoreEdges never yields an edge into one.
+//
+// target is the binding the borrow lands in and referent is the local it reaches, so the loan
+// is a borrow of referent held by target. It lasts as long as target is live, the same rule a
+// borrow bound to a name follows.
+func (c *checker) recordStoreEdgeLoan(target, referent liveness.VarID, ref liveness.StmtRef, blame ast.Node) {
+	if c.fn == nil || target <= 0 || referent <= 0 {
+		return
+	}
+	c.fn.loans = append(c.fn.loans, loan{
+		place:     movePlace{root: referent},
+		mut:       true,
+		holder:    target,
+		ref:       ref,
+		node:      blame,
+		fromStore: true,
+	})
+}
+
+// checkUseAgainstLoans reports a read of data some live borrow can write through. Two readers
+// are fine, so only a mutable loan conflicts with a use.
+//
+// The read a borrow performs to take its own loan is skipped. `&mut b` reads b, and that read
+// is what creates the loan rather than a second path to it. The loan-against-loan check is what
+// compares one borrow with another.
+func (c *checker) checkUsesAgainstLoans() {
+	if c.fn == nil || len(c.fn.loans) == 0 || len(c.fn.useSites) == 0 {
+		return
+	}
+	if c.fn.loanReads == nil {
+		c.fn.loanReads = set.NewSet[ast.Node]()
+	}
+	for _, u := range c.fn.useSites {
+		if c.fn.loanReads.Contains(u.node) {
+			continue
+		}
+		for _, l := range c.fn.loans {
+			if !l.mut || !c.liveAt(l, u.ref) || !placesOverlap(l.place, u.place) {
+				continue
+			}
+			// The call that declares a store is where its loan begins, so a read in that same
+			// statement has not gone through the alias yet. `h.drain(&mut o)` reads h to reach
+			// the method, and that read is the call itself rather than a second path to h.
+			// Two borrows written in one statement are compared by the loan-against-loan check.
+			if l.fromStore && l.ref == u.ref {
+				continue
+			}
+			c.report(&BorrowedValueUseError{
+				Place:  c.renderPlace(u.place),
+				use:    u.node,
+				borrow: l.node.Span(),
+			})
+			break
+		}
+	}
 }
 
 // checkCallBorrowExclusivity reports two arguments of one call that borrow overlapping data
@@ -261,6 +357,7 @@ func (c *checker) checkCallBorrowExclusivity(e *ast.CallExpr, fn *soltype.FuncTy
 		if !ok {
 			continue
 		}
+		c.noteLoanRead(borrowOperand(arg))
 		args = append(args, loan{place: place, mut: mut, ref: ref, node: arg})
 	}
 	for i := range args {

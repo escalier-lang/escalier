@@ -202,3 +202,104 @@ func TestBorrowExclusivity(t *testing.T) {
 		})
 	}
 }
+
+// storeEffectDecls declares a callee that writes its second argument into its first, plus the
+// helpers the cases read the aliased data back through. `'a` at both item and target's peer
+// field is what makes the signature declare a store.
+const storeEffectDecls = `
+	declare fn store<'a, 'b, 'c>(
+		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+		item: &'a mut {value: number},
+	) -> undefined
+	declare fn readBorrow(x: &mut {value: number}) -> undefined
+	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+`
+
+// TestStoreEffectLoans covers the borrow a call's store effect creates. A signature that writes
+// one argument into another leaves the target reaching the item, so the target holds a borrow
+// of it that a second borrow or a plain read has to respect.
+//
+// Each case keeps the target live past the read, since a loan lasts only as long as the binding
+// holding it. The last case drops that use to show the rule turning off.
+func TestStoreEffectLoans(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// A second mutable borrow of the stored item is a second writable path, since the
+		// target still reaches the first.
+		"SecondBorrowAfterAStore": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					readBorrow(&mut b)
+					touch(&mut a)
+				}
+			`,
+			want: []string{"13:17-13:23: cannot borrow 'b' as mutable more than once at a time"},
+		},
+		// Reading the item directly reaches the same data the target can write through, which
+		// the loan-against-loan check does not see because a read is not a borrow.
+		"UseAfterAStore": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: []string{"13:14-13:15: cannot use 'b' while it is borrowed as mutable"},
+		},
+		// Nothing reads the target after the store, so its borrow of the item is dead and the
+		// item is reachable one way again. This is the same NLL rule a named borrow follows.
+		"DeadTargetReleasesTheItemOk": {
+			src: storeEffectDecls + `
+				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+				}
+			`,
+			want: nil,
+		},
+		// Without the store the target reaches nothing of b's, so both the borrow and the read
+		// are the only path to it.
+		"NoStoreLeavesTheItemFreeOk": {
+			src: storeEffectDecls + `
+				fn k(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					readBorrow(&mut b)
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// The store's own arguments are compared against each other by the loan-against-loan
+		// check, not against the loan that same call creates. Reading b to pass `&mut b` is how
+		// the store is written, so it reports nothing on its own.
+		"TheStoreCallItselfIsQuietOk": {
+			src: storeEffectDecls + `
+				fn m(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}

@@ -595,6 +595,9 @@ func (c *checker) checkUseAfterMoves() {
 			moveSite:    c.fn.moveNodes[movedID],
 		})
 	}
+	// Every loan is recorded by now, so a read of data a live borrow can write through is
+	// decided here rather than mid-walk.
+	c.checkUsesAgainstLoans()
 	c.resolvePhaseTransitions(info)
 }
 
