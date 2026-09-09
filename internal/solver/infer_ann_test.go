@@ -491,3 +491,99 @@ func TestInferUnknownAnnotationTwiceInOneModule(t *testing.T) {
 	require.Equal(t, "unknown", values["u"])
 	require.Equal(t, "unknown", values["v"])
 }
+
+// `any` in annotation position resolves to `unknown`, the top of the lattice. A declaration
+// writes `any` where it places no constraint on a type, and `unknown` carries that meaning
+// without TypeScript's unsound assignment from `any` down to any other type.
+func TestInferAnyAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AcceptsPrimitive",
+			src:  `val u: any = 5`,
+			want: "unknown",
+		},
+		{
+			name: "AcceptsObject",
+			src:  `val u: any = {a: 1}`,
+			want: "unknown",
+		},
+		{
+			// A nested position resolves the same way, so `any` composes rather than being
+			// special-cased at the top of an annotation.
+			name: "NestedInObject",
+			src:  `val u: {a: any} = {a: "s"}`,
+			want: "{a: unknown}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["u"])
+		})
+	}
+}
+
+// Two `any` annotations in one module each resolve without tripping the provenance table, for
+// the reason TestInferUnknownAnnotationTwiceInOneModule gives: both resolve to the shared
+// zero-size UnknownType singleton, so the arm records no provenance against it.
+func TestInferAnyAnnotationTwiceInOneModule(t *testing.T) {
+	values, _, errs := inferSource(t, "val u: any = 1\nval v: any = \"s\"")
+	require.Empty(t, errs)
+	require.Equal(t, "unknown", values["u"])
+	require.Equal(t, "unknown", values["v"])
+}
+
+// A type parameter defaulted to `any` keeps its default, so a reference omitting the argument
+// resolves rather than reporting an arity mismatch. Resolving the default is what makes the
+// parameter optional: resolveTypeParams drops a default it cannot resolve, and requiredArgCount
+// then counts the parameter as required.
+func TestInferAnyTypeParamDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "Interface",
+			src: `declare interface It<T, R = any> { a: T, b: R }
+				fn f(p: It<number>) -> number { return p.a }`,
+			want: "fn (p: It<number, unknown>) -> number",
+		},
+		{
+			name: "Alias",
+			src: `type It<T, R = any> = {a: T, b: R}
+				fn f(p: It<number>) -> number { return p.a }`,
+			want: "fn (p: It<number, unknown>) -> number",
+		},
+		{
+			// The control the `any` cases are compared against. An ordinary default fills
+			// the omitted argument the same way, so a difference between this case and the
+			// others would mean `any` is still being treated as a special case.
+			name: "OrdinaryDefault",
+			src: `declare interface It<T, R = string> { a: T, b: R }
+				fn f(p: It<number>) -> number { return p.a }`,
+			want: "fn (p: It<number, string>) -> number",
+		},
+		{
+			// The shape `std/iterator.esc` writes for `Iterable`, where two trailing
+			// parameters both default to `any` and every `Iterable<T>` elsewhere in the tree
+			// omits them.
+			name: "TwoTrailingDefaults",
+			src: `declare interface It<T, TReturn = any, TNext = any> { a: T, b: TReturn, c: TNext }
+				fn f(p: It<number>) -> number { return p.a }`,
+			want: "fn (p: It<number, unknown, unknown>) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values["f"])
+		})
+	}
+}
