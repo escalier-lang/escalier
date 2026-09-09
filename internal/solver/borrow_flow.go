@@ -298,10 +298,11 @@ func unionEdges(a, b []fieldBorrow) []fieldBorrow {
 	return out
 }
 
-// containsFieldBorrow reports whether edges holds one with the same path and referent as e.
+// containsFieldBorrow reports whether edges holds one reaching the same data by the same route
+// as fb: the same path within the holder, the same referent, and the same path within it.
 func containsFieldBorrow(fieldBorrows []fieldBorrow, fb fieldBorrow) bool {
 	for _, x := range fieldBorrows {
-		if x.referent == fb.referent && slices.Equal(x.path, fb.path) {
+		if x.referent == fb.referent && slices.Equal(x.path, fb.path) && slices.Equal(x.refPath, fb.refPath) {
 			return true
 		}
 	}
