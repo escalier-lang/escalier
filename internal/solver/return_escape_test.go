@@ -42,20 +42,51 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> mut {value: number}"},
+			types: map[string]string{"build": "fn () -> {value: number}"},
 		},
-		// The first repro in #1264. A signature that annotates its return as a borrow still
-		// checks: the body's inferred `mut {value: number}` satisfies `&mut {value: number}`,
-		// because an owned source fills a borrow destination with no lifetime to relate.
-		"ReturnDirectBorrowUnderABorrowAnnotation": {
+		// The first repro in #1264, annotated with the owned type the body produces. `return
+		// &mut q` hands out q itself, so the honest annotation names an owned value rather
+		// than a borrow.
+		"ReturnDirectBorrowUnderAnOwnedAnnotation": {
 			src: `
-				fn f() -> &mut {value: number} {
+				fn f() -> {value: number} {
 					val mut q = {value: 1}
 					return &mut q
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn () -> &mut {value: number}"},
+			types: map[string]string{"f": "fn () -> {value: number}"},
+		},
+		// A signature may still ask to hand the value out mutably. Every return operand is
+		// uniquely owned, so the immutable-to-mutable upgrade grants it.
+		"ReturnDirectBorrowUnderAMutAnnotation": {
+			src: `
+				fn f() -> mut {value: number} {
+					val mut q = {value: 1}
+					return &mut q
+				}
+			`,
+			want:  nil,
+			types: map[string]string{"f": "fn () -> mut {value: number}"},
+		},
+		// The caller decides mutability, which is what makes the immutable default workable.
+		// A plain `val` keeps the returned value frozen; `val mut` thaws it.
+		"CallerOptsIntoMutability": {
+			src: `
+				fn f() {
+					val mut q = {value: 1}
+					return &mut q
+				}
+				fn caller() -> undefined {
+					val mut r = f()
+					r.value = 2
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"f":      "fn () -> {value: number}",
+				"caller": "fn () -> undefined",
+			},
 		},
 		// The second repro in #1264. The store puts b at a.peer, and a and b are both dead at
 		// the return, so `a.peer` is again the only path out. A field read is not re-typed:
@@ -254,7 +285,7 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> mut {value: number}"},
+			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> {value: number}"},
 		},
 		// Two returns of one local on exclusive branches are each the only path, since only one
 		// of them runs. Neither is a flow-out the other has to account for.
@@ -269,7 +300,7 @@ func TestReturnValueBorrows(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn (cond: boolean) -> mut {value: number}"},
+			types: map[string]string{"f": "fn (cond: boolean) -> {value: number}"},
 		},
 		// A function returning a local borrow on one path and a parameter borrow on another
 		// keeps both borrowed. A parameter borrow carries no local edge, so it never strips,
@@ -288,9 +319,9 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn <'a>(p: &'a mut {value: number}, cond: boolean) -> &'a mut {value: number}"},
 		},
-		// A shared borrow of a carrier holding a `&mut` field hands out no write access, so the
-		// owned form stays immutable. A field cannot carry its own owned `mut`, so letting the
-		// field's mut through would hoist it onto the whole object and make data writable too.
+		// Stripping reaches through a shared borrow of a carrier that itself holds a `&mut`
+		// field, so the returned tree owns c as well as a. The owned form is immutable, like
+		// every stripped return: the caller's binding decides mutability.
 		"SharedBorrowOfAMutableCarrierOwnsImmutably": {
 			src: `
 				fn f() {
@@ -463,7 +494,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		// The canonical case: the owned binding a holds `&mut b`, and nothing outside the
 		// {a, b} component references either node, so returning a moves the whole component
 		// out. No escape, and a and b are both consumed. b is reached once, so borrow-stripping
-		// rewrites the return to the owned `mut {peer: {value: number}}`.
+		// rewrites the return to the owned `{peer: {value: number}}`.
 		"ReturnSelfContainedComponent": {
 			src: `
 				fn build() {
@@ -473,12 +504,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
 		},
 		// A component with two borrowed locals moves as a unit just the same: both b and c
 		// are reachable only through a, so returning a co-moves all three. b and c are each
 		// reached once, so borrow-stripping rewrites the return to the owned
-		// `mut {p: {x: number}, q: {x: number}}`.
+		// `{p: {x: number}, q: {x: number}}`.
 		"ReturnComponentTwoLocals": {
 			src: `
 				fn build() {
@@ -489,11 +520,11 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> mut {p: {x: number}, q: {x: number}}"},
+			types: map[string]string{"build": "fn () -> {p: {x: number}, q: {x: number}}"},
 		},
 		// The owned carrier may be a fresh literal with no intervening binding: the returned
 		// object owns the borrow of b, and b is reachable only through it. b is reached once,
-		// so borrow-stripping rewrites the return to the owned `mut {peer: {value: number}}`.
+		// so borrow-stripping rewrites the return to the owned `{peer: {value: number}}`.
 		"ReturnInlineLiteralComponent": {
 			src: `
 				fn build() {
@@ -502,12 +533,12 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
 		},
 		// A whole-binding move carries the graph forward: `val a2 = a` moves a, borrow and
 		// all, into a2. The dead a is not a live external reference to b, so returning a2
 		// still moves the {a2, b} component out. b is reached once, so borrow-stripping
-		// rewrites the return to the owned `mut {peer: {value: number}}`.
+		// rewrites the return to the owned `{peer: {value: number}}`.
 		"ReturnMovedCarrierComponent": {
 			src: `
 				fn build() {
@@ -518,7 +549,7 @@ func TestConnectedComponentMove(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"build": "fn () -> mut {peer: {value: number}}"},
+			types: map[string]string{"build": "fn () -> {peer: {value: number}}"},
 		},
 		// An acyclic shared graph moves out the same way: a holds `&b`, and b is reachable
 		// only through a. b is reached once, so borrow-stripping rewrites the return to the
@@ -721,7 +752,7 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// A wider component with five borrowed locals moves out as one unit, the same as the
 		// two-local case, since every node is reachable only through a. Every node is reached
-		// once, so borrow-stripping rewrites the return to the owned `mut {b1: {x: number}, …}`
+		// once, so borrow-stripping rewrites the return to the owned `{b1: {x: number}, …}`
 		// with all five fields owned.
 		"ReturnLargeStar": {
 			src: `
@@ -737,7 +768,7 @@ func TestConnectedComponentMove(t *testing.T) {
 			`,
 			want: nil,
 			types: map[string]string{
-				"build": "fn () -> mut {b1: {x: number}, c1: {x: number}, d1: {x: number}, e1: {x: number}, g1: {x: number}}",
+				"build": "fn () -> {b1: {x: number}, c1: {x: number}, d1: {x: number}, e1: {x: number}, g1: {x: number}}",
 			},
 		},
 		// The co-move reaches the deepest transitive node: storing the chain a → b → c → d

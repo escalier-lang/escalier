@@ -387,6 +387,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 
 	var ret soltype.Type = &soltype.UndefinedType{}
 	var retExprs []ast.Expr
+	returnsUniquelyOwned := false
 	// bodyDiverges records that every path through the body left along the exceptional
 	// edge, and raised that some exceptional exit can actually raise. Both are read after
 	// the walk to warn about a signature the body cannot deliver on.
@@ -434,6 +435,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// it reads this body's move and use state off c.fn.
 		c.checkUseAfterMoves()
 		retExprs = c.fn.returnExprs
+		// Decided here, while this body's context is still current. isUniquelyOwned reads c.fn
+		// to admit a borrow leaf, and popFuncCtx below restores the outer context, so asking at
+		// the annotation check would answer no for every borrow a body returns.
+		returnsUniquelyOwned = c.allReturnsUniquelyOwned(retExprs)
 		throws = c.fn.throws
 		raised = c.fn.raised
 		yielded = c.fn.yielded
@@ -498,7 +503,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// stays `never`. Iterating or delegating is what advances it, and those sites read the
 	// slot back into their enclosing sink.
 	if sig.Gen {
-		ret = c.genReturn(node, gen, retExprs, ret, throws, hasBody)
+		ret = c.genReturn(node, gen, returnsUniquelyOwned, ret, throws, hasBody)
 		throws = nil
 	} else if sig.Async {
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
@@ -525,7 +530,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// function simply adopts the annotation (constraining the synthetic `undefined`
 			// would raise a spurious `undefined <: T`).
 			if hasBody {
-				c.constrainReturnAgainstAnnotation(node, retExprs, ret, annT) // body <: declared return
+				c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, ret, annT) // body <: declared return
 				// No caller can observe an annotated return the body never reaches, so warn
 				// and point at the annotation. A body that diverges into `never` on purpose
 				// writes `-> never`, which is what it delivers and so is not flagged.
@@ -773,11 +778,11 @@ func (c *checker) reportedMixedOwnership(node ast.Node) bool {
 // return annotation's immutable read view, the same covariant check tryUpgradeToOwnedMut
 // runs at the other value-flow sites. The join is not a single source expression, so the
 // decision is made here rather than through that per-expression helper.
-func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast.Expr, ret, annT soltype.Type) {
-	// The gate is ownedMutUpgrade's, reached once per return operand so a body whose returns
-	// disagree takes the ordinary path. Re-inlining the RefType test here is what let this site
-	// and ownedMutUpgrade drift apart, which #1534 records.
-	if view, ok := c.returnsOwnedMutUpgrade(retExprs, annT); ok {
+func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, returnsUniquelyOwned bool, ret, annT soltype.Type) {
+	// The gate is ownedMutUpgrade's, split so each half runs where it can. Re-inlining the
+	// RefType test here is what let this site and ownedMutUpgrade drift apart, which #1534
+	// records.
+	if view, ok := c.returnsOwnedMutUpgrade(returnsUniquelyOwned, annT); ok {
 		c.constrain(node, ret, view)
 		return
 	}
@@ -785,28 +790,34 @@ func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast
 }
 
 // returnsOwnedMutUpgrade reports whether EVERY return operand may take annT's owned-mutable
-// type, and returns the type they are then checked against. It is ownedMutUpgrade folded over a
-// body's returns, so the two sites cannot disagree on when the upgrade applies.
+// type, and returns the type they are then checked against. It is ownedMutUpgrade over a body's
+// returns, so the two sites cannot disagree on when the upgrade applies.
 //
-// An empty set, a bare `return` with a nil operand, or one operand that does not qualify makes
-// it false, since the annotation covers the join of every return and the join is uniquely owned
-// only when each part is.
-func (c *checker) returnsOwnedMutUpgrade(retExprs []ast.Expr, annT soltype.Type) (soltype.Type, bool) {
-	if len(retExprs) == 0 {
+// The two halves of that gate run at different times. The target half reads annT alone and runs
+// here. The source half asks whether every operand is uniquely owned, and isUniquelyOwned reads
+// c.fn to admit a borrow leaf, so inferFunc decides it while the body's context is still
+// current and passes the answer in. Asking here would answer no for every borrow a body returns.
+func (c *checker) returnsOwnedMutUpgrade(returnsUniquelyOwned bool, annT soltype.Type) (soltype.Type, bool) {
+	if !returnsUniquelyOwned {
 		return nil, false
 	}
-	var view soltype.Type
-	for _, e := range retExprs {
-		if e == nil {
-			return nil, false
-		}
-		v, ok := c.ownedMutUpgrade(e, annT)
-		if !ok {
-			return nil, false
-		}
-		view = v
+	return c.ownedMutUpgradeTarget(annT)
+}
+
+// allReturnsUniquelyOwned is the source half of returnsOwnedMutUpgrade's gate, folded over a
+// body's return operands. An empty set, a bare `return` with a nil operand, or one operand that
+// is not uniquely owned makes it false, since the annotation covers the join of every return and
+// the join is uniquely owned only when each part is.
+func (c *checker) allReturnsUniquelyOwned(retExprs []ast.Expr) bool {
+	if len(retExprs) == 0 {
+		return false
 	}
-	return view, true
+	for _, e := range retExprs {
+		if e == nil || !c.isUniquelyOwned(e) {
+			return false
+		}
+	}
+	return true
 }
 
 // joinBorrows joins several mutable borrows of objects. It applies only when EVERY
@@ -1100,10 +1111,10 @@ func (c *checker) resolveGenSinks(scope *Scope, node ast.Node, sig ast.FuncSig, 
 // Otherwise the inferred pieces are wrapped, with what the body raises going in the
 // generator's Throws. A bodyless `declare gen fn` wraps `unknown` rather than the
 // synthetic `undefined`, which would signal that it returns nothing.
-func (c *checker) genReturn(node ast.Node, gs *genSinks, retExprs []ast.Expr, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
+func (c *checker) genReturn(node ast.Node, gs *genSinks, returnsUniquelyOwned bool, bodyType, throws soltype.Type, hasBody bool) soltype.Type {
 	if gs.ann != nil {
 		if hasBody {
-			c.constrainReturnAgainstAnnotation(node, retExprs, bodyType, gs.ann.Ret) // body <: declared Ret
+			c.constrainReturnAgainstAnnotation(node, returnsUniquelyOwned, bodyType, gs.ann.Ret) // body <: declared Ret
 		}
 		return gs.ann
 	}
