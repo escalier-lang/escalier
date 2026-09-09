@@ -1557,10 +1557,10 @@ func (c *Context) constrainStrLitToStringIntrinsic(sub *soltype.LitType, super *
 }
 
 // constrainStrLitToTemplateLit checks a string-literal sub against a template-literal super, such as
-// `"onb" <: `on${string}“. A template denotes the strings its fixed quasi segments and its
+// `"onb" <: `on${string}``. A template denotes the strings its fixed quasi segments and its
 // interpolations spell out, so the literal is a subtype iff its characters match that pattern. The
 // match reads the literal left to right: each quasi must appear in order, and each interpolation
-// consumes a span the interpolation type admits. `"onb"` matches “on${string}“ because it starts
+// consumes a span the interpolation type admits. `"onb"` matches ``on${string}`` because it starts
 // with `on` and `b` is a string; `"xyz"` does not, since it lacks the `on` prefix. An interpolation
 // spanInInterp cannot decide, such as a type parameter, admits no span, so the whole match fails and
 // the mismatch is reported rather than guessed.
@@ -1646,7 +1646,7 @@ func templateMatchesString(s string, quasis []string, interps []soltype.Type) bo
 //     transform leaves unchanged, the fixed points that make up its image.
 //   - A union admits a span any member does; an intersection admits one every member does. A
 //     complement `~X` admits a span its operand rejects, so `string & ~"a"` admits every string
-//     span but `"a"`. This is the shape the template bound “ `on${string & ~"a"}` “ carries, which
+//     span but `"a"`. This is the shape the template bound `` `on${string & ~"a"}` `` carries, which
 //     is why the matcher decides it.
 func spanInInterp(span string, interp soltype.Type) bool {
 	switch it := interp.(type) {
