@@ -2,6 +2,9 @@ package solver
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -4284,4 +4287,95 @@ func TestInferWildcardPatternRoundTrips(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "if t0 : [_, infer B] { B } else { never }",
 		soltype.Print(expandAliasResidual(ctx, nodes["Second"])))
+}
+
+// committedAwaitedDecl returns the `Awaited` alias as the committed tree declares it, read out
+// of internal/interop/data/std/async.esc so the test and the tree cannot drift. The declaration
+// starts at its `export declare type Awaited` line and ends at the first line where its braces
+// balance, which is how the printer lays a multi-line alias out. Balance is read per line rather
+// than per character because the first branch, `{ T }`, closes on the opening line.
+func committedAwaitedDecl(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join("..", "interop", "data", "std", "async.esc")
+	data, err := os.ReadFile(path)
+	require.NoError(t, err)
+	lines := strings.Split(string(data), "\n")
+	start := slices.IndexFunc(lines, func(l string) bool {
+		return strings.HasPrefix(l, "export declare type Awaited")
+	})
+	require.NotEqual(t, -1, start, "%s declares no Awaited", path)
+	depth := 0
+	for i := start; i < len(lines); i++ {
+		depth += strings.Count(lines[i], "{") - strings.Count(lines[i], "}")
+		if depth == 0 {
+			return strings.Join(lines[start:i+1], "\n")
+		}
+	}
+	t.Fatalf("%s: Awaited's braces never balance", path)
+	return ""
+}
+
+// `Awaited<T>` unwraps a thenable to the value its `then` callback is handed, recursively, and
+// leaves everything else alone. It is the recursive conditional TypeScript defines, and the tree
+// names it in `Promise.all`, `Promise.resolve`, and `Array.fromAsync` among others.
+//
+// TestInferAwaited above exercises the same recursion against a Promise-shaped definition written
+// for the test. These cases run the real one instead, which matches structurally on a `then`
+// member and so reaches rules that definition never touches.
+//
+// The cases run against the definition the committed tree carries, so a converter or overlay
+// change that stops it reducing fails here rather than only where a consumer reads it.
+func TestInferCommittedAwaited(t *testing.T) {
+	// A thenable and a thenable whose value is itself a thenable, which is what makes the
+	// recursion observable: `Awaited<Nested>` has to unwrap twice.
+	const thenables = "type Thenable = {then(onfulfilled: fn (value: number) -> unknown) -> unknown, ...}\n" +
+		"type Nested = {then(onfulfilled: fn (value: Thenable) -> unknown) -> unknown, ...}\n"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// A non-thenable reduces to itself, which is the final `else` arm.
+			name: "NonThenableReducesToItself",
+			src:  `fn f(x: Awaited<number>) -> number { return x }`,
+		},
+		{
+			name: "ObjectWithNoThenReducesToItself",
+			src:  `fn f(x: Awaited<{a: number}>) -> {a: number} { return x }`,
+		},
+		{
+			// `null` and `undefined` take the first arm, before the thenable check, since
+			// neither has members to read a `then` off.
+			name: "UndefinedReducesToItself",
+			src:  `fn f(x: Awaited<undefined>) -> undefined { return x }`,
+		},
+		{
+			name: "ThenableReducesToItsValue",
+			src:  thenables + `fn f(x: Awaited<Thenable>) -> number { return x }`,
+		},
+		{
+			name: "NestedThenableReducesAllTheWay",
+			src:  thenables + `fn f(x: Awaited<Nested>) -> number { return x }`,
+		},
+		{
+			// The reduction is what the rejection blames, so a wrong expectation reports
+			// against the unwrapped value rather than against the unreduced alias.
+			name: "RejectsAgainstTheUnwrappedValue",
+			src:  thenables + `fn f(x: Awaited<Thenable>) -> string { return x }`,
+			want: "cannot constrain number <: string",
+		},
+	}
+	decl := committedAwaitedDecl(t) + "\n"
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, decl+tt.src)
+			if tt.want == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
 }
