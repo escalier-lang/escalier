@@ -1676,23 +1676,15 @@ func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 		if !ok {
 			return nil, false
 		}
-		// Two constructors meet only when each carries a single signature, so an overloaded
-		// constructor keeps the objects apart instead. The two atoms denote the meet
-		// exactly, so the bail costs an atom rather than precision. #1517 carries the
-		// fusion, under the same evidence gate #1103 set: a set denotes the intersection of
-		// its arms, so meeting two of them concatenates the lists.
-		if len(a.Signatures) != 1 || len(b.Signatures) != 1 {
-			return nil, false
-		}
-		fused, ok := c.meetFuncs(a.Signatures[0], b.Signatures[0])
+		// Two constructors meet through the same signature-set rule a method's do. There is
+		// no receiver to guard here: a constructor's `mut self` is consumed at the
+		// declaration and never reaches the stored signature, so every arm carries a nil
+		// SelfParam.
+		sigs, ok := c.fuseSignatureSets(a.Signatures, b.Signatures, meetCtorSig(c))
 		if !ok {
 			return nil, false
 		}
-		fn, ok := fused.(*soltype.FuncType)
-		if !ok {
-			return nil, false
-		}
-		return &soltype.ConstructorElem{Signatures: []*soltype.FuncType{fn}}, true
+		return &soltype.ConstructorElem{Signatures: sigs}, true
 	}
 	return nil, false
 }
@@ -1738,31 +1730,96 @@ func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 	return nil, false
 }
 
-// meetMethods fuses two methods that share a name by meeting their signatures. It
-// fuses only single-signature methods, bailing when either carries an overload set.
-// Two identical methods never reach here, since meetObjElem's equal-member check
-// returns one of them first, so the overload sets that do reach here always differ.
-// Static-ness must agree, since a static method lives on the constructor value and an
-// instance method on the instance, so the two are not the same member.
+// meetMethods fuses two methods that share a name by meeting their signature sets,
+// whether either side carries one signature or an overload set. Two identical methods
+// never reach here, since meetObjElem's equal-member check returns one of them first, so
+// the sets that do reach here always differ. Static-ness must agree, since a static method
+// lives on the constructor value and an instance method on the instance, so the two are
+// not the same member.
 //
-// The bail costs an atom rather than precision, since the two unfused atoms denote the
-// meet exactly. #1517 carries the fusion, under the same evidence gate #1103 set. An
-// overload set denotes the intersection of its arms, which methodReadType builds, so
-// meeting two of them concatenates the lists and newIntersection's flatten, dedupe and
-// subsume steps canonicalize the result. The receiver check below still gates it, since
-// that algebra says nothing about which receiver the fused member takes.
+// The receivers must agree as well, and that check belongs here rather than inside
+// fuseSignatureSets. Under the concatenation each arm keeps the receiver it was written
+// with, so two sets whose receivers disagree would fuse into a member mixing them. Such a
+// member is ill-formed for its readers: classes.go takes Signatures[0].SelfParam as the
+// receiver of the whole member, and buildMemberSigs reports
+// MethodOverloadReceiverMismatchError for the same mixture at a declaration. One arm of a
+// well-formed member therefore speaks for all of them, which is why comparing the two
+// representatives is enough.
 func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
 	if a.Static != b.Static {
 		return nil, false
 	}
-	if len(a.Signatures) != 1 || len(b.Signatures) != 1 {
+	if !equalSelfParam(methodReceiver(a), methodReceiver(b), &alphaCtx{}) {
 		return nil, false
 	}
-	fused, ok := c.meetMethodSig(a.Signatures[0], b.Signatures[0])
+	sigs, ok := c.fuseSignatureSets(a.Signatures, b.Signatures, c.meetMethodSig)
 	if !ok {
 		return nil, false
 	}
-	return &soltype.MethodElem{Name: a.Name, Signatures: []*soltype.FuncType{fused}, Static: a.Static}, true
+	return &soltype.MethodElem{Name: a.Name, Signatures: sigs, Static: a.Static}, true
+}
+
+// methodReceiver returns the receiver a method member takes, read off its first arm.
+// buildMemberSigs rejects a declaration whose arms disagree on the receiver, so every arm
+// of a well-formed member carries the same one and the first speaks for all of them. This
+// is the reading classes.go gives the same field. An empty signature list has no receiver
+// to report and yields nil, which equalSelfParam accepts against another nil.
+func methodReceiver(m *soltype.MethodElem) *soltype.FuncParam {
+	if len(m.Signatures) == 0 {
+		return nil
+	}
+	return m.Signatures[0].SelfParam
+}
+
+// fuseSignatureSets meets the signature sets of two members that share a name, returning
+// the arms of the fused member.
+//
+// An overload set denotes the INTERSECTION of its arms — methodReadType and ctorReadType in
+// constrain.go build exactly that IntersectionType — so the meet of two sets is the
+// intersection of every arm of both:
+//
+//	(A ∧ B) ∧ (C ∧ D)  =  A ∧ B ∧ C ∧ D
+//
+// which is the concatenation of the two lists. There is no question of which arm of one
+// pairs with which arm of the other, because ∧ is associative, commutative and idempotent.
+// Sets of different lengths, and arms that line up on nothing, fall out of that for free.
+//
+// newIntersection canonicalizes the concatenation. It flattens a nested set, drops to one
+// copy of an arm both sides carry, drops an arm a sibling already subsumes, and sorts into
+// a canonical order so the stored set is deterministic for resolveOverload to read.
+//
+// exact is tried first on a one-against-one pair, and is meetMethodSig for a method and
+// meetFuncs for a constructor. It fuses `(x: A) -> B` and `(x: A) -> C` into the single arm
+// `(x: A) -> B ∧ C`, which is sharper than the two-arm intersection, so the exact fuse
+// leads and the concatenation is the fallback rather than the rule everywhere.
+//
+// A canonicalized result that is not a function or an intersection of functions is not a
+// signature set, so this bails rather than build a member its readers could not use. That
+// costs an atom and no precision: meetObjects keeps the two unfused atoms, which denote the
+// meet exactly.
+func (c *Context) fuseSignatureSets(
+	a, b []*soltype.FuncType, exact func(a, b *soltype.FuncType) (*soltype.FuncType, bool),
+) ([]*soltype.FuncType, bool) {
+	if len(a) == 1 && len(b) == 1 {
+		if fused, ok := exact(a[0], b[0]); ok {
+			return []*soltype.FuncType{fused}, true
+		}
+	}
+	parts := make([]soltype.Type, 0, len(a)+len(b))
+	for _, sig := range a {
+		parts = append(parts, sig)
+	}
+	for _, sig := range b {
+		parts = append(parts, sig)
+	}
+	switch fused := newIntersection(c, parts).(type) {
+	case *soltype.FuncType:
+		// Every arm but one was dropped as redundant, so the set collapsed to a lone
+		// signature rather than an intersection.
+		return []*soltype.FuncType{fused}, true
+	default:
+		return funcIntersectionArms(fused)
+	}
 }
 
 // meetSetters fuses two setters that share a name. A setter is a one-input arrow
@@ -1816,6 +1873,22 @@ func (c *Context) meetMethodSig(a, b *soltype.FuncType) (*soltype.FuncType, bool
 	}
 	fn.SelfParam = a.SelfParam
 	return fn, true
+}
+
+// meetCtorSig adapts meetFuncs to the exact-fuse signature fuseSignatureSets takes. A
+// constructor signature carries no receiver, so it meets as a plain arrow, and the only
+// work here is narrowing meetFuncs's soltype.Type result back to a FuncType. A pair that
+// meets to anything else has no single signature that states both, which is the same
+// no-fuse answer meetFuncs gives directly.
+func meetCtorSig(c *Context) func(a, b *soltype.FuncType) (*soltype.FuncType, bool) {
+	return func(a, b *soltype.FuncType) (*soltype.FuncType, bool) {
+		fused, ok := c.meetFuncs(a, b)
+		if !ok {
+			return nil, false
+		}
+		fn, isFunc := fused.(*soltype.FuncType)
+		return fn, isFunc
+	}
 }
 
 // meetThrowsTypes meets two throws clauses, each read through the nil-is-never
