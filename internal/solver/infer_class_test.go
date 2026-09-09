@@ -1096,7 +1096,7 @@ func TestInferClassVariance(t *testing.T) {
 		require.Empty(t, errs)
 	})
 	t.Run("a field keeps the parameter covariant alongside a mut self reader", func(t *testing.T) {
-		// `take` is gated on a mutable receiver, but `slot` is not, and a field read is an
+		// `take` demands a mutable receiver, but `slot` does not, and a field read is an
 		// output position the immutable view has. So `T` is covariant rather than
 		// bivariant, and the narrowing this asks for is rejected. A `mut self` method can
 		// only hand back a `T` if the class holds one, and holding one is what puts `T` in

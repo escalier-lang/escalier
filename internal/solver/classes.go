@@ -201,12 +201,12 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // It returns two vectors, one per view a reference to an instance can offer. immut is the
 // variance an immutable reference sees, which reaches only the members such a reference
 // can use. mut is the variance a mutable reference sees, which additionally admits a write
-// to every non-`readonly` field and every member gated on a mutable receiver.
+// to every non-`readonly` field and every member that demands a mutable receiver.
 //
 // A member an immutable reference cannot reach says nothing about the immutable view, so
-// it is walked into mut alone. Three members are gated that way: a write to a non-
-// `readonly` field, a setter, and a `mut self` method. An overloaded method is split per
-// signature, since one arm taking `mut self` does not gate the arms that do not.
+// it is walked into mut alone. Three members demand a mutable receiver: a write to a
+// non-`readonly` field, a setter, and a `mut self` method. An overloaded method is split
+// per signature, since one arm taking `mut self` says nothing about the arms that do not.
 //
 // `Array<T>` is what this buys. Its `at(self, index) -> T | undefined` puts T in an output
 // position and its `push(mut self, item: T)` puts T in an input position. Folding both into
