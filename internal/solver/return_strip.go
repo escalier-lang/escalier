@@ -13,19 +13,13 @@ import (
 // Return borrow-stripping rewrites a returned borrow of a self-contained local graph into the
 // owned pointee. The connected-component move has already re-anchored the nodes and consumed the
 // locals, so the return value is their sole owner, and owning them in the type is honest.
-// `return a` over `val a = {peer: &mut d}` returns `mut {peer: {value: number}}` rather than
-// `{peer: &mut {value: number}}`, and `return &mut d` returns `mut {value: number}`.
+// `return a` over `val a = {peer: &mut d}` returns `{peer: {value: number}}` rather than
+// `{peer: &mut {value: number}}`, and `return &mut d` returns `{value: number}`.
 //
-// The owned form keeps the borrow's mutability. A reader of the `&mut` could write through it
-// and so can the owner, so dropping the `mut` would hand back less than the borrow offered. It
-// would also make a function annotated `-> &mut T` reject its own body, since an owned
-// IMMUTABLE value does not fill a mutable borrow.
-//
-// A field cannot carry its own owned `mut` in Escalier, where the enclosing context decides
-// mutability, so stripping a `&mut` field makes the whole object mutable. `{peer: &mut B, data:
-// D}` strips to `mut {peer: B, data: D}`, which makes data writable too. That grants more than
-// the borrow did. It stays sound, since a write still has to satisfy the field's own type, and
-// a readonly field keeps its flag through the rebuild.
+// The owned form carries no mutability of its own. Ownership and mutability are separate in
+// Escalier, and the binding decides: a caller writes `val mut r = f()` to take the value
+// mutably and a plain `val r` to keep it frozen. Stamping `mut` on the return would hand every
+// caller a mutable value whether or not they asked for one, where the default is immutability.
 //
 // The reachable shape from the return decides whether a borrow is stripped:
 //
@@ -63,7 +57,7 @@ func (c *checker) returnStripFor(
 	if !isTreeReachable(graph, root) {
 		return 0, nil, false
 	}
-	stripped := stripBorrowTree(c.fn.returns[idx], root, nil, graph, true)
+	stripped := stripBorrowTree(c.fn.returns[idx], root, nil, graph)
 	if stripped == c.fn.returns[idx] {
 		return 0, nil, false
 	}
@@ -191,17 +185,11 @@ func isTreeReachable(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID
 //   - An owned-mutable cell is rebuilt around its walked inner at the same root and path.
 //   - An object descends each property at the path extended by the property name; a tuple
 //     descends each element at the same path, since a tuple index contributes no field segment.
-//
-// writable says whether the enclosing context permits writing. It starts true at the return and
-// turns false under a shared borrow, so a `&mut` field nested inside a `&` strips to an
-// immutable owned value. Without it that field's `mut` would hoist onto the whole object and
-// hand back write access the outer shared borrow never carried.
 func stripBorrowTree(
 	t soltype.Type,
 	root liveness.VarID,
 	path []placeSeg,
 	graph map[liveness.VarID][]fieldBorrow,
-	writable bool,
 ) soltype.Type {
 	switch t := t.(type) {
 	case *soltype.RefType:
@@ -210,27 +198,21 @@ func stripBorrowTree(
 			if !ok {
 				return t
 			}
-			// Owning the pointee keeps the write access the borrow carried. A `&mut` reader could
-			// write through it, and the owner of the same value can too, so the owned form is
-			// mutable exactly when the borrow was. Dropping the mut would hand back less than the
-			// borrow offered, and a declared `-> &mut T` return would then reject its own body.
-			mutable := t.Mut && writable
-			stripped := stripBorrowTree(t.Inner, referent, nil, graph, mutable)
-			inner, ok := stripped.(soltype.RefInner)
-			if !ok {
-				return stripped
-			}
-			return soltype.NewRef(mutable, nil, inner)
+			// The owned form carries no mutability of its own. Ownership and mutability are
+			// separate in Escalier: the binding decides, so a caller writes `val mut r = f()`
+			// to take the value mutably and a plain `val r` to keep it frozen. Stamping `mut`
+			// here would hand every caller a mutable value whether or not they asked, where the
+			// default is immutability.
+			return stripBorrowTree(t.Inner, referent, nil, graph)
 		}
 		// An owned-mutable cell rebuilds around its walked inner. The inner is an object or
 		// tuple, so its strip stays a RefInner; keep the cell unchanged if that ever fails to
 		// hold rather than panicking.
-		mutable := t.Mut && writable
-		inner, ok := stripBorrowTree(t.Inner, root, path, graph, mutable).(soltype.RefInner)
+		inner, ok := stripBorrowTree(t.Inner, root, path, graph).(soltype.RefInner)
 		if !ok {
 			return t
 		}
-		return soltype.NewRef(mutable, nil, inner)
+		return soltype.NewRef(t.Mut, nil, inner)
 	case *soltype.ObjectType:
 		// A residual object has no settled property list to walk, the same guard stripOwnedMut
 		// applies. Its borrows are reached once the evaluator reduces it.
@@ -248,7 +230,7 @@ func stripBorrowTree(
 			}
 			elems[i] = &soltype.PropertyElem{
 				Name:     p.Name,
-				Type:     stripBorrowTree(p.Type, root, propPath, graph, writable),
+				Type:     stripBorrowTree(p.Type, root, propPath, graph),
 				Optional: p.Optional,
 				Readonly: p.Readonly,
 			}

@@ -174,9 +174,10 @@ func TestInferValMutConstructedBorrowsMut(t *testing.T) {
 }`)
 	require.Empty(t, errs)
 	// r is the only path left to q once the frame goes, so the return owns what it borrowed.
-	// The owned form keeps the borrow's mutability, which is what says `&mut q` produced a
-	// MUTABLE borrow: a shared `&q` would leave the return at `{x: number}`.
-	require.Equal(t, "fn () -> mut {x: number}", values["f"])
+	// The owned form carries no mutability of its own; a caller writes `val mut` to take it
+	// mutably. TestInferBorrowMutOnImmutableRejected is the contrast that shows the borrow
+	// itself had to be mutable, since `&mut` of a plain `val` binding is rejected.
+	require.Equal(t, "fn () -> {x: number}", values["f"])
 }
 
 // A `mut` binding of a primitive is unchanged: a primitive is a value type with no
