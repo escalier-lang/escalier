@@ -207,6 +207,19 @@ func TestInferBodyVariance(t *testing.T) {
 			wantMut: []Variance{Covariant},
 		},
 		{
+			// The shape a `-> Self` return resolves to: the return is the class's own handle,
+			// carrying its type-parameter vars as arguments. That is an output position like
+			// any other return, so it measures covariant. The receiver holds the same handle
+			// and is still excluded, which is what keeps this from collapsing to invariant.
+			name: "method returning the class's own handle is covariant despite the self receiver",
+			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
+				self := &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{tv}}
+				return exactObj(selfMethod("fill", "Box", tv, num(), self)), nil
+			}),
+			want:    []Variance{Covariant},
+			wantMut: []Variance{Covariant},
+		},
+		{
 			name: "a field write drags a method's covariant return to invariant under mut",
 			def: oneParam(func(tv *soltype.TypeVarType) (*soltype.ObjectType, []*soltype.ClassType) {
 				return exactObj(

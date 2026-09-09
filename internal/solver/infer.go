@@ -107,6 +107,13 @@ type checker struct {
 	// omits.
 	classNamespace string
 
+	// selfClass is the handle `Self` names inside the class body being walked, nil outside
+	// any class body. inferClassDecl sets it on entry and restores it on exit. The body
+	// scope binds `Self` to this same handle, and resolveScopedTypeRef takes its `Self` fast
+	// path only when a reference resolves to it, so a user class that happens to be named
+	// `Self` still resolves as an ordinary class reference with its own arity check.
+	selfClass *soltype.ClassType
+
 	// pkgURI is the URI of the package whose declarations are being inferred,
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,

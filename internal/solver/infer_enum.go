@@ -74,6 +74,8 @@ type enumShell struct {
 func (c *checker) preBindEnum(scope *Scope, lvl int, decl *ast.EnumDecl, ns string) *enumShell {
 	quiet := c.errorWindow()
 
+	c.reportSelfTypeName(EnumDeclKind, decl.Name)
+
 	// An enum-body type reference resolves against the enum's own namespace first, the
 	// same qualified-first resolution a class body uses. Save and restore around the walk.
 	prevNS := c.classNamespace

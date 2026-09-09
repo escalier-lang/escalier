@@ -129,6 +129,7 @@ func (c *checker) preBindAlias(scope *Scope, lvl int, decl *ast.TypeDecl, ns str
 		c.report(&ReservedTypeNameError{Decl: decl})
 		return nil
 	}
+	c.reportSelfTypeName(AliasDeclKind, decl.Name)
 
 	// An alias-body type reference resolves against the alias's own namespace first, the
 	// same qualified-first resolution a class or enum body uses, so a namespaced alias

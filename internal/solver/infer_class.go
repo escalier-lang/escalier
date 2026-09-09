@@ -45,6 +45,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	c.reportSelfTypeName(ClassDeclKind, decl.Name)
+
 	// This window covers the body. A class in an SCC component resolved its parameters in the
 	// module pre-pass, before this point, so a diagnostic drawn by a bound or a default is
 	// carried on the shell instead and both are consulted before the unused warning is
@@ -108,6 +110,30 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	def.Implements = c.resolveClassImplements(declScope, lvl, decl)
 	def.EdgesPending = false
 
+	// Bind `Self` to the class's own instance handle for the member walk below. A member
+	// signature names it for a builder-style return, where a method hands back the receiver's
+	// own type: `std/array.esc` writes `fill(mut self, value: T, start?: number, end?: number)
+	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
+	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
+	// the way it does through any other reference to the class.
+	//
+	// The binding sits in a child of the declaration scope, so it covers the fields, the
+	// member signatures, the member bodies, and the constructors, and does not reach the
+	// `extends` and `implements` references resolved above. Those name the classes this one is
+	// built from, where `Self` would be circular.
+	//
+	// This binds `Self` to the DECLARING class, so an inherited member reads it at that class
+	// rather than at the subclass reaching it. #1520 carries the polymorphic reading, where a
+	// `-> Self` inherited from a superclass yields the receiver's own class. It needs `Self`
+	// kept distinct in the stored signature, which this binding does not do: once resolved, a
+	// written `Self` and a written reference to the class are the same handle, so no later pass
+	// can tell them apart. A distinct soltype kind is the shape that issue settles on.
+	bodyScope := declScope.Child()
+	bodyScope.defineType(selfTypeName, TypeBinding{Type: self})
+	savedSelfClass := c.selfClass
+	c.selfClass = self
+	defer func() { c.selfClass = savedSelfClass }()
+
 	// Two-phase member walk (B3). Phase 1 appends a signature element for every field,
 	// method, getter, and setter to the instance or static body before any body is
 	// inferred. Phase 2 then walks each method, getter, setter, and the constructor body
@@ -116,8 +142,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// recursive, or a forward call to a member declared later.
 	ctors := collectConstructors(decl)
 	c.checkClassBodyLifetimes(decl)
-	c.buildFieldSigs(declScope, lvl, decl, body, static)
-	pending := c.buildMemberSigs(declScope, lvl, decl, self, body, static)
+	c.buildFieldSigs(bodyScope, lvl, decl, body, static)
+	pending := c.buildMemberSigs(bodyScope, lvl, decl, self, body, static)
 	// A mutually recursive method group with no annotated return cannot ground its own
 	// return types, so it is reported before any body runs. Reporting here, not during
 	// body inference, keeps the diagnostic off the inferred-never recovery.
@@ -126,8 +152,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// inherited member is reachable through `self`. Phase 1 has appended every own member by
 	// now, so the view is complete, and it shares each own element pointer so phase 2's
 	// signature installs and field refinements still land on the registered body.
-	c.inferMemberBodies(declScope, lvl, c.ctx.selfView(self, body), pending)
-	ctorFns := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
+	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), pending)
+	ctorFns := c.inferConstructor(bodyScope, lvl, decl, self, body, ctors)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
@@ -691,6 +717,34 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	// defaulted parameter is filled from its default.
 	if at, ok := b.Type.(*soltype.AliasType); ok {
 		return c.buildAliasInstance(scope, at, ref, lvl), true
+	}
+	// `Self` binds the enclosing class's own handle, already carrying that class's
+	// type-parameter vars as its arguments, so it resolves to the binding directly. Routing it
+	// through buildClassInstance would read the arity of a class named `Self`, and a bare
+	// `-> Self` inside `class Box<T>` would report "class `Self` expects 1 type argument but
+	// got 0". A written argument is not part of the shorthand, so `Self<number>` falls through
+	// to the class path and reports there.
+	//
+	// The binding has to be the enclosing class's own handle and not merely a name match, so a
+	// user class declared `class Self<T>` keeps its arity check. Reading the name alone would
+	// let a bare `Self` reference to that class resolve to `Self<unknown>` in silence.
+	//
+	// A written lifetime argument is counted the way a reference through the class's own name
+	// counts one, rather than dropped. The shorthand still means the enclosing handle, so the
+	// count is checked here and the handle returned, instead of falling through to the class
+	// path — that path would also count the absent type arguments and report a second, spurious
+	// mismatch against a shorthand that takes none. A lifetime written as a prefix, `'a Self`,
+	// goes unread: resolveLifetimeArgs reads only the `<…>` list, so a prefix is unread through
+	// a class reference too and the shorthand matches it there.
+	if name == selfTypeName && len(ref.TypeArgs) == 0 && c.selfClass != nil && b.Type == soltype.Type(c.selfClass) {
+		if len(ref.LifetimeArgs) > 0 {
+			var ltParams []*soltype.LifetimeParam
+			if def, ok := c.ctx.classDef(c.selfClass.Name); ok {
+				ltParams = def.LifetimeParams
+			}
+			c.resolveLifetimeArgs(ref, ClassDeclKind, ltParams, lvl)
+		}
+		return b.Type, true
 	}
 	// A class reference routes through buildClassInstance whether or not it supplies
 	// arguments, so a generic class referenced bare still reports an arity mismatch and a
@@ -1402,4 +1456,27 @@ func lookupTypeThroughNamespace(scope *Scope, name string) (TypeBinding, bool) {
 		}
 		rest = tail
 	}
+}
+
+// selfTypeName is the type name a class body binds to its own instance handle, so a member
+// signature can write `-> Self` for a builder-style return. It is the name FuncType.SelfParam's
+// documentation already uses for the receiver's desugared type: `self` is `Self`, `mut self` is
+// `mut Self`, and `&self` is `&Self`.
+const selfTypeName = "Self"
+
+// reportSelfTypeName reports a type declaration that takes the name `Self`, and returns whether
+// it did. Every class body binds that name to its own instance type, so a declaration of that
+// name is unreachable from inside any class body and reads as the shorthand everywhere else.
+// Every kind that binds a type name routes through here, so the four cannot drift.
+//
+// The caller binds the declaration anyway. A reference to it then resolves and draws its own
+// diagnostics rather than cascading from this one, and resolveScopedTypeRef's `Self` shortcut
+// still gates on the enclosing class's own handle so the two readings stay apart during the
+// recovery.
+func (c *checker) reportSelfTypeName(kind TypeDeclKind, name *ast.Ident) bool {
+	if name == nil || name.Name != selfTypeName {
+		return false
+	}
+	c.report(&SelfTypeNameError{Kind: kind, Name: name})
+	return true
 }
