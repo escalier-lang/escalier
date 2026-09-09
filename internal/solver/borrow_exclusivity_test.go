@@ -16,7 +16,8 @@ const exclusivityDecls = `
 `
 
 // TestBorrowExclusivity covers the mutable-XOR-shared rule: data one borrow can write through
-// may not be reachable through a second borrow at the same time.
+// may not be reachable at the same time through a borrow that expects it to hold still. Two
+// borrows that agree, both mutable or both shared, are allowed.
 //
 // Each case pins the full diagnostic, so the wording that says WHICH pair conflicts is part of
 // what is asserted. A case that should be accepted asserts no diagnostic at all.
@@ -36,15 +37,18 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: []string{"9:20-9:26: cannot borrow 'x' as mutable while it is borrowed as immutable"},
 		},
-		// Two writable views of one value disagree the moment either writes.
-		"TwoMutableOfOnePlace": {
+		// Two writable views of one value both expect it to change, so neither is surprised by
+		// the other's write. Rule 3 of planning/lifetimes/requirements.md allows this, where Rust
+		// would not: one thread cannot observe a tear, and `&mut` is invariant in its referent, so
+		// the two views agree on the type as well as on the mutability.
+		"TwoMutableOfOnePlaceOk": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
 					writeWrite(&mut x, &mut x)
 				}
 			`,
-			want: []string{"9:25-9:31: cannot borrow 'x' as mutable more than once at a time"},
+			want: nil,
 		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoSharedOfOnePlaceOk": {
@@ -183,18 +187,18 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The reassignment does not silence a real conflict: a borrows x after it, so b is a
-		// second mutable view of x.
+		// The reassignment does not silence a real conflict: a borrows x mutably after it, and
+		// the shared b then reads data a can write.
 		"ReassignedBorrowStillConflicts": {
 			src: exclusivityDecls + `
 				fn g(x: mut {v: number}, y: mut {v: number}) {
 					var a = &mut y
 					a = &mut x
-					val b = &mut x
-					write(a)
+					val b = &x
+					readWrite(b, a)
 				}
 			`,
-			want: []string{"10:14-10:20: cannot borrow 'x' as mutable more than once at a time"},
+			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
 		},
 		// Two bound borrows of disjoint fields stay apart across statements too.
 		"BorrowsBoundToNamesOfDisjointFieldsOk": {
