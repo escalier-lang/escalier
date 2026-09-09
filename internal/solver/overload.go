@@ -59,7 +59,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		// active. This upholds the guarantee that a losing trial leaves no Info or Prov
 		// entries.
 		p := c.openProbe()
-		inst, ok := c.instantiate(b.Schemes[idx], lvl).(*soltype.FuncType)
+		arm, ok := c.instantiate(b.Schemes[idx], lvl).(*soltype.FuncType)
 		if !ok {
 			// An overload arm that is not a function scheme cannot match a call. This should
 			// not arise, since every arm comes from a FuncDecl. Skip it rather than
@@ -67,7 +67,12 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			c.closeProbe(p, false)
 			continue
 		}
-		matched, diags := c.tryOverloadArm(args, call.Args, inst)
+		// One arm becomes several candidate shapes when its rest slot is a union of tuples,
+		// and a tuple rest expands to plain positions. This is the same callCandidates the
+		// single-signature path reads, so an arm's rest slot means here what it means there.
+		// Probes nest, so a candidate that loses rolls back on its own and leaves the arm's
+		// instantiation intact for the next one.
+		inst, matched, diags := c.tryArmCandidates(args, call.Args, arm)
 		c.closeProbe(p, matched)
 		if matched {
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
@@ -79,31 +84,60 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			// inferCall's shape wires it.
 			if inst.Throws != nil {
 				c.constrain(call, inst.Throws, c.throwsSink(lvl))
-				// The call counts as an exceptional exit unless the winner declares it raises
-				// nothing, so an enclosing `throws` clause this call needs is not warned about
-				// as unused. An unsolved throws variable counts as raising, the same reading
-				// inferCall gives an unresolved callee.
-				if !isNeverType(inst.ThrowsOrNever()) {
-					c.markRaised()
-				}
 			}
+			c.markCallRaised(inst)
 			return inst.Ret, inst
 		}
 	}
 	// No arm accepted the call, so nothing here shows it cannot raise. Count it as an
 	// exceptional exit, the reading inferCall gives a callee it cannot resolve, so the no-match
 	// error is not joined by a spurious unused-clause warning against a clause the call needs.
-	c.markRaised()
+	c.markCallRaised(nil)
 	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes}), nil
 }
 
-// tryOverloadArm reports whether inst, a freshly-instantiated arm, accepts a call with the given
-// argument types, applying the argument constraints to inst's params as it goes. It runs under a
-// probe the caller opened, so a false return rolls back every bound it appended, and it uses the
-// error-returning Context.Constrain so a rejected argument never reaches c.errs. On a match it
-// returns the warnings the accepting constraints produced, for the caller to surface at the
-// call; hasHardError draws the accept line, so an argument that warns still matches. A non-match
-// returns nil, dropping a rejected arm's diagnostics.
+// tryArmCandidates trials each positional shape one instantiated arm stands for, and returns the
+// first that accepts the call along with the warnings its constraints produced. A losing
+// candidate rolls back under its own probe, nested inside the arm's, so the arm's instantiation
+// survives for the next candidate.
+//
+// An arm yields more than one shape only when its rest slot is a union of tuples, where the call
+// matches if some member matches. Every other arm yields exactly one, so the loop is the
+// single-shape case in the common form rather than a separate body.
+func (c *checker) tryArmCandidates(
+	args []soltype.Type, argExprs []ast.Expr, arm *soltype.FuncType,
+) (*soltype.FuncType, bool, []SolverError) {
+	for _, cand := range c.ctx.callCandidates(arm, newSeenPairs()) {
+		p := c.openProbe()
+		matched, diags := c.tryOverloadArm(args, argExprs, cand)
+		c.closeProbe(p, matched)
+		if matched {
+			return cand, true, diags
+		}
+	}
+	return nil, false, nil
+}
+
+// markCallRaised counts a call as an exceptional exit unless the signature it resolved to
+// declares that it raises nothing. An enclosing `throws` clause the call needs is then not
+// warned about as unused. A nil fn is a callee that resolved to no signature — a deferred one,
+// or an overload set no arm of which accepted — and counts as raising, since nothing about it
+// shows that it cannot. An unsolved throws variable counts as raising for the same reason.
+func (c *checker) markCallRaised(fn *soltype.FuncType) {
+	if fn == nil || !isNeverType(fn.ThrowsOrNever()) {
+		c.markRaised()
+	}
+}
+
+// tryOverloadArm reports whether inst, a freshly-instantiated arm, accepts a call with the
+// given argument types, applying the argument constraints to inst's params as it goes. It
+// runs under a probe the caller opened, so a false return rolls back every bound it
+// appended, and it uses the error-returning Context.Constrain so a rejected argument never
+// reaches c.errs.
+//
+// On a match it returns the warnings the accepting constraints produced, for the caller to
+// surface at the call. hasHardError draws the accept line, so an argument that warns still
+// matches. A non-match returns nil, dropping a rejected arm's diagnostics.
 //
 // Arity reuses acceptSet (#677), so the overload gate and the FuncType<:FuncType gate cannot
 // drift. A count outside it is a non-match unless the arm is inexact or has a rest. An `Array<E>`

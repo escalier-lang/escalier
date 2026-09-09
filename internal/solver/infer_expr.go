@@ -1428,20 +1428,27 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	if ft, ok := callee.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
 		callee = c.ctx.instantiateFuncBinder(ft, lvl)
 	}
-	// A callee whose rest slot is a union of tuples admits a call when SOME member admits it,
-	// so each member becomes a candidate and the call resolves through the same trial machinery
-	// an overload set uses. `next(...value: [] | [TNext])` accepts both `i.next()` and
-	// `i.next(v)`, and rejects a wrong `v` against the element rather than against the slot.
-	// This runs after the generic instantiation above so an arm carries the call's own
-	// type-parameter bindings rather than the binder's.
-	if fn, ok := resolveFunc(callee); ok {
-		if arms, ok := c.ctx.distributeUnionRest(fn, newSeenPairs()); ok {
-			return c.inferArmOverloadCall(scope, lvl, e, arms, consumeRef, hasConsumeRef)
+	// Resolve the callee to the positional shapes the argument and arity rules read. This is the
+	// same callCandidates the per-arm trial in resolveOverload reads, so a rest slot means the
+	// same thing on both paths: a tuple rest expands to plain positions, and a union-of-tuples
+	// rest yields one shape per member. It runs after the generic instantiation above so a shape
+	// carries the call's own type-parameter bindings rather than the binder's.
+	fn, resolved := resolveFunc(callee)
+	if resolved {
+		cands := c.ctx.callCandidates(fn, newSeenPairs())
+		if len(cands) > 1 {
+			// The callee admits the call when SOME shape admits it, which is the disjunction an
+			// overload set already resolves. `next(...value: [] | [TNext])` accepts both
+			// `i.next()` and `i.next(v)`, and rejects a wrong `v` against the element rather
+			// than against the slot. Routing here rather than into a single callee <: callShape
+			// constraint keeps that choice where choosing belongs.
+			return c.inferArmOverloadCall(scope, lvl, e, cands, consumeRef, hasConsumeRef)
 		}
+		fn = cands[0]
 	}
 	args := make([]*soltype.FuncParam, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = &soltype.FuncParam{Type: c.inferExpr(scope, lvl, a)}
+	for i, t := range c.inferCallArgs(scope, lvl, e) {
+		args[i] = &soltype.FuncParam{Type: t}
 	}
 	res := c.freshAt(lvl)
 	c.recordProv(res, e, Application)
@@ -1451,13 +1458,6 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// where the lattice tolerates them. They fire only for a concrete callee. When one fires the
 	// demand is reshaped into the callee's accept-set so the synth's gate does not also report
 	// arity: too-many truncates, too-few pads with fresh vars that constrain nothing.
-	fn, resolved := resolveFunc(callee)
-	if resolved {
-		// A tuple-typed rest param expands to one positional param per element, so the lints, the
-		// owned-mutable upgrade, and consumeCallArgs below read plain positions rather than
-		// comparing an argument against the whole tuple.
-		fn = c.ctx.expandTupleRest(fn, newSeenPairs())
-	}
 	demand := args
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
@@ -1526,9 +1526,12 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	callShape := &soltype.FuncType{Params: demand, Ret: res, Throws: c.throwsSink(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
-	// unsolved variable at this point.
-	if fn, ok := resolveFunc(callee); !ok || !isNeverType(fn.ThrowsOrNever()) {
-		c.markRaised()
+	// unsolved variable at this point. resolveOverload reaches the same rule through the same
+	// helper, against the arm it picked.
+	if resolved {
+		c.markCallRaised(fn)
+	} else {
+		c.markCallRaised(nil)
 	}
 	// Record the synthesized call-shape against the CallExpr so a FuncArityMismatchError
 	// — now only from a DEFERRED callee's too-few (or a callback-arity failure), since
@@ -1537,20 +1540,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	c.constrain(e, callee, callShape)
 	if resolved {
 		c.constrain(e, fn.Ret, res)
-		// Passing an owned argument to a bare owned parameter moves it; a `&`/`&mut`
-		// parameter auto-borrows and leaves the argument usable. An arity-mismatched call
-		// still moves each argument that lines up with a parameter, so `store(p, p)` moves
-		// the first p and a later use of p is a use-after-move. consumeCallArgs skips the
-		// extra arguments that have no corresponding parameter.
-		if hasConsumeRef {
-			c.consumeCallArgs(e, fn, consumeRef)
-			// A borrow argument the signature stores into another argument, or into a
-			// method's receiver, aliases the two for as long as the target lives. Record that
-			// edge here rather than leaving the alias invisible to the escape check and the
-			// component move.
-			recv, self := c.calleeReceiver(e.Callee)
-			c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
-		}
+		c.recordCallArgEffects(e, fn, consumeRef, hasConsumeRef)
 	}
 	c.recordType(e, res)
 	return res
@@ -1635,16 +1625,13 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 	// Read the statement point before the arguments are inferred, for the reason inferCall
 	// gives: an argument containing statements overwrites the current one.
 	consumeRef, hasConsumeRef := c.currentStmtRef()
-	args := make([]soltype.Type, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = c.inferExpr(scope, lvl, a)
-	}
+	args := c.inferCallArgs(scope, lvl, e)
 	// Record the callee's display type for Info (hover) via overloadDisplayType, which
 	// coalesces the schemes rather than instantiating them — resolveOverload below does
 	// the (only) per-arm instantiation needed to type the call.
 	c.recordType(e.Callee, overloadDisplayType(b))
 	ret, winner := c.resolveOverload(lvl, b, args, e)
-	c.recordOverloadArgEffects(e, winner, consumeRef, hasConsumeRef)
+	c.recordCallArgEffects(e, winner, consumeRef, hasConsumeRef)
 	c.recordType(e, ret)
 	return ret
 }
@@ -1660,36 +1647,59 @@ func (c *checker) inferArmOverloadCall(
 	scope *Scope, lvl int, e *ast.CallExpr, arms []*soltype.FuncType,
 	consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) soltype.Type {
-	args := make([]soltype.Type, len(e.Args))
-	for i, a := range e.Args {
-		args[i] = c.inferExpr(scope, lvl, a)
-	}
+	args := c.inferCallArgs(scope, lvl, e)
 	schemes := make([]TypeScheme, len(arms))
 	for i, arm := range arms {
 		schemes[i] = &MonoScheme{Ty: arm}
 	}
 	ret, winner := c.resolveOverload(lvl, ValueBinding{Schemes: schemes}, args, e)
-	c.recordOverloadArgEffects(e, winner, consumeRef, hasConsumeRef)
+	c.recordCallArgEffects(e, winner, consumeRef, hasConsumeRef)
 	c.recordType(e, ret)
 	return ret
 }
 
-// recordOverloadArgEffects moves the arguments a resolved overload call consumes and records
-// the borrow edges its signature stores, the two things inferCall does for a callee it
-// resolved to a single signature. Overload resolution owns the argument checking itself, so it
-// leaves inferCall before those run and has to do them here against the arm it picked.
+// inferCallArgs types a call's arguments left to right, the ONE place either call path does so.
+// The result is index-aligned with e.Args, which is what lets the argument rules read the source
+// expression behind an argument — the owned-mutable upgrade needs it to tell a uniquely-owned
+// argument from a live one.
 //
-// winner is nil when no arm accepted the call. Nothing is moved then, since no signature says
-// which arguments a call that does not type-check would have consumed.
-func (c *checker) recordOverloadArgEffects(
-	e *ast.CallExpr, winner *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
+// The enclosing statement's CFG point must be read BEFORE this runs. Inferring a child that
+// contains statements, such as an `if` argument, overwrites c.fn.currentStmt, so reading the
+// point afterward would record an argument move against an inner branch instead of this call's
+// statement.
+func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltype.Type {
+	args := make([]soltype.Type, len(e.Args))
+	for i, a := range e.Args {
+		args[i] = c.inferExpr(scope, lvl, a)
+	}
+	return args
+}
+
+// recordCallArgEffects moves the arguments a call consumes and records the borrow edges its
+// signature stores. It is the ONE place both call paths run those two, against whichever
+// signature the call resolved to: the single shape inferCall read off the callee, or the arm
+// resolveOverload picked. Keeping them here is what stops one path from forgetting them, which
+// is how #1508 came about.
+//
+// Passing an owned argument to a bare owned parameter moves it, while a `&`/`&mut` parameter
+// auto-borrows and leaves the argument usable. An arity-mismatched call still moves each
+// argument that lines up with a parameter, so `store(p, p)` moves the first p and a later use of
+// p is a use-after-move; consumeCallArgs skips the extra arguments that have no parameter. A
+// borrow argument the signature stores into another argument, or into a method's receiver,
+// aliases the two for as long as the target lives, and recordCallStoreEdges records that rather
+// than leaving the alias invisible to the escape check and the component move.
+//
+// fn is nil when no arm accepted the call. Nothing is moved then, since no signature says which
+// arguments a call that does not type-check would have consumed.
+func (c *checker) recordCallArgEffects(
+	e *ast.CallExpr, fn *soltype.FuncType, consumeRef liveness.StmtRef, hasConsumeRef bool,
 ) {
-	if winner == nil || !hasConsumeRef {
+	if fn == nil || !hasConsumeRef {
 		return
 	}
-	c.consumeCallArgs(e, winner, consumeRef)
+	c.consumeCallArgs(e, fn, consumeRef)
 	recv, self := c.calleeReceiver(e.Callee)
-	c.recordCallStoreEdges(e, winner, recv, self, consumeRef)
+	c.recordCallStoreEdges(e, fn, recv, self, consumeRef)
 }
 
 // ctorOverloadArms returns the signatures of an overloaded constructor when t reads as a class
