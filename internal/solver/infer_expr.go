@@ -455,6 +455,23 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			bodyDiverges = true
 		} else {
 			ret = c.joinReturnPoints(node, lvl, collected)
+			// A return moves the value out of the frame, so the caller becomes its sole owner
+			// and its own binding decides mutability. `val r = f()` freezes what it gets and
+			// `val mut r = f()` takes it mutably. Handing back `mut T` would grant every caller
+			// a write they never asked for, where the default is immutability. Only the
+			// INFERRED type is frozen: a signature that writes `-> mut T` still means it, and a
+			// `mut` on a parameter or on a binding inside the body is untouched.
+			//
+			// The peel reads the joined type's shape, so it reaches a return that is settled by
+			// the time the body is walked. A return still standing as an inference variable
+			// keeps its `mut`, since the variable resolves to the mutable form only at
+			// coalescing. Peeling its bounds into a copy here would break the identity
+			// generalization reads to keep a type parameter in the signature. Three shapes land
+			// there: a `var mut` binding returned directly, a join over several returns, and a
+			// return of an `if` or `match` that produces one. See #1505.
+			if sig.Return == nil {
+				ret = stripOwnedMut(ret)
+			}
 		}
 	}
 	// A declared `throws T` the body never uses obliges every caller to handle an
