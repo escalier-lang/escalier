@@ -42,6 +42,16 @@ func (c *checker) preBindNamespaceDecls(scope *Scope, module *ast.Module, handle
 				continue
 			}
 			if sh := c.preBindOneNamespace(prefix, nsDecl, handled, byName); sh != nil {
+				// A file importing a package under this name would write the same
+				// `name.member` for two different namespaces. Report it rather than
+				// picking one, since either choice makes the other unreachable and
+				// nothing in the source says which was meant.
+				if c.importBindsNamespace(sh.qname) {
+					c.report(&NamespaceCollidesWithImportError{
+						Name: sh.qname,
+						span: nsDecl.Span(),
+					})
+				}
 				// Bind under the qualified name, matching the keys the walk gives the
 				// members, so a block in a directory-derived namespace does not collide
 				// with a same-named block in a sibling directory.
@@ -147,9 +157,47 @@ func (c *checker) populateNamespace(scope *Scope, sh *namespaceShell) {
 				}
 				if b, found := scope.GetType(key); found {
 					out.Types[name] = b
+				} else if b, found := scope.GetType(qualify(packageKeyPrefix(c.pkgURI), key)); found {
+					// A type declared inside a package registers under a key carrying the
+					// package URI, which is what keeps two packages' same-named classes
+					// apart. The member is re-keyed to its bare name here, the way
+					// exportedSurface re-keys a package's top-level types.
+					out.Types[name] = b
 				}
 			}
 		}
 	}
 	c.populateNamespaces(scope, sh.nested)
 }
+
+// importBindsNamespace reports whether any file of the module being inferred binds
+// name as an imported package. Imports are bound before the walk, so every one is
+// in place by the time a block is pre-bound.
+func (c *checker) importBindsNamespace(name string) bool {
+	for _, fileScope := range c.fileScopes {
+		if fileScope == nil {
+			continue
+		}
+		if _, bound := fileScope.namespaces[name]; bound {
+			return true
+		}
+	}
+	return false
+}
+
+// NamespaceCollidesWithImportError reports a `namespace` block whose name a file
+// of the same module also imports a package under. Both are reached by writing
+// `name.member`, so one name would stand for two namespaces.
+type NamespaceCollidesWithImportError struct {
+	// Name is the name declared as a block and bound by an import.
+	Name string
+	span ast.Span
+}
+
+func (e *NamespaceCollidesWithImportError) Message() string {
+	return "namespace " + e.Name + " has the name an import already binds; " +
+		"rename the block or write `as` on the import"
+}
+func (e *NamespaceCollidesWithImportError) Span() ast.Span      { return e.span }
+func (e *NamespaceCollidesWithImportError) Related() []ast.Span { return nil }
+func (e *NamespaceCollidesWithImportError) isSolverError()      {}

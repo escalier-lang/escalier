@@ -275,39 +275,29 @@ func TestImportsDoNotLeakAcrossFiles(t *testing.T) {
 // A package exports its types, not only its values. The registry keys a type
 // under the package URI while an importer names it bare, so the surface has to
 // re-key it.
-//
-// DISABLED until #1474 resolves a dotted type annotation. Without named
-// imports there is no way to write an imported type in annotation position. A
-// bare import binds the package as a namespace, and an annotation naming
-// `geometry.Point` is reported as a type the solver cannot find. The shipped
-// `std/intl.esc` already writes annotations of that shape, so this has to work
-// before the committed tree can be ingested. Re-enable by removing the wrapper
-// and rewriting the body as a bare import with both annotations qualified; the
-// named form the body still holds is rejected outright since #1471.
 func TestImportResolvesAnExportedType(t *testing.T) {
 	t.Parallel()
-	/*
-		res := InferModuleWithSource(
-			parseModule(t, `
-				import { Point, Num } from "geometry"
-				val p: Point = Point(1, 2)
-				val n: Num = 3
-			`),
-			sourceOf(t, map[string]string{
-				"geometry": `
-					export type Num = number
-					export class Point {
-						x: number,
-						y: number,
-					}
-				`,
-			}),
-		)
 
-		require.Empty(t, errorMessagesOf(res.Errors))
-		require.Equal(t, "Point", soltype.Print(inferredValueType(t, res.Scope, "p")))
-		require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
-	*/
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "geometry"
+			val p: geometry.Point = geometry.Point(1, 2)
+			val n: geometry.Num = 3
+		`),
+		sourceOf(t, map[string]string{
+			"geometry": `
+				export type Num = number
+				export class Point {
+					x: number,
+					y: number,
+				}
+			`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Point", soltype.Print(inferredValueType(t, res.Scope, "p")))
+	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
 
 // A package resolves the types it declares itself. Registration keys them under
@@ -691,41 +681,36 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
 
-// An import a file wrote outranks a declaration the package made under the same
-// name. The import is bound in the file's own scope, nearer than the module
-// scope the package's declarations live in.
-//
-// DISABLED until #1474 resolves a dotted type annotation. The case needs
-// two declarations of one bare type name, one imported and one local, which
-// only a named import produces. A bare import binds a namespace, so the
-// imported one is written `inner.Widget` and never competes for `Widget`.
-// Re-enable by rewriting the body as bare imports with the annotation
-// qualified, which turns this into a test that the qualified name reaches the
-// imported class rather than the local one. The named form the body still holds
-// is rejected outright since #1471.
-func TestAFileImportOutranksThePackagesOwnDeclaration(t *testing.T) {
+// A qualified annotation reaches the package the import names, not a same-named
+// declaration the file made itself. `outer` declares its own `Widget` and imports
+// another, so `inner.Widget` has to answer with the imported one.
+func TestAQualifiedNameReachesTheImportedDeclaration(t *testing.T) {
 	t.Parallel()
-	/*
-		res := InferModuleWithSource(
-			parseModule(t, `
-				import { make } from "outer"
-				val w = make()
-				val tag = w.fromInner
-			`),
-			sourceOf(t, map[string]string{
-				// `outer` declares its own `Widget` and imports another. The
-				// annotation on `make` names the imported one, since the file wrote
-				// that import.
-				"outer": `
-					import { Widget } from "inner"
-					export class Widget { fromOuter: number, }
-					export fn make() -> Widget { return Widget(1) }
-				`,
-				"inner": `export class Widget { fromInner: number, }`,
-			}),
-		)
 
-		require.Empty(t, errorMessagesOf(res.Errors))
-		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "tag")))
-	*/
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "outer"
+			val w = outer.make()
+			val tag = w.fromInner
+		`),
+		sourceOf(t, map[string]string{
+			"outer": `
+				import "inner"
+				export class Widget {
+					fromOuter: number,
+				}
+				export fn make() -> inner.Widget {
+					return inner.Widget(1)
+				}
+			`,
+			"inner": `
+				export class Widget {
+					fromInner: number,
+				}
+			`,
+		}),
+	)
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "tag")))
 }

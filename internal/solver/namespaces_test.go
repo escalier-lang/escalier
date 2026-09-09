@@ -121,6 +121,26 @@ func TestExportedNamespaceBlockReachesTheSurface(t *testing.T) {
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "o")))
 }
 
+// A type an exported namespace block declares reaches the surface alongside its
+// values, so an importer can name it in an annotation.
+func TestExportedNamespaceBlockCarriesItsTypes(t *testing.T) {
+	res := InferModuleWithSource(
+		parseModule(t, `
+			import "geometry"
+			val n: geometry.shapes.Num = 3
+		`),
+		sourceOf(t, map[string]string{
+			"geometry": `
+				export namespace shapes {
+					export type Num = number
+				}
+			`,
+		}),
+	)
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}
+
 // Two functions in one namespace calling each other land in one component, and
 // each body reads the other through `Foo.member` while both are still being
 // inferred. The namespace has to answer for a member whose binding var exists but
