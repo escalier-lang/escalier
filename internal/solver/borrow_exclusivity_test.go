@@ -212,6 +212,7 @@ const storeEffectDecls = `
 		item: &'a mut {value: number},
 	) -> undefined
 	declare fn readBorrow(x: &mut {value: number}) -> undefined
+	declare fn readShared(x: &{value: number}) -> undefined
 	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
 `
 
@@ -234,11 +235,11 @@ func TestStoreEffectLoans(t *testing.T) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
-					readBorrow(&mut b)
+					readShared(&b)
 					touch(&mut a)
 				}
 			`,
-			want: []string{"13:17-13:23: cannot borrow 'b' as mutable more than once at a time"},
+			want: []string{"14:17-14:19: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Reading the item directly reaches the same data the target can write through, which
 		// the loan-against-loan check does not see because a read is not a borrow.
@@ -252,7 +253,7 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"13:14-13:15: cannot use 'b' while it is borrowed as mutable"},
+			want: []string{"14:14-14:15: cannot use 'b' while it is borrowed as mutable"},
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
@@ -365,8 +366,8 @@ func TestStoreEffectLoans(t *testing.T) {
 // mutability does not describe it. Reading it as shared would let the target hold a writable
 // view while the check believed it held a read-only one.
 //
-// The wording is what pins this. A shared loan of h would report `as mutable while it is
-// borrowed as immutable`; a mutable one reports `more than once at a time`.
+// The later SHARED borrow of h is what pins this. It conflicts with a mutable loan and not with
+// a shared one, so the diagnostic appears only when the receiver was read as mutable.
 func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
@@ -378,11 +379,11 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 			val mut h = Holder(&mut p)
 			val mut o = {slot: &mut p}
 			h.drain(&mut o)
-			val again = &mut h
+			val again = &h
 			touch(&mut o)
 		}
 	`)
 	require.Equal(t, []string{
-		"11:16-11:22: cannot borrow 'h' as mutable more than once at a time",
+		"11:16-11:18: cannot borrow 'h' as immutable while it is borrowed as mutable",
 	}, messagesWithSpan(t, errs))
 }
