@@ -8,10 +8,17 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// Borrow exclusivity. Data that one borrow can write through may not be reachable through a
-// second borrow at the same time. Two shared borrows are fine, since neither writes. A mutable
-// borrow beside any other borrow of the same data is not, because the two views disagree the
-// moment one of them writes.
+// Borrow exclusivity. Data a borrow can write through may not be reachable at the same time
+// through a borrow that expects it to hold still. A mutable borrow beside a shared one is the
+// pair that breaks: the shared view promises stability and the mutable view can take it away.
+//
+// Two mutable borrows of one value are allowed. That is Rule 3 of
+// planning/lifetimes/requirements.md, a deliberate departure from Rust: both views agree the
+// data can change, and with one thread neither can observe a tear. `&mut` is invariant in its
+// referent, so two mutable borrows of one place also agree on its type and neither can write a
+// value the other would misread.
+//
+// Two shared borrows are fine for the mirror-image reason, since neither writes.
 //
 // A loan is one borrow the checker tracks. It records the place the borrow reaches, whether a
 // write can go through it, and how long it stays usable. Loans come from two sites:
@@ -54,13 +61,15 @@ import (
 //     `&mut self.p` names no binding and records no loan. #1486 covers that, and it reaches
 //     further than this check: every analysis built on places sees the same 0.
 
-// BorrowAliasError reports two borrows of overlapping data live at once where at least one can
-// write through its view.
+// BorrowAliasError reports two borrows of overlapping data live at once that disagree about
+// whether it can change, so one can write through its view and the other expects it to hold
+// still.
 type BorrowAliasError struct {
 	// Place names the data both borrows reach, `x` for a whole binding and `x.a` for a field.
 	Place string
-	// FirstMut and SecondMut say whether a write can go through each borrow. Second is the one
-	// the error is blamed on, since it is where the program first holds two views.
+	// FirstMut and SecondMut say whether a write can go through each borrow. Exactly one of them
+	// is true, since a conflicting pair is one mutable borrow beside one shared borrow. Second is
+	// the one the error is blamed on, since it is where the program first holds two views.
 	FirstMut  bool
 	SecondMut bool
 	node      ast.Node
@@ -71,14 +80,10 @@ func (*BorrowAliasError) isSolverError()        {}
 func (e *BorrowAliasError) Span() ast.Span      { return e.node.Span() }
 func (e *BorrowAliasError) Related() []ast.Span { return []ast.Span{e.first} }
 func (e *BorrowAliasError) Message() string {
-	switch {
-	case e.FirstMut && e.SecondMut:
-		return fmt.Sprintf("cannot borrow '%s' as mutable more than once at a time", e.Place)
-	case e.SecondMut:
+	if e.SecondMut {
 		return fmt.Sprintf("cannot borrow '%s' as mutable while it is borrowed as immutable", e.Place)
-	default:
-		return fmt.Sprintf("cannot borrow '%s' as immutable while it is borrowed as mutable", e.Place)
 	}
+	return fmt.Sprintf("cannot borrow '%s' as immutable while it is borrowed as mutable", e.Place)
 }
 
 // loan is one borrow the exclusivity check tracks.
@@ -126,10 +131,12 @@ func placesOverlap(a, b movePlace) bool {
 	return a.root == b.root && pathPrefixRelated(a.path, b.path)
 }
 
-// conflicts reports whether two loans may not be live at once. Overlapping data is fine while
-// neither borrow can write, since two readers see the same value.
+// conflicts reports whether two loans may not be live at once. The pair has to disagree about
+// whether the data can change, so one borrow writable and the other not. Two readers see the
+// same value and two writers both expect the value to move under them, so neither pair is a
+// conflict. Rule 3 in planning/lifetimes/requirements.md is what admits the second of those.
 func conflicts(a, b loan) bool {
-	return (a.mut || b.mut) && placesOverlap(a.place, b.place)
+	return a.mut != b.mut && placesOverlap(a.place, b.place)
 }
 
 // reportBorrowConflict reports second as the borrow that broke exclusivity, pointing back at
