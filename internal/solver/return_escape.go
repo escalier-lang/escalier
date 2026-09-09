@@ -780,6 +780,10 @@ func (c *checker) recordFieldStoreEdges(
 	}
 	base := appendSeg(rp.path, field)
 	c.clearEagerSubtree(rp.root, base)
+	// The store repoints the field, so whatever it reached before is unreachable through it.
+	// The loans at that field end with the edges, which is the same strong update on the same
+	// subtree.
+	c.endLoansAt(rp.root, base)
 	c.recordBorrowSources(rp.root, base, source)
 	c.flushBorrowDirty(stmtRef)
 	// The receiver reaches the stored place from here on, so it holds a borrow of it that a
@@ -787,7 +791,7 @@ func (c *checker) recordFieldStoreEdges(
 	// recordCallStoreEdges derives from a call's store effect.
 	if borrow, ok := source.(*ast.BorrowExpr); ok {
 		if place, ok := loanPlace(borrow); ok {
-			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, stmtRef, borrow)
+			c.recordStoreEdgeLoan(place, borrow.Mut, rp.root, base, stmtRef, borrow)
 		}
 	}
 }
