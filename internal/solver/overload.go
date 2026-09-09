@@ -67,7 +67,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			c.closeProbe(p, false)
 			continue
 		}
-		matched, diags := c.tryOverloadArm(args, inst)
+		matched, diags := c.tryOverloadArm(args, call.Args, inst)
 		c.closeProbe(p, matched)
 		if matched {
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
@@ -115,7 +115,23 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // Either is a non-match, unless the arm is inexact or has a rest. An `Array<E>` rest slot
 // says what each argument it absorbs must be, so those are checked against E. An inexact
 // tail says nothing about what it absorbs, so those stay arity-only.
-func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (bool, []SolverError) {
+//
+// argExprs are the source expressions behind args, index for index, and are read only to
+// decide the owned-mutable upgrade — a uniquely-owned argument fills a `mut` parameter, so
+// `take({x: 1})` matches an arm declaring `a: mut {x: number}`. inferCall grants the same
+// thing through tryUpgradeToOwnedMut for a callee it resolved to one signature, and an
+// argument accepted there must be accepted here too, or adding an unrelated second arm to a
+// set would break a call that compiled. The upgrade is taken through ownedMutReadView rather
+// than tryUpgradeToOwnedMut so the check stays on Context.Constrain and a losing arm writes
+// no errors. A shorter argExprs, which a hand-built call in a test may give, leaves the
+// arguments past its end on the ordinary path.
+//
+// A rest slot takes no upgrade. An argument there fills one element of the array the slot
+// gathers rather than the slot itself, so there is no parameter type to upgrade it against.
+// inferCall skips a rest slot for the same reason.
+func (c *checker) tryOverloadArm(
+	args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
+) (bool, []SolverError) {
 	n := len(args)
 	if lo, hi := acceptSet(inst); n < lo || n > hi {
 		return false, nil
@@ -144,7 +160,13 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (b
 			}
 			break
 		}
-		errs := c.ctx.Constrain(arg, inst.Params[i].Type)
+		target := inst.Params[i].Type
+		if i < len(argExprs) {
+			if view, ok := c.ownedMutReadView(argExprs[i], target); ok {
+				target = view
+			}
+		}
+		errs := c.ctx.Constrain(arg, target)
 		if hasHardError(errs) {
 			return false, nil
 		}
