@@ -40,25 +40,101 @@ func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 // expandTupleRest returns f with a tuple-typed rest param replaced by one positional param per
 // tuple element, so the rules that walk a parameter list read ordinary positions instead of each
 // growing a rest case. The expanded form is never stored or printed, so a diagnostic still names
-// the written type. An inexact tuple keeps its unbounded ceiling, and an inference variable stays
-// a rest param for the gather rule to bind, which is why the tuple is read by a direct assertion.
-func expandTupleRest(f *soltype.FuncType) *soltype.FuncType {
+// the written type. An inference variable stays a rest param for the gather rule to bind, which
+// is why the tuple is read by a direct assertion.
+//
+// Two tuple shapes need work before the positions fall out.
+//
+// A tuple carrying `...P` spread elements is grounded first, since a spread stands for several
+// positions rather than one. `Function.bind` writes `...args: [...A, ...B]`, and pairing argument
+// 0 with the whole `...A` would check it against a spread rather than against the element the
+// spread places there. groundTuple splices each operand's own elements in, expanding a named
+// alias on the way, and reports false for a spread that never grounds — over a type parameter,
+// say. The slot then stays a rest param, arity-only, which is the inert-residual reading a
+// symbolic operand already gets everywhere else.
+//
+// An INEXACT tuple expands its fixed prefix into positions and keeps a trailing rest param for
+// the tail. `...xs: [A, ...]` means "at least an A, then any number more", so the prefix has to
+// be checked and the tail must not be. The tail's slot is typed `unknown`, which restArity reads
+// as binding [0, ∞) and restSlotElem reads as declaring no element type, so the tail is
+// arity-only. Marking the expanded FuncType Inexact instead would leave the callee with no rest
+// param at all, and inferCall's too-many-arguments lint would then reject the very tail the
+// written `...` admits.
+//
+// seen is the caller's expansion guard, shared with the evaluator so a recursive alias reached
+// through a spread closes the same way it does at a constraint site.
+func (c *Context) expandTupleRest(f *soltype.FuncType, seen *seenPairs) *soltype.FuncType {
 	k := restIndex(f)
 	if k < 0 {
 		return f
 	}
 	tup, ok := f.Params[k].Type.(*soltype.TupleType)
-	if !ok || tup.Inexact {
+	if !ok {
 		return f
 	}
-	params := make([]*soltype.FuncParam, 0, k+len(tup.Elems))
+	if hasRestSpread(tup.Elems) {
+		// Diagnostics the reduction records are dropped, as they are wherever else a tuple is
+		// ground for its shape. The written slot is what a call's diagnostic names, so a
+		// complaint about the reduced form would point at a type the source never wrote.
+		if tup, ok = newTypeEvaluator(c, seen).groundTuple(tup); !ok {
+			return f
+		}
+	}
+	params := make([]*soltype.FuncParam, 0, k+len(tup.Elems)+1)
 	params = append(params, f.Params[:k]...)
 	for _, elem := range tup.Elems {
 		params = append(params, &soltype.FuncParam{Pattern: f.Params[k].Pattern, Type: elem})
 	}
+	if tup.Inexact {
+		params = append(params, &soltype.FuncParam{
+			Pattern: f.Params[k].Pattern,
+			Type:    &soltype.UnknownType{},
+			Rest:    true,
+		})
+	}
 	expanded := *f
 	expanded.Params = params
 	return &expanded
+}
+
+// distributeUnionRest turns a rest slot typed as a UNION of tuples into one candidate signature
+// per member, and reports false for a slot of any other shape.
+//
+// `[] | [T]` is how TypeScript spells an optional argument in a rest position, and it is what the
+// committed tree writes for the iteration protocol: `next(...value: [] | [TNext])` on Iterator,
+// AsyncIterator, Generator and AsyncGenerator. A union slot admits a call when SOME member admits
+// it, which is a disjunction the lattice deliberately does not resolve — reading the slot as one
+// type would check argument 0 against the whole union and say nothing about the element.
+//
+// A disjunction the call must choose between is what overload resolution already does, so each
+// member becomes a candidate arm and the call resolves through resolveOverload: arms are trialled
+// under a probe, the first that accepts wins, and the losers roll back. Every member is expanded
+// through expandTupleRest, so an arm reads as ordinary positions.
+//
+// Every member must be a tuple. One that is not names no positions to expand, so the whole slot
+// stays as written and the ordinary path handles it.
+func (c *Context) distributeUnionRest(f *soltype.FuncType, seen *seenPairs) ([]*soltype.FuncType, bool) {
+	k := restIndex(f)
+	if k < 0 {
+		return nil, false
+	}
+	union, isUnion := f.Params[k].Type.(*soltype.UnionType)
+	if !isUnion {
+		return nil, false
+	}
+	arms := make([]*soltype.FuncType, 0, len(union.Types))
+	for _, member := range union.Types {
+		if _, isTuple := member.(*soltype.TupleType); !isTuple {
+			return nil, false
+		}
+		params := make([]*soltype.FuncParam, len(f.Params))
+		copy(params, f.Params)
+		params[k] = &soltype.FuncParam{Pattern: f.Params[k].Pattern, Type: member, Rest: true}
+		arm := *f
+		arm.Params = params
+		arms = append(arms, c.expandTupleRest(&arm, seen))
+	}
+	return arms, true
 }
 
 // restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
@@ -867,7 +943,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// A tuple-typed rest param on either side expands to one positional param per element,
 			// so a written rest param works as a value-level type and not only as a pattern. The
 			// unexpanded sub and sup are what a diagnostic reports.
-			subX, supX := expandTupleRest(sub), expandTupleRest(sup)
+			subX, supX := c.expandTupleRest(sub, seen), c.expandTupleRest(sup, seen)
 			// An ABSORBING super rest param at index k stands for the sub params from k on. Two
 			// slot types absorb that group: an `infer` hole binds it as one tuple, which is how
 			// `Parameters<F>` captures a parameter list, and an `Array<E>` checks each absorbed
@@ -940,6 +1016,19 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 						scatterAt, scatterElem = j, elem
 						n = min(j, len(supX.Params))
 					}
+				}
+			}
+			// A SUB rest slot the scatter could not read stands for the super positions from its
+			// index on, and declares no element type to check them against, so it is arity-only.
+			// That is the same reading the surplus-param loop below gives such a slot. Pairing it
+			// with one super position instead would check a single argument against the whole
+			// slot: `f(1, "a")` against `fn (...args: [...T, string]) -> R` would ask for
+			// `1 <: [...T, string]`, which is neither true nor what the slot means. A super
+			// carrying its own rest at that index is a different pairing — two slots compared
+			// directly — and stays on the walk.
+			if absorbAt < 0 && scatterAt < 0 {
+				if j := restIndex(subX); j >= 0 && j < n && !supX.Params[j].Rest {
+					n = j
 				}
 			}
 			for i := 0; i < n; i++ {
@@ -1468,10 +1557,10 @@ func (c *Context) constrainStrLitToStringIntrinsic(sub *soltype.LitType, super *
 }
 
 // constrainStrLitToTemplateLit checks a string-literal sub against a template-literal super, such as
-// `"onb" <: `on${string}``. A template denotes the strings its fixed quasi segments and its
+// `"onb" <: `on${string}“. A template denotes the strings its fixed quasi segments and its
 // interpolations spell out, so the literal is a subtype iff its characters match that pattern. The
 // match reads the literal left to right: each quasi must appear in order, and each interpolation
-// consumes a span the interpolation type admits. `"onb"` matches ``on${string}`` because it starts
+// consumes a span the interpolation type admits. `"onb"` matches “on${string}“ because it starts
 // with `on` and `b` is a string; `"xyz"` does not, since it lacks the `on` prefix. An interpolation
 // spanInInterp cannot decide, such as a type parameter, admits no span, so the whole match fails and
 // the mismatch is reported rather than guessed.
@@ -1557,7 +1646,7 @@ func templateMatchesString(s string, quasis []string, interps []soltype.Type) bo
 //     transform leaves unchanged, the fixed points that make up its image.
 //   - A union admits a span any member does; an intersection admits one every member does. A
 //     complement `~X` admits a span its operand rejects, so `string & ~"a"` admits every string
-//     span but `"a"`. This is the shape the template bound `` `on${string & ~"a"}` `` carries, which
+//     span but `"a"`. This is the shape the template bound “ `on${string & ~"a"}` “ carries, which
 //     is why the matcher decides it.
 func spanInInterp(span string, interp soltype.Type) bool {
 	switch it := interp.(type) {
