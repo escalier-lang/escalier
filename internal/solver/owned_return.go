@@ -64,21 +64,6 @@ func (c *checker) ownedReturnType(
 	return idx, owned, true
 }
 
-// commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
-// writes none of them.
-//
-// A function's returns are unioned, and Escalier rejects a union that mixes an owned member
-// with a borrowed one. Rewriting only some of them builds exactly that. In
-//
-//	fn f(p: &mut B, cond: boolean) {
-//		val mut b = {value: 0}
-//		if cond { return &mut b }
-//		return p
-//	}
-//
-// only the first return strips, since a parameter borrow carries no local edge. Owning that one
-// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
-// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
 // mayBeBorrowed reports whether t could still be a borrow when the union of a function's
 // returns is built. A `RefType` carrying a lifetime is one outright. A type variable is one
 // too, since what it resolves to is not settled while the rewrites are decided, and `return
@@ -94,6 +79,21 @@ func mayBeBorrowed(t soltype.Type) bool {
 	return false
 }
 
+// commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
+// writes none of them.
+//
+// A function's returns are unioned, and Escalier rejects a union that mixes an owned member
+// with a borrowed one. Rewriting only some of them builds exactly that. In
+//
+//	fn f(p: &mut B, cond: boolean) {
+//		val mut b = {value: 0}
+//		if cond { return &mut b }
+//		return p
+//	}
+//
+// only the first return ownedReturns, since a parameter borrow carries no local edge. Owning that one
+// and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
+// function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
 func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
 	if len(ownedReturns) == 0 {
 		return
