@@ -232,25 +232,25 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	for i, tp := range def.TypeParams {
 		targets[tp.Var] = i
 	}
-	// anyRef records the occurrences any reference reaches, which both vectors fold in.
-	// mutRef records the ones only a mutable reference reaches, which mut folds in and
-	// immut does not.
-	anyRef := newVarianceVisitor(targets, len(def.TypeParams))
-	mutRef := newVarianceVisitor(targets, len(def.TypeParams))
+	// immutRef records the occurrences an immutable reference reaches, which is the
+	// immutable view whole and the base the mutable one builds on. mutOnlyRef records
+	// what a mutable reference adds to that, which is why mut is the union of the two.
+	immutRef := newVarianceVisitor(targets, len(def.TypeParams))
+	mutOnlyRef := newVarianceVisitor(targets, len(def.TypeParams))
 	if def.Body != nil {
 		for _, elem := range def.Body.Elems {
-			anyPart, mutPart := splitByReceiverMut(elem)
-			if anyPart != nil {
-				soltype.AcceptObjElem(anyPart, anyRef, soltype.Positive)
+			immutPart, mutOnlyPart := splitByReceiverMut(elem)
+			if immutPart != nil {
+				soltype.AcceptObjElem(immutPart, immutRef, soltype.Positive)
 			}
-			if mutPart != nil {
-				soltype.AcceptObjElem(mutPart, mutRef, soltype.Positive)
+			if mutOnlyPart != nil {
+				soltype.AcceptObjElem(mutOnlyPart, mutOnlyRef, soltype.Positive)
 			}
 			if prop, ok := elem.(*soltype.PropertyElem); ok && !prop.Readonly {
 				// Walking the same field again at Negative records the input position
 				// `obj.f = …` occupies. A `readonly` field rejects that write, so it is
 				// skipped here and contributes only its output position to both vectors.
-				soltype.AcceptObjElem(prop, mutRef, soltype.Negative)
+				soltype.AcceptObjElem(prop, mutOnlyRef, soltype.Negative)
 			}
 		}
 	}
@@ -258,12 +258,15 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	// collapses to invariant — the sound conservative choice while inheritance variance is
 	// not composed precisely. Walking each super once per polarity records both.
 	for _, super := range def.Supers {
-		super.Accept(anyRef, soltype.Positive)
-		super.Accept(anyRef, soltype.Negative)
+		super.Accept(immutRef, soltype.Positive)
+		super.Accept(immutRef, soltype.Negative)
 	}
 	for i := range def.TypeParams {
-		immut[i] = collapseVariance(anyRef.pos[i], anyRef.neg[i])
-		mut[i] = collapseVariance(anyRef.pos[i] || mutRef.pos[i], anyRef.neg[i] || mutRef.neg[i])
+		immut[i] = collapseVariance(immutRef.pos[i], immutRef.neg[i])
+		mut[i] = collapseVariance(
+			immutRef.pos[i] || mutOnlyRef.pos[i],
+			immutRef.neg[i] || mutOnlyRef.neg[i],
+		)
 	}
 	return immut, mut
 }
@@ -283,15 +286,16 @@ func collapseVariance(pos, neg bool) Variance {
 	}
 }
 
-// splitByReceiverMut divides a class member into the part any reference can reach and
-// the part only a mutable one can, each returned with its `self` receiver stripped for
-// the variance walk. Either half is nil when the member contributes nothing to that view.
+// splitByReceiverMut divides a class member into the part an immutable reference can
+// reach and the part only a mutable one can, each returned with its `self` receiver
+// stripped for the variance walk. Either half is nil when the member contributes nothing
+// to that view.
 //
 // A setter is a write, so only a mutable reference reaches it. A method is split per
 // signature, since `find(self, …)` and `push(mut self, …)` on one name demand different
 // receivers and an overload set may hold both. Every other member is readable through
-// either view and goes to the any-reference half whole.
-func splitByReceiverMut(elem soltype.ObjTypeElem) (anyPart, mutPart soltype.ObjTypeElem) {
+// either view and goes to the immutable half whole.
+func splitByReceiverMut(elem soltype.ObjTypeElem) (immutPart, mutOnlyPart soltype.ObjTypeElem) {
 	switch e := elem.(type) {
 	case *soltype.SetterElem:
 		return nil, stripSelfReceiver(e)
@@ -301,23 +305,23 @@ func splitByReceiverMut(elem soltype.ObjTypeElem) (anyPart, mutPart soltype.ObjT
 		}
 		return stripSelfReceiver(e), nil
 	case *soltype.MethodElem:
-		var anySigs, mutSigs []*soltype.FuncType
+		var immutSigs, mutOnlySigs []*soltype.FuncType
 		for _, sig := range e.Signatures {
 			bare := *sig
 			bare.SelfParam = nil
 			if mutReceiver(sig.SelfParam) {
-				mutSigs = append(mutSigs, &bare)
+				mutOnlySigs = append(mutOnlySigs, &bare)
 				continue
 			}
-			anySigs = append(anySigs, &bare)
+			immutSigs = append(immutSigs, &bare)
 		}
-		if len(anySigs) > 0 {
-			anyPart = &soltype.MethodElem{Name: e.Name, Signatures: anySigs, Static: e.Static}
+		if len(immutSigs) > 0 {
+			immutPart = &soltype.MethodElem{Name: e.Name, Signatures: immutSigs, Static: e.Static}
 		}
-		if len(mutSigs) > 0 {
-			mutPart = &soltype.MethodElem{Name: e.Name, Signatures: mutSigs, Static: e.Static}
+		if len(mutOnlySigs) > 0 {
+			mutOnlyPart = &soltype.MethodElem{Name: e.Name, Signatures: mutOnlySigs, Static: e.Static}
 		}
-		return anyPart, mutPart
+		return immutPart, mutOnlyPart
 	default:
 		return stripSelfReceiver(elem), nil
 	}
