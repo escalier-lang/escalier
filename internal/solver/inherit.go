@@ -227,7 +227,10 @@ func (c *checker) inheritedHalfWalk(
 			continue
 		}
 		if member, found := declaredHalf(superDef.Body, name, half); found {
-			return projectClassMember(superDef, superInstance, member), superInstance, true
+			// `Self` resolves at sub, the class the walk started from, so an inherited member
+			// declared `-> Self` reads as the subclass here too. The class substitution still
+			// takes superInstance, the arguments the `extends` clause writes.
+			return projectClassMember(superDef, superInstance, projectSelf(superDef, sub, member)), superInstance, true
 		}
 		if member, owner, found := c.inheritedHalfWalk(superDef, superInstance, name, half, visited); found {
 			return member, owner, true

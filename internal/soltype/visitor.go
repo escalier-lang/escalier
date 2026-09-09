@@ -485,6 +485,29 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
+func (t *SelfType) Accept(v TypeVisitor, pol Polarity) Type {
+	e := v.EnterType(t, pol)
+	if e.SkipChildren {
+		return v.ExitType(skipReplace(t, e), pol)
+	}
+	cur := descendReplacement(t, e)
+	// The declaring class walks covariantly, the way a ClassType's own arguments do, so a
+	// substitution or a freshening reaches the arguments a `Self` inside a generic class carries.
+	// A visitor that replaces `Self` outright does so in its EnterType and skips this rebuild.
+	class := cur.Class.Accept(v, pol)
+	out := cur
+	if class != Type(cur.Class) {
+		ct, ok := class.(*ClassType)
+		if !ok {
+			// A visitor rewrote the declaring class into something that is not a class, so
+			// there is no `Self` left to speak of. Hand back what the walk produced.
+			return v.ExitType(class, pol)
+		}
+		out = &SelfType{Class: ct}
+	}
+	return v.ExitType(out, pol)
+}
+
 func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {

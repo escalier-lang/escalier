@@ -529,6 +529,10 @@ func compareSameKind(a, b soltype.Type) int {
 		// Two complements order by their operands, so the order over negated members mirrors
 		// the order over the members themselves and `~number` precedes `~string`.
 		return compareType(a.Inner, b.(*soltype.NegationType).Inner)
+	case *soltype.SelfType:
+		// Two `Self`s order by the class each was declared in, which is the only type they
+		// carry. A `Self` and a bare class never reach here: typeKindOrder separates them.
+		return compareType(a.Class, b.(*soltype.SelfType).Class)
 	}
 	return 0
 }
@@ -826,6 +830,8 @@ func typeKindOrder(t soltype.Type) int {
 		return 15
 	case *soltype.UndefinedType:
 		return 16
+	case *soltype.SelfType:
+		return 17
 	}
-	return 17
+	return 18
 }

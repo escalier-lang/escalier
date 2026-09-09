@@ -2446,12 +2446,14 @@ func TestInferClassSelfType(t *testing.T) {
 			want:  "fn (b: Box) -> Box",
 		},
 		{
-			// A parameter position resolves the same way, so `Self` composes rather than
-			// being special-cased in a return.
-			name:  "MethodParameter",
-			src:   "declare class Box {\n  eq(self, other: Self) -> boolean,\n}\nfn g(a: Box, b: Box) -> boolean { return a.eq(b) }",
+			// A `Self` nested inside a CALLBACK parameter is contravariant twice, so it is
+			// covariant overall and stays legal. This is the position 176 of the tree's 242
+			// occurrences take, and it resolves at the receiver's class the way a return does.
+			name: "CallbackParameter",
+			src: "declare class Box {\n  each(self, cb: fn (arr: Self) -> boolean) -> number,\n}\n" +
+				"fn g(b: Box) { return b.each }",
 			which: "g",
-			want:  "fn (a: Box, b: Box) -> boolean",
+			want:  "fn (b: Box) -> fn (cb: fn (arr: Box) -> boolean) -> number",
 		},
 		{
 			// The binding covers the fields as well as the member signatures, so a
@@ -2469,6 +2471,37 @@ func TestInferClassSelfType(t *testing.T) {
 			require.Equal(t, tt.want, values[tt.which])
 		})
 	}
+}
+
+// A DIRECT parameter is the one position `Self` may not take. It is contravariant, so the
+// polymorphic reading breaks `B <: A`: an A-typed holder may call `a.eq(someA)` on a value that
+// is really a B, whose `eq` demands a B. TypeScript has this hole and method bivariance hides
+// it. The committed tree writes no such `Self`, so rejecting costs nothing.
+//
+// The member keeps its shape after the report, so `a.eq(b)` draws no second diagnostic
+// cascading from this one.
+func TestInferSelfTypeInAParameterRejected(t *testing.T) {
+	const msg = "2:19-2:23: \"Self\" cannot be written in a parameter position; it denotes the " +
+		"receiver's own class, so a subclass would demand an argument its superclass accepts — " +
+		"write the class by name instead"
+	t.Run("a direct parameter is rejected", func(t *testing.T) {
+		_, _, errs := inferSource(t,
+			"declare class Box {\n  eq(self, other: Self) -> boolean,\n}\n"+
+				"fn g(a: Box, b: Box) -> boolean { return a.eq(b) }")
+		require.Equal(t, []string{msg}, messagesWithSpan(t, errs))
+	})
+	t.Run("writing the class by name is the way to say it", func(t *testing.T) {
+		values, _, errs := inferSource(t,
+			"declare class Box {\n  eq(self, other: Box) -> boolean,\n}\n"+
+				"fn g(a: Box, b: Box) -> boolean { return a.eq(b) }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (a: Box, b: Box) -> boolean", values["g"])
+	})
+	t.Run("a callback parameter is not a parameter position for this rule", func(t *testing.T) {
+		_, _, errs := inferSource(t,
+			"declare class Box {\n  each(self, cb: fn (arr: Self) -> boolean) -> number,\n}")
+		require.Empty(t, errs)
+	})
 }
 
 // `Self` is bound by a class body and nowhere else, so a plain function writing it finds the
@@ -2504,16 +2537,58 @@ func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
 	const decl = "declare class A {\n  me(self) -> Self,\n}\n" +
 		"declare class B extends A {\n  constructor(mut self),\n  extra(self) -> number,\n}\n"
 
-	t.Run("InfersTheDeclaringClass", func(t *testing.T) {
+	t.Run("InfersTheReceivingClass", func(t *testing.T) {
 		values, _, errs := inferSource(t, decl+"fn g(b: B) { return b.me() }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (b: B) -> B", values["g"])
+	})
+
+	t.Run("AcceptsTheSubclassReturn", func(t *testing.T) {
+		_, _, errs := inferSource(t, decl+"fn g(b: B) -> B { return b.me() }")
+		require.Empty(t, errs)
+	})
+
+	t.Run("TheDeclaringClassStillReadsAsItself", func(t *testing.T) {
+		// A member declared `-> A` literally is NOT polymorphic, which is the distinction
+		// `Self` exists to draw. Reaching it through a B still yields A.
+		const literal = "declare class A {\n  me(self) -> A,\n}\n" +
+			"declare class B extends A {\n  constructor(mut self),\n}\n"
+		values, _, errs := inferSource(t, literal+"fn g(b: B) { return b.me() }")
 		require.Empty(t, errs)
 		require.Equal(t, "fn (b: B) -> A", values["g"])
 	})
 
-	t.Run("RejectsTheSubclassReturn", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+"fn g(b: B) -> B { return b.me() }")
-		require.Len(t, errs, 1)
-		require.Equal(t, "cannot constrain A <: B", errs[0].Message())
+	t.Run("ReadingItOnTheDeclaringClassYieldsThatClass", func(t *testing.T) {
+		values, _, errs := inferSource(t, decl+"fn g(a: A) { return a.me() }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (a: A) -> A", values["g"])
+	})
+
+	t.Run("ResolvesAtTheReceiverTwoLevelsDown", func(t *testing.T) {
+		values, _, errs := inferSource(t, decl+
+			"declare class C extends B {\n  constructor(mut self),\n}\nfn g(c: C) { return c.me() }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (c: C) -> C", values["g"])
+	})
+
+	t.Run("KeepsTheSubclassTypeArguments", func(t *testing.T) {
+		values, _, errs := inferSource(t,
+			"declare class Box<T> {\n  dup(self) -> Self,\n}\n"+
+				"declare class Pair<T> extends Box<T> {\n  constructor(mut self),\n}\n"+
+				"fn g(p: Pair<string>) { return p.dup() }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (p: Pair<string>) -> Pair<string>", values["g"])
+	})
+
+	t.Run("ABuilderChainSurvivesInheritance", func(t *testing.T) {
+		// This is what polymorphic `Self` buys. Each inherited step yields the subclass, so the
+		// chain can end on a member only the subclass declares. Under the declaring-class
+		// reading `q.a()` would be a Q and `.r()` would not resolve.
+		_, _, errs := inferSource(t,
+			"declare class Q {\n  a(self) -> Self,\n  b(self) -> Self,\n}\n"+
+				"declare class R extends Q {\n  constructor(mut self),\n  r(self) -> number,\n}\n"+
+				"fn g(r: R) -> number { return r.a().b().r() }")
+		require.Empty(t, errs)
 	})
 }
 

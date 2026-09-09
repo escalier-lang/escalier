@@ -194,7 +194,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns))
 	}
 
-	return c.classValue(ctorFns, static), &ast.NodeProvenance{Node: decl}, true
+	return c.classValue(self, ctorFns, static), &ast.NodeProvenance{Node: decl}, true
 }
 
 // classDeclTypes returns every type a class declaration writes, so a walk over them covers each
@@ -276,11 +276,22 @@ func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
 //
 // ctorFns holds one signature per declared constructor, in source order, so an overloaded
 // constructor binds every arm under the one element.
-func (c *checker) classValue(ctorFns []*soltype.FuncType, static *soltype.ObjectType) soltype.Type {
+// A `Self` written in a constructor or a static member resolves at self, the class the value
+// constructs. There is no subclass to defer to: a class value is reached by name rather than
+// through a receiver, so the declaring class IS the answer.
+func (c *checker) classValue(self *soltype.ClassType, ctorFns []*soltype.FuncType, static *soltype.ObjectType) soltype.Type {
 	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+1)
 	elems = append(elems, &soltype.ConstructorElem{Signatures: ctorFns})
 	elems = append(elems, static.Elems...)
-	return &soltype.ObjectType{Elems: elems}
+	value := &soltype.ObjectType{Elems: elems}
+	resolved, ok := value.Accept(&selfSubst{recv: self}, soltype.Positive).(*soltype.ObjectType)
+	if !ok {
+		// selfSubst replaces only SelfType nodes, so an ObjectType always walks to an
+		// ObjectType. A different kind means the substitution corrupted the value, which is
+		// worth failing on rather than returning something a member lookup cannot read.
+		panic(fmt.Sprintf("classValue: %s projected to non-ObjectType %T", self.Name, resolved))
+	}
+	return resolved
 }
 
 // getOrCreateClass returns the nominal ClassType handle and ClassDef a class binds to,
@@ -737,14 +748,35 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	// goes unread: resolveLifetimeArgs reads only the `<…>` list, so a prefix is unread through
 	// a class reference too and the shorthand matches it there.
 	if name == selfTypeName && len(ref.TypeArgs) == 0 && c.selfClass != nil && b.Type == soltype.Type(c.selfClass) {
+		def, hasDef := c.ctx.classDef(c.selfClass.Name)
 		if len(ref.LifetimeArgs) > 0 {
 			var ltParams []*soltype.LifetimeParam
-			if def, ok := c.ctx.classDef(c.selfClass.Name); ok {
+			if hasDef {
 				ltParams = def.LifetimeParams
 			}
 			c.resolveLifetimeArgs(ref, ClassDeclKind, ltParams, lvl)
 		}
-		return b.Type, true
+		// `Self` is its own type kind rather than the enclosing class written out, so an
+		// INHERITED member carrying one resolves it at the class the receiver belongs to
+		// instead of at the class that declared it. Once it resolved to the class handle the
+		// two were the same ClassType and nothing downstream could tell them apart.
+		//
+		// HasSelf is recorded here, the one place a `Self` enters a body, so the substitution
+		// that runs at every member projection stays off the classes that wrote none.
+		if hasDef {
+			def.HasSelf = true
+		}
+		// A `Self` in a contravariant position is unsound: `B <: A` lets an A-typed holder call
+		// `a.eq(someA)` on a value that is really a B, whose `eq` demands a B. inputDepth counts
+		// the enclosing parameter positions, each of which flips the variance, so an odd count
+		// is contravariant. A `Self` inside a callback parameter is contravariant twice and
+		// therefore covariant overall, which is the position 176 of the tree's 242 occurrences
+		// take. The type is still returned, so the member keeps its shape and a reference to it
+		// draws no cascade from this report.
+		if c.inputDepth%2 == 1 {
+			c.report(&SelfInInputPositionError{Ref: ref})
+		}
+		return &soltype.SelfType{Class: c.selfClass}, true
 	}
 	// A class reference routes through buildClassInstance whether or not it supplies
 	// arguments, so a generic class referenced bare still reports an arity mismatch and a

@@ -927,6 +927,13 @@ func (p *namedPrinter) printType(t Type) string {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
+	case *SelfType:
+		// A `Self` renders as the word the source wrote, not as the class it was declared in.
+		// That is the whole point of keeping it a kind of its own: `me(self) -> Self` on a
+		// class A reads back as `-> Self` rather than `-> A`, so a reader can tell it means the
+		// receiver's class. A substituted member carries the receiver's ClassType instead and
+		// never reaches this arm.
+		return "Self"
 	case *ClassType:
 		// A ClassType renders under its bare display name, with a `<...>` argument list
 		// when it has arguments: `Point`, `Box<number>`, `Ref<'x, number>`. Lifetime
