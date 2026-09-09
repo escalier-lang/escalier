@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"path/filepath"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -11,9 +12,18 @@ import (
 // reaches a handle without inferring a module that imports anything.
 func wellKnownChecker(t *testing.T, files map[string]string) *checker {
 	t.Helper()
-	c := newTestChecker()
-	c.source = StdlibSource(seedStdlib(t, files))
+	c, _ := wellKnownCheckerIn(t, files)
 	return c
+}
+
+// wellKnownCheckerIn is wellKnownChecker plus the directory the tree was written to,
+// for a test asserting a message that names the file the loader reached for.
+func wellKnownCheckerIn(t *testing.T, files map[string]string) (*checker, string) {
+	t.Helper()
+	dir := seedStdlib(t, files)
+	c := newChecker()
+	c.source = StdlibSource(dir)
+	return c, dir
 }
 
 // A handle is read from the package declaring the type, so a rule reaches it with
@@ -76,12 +86,15 @@ func TestWellKnownTypeReportsAMissingDeclarationOnce(t *testing.T) {
 func TestWellKnownTypeReportsAMissingPackage(t *testing.T) {
 	t.Parallel()
 
-	c := wellKnownChecker(t, map[string]string{})
+	c, dir := wellKnownCheckerIn(t, map[string]string{})
 	_, ok := c.wellKnownType(wellKnownArray)
 	require.False(t, ok)
-	require.Len(t, c.errs, 1)
-	require.Contains(t, c.errs[0].Message(),
-		"the standard library does not supply Array, expected in std:array:")
+
+	require.Equal(t, []string{
+		"the standard library does not supply Array, expected in std:array: " +
+			`cannot resolve import "std:array": unknown package "array" in std: scheme ` +
+			"(no std/array.esc under " + dir + ")",
+	}, errorMessagesOf(c.errs))
 }
 
 // Every name in the closed set names a package, so no handle is unreachable by
@@ -122,7 +135,7 @@ func TestWellKnownTypeDeclinesANameOutsideTheSet(t *testing.T) {
 func TestWellKnownTypeReportsThePackagesOwnDiagnostics(t *testing.T) {
 	t.Parallel()
 
-	c := wellKnownChecker(t, map[string]string{
+	c, dir := wellKnownCheckerIn(t, map[string]string{
 		"std/array.esc": `
 			export declare class Array {
 				length: number,
@@ -133,11 +146,11 @@ func TestWellKnownTypeReportsThePackagesOwnDiagnostics(t *testing.T) {
 	got, ok := c.wellKnownType(wellKnownArray)
 	require.True(t, ok)
 	require.Equal(t, "Array", soltype.Print(got))
-	// The package wraps its diagnostics in one that names the file it loaded, whose
-	// path is a temp directory, so the two stable halves are matched separately.
-	require.Len(t, c.errs, 1)
-	require.Contains(t, c.errs[0].Message(), `package "std:array"`)
-	require.Contains(t, c.errs[0].Message(), `has 1 error(s):`+"\n"+`  cannot constrain "not a number" <: number`)
+
+	require.Equal(t, []string{
+		`package "std:array" (` + filepath.Join(dir, "std", "array.esc") + ") has 1 error(s):\n" +
+			`  cannot constrain "not a number" <: number`,
+	}, errorMessagesOf(c.errs))
 }
 
 // Loading a handle's package mid-walk must leave the caller's file scopes in
