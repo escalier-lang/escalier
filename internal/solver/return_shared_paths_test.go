@@ -76,9 +76,11 @@ func TestSharedReturnPaths(t *testing.T) {
 			want: nil,
 		},
 		// One path to b is the case #1264 accepts and re-types, so it must stay quiet here.
+		// The annotation names the re-typed shape: the component move makes the return the
+		// sole owner of b, so the field is an owned `{value: number}` rather than a borrow.
 		"SinglePathOk": {
 			src: `
-				fn build() -> {peer: &mut {value: number}} {
+				fn build() -> {peer: {value: number}} {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut b}
 					return a
