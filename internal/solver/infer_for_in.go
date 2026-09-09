@@ -201,6 +201,15 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 			return &soltype.UnknownType{}, true
 		}
 		return newUnion(c.ctx, t.Elems), true
+	case *soltype.ClassType:
+		// An array iterates its elements. This reads the element off the instance
+		// directly, which is the answer for the one container the milestone requires.
+		// The protocol lookup over the reserved symbol keys replaces it, at which point
+		// `Array` answers through its own `[Symbol.iterator]` like any other iterable.
+		if elem, isArray := c.ctx.arrayElem(t); isArray {
+			return elem, true
+		}
+		return nil, false
 	case *soltype.UnionType:
 		elems := make([]soltype.Type, 0, len(t.Types))
 		for _, branch := range t.Types {

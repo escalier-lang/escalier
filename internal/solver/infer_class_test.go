@@ -1078,6 +1078,53 @@ func TestInferClassVariance(t *testing.T) {
 		require.Len(t, errs, 1)
 		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
 	})
+	t.Run("a mut self parameter does not shape the immutable view", func(t *testing.T) {
+		// No immutable reference reaches `push`, so its parameter says nothing about how
+		// two `Sink` instances relate while shared. `T` is bivariant here: it reaches no
+		// member such a reference can use, which is what leaves both directions open.
+		//
+		// Nothing observable is widened. A parameter reachable only under a mutable
+		// receiver means the class declares no `T`-typed storage, so there is no read to
+		// come back at the wrong type. The case below adds one and the widening stops.
+		_, _, errs := inferSource(t, `
+			class Sink<T> {
+				push(mut self, item: T) -> undefined { return undefined },
+			}
+			fn widen(s: Sink<number>) -> Sink<number | string> { return s }
+			fn narrow(s: Sink<number | string>) -> Sink<number> { return s }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("a field keeps the parameter covariant alongside a mut self reader", func(t *testing.T) {
+		// `take` demands a mutable receiver, but `slot` does not, and a field read is an
+		// output position the immutable view has. So `T` is covariant rather than
+		// bivariant, and the narrowing this asks for is rejected. A `mut self` method can
+		// only hand back a `T` if the class holds one, and holding one is what puts `T` in
+		// the immutable view.
+		_, _, errs := inferSource(t, `
+			class Cell<T> {
+				slot: T,
+				take(mut self) -> T { return self.slot },
+			}
+			fn narrow(c: Cell<number | string>) -> Cell<number> { return c }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("a self reader beside a mut self mutator stays covariant", func(t *testing.T) {
+		// The shape `Array<T>` has. `read` is an output position both views reach and
+		// `write` an input position only a mutable reference reaches, so the immutable
+		// view measures `T` covariant and the widening holds.
+		_, _, errs := inferSource(t, `
+			class Slot<T> {
+				value: T,
+				read(self) -> T { return self.value },
+				write(mut self, v: T) -> undefined { return undefined },
+			}
+			fn widen(s: Slot<number>) -> Slot<number | string> { return s }
+		`)
+		require.Empty(t, errs)
+	})
 }
 
 // TestInferClassCovariance demonstrates C2 covariance in the shapes that produce an
@@ -1294,6 +1341,73 @@ func TestInferClassMutVariance(t *testing.T) {
 			}
 			fn wide(r: mut Reader<number | string>) { }
 			fn narrow(r: mut Reader<number>) { wide(r) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("mut self method parameter is contravariant under mut", func(t *testing.T) {
+		// `push` is unreachable immutably, so it shapes the mutable view alone, where it is
+		// an input position like any method parameter. `narrow` can only call
+		// `push(<number>)`, and the instance behind it takes a `number | string`.
+		_, _, errs := inferSource(t, `
+			class Sink<T> {
+				push(mut self, item: T) -> undefined { return undefined },
+			}
+			fn narrow(s: mut Sink<number>) { }
+			fn wide(s: mut Sink<number | string>) { narrow(s) }
+		`)
+		require.Empty(t, errs)
+	})
+	t.Run("mut self method parameter rejects a widening", func(t *testing.T) {
+		// The other direction, which contravariance rejects: `wide` may call
+		// `push("s")`, and the instance's `number`-only `push` cannot take it.
+		_, _, errs := inferSource(t, `
+			class Sink<T> {
+				push(mut self, item: T) -> undefined { return undefined },
+			}
+			fn wide(s: mut Sink<number | string>) { }
+			fn narrow(s: mut Sink<number>) { wide(s) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("a mut self mutator pins a parameter a self reader returns", func(t *testing.T) {
+		// The shape `Array<T>` has, and the reason it is covariant shared and invariant
+		// mutable. `read` is an output position both views have. `write` is an input
+		// position only the mutable view has, and it is what rejects the widening the
+		// immutable check accepts.
+		_, _, errs := inferSource(t, `
+			class Slot<T> {
+				value: T,
+				read(self) -> T { return self.value },
+				write(mut self, v: T) -> undefined { return undefined },
+			}
+			fn wide(s: mut Slot<number | string>) { }
+			fn narrow(s: mut Slot<number>) { wide(s) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+	})
+	t.Run("a setter pins a parameter its getter returns", func(t *testing.T) {
+		// A setter is a write, so no immutable reference reaches it and it lands in the
+		// mutable view alone. The field is `readonly` and the getter is an output position,
+		// so the setter is the only input position here and the only thing that can reject
+		// this. The immutable case below is the same class, accepted.
+		const src = `
+			class Prop<T> {
+				readonly v: T,
+				get item(self) -> T { return self.v },
+				set item(mut self, x: T) { },
+			}
+		`
+		_, _, errs := inferSource(t, src+`
+			fn wide(p: mut Prop<number | string>) { }
+			fn narrow(p: mut Prop<number>) { wide(p) }
+		`)
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain string <: number", errs[0].Message())
+
+		_, _, errs = inferSource(t, src+`
+			fn widen(p: Prop<number>) -> Prop<number | string> { return p }
 		`)
 		require.Empty(t, errs)
 	})

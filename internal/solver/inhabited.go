@@ -161,9 +161,6 @@ func finitelyInhabited(t soltype.Type) bool {
 		// A closure, a promise, and a generator each hold their payload unevaluated, so building one
 		// runs none of the code that would produce that payload.
 		return true
-	case *soltype.ArrayType:
-		// The empty array is a finite value of every array type.
-		return true
 	case *soltype.ObjectType:
 		// Only a required property and a spread are read. A method, a getter, a setter, and a
 		// constructor are function-valued, so they defer their bodies the way a property holding a

@@ -2868,8 +2868,6 @@ func describe(t soltype.Type) string {
 		// diagnostic naming it matches the printer's surface form rather than the expanded
 		// body the constraint actually compares.
 		return soltype.PrintElided(t, describeMaxDepth)
-	case *soltype.ArrayType:
-		return "Array<" + describe(t.Elem) + ">"
 	case *soltype.PromiseType:
 		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
 		// object above. That is deliberate and consistent with the Union/Intersection

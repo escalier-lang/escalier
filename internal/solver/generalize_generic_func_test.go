@@ -87,7 +87,7 @@ func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			fn := tt.build(func() *soltype.TypeVarType { return c.freshAt(1) })
 			// Model the value-binding path: the SCC driver constrains the function value
 			// into a binding var, then generalizes that var at the component's level.
@@ -104,7 +104,7 @@ func TestGeneralizeRetainsFuncTypeParams(t *testing.T) {
 // funcTypeParamVars descends a binding var's bound side-graph to reach the value
 // FuncType, collecting a type parameter that is not a structural child of the var.
 func TestFuncTypeParamVarsDescendsBoundGraph(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	vT := c.freshAt(1)
 	fn := &soltype.FuncType{
 		TypeParams: []*soltype.TypeParam{{Name: "T", Var: vT}},

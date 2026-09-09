@@ -39,7 +39,7 @@ func aliasLifetimeParams(ctx *Context, name string) []*soltype.LifetimeParam {
 func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context, []SolverError) {
 	t.Helper()
 	module := parseModule(t, src)
-	c := newChecker()
+	c := newTestChecker()
 	scope := sharedPrelude().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	nodes := make(map[string]soltype.Type, len(scope.types))

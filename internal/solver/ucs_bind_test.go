@@ -21,7 +21,7 @@ import (
 // built by hand.
 func newPathChecker(t *testing.T, src string) (*checker, *Scope) {
 	t.Helper()
-	c := newChecker()
+	c := newTestChecker()
 	scope := sharedPrelude().Child()
 	module := parseModule(t, src)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))

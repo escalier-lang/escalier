@@ -139,7 +139,7 @@ func TestInferSubsumedTypePreservesAssignability(t *testing.T) {
 // An inferred intersection collapses to its narrowest member: `{x, ...} & {x, y, ...}`
 // reduces to `{x, y, ...}`. It has no source form that survives combine's fold, so it is built directly.
 func TestSubsumeFinalIntersectionObjects(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	in := newIntersection(nil, parseTypes(t, "{x: number, ...}", "{x: number, y: string, ...}"))
 	require.IsType(t, &soltype.IntersectionType{}, in, "precondition: combine leaves both members")
 	got := c.subsumeFinal(in)
@@ -150,7 +150,7 @@ func TestSubsumeFinalIntersectionObjects(t *testing.T) {
 // gate skips it, so a scheme whose union is not yet ground is unchanged. The free
 // var has no surface form parseType can author, so the union is built directly.
 func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	v := c.ctx.freshVar(0)
 	got := c.subsumeFinal(newUnion(nil, []soltype.Type{parseType(t, "number"), v}))
 	require.IsType(t, &soltype.UnionType{}, got, "got %s", soltype.Print(got))
@@ -161,7 +161,7 @@ func TestSubsumeFinalLeavesFreeVar(t *testing.T) {
 // preserved up the spine rather than reallocating an equal node. `1 | 2` has no
 // subsumable member, so subsumeFinal returns the same union pointer.
 func TestSubsumeFinalPreservesIdentityWhenUnchanged(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	in := newUnion(nil, parseTypes(t, "1", "2"))
 	require.IsType(t, &soltype.UnionType{}, in)
 	require.Same(t, in, c.subsumeFinal(in))

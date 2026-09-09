@@ -1,0 +1,12 @@
+// The `Array` the solver's own tests resolve `Array<T>` against.
+//
+// This is a hand-written stand-in for the committed `internal/interop/data/std/array.esc`,
+// which declares over four hundred lines and does not yet ingest cleanly. Reading it here
+// would put its diagnostics in front of every test that writes an array annotation. The
+// members below are the ones the tests exercise: a length, an element read, and a mutator
+// that makes `T` invariant the way the real declaration does.
+export declare class Array<T> {
+    length: number,
+    at(self, index: number) -> T | undefined,
+    push(mut self, item: T) -> number,
+}

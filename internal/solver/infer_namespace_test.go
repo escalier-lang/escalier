@@ -23,7 +23,7 @@ func strScheme() []TypeScheme {
 
 // Foo.bar resolves to the member's type.
 func TestInferNamespaceMember(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{
 		Name:   "Foo",
@@ -39,7 +39,7 @@ func TestInferNamespaceMember(t *testing.T) {
 
 // Foo["bar"] resolves a constant-keyed member — the bracket form of Foo.bar.
 func TestInferNamespaceConstantIndex(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{
 		Name:   "Foo",
@@ -55,7 +55,7 @@ func TestInferNamespaceConstantIndex(t *testing.T) {
 
 // A.B.c walks through a nested namespace to the member's type.
 func TestInferNestedNamespaceMember(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	inner := &Namespace{
 		Name:   "A.B",
@@ -74,7 +74,7 @@ func TestInferNestedNamespaceMember(t *testing.T) {
 
 // f(Foo) — a bare namespace name in value position is rejected.
 func TestInferNamespaceAsValue(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{Name: "Foo"})
 
@@ -88,7 +88,7 @@ func TestInferNamespaceAsValue(t *testing.T) {
 // f(A.B) — a partial chain stopping at a nested namespace is rejected once, with
 // the nested namespace's qualified name.
 func TestInferNestedNamespaceAsValue(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	inner := &Namespace{Name: "A.B"}
 	scope.defineNamespace("A", &Namespace{
@@ -106,7 +106,7 @@ func TestInferNestedNamespaceAsValue(t *testing.T) {
 
 // Foo.nope — an absent member is an UnknownNamespaceMemberError.
 func TestInferNamespaceUnknownMember(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{
 		Name:   "Foo",
@@ -123,7 +123,7 @@ func TestInferNamespaceUnknownMember(t *testing.T) {
 
 // Foo[k] — a dynamic (non-constant) index into a namespace is rejected.
 func TestInferNamespaceDynamicIndex(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("k", ValueBinding{Schemes: strScheme()})
 	scope.defineNamespace("Foo", &Namespace{
@@ -142,7 +142,7 @@ func TestInferNamespaceDynamicIndex(t *testing.T) {
 // An index into a value (array element / index-signature read) is M7, still
 // outside the supported subset — the namespace path doesn't accidentally accept it.
 func TestInferValueIndexUnsupported(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("o", ValueBinding{Schemes: numScheme()})
 
@@ -161,7 +161,7 @@ func TestInferValueIndexUnsupported(t *testing.T) {
 // because the intercept routed the receiver through inferExpr, which rejects
 // a namespace in value position.
 func TestInferBorrowOfNamespaceMember(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	objT := &soltype.ObjectType{
 		Elems: []soltype.ObjTypeElem{&soltype.PropertyElem{

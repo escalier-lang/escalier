@@ -11,7 +11,7 @@ import (
 // --- TupleExpr ---
 
 func TestInferTuple(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [1, "hi"]
 	e := tupleExpr(numExpr(1), strExpr("hi"))
 
@@ -22,7 +22,7 @@ func TestInferTuple(t *testing.T) {
 }
 
 func TestInferTupleEmpty(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	got := c.inferExpr(NewScope(), 0, tupleExpr())
 	require.Empty(t, c.errs)
 	require.Equal(t, "[]", render(got))
@@ -31,7 +31,7 @@ func TestInferTupleEmpty(t *testing.T) {
 // A spread element ([...pair]) splices the operand tuple's element types into the
 // literal: [...pair, 3] over pair: [number, string] builds [number, string, 3].
 func TestInferTupleSpread(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [...[1, "hi"], 3]
 	pair := tupleExpr(numExpr(1), strExpr("hi"))
 	e := tupleExpr(ast.NewArraySpread(pair, testSpan()), numExpr(3))
@@ -44,7 +44,7 @@ func TestInferTupleSpread(t *testing.T) {
 // the spread, then the splice, then the elements after. [1, ...[2, 3], 4] builds
 // [1, 2, 3, 4].
 func TestInferTupleSpreadMiddle(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [1, ...[2, 3], 4]
 	mid := tupleExpr(numExpr(2), numExpr(3))
 	e := tupleExpr(numExpr(1), ast.NewArraySpread(mid, testSpan()), numExpr(4))
@@ -58,7 +58,7 @@ func TestInferTupleSpreadMiddle(t *testing.T) {
 // operand has a known length, so the assertion checks the Inexact flag and the
 // element count directly rather than relying on the rendered form.
 func TestInferTupleSpreadMultipleExact(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [...[1, 2], ...[3, 4]]
 	a := tupleExpr(numExpr(1), numExpr(2))
 	b := tupleExpr(numExpr(3), numExpr(4))
@@ -76,7 +76,7 @@ func TestInferTupleSpreadMultipleExact(t *testing.T) {
 // Spreading a non-tuple value is a typed error: M4 splices concrete tuple
 // literals only, so the operand must infer to a tuple.
 func TestInferTupleSpreadNonTuple(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [...5]
 	e := tupleExpr(ast.NewArraySpread(numExpr(5), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
@@ -118,7 +118,7 @@ func TestInferTupleSpreadInexactLast(t *testing.T) {
 // reports a single unknown-identifier error, and the spread does not layer a
 // SpreadNotTupleError on the recovery sentinel.
 func TestInferTupleSpreadErrorOperandAbsorbs(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// [...a]
 	e := tupleExpr(ast.NewArraySpread(identExpr("a"), testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
@@ -130,7 +130,7 @@ func TestInferTupleSpreadErrorOperandAbsorbs(t *testing.T) {
 // --- ObjectExpr ---
 
 func TestInferObject(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {a: 5, b: "hi"}
 	e := objExpr(prop("a", numExpr(5)), prop("b", strExpr("hi")))
 
@@ -141,7 +141,7 @@ func TestInferObject(t *testing.T) {
 }
 
 func TestInferObjectEmpty(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	got := c.inferExpr(NewScope(), 0, objExpr())
 	require.Empty(t, c.errs)
 	require.Equal(t, "{}", render(got))
@@ -149,7 +149,7 @@ func TestInferObjectEmpty(t *testing.T) {
 
 // A string-literal key maps to a field name just like an identifier label.
 func TestInferObjectStringKey(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {"a": 5}
 	strKey := ast.NewProperty(ast.NewString("a", testSpan()), false, false, numExpr(5), testSpan())
 	got := c.inferExpr(NewScope(), 0, objExpr(strKey))
@@ -161,7 +161,7 @@ func TestInferObjectStringKey(t *testing.T) {
 // string form, so {0: 5} names the field "0". The field name is not a valid
 // identifier, so it renders as a quoted key.
 func TestInferObjectNumericKey(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {0: 5}
 	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(5), testSpan())
 	got := c.inferExpr(NewScope(), 0, objExpr(numKey))
@@ -174,7 +174,7 @@ func TestInferObjectNumericKey(t *testing.T) {
 // dedup then collapses them to {"0": 2}, so the resolved name, not the syntactic
 // key kind, decides identity.
 func TestInferObjectNumericStringKeyCollision(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {0: 1, "0": 2}
 	numKey := ast.NewProperty(ast.NewNumber(0, testSpan()), false, false, numExpr(1), testSpan())
 	strKey := ast.NewProperty(ast.NewString("0", testSpan()), false, false, numExpr(2), testSpan())
@@ -191,7 +191,7 @@ func TestInferObjectNumericStringKeyCollision(t *testing.T) {
 // earlier one while the field keeps its first position. This keeps field names
 // unique, so the record is well-formed (and equalType stays reflexive on it).
 func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {a: 1, b: 2, a: "x"}  ⇒  {a: "x", b: 2}
 	e := objExpr(prop("a", numExpr(1)), prop("b", numExpr(2)), prop("a", strExpr("x")))
 
@@ -208,7 +208,7 @@ func TestInferObjectDuplicateKeyLastWins(t *testing.T) {
 // Shorthand ({x}) is a property with no value — deferred to M4. It reports a
 // clean UnsupportedNodeError and is skipped (the rest of the object still types).
 func TestInferObjectShorthandUnsupported(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	shorthand := ast.NewProperty(ast.NewIdent("x", testSpan()), false, false, nil, testSpan())
 	got := c.inferExpr(NewScope(), 0, objExpr(shorthand))
 	require.Equal(t, "{}", render(got))
@@ -251,7 +251,7 @@ func TestInferObjectSpread(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			got := c.inferExpr(NewScope(), 0, objExpr(tt.elems...))
 			require.Equal(t, tt.wantRender, render(got))
 			if tt.wantErr == "" {
@@ -266,7 +266,7 @@ func TestInferObjectSpread(t *testing.T) {
 
 // A computed key ({[k]: v}) carries no static field name — M4.
 func TestInferObjectComputedKeyUnsupported(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	computed := ast.NewProperty(ast.NewComputedKey(identExpr("k")), false, false, numExpr(1), testSpan())
 	got := c.inferExpr(NewScope(), 0, objExpr(computed))
 	require.Equal(t, "{}", render(got))
@@ -277,7 +277,7 @@ func TestInferObjectComputedKeyUnsupported(t *testing.T) {
 // --- MemberExpr ---
 
 func TestInferMember(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// ({a: 5, b: "hi"}).a
 	recv := objExpr(prop("a", numExpr(5)), prop("b", strExpr("hi")))
 	e := memberExpr(recv, "a")
@@ -291,7 +291,7 @@ func TestInferMember(t *testing.T) {
 // Reading a field the receiver lacks fails with a MissingPropertyError carrying
 // the member node's span.
 func TestInferMemberMissingProperty(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// ({a: 5}).b
 	e := memberExpr(objExpr(prop("a", numExpr(5))), "b")
 
@@ -304,7 +304,7 @@ func TestInferMemberMissingProperty(t *testing.T) {
 
 // Optional chaining (recv?.prop) needs union/undefined handling — M6.
 func TestInferMemberOptionalChainUnsupported(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("a", testSpan()), true, testSpan())
 
 	got := c.inferExpr(NewScope(), 0, e)
@@ -318,7 +318,7 @@ func TestInferMemberOptionalChainUnsupported(t *testing.T) {
 // an unbound receiver does not add a cascading "unknown identifier" error — the
 // single OptionalChain diagnostic stands for the whole unsupported construct.
 func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// nope?.a — receiver `nope` is unbound and would error if typed.
 	e := ast.NewMember(identExpr("nope"), ast.NewIdentifier("a", testSpan()), true, testSpan())
 
@@ -334,7 +334,7 @@ func TestInferMemberOptionalChainDoesNotDescendIntoReceiver(t *testing.T) {
 // sink (`if recv. {}`, `await recv.`, `var x = recv.`) the sentinel absorbs in
 // constrain rather than cascading `never <: …`. It reports nothing itself.
 func TestInferMemberEmptyPropertyNameIsSilent(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// recv = {a: 5}; access with an empty property name (as the parser builds for `recv.`)
 	e := ast.NewMember(objExpr(prop("a", numExpr(5))), ast.NewIdentifier("", testSpan()), false, testSpan())
 
@@ -397,7 +397,7 @@ func TestInferModuleMemberReadAcceptsWiderArg(t *testing.T) {
 // reads the same property a dot access would, and lets the source name a key that
 // is not a valid identifier. The receiver here is a value, not a namespace.
 func TestInferIndexValueConstStringKey(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {"foo-bar": 5, b: "hi"}["foo-bar"]
 	fooBar := ast.NewProperty(ast.NewString("foo-bar", testSpan()), false, false, numExpr(5), testSpan())
 	recv := objExpr(fooBar, prop("b", strExpr("hi")))
@@ -413,7 +413,7 @@ func TestInferIndexValueConstStringKey(t *testing.T) {
 // MissingPropertyError, the same as the dot form — the index path shares
 // valueProp's blame.
 func TestInferIndexValueMissingProperty(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// {a: 5}["foo-bar"]
 	e := ast.NewIndex(objExpr(prop("a", numExpr(5))), strExpr("foo-bar"), false, testSpan())
 

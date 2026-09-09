@@ -199,27 +199,29 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // measured unsoundly.
 //
 // It returns two vectors, one per view a reference to an instance can offer. immut is the
-// variance an immutable reference sees, where every member is readable and none is
-// writable. mut is the variance a mutable reference sees, which additionally admits a
-// write to every non-`readonly` field.
+// variance an immutable reference sees, which reaches only the members such a reference
+// can use. mut is the variance a mutable reference sees, which additionally admits a write
+// to every non-`readonly` field and every member that demands a mutable receiver.
 //
-// The two vectors differ only at those writable fields. A field's read is an output
-// position in both views, so a parameter reaching one is covariant in immut. Its write is
-// an input position only mut has, so the same parameter is invariant in mut. Given `class
-// Box<T> { value: T }`, immut measures T covariant while mut measures it invariant. That
-// is what leaves `mut Box<number>` and `mut Box<number | string>` unrelated even though
-// `Box<number> <: Box<number | string>` holds.
+// A member an immutable reference cannot reach says nothing about the immutable view, so
+// it is walked into mut alone. Three members demand a mutable receiver: a write to a
+// non-`readonly` field, a setter, and a `mut self` method. An overloaded method is split
+// per signature, since one arm taking `mut self` says nothing about the arms that do not.
+//
+// `Array<T>` is what this buys. Its `at(self, index) -> T | undefined` puts T in an output
+// position and its `push(mut self, item: T)` puts T in an input position. Folding both into
+// immut would measure T invariant and leave `Array<1> <: Array<number>` rejected. Reading
+// `push` only where it can be called measures T covariant in immut and invariant in mut, so
+// the widening holds for an immutable array while `mut Array<1>` and `mut Array<number>` stay
+// unrelated.
+//
+// A field is the same shape of split. Its read is an output position in both views, its
+// write an input position only mut has, so `class Box<T> { value: T }` measures T covariant
+// in immut and invariant in mut.
 //
 // Every other member position has one variance both views share, so it is walked once and
-// folded into both. A method value parameter is contravariant whether or not the holder
-// can mutate the instance, and a method return or getter is covariant either way. The same
-// holds for a member only a mutable reference can reach, such as a setter or a `mut self`
-// method. Reaching such a member is a call, and a call's argument and result carry the
-// polarity its signature gives them regardless of what made the member reachable.
-//
-// Folding a mutability-gated member into immut as well is the conservative choice. An
-// owned value can later be bound mutably, so a parameter that is inert only while the
-// reference stays immutable is not safe to treat as a phantom.
+// folded into both. A method value parameter is contravariant whether or not the holder can
+// mutate the instance, and a method return or getter is covariant either way.
 func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	immut = make([]Variance, len(def.TypeParams))
 	mut = make([]Variance, len(def.TypeParams))
@@ -230,18 +232,25 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	for i, tp := range def.TypeParams {
 		targets[tp.Var] = i
 	}
-	// shared records the occurrences both views agree on. write records the field-write
-	// occurrences only a mutable reference adds.
-	shared := newVarianceVisitor(targets, len(def.TypeParams))
-	write := newVarianceVisitor(targets, len(def.TypeParams))
+	// immutRef records the occurrences an immutable reference reaches, which is the
+	// immutable view whole and the base the mutable one builds on. mutOnlyRef records
+	// what a mutable reference adds to that, which is why mut is the union of the two.
+	immutRef := newVarianceVisitor(targets, len(def.TypeParams))
+	mutOnlyRef := newVarianceVisitor(targets, len(def.TypeParams))
 	if def.Body != nil {
 		for _, elem := range def.Body.Elems {
-			soltype.AcceptObjElem(stripSelfReceiver(elem), shared, soltype.Positive)
+			immutPart, mutOnlyPart := splitByReceiverMut(elem)
+			if immutPart != nil {
+				soltype.AcceptObjElem(immutPart, immutRef, soltype.Positive)
+			}
+			if mutOnlyPart != nil {
+				soltype.AcceptObjElem(mutOnlyPart, mutOnlyRef, soltype.Positive)
+			}
 			if prop, ok := elem.(*soltype.PropertyElem); ok && !prop.Readonly {
 				// Walking the same field again at Negative records the input position
 				// `obj.f = …` occupies. A `readonly` field rejects that write, so it is
 				// skipped here and contributes only its output position to both vectors.
-				soltype.AcceptObjElem(prop, write, soltype.Negative)
+				soltype.AcceptObjElem(prop, mutOnlyRef, soltype.Negative)
 			}
 		}
 	}
@@ -249,12 +258,15 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	// collapses to invariant — the sound conservative choice while inheritance variance is
 	// not composed precisely. Walking each super once per polarity records both.
 	for _, super := range def.Supers {
-		super.Accept(shared, soltype.Positive)
-		super.Accept(shared, soltype.Negative)
+		super.Accept(immutRef, soltype.Positive)
+		super.Accept(immutRef, soltype.Negative)
 	}
 	for i := range def.TypeParams {
-		immut[i] = collapseVariance(shared.pos[i], shared.neg[i])
-		mut[i] = collapseVariance(shared.pos[i] || write.pos[i], shared.neg[i] || write.neg[i])
+		immut[i] = collapseVariance(immutRef.pos[i], immutRef.neg[i])
+		mut[i] = collapseVariance(
+			immutRef.pos[i] || mutOnlyRef.pos[i],
+			immutRef.neg[i] || mutOnlyRef.neg[i],
+		)
 	}
 	return immut, mut
 }
@@ -272,6 +284,59 @@ func collapseVariance(pos, neg bool) Variance {
 	default:
 		return Bivariant
 	}
+}
+
+// splitByReceiverMut divides a class member into the part an immutable reference can
+// reach and the part only a mutable one can, each returned with its `self` receiver
+// stripped for the variance walk. Either half is nil when the member contributes nothing
+// to that view.
+//
+// A setter is a write, so only a mutable reference reaches it. A method is split per
+// signature, since `find(self, …)` and `push(mut self, …)` on one name demand different
+// receivers and an overload set may hold both. Every other member is readable through
+// either view and goes to the immutable half whole.
+func splitByReceiverMut(elem soltype.ObjTypeElem) (immutPart, mutOnlyPart soltype.ObjTypeElem) {
+	switch e := elem.(type) {
+	case *soltype.SetterElem:
+		return nil, stripSelfReceiver(e)
+	case *soltype.GetterElem:
+		if mutReceiver(e.SelfParam) {
+			return nil, stripSelfReceiver(e)
+		}
+		return stripSelfReceiver(e), nil
+	case *soltype.MethodElem:
+		var immutSigs, mutOnlySigs []*soltype.FuncType
+		for _, sig := range e.Signatures {
+			bare := *sig
+			bare.SelfParam = nil
+			if mutReceiver(sig.SelfParam) {
+				mutOnlySigs = append(mutOnlySigs, &bare)
+				continue
+			}
+			immutSigs = append(immutSigs, &bare)
+		}
+		if len(immutSigs) > 0 {
+			immutPart = &soltype.MethodElem{Name: e.Name, Signatures: immutSigs, Static: e.Static}
+		}
+		if len(mutOnlySigs) > 0 {
+			mutOnlyPart = &soltype.MethodElem{Name: e.Name, Signatures: mutOnlySigs, Static: e.Static}
+		}
+		return immutPart, mutOnlyPart
+	default:
+		return stripSelfReceiver(elem), nil
+	}
+}
+
+// mutReceiver reports whether a member's `self` receiver demands mutable access, which is
+// what makes the member unreachable through an immutable reference. Both `mut self` and
+// `&mut self` desugar to a mutable RefType over the class; a plain `self` or `&self` does
+// not, and a nil receiver is a static member or a plain function.
+func mutReceiver(self *soltype.FuncParam) bool {
+	if self == nil {
+		return false
+	}
+	ref, isRef := self.Type.(*soltype.RefType)
+	return isRef && ref.Mut
 }
 
 // stripSelfReceiver returns a copy of a class-body member with its `self` receiver

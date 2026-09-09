@@ -32,7 +32,7 @@ func TestInferLiteral(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			e := ast.NewLitExpr(tt.lit)
 			got := c.inferExpr(NewScope(), 0, e)
 			require.Empty(t, c.errs)
@@ -46,7 +46,7 @@ func TestInferLiteral(t *testing.T) {
 // A literal kind with no soltype form, regex or bigint, is a subset miss rather than a
 // crash. Both wait on a soltype.Lit member of their own.
 func TestInferLiteralUnsupported(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := ast.NewLitExpr(ast.NewRegex("/a/", testSpan()))
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
@@ -56,7 +56,7 @@ func TestInferLiteralUnsupported(t *testing.T) {
 }
 
 func TestInferIdentResolvesBinding(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}})
 
@@ -68,7 +68,7 @@ func TestInferIdentResolvesBinding(t *testing.T) {
 }
 
 func TestInferIdentResolvesThroughParent(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	parent := NewScope()
 	parent.defineValue("y", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.LitType{Lit: &soltype.StrLit{Value: "hi"}})}})
 	child := parent.Child()
@@ -80,7 +80,7 @@ func TestInferIdentResolvesThroughParent(t *testing.T) {
 }
 
 func TestInferIdentUnknown(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := ast.NewIdent("nope", testSpan())
 	got := c.inferExpr(NewScope(), 0, e)
 	require.IsType(t, &soltype.ErrorType{}, got) // PR8: report's recovery placeholder
@@ -90,7 +90,7 @@ func TestInferIdentUnknown(t *testing.T) {
 }
 
 func TestInferIdentNamespaceUsedAsValue(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineNamespace("Foo", &Namespace{Name: "Foo"})
 
@@ -103,7 +103,7 @@ func TestInferIdentNamespaceUsedAsValue(t *testing.T) {
 }
 
 func TestInferExprUnsupportedNode(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	left := ast.NewLitExpr(ast.NewNumber(1, testSpan()))
 	right := ast.NewLitExpr(ast.NewNumber(2, testSpan()))
 	e := ast.NewBinary(left, right, ast.Plus, testSpan())

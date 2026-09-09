@@ -147,7 +147,7 @@ func TestInferDeclaredTransitiveBoundSatisfied(t *testing.T) {
 // The check runs directly because current surface syntax does not put a lower-bound
 // 'static on a parameter lifetime. The store paths that would are deferred to M7.
 func TestCheckDeclaredBoundLowerBoundStaticNotForced(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := c.ctx.freshLifetime(0)
 	b := c.ctx.freshLifetime(0)
 	c.namedLifetimes = map[string]*soltype.LifetimeVar{"a": a, "b": b}

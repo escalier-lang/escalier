@@ -320,10 +320,10 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 	})
 
 	// A rest fn and an inexact fn have the same ∞ upper bound, so a rest fn fills an
-	// inexact callback parameter of matching required arity. Rest params are
-	// arity-only until M7, so the trailing element type is not checked here. The
-	// element check against `Array<T>` lands with M7, exercised by
-	// TestConstrainRestParamElementChecking.
+	// inexact callback parameter of matching required arity. The rest slot here is a
+	// bare `number` rather than an array, so nothing declares an element and the check
+	// is arity-only. TestConstrainRestParamElementChecking covers the array slot, where
+	// each absorbed argument is checked against the element.
 	t.Run("rest fn fills an inexact callback parameter", func(t *testing.T) {
 		c := &Context{}
 		g := restFn(num(), identParam("a", num()), restParam("rest", num()))
@@ -344,60 +344,82 @@ func TestConstrainFunctionRestParam(t *testing.T) {
 	})
 }
 
-// DISABLED until M7: rest-param element checking needs Array<T>, which the solver
-// gains in M7 (library type resolution). A typed rest param is written
-// `...rest: Array<T>`, and each trailing argument is checked against the element
-// type T. Until then rest params are arity-only and the element type is unchecked,
-// so the inexact-callback fill above succeeds regardless of the rest type. When M7
-// lands, build the rest type as Array<T>, teach the FuncType arm to read its
-// element, and remove the /* */ wrapper.
+// A typed rest parameter is written `...rest: Array<T>`, and each argument it stands
+// for is checked against the element T. This is what the element-carrying array buys
+// over an arity-only rest, and it is the behavior #677 gave the retired concrete.
+//
+// The cases build the check directly on Context, with no module to infer, so `Array` is
+// named rather than resolved: arrayClass is the name the rules compare against, and any
+// name serves as long as both sides agree.
 func TestConstrainRestParamElementChecking(t *testing.T) {
-	/*
-		restFn := func(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
-			return &soltype.FuncType{Params: params, Ret: ret}
-		}
+	// restFn is a rest-bearing function, exact in its accept-set the way a written one is.
+	restFn := func(ret soltype.Type, params ...*soltype.FuncParam) *soltype.FuncType {
+		return &soltype.FuncType{Params: params, Ret: ret}
+	}
+	// arrayCtx is a Context that recognizes arrayOf's instances as arrays.
+	arrayCtx := func() *Context { return &Context{arrayClass: "Array"} }
+	arrayOf := func(elem soltype.Type) soltype.Type {
+		return &soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{elem}}
+	}
 
-		// An inexact super's tail passes unknown-typed arguments, so a sub whose rest
-		// absorbs them must accept unknown at the element type. `...rest: Array<number>`
-		// is rejected, since unknown is not a subtype of number.
-		t.Run("number rest is rejected by an inexact callback parameter", func(t *testing.T) {
-			c := &Context{}
-			g := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(num())))
-			f := inexactFn(num(), identParam("a", num()))
-			require.Equal(t,
-				[]string{"cannot constrain unknown <: number"},
-				Messages(c.Constrain(g, f)))
-		})
+	// An absorbing rest stands for the sub's whole tail, so each parameter it absorbs is
+	// checked against the element. The check is contravariant, the orientation the fixed
+	// positions use, so the element is the sub of each pair.
+	//
+	//	fn (a: number, b: string) -> number  <:  fn (...rest: Array<number>) -> number
+	//
+	// `b`'s string is what the rest absorbs at its second position, and `number <: string`
+	// is the check that fails.
+	t.Run("an absorbed parameter is rejected on the element", func(t *testing.T) {
+		c := arrayCtx()
+		super := restFn(num(), restParam("rest", arrayOf(num())))
+		sub := exactFn(num(), identParam("a", num()), identParam("b", str()))
+		require.Equal(t,
+			[]string{"cannot constrain number <: string"},
+			Messages(c.Constrain(sub, super)))
+	})
 
-		// `...rest: Array<unknown>` accepts the unknown-typed tail, since unknown is a
-		// subtype of unknown.
-		t.Run("unknown rest fills an inexact callback parameter", func(t *testing.T) {
-			c := &Context{}
-			g := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(&soltype.UnknownType{})))
-			f := inexactFn(num(), identParam("a", num()))
-			require.Empty(t, c.Constrain(g, f))
-		})
+	//	fn (a: number, b: number) -> number  <:  fn (...rest: Array<number>) -> number
+	t.Run("an absorbed parameter matching the element is accepted", func(t *testing.T) {
+		c := arrayCtx()
+		super := restFn(num(), restParam("rest", arrayOf(num())))
+		sub := exactFn(num(), identParam("a", num()), identParam("b", num()))
+		require.Empty(t, c.Constrain(sub, super))
+	})
 
-		// A callback parameter with a typed rest passes its element type at every
-		// position past its named params. fn(a: number, ...rest: Array<string>) passes a
-		// string there, so a sub whose surplus param is number is rejected and one whose
-		// surplus param is string is accepted.
-		t.Run("typed-rest callback parameter rejects a mismatched surplus param", func(t *testing.T) {
-			c := &Context{}
-			super := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(str())))
-			sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", num()))
-			require.Equal(t,
-				[]string{"cannot constrain string <: number"},
-				Messages(c.Constrain(sub, super)))
-		})
+	// The named prefix ahead of the rest keeps its own positional check, so absorbing the
+	// tail does not loosen the parameters the super declares by position.
+	//
+	//	fn (a: number, b: number) -> number  <:  fn (a: string, ...rest: Array<number>) -> number
+	//
+	// The rest absorbs `b` and accepts it. Position `a` is checked on its own, and
+	// `string <: number` is what fails.
+	t.Run("the prefix ahead of the rest is still checked by position", func(t *testing.T) {
+		c := arrayCtx()
+		super := restFn(num(), identParam("a", str()), restParam("rest", arrayOf(num())))
+		sub := exactFn(num(), identParam("a", num()), identParam("b", num()))
+		require.Equal(t,
+			[]string{"cannot constrain string <: number"},
+			Messages(c.Constrain(sub, super)))
+	})
 
-		t.Run("typed-rest callback parameter accepts a matching surplus param", func(t *testing.T) {
-			c := &Context{}
-			super := restFn(num(), identParam("a", num()), restParam("rest", arrayOf(str())))
-			sub := inexactFn(num(), identParam("a", num()), optParam("b", str()), optParam("c", str()))
-			require.Empty(t, c.Constrain(sub, super))
-		})
-	*/
+	// A Context that recognizes no array reads the same slot as an ordinary parameter
+	// type, so no element check fires and only the arity gate applies. This is what a run
+	// without a stdlib sees.
+	//
+	//	fn (a: number, b: string) -> number  <:  fn (...rest: Array<number>) -> number
+	//
+	// The same pair as the first case. Without an `Array` to recognize, the rest declares
+	// no element, so the two parameters are never checked and the arity gate rejects the
+	// pair on its own.
+	t.Run("an unrecognized array slot is not an element check", func(t *testing.T) {
+		c := &Context{}
+		super := restFn(num(), restParam("rest", arrayOf(num())))
+		sub := exactFn(num(), identParam("a", num()), identParam("b", str()))
+		require.Equal(t,
+			[]string{"cannot constrain function of arity 2 <: function of arity 0 or more"},
+			Messages(c.Constrain(sub, super)))
+	})
 }
 
 func TestConstrainTuple(t *testing.T) {

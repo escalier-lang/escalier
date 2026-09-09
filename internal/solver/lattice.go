@@ -494,8 +494,6 @@ func compareSameKind(a, b soltype.Type) int {
 			return c
 		}
 		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
-	case *soltype.ArrayType:
-		return compareType(a.Elem, b.(*soltype.ArrayType).Elem)
 	case *soltype.FuncType:
 		b := b.(*soltype.FuncType)
 		if a.Inexact != b.Inexact {
@@ -810,20 +808,18 @@ func typeKindOrder(t soltype.Type) int {
 		return 9
 	case *soltype.GeneratorType:
 		return 10
-	case *soltype.ArrayType:
-		return 11
 	case *soltype.FuncType:
-		return 12
+		return 11
 	case *soltype.UnionType:
-		return 13
+		return 12
 	case *soltype.IntersectionType:
-		return 14
+		return 13
 	case *soltype.NegationType:
-		return 15
+		return 14
 	case *soltype.NullType:
-		return 16
+		return 15
 	case *soltype.UndefinedType:
-		return 17
+		return 16
 	}
-	return 18
+	return 17
 }

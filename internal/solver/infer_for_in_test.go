@@ -7,12 +7,13 @@ import (
 )
 
 // F1 — the `for (x in xs)` / `for await (x in xs)` iteration protocol. The loop
-// variable binds at the iterable's element type. M5 resolves that element type
-// structurally over the types the solver can represent — a tuple, the stand-in
-// for an array, and a union of tuples — since Array<T> and the `[Symbol.iterator]`
-// protocol land in M7. The element type is surfaced through a function's return
-// type: a `return x` inside the loop makes the loop variable's type the function's
-// return type, so `values["f"]` renders it.
+// variable binds at the iterable's element type, resolved structurally: a tuple, a
+// union of tuples, and a generator each answer from their own shape. An array answers
+// the same way, covered by TestArrayResolvesToTheIngestedClass, and the
+// `[Symbol.iterator]` protocol that generalizes all of them lands in M7.5 PR6. The
+// element type is surfaced through a function's return type: a `return x` inside the
+// loop makes the loop variable's type the function's return type, so `values["f"]`
+// renders it.
 
 func TestInferForInElementType(t *testing.T) {
 	tests := map[string]struct {
@@ -31,9 +32,7 @@ func TestInferForInElementType(t *testing.T) {
 			`,
 			want: map[string]string{"f": "fn () -> 1 | 2 | 3"},
 		},
-		// A single-element tuple binds the loop variable at that element's type — the
-		// milestone's `for (x in numbers)` where `numbers: Array<number>` binds
-		// `x: number`, expressed with the tuple that stands in for the array.
+		// A single-element tuple binds the loop variable at that element's type.
 		"SingleElementTupleBindsElement": {
 			src: `
 				fn f(xs: [number]) {

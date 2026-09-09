@@ -100,7 +100,7 @@ func transitionFixture(
 	aliases *liveness.AliasTracker,
 	live set.Set[liveness.VarID],
 ) *checker {
-	c := newChecker()
+	c := newTestChecker()
 	c.fn = &funcCtx{
 		liveness: &liveness.LivenessInfo{
 			LiveAfter: [][]set.Set[liveness.VarID]{{live}},
@@ -527,7 +527,7 @@ func TestTransitionWiringReportsMoveError(t *testing.T) {
 // prelude's operator names are included, and the prelude cache makes repeated calls
 // return the same result.
 func TestCollectOuterBindingsPreludeCache(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := sharedPrelude().Child()
 	scope.defineValue("myLocal", ValueBinding{})
 

@@ -862,11 +862,11 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// positions use. A written tuple never reaches here, expandTupleRest having split it.
 			absorbAt, absorbElem := -1, soltype.Type(nil)
 			if k := restIndex(supX); k >= 0 && canAbsorbRest(subX, k) {
-				switch slot := supX.Params[k].Type.(type) {
-				case *soltype.TypeVarType:
+				slot := supX.Params[k].Type
+				if _, isVar := slot.(*soltype.TypeVarType); isVar {
 					absorbAt = k
-				case *soltype.ArrayType:
-					absorbAt, absorbElem = k, slot.Elem
+				} else if elem, isArray := c.arrayElem(slot); isArray {
+					absorbAt, absorbElem = k, elem
 				}
 			}
 			var errs []SolverError
@@ -923,8 +923,8 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			scatterAt, scatterElem := -1, soltype.Type(nil)
 			if absorbAt < 0 && !hasRest(supX) {
 				if j := restIndex(subX); j >= 0 {
-					if arr, ok := subX.Params[j].Type.(*soltype.ArrayType); ok {
-						scatterAt, scatterElem = j, arr.Elem
+					if elem, isArray := c.arrayElem(subX.Params[j].Type); isArray {
+						scatterAt, scatterElem = j, elem
 						n = min(j, len(supX.Params))
 					}
 				}
@@ -1210,14 +1210,6 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(body, sup, seen, mutCtx)
 		}
 		// A ClassType against any other concrete falls through to the var arms below.
-	case *soltype.ArrayType:
-		if sup, ok := super.(*soltype.ArrayType); ok {
-			// ArrayType is covariant in its Elem: Array<L> <: Array<R> iff L <: R. That is the
-			// read-only reading, which is what a rest parameter needs, since the callee only
-			// reads the arguments it gathers. An array's element is its own annotation context,
-			// so the deep-mut flag resets.
-			return c.constrain(sub.Elem, sup.Elem, seen, false)
-		}
 	case *soltype.PromiseType:
 		if sup, ok := super.(*soltype.PromiseType); ok {
 			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff

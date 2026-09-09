@@ -130,7 +130,7 @@ func TestInferCallRestCalleeArity(t *testing.T) {
 	}
 
 	t.Run("absorbs extra args (no too-many)", func(t *testing.T) {
-		c := newChecker()
+		c := newTestChecker()
 		scope := NewScope()
 		scope.defineValue("g", restCallee())
 		// g(1, 2, 3) — two args beyond the fixed param; the rest absorbs them.
@@ -140,7 +140,7 @@ func TestInferCallRestCalleeArity(t *testing.T) {
 	})
 
 	t.Run("still rejects too few (required fixed params)", func(t *testing.T) {
-		c := newChecker()
+		c := newTestChecker()
 		scope := NewScope()
 		scope.defineValue("g", restCallee())
 		// g() — zero args, but x is required (the rest may be empty, x may not).

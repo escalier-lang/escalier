@@ -84,8 +84,8 @@ func typePrec(t Type) int {
 		return precAtom
 	default:
 		// PrimType, LitType, TupleType, ObjectType, ClassType, AliasType, NullType,
-		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType,
-		// ArrayType, and AliasType each render as a bare name or `Name<args>`, so none needs parens. A raw TypeVarType
+		// UndefinedType, NeverType, UnknownType — atoms. ObjectType is brace-delimited, and ClassType
+		// and AliasType each render as a bare name or `Name<args>`, so neither needs parens. A raw TypeVarType
 		// appears only when printing an un-coalesced type, see printType; it is also an
 		// atom rendered as `t{ID}`, so it lands here. A `mut 'a Point` borrow wraps the
 		// ClassType in a RefType, which carries the looser precPrefix precedence.
@@ -655,8 +655,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			if t.Throws != nil {
 				walk(t.Throws)
 			}
-		case *ArrayType:
-			walk(t.Elem)
 		case *RefType:
 			walk(t.Inner)
 		case *UnionType:
@@ -1048,8 +1046,6 @@ func (p *namedPrinter) printType(t Type) string {
 			slots += ", " + p.printType(t.Throws)
 		}
 		return t.Name() + "<" + slots + ">"
-	case *ArrayType:
-		return "Array<" + p.printType(t.Elem) + ">"
 	case *RefType:
 		// Ownership and the borrow `&` split on Lt. An owned value has Lt nil and
 		// renders bare. NewRef collapses the owned-immutable cell, so a surviving owned

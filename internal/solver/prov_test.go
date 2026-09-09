@@ -45,7 +45,7 @@ func requireFromNormalization(t *testing.T, c *checker, ty soltype.Type, sources
 // written by an AST node, so without the edge a diagnostic naming one falls back to
 // the constraint site's span.
 func TestProvFusedArrowAndDomain(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := parseType(t, "fn (x: number) -> boolean")
 	b := parseType(t, "fn (x: string) -> boolean")
 
@@ -65,7 +65,7 @@ func TestProvFusedArrowAndDomain(t *testing.T) {
 // The record came from the two source records, and the field `never` from the meet
 // of the two source field types.
 func TestProvFusedRecordAndField(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := parseType(t, "{x: number, ...}")
 	b := parseType(t, "{x: string, ...}")
 
@@ -83,7 +83,7 @@ func TestProvFusedRecordAndField(t *testing.T) {
 // still reach the two atoms whose intersection is uninhabited. `5 & 6` fuses to
 // `never` naming the two literals.
 func TestProvFusedNeverNamesSources(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	a := parseType(t, "5")
 	b := parseType(t, "6")
 
@@ -96,7 +96,7 @@ func TestProvFusedNeverNamesSources(t *testing.T) {
 
 // A literal mints a LitType recorded against its LiteralExpr.
 func TestProvLiteralInference(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := numExpr(5)
 	ty := c.inferExpr(NewScope(), 0, e)
 	requireOrigin(t, c, ty, e, LiteralInference)
@@ -104,7 +104,7 @@ func TestProvLiteralInference(t *testing.T) {
 
 // A tuple/object literal records its aggregate type against the literal node.
 func TestProvTupleAndObject(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	tup := tupleExpr(numExpr(1), strExpr("hi"))
 	tupTy := c.inferExpr(NewScope(), 0, tup)
 	requireOrigin(t, c, tupTy, tup, TupleElem)
@@ -117,7 +117,7 @@ func TestProvTupleAndObject(t *testing.T) {
 // A call records its fresh result var (Application) against the CallExpr and the
 // synthesized call-shape (CallShape) against the same node.
 func TestProvCallResultAndShape(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("inc", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "n"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
@@ -145,7 +145,7 @@ func TestProvCallResultAndShape(t *testing.T) {
 // A member read records its fresh result var against the .prop IDENTIFIER, not the
 // whole MemberExpr — so missing-property blame is the property, not the receiver.
 func TestProvMemberAccessRecordedAgainstProp(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := memberExpr(objExpr(prop("a", numExpr(5))), "a")
 	res := c.inferExpr(NewScope(), 0, e)
 	requireOrigin(t, c, res, e.Prop, MemberAccess)
@@ -154,7 +154,7 @@ func TestProvMemberAccessRecordedAgainstProp(t *testing.T) {
 // A function records its own FuncType (FuncInference) against the function node and
 // each un-annotated param's fresh var (ParamBinding) against the param's pattern.
 func TestProvFuncTypeAndParamBinding(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := funcExpr([]*ast.Param{param("x", nil)}, nil, block(exprStmt(identExpr("x"))))
 	ty := c.inferExpr(NewScope(), 0, e)
 	requireOrigin(t, c, ty, e, FuncInference)
@@ -168,7 +168,7 @@ func TestProvFuncTypeAndParamBinding(t *testing.T) {
 // (AnnotationType), and the ParamBinding origin is NOT recorded for it — its blame
 // rides on the annotation (the fresh-atom discipline, §3.3).
 func TestProvAnnotatedParamUsesAnnotationOrigin(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	ann := numAnn()
 	e := funcExpr([]*ast.Param{param("x", ann)}, nil, block(exprStmt(identExpr("x"))))
 	ty := c.inferExpr(NewScope(), 0, e)
@@ -181,7 +181,7 @@ func TestProvAnnotatedParamUsesAnnotationOrigin(t *testing.T) {
 // (AnnotationType) — the fresh-atom discipline that makes a shared `number` no
 // longer a blind spot.
 func TestProvAnnotationType(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	ta := numAnn()
 	ty, ok := c.resolveTypeAnn(NewScope(), ta, 0)
 	require.True(t, ok)
@@ -192,7 +192,7 @@ func TestProvAnnotationType(t *testing.T) {
 // atom would overwrite the definition's origin. So inferring a bare ident over a
 // pre-bound atom leaves the table empty.
 func TestProvIdentRecordsNothing(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.PrimType{Prim: soltype.NumPrim})}})
 	c.inferExpr(scope, 0, identExpr("x"))
@@ -202,7 +202,7 @@ func TestProvIdentRecordsNothing(t *testing.T) {
 // The honest absence (§3.2): a synthesized (coalesced) type has no Prov entry, so
 // NodeFor reports a miss rather than lying.
 func TestProvCoalescedTypeHasNoEntry(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	v := c.freshAt(0)
 	co := coalesce(v, soltype.Positive) // empty bounds → never, a fresh synthesized atom
 	_, ok := c.prov.NodeFor(co)
@@ -236,7 +236,7 @@ func TestProvSharedSingletonRecordsNothing(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			c.debugProv = true
 			ty, ok := c.resolveTypeAnn(NewScope(), tt.ann(), 0)
 			require.True(t, ok)
@@ -251,7 +251,7 @@ func TestProvSharedSingletonRecordsNothing(t *testing.T) {
 // interned/coalesced-pointer reuse that would silently mis-blame), while
 // re-recording against the same node is idempotent and allowed.
 func TestProvDebugGuardCatchesConflictingOverwrite(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	c.debugProv = true
 	ty := &soltype.PrimType{Prim: soltype.NumPrim}
 	nodeA := numAnn()
@@ -265,7 +265,7 @@ func TestProvDebugGuardCatchesConflictingOverwrite(t *testing.T) {
 // With the guard OFF (production default), a conflicting overwrite does not panic —
 // a span bug must never crash the compiler (it degrades to last-write-wins blame).
 func TestProvDebugGuardOffDoesNotPanic(t *testing.T) {
-	c := newChecker() // debugProv defaults false
+	c := newTestChecker() // debugProv defaults false
 	ty := &soltype.PrimType{Prim: soltype.NumPrim}
 	c.recordProv(ty, numAnn(), AnnotationType)
 	require.NotPanics(t, func() { c.recordProv(ty, strAnn(), AnnotationType) })

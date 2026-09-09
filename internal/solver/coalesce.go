@@ -1540,9 +1540,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			return false
 		}
 		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
-	case *soltype.ArrayType:
-		b, ok := b.(*soltype.ArrayType)
-		return ok && equalTypeWith(a.Elem, b.Elem, ctx)
 	case *soltype.PromiseType:
 		b, ok := b.(*soltype.PromiseType)
 		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises

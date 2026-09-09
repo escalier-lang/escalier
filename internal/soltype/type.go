@@ -843,13 +843,6 @@ func (t *GeneratorType) Name() string {
 	return "Generator"
 }
 
-// ArrayType is a homogeneous sequence of Elem, written `Array<T>`. It is a dedicated concrete
-// for the reason PromiseType is: one stdlib generic the milestone needs typed ahead of library
-// ingestion. It exists to give a rest parameter an element type, the arity-and-element pair a
-// tuple-typed rest cannot express. Elem is covariant, the read-only reading a rest parameter
-// needs. The minimal form carries no members, so `xs.length` and `xs[0]` do not resolve.
-type ArrayType struct{ Elem Type }
-
 // NullType is the type whose only inhabitant is the `null` literal. It
 // mirrors TypeScript's `null` type and sits alongside UndefinedType as a
 // distinct atomic kind. The canonical comparator sorts both kinds last so a
@@ -1309,7 +1302,6 @@ func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
 func (*PromiseType) isType()         {}
 func (*GeneratorType) isType()       {}
-func (*ArrayType) isType()           {}
 func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
 func (*NeverType) isType()           {}
@@ -1443,9 +1435,6 @@ func LevelOf(t Type) int {
 			max(LevelOf(t.Yield), LevelOf(t.Ret)),
 			max(LevelOf(t.Next), throwsLevel(t.Throws)),
 		)
-	case *ArrayType:
-		// An array's level is its element's, the same single-child rule PromiseType follows.
-		return LevelOf(t.Elem)
 	case *RefType:
 		// A borrow's level is the max of its inner content's and its lifetime's (M4
 		// D2.5). The lifetime is a SECOND quantifiable variable on the wrapper: a

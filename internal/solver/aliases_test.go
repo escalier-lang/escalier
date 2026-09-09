@@ -143,7 +143,7 @@ func TestInferTypeAliasShadowingPromiseRejectsArgs(t *testing.T) {
 // subtyping rather than looping. inferTypeDecl registers before binding, so this never
 // arises from source, but the guard keeps a stray reference from diverging.
 func TestExpandAliasUnregisteredReturnsError(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	got := c.ctx.expandAlias(&soltype.AliasType{Name: "Missing"})
 	require.IsType(t, &soltype.ErrorType{}, got)
 }

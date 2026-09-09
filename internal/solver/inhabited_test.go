@@ -304,11 +304,12 @@ func TestFinitelyInhabited(t *testing.T) {
 		{
 			// μX0.Array<X0>
 			//
-			// An array type is inhabited by the empty array, so a recursive element type imposes
-			// nothing on the value.
-			name: "an array of the binder is inhabited by the empty array",
+			// A class instance is one of the shapes the walk does not decide, so it reads as
+			// inhabited whatever its type arguments carry. That is the right answer for an
+			// array, which the empty array inhabits.
+			name: "a class instance over the binder reads as inhabited",
 			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
-				return &soltype.ArrayType{Elem: ref}
+				return &soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{ref}}
 			}),
 			want: true,
 		},

@@ -2,6 +2,7 @@ package solver
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -95,7 +96,7 @@ func parseModule(t *testing.T, src string) *ast.Module {
 // stays reachable: a type-alias binding renders as its definition body, which lives on
 // the checker's Context, not on the AliasType handle in scope.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := sharedPrelude().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	values = make(map[string]string, len(scope.values))
@@ -612,4 +613,23 @@ func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "3:11-3:18: Too many arguments: expected at most 1, but got 2", msgWithSpan(t, errs[0]))
 	require.Equal(t, "number", values["r"], "the result recovers to the declared return, not never")
+}
+
+// testStdlibSource resolves the pseudo-packages the solver's own tests infer
+// against, read from testdata/stdlib.
+//
+// It supplies `std:array`, which is what makes a written `Array<T>` resolve to the
+// ingested class rather than to an unknown name. The committed
+// internal/interop/data tree is not used: it does not yet ingest cleanly, and its
+// diagnostics would land in front of every test's own.
+func testStdlibSource() ModuleSource {
+	return StdlibSource(filepath.Join("testdata", "stdlib"))
+}
+
+// newTestChecker is newChecker with the test pseudo-package tree attached, so a
+// test that writes `Array<T>` resolves it the way a real run does.
+func newTestChecker() *checker {
+	c := newChecker()
+	c.source = testStdlibSource()
+	return c
 }

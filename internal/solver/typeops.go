@@ -1448,6 +1448,14 @@ func (e *typeEvaluator) reduceIndex(target, index soltype.Type, inexact bool) so
 		}
 		return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
 	case *soltype.ClassType:
+		// An array read at a numeric key yields its element type. A tuple answers this from
+		// its listed positions, but an array declares no position for the key to land on, so
+		// the element is the whole answer whatever the index is. The declaration itself
+		// carries no numeric member, so without this arm the read would report the key as
+		// absent.
+		if elem, isArray := e.ctx.arrayElem(tgt); isArray && isNumericKey(idx) {
+			return elem
+		}
 		obj, ok := e.ctx.projectClassBody(tgt)
 		if !ok {
 			return &soltype.IndexType{Target: target, Index: idx, Inexact: inexact}
@@ -1598,6 +1606,19 @@ func (e *typeEvaluator) indexSignatureRead(obj *soltype.ObjectType, index soltyp
 		return &soltype.ErrorType{}
 	}
 	return newUnion(nil, []soltype.Type{idx.Value, &soltype.UndefinedType{}})
+}
+
+// isNumericKey reports whether t is a key that reads a position rather than a named
+// member: the `number` primitive, or a number literal.
+func isNumericKey(t soltype.Type) bool {
+	switch t := t.(type) {
+	case *soltype.PrimType:
+		return t.Prim == soltype.NumPrim
+	case *soltype.LitType:
+		_, isNum := t.Lit.(*soltype.NumLit)
+		return isNum
+	}
+	return false
 }
 
 // indexTuple reduces `tup[n]` for a ground tuple. A numeric-literal key selects the element at
@@ -1848,7 +1869,7 @@ func (e *typeEvaluator) reduceExactness(kind soltype.ExactnessKind, operand solt
 		return op
 	case *soltype.PrimType, *soltype.LitType, *soltype.NeverType, *soltype.UnknownType,
 		*soltype.NullType, *soltype.UndefinedType, *soltype.PromiseType,
-		*soltype.GeneratorType, *soltype.ArrayType, *soltype.ErrorType:
+		*soltype.GeneratorType, *soltype.ErrorType:
 		return reduced
 	}
 	return &soltype.ExactnessType{Kind: kind, Operand: reduced}

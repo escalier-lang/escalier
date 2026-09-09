@@ -156,7 +156,7 @@ func TestInferAwaitOutsideAsyncBlamesEnclosingFn(t *testing.T) {
 // is nothing to mark `async`). Built directly so the awaited value resolves cleanly
 // and the only error is the await itself.
 func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{
 		monoScheme(&soltype.PromiseType{Inner: &soltype.PrimType{Prim: soltype.StrPrim}}),
@@ -324,7 +324,7 @@ func TestInferIfElseConditionMustBeBool(t *testing.T) {
 // external return is `Promise<undefined>`. Exercises the funcCtx collection of a
 // bare return.
 func TestInferAsyncBareReturnIsPromiseUndefined(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// async fn () { return }
 	e := ast.NewFuncExpr(nil, nil, nil, nil, nil, true,
 		block(returnStmt(nil)), testSpan())
@@ -338,7 +338,7 @@ func TestInferAsyncBareReturnIsPromiseUndefined(t *testing.T) {
 // same type, coalescing to plain `undefined` rather than a degenerate
 // `undefined | undefined` union.
 func TestInferFnMultipleBareReturnsCollapse(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn () { return; return; }
 	e := funcExpr(nil, nil, block(
 		returnStmt(nil),
@@ -354,7 +354,7 @@ func TestInferFnMultipleBareReturnsCollapse(t *testing.T) {
 // the inner fn ends, the outer's returns list holds only the outer's own
 // `return` of the inner fn — the inner's `return x` never leaks out.
 func TestInferNestedFnReturnsScoped(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn outer() { return fn (x: number) { return x } }
 	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil,
 		block(returnStmt(identExpr("x"))))

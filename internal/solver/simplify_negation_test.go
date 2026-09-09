@@ -142,7 +142,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c := newChecker()
+			c := newTestChecker()
 			in := tt.build(c)
 			require.Equal(t, tt.unsimplified, soltype.Print(in), "input to the pass")
 			require.Equal(t, tt.want, soltype.Print(c.subsumeFinal(in)))
@@ -154,7 +154,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 // from the excluded tag, so the pass must render it faithfully rather than drop it. The
 // scheme goes through generalize, the path a real binding takes to its display type.
 func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	c.ctx.registerClass("Tag", &ClassDef{})
 	param := c.freshAt(1)
 	// The unsimplified body is `fn (x: T) -> T & ~Tag`. T occurs in both polarities, so
@@ -175,7 +175,7 @@ func TestSimplifyNegationsKeepsIrreducibleComplement(t *testing.T) {
 // the meet has an inhabitant. A false means the pass reached no derivation, which for a
 // meet the concreteness gate keeps it away from says nothing either way.
 func TestSimplifyNegationsMemberRewrites(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 
 	// `string & ~string` admits no value and the pass derives it. The empty meet is
 	// reported rather than returned as a `never` member, so the caller decides what an

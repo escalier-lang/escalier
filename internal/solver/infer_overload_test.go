@@ -341,7 +341,7 @@ func TestInferOverloadThreeArmSpecificity(t *testing.T) {
 // the winning (number) arm's bound — never the loser's. Built directly so the
 // argument variable is inspectable.
 func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 
 	str := func() soltype.Type { return &soltype.PrimType{Prim: soltype.StrPrim} }
 	num := func() soltype.Type { return &soltype.PrimType{Prim: soltype.NumPrim} }
@@ -375,7 +375,7 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 // it win, but the accepting constraint against a union param is ambiguous, and that warning
 // must not be swallowed by overload matching.
 func TestResolveOverloadSurfacesWinningArmWarning(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 
 	num := func() soltype.Type { return &soltype.PrimType{Prim: soltype.NumPrim} }
 	// The single arm takes `(T | number)`, a union with a bare type-variable member. Calling

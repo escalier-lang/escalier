@@ -27,7 +27,7 @@ func renderBinding(b ValueBinding) string {
 // --- FuncExpr ---
 
 func TestInferFuncExprAnnotated(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn (x: number) { return x }
 	e := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 
@@ -42,7 +42,7 @@ func TestInferFuncExprAnnotated(t *testing.T) {
 // contravariant param position, never in covariant return position) rather than
 // a <T0> quantifier.
 func TestInferFuncExprUnannotatedIsMonomorphic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn (x) { return x }
 	e := funcExpr([]*ast.Param{param("x", nil)}, nil, block(returnStmt(identExpr("x"))))
 
@@ -52,7 +52,7 @@ func TestInferFuncExprUnannotatedIsMonomorphic(t *testing.T) {
 }
 
 func TestInferFuncExprMultiParam(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn (x: number, y: string) { return y }
 	e := funcExpr(
 		[]*ast.Param{param("x", numAnn()), param("y", strAnn())},
@@ -66,7 +66,7 @@ func TestInferFuncExprMultiParam(t *testing.T) {
 }
 
 func TestInferFuncExprReturnAnnotationAccepted(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn (x: number) -> number { return x }
 	e := funcExpr([]*ast.Param{param("x", numAnn())}, numAnn(), block(returnStmt(identExpr("x"))))
 
@@ -76,7 +76,7 @@ func TestInferFuncExprReturnAnnotationAccepted(t *testing.T) {
 }
 
 func TestInferFuncExprReturnAnnotationMismatch(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn () -> number { return "hello" }
 	e := funcExpr(nil, numAnn(), block(returnStmt(strExpr("hello"))))
 
@@ -89,7 +89,7 @@ func TestInferFuncExprReturnAnnotationMismatch(t *testing.T) {
 // A body-level val is visible to later statements, including the return that
 // becomes the function's result.
 func TestInferFuncExprBodyValDecl(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn () { val y = 5; return y }
 	e := funcExpr(nil, nil, block(
 		ast.NewDeclStmt(valDecl("y", nil, numExpr(5)), testSpan()),
@@ -104,7 +104,7 @@ func TestInferFuncExprBodyValDecl(t *testing.T) {
 // A bodyless (declare/ambient) function adopts its return annotation without
 // constraining a synthetic `undefined` against it (which would error spuriously).
 func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// declare fn now() -> number
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("now", testSpan()), nil, nil,
@@ -125,7 +125,7 @@ func TestInferFuncDeclBodylessReturnAnnotation(t *testing.T) {
 // body-free and this recovery path runs; the decl here is built with a nil body to
 // exercise it directly.
 func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// declare fn now() -> bigint   (bigint is unsupported in M2)
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("now", testSpan()), nil, nil,
@@ -144,7 +144,7 @@ func TestInferFuncDeclBodylessUnsupportedReturnRecoversToUnknown(t *testing.T) {
 // p.Span() (which dereferences the nil pattern). Not reachable from the real
 // parser, but the walk must uphold M2's "never a panic" guarantee.
 func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	e := funcExpr([]*ast.Param{{Pattern: nil}}, nil, block(exprStmt(numExpr(1))))
 
 	require.NotPanics(t, func() { c.inferExpr(NewScope(), 0, e) })
@@ -156,7 +156,7 @@ func TestInferFuncExprNilParamPatternNoPanic(t *testing.T) {
 // leaves below go unused, so each element coalesces to `unknown`. The point is that
 // the param is accepted and rendered, not reported as unsupported.
 func TestInferFuncExprDestructuringParam(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn ([a, b]) { 1 }
 	tuplePat := ast.NewTuplePat([]ast.Pat{
 		ast.NewIdentPat("a", false, nil, nil, testSpan()),
@@ -173,7 +173,7 @@ func TestInferFuncExprDestructuringParam(t *testing.T) {
 // function's own FuncType.TypeParams, so the parameter and return read the one shared
 // `T` var rather than reporting the parameter feature as unsupported.
 func TestInferFuncExprGenericResolves(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn <T>(x: T) -> T { return x }
 	tp := ast.NewTypeParam("T", nil, nil, testSpan())
 	tRef := func() ast.TypeAnn { return ast.NewRefTypeAnn(ast.NewIdentifier("T", testSpan()), nil, testSpan()) }
@@ -194,7 +194,7 @@ func TestInferFuncExprGenericResolves(t *testing.T) {
 // --- CallExpr ---
 
 func TestInferCallResolvesReturn(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// (fn (x: number) { return x })(5)
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(5)}, false, testSpan())
@@ -206,7 +206,7 @@ func TestInferCallResolvesReturn(t *testing.T) {
 }
 
 func TestInferCallArgMismatch(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// (fn (x: number) { return x })("hello")
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{strExpr("hello")}, false, testSpan())
@@ -223,7 +223,7 @@ func TestInferCallArgMismatch(t *testing.T) {
 // uniform too-many message), not a FuncArityMismatch — and the constraint receives
 // only the arity-matched prefix, so the lint is the SOLE diagnostic.
 func TestInferCallTooManyArgs(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// (fn (x: number) { return x })(1, 2)
 	callee := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(1), numExpr(2)}, false, testSpan())
@@ -240,7 +240,7 @@ func TestInferCallTooManyArgs(t *testing.T) {
 // symmetric twin of TooManyArgsError) — the demand is padded to the callee's arity
 // so the lint is the SOLE diagnostic, not a doubled lint + FuncArityMismatch.
 func TestInferCallTooFewArgs(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// (fn (x: number, y: number) { return x })(1)
 	callee := funcExpr([]*ast.Param{param("x", numAnn()), param("y", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	e := ast.NewCall(callee, []ast.Expr{numExpr(1)}, false, testSpan())
@@ -254,7 +254,7 @@ func TestInferCallTooFewArgs(t *testing.T) {
 }
 
 func TestInferCallThroughBinding(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("inc", ValueBinding{Schemes: []TypeScheme{monoScheme(&soltype.FuncType{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "n"}, Type: &soltype.PrimType{Prim: soltype.NumPrim}}},
@@ -271,7 +271,7 @@ func TestInferCallThroughBinding(t *testing.T) {
 // --- Block / statements ---
 
 func TestInferBlockResultIsLastStmt(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// { 1; "two" }
 	b := block(exprStmt(numExpr(1)), exprStmt(strExpr("two")))
 
@@ -282,7 +282,7 @@ func TestInferBlockResultIsLastStmt(t *testing.T) {
 }
 
 func TestInferBlockEmptyIsUndefined(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	got, diverges := c.inferBlock(NewScope(), 0, block())
 	require.Empty(t, c.errs)
 	require.False(t, diverges)
@@ -290,7 +290,7 @@ func TestInferBlockEmptyIsUndefined(t *testing.T) {
 }
 
 func TestInferBlockReturnStmt(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// A return is only legal inside a function body, so push a func context the way
 	// inferFunc does — otherwise the walk (correctly) reports ReturnOutsideFunction.
 	saved := c.pushFuncCtx(false, nil, 0)
@@ -310,7 +310,7 @@ func TestInferBlockReturnStmt(t *testing.T) {
 // rebinds it (overwrite, no constraint linking the two), so the tail sees the
 // later type even though it is unrelated to the earlier one (§3.2).
 func TestInferBlockRedeclarationRebinds(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// { val x = "hello"; val x = 5; x }
 	b := block(
 		ast.NewDeclStmt(valDecl("x", nil, strExpr("hello")), testSpan()),
@@ -324,7 +324,7 @@ func TestInferBlockRedeclarationRebinds(t *testing.T) {
 }
 
 func TestInferStmtBodyDeclNotAllowed(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// A nested FuncDecl as a body statement is a permanent language error.
 	inner := ast.NewFuncDecl(ast.NewIdentifier("f", testSpan()), nil, nil, nil, nil, nil,
 		block(), false, false, false, testSpan())
@@ -340,7 +340,7 @@ func TestInferStmtBodyDeclNotAllowed(t *testing.T) {
 // --- FuncDecl ---
 
 func TestInferFuncDecl(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn id(x: number) { return x }
 	d := ast.NewFuncDecl(
 		ast.NewIdentifier("id", testSpan()), nil, nil,
@@ -362,7 +362,7 @@ func TestInferFuncDecl(t *testing.T) {
 // (`foo(x + 1)` would be the textbook shape, but `+` is a BinaryExpr, which
 // PR-3 doesn't type yet; `foo(x)` exercises the same recursive-call path.)
 func TestInferFuncDeclSelfReference(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	scope := NewScope()
 	scope.defineValue("foo", ValueBinding{Schemes: []TypeScheme{monoScheme(c.freshAt(1))}})
 	// fn foo(x: number) { return foo(x) }
@@ -383,7 +383,7 @@ func TestInferFuncDeclSelfReference(t *testing.T) {
 // The bound name resolves to the function type, and the enclosing function
 // returns it.
 func TestInferFuncDeclBodyFuncValDecl(t *testing.T) {
-	c := newChecker()
+	c := newTestChecker()
 	// fn outer() { val f = fn (x: number) { return x }; return f }
 	inner := funcExpr([]*ast.Param{param("x", numAnn())}, nil, block(returnStmt(identExpr("x"))))
 	d := ast.NewFuncDecl(
