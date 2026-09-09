@@ -127,6 +127,8 @@ importers:
 
   fixtures/do: {}
 
+  fixtures/doc_comments: {}
+
   fixtures/enum: {}
 
   fixtures/enum_script: {}

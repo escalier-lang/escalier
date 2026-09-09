@@ -24,6 +24,19 @@ func hasRest(f *soltype.FuncType) bool {
 	return n > 0 && f.Params[n-1].Rest
 }
 
+// restSlotElem returns the element type a rest parameter's slot stands for, and false when the
+// slot is not an array. It looks through a borrow first, so `...items: mut Array<T>` binds the
+// same arguments `...items: Array<T>` does. The borrow describes the array a call gathers its
+// surplus arguments into and says nothing about the arguments, so it must not reach the element.
+// `std/array.esc` writes `push(mut self, ...items: mut Array<T>) -> number`, which is the form
+// this reads.
+func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
+	if ref, ok := slot.(*soltype.RefType); ok {
+		return c.arrayElem(ref.Inner)
+	}
+	return c.arrayElem(slot)
+}
+
 // expandTupleRest returns f with a tuple-typed rest param replaced by one positional param per
 // tuple element, so the rules that walk a parameter list read ordinary positions instead of each
 // growing a rest case. The expanded form is never stored or printed, so a diagnostic still names
@@ -865,7 +878,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				slot := supX.Params[k].Type
 				if _, isVar := slot.(*soltype.TypeVarType); isVar {
 					absorbAt = k
-				} else if elem, isArray := c.arrayElem(slot); isArray {
+				} else if elem, isArray := c.restSlotElem(slot); isArray {
 					absorbAt, absorbElem = k, elem
 				}
 			}
@@ -923,7 +936,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			scatterAt, scatterElem := -1, soltype.Type(nil)
 			if absorbAt < 0 && !hasRest(supX) {
 				if j := restIndex(subX); j >= 0 {
-					if elem, isArray := c.arrayElem(subX.Params[j].Type); isArray {
+					if elem, isArray := c.restSlotElem(subX.Params[j].Type); isArray {
 						scatterAt, scatterElem = j, elem
 						n = min(j, len(supX.Params))
 					}

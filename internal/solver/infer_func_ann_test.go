@@ -688,3 +688,174 @@ func TestInferFunctionTopType(t *testing.T) {
 		})
 	}
 }
+
+// A rest parameter written on a function or method DECLARATION binds a slot, the same as one
+// written in a `fn(...) -> R` type annotation. The declaration path binds the pattern into the
+// body's scope, which the annotation path never does, so it reaches the marker separately and
+// needs its own coverage.
+func TestInferRestParamDeclaration(t *testing.T) {
+	const cls = "declare class Box<T> {\n  push(mut self, ...items: mut Array<T>) -> number,\n}\n"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// The declared slot survives onto the inferred type rather than degrading to a
+			// positional parameter typed `Array<number>`.
+			name: "KeepsTheSlotOnTheInferredType",
+			src:  `fn f(...xs: Array<number>) -> number { return 1 }`,
+		},
+		{
+			// The name binds at the slot's own type, so the body reads the gathered array.
+			name: "BindsTheNameAtTheSlotType",
+			src:  `fn f(...xs: Array<number>) -> number { return xs[0] }`,
+		},
+		{
+			name: "CallWithNoArguments",
+			src:  `fn f(...xs: Array<number>) -> number { return 1 }` + "\n" + `val r = f()`,
+		},
+		{
+			name: "CallWithSeveralArguments",
+			src:  `fn f(...xs: Array<number>) -> number { return 1 }` + "\n" + `val r = f(1, 2, 3)`,
+		},
+		{
+			name: "CallRejectsAWrongElement",
+			src:  `fn f(...xs: Array<number>) -> number { return 1 }` + "\n" + `val r = f(1, "a")`,
+			want: []string{`cannot constrain "a" <: number`},
+		},
+		{
+			// An owned-mutable slot binds the same arguments an owned one does. The borrow
+			// describes the array the call gathers its surplus arguments into and says nothing
+			// about the arguments, so it must not reach the element.
+			name: "OwnedMutableSlotChecksTheElement",
+			src:  `declare fn f(...xs: mut Array<number>) -> number` + "\n" + `val r = f(1, "a")`,
+			want: []string{`cannot constrain "a" <: number`},
+		},
+		{
+			// The shape `std/array.esc` writes for `Array.push`.
+			name: "MethodSlotAcceptsElements",
+			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push(1, 2) }`,
+		},
+		{
+			name: "MethodSlotAcceptsNoArguments",
+			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push() }`,
+		},
+		{
+			// The gap this case pins. A member's slot that degrades to a positional parameter
+			// demands the whole array, so the call is rejected for passing an element:
+			// `cannot constrain 1 <: Array<number>`.
+			name: "MethodSlotRejectsAWrongElement",
+			src:  cls + `fn g(xs: mut Box<number>) -> number { return xs.push("a") }`,
+			want: []string{`cannot constrain "a" <: number`},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, len(tt.want))
+			for i, want := range tt.want {
+				require.Equal(t, want, errs[i].Message())
+			}
+		})
+	}
+}
+
+// A rest parameter on a function declaration renders with its `...` marker, which is what
+// shows the slot reached the inferred type rather than degrading to a positional parameter.
+func TestInferRestParamDeclarationRenders(t *testing.T) {
+	values, _, errs := inferSource(t, `fn f(...xs: Array<number>) -> number { return 1 }`)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (...xs: Array<number>) -> number", values["f"])
+}
+
+// Each malformed rest parameter on a class member reports once. A member is resolved twice,
+// as a signature stub and then as the signature that replaces it, so a report from both passes
+// would double every message. The stub reads the slot's shape without reporting, and it reads
+// the same recovery, so a recovered `...xs?` does not also draw an arity mismatch between the
+// stub and its replacement.
+func TestInferRestParamMalformedOnAMember(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "NotLast",
+			src:  "declare class Box {\n  m(self, ...xs: Array<number>, y: number) -> number,\n}",
+			want: "a rest parameter must be the last parameter of a function type",
+		},
+		{
+			name: "NoTypeAnnotation",
+			src:  "declare class Box {\n  m(self, ...xs) -> number,\n}",
+			want: "a rest parameter in a function type must have a type annotation",
+		},
+		{
+			name: "Optional",
+			src:  "declare class Box {\n  m(self, ...xs?: Array<number>) -> number,\n}",
+			want: "a rest parameter cannot be marked optional",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// An overload arm whose last parameter is an `Array<E>` rest slot checks every argument the
+// slot gathers against E. Resolution reads the arms one at a time rather than through the
+// callee <: callShape constraint, so the scatter rule constrain applies to a single-signature
+// callee is not what runs here and the element check has to be made per arm.
+func TestInferOverloadArmWithARestSlot(t *testing.T) {
+	const decl = "declare class Box {\n" +
+		"  m(self, n: number) -> number,\n" +
+		"  m(self, ...items: Array<string>) -> number,\n" +
+		"}\n"
+	const noMatch = "No matching overload for this call\n" +
+		"  fn (n: number) -> number\n" +
+		"  fn (...items: Array<string>) -> number"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "SelectsTheFixedArm",
+			src:  decl + `fn g(b: Box) -> number { return b.m(3) }`,
+		},
+		{
+			name: "SelectsTheRestArm",
+			src:  decl + `fn g(b: Box) -> number { return b.m("x", "y") }`,
+		},
+		{
+			// Zero arguments fill the slot, so the rest arm still accepts.
+			name: "AcceptsNoArguments",
+			src:  decl + `fn g(b: Box) -> number { return b.m() }`,
+		},
+		{
+			// The gap this case pins. An arm accepted with its element unchecked takes any
+			// argument at all past the first, so the call resolves clean.
+			name: "RejectsAWrongElement",
+			src:  decl + `fn g(b: Box) -> number { return b.m("x", true) }`,
+			want: noMatch,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.want == "" {
+				require.Empty(t, errs)
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}

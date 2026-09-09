@@ -994,6 +994,68 @@ func (c *checker) typeofMember(recv soltype.Type, name string) (soltype.Type, bo
 	return read, true
 }
 
+// restParamSlot reads the `...` marker off one written parameter, returning the pattern to
+// bind, whether the parameter is a rest slot, and the optional marker to keep. A parameter
+// with no marker comes back unchanged. It is restParamSlotShape plus the diagnostics.
+//
+// The Rest flag it returns is what raises the function's accept-set ceiling and what an
+// `infer` clause in the slot captures the surplus arguments into. Three things the parser
+// accepts are rejected here, and each recovers the parameter to a positional one so the
+// function keeps its arity.
+//
+//  1. A rest parameter written anywhere but last, since acceptSet reads the flag off the last
+//     parameter only. last says whether this is that parameter.
+//  2. A rest parameter with no type annotation. The slot's type is what says how many
+//     arguments the parameter binds, and the fresh var an unannotated parameter recovers to
+//     says nothing, so keeping Rest would let the initializer decide the declared type's
+//     arity.
+//  3. A rest parameter marked `?`. A slot binding zero or more arguments is already omittable
+//     and a tuple slot fixes its count, so the marker changes nothing.
+//
+// Shared by the function type annotation and the function declaration, so `fn (...xs: T) -> R`
+// written as a type and `fn f(...xs: T) -> R` written as a declaration agree on the slot.
+func (c *checker) restParamSlot(p *ast.Param, last bool) (ast.Pat, bool, bool) {
+	pat, rest, optional := restParamSlotShape(p, last)
+	rp, isRest := p.Pattern.(*ast.RestPat)
+	if !isRest || rest {
+		return pat, rest, optional
+	}
+	switch {
+	case !last:
+		c.report(&RestParamNotLastError{Param: rp})
+	case p.TypeAnn == nil:
+		c.report(&RestParamNeedsTypeError{Param: rp})
+	default:
+		c.report(&OptionalRestParamError{Param: rp})
+	}
+	return pat, rest, optional
+}
+
+// restParamSlotShape reads the `...` marker off one written parameter without reporting,
+// returning the pattern to bind, whether the parameter is a well-formed rest slot, and the
+// optional marker to keep. last says whether p is the final parameter. restParamSlot layers
+// the diagnostics on top, so a caller that needs only the shape reads it here and the same
+// malformed slot is reported once. A member's signature stub is such a caller, and it needs
+// the same answer the signature that replaces it will carry, since linkMemberSig compares the
+// two and a differing arity would report on top of the diagnostic restParamSlot already filed.
+func restParamSlotShape(p *ast.Param, last bool) (ast.Pat, bool, bool) {
+	rp, ok := p.Pattern.(*ast.RestPat)
+	if !ok {
+		return p.Pattern, false, p.Optional
+	}
+	switch {
+	case !last, p.TypeAnn == nil:
+		return rp.Pattern, false, p.Optional
+	case p.Optional:
+		// The recovery drops the `?` marker along with Rest. Keeping it would give the
+		// parameter an accept-set the source never asked for, so `m(self, ...xs?: Array<T>)`
+		// would accept zero or one argument where its recovered signature accepts exactly one.
+		return rp.Pattern, false, false
+	default:
+		return rp.Pattern, true, p.Optional
+	}
+}
+
 // resolveFuncTypeAnn lowers a function type annotation `fn<T>(p: A, ...) -> R` into a
 // soltype.FuncType, recovering an unsupported part to a fresh var so the shape survives. A
 // `<T>` list resolves through resolveTypeParams into a child scope, so a parameter, return,
@@ -1025,39 +1087,7 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 
 	params := make([]*soltype.FuncParam, len(ta.Params))
 	for i, p := range ta.Params {
-		pat := p.Pattern
-		// A `...xs: T` parameter sets Rest. That flag is what raises the function's
-		// accept-set ceiling and what an `infer` clause in the slot captures the surplus
-		// arguments into. Three things the parser accepts are rejected here, and each
-		// recovers the parameter to a positional one so the function keeps its arity.
-		//
-		//  1. A rest parameter written anywhere but last, since acceptSet reads the flag off
-		//     the last parameter only.
-		//  2. A rest parameter with no type annotation. The slot's type is what says how many
-		//     arguments the parameter binds, and the fresh var an unannotated parameter
-		//     recovers to says nothing, so keeping Rest would let the initializer decide the
-		//     declared type's arity.
-		//  3. A rest parameter marked `?`. A slot binding zero or more arguments is already
-		//     omittable and a tuple slot fixes its count, so the marker changes nothing.
-		rest := false
-		optional := p.Optional
-		if rp, ok := pat.(*ast.RestPat); ok {
-			switch {
-			case i != len(ta.Params)-1:
-				c.report(&RestParamNotLastError{Param: rp})
-			case p.TypeAnn == nil:
-				c.report(&RestParamNeedsTypeError{Param: rp})
-			case p.Optional:
-				// The recovery drops the marker along with Rest. Keeping it would give the
-				// parameter an accept-set the source never asked for and cascade a second
-				// error out of the one just reported.
-				c.report(&OptionalRestParamError{Param: rp})
-				optional = false
-			default:
-				rest = true
-			}
-			pat = rp.Pattern
-		}
+		pat, rest, optional := c.restParamSlot(p, i == len(ta.Params)-1)
 		// A missing or unsupported parameter annotation recovers to a fresh var so
 		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
 		var pt soltype.Type = c.freshAt(lvl)

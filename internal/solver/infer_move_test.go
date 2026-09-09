@@ -432,3 +432,62 @@ func TestFreezeMoveAllowed(t *testing.T) {
 	require.Empty(t, errs)
 	require.Equal(t, "fn (p: mut {x: number}) -> {x: number}", values["f"])
 }
+
+// An argument a rest slot gathers is carried out of the frame the way one passed to a bare
+// owned parameter is, so every argument the slot absorbs is consumed and not just the first.
+// The gathered array is what the callee owns, so the slot's element type is what says whether
+// an argument moves.
+func TestRestParamConsumesEveryArgument(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			// The gap this case pins. Where only a fixed position consumes its argument, both
+			// reads below stand and a value the callee owns stays readable here.
+			name: "SecondGatheredArgumentIsMoved",
+			src: `fn store(...xs: Array<{x: number}>) -> number { return 1 }
+fn f() {
+  val p = {x: 1}
+  val q = {x: 2}
+  store(p, q)
+  q.x
+}`,
+			want: []string{"6:3-6:6: use of moved value 'q'"},
+		},
+		{
+			name: "FirstGatheredArgumentIsMoved",
+			src: `fn store(...xs: Array<{x: number}>) -> number { return 1 }
+fn f() {
+  val p = {x: 1}
+  val q = {x: 2}
+  store(p, q)
+  p.x
+}`,
+			want: []string{"6:3-6:6: use of moved value 'p'"},
+		},
+		{
+			// A primitive element is not a concrete owned shape, so the slot moves nothing
+			// and a later read stands. That is the same conservative reading a fixed
+			// position of a primitive type takes.
+			name: "APrimitiveElementMovesNothing",
+			src: `fn store(...xs: Array<number>) -> number { return 1 }
+fn f() -> number {
+  val p = 1
+  store(p, 2)
+  return p
+}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if len(tt.want) == 0 {
+				require.Empty(t, errs)
+				return
+			}
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}
