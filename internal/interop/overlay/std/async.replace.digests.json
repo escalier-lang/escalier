@@ -6,6 +6,10 @@
     "digest": "1386f0dcfb074072"
   },
   {
+    "decl": "Awaited",
+    "digest": "fce3e28102d0c094"
+  },
+  {
     "decl": "Promise",
     "member": "catch",
     "kind": "method",
