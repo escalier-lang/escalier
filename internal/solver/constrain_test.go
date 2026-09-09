@@ -365,6 +365,11 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 	// An absorbing rest stands for the sub's whole tail, so each parameter it absorbs is
 	// checked against the element. The check is contravariant, the orientation the fixed
 	// positions use, so the element is the sub of each pair.
+	//
+	//	fn (a: number, b: string) -> number  <:  fn (...rest: Array<number>) -> number
+	//
+	// `b`'s string is what the rest absorbs at its second position, and `number <: string`
+	// is the check that fails.
 	t.Run("an absorbed parameter is rejected on the element", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), restParam("rest", arrayOf(num())))
@@ -374,6 +379,7 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 			Messages(c.Constrain(sub, super)))
 	})
 
+	//	fn (a: number, b: number) -> number  <:  fn (...rest: Array<number>) -> number
 	t.Run("an absorbed parameter matching the element is accepted", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), restParam("rest", arrayOf(num())))
@@ -383,6 +389,11 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 
 	// The named prefix ahead of the rest keeps its own positional check, so absorbing the
 	// tail does not loosen the parameters the super declares by position.
+	//
+	//	fn (a: number, b: number) -> number  <:  fn (a: string, ...rest: Array<number>) -> number
+	//
+	// The rest absorbs `b` and accepts it. Position `a` is checked on its own, and
+	// `string <: number` is what fails.
 	t.Run("the prefix ahead of the rest is still checked by position", func(t *testing.T) {
 		c := arrayCtx()
 		super := restFn(num(), identParam("a", str()), restParam("rest", arrayOf(num())))
@@ -395,6 +406,12 @@ func TestConstrainRestParamElementChecking(t *testing.T) {
 	// A Context that recognizes no array reads the same slot as an ordinary parameter
 	// type, so no element check fires and only the arity gate applies. This is what a run
 	// without a stdlib sees.
+	//
+	//	fn (a: number, b: string) -> number  <:  fn (...rest: Array<number>) -> number
+	//
+	// The same pair as the first case. Without an `Array` to recognize, the rest declares
+	// no element, so the two parameters are never checked and the arity gate rejects the
+	// pair on its own.
 	t.Run("an unrecognized array slot is not an element check", func(t *testing.T) {
 		c := &Context{}
 		super := restFn(num(), restParam("rest", arrayOf(num())))
