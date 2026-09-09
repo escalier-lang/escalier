@@ -327,7 +327,7 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"15:14-15:15: cannot move 'b' while it is borrowed"},
+			want: []string{"16:14-16:15: cannot move 'b' while it is borrowed"},
 		},
 		// A read walked BEFORE the repoint went through the loan while it still held, so it
 		// keeps its diagnostic. The loan carries the sequence it ended at rather than leaving
@@ -344,7 +344,7 @@ func TestStoreEffectLoans(t *testing.T) {
 					touch(&mut a)
 				}
 			`,
-			want: []string{"14:14-14:15: cannot move 'b' while it is borrowed"},
+			want: []string{"15:14-15:15: cannot move 'b' while it is borrowed"},
 		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
