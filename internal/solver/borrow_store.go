@@ -449,10 +449,11 @@ func (c *checker) recordCallStoreEdges(
 		}
 		// A BORROW parameter's referent belongs to the caller and outlives the frame, so a
 		// borrow of a local written into it dangles. An owned parameter is moved into the
-		// frame and dies with it, so it takes an edge like a local does. Reporting it here rather than recording an edge is
-		// what keeps the escape post-pass out of it. The callee borrows this argument instead
-		// of taking it, and the post-pass would weigh an owned-looking argument as a
-		// connected-component move and consume the locals it borrows.
+		// frame and dies with it, so it takes an edge like a local does. Reporting it here
+		// rather than recording an edge is what keeps the escape post-pass out of it. The
+		// callee borrows this argument instead of taking it, and the post-pass would weigh an
+		// owned-looking argument as a connected-component move and consume the locals it
+		// borrows.
 		if c.paramReferentOutlivesFrame(target.root) {
 			carried, seen := escaping[edge.arg]
 			if !seen {
