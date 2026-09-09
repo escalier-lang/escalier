@@ -108,9 +108,9 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 // Arity follows the direct-call accept-set from #677, reusing acceptSet so the overload
 // arity gate and the FuncType<:FuncType constraint gate can never drift. A count below
 // acceptSet's lower bound is too few, and a count above its upper bound is too many.
-// Either is a non-match, unless the arm is inexact or has a rest. Extra arguments that
-// such an arm absorbs impose no per-element constraint here. That per-element check needs
-// Array types, which arrive in M4.
+// Either is a non-match, unless the arm is inexact or has a rest. An `Array<E>` rest slot
+// says what each argument it absorbs must be, so those are checked against E. An inexact
+// tail says nothing about what it absorbs, so those stay arity-only.
 func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (bool, []SolverError) {
 	n := len(args)
 	if lo, hi := acceptSet(inst); n < lo || n > hi {
@@ -118,11 +118,26 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (b
 	}
 	var diags []SolverError
 	for i, arg := range args {
-		if i >= len(inst.Params) || inst.Params[i].Rest {
-			// Past the fixed params, or AT a trailing rest param. The rest or inexact tail
-			// absorbs this and every later argument. Don't constrain a scalar argument
-			// against the rest param's ARRAY element type, since Params[i].Type is `T[]`.
-			// Per-element checking is M4.
+		if i >= len(inst.Params) {
+			// Past the fixed params. An inexact tail absorbs this argument and every later
+			// one and declares no type to check them against.
+			break
+		}
+		if inst.Params[i].Rest {
+			// A rest slot stands for this argument and every later one, so each is checked
+			// against the slot's element type rather than against the slot. A slot of any
+			// other shape declares no element type and stays arity-only.
+			elem, isArray := c.ctx.restSlotElem(inst.Params[i].Type)
+			if !isArray {
+				break
+			}
+			for _, absorbed := range args[i:] {
+				errs := c.ctx.Constrain(absorbed, elem)
+				if hasHardError(errs) {
+					return false, nil
+				}
+				diags = append(diags, errs...)
+			}
 			break
 		}
 		errs := c.ctx.Constrain(arg, inst.Params[i].Type)

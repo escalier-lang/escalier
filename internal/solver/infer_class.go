@@ -971,17 +971,23 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 func (c *checker) memberSigStub(lvl int, fn *ast.FuncExpr) *soltype.FuncType {
 	params := make([]*soltype.FuncParam, len(fn.Params))
 	for i, p := range fn.Params {
+		// Read the `...` marker off the parameter without reporting, so a malformed rest
+		// slot draws its diagnostic once, from the body pass. The flag has to reach the stub
+		// because a stub and the signature that replaces it are compared by linkMemberSig,
+		// and a rest slot and a positional parameter accept different argument counts.
+		pat, rest, optional := restParamSlotShape(p, i == len(fn.Params)-1)
 		// A destructuring parameter has no single name, so the stub uses a positional
 		// placeholder. It never surfaces: the stub carries arity and fresh-var types only,
 		// and the body pass installs the real signature, whose inferFunc binds the pattern.
-		name, ok := identPatName(p.Pattern)
+		name, ok := identPatName(pat)
 		if !ok {
 			name = fmt.Sprintf("arg%d", i)
 		}
 		params[i] = &soltype.FuncParam{
 			Pattern:  &soltype.IdentPat{Name: name},
 			Type:     c.freshAt(lvl),
-			Optional: p.Optional,
+			Optional: optional,
+			Rest:     rest,
 		}
 	}
 	return &soltype.FuncType{

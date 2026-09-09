@@ -240,6 +240,11 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// G1 liveness pre-pass to seed parameter alias mutability.
 	paramTypes := make(map[string]soltype.Type, len(sig.Params))
 	for i, p := range sig.Params {
+		// A `...xs: Array<E>` parameter binds the slot rather than one argument. restParamSlot
+		// unwraps the marker to the pattern underneath and reports the forms that cannot carry
+		// it, so `...xs` binds `xs` at the slot's own type and the flag rides onto the
+		// FuncParam below.
+		pat, rest, optional := c.restParamSlot(p, i == len(sig.Params)-1)
 		pt := c.paramType(declScope, p, lvl)
 		// A generic function in parameter position is a rank-2 callback such as
 		// `g: <V>(x: V) -> V`. Its `<V>` binder is kept on the parameter's FuncType so a
@@ -259,17 +264,17 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				v.Open = true
 			}
 		}
-		if name, ok := identPatName(p.Pattern); ok {
+		if name, ok := identPatName(pat); ok {
 			// The param's IdentPat IS its definition site, so record it as the binding's
 			// source — symmetric to a val/var/fn binding (inferVarDecl/module.go). This
 			// lets CannotAssignToImmutableError point "declared immutable here" at the
-			// parameter (see bindingDecl). p.Pattern is an ast.Node (*ast.Param is not).
-			sources := []provenance.Provenance{&ast.NodeProvenance{Node: p.Pattern}}
+			// parameter (see bindingDecl). pat is an ast.Node (*ast.Param is not).
+			sources := []provenance.Provenance{&ast.NodeProvenance{Node: pat}}
 			if p.TypeAnn == nil {
 				// An un-annotated param's type is the fresh var minted here, so a
 				// param-type mismatch blames the param. An annotated param's blame
 				// instead rides on its annotation, recorded by resolveTypeAnn.
-				c.recordProv(pt, p.Pattern, ParamBinding)
+				c.recordProv(pt, pat, ParamBinding)
 			}
 			// A parameter binding never generalizes — its var is fixed for the body — so
 			// it is a MonoScheme; instantiate returns pt unchanged at every use.
@@ -281,8 +286,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// in-body binding keeps the param's declared type (pt), NOT widened to
 			// `pt | undefined`, so a body that reads an omitted optional sees it at the
 			// narrower type. Widening needs undefined/unions (M6); M3 has neither.
-			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
-		} else if p.Pattern != nil {
+			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: optional, Rest: rest}
+		} else if pat != nil {
 			// M4 E1: a destructuring parameter such as `{x, y}` or `[a, b]`. bindPattern
 			// binds each leaf into the function scope against the param's type and returns
 			// the soltype mirror the printer renders. It also writes each leaf's type into
@@ -290,7 +295,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			// alias mutability. An un-annotated destructuring param mints a fresh var pt
 			// whose mismatch blame should point at the pattern.
 			if p.TypeAnn == nil {
-				c.recordProv(pt, p.Pattern, ParamBinding)
+				c.recordProv(pt, pat, ParamBinding)
 				// A pattern naming a `...rest` binds the properties its fields do not, so
 				// the parameter has to admit an argument that carries them. Policy A would
 				// otherwise close the usage-inferred object to exact, which rejects every
@@ -298,12 +303,12 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				// would infer the parameter `{x: T0}` and reject `f({x: 1, y: 2})` for the
 				// extra y. Marking the var open keeps the folded object inexact, the same
 				// row-polymorphic shape the written `open` marker produces.
-				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(p.Pattern) {
+				if v, ok := pt.(*soltype.TypeVarType); ok && objectPatNamesRest(pat) {
 					v.Open = true
 				}
 			}
-			mirror := c.bindPattern(fnScope, lvl, p.Pattern, pt, paramTypes)
-			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: p.Optional}
+			mirror := c.bindPattern(fnScope, lvl, pat, pt, paramTypes)
+			params[i] = &soltype.FuncParam{Pattern: mirror, Type: pt, Optional: optional, Rest: rest}
 		} else {
 			// A pattern-less param is not reachable from the real parser, which
 			// synthesizes a placeholder. Blame the enclosing function rather than a nil
@@ -313,7 +318,7 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			name := fmt.Sprintf("arg%d", i)
 			fnScope.defineValue(name, ValueBinding{Schemes: []TypeScheme{monoScheme(pt)}})
 			paramTypes[name] = pt
-			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: p.Optional}
+			params[i] = &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: name}, Type: pt, Optional: optional, Rest: rest}
 		}
 	}
 
@@ -1473,6 +1478,15 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// strict path.
 	if resolved {
 		for i := 0; i < len(e.Args) && i < len(fn.Params); i++ {
+			if fn.Params[i].Rest {
+				// An argument at a rest slot fills one element of the gathered array, not the
+				// slot itself, so there is no parameter type to upgrade it against. Pairing the
+				// two would check the argument against the whole array: `f(1)` against
+				// `fn (...xs: mut Array<number>) -> R` would ask for `1 <: Array<number>`. The
+				// element check belongs to constrain's scatter rule, which the callee <:
+				// callShape constraint below reaches.
+				continue
+			}
 			if c.tryUpgradeToOwnedMut(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
 				// The upgrade constrained the argument's shape against the parameter's
 				// immutable read view, so pin this argument's demand entry to the parameter's
@@ -1556,10 +1570,28 @@ func (c *checker) calleeReceiver(callee ast.Expr) (ast.Expr, *soltype.FuncParam)
 // tuple, or owned RefType consumes its argument. An extra argument beyond the declared
 // parameters, the surplus of a too-many-arguments call, has no parameter to move into,
 // so it is skipped.
+//
+// A rest slot is read through its element type, since each argument it gathers fills one
+// element of the array the callee owns rather than the array itself.
 func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liveness.StmtRef) {
 	for i, arg := range e.Args {
 		if i >= len(fn.Params) {
 			break
+		}
+		if fn.Params[i].Rest {
+			// The slot gathers this argument and every later one into an array the callee
+			// owns, so each is carried out of the frame the way a bare owned parameter's
+			// argument is. A slot that is not an array of a concrete owned element moves
+			// nothing, the same conservative reading a fixed position takes.
+			elem, isArray := c.ctx.restSlotElem(fn.Params[i].Type)
+			if !isArray || !isConcreteOwned(elem) {
+				return
+			}
+			for _, absorbed := range e.Args[i:] {
+				c.consumeOwned(absorbed, c.info.TypeOf(absorbed), absorbed, ref)
+				c.recordEscapeSite(absorbed, ref)
+			}
+			return
 		}
 		if !isConcreteOwned(fn.Params[i].Type) {
 			continue
