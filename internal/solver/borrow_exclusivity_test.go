@@ -382,11 +382,7 @@ func TestMutSelfIsAMutableStoreSource(t *testing.T) {
 			touch(&mut o)
 		}
 	`)
-	// The two constrain errors are unrelated to the store. Borrowing a class instance that
-	// carries a lifetime parameter reports them on its own, with or without the drain.
 	require.Equal(t, []string{
-		"11:16-11:22: cannot constrain immutable Holder<'l12> <: mutable Holder<'l12>",
-		"11:16-11:22: cannot constrain immutable Holder<'l12> <: mutable Holder<'l12>",
 		"11:16-11:22: cannot borrow 'h' as mutable more than once at a time",
 	}, messagesWithSpan(t, errs))
 }
