@@ -127,6 +127,27 @@ func TestSharedReturnPaths(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// The subsumption covers only reads INSIDE the reported return. This read of b.v sits
+		// earlier in the body and conflicts with a's borrow on its own, so it keeps its
+		// diagnostic while the return keeps its own.
+		"AReadOutsideTheReturnKeepsItsDiagnostic": {
+			src: `
+				declare fn write(a: &mut {v: number}) -> undefined
+				fn g() -> [&mut {v: number}, &mut {v: number}] {
+					val mut b = {v: 1}
+					var a = &mut b
+					val n = b.v
+					write(a)
+					return [&mut b, &mut b]
+				}
+			`,
+			want: []string{
+				"8:13-8:29: returned value reaches 'b' through two paths while one of them can write",
+				"8:19-8:20: use of partially moved value 'b'; field 'b.v' was moved out",
+				"8:27-8:28: use of partially moved value 'b'; field 'b.v' was moved out",
+				"6:14-6:17: cannot use 'b.v' while it is borrowed as mutable",
+			},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
