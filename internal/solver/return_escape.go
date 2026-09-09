@@ -737,8 +737,9 @@ func (c *checker) checkParamFieldStoreEscape(recv, source ast.Expr, stmtRef live
 // receiver that dies with the frame, a local or an owned parameter, rooted at recv's place
 // extended by f. A store `b.peer = &mut d` records b → d at [peer], so a later flow-out of b
 // finds the borrow of d. Such a store does not escape until b itself flows out, unlike a store
-// into a BORROW parameter's field, which checkParamFieldStoreEscape reports at once. It is a strong update on the stored field's
-// subtree: it clears the [f] subtree before recording, so a repoint `b.peer = &mut e` after
+// into a BORROW parameter's field, which checkParamFieldStoreEscape reports at once. It is a
+// strong update on the stored field's subtree: it clears the [f] subtree before recording, so
+// a repoint `b.peer = &mut e` after
 // `b.peer = &mut d` leaves only b → e at [peer] while a sibling edge b → x at [data] survives.
 // It then flushes the dirtied root into borrowGens at stmtRef.
 func (c *checker) recordFieldStoreEdges(
