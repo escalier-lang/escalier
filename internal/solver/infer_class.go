@@ -45,6 +45,8 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
 
+	c.reportSelfTypeName(ClassDeclKind, decl.Name)
+
 	// This window covers the body. A class in an SCC component resolved its parameters in the
 	// module pre-pass, before this point, so a diagnostic drawn by a bound or a default is
 	// carried on the shell instead and both are consulted before the unused warning is
@@ -1461,3 +1463,20 @@ func lookupTypeThroughNamespace(scope *Scope, name string) (TypeBinding, bool) {
 // documentation already uses for the receiver's desugared type: `self` is `Self`, `mut self` is
 // `mut Self`, and `&self` is `&Self`.
 const selfTypeName = "Self"
+
+// reportSelfTypeName reports a type declaration that takes the name `Self`, and returns whether
+// it did. Every class body binds that name to its own instance type, so a declaration of that
+// name is unreachable from inside any class body and reads as the shorthand everywhere else.
+// Every kind that binds a type name routes through here, so the four cannot drift.
+//
+// The caller binds the declaration anyway. A reference to it then resolves and draws its own
+// diagnostics rather than cascading from this one, and resolveScopedTypeRef's `Self` shortcut
+// still gates on the enclosing class's own handle so the two readings stay apart during the
+// recovery.
+func (c *checker) reportSelfTypeName(kind TypeDeclKind, name *ast.Ident) bool {
+	if name == nil || name.Name != selfTypeName {
+		return false
+	}
+	c.report(&SelfTypeNameError{Kind: kind, Name: name})
+	return true
+}

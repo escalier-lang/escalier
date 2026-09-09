@@ -1239,6 +1239,7 @@ func (*ExtractorPatternArityError) isSolverError()          {}
 func (*TypeArgArityMismatchError) isSolverError()           {}
 func (*LifetimeArgArityMismatchError) isSolverError()       {}
 func (*ReservedTypeNameError) isSolverError()               {}
+func (*SelfTypeNameError) isSolverError()                   {}
 func (*RestParamNotLastError) isSolverError()               {}
 func (*RestParamNeedsTypeError) isSolverError()             {}
 func (*OptionalRestParamError) isSolverError()              {}
@@ -1367,11 +1368,22 @@ func (e *ExtractorPatternArityError) Message() string {
 type TypeDeclKind string
 
 const (
-	AliasDeclKind   TypeDeclKind = "type alias"
-	ClassDeclKind   TypeDeclKind = "class"
-	EnumDeclKind    TypeDeclKind = "enum"
-	BuiltinDeclKind TypeDeclKind = "built-in type"
+	AliasDeclKind     TypeDeclKind = "type alias"
+	ClassDeclKind     TypeDeclKind = "class"
+	EnumDeclKind      TypeDeclKind = "enum"
+	InterfaceDeclKind TypeDeclKind = "interface"
+	BuiltinDeclKind   TypeDeclKind = "built-in type"
 )
+
+// article returns the indefinite article that reads correctly before the kind's name, so a
+// message says "an enum" and "an interface" beside "a class" rather than picking one for all.
+func (k TypeDeclKind) article() string {
+	switch k[0] {
+	case 'a', 'e', 'i', 'o', 'u':
+		return "an"
+	}
+	return "a"
+}
 
 // UnknownTypeError fires on a type reference whose name resolves to no declaration: no alias,
 // class, enum, or type parameter in scope, and none of the built-in names. It names what the
@@ -1450,6 +1462,25 @@ func (e *ReservedTypeNameError) Span() ast.Span      { return e.Decl.Name.Span()
 func (e *ReservedTypeNameError) Related() []ast.Span { return nil }
 func (e *ReservedTypeNameError) Message() string {
 	return fmt.Sprintf("%q is a built-in type operator and cannot be redefined", e.Decl.Name.Name)
+}
+
+// SelfTypeNameError fires when a type declaration of any kind takes the name `Self`. A class
+// body binds `Self` to its own instance handle, so a declaration of that name is unreachable
+// from inside any class body and reads as the shorthand everywhere else. No precedence rule
+// separates the two meanings for a reader, so the name is refused rather than resolved.
+//
+// The declaration is still bound after the report, so a reference to it resolves and draws its
+// own diagnostics instead of cascading from this one.
+type SelfTypeNameError struct {
+	Kind TypeDeclKind
+	Name *ast.Ident
+}
+
+func (e *SelfTypeNameError) Span() ast.Span      { return e.Name.Span() }
+func (e *SelfTypeNameError) Related() []ast.Span { return nil }
+func (e *SelfTypeNameError) Message() string {
+	return fmt.Sprintf("%s %s cannot be named %q; the name is bound in every class body to that class's own instance type",
+		e.Kind.article(), e.Kind, e.Name.Name)
 }
 
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter

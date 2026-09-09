@@ -2517,6 +2517,71 @@ func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
 	})
 }
 
+// No type declaration of any kind may be named `Self`. Every class body binds that name to its
+// own instance type, so a declaration of that name is unreachable from inside any class body and
+// reads as the shorthand everywhere else.
+//
+// The declaration is still bound after the report, which StillBoundAfterTheReport shows: the
+// class registers, and a reference to it resolves and draws its own arity diagnostic rather than
+// cascading from the name. That recovery is why resolveScopedTypeRef still gates its `Self`
+// shortcut on the enclosing class's own handle instead of on the name.
+func TestInferTypeNamedSelf(t *testing.T) {
+	const tail = " cannot be named \"Self\"; the name is bound in every class body to " +
+		"that class's own instance type"
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "Class",
+			src:  "declare class Self {\n  x: number,\n}",
+			want: []string{"a class" + tail},
+		},
+		{
+			name: "Interface",
+			src:  "declare interface Self {\n  x: number,\n}",
+			want: []string{"an interface" + tail},
+		},
+		{
+			// Interface declarations of one name merge into a single binding, so the report is
+			// against the first rather than once per declaration.
+			name: "MergedInterfaces",
+			src:  "declare interface Self {\n  x: number,\n}\ndeclare interface Self {\n  y: number,\n}",
+			want: []string{"an interface" + tail},
+		},
+		{
+			name: "TypeAlias",
+			src:  "type Self = number",
+			want: []string{"a type alias" + tail},
+		},
+		{
+			name: "Enum",
+			src:  "enum Self { A, B }",
+			want: []string{"an enum" + tail},
+		},
+		{
+			name: "InANamespace",
+			src:  "namespace Geo {\n  declare class Self {\n    x: number,\n  }\n}",
+			want: []string{"a class" + tail},
+		},
+		{
+			name: "StillBoundAfterTheReport",
+			src:  "declare class Self<T> {\n  v: T,\n}\nfn f(p: Self) -> number { return 1 }",
+			want: []string{"a class" + tail, "class `Self` expects 1 type argument but got 0"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, len(tt.want))
+			for i, want := range tt.want {
+				require.Equal(t, want, errs[i].Message())
+			}
+		})
+	}
+}
+
 // A lifetime argument written on `Self` is counted against what the class declares, the same
 // as one written on a reference through the class's own name. The shorthand resolves to the
 // enclosing handle directly, so without the guard it would accept any `<'…>` list and drop it.

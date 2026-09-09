@@ -51,6 +51,10 @@ type interfaceShell struct {
 func (c *checker) preBindInterface(scope *Scope, lvl int, decls []*ast.InterfaceDecl, ns string) *interfaceShell {
 	first := decls[0]
 
+	// Reported against the first declaration of the name. Interface declarations of one name
+	// merge into a single binding, so reporting per declaration would repeat one problem.
+	c.reportSelfTypeName(InterfaceDeclKind, first.Name)
+
 	prevNS := c.classNamespace
 	c.classNamespace = ns
 	defer func() { c.classNamespace = prevNS }()
