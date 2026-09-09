@@ -416,6 +416,11 @@ func pathHasPrefix(full, prefix []placeSeg) bool {
 type fieldBorrow struct {
 	path     []placeSeg
 	referent liveness.VarID
+	// refPath is the field path INSIDE referent the borrow reaches, empty for a borrow of the
+	// whole binding. `val t = {p: &mut b.x}` records refPath [x] beside path [p]. It is what
+	// separates two borrows of disjoint fields of one local from two borrows of the same field,
+	// which reach the same data and are the pair reportSharedReturnPaths exists to catch.
+	refPath []placeSeg
 }
 
 // borrowCollector gathers the BorrowExprs an expression carries by value, riding the
@@ -494,14 +499,22 @@ func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 // rooted at a real binding that is not a parameter. A parameter referent is exempt, and a
 // non-place operand names no tracked binding.
 func (c *checker) isLocalReferent(arg ast.Expr) (liveness.VarID, bool) {
+	p, ok := c.localReferentPlace(arg)
+	return p.root, ok
+}
+
+// localReferentPlace is isLocalReferent keeping the field path within the local, so a caller
+// recording an edge can say which part of the referent the borrow reaches. `&mut b.x` gives
+// root b and path [x].
+func (c *checker) localReferentPlace(arg ast.Expr) (movePlace, bool) {
 	p, ok := exprPlace(arg)
 	if !ok || p.root <= 0 {
-		return 0, false
+		return movePlace{}, false
 	}
 	if c.fn.paramVarIDs.Contains(p.root) {
-		return 0, false
+		return movePlace{}, false
 	}
-	return p.root, true
+	return p, true
 }
 
 // escapingLocalsOf returns the function-locals whose data e carries by value. Two sources
@@ -536,8 +549,8 @@ func (c *checker) escapingLocalsOf(
 // given field path, allocating the root's edge list on first use. A duplicate edge with
 // the same path and referent is ignored, so repeated walks keep one copy rather than
 // accumulating identical edges.
-func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID) {
-	fb := fieldBorrow{path: path, referent: referent}
+func (c *checker) addBorrowEdge(root liveness.VarID, path []placeSeg, referent liveness.VarID, refPath []placeSeg) {
+	fb := fieldBorrow{path: path, referent: referent, refPath: refPath}
 	if containsFieldBorrow(c.fn.eagerBorrowGraph[root], fb) {
 		return
 	}
@@ -578,8 +591,8 @@ func (c *checker) recordBorrowEdges(destVarID int, init ast.Expr) {
 func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e ast.Expr) {
 	switch e := e.(type) {
 	case *ast.BorrowExpr:
-		if referent, ok := c.isLocalReferent(e.Arg); ok && referent != root {
-			c.addBorrowEdge(root, base, referent)
+		if src, ok := c.localReferentPlace(e.Arg); ok && src.root != root {
+			c.addBorrowEdge(root, base, src.root, src.path)
 		}
 	case *ast.ObjectExpr:
 		for _, elem := range e.Elems {
@@ -625,8 +638,8 @@ func (c *checker) recordBorrowSources(root liveness.VarID, base []placeSeg, e as
 		// in the `if cond { &mut b } else { … }` of `val a = if cond { &mut b } else { … }`.
 		// The walk descends through it but stops at call and nested-function boundaries.
 		for _, b := range borrowsIn(e) {
-			if referent, ok := c.isLocalReferent(b.Arg); ok && referent != root {
-				c.addBorrowEdge(root, base, referent)
+			if src, ok := c.localReferentPlace(b.Arg); ok && src.root != root {
+				c.addBorrowEdge(root, base, src.root, src.path)
 			}
 		}
 	}
@@ -650,7 +663,7 @@ func (c *checker) copyPlaceEdges(root liveness.VarID, base []placeSeg, src moveP
 		if len(edge.path) > len(src.path) {
 			suffix = edge.path[len(src.path):]
 		}
-		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent)
+		c.addBorrowEdge(root, appendPath(base, suffix), edge.referent, edge.refPath)
 	}
 }
 

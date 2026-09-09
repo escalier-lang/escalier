@@ -18,11 +18,16 @@ import (
 // Two SHARED paths are fine, since two readers see the same value. What makes the pair a hazard
 // is that one of them can write.
 //
-// The borrow-edge graph cannot answer this on its own. addBorrowEdge keeps one edge per
-// (path, referent) pair, so the two borrows of b in that tuple collapse to a single edge and
-// the graph reads the same as a single path. The RETURN TYPE is what still distinguishes them,
-// because it carries one borrow position per path. So the count comes from the type and the
-// referent each position reaches comes from the graph.
+// The borrow-edge graph cannot answer this on its own. addBorrowEdge keeps one edge per route
+// into the referent, so the two borrows of b in that tuple, which take the same route, collapse
+// to a single edge and the graph reads the same as a single path. The RETURN TYPE is what still
+// distinguishes them, because it carries one borrow position per path. So the count comes from
+// the type and the data each position reaches comes from the graph.
+//
+// Two paths are a hazard only when they reach OVERLAPPING data. `{p: &mut b.x, q: &mut b.y}`
+// hands out two handles to one local and no caller can write through either and be seen by the
+// other, so the pair is fine. An edge carries the path inside its referent, so the check
+// compares those paths and reports only a pair whose paths are prefix-related.
 //
 // Pairing a position with an edge is exact only where a field path names it. An object's
 // properties each extend the path, so `{p: &mut b, q: &mut b}` gives two positions at two
@@ -66,8 +71,7 @@ func (c *checker) reportSharedReturnPaths(
 	graph map[liveness.VarID][]fieldBorrow,
 	blame ast.Expr,
 ) {
-	reaches := map[liveness.VarID]int{}
-	writable := map[liveness.VarID]bool{}
+	var reached []reachedPlace
 	// A literal carrier is counted from its own elements, which name their referents whether or
 	// not the evaluator has settled their types. A place carrier has no elements to walk, so
 	// its count comes from the type below.
@@ -80,7 +84,7 @@ func (c *checker) reportSharedReturnPaths(
 		return
 	}
 	for _, group := range groupByPath(positions) {
-		edges := referentsAt(graph, root, group.path)
+		edges := edgesAt(graph, root, group.path)
 		// A group with no edge names no tracked local, a parameter borrow among them.
 		if len(edges) == 0 {
 			continue
@@ -90,38 +94,50 @@ func (c *checker) reportSharedReturnPaths(
 			continue
 		}
 		if len(edges) == 1 {
-			// Every position at this path reaches the one referent the path holds, so one
-			// writable position among them makes that referent writable.
-			anyMut := slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return p.mut })
-			reaches[edges[0]] += len(group.positions)
-			writable[edges[0]] = writable[edges[0]] || anyMut
+			// Every position at this path reaches the one place the edge names, so each of them
+			// is one more path to it, writable or not on its own terms.
+			for _, pos := range group.positions {
+				reached = append(reached, reachedPlace{referent: edges[0].referent, refPath: edges[0].refPath, mut: pos.mut})
+			}
 			continue
 		}
 		// The positions pair off one to one with the edges, but which position takes which
-		// referent is unknown. A group mixing a written borrow with a read one would mark the
-		// read referent writable on the strength of the other, so only an all-writable group
-		// says anything about any single referent here.
+		// edge is unknown. A group mixing a written borrow with a read one would mark the read
+		// edge writable on the strength of the other, so only an all-writable group says
+		// anything about any single edge here.
 		allMut := !slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return !p.mut })
-		for _, referent := range edges {
-			reaches[referent]++
-			writable[referent] = writable[referent] || allMut
+		for _, edge := range edges {
+			reached = append(reached, reachedPlace{referent: edge.referent, refPath: edge.refPath, mut: allMut})
 		}
 	}
-	c.reportReachedTwice(reaches, writable, blame)
+	c.reportReachedTwice(reached, blame)
 }
 
-// reportReachedTwice reports each local reached at least twice with a write available through
-// one of those paths, in VarID order so a value reached from several places reads the same way
-// every run.
-func (c *checker) reportReachedTwice(
-	reaches map[liveness.VarID]int,
-	writable map[liveness.VarID]bool,
-	blame ast.Expr,
-) {
-	shared := make([]liveness.VarID, 0, len(reaches))
-	for referent, n := range reaches {
-		if n >= 2 && writable[referent] {
-			shared = append(shared, referent)
+// reachedPlace is one path the returned value takes into a local: the local it lands in, the
+// field path within it the path reaches, and whether a write can go through that path.
+type reachedPlace struct {
+	referent liveness.VarID
+	refPath  []placeSeg
+	mut      bool
+}
+
+// reportReachedTwice reports each local two of the paths reach overlapping data in, with a write
+// available through at least one of the two. Reports come in VarID order so a value reached from
+// several places reads the same way every run.
+//
+// Two paths into one local overlap when their field paths within it are prefix-related. Equal
+// paths reach the same data, and a path above another contains it. Disjoint fields such as
+// `b.x` and `b.y` are neither, and a write through one is invisible through the other.
+func (c *checker) reportReachedTwice(reached []reachedPlace, blame ast.Expr) {
+	var shared []liveness.VarID
+	for i, a := range reached {
+		for _, b := range reached[i+1:] {
+			if a.referent != b.referent || slices.Contains(shared, a.referent) {
+				continue
+			}
+			if (a.mut || b.mut) && pathPrefixRelated(a.refPath, b.refPath) {
+				shared = append(shared, a.referent)
+			}
 		}
 	}
 	slices.Sort(shared)
@@ -268,14 +284,21 @@ func groupByPath(positions []borrowPosition) []pathGroup {
 	return groups
 }
 
-// referentsAt returns the distinct locals the carrier's edges at path reach. A borrow the graph
-// records twice at one path is one edge, since addBorrowEdge keeps one per (path, referent).
-func referentsAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path []placeSeg) []liveness.VarID {
-	var out []liveness.VarID
+// edgesAt returns the carrier's edges sitting exactly at path, one per distinct place they
+// reach. Two borrows the graph records at one path into one place are a single edge, since
+// addBorrowEdge keeps one per route.
+func edgesAt(graph map[liveness.VarID][]fieldBorrow, root liveness.VarID, path []placeSeg) []fieldBorrow {
+	var out []fieldBorrow
 	for _, e := range graph[root] {
-		if slices.Equal(e.path, path) && !slices.Contains(out, e.referent) {
-			out = append(out, e.referent)
+		if !slices.Equal(e.path, path) {
+			continue
 		}
+		if slices.ContainsFunc(out, func(x fieldBorrow) bool {
+			return x.referent == e.referent && slices.Equal(x.refPath, e.refPath)
+		}) {
+			continue
+		}
+		out = append(out, e)
 	}
 	return out
 }

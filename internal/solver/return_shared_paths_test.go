@@ -19,6 +19,56 @@ func TestSharedReturnPaths(t *testing.T) {
 		src  string
 		want []string
 	}{
+		// The same disjoint pair reached through a BINDING carrier. A binding is the route that
+		// pairs the return type's positions against the graph's edges, where a returned literal
+		// compares the places its elements name. Both routes have to agree that the pair is
+		// fine.
+		"DisjointFieldsThroughABindingOk": {
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val t = {p: &mut b.x, q: &mut b.y}
+					return t
+				}
+			`,
+			want: nil,
+		},
+		// A tuple's elements all sit at the carrier's own path, so the two edges are told apart
+		// by the field they reach inside b rather than by where they sit in the carrier.
+		"DisjointFieldsInATupleOk": {
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val t = [&mut b.x, &mut b.y]
+					return t
+				}
+			`,
+			want: nil,
+		},
+		// The same field twice is the hazard the disjoint cases are measured against: both
+		// paths reach b.x, and a write through one is visible through the other.
+		"OneFieldTwiceReported": {
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val t = {p: &mut b.x, q: &mut b.x}
+					return t
+				}
+			`,
+			want: []string{"5:13-5:14: returned value reaches 'b' through two paths while one of them can write"},
+		},
+		// A borrow of the whole binding contains a borrow of any field of it, so the two paths
+		// overlap even though their field paths differ.
+		"WholeBindingContainsAFieldReported": {
+			src: `
+				fn build() {
+					val mut b = {x: {n: 1}, y: {n: 2}}
+					val t = {p: &mut b, q: &mut b.y}
+					return t
+				}
+			`,
+			want: []string{"5:13-5:14: returned value reaches 'b' through two paths while one of them can write"},
+		},
 		// The second repro in #1263. a.peer and `&mut b` both lead to b, so the tuple hands out
 		// two mutable handles to one object.
 		"TupleReachesOneLocalTwice": {
@@ -119,8 +169,9 @@ func TestSharedReturnPaths(t *testing.T) {
 			want: []string{"10:13-10:29: returned value reaches 'b' through two paths while one of them can write"},
 		},
 		// Two DISJOINT fields of one local are two objects, so neither path can observe the
-		// other's write. The count keeps the field path for exactly this.
-		"DisjointFieldsOfOneLocalOk": {
+		// other's write. This is the returned-literal route, which compares the places its
+		// elements name.
+		"DisjointFieldsInAReturnedLiteralOk": {
 			src: `
 				fn build() -> [&mut {v: number}, &mut {v: number}] {
 					val mut b = {x: {v: 1}, y: {v: 2}}
