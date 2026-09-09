@@ -147,6 +147,27 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: nil,
 		},
+		// A plain `T` parameter is owned too, and dies with the frame just as `mut T` does.
+		// Owned-immutable collapses to the bare inner, so the bridge records its concrete type
+		// rather than a RefType, and reading anything settled that is not a borrow as
+		// caller-owned would report a store into it.
+		//
+		// Nothing valid can store into one, since both a field write and an `&mut` need a
+		// mutable place, so what this pins is the absence of a second diagnostic on top of the
+		// mutability error that already rejects the program.
+		"StoreIntoAPlainOwnedParameterAddsNoEscape": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut {peer: &'a mut {value: number}},
+					item: &'a mut {value: number},
+				) -> undefined
+				fn f(p: {peer: &mut {value: number}}) -> undefined {
+					val mut b = {value: 0}
+					store(&mut p, &mut b)
+				}
+			`,
+			want: []string{"8:12-8:18: cannot constrain immutable object <: mutable object"},
+		},
 	}
 	for name, tc := range tests {
 		t.Run(name, func(t *testing.T) {
