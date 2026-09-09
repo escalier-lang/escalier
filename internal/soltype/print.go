@@ -600,7 +600,9 @@ func freeTypeVars(t Type) []*TypeVarType {
 						walk(e.Throws)
 					}
 				case *ConstructorElem:
-					walk(e.Fn)
+					for _, sig := range e.Signatures {
+						walk(sig)
+					}
 				case *SpreadElem:
 					walk(e.Type)
 				case *MappedElem:
@@ -1206,8 +1208,13 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 			p.printThrowsClause(e.ThrowsOrNever())
 	case *ConstructorElem:
 		// A class value's constructor renders as the unnamed call signature
-		// `new (params) -> ret`.
-		return "new " + p.printFuncTail(e.Fn)
+		// `new (params) -> ret`, one per declared constructor. An overloaded constructor
+		// renders its arms the way an overloaded method does, joined by `; `.
+		arms := make([]string, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			arms[i] = "new " + p.printFuncTail(sig)
+		}
+		return strings.Join(arms, "; ")
 	case *SpreadElem:
 		// A `...A` spread renders inline among the object's fields, so `{...A, x: T}` round-trips
 		// to the source. The operand prints at precPrefix, so a looser one such as a union gets

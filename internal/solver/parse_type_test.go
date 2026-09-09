@@ -231,7 +231,7 @@ func objectToSoltype(t *testing.T, env map[string]soltype.Type, ta *ast.ObjectTy
 			require.Len(t, fn.Params, 1, "parseType: a setter takes one value parameter")
 			elems = append(elems, &soltype.SetterElem{Name: objKeyNameReq(t, e.Name), SelfParam: fn.SelfParam, Param: fn.Params[0].Type, Throws: fn.Throws})
 		case *ast.ConstructorTypeAnn:
-			elems = append(elems, &soltype.ConstructorElem{Fn: funcToSoltype(t, env, e.Fn)})
+			elems = append(elems, &soltype.ConstructorElem{Signatures: []*soltype.FuncType{funcToSoltype(t, env, e.Fn)}})
 		case *ast.MappedTypeAnn:
 			elems = append(elems, mappedToSoltype(t, env, e))
 		default:

@@ -422,7 +422,9 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			return nil, true
 		}
 		l.sawCtor = true
-		return &soltype.ConstructorElem{Fn: l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)}, true
+		return &soltype.ConstructorElem{
+			Signatures: []*soltype.FuncType{l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)},
+		}, true
 	case *ast.RestSpreadTypeAnn:
 		src, ok := l.c.resolveTypeAnn(l.scope, elem.Value, l.lvl)
 		if !ok {

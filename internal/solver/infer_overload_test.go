@@ -362,7 +362,7 @@ func TestResolveOverloadRollsBackLosingArm(t *testing.T) {
 	argVar.LowerBounds = []soltype.Type{&soltype.LitType{Lit: &soltype.NumLit{Value: 5}}}
 
 	call := ast.NewCall(identExpr("f"), []ast.Expr{numExpr(5)}, false, testSpan())
-	ret := c.resolveOverload(0, b, []soltype.Type{argVar}, call)
+	ret, _ := c.resolveOverload(0, b, []soltype.Type{argVar}, call)
 
 	require.Empty(t, c.errs, "the losing arm's trial error is rolled back, not accumulated")
 	require.Equal(t, "number", soltype.Print(ret))
@@ -389,7 +389,7 @@ func TestResolveOverloadSurfacesWinningArmWarning(t *testing.T) {
 	b := ValueBinding{Schemes: []TypeScheme{monoScheme(arm)}}
 
 	call := ast.NewCall(identExpr("f"), []ast.Expr{numExpr(5)}, false, testSpan())
-	ret := c.resolveOverload(0, b, []soltype.Type{numLit(5)}, call)
+	ret, _ := c.resolveOverload(0, b, []soltype.Type{numLit(5)}, call)
 
 	require.Equal(t, "number", soltype.Print(ret))
 	require.Equal(t, []string{

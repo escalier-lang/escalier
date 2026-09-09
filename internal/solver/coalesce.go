@@ -742,7 +742,11 @@ func (c *checker) declaredTypeParams(t soltype.Type) []*soltype.TypeParam {
 			if !isCtor {
 				continue
 			}
-			if cls, isClass := ctor.Fn.Ret.(*soltype.ClassType); isClass {
+			inst, hasInst := ctor.Instance()
+			if !hasInst {
+				return nil
+			}
+			if cls, isClass := inst.(*soltype.ClassType); isClass {
 				return c.declaredTypeParams(cls)
 			}
 			return nil
@@ -771,7 +775,11 @@ func (c *checker) declaredLifetimeParams(t soltype.Type) []*soltype.LifetimePara
 			if !isCtor {
 				continue
 			}
-			if cls, isClass := ctor.Fn.Ret.(*soltype.ClassType); isClass {
+			inst, hasInst := ctor.Instance()
+			if !hasInst {
+				return nil
+			}
+			if cls, isClass := inst.(*soltype.ClassType); isClass {
 				return c.declaredLifetimeParams(cls)
 			}
 			return nil
@@ -1725,7 +1733,15 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)
-		return ok && equalTypeWith(a.Fn, b.Fn, ctx)
+		if !ok || len(a.Signatures) != len(b.Signatures) {
+			return false
+		}
+		for i := range a.Signatures {
+			if !equalTypeWith(a.Signatures[i], b.Signatures[i], ctx) {
+				return false
+			}
+		}
+		return true
 	case *soltype.SpreadElem:
 		b, ok := b.(*soltype.SpreadElem)
 		return ok && equalTypeWith(a.Type, b.Type, ctx)

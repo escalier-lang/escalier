@@ -872,7 +872,7 @@ func TestConstrainConstructorObjectAsFunction(t *testing.T) {
 		return &soltype.FuncType{Params: []*soltype.FuncParam{identParam("a", param)}, Ret: ret}
 	}
 	ctorObj := func(param, ret soltype.Type, extra ...soltype.ObjTypeElem) *soltype.ObjectType {
-		return exactObj(append([]soltype.ObjTypeElem{&soltype.ConstructorElem{Fn: fn(param, ret)}}, extra...)...)
+		return exactObj(append([]soltype.ObjTypeElem{&soltype.ConstructorElem{Signatures: []*soltype.FuncType{fn(param, ret)}}}, extra...)...)
 	}
 	x := &soltype.ClassType{Name: "X"}
 	tests := []struct {

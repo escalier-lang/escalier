@@ -350,10 +350,10 @@ func TestPrintGenericMethod(t *testing.T) {
 // alongside its static members, and round-trips through Accept unchanged.
 func TestPrintConstructorElem(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&ConstructorElem{Fn: &FuncType{
+		&ConstructorElem{Signatures: []*FuncType{{
 			Params: []*FuncParam{identP("x", numP()), identP("y", numP())},
 			Ret:    &ClassType{Name: "Point"},
-		}},
+		}}},
 		&PropertyElem{Name: "count", Type: numP()},
 		&MethodElem{Name: "zero", Signatures: []*FuncType{{Ret: numP()}}, Static: true},
 	}}
@@ -368,7 +368,7 @@ func TestPrintConstructorElem(t *testing.T) {
 func TestFreeTypeVarsConstructorElem(t *testing.T) {
 	v := &TypeVarType{ID: 7, Level: 1}
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", v)}, Ret: &ClassType{Name: "Box"}}},
+		&ConstructorElem{Signatures: []*FuncType{{Params: []*FuncParam{identP("x", v)}, Ret: &ClassType{Name: "Box"}}}},
 	}}
 	require.Equal(t, []*TypeVarType{v}, freeTypeVars(obj))
 }
@@ -948,7 +948,7 @@ func TestPrintWithParams(t *testing.T) {
 // ctorObj wraps a constructor signature in the object a class value binds to, the
 // `{new (…) -> C}` shape classValue builds in internal/solver.
 func ctorObj(fn *FuncType) *ObjectType {
-	return &ObjectType{Elems: []ObjTypeElem{&ConstructorElem{Fn: fn}}}
+	return &ObjectType{Elems: []ObjTypeElem{&ConstructorElem{Signatures: []*FuncType{fn}}}}
 }
 
 // PrintElided renders a type like Print but stops at maxDepth, standing in ElisionMark for every

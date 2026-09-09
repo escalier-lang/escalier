@@ -682,14 +682,11 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 		}
 		return &MethodElem{Name: e.Name, Signatures: sigs, Static: e.Static}
 	case *ConstructorElem:
-		nf, ok := e.Fn.Accept(v, pol).(*FuncType) // params contravariant, via FuncType.Accept
-		if !ok {
-			panic(fmt.Sprintf("AcceptObjElem: constructor signature rewrote to non-FuncType %T", e.Fn))
-		}
-		if nf == e.Fn {
+		sigs, changed := acceptSignatures(e.Signatures, v, pol) // params contravariant, via FuncType.Accept
+		if !changed {
 			return e
 		}
-		return &ConstructorElem{Fn: nf}
+		return &ConstructorElem{Signatures: sigs}
 	case *SpreadElem:
 		// The operand walks in the current polarity, the covariant visit KeyofType applies to its
 		// single operand. The spread is inert — the visit rebuilds it around a rewritten operand

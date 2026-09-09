@@ -47,15 +47,17 @@ func (c *checker) inferSuperCall(scope *Scope, lvl int, e *ast.SuperCallExpr) so
 	return &soltype.UndefinedType{}
 }
 
-// superConstructor returns the callable signature of a superclass's constructor, read off
-// the class's value binding, which is the object `Animal(…)` calls through. It returns
-// ok=false when the binding is absent or carries no constructor, which leaves the arguments
-// unchecked rather than reported against a signature that was never found.
+// superConstructor returns the callable a superclass's constructor stands for, read off the
+// class's value binding, which is the object `Animal(…)` calls through. An overloaded
+// superclass constructor reads as the intersection of its arms, so the constraint below weighs
+// them together rather than picking one. It returns ok=false when the binding is absent or
+// carries no constructor, which leaves the arguments unchecked rather than reported against a
+// signature that was never found.
 //
 // The name is looked up in the scope the subclass is declared in, not the constructor's own
 // scope. A parameter named after the superclass would shadow the class binding there, and the
 // arguments would go unchecked against a signature the lookup never found.
-func (c *checker) superConstructor(lvl int, ctx *superCtx) (*soltype.FuncType, bool) {
+func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) {
 	if ctx.declScope == nil {
 		return nil, false
 	}
@@ -71,7 +73,7 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (*soltype.FuncType, b
 	if !ok {
 		return nil, false
 	}
-	return ctor.Fn, true
+	return ctorReadType(ctor), true
 }
 
 // superVarID is the synthetic binding the move dataflow tracks in place of "the superclass

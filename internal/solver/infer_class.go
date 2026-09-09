@@ -114,7 +114,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// with `self` bound to the full body, so a call between two methods of the same class
 	// resolves through the pre-declared sibling signature — self-recursive, mutually
 	// recursive, or a forward call to a member declared later.
-	ctors := c.collectConstructors(decl)
+	ctors := collectConstructors(decl)
 	c.checkClassBodyLifetimes(decl)
 	c.buildFieldSigs(declScope, lvl, decl, body, static)
 	pending := c.buildMemberSigs(declScope, lvl, decl, self, body, static)
@@ -127,7 +127,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// now, so the view is complete, and it shares each own element pointer so phase 2's
 	// signature installs and field refinements still land on the registered body.
 	c.inferMemberBodies(declScope, lvl, c.ctx.selfView(self, body), pending)
-	ctorType := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
+	ctorFns := c.inferConstructor(declScope, lvl, decl, self, body, ctors)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
@@ -165,21 +165,21 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.queueInheritedMemberCheck(def, self, decl)
 
 	if quiet() && paramsClean {
-		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorType))
+		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns))
 	}
 
-	return c.classValue(ctorType, static), &ast.NodeProvenance{Node: decl}, true
+	return c.classValue(ctorFns, static), &ast.NodeProvenance{Node: decl}, true
 }
 
 // classDeclTypes returns every type a class declaration writes, so a walk over them covers each
 // position that could name one of the class's type parameters. That is the instance and static
-// members, the constructor's signature, and the `extends` and `implements` targets.
+// members, every constructor signature, and the `extends` and `implements` targets.
 //
 // A method's `self` receiver is dropped, since every method names the class in it and counting
 // that would make each parameter look used. stripSelfReceiver is the same helper variance
 // inference uses for the same reason. Every other position of a member's signature counts,
 // `throws` included, since walking the object that holds them descends into the whole of each.
-func classDeclTypes(def *ClassDef, ctor soltype.Type) []soltype.Type {
+func classDeclTypes(def *ClassDef, ctors []*soltype.FuncType) []soltype.Type {
 	var out []soltype.Type
 	// The stripped members are handed back inside an object rather than one by one, so the
 	// caller walks a type and the visitor's own member traversal reaches each position.
@@ -203,7 +203,7 @@ func classDeclTypes(def *ClassDef, ctor soltype.Type) []soltype.Type {
 	// stripSelfReceiver drops a method's. The return is the class's own handle, minted with
 	// every type-parameter var as an argument, so walking it would mark them all; `never`
 	// stands in because it is a leaf that names nothing.
-	if fn, ok := ctor.(*soltype.FuncType); ok {
+	for _, fn := range ctors {
 		bare := *fn
 		bare.SelfParam = nil
 		bare.Ret = &soltype.NeverType{}
@@ -247,15 +247,12 @@ func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
 // through constrain's ordinary object-against-object arm. A statics-free class bound to its bare
 // constructor function would need an arm of its own, and that arm could not tell a constructor
 // from an ordinary function, since a FuncType records nothing about constructibility.
-func (c *checker) classValue(ctorType soltype.Type, static *soltype.ObjectType) soltype.Type {
-	// inferConstructor always returns a FuncType, so anything else is a wiring bug.
-	// Fail loudly rather than drop the statics by returning the bare ctorType.
-	ctorFn, ok := ctorType.(*soltype.FuncType)
-	if !ok {
-		panic(fmt.Sprintf("classValue: constructor is %T, not *soltype.FuncType", ctorType))
-	}
+//
+// ctorFns holds one signature per declared constructor, in source order, so an overloaded
+// constructor binds every arm under the one element.
+func (c *checker) classValue(ctorFns []*soltype.FuncType, static *soltype.ObjectType) soltype.Type {
 	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+1)
-	elems = append(elems, &soltype.ConstructorElem{Fn: ctorFn})
+	elems = append(elems, &soltype.ConstructorElem{Signatures: ctorFns})
 	elems = append(elems, static.Elems...)
 	return &soltype.ObjectType{Elems: elems}
 }
@@ -707,16 +704,13 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	return nil, false
 }
 
-// collectConstructors returns the explicit constructor elements of a class, reporting
-// each one past the first as a duplicate. A well-formed class has zero or one.
-func (c *checker) collectConstructors(decl *ast.ClassDecl) []*ast.ConstructorElem {
+// collectConstructors returns the explicit constructor elements of a class, in source order.
+// A class declaring more than one is overloaded, and each element becomes one arm of the
+// ConstructorElem the class value carries.
+func collectConstructors(decl *ast.ClassDecl) []*ast.ConstructorElem {
 	var ctors []*ast.ConstructorElem
 	for _, elem := range decl.Body {
 		if ctor, ok := elem.(*ast.ConstructorElem); ok {
-			if len(ctors) >= 1 {
-				c.report(&MultipleConstructorsError{Ctor: ctor})
-				continue
-			}
 			ctors = append(ctors, ctor)
 		}
 	}

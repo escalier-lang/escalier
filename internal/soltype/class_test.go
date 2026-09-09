@@ -413,7 +413,7 @@ func TestAcceptConstructorElem(t *testing.T) {
 	paramT := &TypeVarType{ID: 1}
 	retT := &TypeVarType{ID: 2}
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", paramT)}, Ret: retT}},
+		&ConstructorElem{Signatures: []*FuncType{{Params: []*FuncParam{identP("x", paramT)}, Ret: retT}}},
 	}}
 
 	r := &recorder{seen: map[Type]Polarity{}}
@@ -425,13 +425,13 @@ func TestAcceptConstructorElem(t *testing.T) {
 	got := obj.Accept(&replaceVar{target: paramT, repl: str}, Positive).(*ObjectType)
 	require.NotSame(t, obj, got, "a changed constructor forces a new object")
 	gotCtor := got.Elems[0].(*ConstructorElem)
-	require.Same(t, str, gotCtor.Fn.Params[0].Type, "the constructor param took the replacement")
+	require.Same(t, str, gotCtor.Signatures[0].Params[0].Type, "the constructor param took the replacement")
 }
 
 // LevelOf on an object descends into a constructor's signature.
 func TestLevelOfConstructorElem(t *testing.T) {
 	obj := &ObjectType{Elems: []ObjTypeElem{
-		&ConstructorElem{Fn: &FuncType{Params: []*FuncParam{identP("x", &TypeVarType{ID: 1, Level: 6})}, Ret: numP()}},
+		&ConstructorElem{Signatures: []*FuncType{{Params: []*FuncParam{identP("x", &TypeVarType{ID: 1, Level: 6})}, Ret: numP()}}},
 	}}
 	require.Equal(t, 6, LevelOf(obj), "the level is the max over the constructor signature")
 }

@@ -408,11 +408,17 @@ func (e *SetterElem) ThrowsOrNever() Type {
 }
 
 // ConstructorElem is the call signature a class value carries. It is the constructor a
-// class name resolves to as a value, so `Point(1, 2)` calls Fn. A class value holds
+// class name resolves to as a value, so `Point(1, 2)` calls it. A class value holds
 // exactly one, unnamed, alongside the class's static members. It is the single callable
 // element the structural lattice admits, scoped to the class-value carrier rather than a
 // general call-signature-in-any-object feature.
-type ConstructorElem struct{ Fn *FuncType }
+//
+// An overloaded constructor holds its arms in Signatures, the same shape MethodElem uses
+// for an overloaded method, ordered as the source declares them. `Array` is the case that
+// needs it: it declares both the length form and the element-list form, which is why
+// `Array(3)` and `Array(1, 2, 3)` mean different things. A class with one constructor has
+// exactly one signature.
+type ConstructorElem struct{ Signatures []*FuncType }
 
 // SpreadElem is a `...A` object spread written as an element of an ObjectType, the object twin of
 // the tuple's RestSpreadType (M9 PR5). `{...A, x: T}` is an ObjectType whose first element is a
@@ -428,6 +434,29 @@ func (*SetterElem) isObjTypeElem()      {}
 func (*ConstructorElem) isObjTypeElem() {}
 func (*MappedElem) isObjTypeElem()      {}
 func (*SpreadElem) isObjTypeElem()      {}
+
+// Instance returns the class instance every arm of this constructor produces, and false when
+// the element carries no signature. inferConstructor upholds the agreement by giving every arm
+// the one class handle it threads through them, and an object type annotation declares at most
+// one `new` signature, so no path builds a set whose arms disagree.
+//
+// The agreement covers the type and lifetime arguments, not just the class name. A reader may
+// act on them: coalesce's declaredTypeParams reads the handle's TypeArgs to name the display
+// binder after the vars the instance carries, so arms returning `Box<T0>` and `Box<T1>` would
+// render a binder over T0 and drop T1. Anything that builds a ConstructorElem has to keep the
+// arms agreeing on the whole handle.
+//
+// The instance is the ONLY thing the arms agree on. Params is what distinguishes them, and each
+// arm carries its own Throws and Inexact from its own body. A reader after any of those has no
+// arm the set endorses, so there is no accessor for one: it reads Signatures directly and owns
+// the arbitrary choice at its own call site, as ctorSignature in the solver does. #1516 replaces
+// the reason that one reads a constructor at all.
+func (e *ConstructorElem) Instance() (Type, bool) {
+	if len(e.Signatures) == 0 {
+		return nil, false
+	}
+	return e.Signatures[0].Ret, true
+}
 
 // ObjElemName returns the member name of any ObjTypeElem kind. It is the shared
 // name accessor for member lookup and structural equality, so those sites need no
@@ -670,10 +699,10 @@ func (o *ObjectType) preferredMember(name string, preferred func(ObjTypeElem) bo
 	return first, first != nil
 }
 
-// Constructor returns the object's constructor call signature and whether it carries
-// one. A class value carries exactly one ConstructorElem, so this is the lookup a call
-// site and the nominal-value constrain rule use to reach the constructor without a
-// type switch of their own.
+// Constructor returns the object's constructor element and whether it carries one. A class
+// value carries exactly one ConstructorElem, holding one signature per declared
+// constructor, so this is the lookup a call site and the nominal-value constrain rule use to
+// reach the constructor without a type switch of their own.
 func (o *ObjectType) Constructor() (*ConstructorElem, bool) {
 	for _, e := range o.Elems {
 		if ctor, ok := e.(*ConstructorElem); ok {
@@ -1495,7 +1524,11 @@ func levelOfElem(e ObjTypeElem) int {
 	case *SetterElem:
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param), throwsLevel(e.Throws))
 	case *ConstructorElem:
-		return LevelOf(e.Fn)
+		m := 0
+		for _, sig := range e.Signatures {
+			m = max(m, LevelOf(sig))
+		}
+		return m
 	case *SpreadElem:
 		// A `...A` spread element's level is its operand's, so an out-of-level spread operand lifts
 		// the enclosing object's level and the freshener/extruder prune descends to freshen it.

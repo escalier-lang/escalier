@@ -491,3 +491,74 @@ fn f() -> number {
 		})
 	}
 }
+
+// A call resolved through an overload set moves the arguments the winning arm consumes, the
+// way a call to a single signature does. Resolution owns the argument checking and leaves
+// inferCall before its move recording runs, so the arm it picks has to drive that separately.
+// All three overload callees take the same path: a named set, a method, and a constructor.
+func TestOverloadCallConsumesArguments(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "NamedOverloadSet",
+			src: `fn take(a: {x: number}) -> number { return 1 }
+fn take(a: {x: number}, b: number) -> number { return 2 }
+fn f() {
+  val p = {x: 1}
+  take(p)
+  p.x
+}`,
+			want: []string{"6:3-6:6: use of moved value 'p'"},
+		},
+		{
+			name: "OverloadedMethod",
+			src: `declare class Box {
+  m(self, a: {x: number}) -> number,
+  m(self, a: {x: number}, b: number) -> number,
+}
+fn f(b: Box) {
+  val p = {x: 1}
+  b.m(p)
+  p.x
+}`,
+			want: []string{"8:3-8:6: use of moved value 'p'"},
+		},
+		{
+			name: "OverloadedConstructor",
+			src: `declare class Box {
+  constructor(mut self, a: {x: number}),
+  constructor(mut self, a: {x: number}, b: number),
+}
+fn f() {
+  val p = {x: 1}
+  Box(p)
+  p.x
+}`,
+			want: []string{"8:3-8:6: use of moved value 'p'"},
+		},
+		{
+			// No arm accepted the call, so no signature says which arguments it would have
+			// consumed. The no-match is the only diagnostic; the later read still stands.
+			name: "NoMatchingArmMovesNothing",
+			src: `declare class Box {
+  constructor(mut self, a: number),
+  constructor(mut self, a: number, b: number),
+}
+fn f() {
+  val p = {x: 1}
+  Box(p)
+  p.x
+}`,
+			want: []string{"7:3-7:9: No matching overload for this call\n  fn (a: number) -> Box\n  fn (a: number, b: number) -> Box"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, messagesWithSpan(t, errs))
+		})
+	}
+}

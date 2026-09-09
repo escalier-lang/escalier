@@ -1606,14 +1606,6 @@ func TestInferClassErrors(t *testing.T) {
 			want: "Setter 'value' must declare a `mut self` receiver; writing through it mutates the instance.",
 		},
 		{
-			name: "MultipleConstructors",
-			src: `class C {
-				constructor(mut self) {},
-				constructor(mut self) {},
-			}`,
-			want: "Multiple constructors per class are not yet supported.",
-		},
-		{
 			name: "FieldInitializerNotAllowed",
 			src:  `class C { x: number = 5 }`,
 			want: "Field 'x' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body.",
@@ -2292,4 +2284,137 @@ func TestInferClassMethodTypeParamBounds(t *testing.T) {
 			})
 		}
 	*/
+}
+
+// A class may declare more than one constructor. Every arm binds under the one
+// ConstructorElem the class value carries, and a call resolves against the set the way a call
+// to an overloaded method does. `Array` is the case that needs it: it declares both the
+// length form and the element-list form, which is why `Array(3)` and `Array(1, 2, 3)` mean
+// different things.
+func TestInferClassConstructorOverloads(t *testing.T) {
+	const decl = "declare class Box {\n" +
+		"  constructor(mut self, n: number),\n" +
+		"  constructor(mut self, a: string, b: string),\n" +
+		"}\n"
+	const noMatch = "No matching overload for this call\n" +
+		"  fn (n: number) -> Box\n" +
+		"  fn (a: string, b: string) -> Box"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "SelectsTheFirstArm",
+			src:  decl + `val v = Box(1)`,
+		},
+		{
+			name: "SelectsTheSecondArm",
+			src:  decl + `val v = Box("x", "y")`,
+		},
+		{
+			// Neither arm accepts the argument, so the report names the whole set rather than
+			// one arm's parameter.
+			name: "RejectsAgainstTheWholeSet",
+			src:  decl + `val v = Box(true)`,
+			want: noMatch,
+		},
+		{
+			name: "RejectsAnArityNoArmAccepts",
+			src:  decl + `val v = Box(1, 2, 3)`,
+			want: noMatch,
+		},
+		{
+			// The arity matches the second arm and the element does not, which is still a
+			// no-match rather than a per-argument mismatch against that arm.
+			name: "RejectsAWrongElementAtAMatchingArity",
+			src:  decl + `val v = Box("x", 2)`,
+			want: noMatch,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.want == "" {
+				require.Empty(t, errs)
+				require.Equal(t, "Box", values["v"])
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
+
+// A class value renders every constructor it declares, joined the way an overloaded method's
+// arms are, so the set is visible at a hover rather than collapsed to one arm.
+func TestInferClassConstructorOverloadsRender(t *testing.T) {
+	src := "declare class Box {\n" +
+		"  constructor(mut self, n: number),\n" +
+		"  constructor(mut self, a: string, b: string),\n" +
+		"}"
+	values, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+	require.Equal(t, "{new (n: number) -> Box; new (a: string, b: string) -> Box}", values["Box"])
+}
+
+// A class declaring one constructor keeps the single-signature shape, so the arity lints and
+// the per-argument blame a direct call gives are unaffected by the overload path above.
+func TestInferClassSingleConstructorUnaffected(t *testing.T) {
+	src := "declare class Box {\n  constructor(mut self, n: number),\n}\nval v = Box(\"x\")"
+	_, _, errs := inferSource(t, src)
+	require.Len(t, errs, 1)
+	require.Equal(t, `cannot constrain "x" <: number`, errs[0].Message())
+}
+
+// An overload arm whose last parameter is an `Array<E>` rest slot checks every argument the
+// slot gathers against E. Resolution reads the arms one at a time rather than through the
+// callee <: callShape constraint, so the scatter rule constrain applies to a single-signature
+// callee is not what runs here and the element check has to be made per arm.
+func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
+	const decl = "declare class Arr {\n" +
+		"  constructor(mut self, arrayLength: number),\n" +
+		"  constructor(mut self, ...items: mut Array<string>),\n" +
+		"}\n"
+	const noMatch = "No matching overload for this call\n" +
+		"  fn (arrayLength: number) -> Arr\n" +
+		"  fn (...items: mut Array<string>) -> Arr"
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "SelectsTheLengthArm",
+			src:  decl + `val v = Arr(3)`,
+		},
+		{
+			name: "SelectsTheElementArm",
+			src:  decl + `val v = Arr("x", "y")`,
+		},
+		{
+			// Zero arguments fill the slot, so the element arm still accepts.
+			name: "AcceptsNoArguments",
+			src:  decl + `val v = Arr()`,
+		},
+		{
+			// The gap this case pins. An arm accepted with its element unchecked takes any
+			// argument at all past the first, so the call resolves clean.
+			name: "RejectsAWrongElement",
+			src:  decl + `val v = Arr("x", true)`,
+			want: noMatch,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			if tt.want == "" {
+				require.Empty(t, errs)
+				require.Equal(t, "Arr", values["v"])
+				return
+			}
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
 }
