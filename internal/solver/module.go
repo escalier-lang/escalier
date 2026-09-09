@@ -100,6 +100,11 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	defer func() { c.moduleScope = prevModuleScope }()
 
 	handled := set.NewSet[ast.Decl]()
+	// Bind an empty Namespace per `namespace` block before the walk, so a member of
+	// this module that writes `Foo.member` finds the binding while the walk is still
+	// running. populateNamespaces fills them through the same pointers afterwards.
+	c.nsShells = c.preBindNamespaceDecls(scope, module, handled)
+	defer func() { c.nsShells = nil }()
 	// M4 E3: dep_graph fans one top-level destructuring `val {x, y} = …` across one
 	// SCC component per leaf key. Its initializer is typed and its pattern bound
 	// once, memoized here on the first leaf reached. Each leaf component then
@@ -107,6 +112,10 @@ func (c *checker) inferDepGraph(scope *Scope, lvl int, module *ast.Module, g *de
 	destructured := map[*ast.VarDecl]*moduleDestructure{}
 	for _, component := range g.Components {
 		c.inferComponent(scope, lvl, module, g, component, handled, destructured)
+		// Components run in dependency order, so refreshing after each one means a
+		// later component reading `Foo.member` finds the member its own component
+		// already bound.
+		c.refreshNamespaces(scope)
 	}
 	// Every class is inferred, so each superclass edge and body is final. Check the members
 	// each subclass redeclares against the ones they override.
@@ -256,6 +265,11 @@ func (c *checker) inferComponent(
 		// generalization happens in phase 3.
 		scope.defineValue(key.Name(), ValueBinding{Schemes: []TypeScheme{monoScheme(v)}})
 	}
+	// Every binding var in the component now exists, so a namespace holding these
+	// members can answer for them. Two functions in one namespace calling each other
+	// land in one component, and each body reads the other through `Foo.member`
+	// while both are still being inferred.
+	c.refreshNamespaces(scope)
 
 	// Pre-bind every nominal identity in this component — each class handle and each enum
 	// union type — before any enum body resolves a variant parameter, so a group of
@@ -272,12 +286,18 @@ func (c *checker) inferComponent(
 	//     no-op whose pre-bound value var is retracted in phase 3.
 	var enumShells []*enumShell
 	var aliasShells []*aliasShell
+	var interfaceShells []*interfaceShell
 	var classDecls []*ast.ClassDecl
 	var classNamespaces []string
 	for _, key := range component {
 		if _, isValue := bindings[key]; isValue {
 			continue
 		}
+		// Every `interface Point` in the module shares one type key, so the group is
+		// collected here and pre-bound once. The bound type is their merged member
+		// list, which is what makes declaration merging a property of the binding
+		// rather than of any one declaration.
+		var interfaceDecls []*ast.InterfaceDecl
 		for _, d := range g.GetDecls(key) {
 			if handled.Contains(d) {
 				continue
@@ -310,6 +330,29 @@ func (c *checker) inferComponent(
 					aliasShells = append(aliasShells, sh)
 				}
 				handled.Add(d)
+			case *ast.InterfaceDecl:
+				// An interface binds at its type key like an alias, so its value key is
+				// a no-op. The group is pre-bound after this loop, once every
+				// declaration of the name is collected.
+				if decl.Name != nil && decl.Name.Name != "" {
+					interfaceDecls = append(interfaceDecls, decl)
+				}
+				handled.Add(d)
+			}
+		}
+		if len(interfaceDecls) > 0 {
+			// One type key holding both an interface and a declaration of another kind
+			// means one name was declared twice in ways that cannot merge. Binding the
+			// interface here would overwrite the alias registry entry and the type
+			// binding the other kind made, so report and leave that binding in place.
+			if other, clash := nonInterfaceTypeDecl(g.GetDecls(key)); clash {
+				c.report(&ConflictingTypeDeclarationError{
+					Name: interfaceDecls[0].Name.Name,
+					span: other.Span(),
+				})
+			} else {
+				interfaceShells = append(interfaceShells, c.preBindInterface(
+					c.lookupScope(scope, interfaceDecls[0]), inner, interfaceDecls, g.GetNamespace(key)))
 			}
 		}
 	}
@@ -334,6 +377,11 @@ func (c *checker) inferComponent(
 	// is bound, so a body naming a sibling type — or the alias itself — resolves.
 	for _, sh := range aliasShells {
 		c.inferAliasBody(sh)
+	}
+	// Each interface's members resolve last, so an `extends` target declared as an
+	// alias or a class in this component is already filled.
+	for _, sh := range interfaceShells {
+		c.inferInterfaceBody(sh)
 	}
 	c.deferArgBounds = false
 	// Every body in the component is resolved, so the alias reference graph the productivity
@@ -929,3 +977,37 @@ func (c *checker) lookupScope(module *Scope, decl ast.Decl) *Scope {
 	}
 	return module
 }
+
+// nonInterfaceTypeDecl returns the first declaration in decls that is not an
+// InterfaceDecl. Several interfaces of one name merge, so a group of them is legal,
+// while anything else under the same type key gives that name two definitions.
+//
+// decls comes from a type key, so every declaration in it introduces a type. The
+// test is therefore what an interface is not, rather than a list of the kinds it
+// conflicts with: a declaration kind added later is caught without this being
+// revisited.
+func nonInterfaceTypeDecl(decls []ast.Decl) (ast.Decl, bool) {
+	for _, d := range decls {
+		if _, isInterface := d.(*ast.InterfaceDecl); !isInterface {
+			return d, true
+		}
+	}
+	return nil, false
+}
+
+// ConflictingTypeDeclarationError reports one name declared both as an interface
+// and as a kind that cannot merge with one. Interfaces merge with each other, so a
+// repeated interface is legal, while an alias, a class, or an enum under the same
+// name gives that name two definitions.
+type ConflictingTypeDeclarationError struct {
+	// Name is the name declared twice.
+	Name string
+	span ast.Span
+}
+
+func (e *ConflictingTypeDeclarationError) Message() string {
+	return "cannot declare " + e.Name + " as both an interface and another type"
+}
+func (e *ConflictingTypeDeclarationError) Span() ast.Span      { return e.span }
+func (e *ConflictingTypeDeclarationError) Related() []ast.Span { return nil }
+func (e *ConflictingTypeDeclarationError) isSolverError()      {}
