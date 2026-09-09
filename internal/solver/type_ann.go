@@ -42,6 +42,19 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		t := &soltype.UnknownType{}
 		c.recordProvForResult(t, ta, AnnotationType)
 		return t, true
+	case *ast.AnyTypeAnn:
+		// `any` resolves to `unknown`, the top of the lattice. A declaration writes `any`
+		// where it places no constraint on a type, most often a type parameter's default such
+		// as the `TReturn = any` of `interface Iterable<T, TReturn = any, TNext = any>`.
+		// `unknown` carries that meaning and stays sound. TypeScript's `any` also assigns in
+		// the unsound direction, from `any` down to any other type, and nothing here relies on
+		// that.
+		//
+		// recordProvForResult records nothing here, for the reason the NeverTypeAnn arm gives:
+		// UnknownType is a shared zero-size singleton.
+		t := &soltype.UnknownType{}
+		c.recordProvForResult(t, ta, AnnotationType)
+		return t, true
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
