@@ -2418,3 +2418,130 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 		})
 	}
 }
+
+// `Self` inside a class body names the class's own instance type, which is what a
+// builder-style return needs: a method handing back the receiver's own type writes `-> Self`
+// rather than repeating the class name and its arguments. `std/array.esc` writes
+// `fill(mut self, value: T, start?: number, end?: number) -> Self`.
+func TestInferClassSelfType(t *testing.T) {
+	tests := []struct {
+		name  string
+		src   string
+		which string
+		want  string
+	}{
+		{
+			// The handle carries the class's own type-parameter vars as its arguments, so
+			// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes
+			// for `T` the way it does through any other reference to the class.
+			name:  "MethodReturnOnAGenericClass",
+			src:   "declare class Box<T> {\n  fill(mut self, value: T) -> Self,\n}\nfn g(b: mut Box<number>) -> Box<number> { return b.fill(1) }",
+			which: "g",
+			want:  "fn (b: mut Box<number>) -> Box<number>",
+		},
+		{
+			name:  "MethodReturnOnANonGenericClass",
+			src:   "declare class Box {\n  copy(self) -> Self,\n}\nfn g(b: Box) -> Box { return b.copy() }",
+			which: "g",
+			want:  "fn (b: Box) -> Box",
+		},
+		{
+			// A parameter position resolves the same way, so `Self` composes rather than
+			// being special-cased in a return.
+			name:  "MethodParameter",
+			src:   "declare class Box {\n  eq(self, other: Self) -> boolean,\n}\nfn g(a: Box, b: Box) -> boolean { return a.eq(b) }",
+			which: "g",
+			want:  "fn (a: Box, b: Box) -> boolean",
+		},
+		{
+			// The binding covers the fields as well as the member signatures, so a
+			// self-referential field reaches it.
+			name:  "FieldAnnotation",
+			src:   "declare class Node {\n  next: Self,\n}",
+			which: "Node",
+			want:  "{new (next: Node) -> Node}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errs)
+			require.Equal(t, tt.want, values[tt.which])
+		})
+	}
+}
+
+// `Self` is bound by a class body and nowhere else, so a plain function writing it finds the
+// name unbound.
+func TestInferSelfTypeOutsideAClassBody(t *testing.T) {
+	_, _, errs := inferSource(t, `fn f(x: Self) -> number { return 1 }`)
+	require.Len(t, errs, 1)
+	require.Equal(t, "cannot find type `Self`", errs[0].Message())
+}
+
+// A `-> Self` return is an output position, so the immutable view measures the class's type
+// parameter covariant and `Box<5>` widens to `Box<number>`. The receiver holds the same
+// handle and stays excluded from the variance walk, which is what keeps the parameter from
+// collapsing to invariant.
+func TestInferSelfTypeVariance(t *testing.T) {
+	src := "declare class Box<T> {\n  fill(mut self, value: T) -> Self,\n}\nfn g(b: Box<5>) -> Box<number> { return b }"
+	_, _, errs := inferSource(t, src)
+	require.Empty(t, errs)
+}
+
+// `Self` in an INHERITED member reads at the class that declared it, not at the subclass
+// reaching it. `me` is declared on A returning `Self`, so `b.me()` on a `B` yields an `A`.
+//
+// #1520 carries the polymorphic reading, where it resolves at the receiving subclass the way
+// TypeScript's `this` type does. That needs `Self` kept distinct in the stored signature and
+// substituted by the receiver's class at member lookup, which no rule does today.
+//
+// Both halves are needed to observe the answer. An annotated `-> A` return would hold whether
+// the call yields `A` or `B`, since `B <: A` nominally, so the unannotated case is what reads
+// the type back. The annotated `-> B` case is what fails once the substitution lands, which is
+// the signal that this comment is stale.
+func TestInferSelfTypeInAnInheritedMember(t *testing.T) {
+	const decl = "declare class A {\n  me(self) -> Self,\n}\n" +
+		"declare class B extends A {\n  constructor(mut self),\n  extra(self) -> number,\n}\n"
+
+	t.Run("InfersTheDeclaringClass", func(t *testing.T) {
+		values, _, errs := inferSource(t, decl+"fn g(b: B) { return b.me() }")
+		require.Empty(t, errs)
+		require.Equal(t, "fn (b: B) -> A", values["g"])
+	})
+
+	t.Run("RejectsTheSubclassReturn", func(t *testing.T) {
+		_, _, errs := inferSource(t, decl+"fn g(b: B) -> B { return b.me() }")
+		require.Len(t, errs, 1)
+		require.Equal(t, "cannot constrain A <: B", errs[0].Message())
+	})
+}
+
+// A lifetime argument written on `Self` is counted against what the class declares, the same
+// as one written on a reference through the class's own name. The shorthand resolves to the
+// enclosing handle directly, so without the guard it would accept any `<'…>` list and drop it.
+func TestInferSelfTypeRejectsLifetimeArgs(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "NoneDeclared",
+			src:  "declare class Box<T> {\n  m(self) -> Self<'a>,\n}",
+			want: "class `Self` expects 0 lifetime arguments but got 1",
+		},
+		{
+			name: "MoreThanDeclared",
+			src:  "declare class Box<'a, T> {\n  m(self) -> Self<'a, 'a>,\n}",
+			want: "class `Self` expects 1 lifetime arguments but got 2",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errs, 1)
+			require.Equal(t, tt.want, errs[0].Message())
+		})
+	}
+}
