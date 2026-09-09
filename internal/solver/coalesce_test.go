@@ -765,7 +765,7 @@ func TestEqualTypeConstructorElem(t *testing.T) {
 			Ret:        u,
 		}
 		return exactObj(
-			&soltype.ConstructorElem{Fn: ctor},
+			&soltype.ConstructorElem{Signatures: []*soltype.FuncType{ctor}},
 			&soltype.PropertyElem{Name: "count", Type: num()},
 		)
 	}
@@ -781,14 +781,14 @@ func TestEqualTypeConstructorElem(t *testing.T) {
 	require.False(t, equalType(value(10, nil, num()), value(20, nil, str())))
 	require.False(t, equalType(value(10, nil, num()), value(20, nil, nil)))
 	// A constructor whose parameter type differs structurally is not equal.
-	strCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+	strCtor := exactObj(&soltype.ConstructorElem{Signatures: []*soltype.FuncType{{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: str()}},
 		Ret:    &soltype.ClassType{Name: "Point"},
-	}})
-	numCtor := exactObj(&soltype.ConstructorElem{Fn: &soltype.FuncType{
+	}}})
+	numCtor := exactObj(&soltype.ConstructorElem{Signatures: []*soltype.FuncType{{
 		Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: num()}},
 		Ret:    &soltype.ClassType{Name: "Point"},
-	}})
+	}}})
 	require.False(t, equalType(numCtor, strCtor))
 	// An object carrying a constructor never equals one without it.
 	require.False(t, equalType(numCtor, exactObj(&soltype.PropertyElem{Name: "count", Type: num()})))

@@ -9,28 +9,31 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferConstructor produces a class's constructor as a FuncType returning the
-// instance. With an explicit constructor it walks the constructor body so field
-// assignments refine the instance fields, then builds a callable signature from the
-// value parameters. With none it synthesizes one from the instance fields, unless the
-// class extends a superclass — a subclass must declare its own constructor to call
-// `super`, so a missing one is reported and a field-based constructor is synthesized
-// for recovery.
-func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType, ctors []*ast.ConstructorElem) soltype.Type {
+// inferConstructor produces a class's constructors as FuncTypes returning the instance, one
+// per declared constructor and in source order. Each explicit constructor has its body walked
+// so field assignments refine the instance fields, then a callable signature built from its
+// value parameters. With none it synthesizes one from the instance fields, unless the class
+// extends a superclass — a subclass must declare its own constructor to call `super`, so a
+// missing one is reported and a field-based constructor is synthesized for recovery.
+func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType, ctors []*ast.ConstructorElem) []*soltype.FuncType {
 	if len(ctors) == 0 {
 		if decl.Extends != nil {
 			c.report(&SubclassConstructorRequiredError{Decl: decl})
 		}
-		return c.synthesizeConstructor(self, body)
+		return []*soltype.FuncType{c.synthesizeConstructor(self, body)}
 	}
-	return c.walkConstructorBody(scope, lvl, self, body, ctors[0])
+	out := make([]*soltype.FuncType, len(ctors))
+	for i, ctor := range ctors {
+		out[i] = c.walkConstructorBody(scope, lvl, self, body, ctor)
+	}
+	return out
 }
 
 // synthesizeConstructor builds the implicit constructor of a class with no explicit
 // one: a function taking one parameter per required instance field, in declaration
 // order, and returning the instance. An optional field is omitted, matching its
 // omission from the required set.
-func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.ObjectType) soltype.Type {
+func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
 	var params []*soltype.FuncParam
 	for _, e := range body.Elems {
 		prop, ok := e.(*soltype.PropertyElem)
@@ -53,7 +56,7 @@ func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.O
 // After the body is walked it runs definite-assignment analysis so a required field
 // left unassigned on some path is a FieldNotInitializedError and a `self.f` read before
 // its assignment is a ReadBeforeInitError.
-func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, ctor *ast.ConstructorElem) soltype.Type {
+func (c *checker) walkConstructorBody(scope *Scope, lvl int, self *soltype.ClassType, body *soltype.ObjectType, ctor *ast.ConstructorElem) *soltype.FuncType {
 	// The parser materializes `mut self` as Fn.Params[0]; the callable signature is
 	// the params after it.
 	valueParams := ctor.Fn.Params

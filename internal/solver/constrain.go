@@ -1046,7 +1046,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			// An object with a constructor signature is a subtype of the matching function
 			// type; codegen makes the constructor behave as a plain function where expected.
 			if ctor, ok := sub.Constructor(); ok {
-				return c.constrain(ctor.Fn, sup, seen, mutCtx)
+				return c.constrain(ctorReadType(ctor), sup, seen, mutCtx)
 			}
 		} else if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
@@ -1085,7 +1085,7 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				// cannot fill one.
 				if superCtor, ok := superElem.(*soltype.ConstructorElem); ok {
 					if subCtor, has := sub.Constructor(); has {
-						errs = append(errs, c.constrain(subCtor.Fn, superCtor.Fn, seen, mutCtx)...)
+						errs = append(errs, c.constrain(ctorReadType(subCtor), ctorReadType(superCtor), seen, mutCtx)...)
 					} else {
 						errs = append(errs, &CannotConstrainError{Sub: sub, Super: sup})
 					}
@@ -2042,6 +2042,29 @@ func methodReadType(elem *soltype.MethodElem) soltype.Type {
 	arms := make([]soltype.Type, len(elem.Signatures))
 	for i, sig := range elem.Signatures {
 		arms[i] = callableView(sig)
+	}
+	return &soltype.IntersectionType{Types: arms}
+}
+
+// ctorReadType returns the callable value a class value's constructor stands for. A single
+// signature reads as itself, and an overloaded constructor as the intersection of its arms, so
+// a comparison against it weighs the arms together through the arrow-decomposition rule rather
+// than picking one. It is the constructor twin of methodReadType, without the receiver strip,
+// since a constructor declares no receiver in its callable signature. An element carrying no
+// signature reads as the error sentinel.
+//
+// This is the lattice's reading, which is what an assignment and a `super(…)` call take. A
+// direct call picks one arm instead, through inferArmOverloadCall.
+func ctorReadType(elem *soltype.ConstructorElem) soltype.Type {
+	switch len(elem.Signatures) {
+	case 0:
+		return &soltype.ErrorType{}
+	case 1:
+		return elem.Signatures[0]
+	}
+	arms := make([]soltype.Type, len(elem.Signatures))
+	for i, sig := range elem.Signatures {
+		arms[i] = sig
 	}
 	return &soltype.IntersectionType{Types: arms}
 }

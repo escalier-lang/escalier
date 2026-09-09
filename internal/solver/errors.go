@@ -1221,7 +1221,6 @@ func (*MixedOwnershipError) isSolverError()                 {}
 func (*MutLeafThroughSharedBorrowError) isSolverError()     {}
 func (*MissingSelfReceiverError) isSolverError()            {}
 func (*MethodOverloadReceiverMismatchError) isSolverError() {}
-func (*MultipleConstructorsError) isSolverError()           {}
 func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
@@ -1644,18 +1643,6 @@ func expansionHeadName(t soltype.Type) string {
 		return at.Name
 	}
 	return describe(t)
-}
-
-// MultipleConstructorsError fires on the second and any later `constructor` block in
-// one class; a class declares at most one.
-type MultipleConstructorsError struct {
-	Ctor *ast.ConstructorElem
-}
-
-func (e *MultipleConstructorsError) Span() ast.Span      { return e.Ctor.Span() }
-func (e *MultipleConstructorsError) Related() []ast.Span { return nil }
-func (e *MultipleConstructorsError) Message() string {
-	return "Multiple constructors per class are not yet supported."
 }
 
 // DuplicateObjectMemberError fires on the second member of an object type annotation that

@@ -902,17 +902,33 @@ func (c *checker) resolveQualClassType(scope *Scope, qi ast.QualIdent) (*soltype
 //
 // For `class Point { x: number, y: number }` the value `Point` resolves mid-inference to a var
 // whose lower bound is `{new (x: number, y: number) -> Point}`, and ctorSignature looks through
-// the var to that object, returning its Constructor().Fn. Every class value has that shape,
-// statics or not. The bare-FuncType arm is what an extractor pattern naming a plain function
-// resolves through. A var with two conflicting constructor lower bounds is ambiguous and left
+// the var to that object, returning that signature. Every class value has that shape, statics
+// or not. The bare-FuncType arm is what an extractor pattern naming a plain function resolves
+// through. A var with two conflicting constructor lower bounds is ambiguous and left
 // unresolved.
+//
+// An overloaded constructor resolves to its first arm. An extractor reads the parameter list
+// as the instance's positional shape, and only one list can serve as that shape.
+//
+// Reading a constructor at all is a placeholder. What an extractor deconstructs is not what a
+// constructor builds, so the signature to read is the `[Symbol.customMatcher]` method on the
+// extractor's type, and a class carrying none is not an extractor. Binding against constructor
+// parameters instead is why `Point(x, y)` is accepted against a plain two-field class. #1516
+// carries the replacement, and #1246 the symbol-keyed members it needs first.
 func ctorSignature(t soltype.Type) (*soltype.FuncType, bool) {
 	switch t := t.(type) {
 	case *soltype.FuncType:
 		return t, true
 	case *soltype.ObjectType:
 		if ctor, ok := t.Constructor(); ok {
-			return ctor.Fn, true
+			if len(ctor.Signatures) == 0 {
+				return nil, false
+			}
+			// Arm zero of an overloaded constructor, chosen arbitrarily. The arms agree on the
+			// instance they produce and on nothing else, so no arm speaks for the set's
+			// parameter list. Read here rather than through an accessor so the choice is
+			// visible where it is made.
+			return ctor.Signatures[0], true
 		}
 	case *soltype.TypeVarType:
 		// Scan the var's lower bounds for a constructor, requiring all that resolve to agree.

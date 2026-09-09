@@ -43,11 +43,15 @@ import (
 // documented MVP fallback, with no speculative pinning and backtracking. The first arm
 // whose argument constraints succeed wins. Its bounds are committed and the rest roll back.
 
-// resolveOverload picks one arm of the overload set b for the call and returns that
-// arm's instantiated return type. It commits the winning arm's argument constraints and
-// rolls back every losing trial. When no arm accepts the arguments, it reports a
-// NoMatchingOverloadError and returns the recovery placeholder.
-func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, call *ast.CallExpr) soltype.Type {
+// resolveOverload picks one arm of the overload set b for the call and returns that arm's
+// instantiated return type, together with the arm itself. It commits the winning arm's
+// argument constraints and rolls back every losing trial. When no arm accepts the arguments,
+// it reports a NoMatchingOverloadError and returns the recovery placeholder with a nil arm.
+//
+// The arm is returned because the caller has the rest of a call's bookkeeping left to do
+// against it: recordOverloadArgEffects moves the arguments it consumes and records the borrow
+// edges it stores.
+func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, call *ast.CallExpr) (soltype.Type, *soltype.FuncType) {
 	for _, idx := range c.overloadOrder(b.Schemes, args) {
 		// Open the probe BEFORE instantiating so the instantiation's side-table writes are
 		// journaled and rolled back with a losing trial. Those writes are freshenAbove's
@@ -83,14 +87,14 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 					c.markRaised()
 				}
 			}
-			return inst.Ret
+			return inst.Ret, inst
 		}
 	}
 	// No arm accepted the call, so nothing here shows it cannot raise. Count it as an
 	// exceptional exit, the reading inferCall gives a callee it cannot resolve, so the no-match
 	// error is not joined by a spurious unused-clause warning against a clause the call needs.
 	c.markRaised()
-	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes})
+	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes}), nil
 }
 
 // tryOverloadArm reports whether inst accepts a call with the given argument types,

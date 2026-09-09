@@ -608,15 +608,7 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		if a.Static != b.Static {
 			return boolOrder(a.Static) - boolOrder(b.Static)
 		}
-		if c := len(a.Signatures) - len(b.Signatures); c != 0 {
-			return c
-		}
-		for i := range a.Signatures {
-			if c := compareType(a.Signatures[i], b.Signatures[i]); c != 0 {
-				return c
-			}
-		}
-		return 0
+		return compareSignatures(a.Signatures, b.Signatures)
 	case *soltype.GetterElem:
 		b := b.(*soltype.GetterElem)
 		if c := compareSelfParam(a.SelfParam, b.SelfParam); c != 0 {
@@ -638,7 +630,7 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		}
 		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
 	case *soltype.ConstructorElem:
-		return compareType(a.Fn, b.(*soltype.ConstructorElem).Fn)
+		return compareSignatures(a.Signatures, b.(*soltype.ConstructorElem).Signatures)
 	case *soltype.SpreadElem:
 		return compareType(a.Type, b.(*soltype.SpreadElem).Type)
 	case *soltype.MappedElem:
@@ -646,6 +638,20 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		// Ordering by its value type gives a stable key, and equalObjElem settles whether
 		// two are truly equal.
 		return compareType(a.Value, b.(*soltype.MappedElem).Value)
+	}
+	return 0
+}
+
+// compareSignatures orders two overload sets, shorter set first and then arm by arm. It is
+// the canonical ordering for the two members that carry one, a method and a constructor.
+func compareSignatures(a, b []*soltype.FuncType) int {
+	if c := len(a) - len(b); c != 0 {
+		return c
+	}
+	for i := range a {
+		if c := compareType(a[i], b[i]); c != 0 {
+			return c
+		}
 	}
 	return 0
 }

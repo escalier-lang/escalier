@@ -1676,7 +1676,15 @@ func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 		if !ok {
 			return nil, false
 		}
-		fused, ok := c.meetFuncs(a.Fn, b.Fn)
+		// Two constructors meet only when each carries a single signature, so an overloaded
+		// constructor keeps the objects apart instead. The two atoms denote the meet
+		// exactly, so the bail costs an atom rather than precision. #1517 carries the
+		// fusion, under the same evidence gate #1103 set: a set denotes the intersection of
+		// its arms, so meeting two of them concatenates the lists.
+		if len(a.Signatures) != 1 || len(b.Signatures) != 1 {
+			return nil, false
+		}
+		fused, ok := c.meetFuncs(a.Signatures[0], b.Signatures[0])
 		if !ok {
 			return nil, false
 		}
@@ -1684,7 +1692,7 @@ func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 		if !ok {
 			return nil, false
 		}
-		return &soltype.ConstructorElem{Fn: fn}, true
+		return &soltype.ConstructorElem{Signatures: []*soltype.FuncType{fn}}, true
 	}
 	return nil, false
 }
@@ -1733,10 +1741,16 @@ func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 // meetMethods fuses two methods that share a name by meeting their signatures. It
 // fuses only single-signature methods, bailing when either carries an overload set.
 // Two identical methods never reach here, since meetObjElem's equal-member check
-// returns one of them first, so the overload sets that do reach here always differ,
-// and meeting two differing overload sets exactly is not attempted. Static-ness must
-// agree, since a static method lives on the constructor value and an instance method
-// on the instance, so the two are not the same member.
+// returns one of them first, so the overload sets that do reach here always differ.
+// Static-ness must agree, since a static method lives on the constructor value and an
+// instance method on the instance, so the two are not the same member.
+//
+// The bail costs an atom rather than precision, since the two unfused atoms denote the
+// meet exactly. #1517 carries the fusion, under the same evidence gate #1103 set. An
+// overload set denotes the intersection of its arms, which methodReadType builds, so
+// meeting two of them concatenates the lists and newIntersection's flatten, dedupe and
+// subsume steps canonicalize the result. The receiver check below still gates it, since
+// that algebra says nothing about which receiver the fused member takes.
 func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
 	if a.Static != b.Static {
 		return nil, false
