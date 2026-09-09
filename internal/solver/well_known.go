@@ -170,20 +170,21 @@ func (e *MissingWellKnownTypeError) Span() ast.Span      { return e.span }
 func (e *MissingWellKnownTypeError) Related() []ast.Span { return nil }
 func (e *MissingWellKnownTypeError) isSolverError()      {}
 
-// warmArrayClass resolves the well-known `Array` once and records its qualified
+// resolveArrayClass resolves the well-known `Array` once and records its qualified
 // class name on the Context, leaving the name empty when the run supplies no
-// `Array`.
+// `Array`. A second call reads the cached handle rather than loading again.
 //
 // The rules that single an array out run deep inside constraint solving, where a
 // package load would be unsafe: a speculation trial truncates every bound it
 // journals, so a load raised under one would publish a package whose bounds the
-// discard then removes. Resolving here, before the walk, keeps those rules to a
-// string comparison over a name that is already settled.
+// discard then removes. Settling the name at the annotation that writes `Array`
+// keeps those rules to a string comparison. An annotation resolves while its
+// declaration is being bound, which is ahead of any constraint an array can reach.
 //
 // Diagnostics are dropped. A tree without a stdlib supplies no `Array` and needs
 // no report for one it never mentions. A program that does mention `Array` gets
 // the ordinary unknown-type diagnostic at the reference instead.
-func (c *checker) warmArrayClass() {
+func (c *checker) resolveArrayClass() {
 	saved := c.errs
 	t, ok := c.wellKnownType(wellKnownArray)
 	c.errs = saved

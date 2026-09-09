@@ -49,10 +49,11 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		// so the subtyping rules that single an array out compare against a name that is
 		// already cached. It runs ahead of the scope lookup because both outcomes need it:
 		// an imported `Array` resolves below and is the same ingested class, and the
-		// fallback further down instantiates the handle directly. Warming here rather than
-		// once per run keeps a program that never writes `Array` from loading the package.
+		// fallback further down instantiates the handle directly. Resolving on a written
+		// reference rather than once per run keeps a program that never writes `Array`
+		// from loading the package at all.
 		if namesArray(ta.Name) {
-			c.warmArrayClass()
+			c.resolveArrayClass()
 		}
 		// Resolve through the type scope first so a user-defined alias, class, or type
 		// parameter takes precedence over the built-in Promise stub below. A bare alias or
