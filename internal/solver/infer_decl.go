@@ -656,8 +656,15 @@ func stripOwnedMut(t soltype.Type) soltype.Type {
 		}
 		elems := make([]soltype.ObjTypeElem, len(t.Elems))
 		for i, e := range t.Elems {
-			p := soltype.AsProperty(e)
-			elems[i] = &soltype.PropertyElem{Name: p.Name, Type: stripOwnedMut(p.Type), Optional: p.Optional, Readonly: p.Readonly}
+			// Only a plain property holds a type to peel. A getter, setter, method, or index
+			// signature carries a signature of its own, so it passes through unchanged.
+			// Asserting it into a property would panic on the element kind.
+			prop, isProp := e.(*soltype.PropertyElem)
+			if !isProp {
+				elems[i] = e
+				continue
+			}
+			elems[i] = &soltype.PropertyElem{Name: prop.Name, Type: stripOwnedMut(prop.Type), Optional: prop.Optional, Readonly: prop.Readonly}
 		}
 		return &soltype.ObjectType{Elems: elems, Inexact: t.Inexact}
 	case *soltype.TupleType:
