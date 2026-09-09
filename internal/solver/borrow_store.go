@@ -490,7 +490,7 @@ func (c *checker) recordCallStoreEdges(
 			// The target reaches the referent from here on, so it holds a borrow of it that a
 			// second borrow or a read of the referent has to respect.
 			c.recordStoreEdgeLoan(storeLoanPlace(argExpr, referent, edge.direct),
-				storeSourceMut(fn, self, edge.arg), target.root, ref, argExpr)
+				storeSourceMut(fn, self, edge.arg), target.root, appendPath(target.path, edge.path), ref, argExpr)
 			recorded = true
 		}
 	}

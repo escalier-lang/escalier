@@ -270,6 +270,56 @@ func TestStoreEffectLoans(t *testing.T) {
 			`,
 			want: []string{"14:14-14:15: cannot use 'b' while it is borrowed as mutable"},
 		},
+		// Repointing the field the store wrote to ends the loan there, so the item is reachable
+		// one way again. This is the loan side of the strong update the borrow graph makes on
+		// the same subtree.
+		"RepointingTheStoredFieldReleasesTheItemOk": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					a.peer = &mut c
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A store into a SIBLING field leaves the loan at [peer] holding, since the update
+		// reaches only the field it writes.
+		"RepointingASiblingFieldKeepsTheLoan": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					a.spare = &mut c
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: []string{"15:14-15:15: cannot use 'b' while it is borrowed as mutable"},
+		},
+		// A read walked BEFORE the repoint went through the loan while it still held, so it
+		// keeps its diagnostic. The loan carries the sequence it ended at rather than leaving
+		// the list, which is what lets a later store leave an earlier read alone.
+		"AReadBeforeTheRepointKeepsItsDiagnostic": {
+			src: storeEffectDecls + `
+				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut c = {value: 3}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+					a.peer = &mut c
+					touch(&mut a)
+				}
+			`,
+			want: []string{"14:14-14:15: cannot use 'b' while it is borrowed as mutable"},
+		},
 		// Nothing reads the target after the store, so its borrow of the item is dead and the
 		// item is reachable one way again. This is the same NLL rule a named borrow follows.
 		"DeadTargetReleasesTheItemOk": {
