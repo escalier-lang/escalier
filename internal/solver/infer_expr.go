@@ -1495,24 +1495,9 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// known. A deferred callee, one called through a `var`, keeps every argument on the
 	// strict path.
 	if resolved {
-		for i := 0; i < len(e.Args) && i < len(fn.Params); i++ {
-			if fn.Params[i].Rest {
-				// An argument at a rest slot fills one element of the gathered array, not the
-				// slot itself, so there is no parameter type to upgrade it against. Pairing the
-				// two would check the argument against the whole array: `f(1)` against
-				// `fn (...xs: mut Array<number>) -> R` would ask for `1 <: Array<number>`. The
-				// element check belongs to constrain's scatter rule, which the callee <:
-				// callShape constraint below reaches.
-				continue
-			}
-			if c.tryUpgradeToOwnedMut(e.Args[i], e.Args[i], demand[i].Type, fn.Params[i].Type) {
-				// The upgrade constrained the argument's shape against the parameter's
-				// immutable read view, so pin this argument's demand entry to the parameter's
-				// own type; the callee <: callShape constraint below then re-checks it as
-				// param<:param rather than strictly rejecting the immutable argument.
-				demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
-			}
-		}
+		demand = c.upgradeCallDemand(e.Args, demand, fn, func(src ast.Node, srcT, target soltype.Type) {
+			c.constrain(src, srcT, target)
+		})
 	}
 
 	// callShape is built EXACT with all N params required, on purpose. That gives
@@ -1656,6 +1641,47 @@ func (c *checker) inferArmOverloadCall(
 	c.recordCallArgEffects(e, winner, consumeRef, hasConsumeRef)
 	c.recordType(e, ret)
 	return ret
+}
+
+// upgradeCallDemand applies the immutable→mutable argument upgrade across a call's demand and
+// returns the demand it leaves behind. It is the ONE place either call path decides which
+// arguments take an owned-mutable parameter's type, so a shape built here and an overload arm's
+// trial agree on what a `mut` parameter accepts.
+//
+// A uniquely-owned argument flowing into an owned-mutable parameter takes the mutable type, the
+// same grant the annotated declaration makes, so `f({x: 1})` and `f(cfg)` type-check for an
+// owned-mutable parameter. The argument's shape is checked covariantly against the parameter's
+// immutable read view, and that argument's demand entry is then PINNED to the parameter's own
+// type, so the callee <: callShape constraint re-checks it as param<:param rather than strictly
+// rejecting the immutable argument.
+//
+// check runs the covariant check, and is what differs between the two callers. inferCall passes
+// the accumulating constrain, since its callee is settled. An overload trial passes the
+// error-returning one, since a losing arm must write nothing.
+//
+// An argument at a rest slot takes no upgrade. It fills one element of the gathered array rather
+// than the slot itself, so there is no parameter type to upgrade it against: pairing the two
+// would check `f(1)` against `fn (...xs: mut Array<number>) -> R` as `1 <: Array<number>`. The
+// element check belongs to constrain's scatter rule instead.
+//
+// consumeCallArgs still moves an upgraded argument, since an owned-mutable parameter is
+// concrete-owned.
+func (c *checker) upgradeCallDemand(
+	argExprs []ast.Expr, demand []*soltype.FuncParam, fn *soltype.FuncType,
+	check func(src ast.Node, srcT, target soltype.Type),
+) []*soltype.FuncParam {
+	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(demand); i++ {
+		if fn.Params[i].Rest {
+			continue
+		}
+		view, ok := c.ownedMutReadView(argExprs[i], fn.Params[i].Type)
+		if !ok {
+			continue
+		}
+		check(argExprs[i], demand[i].Type, view)
+		demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
+	}
+	return demand
 }
 
 // inferCallArgs types a call's arguments left to right, the ONE place either call path does so.
