@@ -449,11 +449,15 @@ func borrowsIn(e ast.Expr) []*ast.BorrowExpr {
 // `T`, is MOVED into the frame. The caller gave up every handle at the call, and the value dies
 // with the frame, so nothing written into it can outlive anything.
 //
-// A parameter the bridge cannot describe as a borrow or an owned value is treated as
-// caller-owned, the stricter answer. That covers a leaf the seed did not reach and an
-// UNANNOTATED parameter, whose recorded type is an inference variable this reads as a leaf
-// rather than following its bounds. So an unannotated owned parameter keeps reporting a store
-// into it, where the same parameter written `mut T` does not.
+// A settled type answers directly. A `RefType` carrying a lifetime is a borrow. Anything else
+// settled is owned: owned-immutable collapses to the bare inner, so a plain `T` parameter is
+// recorded as its concrete type rather than wrapped, and owned-mutable is a `RefType` with no
+// lifetime.
+//
+// An unsettled type keeps the stricter caller-owned answer. That covers a leaf the seed did not
+// reach and an UNANNOTATED parameter, whose recorded type is an inference variable this reads
+// as a leaf rather than following its bounds. So an unannotated owned parameter keeps reporting
+// a store into it, where the same parameter written `mut T` does not.
 func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 	if c.fn == nil || !c.fn.paramVarIDs.Contains(root) {
 		return false
@@ -465,11 +469,15 @@ func (c *checker) paramReferentOutlivesFrame(root liveness.VarID) bool {
 	if !ok {
 		return true
 	}
-	ref, isRef := t.(*soltype.RefType)
-	if !isRef {
+	switch t := t.(type) {
+	case *soltype.RefType:
+		return t.Lt != nil
+	case *soltype.TypeVarType:
+		// Unsettled, so which kind it becomes is not known here. The stricter answer keeps a
+		// store into it reported rather than silently skipped.
 		return true
 	}
-	return ref.Lt != nil
+	return false
 }
 
 // isLocalReferent reports whether the borrow operand names a function-local place, one
