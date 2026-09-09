@@ -89,17 +89,22 @@ func (c *checker) reportSharedReturnPaths(
 			// Which position reaches which referent is unknown, so this group is left alone.
 			continue
 		}
-		anyMut := slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return p.mut })
 		if len(edges) == 1 {
-			// Every position at this path reaches the one referent the path holds.
+			// Every position at this path reaches the one referent the path holds, so one
+			// writable position among them makes that referent writable.
+			anyMut := slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return p.mut })
 			reaches[edges[0]] += len(group.positions)
 			writable[edges[0]] = writable[edges[0]] || anyMut
 			continue
 		}
-		// The positions pair off one to one with the edges, so each referent is reached once.
+		// The positions pair off one to one with the edges, but which position takes which
+		// referent is unknown. A group mixing a written borrow with a read one would mark the
+		// read referent writable on the strength of the other, so only an all-writable group
+		// says anything about any single referent here.
+		allMut := !slices.ContainsFunc(group.positions, func(p borrowPosition) bool { return !p.mut })
 		for _, referent := range edges {
 			reaches[referent]++
-			writable[referent] = writable[referent] || anyMut
+			writable[referent] = writable[referent] || allMut
 		}
 	}
 	c.reportReachedTwice(reaches, writable, blame)
@@ -121,7 +126,7 @@ func (c *checker) reportReachedTwice(
 	}
 	slices.Sort(shared)
 	for _, referent := range shared {
-		c.noteSharedPathLocal(referent)
+		c.noteSharedPathReturn(blame)
 		c.report(&SharedReturnPathsError{LocalName: c.varIDToName(referent), node: blame})
 	}
 }
@@ -184,20 +189,22 @@ func (c *checker) reportLiteralSharedPaths(
 				continue
 			}
 			seen.Add(root)
-			c.noteSharedPathLocal(root)
+			c.noteSharedPathReturn(e)
 			c.report(&SharedReturnPathsError{LocalName: c.varIDToName(root), node: e})
 		}
 	}
 	return true
 }
 
-// noteSharedPathLocal records that a return was reported for reaching this local twice, so the
-// use check does not add a second diagnostic naming a read of the same value.
-func (c *checker) noteSharedPathLocal(referent liveness.VarID) {
-	if c.fn.sharedPathLocals == nil {
-		c.fn.sharedPathLocals = set.NewSet[liveness.VarID]()
+// noteSharedPathReturn records the returned expression a shared-path report blamed, so the use
+// check does not add a second diagnostic naming a read this very expression contains. Only a
+// read inside it is covered, since a read elsewhere in the body is a separate fact.
+func (c *checker) noteSharedPathReturn(blame ast.Expr) {
+	span := blame.Span()
+	if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool { return s == span }) {
+		return
 	}
-	c.fn.sharedPathLocals.Add(referent)
+	c.fn.sharedPathSpans = append(c.fn.sharedPathSpans, span)
 }
 
 // elementReferents returns the locals one element of a returned literal reaches.

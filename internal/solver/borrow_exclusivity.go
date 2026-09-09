@@ -346,10 +346,13 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 		if c.fn.loanReads.Contains(u.node) || reported.Contains(u.node) {
 			continue
 		}
-		// A local a return was already reported for reaching twice needs no second diagnostic
-		// naming a read of it. The return names where the two paths leave together, which is the
-		// more useful of the two.
-		if c.fn.sharedPathLocals != nil && c.fn.sharedPathLocals.Contains(u.place.root) {
+		// A read INSIDE a returned expression already reported for reaching a local twice needs
+		// no second diagnostic. The return names where the two paths leave together, which is
+		// the more useful of the two. A read elsewhere in the body is a separate fact and keeps
+		// its own.
+		if slices.ContainsFunc(c.fn.sharedPathSpans, func(s ast.Span) bool {
+			return s.ContainsSpan(u.node.Span())
+		}) {
 			continue
 		}
 		for _, l := range c.fn.loans {
