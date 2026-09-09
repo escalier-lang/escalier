@@ -212,7 +212,7 @@ func modifierVariance(m ast.VarianceModifier) (Variance, bool) {
 // position and its `push(mut self, item: T)` puts T in an input position. Folding both into
 // immut would measure T invariant and leave `Array<1> <: Array<number>` rejected. Reading
 // `push` only where it can be called measures T covariant in immut and invariant in mut, so
-// the widening holds for a shared array while `mut Array<1>` and `mut Array<number>` stay
+// the widening holds for an immutable array while `mut Array<1>` and `mut Array<number>` stay
 // unrelated.
 //
 // A field is the same shape of split. Its read is an output position in both views, its
@@ -232,24 +232,25 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	for i, tp := range def.TypeParams {
 		targets[tp.Var] = i
 	}
-	// shared records the occurrences both views agree on. gated records the occurrences
-	// only a mutable reference can reach, which mut folds in and immut does not.
-	shared := newVarianceVisitor(targets, len(def.TypeParams))
-	gated := newVarianceVisitor(targets, len(def.TypeParams))
+	// anyRef records the occurrences any reference reaches, which both vectors fold in.
+	// mutRef records the ones only a mutable reference reaches, which mut folds in and
+	// immut does not.
+	anyRef := newVarianceVisitor(targets, len(def.TypeParams))
+	mutRef := newVarianceVisitor(targets, len(def.TypeParams))
 	if def.Body != nil {
 		for _, elem := range def.Body.Elems {
-			shareable, mutOnly := splitByReceiverMut(elem)
-			if shareable != nil {
-				soltype.AcceptObjElem(shareable, shared, soltype.Positive)
+			anyPart, mutPart := splitByReceiverMut(elem)
+			if anyPart != nil {
+				soltype.AcceptObjElem(anyPart, anyRef, soltype.Positive)
 			}
-			if mutOnly != nil {
-				soltype.AcceptObjElem(mutOnly, gated, soltype.Positive)
+			if mutPart != nil {
+				soltype.AcceptObjElem(mutPart, mutRef, soltype.Positive)
 			}
 			if prop, ok := elem.(*soltype.PropertyElem); ok && !prop.Readonly {
 				// Walking the same field again at Negative records the input position
 				// `obj.f = …` occupies. A `readonly` field rejects that write, so it is
 				// skipped here and contributes only its output position to both vectors.
-				soltype.AcceptObjElem(prop, gated, soltype.Negative)
+				soltype.AcceptObjElem(prop, mutRef, soltype.Negative)
 			}
 		}
 	}
@@ -257,12 +258,12 @@ func inferBodyVariance(def *ClassDef) (immut, mut []Variance) {
 	// collapses to invariant — the sound conservative choice while inheritance variance is
 	// not composed precisely. Walking each super once per polarity records both.
 	for _, super := range def.Supers {
-		super.Accept(shared, soltype.Positive)
-		super.Accept(shared, soltype.Negative)
+		super.Accept(anyRef, soltype.Positive)
+		super.Accept(anyRef, soltype.Negative)
 	}
 	for i := range def.TypeParams {
-		immut[i] = collapseVariance(shared.pos[i], shared.neg[i])
-		mut[i] = collapseVariance(shared.pos[i] || gated.pos[i], shared.neg[i] || gated.neg[i])
+		immut[i] = collapseVariance(anyRef.pos[i], anyRef.neg[i])
+		mut[i] = collapseVariance(anyRef.pos[i] || mutRef.pos[i], anyRef.neg[i] || mutRef.neg[i])
 	}
 	return immut, mut
 }
@@ -282,16 +283,15 @@ func collapseVariance(pos, neg bool) Variance {
 	}
 }
 
-// splitByReceiverMut divides a class member into the part an immutable reference can
-// reach and the part only a mutable one can, each returned with its `self` receiver
-// stripped for the variance walk. Either half is nil when the member contributes nothing
-// to that view.
+// splitByReceiverMut divides a class member into the part any reference can reach and
+// the part only a mutable one can, each returned with its `self` receiver stripped for
+// the variance walk. Either half is nil when the member contributes nothing to that view.
 //
-// A setter is a write, so no immutable reference reaches it. A method is split per
-// signature, since `find(self, …)` and `push(mut self, …)` on one name are reachable
-// under different views and an overload set may hold both. Every other member is readable
-// through either view and goes to the immutable half whole.
-func splitByReceiverMut(elem soltype.ObjTypeElem) (shareable, mutOnly soltype.ObjTypeElem) {
+// A setter is a write, so only a mutable reference reaches it. A method is split per
+// signature, since `find(self, …)` and `push(mut self, …)` on one name demand different
+// receivers and an overload set may hold both. Every other member is readable through
+// either view and goes to the any-reference half whole.
+func splitByReceiverMut(elem soltype.ObjTypeElem) (anyPart, mutPart soltype.ObjTypeElem) {
 	switch e := elem.(type) {
 	case *soltype.SetterElem:
 		return nil, stripSelfReceiver(e)
@@ -301,23 +301,23 @@ func splitByReceiverMut(elem soltype.ObjTypeElem) (shareable, mutOnly soltype.Ob
 		}
 		return stripSelfReceiver(e), nil
 	case *soltype.MethodElem:
-		var open, gated []*soltype.FuncType
+		var anySigs, mutSigs []*soltype.FuncType
 		for _, sig := range e.Signatures {
 			bare := *sig
 			bare.SelfParam = nil
 			if mutReceiver(sig.SelfParam) {
-				gated = append(gated, &bare)
+				mutSigs = append(mutSigs, &bare)
 				continue
 			}
-			open = append(open, &bare)
+			anySigs = append(anySigs, &bare)
 		}
-		if len(open) > 0 {
-			shareable = &soltype.MethodElem{Name: e.Name, Signatures: open, Static: e.Static}
+		if len(anySigs) > 0 {
+			anyPart = &soltype.MethodElem{Name: e.Name, Signatures: anySigs, Static: e.Static}
 		}
-		if len(gated) > 0 {
-			mutOnly = &soltype.MethodElem{Name: e.Name, Signatures: gated, Static: e.Static}
+		if len(mutSigs) > 0 {
+			mutPart = &soltype.MethodElem{Name: e.Name, Signatures: mutSigs, Static: e.Static}
 		}
-		return shareable, mutOnly
+		return anyPart, mutPart
 	default:
 		return stripSelfReceiver(elem), nil
 	}

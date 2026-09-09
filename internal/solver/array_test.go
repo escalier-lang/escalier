@@ -77,7 +77,7 @@ func TestArrayResolvesToTheIngestedClass(t *testing.T) {
 
 // `Array<T>` is covariant in T and `mut Array<T>` is invariant. `at(self, index)` is an
 // output position both views reach, and `push(mut self, item: T)` an input position only a
-// mutable reference reaches, so the widening holds for a shared array while two mutable
+// mutable reference reaches, so the widening holds for an immutable array while two mutable
 // ones over different elements stay unrelated.
 func TestArrayIsCovariantAndMutArrayIsNot(t *testing.T) {
 	t.Parallel()
