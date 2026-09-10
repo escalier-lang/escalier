@@ -131,28 +131,22 @@ func TestInferOverloadThrowsIsNotDispatch(t *testing.T) {
 		messagesWithSpan(t, errs))
 }
 
-// The `Array<E>` rest rows of the parity table above, split out because they cannot pass yet.
-//
-// DISABLED until #1521. An `Array<E>` annotation on a top-level overload arm silently resolves
-// to `unknown`, because the overload pre-bind builds arm signatures under a discarded probe and
-// the well-known `Array` load cannot survive it. The rest slot then accepts every argument, so
-// the accepting row passes for the wrong reason and the rejecting row does not fail at all.
-// Re-enable by removing the wrapper once the arm keeps its written annotation.
+// The `Array<E>` rest rows of the parity table above. A second arm moves the set onto
+// the fully-annotated pre-bind path, and the rest slot has to reach the same element
+// type there as it does on a plain callee.
 func TestInferOverloadArmArrayRestMatchesPlainCallee(t *testing.T) {
-	/*
-		const sig = "declare fn f(...xs: Array<number>) -> number\n"
-		const extraArm = "declare fn f(p: boolean, q: boolean, r: boolean) -> boolean\n"
-		t.Run("matching elements accept either way", func(t *testing.T) {
-			_, _, alone := inferSource(t, sig+"val r = f(1, 2, 3)")
-			require.Empty(t, alone)
-			_, _, set := inferSource(t, sig+extraArm+"val r = f(1, 2, 3)")
-			require.Empty(t, set)
-		})
-		t.Run("a bad element is rejected either way", func(t *testing.T) {
-			_, _, alone := inferSource(t, sig+`val r = f(1, "a")`)
-			require.NotEmpty(t, alone)
-			_, _, set := inferSource(t, sig+extraArm+`val r = f(1, "a")`)
-			require.NotEmpty(t, set, "the arm's Array<number> must still check its element")
-		})
-	*/
+	const sig = "declare fn f(...xs: Array<number>) -> number\n"
+	const extraArm = "declare fn f(p: boolean, q: boolean, r: boolean) -> boolean\n"
+	t.Run("matching elements accept either way", func(t *testing.T) {
+		_, _, alone := inferSource(t, sig+"val r = f(1, 2, 3)")
+		require.Empty(t, alone)
+		_, _, set := inferSource(t, sig+extraArm+"val r = f(1, 2, 3)")
+		require.Empty(t, set)
+	})
+	t.Run("a bad element is rejected either way", func(t *testing.T) {
+		_, _, alone := inferSource(t, sig+`val r = f(1, "a")`)
+		require.NotEmpty(t, alone)
+		_, _, set := inferSource(t, sig+extraArm+`val r = f(1, "a")`)
+		require.NotEmpty(t, set, "the arm's Array<number> must still check its element")
+	})
 }

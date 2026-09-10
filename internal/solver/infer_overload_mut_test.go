@@ -94,9 +94,9 @@ func TestInferOverloadOwnedMutArgumentLosingArmRollsBack(t *testing.T) {
 // skips a rest slot for the same reason. The accepted call and the rejected one differ only
 // in an element, which is what shows the element is being read.
 //
-// Neither arm carries a return annotation, which keeps the set off the fully-annotated
-// pre-bind path. That path resolves an `Array<E>` annotation to `unknown`, so the rest
-// slot would have no element type to check against — see #1521.
+// Neither arm carries a return annotation, which keeps the set on the group-var path.
+// TestInferOverloadPathsAgreeOnAnArrayParameter covers the fully-annotated path, where
+// the same rest slot reaches the same element type.
 func TestInferOverloadRestSlotChecksElement(t *testing.T) {
 	const arms = `
 		fn g(...xs: mut Array<number>) { return 1 }

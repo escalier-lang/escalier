@@ -244,13 +244,29 @@ func (c *checker) inferComponent(
 			arms := make([]overloadArm, len(armDecls))
 			schemes := make([]TypeScheme, len(armDecls))
 			for i, fd := range armDecls {
-				// Build the signature body-free under a discarded probe: the arm is fully
-				// annotated, so the signature is concrete (no bounds to roll back), and
-				// discarding keeps phase 2's inferFunc — which re-derives the signature
-				// while checking the body — the single reporter of any signature error.
+				// A written `Array` resolves through a lazy package load, which a probe
+				// declines to raise, so the annotation would read as a bare var and the
+				// arm would check nothing. Settling the name first leaves the resolution
+				// below a scope lookup against a cached class.
+				c.resolveSigArrays(fd.FuncSig)
+				// Build the signature body-free under a probe, so phase 2's inferFunc —
+				// which re-derives the signature while checking the body — stays the
+				// single reporter of any signature error.
+				//
+				// The probe COMMITS. A written `<T: C>` constraint records an upper bound on
+				// the parameter's var, and a discard would truncate it, leaving the arm with
+				// a bare `<T>` that enforces nothing. Committing keeps that bound and costs
+				// nothing else, since the arm is fully annotated and its signature is
+				// otherwise concrete.
+				//
+				// The single-reporter rule is about the diagnostics rather than the bounds,
+				// so those are dropped by hand. A commit does not run the rollback openProbe
+				// registers to truncate them, which is why errsLen is taken here.
 				p := c.openProbe()
+				errsLen := len(c.errs)
 				sig := c.inferFunc(c.lookupScope(scope, fd), inner, fd.FuncSig, nil, fd, true)
-				c.closeProbe(p, false)
+				c.closeProbe(p, true)
+				c.errs = c.errs[:errsLen]
 				arms[i] = overloadArm{decl: fd, t: sig}
 				schemes[i] = monoScheme(sig)
 			}
