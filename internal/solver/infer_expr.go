@@ -1670,7 +1670,21 @@ func (c *checker) upgradeCallDemand(
 		if !ok {
 			continue
 		}
+		// The argument is checked against the parameter's immutable read view rather than
+		// the parameter, so an IMMUTABLE argument fills a `mut` parameter: `take({x: 1})`
+		// is not rejected on the mutability wrapper. Only the wrapper is dropped, since the
+		// check stays covariant, so `take({y: 1})` still fails on the shape.
+		//
+		// This is sound because ownedMutReadView fires only for a freshly built literal or
+		// a moved place. Nothing else refers to the value, so no live alias can observe a
+		// write the callee makes through the mutable view it receives, which is Rule 2 of
+		// the mutability-transition checker with an empty alias set. recordCallArgEffects
+		// then moves the argument, so a later use of it is a use-after-move and the
+		// uniqueness holds past the call rather than only at it.
 		check(argExprs[i], demand[i].Type, view)
+		// Pin the demand entry to the parameter's own type. The argument has been checked
+		// covariantly above, and leaving the immutable argument type here would make the
+		// caller's `candidate <: callShape` constraint reject it a second time, strictly.
 		demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 	}
 	return demand
