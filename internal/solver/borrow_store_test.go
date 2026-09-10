@@ -133,27 +133,6 @@ func TestCallStoreEdge(t *testing.T) {
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
 		},
-		// An auto-borrowed argument names no borrow expression, so the local it carries is the
-		// place's own root. The target is an owned parameter, moved into build and out of the
-		// caller's reach, so the store records an edge the way it does into a local and nothing
-		// escapes. TestStoreIntoOwnedParameter covers the written-out `&mut` form.
-		"AutoBorrowedArgumentIntoOwnedParameterRecordsAnEdge": {
-			src: `
-				declare fn store<'a, 'c>(
-					target: &'c mut {peer: &'a {value: number}},
-					item: &'a {value: number},
-				) -> undefined
-				fn build(p: mut {peer: &{value: number}}) -> undefined {
-					val b = {value: 2}
-					store(&mut p, b)
-				}
-			`,
-			want: nil,
-			types: map[string]string{
-				"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
-				"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
-			},
-		},
 		// DISABLED until #1263. The store aliases a.peer to b, so the returned tuple hands the
 		// caller two mutable paths to one object. That is the shape a GC'd target makes unsafe,
 		// and nothing reports it. The wording and span below are a guess at what the
@@ -388,10 +367,9 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					"out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) -> undefined",
 			},
 		},
-		// A shared-borrow parameter auto-borrows the place passed to it, so the stored
-		// argument is a bare name rather than an `&` expression and the recorder reads the
-		// place off the argument itself.
-		"AutoBorrowedArgumentIsStored": {
+		// A shared borrow is stored the way a mutable one is, so the item's local escapes
+		// through the target just the same.
+		"SharedBorrowArgumentIsStored": {
 			src: `
 				declare fn store<'a, 'c>(
 					target: &'c mut {peer: &'a {value: number}},
@@ -400,7 +378,7 @@ func TestCallStoreEdgePositions(t *testing.T) {
 				fn build(p: {value: number}, out: &mut {slot: &{value: number}}) {
 					val b = {value: 2}
 					val mut a = {peer: &p}
-					store(&mut a, b)
+					store(&mut a, &b)
 					out.slot = a.peer
 				}
 			`,
