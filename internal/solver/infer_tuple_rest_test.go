@@ -125,28 +125,78 @@ func TestInferSpreadTupleRest(t *testing.T) {
 // resting on a program that issue would still accept.
 const ungroundableRestDecl = "declare fn f<T: Array<number>>(...args: [...T, string]) -> number\n"
 
-// A rest slot typed as an INEXACT tuple expands its fixed prefix into positions and leaves the
-// tail unbounded. `[A, ...]` means "at least an A, then any number more".
+// A rest slot typed as an INEXACT tuple expands its fixed prefix into positions and marks the
+// function inexact, which is the representation `fn (x: A, ...)` already has. The two spellings
+// say the same thing, so every case below runs against both and requires the same answer.
+//
+// `[A, ...]` and a trailing `...` on the parameter list both mean "at least an A, then any
+// number more the signature says nothing about". The `...` is a width marker for SUBTYPING: it
+// widens the accept-set to [required, ∞), which is what a callee filling the slot must match. It
+// is not permission for a caller who can see the signature to pass arguments the callee ignores,
+// so the too-many-arguments lint fires for both — #677 §4.2.3 rejects extras "for exact and
+// inexact callees alike".
 func TestInferInexactTupleRest(t *testing.T) {
-	const decl = "declare fn f(...xs: [number, ...]) -> number\n"
-	t.Run("the prefix alone accepts", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+`val r = f(1)`)
+	const tupleRest = "declare fn f(...xs: [number, ...]) -> number\n"
+	const inexactFn = "declare fn f(x: number, ...) -> number\n"
+	tests := []struct {
+		name string
+		call string
+		want []string
+	}{
+		{
+			name: "the prefix alone accepts",
+			call: "f(1)",
+		},
+		{
+			name: "the prefix is checked against its element",
+			call: `f("z")`,
+			want: []string{`cannot constrain "z" <: number`},
+		},
+		{
+			name: "the prefix is still required",
+			call: "f()",
+			want: []string{"Not enough arguments: expected at least 1, but got 0"},
+		},
+		{
+			name: "an extra argument is linted at a direct call",
+			call: `f(1, "a")`,
+			want: []string{"Too many arguments: expected at most 1, but got 2"},
+		},
+		{
+			name: "so is a longer tail",
+			call: `f(1, "a", true)`,
+			want: []string{"Too many arguments: expected at most 1, but got 3"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, viaTuple := inferSource(t, tupleRest+"val r = "+tt.call)
+			_, _, viaMarker := inferSource(t, inexactFn+"val r = "+tt.call)
+			// Compared without spans, since the two declarations differ in length and the
+			// point here is that the two spellings agree on what they report. The spans for
+			// these diagnostics are pinned by the ground-tuple cases above.
+			require.Equal(t, tt.want, Messages(viaTuple), "through the inexact tuple rest")
+			require.Equal(t, tt.want, Messages(viaMarker), "through the inexact function")
+		})
+	}
+}
+
+// The width the `...` does buy shows in SUBTYPING, and there the two spellings agree as well. An
+// unbounded ceiling demands a callee that itself accepts unboundedly many, so a fixed-arity
+// function cannot fill either slot — where the EXACT tuple rest `[number]` takes the one-argument
+// function, since its ceiling is 1.
+func TestInferInexactTupleRestSubtyping(t *testing.T) {
+	const fill = " = fn (a: number) { return 1 }"
+	t.Run("an exact tuple rest takes a matching fixed-arity function", func(t *testing.T) {
+		_, _, errs := inferSource(t, "val s: fn(...xs: [number]) -> number"+fill)
 		require.Empty(t, errs)
 	})
-	t.Run("any tail is admitted", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+`val r = f(1, "a", true)`)
-		require.Empty(t, errs)
-	})
-	t.Run("the prefix is checked against its element", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+`val r = f("z")`)
-		require.Equal(t, []string{"2:11-2:14: cannot constrain \"z\" <: number"},
-			messagesWithSpan(t, errs))
-	})
-	t.Run("the prefix is still required", func(t *testing.T) {
-		_, _, errs := inferSource(t, decl+`val r = f()`)
-		require.Equal(t,
-			[]string{"2:9-2:12: Not enough arguments: expected at least 1, but got 0"},
-			messagesWithSpan(t, errs))
+	t.Run("neither inexact spelling does", func(t *testing.T) {
+		const want = "cannot constrain function of arity 1 <: function of arity 1 or more"
+		_, _, viaTuple := inferSource(t, "val s: fn(...xs: [number, ...]) -> number"+fill)
+		_, _, viaMarker := inferSource(t, "val s: fn(x: number, ...) -> number"+fill)
+		require.Equal(t, []string{want}, Messages(viaTuple), "through the inexact tuple rest")
+		require.Equal(t, []string{want}, Messages(viaMarker), "through the inexact function")
 	})
 }
 

@@ -53,13 +53,16 @@ func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 // say. The slot then stays a rest param, arity-only, which is the inert-residual reading a
 // symbolic operand already gets everywhere else.
 //
-// An INEXACT tuple expands its fixed prefix into positions and keeps a trailing rest param for
-// the tail. `...xs: [A, ...]` means "at least an A, then any number more", so the prefix has to
-// be checked and the tail must not be. The tail's slot is typed `unknown`, which restArity reads
-// as binding [0, ∞) and restSlotElem reads as declaring no element type, so the tail is
-// arity-only. Marking the expanded FuncType Inexact instead would leave the callee with no rest
-// param at all, and inferCall's too-many-arguments lint would then reject the very tail the
-// written `...` admits.
+// An INEXACT tuple expands its fixed prefix into positions and marks the function inexact, which
+// is the representation `fn (a: A, ...)` already has. `...xs: [A, ...]` and `fn (x: A, ...)` say
+// the same thing — at least an A, then any number more the signature says nothing about — so
+// they resolve to the same FuncType and behave identically everywhere: the same accept-set of
+// [required, ∞), the same subtyping, and the same too-many-arguments lint at a direct call.
+//
+// That lint firing is deliberate. #677 §4.2.3 rejects extra arguments "for exact and inexact
+// callees alike, since supplying extras to a call you can see is a mistake even where the
+// lattice tolerates them". The `...` is a width marker for subtyping, not permission for a
+// caller who can see the signature to pass arguments it ignores.
 //
 // seen is the caller's expansion guard, shared with the evaluator so a recursive alias reached
 // through a spread closes the same way it does at a constraint site.
@@ -85,15 +88,11 @@ func (c *Context) expandTupleRest(f *soltype.FuncType, seen *seenPairs) *soltype
 	for _, elem := range tup.Elems {
 		params = append(params, &soltype.FuncParam{Pattern: f.Params[k].Pattern, Type: elem})
 	}
-	if tup.Inexact {
-		params = append(params, &soltype.FuncParam{
-			Pattern: f.Params[k].Pattern,
-			Type:    &soltype.UnknownType{},
-			Rest:    true,
-		})
-	}
 	expanded := *f
 	expanded.Params = params
+	if tup.Inexact {
+		expanded.Inexact = true
+	}
 	return &expanded
 }
 
