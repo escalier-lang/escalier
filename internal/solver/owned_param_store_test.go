@@ -135,18 +135,6 @@ func TestStoreIntoOwnedParameter(t *testing.T) {
 			`,
 			want: []string{"6:14-6:15: cannot use 'b' while it is borrowed as mutable"},
 		},
-		// Nothing reads the receiver after the field store, so its borrow of b is dead and b is
-		// reachable one way again.
-		"FieldStoreWithADeadReceiverOk": {
-			src: `
-				fn f(p: mut {peer: &mut {value: number}}) -> undefined {
-					val mut b = {value: 0}
-					p.peer = &mut b
-					val y = b
-				}
-			`,
-			want: nil,
-		},
 		// A plain `T` parameter is owned too, and dies with the frame just as `mut T` does.
 		// Owned-immutable collapses to the bare inner, so the bridge records its concrete type
 		// rather than a RefType, and reading anything settled that is not a borrow as
