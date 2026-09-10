@@ -1602,10 +1602,11 @@ func (c *checker) consumeCallArgs(e *ast.CallExpr, fn *soltype.FuncType, ref liv
 // inferOverloadedCall types a direct call to an overloaded name (PR6). It infers
 // the types of the arguments, records the callee's overload type for Info, and
 // resolves the call through resolveOverload, which trials each arm under a probe
-// and commits the winner. Unlike the ordinary path it emits no callee <: callShape
-// constraint.  Overload resolution is a separate phase that owns arity and argument
-// checking. The TooManyArgs and NotEnoughArgs lints don't apply – arity is the
-// per-arm gate, and a no-match becomes a NoMatchingOverloadError.
+// and commits the winner. No constraint is emitted against the SET as a whole: an
+// overload set is chosen from rather than checked whole, and each trial builds the
+// same call shape the ordinary path builds and constrains its own candidate against
+// it. The TooManyArgs and NotEnoughArgs lints don't apply – arity is settled by that
+// per-arm constraint, and a no-match becomes a NoMatchingOverloadError.
 func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b ValueBinding) soltype.Type {
 	// Read the statement point before the arguments are inferred, for the reason inferCall
 	// gives: an argument containing statements overwrites the current one.
@@ -1626,8 +1627,8 @@ func (c *checker) inferOverloadedCall(scope *Scope, lvl int, e *ast.CallExpr, b 
 // overloaded constructor reached through a class value, such as `Array(3)`. It infers the
 // arguments, then resolves one arm through resolveOverload — the same machinery a direct
 // overloaded-name call uses, driven by the arms wrapped as monomorphic schemes. Like
-// inferOverloadedCall it emits no callee <: callShape constraint. Overload resolution owns
-// arity and argument checking, and a no-match becomes a NoMatchingOverloadError.
+// inferOverloadedCall it emits no constraint against the set as a whole, since choosing an
+// arm is what resolution does, and a no-match becomes a NoMatchingOverloadError.
 func (c *checker) inferArmOverloadCall(
 	scope *Scope, lvl int, e *ast.CallExpr, arms []*soltype.FuncType,
 	consumeRef liveness.StmtRef, hasConsumeRef bool,
