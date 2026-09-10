@@ -1649,12 +1649,18 @@ func (c *checker) inferArmOverloadCall(
 // arguments take an owned-mutable parameter's type, so a call shape and an overload arm's trial
 // agree on what a `mut` parameter accepts.
 //
-// An upgraded argument is checked covariantly against the parameter's immutable read view, and
-// its demand entry is then PINNED to the parameter's own type, so the callee <: callShape
-// constraint re-checks it as param<:param rather than rejecting the immutable argument outright.
-// check runs that covariant check: inferCall passes the accumulating constrain, since its callee
-// is settled, and an overload trial passes the error-returning one, since a losing arm must
-// write nothing.
+// `take({x: 1})` against `a: mut {x: number | string}` runs in three steps:
+//
+//  1. ownedMutReadView hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
+//  2. check runs `{x: 1} <: {x: number | string}` COVARIANTLY. That is where the widening the
+//     argument needs happens, and where a wrong shape such as `take({y: 1})` still fails.
+//  3. The demand entry becomes the parameter's own type, so the later `callee <: callShape`
+//     compares `mut {x: number | string}` against itself. An owned-mutable cell is invariant,
+//     and identity is what satisfies it — no subtype relation is asked for at that position.
+//
+// check is what differs between the two callers: inferCall passes the accumulating constrain,
+// since its callee is settled, and an overload trial passes the error-returning one, since a
+// losing arm must write nothing.
 //
 // An argument at a rest slot takes no upgrade, since it fills one element of the gathered array
 // rather than the slot itself. The element check belongs to constrain's scatter rule.
@@ -1692,12 +1698,8 @@ func (c *checker) upgradeCallDemand(
 		// field be repointed but grants no write to the referent, whose type stays invariant
 		// through the RefType arm, so the covariant check here cannot widen it.
 		check(argExprs[i], demand[i].Type, view)
-		// Pin the demand entry to the PARAMETER's own type, which is what the call shape
-		// carries at this position. The widening the argument needs has already happened
-		// covariantly in the check above, and pinning is what stops the caller's
-		// `candidate <: callShape` constraint from undoing it.
-		//
-		// Upgrading the argument in place would not do, which is the reason this pins. An
+		// Step 3 of the walkthrough above. Upgrading the argument in place would not do,
+		// which is the reason this pins instead. An
 		// owned-mutable cell is INVARIANT, so the shape has to carry the parameter's type
 		// exactly. Wrapping the argument's own type gives `mut {x: 1}` for `take({x: 1})`
 		// against `a: mut {x: number}`, rejected with `cannot constrain number <: 1`.
