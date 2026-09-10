@@ -148,6 +148,23 @@ func (c *checker) tryOverloadArm(
 		}
 		target := inst.Params[i].Type
 		if i < len(argExprs) {
+			// A `mut` parameter takes an IMMUTABLE argument when that argument is uniquely
+			// owned, so the check narrows to the parameter's immutable read view instead of
+			// rejecting `take({x: 1})` against `a: mut {x: number}` on the mutability
+			// wrapper. Only the wrapper is dropped: the shape is still checked covariantly,
+			// so `take({y: 1})` still fails.
+			//
+			// This is sound because ownedMutReadView fires only for a freshly built literal
+			// or a moved place. Nothing else refers to the value, so no live alias can
+			// observe a write the callee makes through the mutable view it receives, which
+			// is Rule 2 of the mutability-transition checker with an empty alias set.
+			// consumeCallArgs then moves the argument, so a later use of it is a
+			// use-after-move and the uniqueness holds past the call rather than only at it.
+			//
+			// inferCall pins its demand entry rather than narrowing, because its
+			// `callee <: callShape` constraint would otherwise re-check the argument
+			// strictly. Resolution emits no such constraint, so narrowing is the whole of it
+			// here.
 			if view, ok := c.ownedMutReadView(argExprs[i], target); ok {
 				target = view
 			}
