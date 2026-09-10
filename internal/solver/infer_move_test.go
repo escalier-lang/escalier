@@ -60,13 +60,14 @@ func TestMoveSemantics(t *testing.T) {
 			`,
 			want: []string{"6:6-6:9: use of moved value 'p'"},
 		},
-		// Passing an owned value to a `&` parameter auto-borrows and keeps it usable.
+		// A `&` parameter borrows its argument rather than consuming it, so the argument stays
+		// usable afterwards. The borrow is written at the call, which #1541 requires.
 		"BorrowParameterKeepsArgument": {
 			src: `
 				fn read(p: &{x: number}) {}
 				fn test() {
 					val p = {x: 0}
-					read(p)
+					read(&p)
 					p.x
 				}
 			`,

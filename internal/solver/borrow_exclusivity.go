@@ -117,6 +117,21 @@ func (e *BorrowedValueUseError) Message() string {
 	return fmt.Sprintf("cannot use '%s' while it is borrowed as mutable", e.Place)
 }
 
+// ImplicitBorrowArgError reports an argument filling a `&` or `&mut` parameter without a borrow
+// written at the call.
+type ImplicitBorrowArgError struct {
+	// Written is the borrow the argument needs, `&` or `&mut`, taken from the parameter.
+	Written string
+	node    ast.Node
+}
+
+func (*ImplicitBorrowArgError) isSolverError()        {}
+func (e *ImplicitBorrowArgError) Span() ast.Span      { return e.node.Span() }
+func (e *ImplicitBorrowArgError) Related() []ast.Span { return nil }
+func (e *ImplicitBorrowArgError) Message() string {
+	return fmt.Sprintf("this argument is borrowed by the callee, so write the borrow: `%s`", e.Written)
+}
+
 // loan is one borrow the exclusivity check tracks.
 type loan struct {
 	// place is the data the borrow reaches.
@@ -407,6 +422,54 @@ func (c *checker) checkUsesAgainstLoans(reported set.Set[ast.Node]) {
 			})
 			break
 		}
+	}
+}
+
+// checkExplicitBorrowArgs reports an argument that fills a borrow parameter without a borrow
+// written at the call. A borrow is where a second view of a value comes into existence, and
+// every borrow rule keys on it, so the call site is where it should be visible.
+//
+// Two arguments are already borrows and need nothing written:
+//
+//   - A borrow expression, `&e` or `&mut e`.
+//   - A value whose own type is a borrow, passed by name. `fn g(m: &mut T) { f(m) }` hands on a
+//     borrow g holds rather than creating one.
+//
+// An argument whose type has not settled is left alone, since what it becomes decides whether a
+// borrow is missing and this walk cannot wait for it.
+//
+// A method call's RECEIVER is not an argument and does not reach here. It keeps auto-borrowing,
+// because the method's signature already names the mode: `bump(mut self)` says the receiver is
+// taken mutably, and `c.bump()` has no second reading for a written borrow to disambiguate.
+func (c *checker) checkExplicitBorrowArgs(e *ast.CallExpr, fn *soltype.FuncType) {
+	for i, arg := range e.Args {
+		if i >= len(fn.Params) || fn.Params[i].Rest {
+			// A rest parameter gathers its arguments into a value the callee owns, so none of
+			// them fills a borrow slot. #1530 covers what the borrow rules still miss there.
+			break
+		}
+		mut, isBorrowParam := paramBorrowMut(fn.Params[i].Type)
+		if !isBorrowParam {
+			continue
+		}
+		if _, written := arg.(*ast.BorrowExpr); written {
+			continue
+		}
+		argT := c.info.TypeOf(arg)
+		if argT == nil {
+			continue
+		}
+		if ref, isRef := argT.(*soltype.RefType); isRef && ref.Lt != nil {
+			continue
+		}
+		if _, unsettled := argT.(*soltype.TypeVarType); unsettled {
+			continue
+		}
+		written := "&"
+		if mut {
+			written = "&mut"
+		}
+		c.report(&ImplicitBorrowArgError{Written: written, node: arg})
 	}
 }
 

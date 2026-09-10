@@ -1800,6 +1800,9 @@ func (c *checker) recordCallArgEffects(
 		return
 	}
 	c.consumeCallArgs(e, fn, consumeRef)
+	// A borrow parameter takes a borrow, so the call has to write one. The receiver of a
+	// method call is not an argument and keeps auto-borrowing.
+	c.checkExplicitBorrowArgs(e, fn)
 	// Every argument of a call is live at once, so two that borrow overlapping data break
 	// exclusivity when the two parameters disagree about whether the data can change. This runs
 	// before the store edges are recorded, so an argument is compared against the loans that
