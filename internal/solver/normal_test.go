@@ -568,7 +568,7 @@ func TestUnreducedAtomsKeepTheirOpenMarkerApart(t *testing.T) {
 		name string
 		src  string
 	}{
-		{name: "Tuple", src: `fn go<P>(x: [...P]) -> [...P] | [...P, ...] { return x }`},
+		{name: "Tuple", src: `fn go<P: Array<number>>(x: [...P]) -> [...P] | [...P, ...] { return x }`},
 		{name: "Object", src: `fn go<S>(x: {...S}) -> {...S} | {...S, ...} { return x }`},
 	}
 	for _, tt := range tests {

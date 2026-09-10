@@ -805,10 +805,11 @@ func TestInferTuplePatternRestFallbackGuards(t *testing.T) {
 		},
 		{
 			// `...P` over a type parameter never splices, so no position after it is fixed
-			// and the tuple cannot be read by index.
+			// and the tuple cannot be read by index. P is bounded by an array, the form
+			// the stdlib tree writes, so the spread operand itself is legal.
 			name: "SpreadOverTypeParamNeverSplices",
 			src: `
-				fn f<P>(t: [number, ...P]) {
+				fn f<P: Array<number>>(t: [number, ...P]) {
 					val [a, ...rest] = t
 					return rest
 				}`,

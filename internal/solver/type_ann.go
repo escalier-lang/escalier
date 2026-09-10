@@ -571,11 +571,11 @@ func (c *checker) resolveObjectProperty(scope *Scope, prop *ast.PropertyTypeAnn,
 func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl int) (soltype.Type, bool) {
 	elems := make([]soltype.Type, 0, len(ta.Elems))
 	for _, el := range ta.Elems {
-		spread := false
+		var rest *ast.RestSpreadTypeAnn
 		operand := el
-		if rest, ok := el.(*ast.RestSpreadTypeAnn); ok {
-			spread = true
-			operand = rest.Value
+		if r, isRest := el.(*ast.RestSpreadTypeAnn); isRest {
+			rest = r
+			operand = r.Value
 		}
 		// An owned-mutable element `[mut {x}]` or a mutable spread operand `[...mut P]` is rejected
 		// (#779), the tuple twin of the object-property rejection: a `mut` cell nested inside a
@@ -589,7 +589,12 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 		if !ok {
 			t = c.freshAt(lvl)
 		}
-		if spread {
+		if rest != nil {
+			// An operand that failed to resolve already reported, so checking the fresh
+			// var standing in for it would blame one mistake twice.
+			if ok && !c.spreadableOperand(t, spreadFollowBudget) {
+				c.report(&SpreadOperandNotListError{Spread: rest, Operand: t})
+			}
 			t = &soltype.RestSpreadType{Operand: t}
 		}
 		elems = append(elems, t)
