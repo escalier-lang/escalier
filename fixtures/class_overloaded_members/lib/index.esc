@@ -1,0 +1,17 @@
+fn area(w: number) -> number { return w * w }
+fn area(w: number, h: number) -> number { return w * h }
+
+// An overloaded constructor is covered by internal/codegen's own tests instead.
+// internal/checker still reports `Multiple constructors per class are not yet
+// supported`, so such a class never reaches codegen through this path.
+class Box {
+    x: number,
+    y: number,
+    constructor(mut self, x: number, y: number) { self.x = x  self.y = y },
+    grow(mut self, d: number) -> number { return d },
+    grow(mut self, d: number, e: number) -> number { return d + e },
+    // A member declaring its name once keeps its ordinary lowering.
+    area(self) -> number { return self.x * self.y },
+    static of(x: number) -> number { return x },
+    static of(x: number, y: number) -> number { return x + y },
+}
