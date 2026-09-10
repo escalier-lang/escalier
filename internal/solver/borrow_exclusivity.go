@@ -44,22 +44,24 @@ import (
 //
 // What this does NOT cover yet:
 //
-//   - A borrow reaching a place through another binding. `val a = &x` then `f(a, &mut x)`
-//     reports at the second borrow rather than at the call, and `val a = &x; val c = a` leaves
-//     c untracked, so a conflict against c is missed.
-//   - A borrow stored into a container and read back out. The place a loan names is the one
-//     written at the borrow site.
-//   - A trailing argument absorbed by a rest parameter. checkCallBorrowExclusivity pairs each
-//     argument with the parameter at its own index and stops past the last one, so a call that
-//     passes more arguments than the signature declares leaves the extras unchecked. Reaching
-//     them means reading the rest parameter's ELEMENT type, which the arity-only model of
-//     FuncParam.Rest does not settle yet.
-//   - Loans crossing a loop back edge. Each loan is checked against the loans recorded before
-//     it in source order, so a borrow created late in a body is not checked against one the
-//     next iteration would still hold.
-//   - Anything rooted at a method's receiver. A `self` reference carries VarID 0, so
-//     `&mut self.p` names no binding and records no loan. #1486 covers that, and it reaches
-//     further than this check: every analysis built on places sees the same 0.
+//   - #1527: a borrow copied into a second binding. A loan records the place named at the
+//     borrow site, so `val a = &x; val c = a` leaves c holding nothing and a conflict against
+//     c is missed.
+//   - #1528: a borrow stored into a container and read back out. The place a loan names is
+//     the one written at the borrow site, so `holder.slot` is not known to reach what
+//     `{slot: &x}` put there.
+//   - #1530: an argument absorbed by a rest parameter. checkCallBorrowExclusivity pairs each
+//     argument with the parameter at its own index and stops past the last one. A ground exact
+//     tuple is fine, since expandTupleRest turns it into ordinary positions first. The shapes
+//     that expansion declines keep the slot, and reaching their arguments means reading the
+//     rest parameter's ELEMENT type, which the arity-only model of FuncParam.Rest does not
+//     settle yet. #1514 is what settles it.
+//   - #1529: loans crossing a loop back edge. Each loan is checked against the loans recorded
+//     before it in source order, so a borrow created late in a body is not checked against one
+//     the next iteration would still hold.
+//   - #1486: anything rooted at a method's receiver. A `self` reference carries VarID 0, so
+//     `&mut self.p` names no binding and records no loan. That one reaches further than this
+//     check, since every analysis built on places sees the same 0.
 
 // BorrowAliasError reports two borrows of overlapping data live at once that disagree about
 // whether it can change, so one can write through its view and the other expects it to hold
