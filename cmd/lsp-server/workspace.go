@@ -95,18 +95,24 @@ func (s *Server) compilePackage() (any, error) {
 			return nil, fmt.Errorf("failed to create directory: %v", err)
 		}
 
-		// Write .js
-		if err := os.WriteFile(jsPath, []byte(module.JS), 0644); err != nil {
-			return nil, fmt.Errorf("failed to write %s: %v", jsPath, err)
+		// Write .js. A package that exports nothing has no public entry point, so the
+		// wrapper comes back empty and gets no file.
+		if module.JS != "" {
+			if err := os.WriteFile(jsPath, []byte(module.JS), 0644); err != nil {
+				return nil, fmt.Errorf("failed to write %s: %v", jsPath, err)
+			}
 		}
 
-		// Write .js.map (pretty-printed)
-		var prettyMap bytes.Buffer
-		if err := json.Indent(&prettyMap, []byte(module.SourceMap), "", "  "); err != nil {
-			prettyMap.WriteString(module.SourceMap)
-		}
-		if err := os.WriteFile(mapPath, prettyMap.Bytes(), 0644); err != nil {
-			return nil, fmt.Errorf("failed to write %s: %v", mapPath, err)
+		// Write .js.map (pretty-printed). The wrapper is generated code with nothing to
+		// map back to, so it carries no source map.
+		if module.SourceMap != "" {
+			var prettyMap bytes.Buffer
+			if err := json.Indent(&prettyMap, []byte(module.SourceMap), "", "  "); err != nil {
+				prettyMap.WriteString(module.SourceMap)
+			}
+			if err := os.WriteFile(mapPath, prettyMap.Bytes(), 0644); err != nil {
+				return nil, fmt.Errorf("failed to write %s: %v", mapPath, err)
+			}
 		}
 
 		// Write .d.ts for lib/ modules only
