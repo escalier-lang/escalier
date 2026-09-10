@@ -1378,7 +1378,19 @@ func (p *namedPrinter) typeParamBinders(tps []*TypeParam) []string {
 	binders := make([]string, len(tps))
 	for i, tp := range tps {
 		s := p.printType(tp.Var) // the registered source name, else t{ID}
-		if bounds := tp.Var.UpperBounds; len(bounds) > 0 {
+		// A substitution rewrites the declared constraint and cannot rewrite the
+		// variable's upper-bound list, since a type parameter's binder must stay a
+		// variable and the bounds hang off it. Reading the field is what lets a method
+		// bounded by its class's parameter render at the instance's argument: `pick<T: U>`
+		// on a `C<number>` shows `<T: number>` rather than the unsubstituted `U`.
+		//
+		// A parameter with no declared constraint falls back to the list, which carries a
+		// bound a body forced and the bounds a prelude parameter is built with.
+		bounds := tp.Var.UpperBounds
+		if tp.Constraint != nil {
+			bounds = []Type{tp.Constraint}
+		}
+		if len(bounds) > 0 {
 			rendered := make([]string, len(bounds))
 			for j, b := range bounds {
 				rendered[j] = p.printType(b)

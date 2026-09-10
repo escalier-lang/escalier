@@ -72,6 +72,14 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 		// single-signature path reads, so an arm's rest slot means here what it means there.
 		// Probes nest, so a candidate that loses rolls back on its own and leaves the arm's
 		// instantiation intact for the next one.
+		// An arm carrying its own `<T>` binder is instantiated per trial, so two calls to one
+		// generic arm bind it independently. A method's arms reach here as MonoSchemes, which
+		// instantiate returns unchanged, so the binder would otherwise be shared and the first
+		// call's argument would fix it for every later one. Doing it here rather than at the
+		// scheme keeps b.Schemes carrying the declared arms, which the no-match report renders.
+		if len(arm.TypeParams) > 0 {
+			arm = c.ctx.instantiateFuncBinder(arm, lvl)
+		}
 		inst, matched, diags := c.tryArmCandidates(lvl, args, call.Args, arm)
 		c.closeProbe(p, matched)
 		if matched {

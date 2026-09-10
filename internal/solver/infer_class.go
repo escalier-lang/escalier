@@ -166,15 +166,14 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
 	// drop it and leave an instance's lifetime argument with nothing to replace.
 	keepLts := classKeepLifetimes(shell.lifetimeParams)
-	if len(typeParams) == 0 {
-		c.freezeClassBody(body, nil, nil, keepLts)
-		c.freezeClassBody(static, nil, nil, keepLts)
-	} else {
-		keep := classKeepVars(typeParams, body, static)
-		flow := keptFlowMap(keep)
-		c.freezeClassBody(body, keep, flow, keepLts)
-		c.freezeClassBody(static, keep, flow, keepLts)
-	}
+	// The keep set is read from the members as well as from the class's own `<…>` list, so a
+	// non-generic class carrying a generic method still keeps that method's parameters. An
+	// empty set coalesces everything, which is what a class with neither kind of parameter
+	// wants.
+	keep := classKeepVars(typeParams, body, static)
+	flow := keptFlowMap(keep)
+	c.freezeClassBody(body, keep, flow, keepLts)
+	c.freezeClassBody(static, keep, flow, keepLts)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -909,6 +908,11 @@ type pendingMember struct {
 	static bool
 	stub   *soltype.FuncType
 	apply  func(bodyFt *soltype.FuncType)
+	// generic marks a member that may quantify type parameters of its own, which only a
+	// method may. A getter takes no arguments to infer one from, and a setter's single
+	// argument is the property's own type, which the class fixes. Either would carry a
+	// binder nothing could instantiate, so one written there is reported as unsupported.
+	generic bool
 }
 
 // buildMemberSigs is phase 1 of the member walk: it appends a signature stub — fresh vars
@@ -943,6 +947,7 @@ func (c *checker) buildMemberSigs(
 			}
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
+				generic: true,
 				apply: func(bodyFt *soltype.FuncType) {
 					bodyFt.SelfParam = stub.SelfParam
 					method.Signatures[arm] = bodyFt
@@ -1026,7 +1031,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// Hand the member's name to the inferFunc call below, which sees only the member's
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
-		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, body)
+		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, m.generic, body)
 		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
@@ -1039,6 +1044,19 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
+	}
+	// A member's own `<T>` binder is not linked. The stub is monomorphic, so comparing a
+	// generic signature against it records the stub's fresh variables on the binder's own
+	// variable. A method returning `T` gives `T <: stubReturn`, and that edge stays. The
+	// binder then reads as bounded by a variable the source never wrote, and the class value
+	// quantifies that variable as a phantom parameter.
+	//
+	// What the link buys is a sibling call made before this member's body is inferred, since
+	// such a call reads the stub. A sibling call to a generic member gets the stub's
+	// unconstrained variables instead. The signature the member ends up with is the inferred
+	// one either way, because the body pass installs it over the stub.
+	if len(bodyFt.TypeParams) > 0 {
+		return
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
@@ -1105,16 +1123,17 @@ func (c *checker) inferMemberFunc(
 	fn *ast.FuncExpr,
 	recv *ast.MethodReceiver,
 	static bool,
+	generic bool,
 	body *soltype.ObjectType,
 ) *soltype.FuncType {
 	memberScope := scope.Child()
 	if !static {
 		c.bindSelf(memberScope, recv, body)
 	}
-	// A method's own type parameters stay gated because their per-instance projection
-	// is not yet applied by the class-body freeze, so inferFunc reports them as
-	// unsupported.
-	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, false)
+	// generic is true for a method and false for a getter or setter, which have no call
+	// site that could instantiate a binder. inferFunc reports a binder it is not allowed
+	// to resolve as an unsupported feature.
+	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, generic)
 }
 
 // appendMethodSig installs a method signature under name, merging it into an existing

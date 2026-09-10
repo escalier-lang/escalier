@@ -220,10 +220,10 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	// FuncType.TypeParams and instantiate freshens it per call. A non-generic function
 	// reuses the enclosing scope and carries no type parameters.
 	//
-	// A method or constructor passes allowTypeParams=false. A member's own type
-	// parameters need the per-instance projection the class-body freeze does not yet
-	// apply, so resolving them would collapse two calls to one shared var. Report the
-	// feature as unsupported and infer monomorphically until that work lands.
+	// allowTypeParams is false for the positions that cannot quantify a parameter of their
+	// own: a constructor, whose arguments infer the class's parameters instead, and a getter
+	// or setter, which has no call site to instantiate a binder from. A binder written there
+	// is reported as an unsupported feature and the signature infers monomorphically.
 	declScope := scope
 	var typeParams []*soltype.TypeParam
 	if len(sig.TypeParams) > 0 {

@@ -2131,26 +2131,20 @@ func TestInferMethodOverloadUniformMutReceiverAccepted(t *testing.T) {
 	require.Equal(t, "number", values["r"])
 }
 
-// TestInferClassMethodTypeParamsGated pins the gate on a method's own `<T>` binder.
-// inferMemberFunc calls inferFunc with allowTypeParams=false, because a member's type
-// parameter needs a per-instance projection the class-body freeze does not apply, so
-// resolving it would collapse two calls onto one shared var. The binder is reported as an
-// unsupported feature and the member infers monomorphically, which leaves each `T` in the
-// signature an unbound name.
+// A method's own `<T>` binder resolves through resolveTypeParams, the path a generic
+// function declaration and a generic function annotation already take, and is
+// instantiated per call so two calls do not share a var.
 //
-// A declared bound rides on the binder, so gating the binder gates the bound with it: the
-// call below passes 1 to a parameter written `T: string` and no mismatch is reported. The
-// class's own `<U: number>` binder is a separate mechanism and still enforces, which the
-// last case shows. Lifting the gate, tracked by issue #957, should flip this test and
-// enable TestInferClassMethodTypeParamBounds below.
-func TestInferClassMethodTypeParamsGated(t *testing.T) {
+// The class's own binder is a separate mechanism and enforces independently, which the
+// last case shows.
+func TestInferClassMethodTypeParams(t *testing.T) {
 	tests := []struct {
 		name string
 		src  string
 		want []string
 	}{
 		{
-			name: "InstanceMethodBinderIsGated",
+			name: "InstanceMethodBinderEnforcesItsBound",
 			src: `
 				class C {
 					pick<T: string>(self, x: T) -> T { return x },
@@ -2158,25 +2152,17 @@ func TestInferClassMethodTypeParamsGated(t *testing.T) {
 				val c = C()
 				val r = c.pick(1)
 			`,
-			want: []string{
-				"Unsupported: TypeParam",
-				"cannot find type `T`",
-				"cannot find type `T`",
-			},
+			want: []string{`cannot constrain 1 <: string`},
 		},
 		{
-			name: "StaticMethodBinderIsGated",
+			name: "StaticMethodBinderEnforcesItsBound",
 			src: `
 				class C {
 					static pick<T: string>(x: T) -> T { return x },
 				}
 				val r = C.pick(1)
 			`,
-			want: []string{
-				"Unsupported: TypeParam",
-				"cannot find type `T`",
-				"cannot find type `T`",
-			},
+			want: []string{`cannot constrain 1 <: string`},
 		},
 		{
 			name: "ClassBinderStillEnforcesItsBound",
@@ -2201,89 +2187,294 @@ func TestInferClassMethodTypeParamsGated(t *testing.T) {
 	}
 }
 
-// DISABLED until issue #957 lands support for a method's own type parameters — the
-// per-instance projection inferMemberFunc names, which lets two calls to one generic method
-// instantiate independently. Today the binder is reported as unsupported and the member
-// infers monomorphically, which TestInferClassMethodTypeParamsGated pins.
-//
-// Once the gate lifts, a method's `<T: string>` should enforce its bound at the call the
-// same way a generic function's does, since both route their binder through
-// resolveTypeParams. These cases carry that intended behavior: a satisfying argument is
-// accepted, a violating one reports the mismatch, an unbounded binder accepts anything, a
-// bound naming a sibling parameter resolves, and two calls to one method instantiate
-// independently rather than sharing a var. Re-enable by removing the comment wrapper.
+// A method's `<T: string>` enforces its bound at the call the same way a generic
+// function's does, since both route their binder through resolveTypeParams.
 func TestInferClassMethodTypeParamBounds(t *testing.T) {
-	/*
-		tests := []struct {
-			name string
-			src  string
-			want []string
-		}{
-			{
-				name: "ArgumentInsideBound",
-				src: `
-					class C {
-						pick<T: string>(self, x: T) -> T { return x },
-					}
-					val c = C()
-					val r = c.pick("a")
-				`,
-			},
-			{
-				name: "ArgumentOutsideBound",
-				src: `
-					class C {
-						pick<T: string>(self, x: T) -> T { return x },
-					}
-					val c = C()
-					val r = c.pick(1)
-				`,
-				want: []string{"cannot constrain 1 <: string"},
-			},
-			{
-				name: "UnboundedBinderAcceptsAnyArgument",
-				src: `
-					class C {
-						pick<T>(self, x: T) -> T { return x },
-					}
-					val c = C()
-					val r = c.pick(1)
-				`,
-			},
-			{
-				name: "SiblingBoundViolated",
-				src: `
-					class C {
-						pair<A, B: A>(self, a: A, b: B) -> A { return a },
-					}
-					val c = C()
-					val r = c.pair(1, "y")
-				`,
-				want: []string{`cannot constrain "y" <: 1`},
-			},
-			{
-				name: "TwoCallsInstantiateIndependently",
-				src: `
-					class C {
-						pick<T: string>(self, x: T) -> T { return x },
-					}
-					val c = C()
-					val a = c.pick("a")
-					val b = c.pick("b")
-				`,
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				_, _, errs := inferSource(t, tt.src)
-				var msgs []string
-				for _, e := range errs {
-					msgs = append(msgs, e.Message())
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "ArgumentInsideBound",
+			src: `
+				class C {
+					pick<T: string>(self, x: T) -> T { return x },
 				}
-				require.Equal(t, tt.want, msgs)
-			})
+				val c = C()
+				val r = c.pick("a")
+			`,
+		},
+		{
+			name: "ArgumentOutsideBound",
+			src: `
+				class C {
+					pick<T: string>(self, x: T) -> T { return x },
+				}
+				val c = C()
+				val r = c.pick(1)
+			`,
+			want: []string{"cannot constrain 1 <: string"},
+		},
+		{
+			name: "UnboundedBinderAcceptsAnyArgument",
+			src: `
+				class C {
+					pick<T>(self, x: T) -> T { return x },
+				}
+				val c = C()
+				val r = c.pick(1)
+			`,
+		},
+		{
+			// A bound naming the class's own parameter resolves, since the method's scope
+			// sits under the class's. Enforcing it at the instance's argument is a further
+			// step: a call reads the bound off the binder's variable, which substitution
+			// cannot rewrite, so `T: U` on a `C<number>` admits any argument. #1547.
+			name: "ClassParameterBoundResolves",
+			src: `
+				class C<U> {
+					v: U,
+					pick<T: U>(self, x: T) -> T { return x },
+				}
+				val c: C<number> = C(1)
+				val r = c.pick(2)
+			`,
+		},
+		{
+			// A method binder may shadow the class's parameter of the same name. The
+			// inner binder wins inside the signature, which is what its child scope
+			// gives, and the class's own parameter is untouched outside it.
+			name: "MethodBinderShadowsAClassParameter",
+			src: `
+				class C<T> {
+					v: T,
+					pick<T>(self, x: T) -> T { return x },
+				}
+				val c: C<number> = C(1)
+				val r = c.pick("a")
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			var msgs []string
+			for _, e := range errs {
+				msgs = append(msgs, e.Message())
+			}
+			require.Equal(t, tt.want, msgs)
+		})
+	}
+}
+
+// Two calls to one generic method instantiate independently rather than sharing a var,
+// which is what makes the binder worth resolving at all.
+func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		class C {
+			pick<T: string>(self, x: T) -> T { return x },
 		}
-	*/
+		val c = C()
+		val a = c.pick("a")
+		val b = c.pick("b")
+	`)
+	require.Empty(t, messagesWithSpan(t, errs))
+	require.Equal(t, `"a"`, values["a"])
+	require.Equal(t, `"b"`, values["b"])
+}
+
+// A bound a BODY forces is enforced at the call, for a method as for a generic function.
+// It is recorded on the binder's variable rather than written in the source, so a rule
+// reading only the declared constraint would lose it.
+func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
+	const callee = "fn f<A: string>(a: A) -> A { return a }\n"
+	const want = "cannot constrain 1 <: string"
+
+	_, _, fnErrs := inferSource(t, callee+`
+		fn g<U>(u: U) -> U { return f(u) }
+		val r = g(1)
+	`)
+	_, _, methodErrs := inferSource(t, callee+`
+		class C {
+			g<U>(self, u: U) -> U { return f(u) },
+		}
+		val c = C()
+		val r = c.g(1)
+	`)
+	require.Equal(t, []string{want}, errorMessagesOf(fnErrs))
+	require.Equal(t, []string{want}, errorMessagesOf(methodErrs))
+}
+
+// A bound naming a SIBLING binder is resolved but not enforced, for a method exactly as
+// for a generic function. The two forms are written side by side here so the parity is
+// what the test asserts rather than the behavior of either alone.
+func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
+	_, _, fnErrs := inferSource(t, `
+		fn pair<A, B: A>(a: A, b: B) -> A { return a }
+		val r = pair(1, "y")
+	`)
+	_, _, methodErrs := inferSource(t, `
+		class C {
+			pair<A, B: A>(self, a: A, b: B) -> A { return a },
+		}
+		val c = C()
+		val r = c.pair(1, "y")
+	`)
+	require.Empty(t, messagesWithSpan(t, fnErrs))
+	require.Equal(t, messagesWithSpan(t, fnErrs), messagesWithSpan(t, methodErrs))
+}
+
+// The signature a caller reads carries the binder under its written name and the bound
+// the source declared. linkMemberSig records `T <: stubReturn` for a method returning
+// `T`, so the binder's variable also collects the stub's return variable; the freeze
+// drops it, which is what keeps `<T>` from rendering as `<T: T0>` and stops that stray
+// variable from being quantified onto the class value as a phantom parameter.
+func TestInferClassMethodTypeParamRendering(t *testing.T) {
+	tests := []struct {
+		name    string
+		src     string
+		binding string
+		want    string
+	}{
+		{
+			name: "an instance method's bound",
+			src: `
+				class C { pick<T: string>(self, x: T) -> T { return x }, }
+				fn probe(c: C) { return c.pick }`,
+			binding: "probe",
+			want:    "fn (c: C) -> fn <T: string>(x: T) -> T",
+		},
+		{
+			name: "an unbounded binder",
+			src: `
+				class C { pick<T>(self, x: T) -> T { return x }, }
+				fn probe(c: C) { return c.pick }`,
+			binding: "probe",
+			want:    "fn (c: C) -> fn <T>(x: T) -> T",
+		},
+		{
+			name: "a bound naming the class's parameter",
+			src: `
+				class C<U> { v: U, pick<T: U>(self, x: T) -> T { return x }, }
+				fn probe(c: C<number>) { return c.pick }`,
+			binding: "probe",
+			want:    "fn <T0>(c: C<number>) -> fn <T: number>(x: T) -> T",
+		},
+		{
+			name: "a signature mixing both binders",
+			src: `
+				class C<U> { v: U, map<T>(self, x: T) -> [T, U] { return [x, self.v] }, }
+				fn probe(c: C<number>) { return c.map }`,
+			binding: "probe",
+			want:    "fn (c: C<number>) -> fn <T>(x: T) -> [T, number]",
+		},
+		{
+			// The class value carries the static member, and no phantom binder beside it.
+			name:    "a static method on the class value",
+			src:     `class C { static pick<T: string>(x: T) -> T { return x }, }`,
+			binding: "C",
+			want:    "{new () -> C, pick<T: string>(x: T) -> T}",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values[tt.binding])
+		})
+	}
+}
+
+// An overloaded method's arms each carry their own binder, and each is instantiated per
+// call. Wrapping an arm in a MonoScheme without instantiating leaves the binder's variable
+// shared, so the first call binds it and every later one is weighed against that binding.
+func TestInferOverloadedGenericMethod(t *testing.T) {
+	t.Run("one generic arm beside a plain one", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class C {
+				pick<T: string>(self, x: T) -> T { return x },
+				pick(self, a: number, b: number) -> number { return a },
+			}
+			val c = C()
+			val a = c.pick("s")
+			val b = c.pick(1, 2)
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, `"s"`, values["a"])
+		require.Equal(t, "number", values["b"])
+	})
+	t.Run("two generic arms", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class C {
+				pick<T: string>(self, x: T) -> T { return x },
+				pick<T: number>(self, x: T, y: T) -> T { return x },
+			}
+			val c = C()
+			val a = c.pick("s")
+			val b = c.pick(1, 2)
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, `"s"`, values["a"])
+		require.Equal(t, "1 | 2", values["b"])
+	})
+	t.Run("a call matching no arm", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				pick<T: string>(self, x: T) -> T { return x },
+				pick(self, a: number, b: number) -> number { return a },
+			}
+			val c = C()
+			val r = c.pick(1)
+		`)
+		require.Equal(t,
+			[]string{"7:12-7:21: No matching overload for this call\n" +
+				"  fn <T: string>(x: T) -> T\n" +
+				"  fn (a: number, b: number) -> number"},
+			messagesWithSpan(t, errs))
+	})
+}
+
+// A getter and a setter cannot quantify a parameter of their own. A getter takes no
+// argument to infer one from, and a setter's single argument is the property's own type,
+// which the class fixes. Both report rather than accepting a binder nothing instantiates.
+func TestInferAccessorTypeParamsGated(t *testing.T) {
+	t.Run("a getter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				get value<T>(self) -> number { return 1 },
+			}
+		`)
+		require.Equal(t, []string{"Unsupported: TypeParam"}, errorMessagesOf(errs))
+	})
+	t.Run("a setter", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				x: number,
+				set value<T>(mut self, v: T) { self.x = 1 },
+			}
+		`)
+		require.Equal(t,
+			[]string{"Unsupported: TypeParam", "cannot find type `T`"},
+			errorMessagesOf(errs))
+	})
+}
+
+// A constructor's own binder stays gated. The class's parameters are what a
+// constructor's arguments infer, so a binder of its own has nothing to quantify, and
+// TypeScript rejects one for the same reason.
+func TestInferClassConstructorTypeParamsGated(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class C {
+			x: number,
+			constructor<T>(mut self, x: number) { self.x = x },
+		}
+	`)
+	var msgs []string
+	for _, e := range errs {
+		msgs = append(msgs, e.Message())
+	}
+	require.Equal(t, []string{"Unsupported: TypeParam"}, msgs)
 }
 
 // A class may declare more than one constructor. Every arm binds under the one
