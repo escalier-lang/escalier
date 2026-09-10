@@ -231,8 +231,12 @@ func TestReturnValueBorrows(t *testing.T) {
 		},
 		// A local this frame also sends out another way is not the return's alone. The store
 		// puts a borrow of b in the caller's object, so the caller reaches b through p.node.peer
-		// AND through the return: two live mutable paths to one value. The return takes no
-		// exemption and reports.
+		// and through the return, which is two live mutable paths to one value. The return
+		// takes no exemption and reports.
+		//
+		// The wording is what pins the reason. b's lifetime is not the problem, since the frame
+		// ends at the return and a borrow leaving through it alone would be fine. The store is,
+		// so the message names the second path rather than claiming b does not live long enough.
 		"ReturnOfALocalAlsoStoredIntoAParam": {
 			src: `
 				fn f(p: mut {node: {peer: &mut {value: number}}}) {
@@ -241,11 +245,18 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want:  []string{"5:13-5:19: borrowed value 'b' does not live long enough to escape the function"},
+			want:  []string{"5:13-5:19: 'b' leaves the function at another point too, so the return is not the only path to it"},
 			types: map[string]string{"f": "fn (p: mut {node: {peer: &mut {value: number}}}) -> &mut {value: number}"},
 		},
-		// A consuming argument leaves the same second path behind, so returning the same local
-		// reports for the same reason.
+		// A consuming argument leaves a second path behind too, and returning the same local
+		// reports the same way. Here the path belongs to the callee rather than the caller: an
+		// owned parameter takes the object and everything it reaches, so `take` owns b from the
+		// call on. Writing the parameter as `&mut` would borrow b for the call alone and leave
+		// the return free, which is the contrast that makes the rule legible.
+		//
+		// #1539 covers the uses this move ought to reject and does not. A read or a re-borrow
+		// of b after the call is accepted today, where the same two after a plain argument move
+		// report use-after-move.
 		"ReturnOfALocalAlsoPassedToAConsumingCall": {
 			src: `
 				declare fn take(x: {peer: &mut {value: number}}) -> undefined
@@ -255,7 +266,7 @@ func TestReturnValueBorrows(t *testing.T) {
 					return &mut b
 				}
 			`,
-			want: []string{"6:13-6:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"6:13-6:19: 'b' leaves the function at another point too, so the return is not the only path to it"},
 			types: map[string]string{
 				"take": "fn (x: {peer: &mut {value: number}}) -> undefined",
 				"f":    "fn () -> &mut {value: number}",
