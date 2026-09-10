@@ -374,19 +374,27 @@ func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target
 // accumulating checker.constrain. constrainReturnAgainstAnnotation reads it too, over the join
 // of a body's return operands.
 //
-// The four conditions below do two different jobs, which is worth keeping straight:
-//
-//   - target is not a RefType at all — DISPATCH. A bare owned target needs no upgrade, since
-//     ordinary subtyping already accepts a fresh literal and a moved variable there.
-//   - !ref.Mut — a GUARD, not a live branch. A RefType with a nil lifetime is always the
-//     owned-mutable form, so no owned-immutable one reaches here today. It is kept so that if
-//     one ever becomes constructible it does not silently take this path.
-//   - ref.Lt != nil — SOUNDNESS. A borrow is not an ownership transfer, so a uniquely-owned
-//     value says nothing about whether a borrowed-mutable target may take it.
-//   - !isUniquelyOwned(src) — SOUNDNESS, and the only condition that looks at the value.
+// The four gates below do two different jobs, dispatch and soundness, and each says which.
 func (c *checker) ownedMutUpgrade(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
 	ref, ok := target.(*soltype.RefType)
-	if !ok || !ref.Mut || ref.Lt != nil || !c.isUniquelyOwned(src) {
+	if !ok {
+		// DISPATCH. A bare owned target needs no upgrade at all, since ordinary subtyping
+		// already accepts a fresh literal and a moved variable there.
+		return nil, false
+	}
+	if !ref.Mut {
+		// A GUARD, not a live branch. A RefType with a nil lifetime is always the
+		// owned-mutable form, so no owned-immutable one reaches here today. It is kept so
+		// that if one ever becomes constructible it does not silently take this path.
+		return nil, false
+	}
+	if ref.Lt != nil {
+		// SOUNDNESS. A borrow is not an ownership transfer, so a uniquely-owned value says
+		// nothing about whether a borrowed-mutable target may take it.
+		return nil, false
+	}
+	if !c.isUniquelyOwned(src) {
+		// SOUNDNESS, and the only gate that looks at the value rather than the target.
 		return nil, false
 	}
 	return stripOwnedMut(ref.Inner), true
