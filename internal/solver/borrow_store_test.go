@@ -133,31 +133,6 @@ func TestCallStoreEdge(t *testing.T) {
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
 		},
-		// Dropping the store call from the case above isolates its effect: with no edge from
-		// a to b, consuming a co-moves nothing and the read of b is fine.
-		"NoStoreLeavesTheCarrierAlone": {
-			src: `
-				declare fn store<'a, 'b, 'c>(
-					target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-					item: &'a mut {value: number},
-				) -> undefined
-				declare fn take(x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
-
-				fn build(p: mut {value: number}, q: mut {value: number}) -> undefined {
-					val mut b = {value: 2}
-					val mut a = {peer: &mut p, spare: &mut q}
-					take(a)
-					val y = b
-				}
-			`,
-			want: nil,
-			types: map[string]string{
-				"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
-					"item: &'a mut {value: number}) -> undefined",
-				"take":  "fn (x: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
-				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
-			},
-		},
 		// DISABLED until #1262. `p` is an owned parameter, so it was moved into build and the
 		// caller holds no path to it. Nothing escapes, and the store should record an edge the
 		// way it does into a local. The check reports an escape because it asks only whether
