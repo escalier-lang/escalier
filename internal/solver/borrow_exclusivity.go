@@ -65,8 +65,12 @@ import (
 // whether it can change, so one can write through its view and the other expects it to hold
 // still.
 type BorrowAliasError struct {
-	// Place names the data both borrows reach, `x` for a whole binding and `x.a` for a field.
-	Place string
+	// Place is what the blamed borrow reaches and FirstPlace what the borrow already live
+	// reaches, each `x` for a whole binding and `x.a` for a field. They overlap and are often
+	// equal, but a borrow of a whole binding conflicts with a borrow of one of its fields, and
+	// then naming only one of them leaves the reader hunting for the other.
+	Place      string
+	FirstPlace string
 	// FirstMut and SecondMut say whether a write can go through each borrow. Exactly one of them
 	// is true, since a conflicting pair is one mutable borrow beside one shared borrow. Second is
 	// the one the error is blamed on, since it is where the program first holds two views.
@@ -80,10 +84,17 @@ func (*BorrowAliasError) isSolverError()        {}
 func (e *BorrowAliasError) Span() ast.Span      { return e.node.Span() }
 func (e *BorrowAliasError) Related() []ast.Span { return []ast.Span{e.first} }
 func (e *BorrowAliasError) Message() string {
-	if e.SecondMut {
-		return fmt.Sprintf("cannot borrow '%s' as mutable while it is borrowed as immutable", e.Place)
+	// One place covers both borrows when they name the same data, so "it" is unambiguous.
+	// Where the two differ the other place is named, since the reader cannot otherwise tell
+	// which part of the binding the live borrow holds.
+	held := "it is"
+	if e.FirstPlace != e.Place {
+		held = fmt.Sprintf("'%s' is", e.FirstPlace)
 	}
-	return fmt.Sprintf("cannot borrow '%s' as immutable while it is borrowed as mutable", e.Place)
+	if e.SecondMut {
+		return fmt.Sprintf("cannot borrow '%s' as mutable while %s borrowed as immutable", e.Place, held)
+	}
+	return fmt.Sprintf("cannot borrow '%s' as immutable while %s borrowed as mutable", e.Place, held)
 }
 
 // loan is one borrow the exclusivity check tracks.
@@ -143,11 +154,12 @@ func conflicts(a, b loan) bool {
 // the borrow already live.
 func (c *checker) reportBorrowConflict(first, second loan) {
 	c.report(&BorrowAliasError{
-		Place:     c.renderPlace(second.place),
-		FirstMut:  first.mut,
-		SecondMut: second.mut,
-		node:      second.node,
-		first:     first.node.Span(),
+		Place:      c.renderPlace(second.place),
+		FirstPlace: c.renderPlace(first.place),
+		FirstMut:   first.mut,
+		SecondMut:  second.mut,
+		node:       second.node,
+		first:      first.node.Span(),
 	})
 }
 
