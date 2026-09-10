@@ -50,12 +50,11 @@ import (
 //   - #1528: a borrow stored into a container and read back out. The place a loan names is
 //     the one written at the borrow site, so `holder.slot` is not known to reach what
 //     `{slot: &x}` put there.
-//   - #1530: an argument absorbed by a rest parameter. checkCallBorrowExclusivity pairs each
-//     argument with the parameter at its own index and stops past the last one. A ground exact
-//     tuple is fine, since expandTupleRest turns it into ordinary positions first. The shapes
-//     that expansion declines keep the slot, and reaching their arguments means reading the
-//     rest parameter's ELEMENT type, which the arity-only model of FuncParam.Rest does not
-//     settle yet. #1514 is what settles it.
+//   - #1530: an argument absorbed by an `Array`-typed rest parameter.
+//     checkCallBorrowExclusivity pairs each argument with the parameter at its own index and
+//     stops past the last one. A tuple-typed rest is fine, since expandTupleRest turns it into
+//     ordinary positions before the walk runs. An `Array<E>` slot has none to expand into, so
+//     `f(&mut x, &x)` against `fn(a: &mut T, ...rest: Array<&T>)` reports nothing.
 //   - #1529: loans crossing a loop back edge. Each loan is checked against the loans recorded
 //     before it in source order, so a borrow created late in a body is not checked against one
 //     the next iteration would still hold.
