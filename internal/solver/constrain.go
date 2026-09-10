@@ -134,6 +134,16 @@ func (c *Context) distributeUnionRest(f *soltype.FuncType, seen *seenPairs) ([]*
 	return arms, true
 }
 
+// unwrapSelf reads a `Self` as the class it was declared in, and returns every other type
+// unchanged. It is the fallback for a `Self` that reaches a rule expecting a settled type; the
+// substitution at member projection is what normally keeps one from getting that far.
+func unwrapSelf(t soltype.Type) soltype.Type {
+	if self, ok := t.(*soltype.SelfType); ok {
+		return self.Class
+	}
+	return t
+}
+
 // restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
 // is always last, since resolveFuncTypeAnn rejects any other position, so the index is
 // len(f.Params)-1 whenever there is one.
@@ -641,6 +651,12 @@ func (c *Context) popUnfoldingAlias(ref *soltype.AliasType) {
 // borrow's mutability, the object/tuple arms propagate it, and the function and
 // promise arms reset it since each carries its own annotation context.
 func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx bool) []SolverError {
+	// A `Self` is resolved at the receiver's class by every path that reads a class member, so
+	// one reaching here belongs to a member no receiver was known for. Read it as the class it
+	// was declared in, which is what `Self` means until a receiver settles it. Falling through
+	// instead would leave it with no arm at all and report a constraint against a type the
+	// diagnostic cannot name.
+	sub, super = unwrapSelf(sub), unwrapSelf(super)
 	// An AliasType operand keys on the canonical identity formed from the alias and its
 	// arguments rather than on its raw pointer, so two structurally-equal instances of a
 	// generic recursive alias close the cycle. expandAlias substitutes arguments into a fresh

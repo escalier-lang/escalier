@@ -44,6 +44,11 @@ type ClassDef struct {
 	// entry falls back to Invariant.
 	MutVariance []Variance
 
+	// HasSelf marks a body carrying a `Self` in some member signature, so the substitution
+	// that resolves `Self` at the receiver's class runs only for a class that wrote one. It is
+	// set when the body is registered and read by projectSelf.
+	HasSelf bool
+
 	// Supers holds the resolved `extends` superclass — the declared nominal
 	// subtype-graph edge. A class has at most one, so this holds zero or one element.
 	// The rule that walks it transitively is C1; B1 only records it.
@@ -444,6 +449,16 @@ func (c *Context) withInherited(def *ClassDef, ct *soltype.ClassType, own *solty
 // A non-generic class needs no substitution, so the returned slice is then the registry's
 // own. A caller that appends to the result has to copy it first.
 func (c *Context) projectOwnElems(def *ClassDef, ct *soltype.ClassType) []soltype.ObjTypeElem {
+	if def.HasSelf {
+		// A member the receiver's own class declares resolves `Self` at that class, which for
+		// an own member is the receiver's class already. The class substitution below still
+		// runs for a generic class, so the two compose.
+		own := make([]soltype.ObjTypeElem, len(def.Body.Elems))
+		for i, elem := range def.Body.Elems {
+			own[i] = projectClassMember(def, ct, projectSelf(def, ct, elem))
+		}
+		return own
+	}
 	if len(def.TypeParams) == 0 && len(def.LifetimeParams) == 0 {
 		return def.Body.Elems
 	}
@@ -476,7 +491,9 @@ func (c *Context) inheritedElems(def *ClassDef, ct *soltype.ClassType) []soltype
 	addElemNames(taken, def.Body)
 	visited := set.NewSet[string]()
 	visited.Add(ct.Name)
-	return c.chainElems(def, ct, taken, visited)
+	// ct is both the class whose chain is walked and the receiver `Self` resolves at, since a
+	// member access enters the chain at the receiver's own class.
+	return c.chainElems(def, ct, ct, taken, visited)
 }
 
 // selfView returns the object `self` binds to inside a member or constructor body: the
@@ -506,7 +523,7 @@ func (c *Context) selfView(self *soltype.ClassType, body *soltype.ObjectType) *s
 // already carry and marking that name taken for the classes further up. visited holds the
 // class names already reached, bounding the walk on a cyclic hierarchy the way
 // constrainNominalWalk does.
-func (c *Context) chainElems(def *ClassDef, ct *soltype.ClassType, taken, visited set.Set[string]) []soltype.ObjTypeElem {
+func (c *Context) chainElems(def *ClassDef, ct, recv *soltype.ClassType, taken, visited set.Set[string]) []soltype.ObjTypeElem {
 	var out []soltype.ObjTypeElem
 	for _, superType := range def.Supers {
 		super := substituteSuperArgs(def, ct, superType)
@@ -520,13 +537,18 @@ func (c *Context) chainElems(def *ClassDef, ct *soltype.ClassType, taken, visite
 		}
 		for _, elem := range superDef.Body.Elems {
 			if !taken.Contains(soltype.ObjElemName(elem)) {
-				out = append(out, projectClassMember(superDef, super, elem))
+				// The class substitution takes the SUPERCLASS instance, since the member was
+				// declared against the superclass's own parameters and the `extends` clause
+				// says what they are here. The `Self` substitution takes recv, the class the
+				// receiver belongs to, which is what makes an inherited `-> Self` yield the
+				// subclass rather than the class that declared the member.
+				out = append(out, projectClassMember(superDef, super, projectSelf(superDef, recv, elem)))
 			}
 		}
 		// Marked after the loop rather than inside it, so a class declaring both halves of an
 		// accessor pair contributes both instead of shadowing its own second half.
 		addElemNames(taken, superDef.Body)
-		out = append(out, c.chainElems(superDef, super, taken, visited)...)
+		out = append(out, c.chainElems(superDef, super, recv, taken, visited)...)
 	}
 	return out
 }
@@ -829,7 +851,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 	if !ok || def.Body == nil {
 		return pathResult{}, false
 	}
-	member, found := c.projectedClassMember(ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
+	member, found := c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
@@ -907,7 +929,7 @@ func objectCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
 //
 // lookup selects which half of a getter/setter pair the access wants. A read passes
 // ObjectType.ReadMember and a write passes ObjectType.WriteMember.
-func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, lookup memberLookup, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
+func (c *checker) projectedClassMember(ct, recv *soltype.ClassType, name string, lookup memberLookup, visited set.Set[string]) (soltype.ObjTypeElem, bool) {
 	def, ok := c.ctx.classDef(ct.Name)
 	if !ok || def.Body == nil {
 		return nil, false
@@ -916,7 +938,11 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, looku
 	// unprojected body and project only the one accessed, rather than rebuilding the
 	// whole body per access.
 	if member, found := lookup(def.Body, name); found {
-		return projectClassMember(def, ct, member), true
+		// The class substitution takes ct, the class the member was declared against as the
+		// walk reaches it. The `Self` substitution takes recv, the class the ACCESS was made
+		// through, which stays fixed as the walk climbs so an inherited `-> Self` yields the
+		// receiver's class rather than the declaring one.
+		return projectClassMember(def, ct, projectSelf(def, recv, member)), true
 	}
 	if visited.Contains(ct.Name) {
 		return nil, false
@@ -924,7 +950,7 @@ func (c *checker) projectedClassMember(ct *soltype.ClassType, name string, looku
 	visited.Add(ct.Name)
 	for _, superType := range def.Supers {
 		superInstance := substituteSuperArgs(def, ct, superType)
-		if member, found := c.projectedClassMember(superInstance, name, lookup, visited); found {
+		if member, found := c.projectedClassMember(superInstance, recv, name, lookup, visited); found {
 			return member, true
 		}
 	}
@@ -989,6 +1015,38 @@ func projectClassMember(def *ClassDef, ct *soltype.ClassType, member soltype.Obj
 	}
 	return soltype.AcceptObjElem(member, newClassSubst(def, ct), soltype.Positive)
 }
+
+// projectSelf resolves every `Self` in a member at recv, the class the RECEIVER belongs to.
+// That is what makes `Self` polymorphic: a member declared `me(self) -> Self` on A and reached
+// through a `B extends A` yields B, the way TypeScript's `this` type does.
+//
+// recv is threaded down from the access rather than taken from the declaring class, which is the
+// one thing the substitution cannot read off def. projectClassMember rewrites an inherited
+// member for the arguments the `extends` clause writes, so it holds the SUPERCLASS instance
+// there; `Self` needs the subclass instead, so the two substitutions take different classes and
+// stay separate.
+//
+// def.HasSelf keeps the walk off every class that wrote no `Self`, which is nearly all of them.
+func projectSelf(def *ClassDef, recv *soltype.ClassType, member soltype.ObjTypeElem) soltype.ObjTypeElem {
+	if !def.HasSelf || recv == nil {
+		return member
+	}
+	return soltype.AcceptObjElem(member, &selfSubst{recv: recv}, soltype.Positive)
+}
+
+// selfSubst replaces every `Self` with the receiver's own instance. It substitutes the whole
+// node rather than descending into it, so the declaring class a `Self` carries is dropped along
+// with it — that class is what `Self` means only until a receiver is known.
+type selfSubst struct{ recv *soltype.ClassType }
+
+func (s *selfSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if _, ok := t.(*soltype.SelfType); ok {
+		return soltype.EnterResult{Type: s.recv, SkipChildren: true}
+	}
+	return soltype.EnterResult{}
+}
+
+func (s *selfSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // classCarrier resolves a receiver to the class instance it reads as: a ClassType
 // directly, or a type variable whose lower bounds carry one — the same look-through
@@ -1095,7 +1153,7 @@ func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjT
 // found=false for any other receiver.
 func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
 	if ct, ok := classCarrier(carrier); ok {
-		return c.projectedClassMember(ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
+		return c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
 	}
 	if obj, ok := carrier.(*soltype.ObjectType); ok {
 		return obj.WriteMember(name)

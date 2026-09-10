@@ -1136,7 +1136,12 @@ func (c *checker) wrapGenerator(node ast.Node, gs *genSinks, bodyType, throws so
 // `<: never` failures.
 func (c *checker) paramType(scope *Scope, p *ast.Param, lvl int) soltype.Type {
 	if p.TypeAnn != nil {
-		if t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl); ok {
+		// A parameter's annotation sits one position deeper in the input, which flips the
+		// variance. reportSelfInInput reads the depth to judge where a `Self` was written.
+		c.inputDepth++
+		t, ok := c.resolveTypeAnn(scope, p.TypeAnn, lvl)
+		c.inputDepth--
+		if ok {
 			return t
 		}
 	}

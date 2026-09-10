@@ -114,6 +114,13 @@ type checker struct {
 	// `Self` still resolves as an ordinary class reference with its own arity check.
 	selfClass *soltype.ClassType
 
+	// inputDepth counts how many parameter positions enclose the annotation being resolved, so
+	// a `Self` can be judged by the variance of where it was written. Each parameter position
+	// flips the variance, so an odd depth is contravariant and an even one covariant: a method's
+	// own parameter is depth 1, a parameter of a callback parameter is depth 2, and a return is
+	// depth 0.
+	inputDepth int
+
 	// pkgURI is the URI of the package whose declarations are being inferred,
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,

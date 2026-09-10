@@ -1524,6 +1524,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			}
 		}
 		return true
+	case *soltype.SelfType:
+		// A `Self` equals only another `Self` over the same declaring class. It never equals
+		// that class written out, which is the distinction the kind exists to keep: a member
+		// declared `-> Self` and one declared `-> A` mean different things on a subclass of A.
+		b, ok := b.(*soltype.SelfType)
+		return ok && equalTypeWith(a.Class, b.Class, ctx)
 	case *soltype.ClassType:
 		b, ok := b.(*soltype.ClassType)
 		// Nominal identity is the qualified name plus the Final exactness flag. The

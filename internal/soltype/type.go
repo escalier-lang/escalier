@@ -1183,6 +1183,25 @@ type RestSpreadType struct {
 	Operand Type
 }
 
+// SelfType is a `Self` written inside a class member signature. It denotes the class the
+// RECEIVER belongs to rather than the class the member was declared in, so an inherited
+// `me(self) -> Self` on a `B extends A` yields `B` and not `A`. That is TypeScript's
+// polymorphic `this` type, and it is what makes a builder-style API survive inheritance.
+//
+// It is a kind of its own rather than a marker on ClassType because the distinction has to
+// survive in the STORED signature: once `Self` resolves to the enclosing class, a written `Self`
+// and a written `A` are the same ClassType, and no rewrite could tell them apart afterwards.
+// Carrying the fact in the type means no reader has to remember to test a flag, and collapsing
+// the distinction silently — which a flag invites at every equality, dedup and subsume step — is
+// not possible.
+//
+// Class is the class the member was declared in, which is what `Self` means until a receiver is
+// known. Substitution replaces the whole SelfType with the receiver's own instance, so a reader
+// that meets one is looking at an unsubstituted member and reads Class as the answer.
+type SelfType struct {
+	Class *ClassType
+}
+
 // TemplateLitType is the residual template literal type operator, such as
 // `on${T}`. Quasis holds the fixed string segments and Interps the interpolated
 // types between them, so Quasis has exactly one more entry than Interps. Like KeyofType
@@ -1342,6 +1361,7 @@ func (*ErrorType) isType()           {}
 func (*ClassType) isType()           {}
 func (*AliasType) isType()           {}
 func (*SkolemType) isType()          {}
+func (*SelfType) isType()            {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).
@@ -1389,6 +1409,9 @@ func LevelOf(t Type) int {
 			m = max(m, LevelOfLifetime(la))
 		}
 		return max(m, LevelOfLifetime(t.Lt))
+	case *SelfType:
+		// A `Self`'s level is its declaring class's, since that is the only type it carries.
+		return LevelOf(t.Class)
 	case *AliasType:
 		// An alias reference's level is the max level over its type and lifetime arguments;
 		// the Name carries no variables. A bare reference with no arguments is level 0. A free

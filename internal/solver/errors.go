@@ -1483,6 +1483,35 @@ func (e *SelfTypeNameError) Message() string {
 		e.Kind.article(), e.Kind, e.Name.Name)
 }
 
+// SelfInInputPositionError fires when `Self` is written in a CONTRAVARIANT position of a class
+// member, which is a DIRECT parameter such as `eq(self, other: Self) -> boolean`. A parameter
+// nested inside another parameter is not one, which is why the message says "direct": a `Self`
+// in a callback's own parameter list stays legal.
+//
+// `Self` denotes the class the receiver belongs to, so on a `B extends A` an inherited member
+// declared `-> Self` yields B. In an output that is sound and is the point. In a direct
+// parameter it is not: `B <: A` lets an A-typed holder call `a.eq(someA)` on a value that is
+// really a B, whose `eq` demands a B. TypeScript has this hole and method bivariance hides it.
+//
+// A `Self` nested inside a callback parameter is contravariant twice, so it is covariant overall
+// and stays legal: `each(self, cb: fn (arr: Self) -> boolean)` reads `arr` at the receiver's
+// class. resolveScopedTypeRef counts the enclosing parameter positions and reports only the odd
+// counts.
+//
+// A class that means "this exact class" in a parameter can still write the class by name, which
+// keeps the invariant reading available where it is what was intended.
+type SelfInInputPositionError struct {
+	Ref *ast.TypeRefTypeAnn
+}
+
+func (e *SelfInInputPositionError) Span() ast.Span      { return e.Ref.Span() }
+func (e *SelfInInputPositionError) Related() []ast.Span { return nil }
+func (e *SelfInInputPositionError) isSolverError()      {}
+func (e *SelfInInputPositionError) Message() string {
+	return "\"Self\" cannot be written in a direct parameter position; it denotes the receiver's own class, " +
+		"so a subclass would demand an argument its superclass accepts — write the class by name instead"
+}
+
 // RestParamNotLastError fires when a function type annotation writes a `...xs: T` parameter
 // somewhere other than the final position, as `fn (...xs: [number], y: string) -> undefined` does.
 // A rest parameter binds the arguments left over after the fixed ones, so it means something

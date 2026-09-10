@@ -1094,7 +1094,12 @@ func (c *checker) resolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int)
 		// the function keeps its arity and shape, cascade-safe like Promise<bad>.
 		var pt soltype.Type = c.freshAt(lvl)
 		if p.TypeAnn != nil {
-			if t, ok := c.resolveTypeAnn(annScope, p.TypeAnn, lvl); ok {
+			// A parameter's annotation sits one position deeper in the input, which flips the
+			// variance. reportSelfInInput reads the depth to judge where a `Self` was written.
+			c.inputDepth++
+			t, ok := c.resolveTypeAnn(annScope, p.TypeAnn, lvl)
+			c.inputDepth--
+			if ok {
 				pt = t
 			}
 		}
