@@ -151,21 +151,21 @@ func (c *checker) markCallRaised(fn *soltype.FuncType) {
 func (c *checker) tryOverloadArm(
 	lvl int, args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
 ) (bool, []SolverError) {
-	shapeParams := make([]*soltype.FuncParam, len(args))
+	callShapeParams := make([]*soltype.FuncParam, len(args))
 	for i, arg := range args {
-		shapeParams[i] = &soltype.FuncParam{Type: arg}
+		callShapeParams[i] = &soltype.FuncParam{Type: arg}
 	}
 	// The upgrade has to run inside the trial, since whether a uniquely-owned argument may fill
 	// a `mut` parameter is part of whether this arm matches at all. Its checks go through the
 	// error-returning engine so a losing arm writes nothing.
 	var upgradeErrs []SolverError
-	shapeParams = c.upgradeShapeParams(argExprs, shapeParams, inst, func(_ ast.Node, srcT, target soltype.Type) {
+	callShapeParams = c.upgradeCallShapeParams(argExprs, callShapeParams, inst, func(_ ast.Node, srcT, target soltype.Type) {
 		upgradeErrs = append(upgradeErrs, c.ctx.Constrain(srcT, target)...)
 	})
 	if hasHardError(upgradeErrs) {
 		return false, nil
 	}
-	shape := &soltype.FuncType{Params: shapeParams, Ret: c.freshAt(lvl), Throws: c.freshAt(lvl)}
+	shape := &soltype.FuncType{Params: callShapeParams, Ret: c.freshAt(lvl), Throws: c.freshAt(lvl)}
 	errs := append(upgradeErrs, c.ctx.Constrain(inst, shape)...)
 	if hasHardError(errs) {
 		return false, nil
