@@ -426,6 +426,49 @@ func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 		_, _, errs := inferSource(t, src)
 		require.Equal(t, []string{"1:15-1:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
 	})
+	t.Run("call argument", func(t *testing.T) {
+		src := `declare fn take(a: mut {p: {x: number | string}}) -> number
+fn f() -> number {
+	val inner: mut {x: number} = {x: 0}
+	return take({p: inner})
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"1:24-1:25: cannot constrain immutable object <: mutable object"},
+			messagesWithSpan(t, errs))
+	})
+}
+
+// The guard above is what makes a WIDER owned-mutable parameter safe to adopt. `take({x: 1})`
+// against `a: mut {x: number | string}` hands the callee a cell it may write a string into,
+// which is sound only because the argument is freshly built or moved, leaving the caller no
+// view of it at a narrower type.
+//
+// A pre-existing `mut` cell is exactly the case where such a view would survive, so it takes no
+// upgrade and falls through to the strict path, which rejects the widening.
+func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
+	const take = "declare fn take(a: mut {x: number | string}) -> number\n"
+	t.Run("a fresh literal adopts the wider parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, take+"val r = take({x: 1})")
+		require.Empty(t, errs)
+	})
+	t.Run("a moved variable does too, and is consumed", func(t *testing.T) {
+		src := take + `fn g() -> number {
+	val cfg = {x: 1}
+	val n = take(cfg)
+	return cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"5:9-5:14: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
+	})
+	t.Run("a pre-existing mut cell does not, so the widening is rejected", func(t *testing.T) {
+		src := take + `fn g() -> number {
+	val cfg: mut {x: number} = {x: 1}
+	return take(cfg)
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"4:9-4:18: cannot constrain string <: number"},
+			messagesWithSpan(t, errs))
+	})
 }
 
 // A module-level `mut` global takes the upgrade on reassignment just like a local `mut`
