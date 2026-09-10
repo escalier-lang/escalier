@@ -88,16 +88,13 @@ func TestInferSpreadTupleRest(t *testing.T) {
 	t.Run("a spread that never grounds leaves the slot arity-only", func(t *testing.T) {
 		// `...T` over a type parameter names no positions to splice, so the slot stays a
 		// residual: the call is checked for arity and its arguments are left alone. Checking
-		// them against the slot would ask for `1 <: [...T, string]`, which is neither true nor
-		// what the slot means.
+		// them against the slot would ask for `1 <: [...T, Array<number>]`, which is neither
+		// true nor what the slot means.
 		//
 		// The argument at the trailing `string` position is deliberately a NUMBER. Passing a
 		// string there would pass whether or not that position is being enforced, so it could
 		// not tell arity-only apart from a slot that checks its fixed suffix.
-		_, _, errs := inferSource(t, `
-			declare fn f<T>(...args: [...T, string]) -> number
-			val r = f(1, 2)
-		`)
+		_, _, errs := inferSource(t, ungroundableRestDecl+"val r = f(1, 2)")
 		require.Empty(t, errs)
 	})
 	t.Run("an unresolved spread stands for any number of positions", func(t *testing.T) {
@@ -105,17 +102,28 @@ func TestInferSpreadTupleRest(t *testing.T) {
 		// stands for an unknown number of positions: `[...T, string]` binds one argument when
 		// T is empty and any larger number when it is not. Counting the spread as one element
 		// would put the range at [2, 2] and reject both ends.
-		const decl = "declare fn f<T>(...args: [...T, string]) -> number\n"
 		for _, call := range []string{`f("a")`, "f(1, 2)", `f(1, "a", true)`} {
-			_, _, errs := inferSource(t, decl+"val r = "+call)
+			_, _, errs := inferSource(t, ungroundableRestDecl+"val r = "+call)
 			require.Empty(t, errs, "%s must be accepted on arity", call)
 		}
-		_, _, errs := inferSource(t, decl+"val r = f()")
+		_, _, errs := inferSource(t, ungroundableRestDecl+"val r = f()")
 		require.Equal(t,
 			[]string{"2:9-2:12: Not enough arguments: expected at least 1, but got 0"},
 			messagesWithSpan(t, errs), "the fixed element is still required")
 	})
 }
+
+// ungroundableRestDecl is a rest slot whose spread operand can never ground: `T` is a type
+// PARAMETER, so it names no element list to splice however it is instantiated.
+//
+// The `Array<number>` bound is what makes the spread well-formed rather than merely
+// ungroundable. A spread splices a positional list, so its operand has to name one — a tuple,
+// an array, or a parameter constrained to either. An unconstrained `T` does not, and the
+// committed tree writes the constrained form throughout, as `Function.bind` does with
+// `bind<A: mut Array<any>, B: mut Array<any>, R>(this: fn (...args: [...A, ...B]) -> R, …)`.
+// Nothing enforces that today, which is #1533; writing it correctly here keeps these cases
+// resting on a program that issue would still accept.
+const ungroundableRestDecl = "declare fn f<T: Array<number>>(...args: [...T, string]) -> number\n"
 
 // A rest slot typed as an INEXACT tuple expands its fixed prefix into positions and leaves the
 // tail unbounded. `[A, ...]` means "at least an A, then any number more".
