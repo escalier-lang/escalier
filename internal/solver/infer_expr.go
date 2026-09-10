@@ -1692,9 +1692,17 @@ func (c *checker) upgradeCallDemand(
 		// field be repointed but grants no write to the referent, whose type stays invariant
 		// through the RefType arm, so the covariant check here cannot widen it.
 		check(argExprs[i], demand[i].Type, view)
-		// Pin the demand entry to the parameter's own type. The argument has been checked
-		// covariantly above, and leaving the immutable argument type here would make the
-		// caller's `candidate <: callShape` constraint reject it a second time, strictly.
+		// Pin the demand entry to the PARAMETER's own type, which is what the call shape
+		// carries at this position. The widening the argument needs has already happened
+		// covariantly in the check above, and pinning is what stops the caller's
+		// `candidate <: callShape` constraint from undoing it.
+		//
+		// The argument's own type wrapped in `mut` would not do, which is the reason this
+		// pins rather than upgrading the argument in place. An owned-mutable cell is
+		// INVARIANT, so `take({x: 1})` against `a: mut {x: number}` would carry
+		// `mut {x: 1}` into the shape and be rejected with `cannot constrain number <: 1`
+		// — the invariance check running the direction the covariant widening already
+		// settled. Only the parameter's own type is guaranteed to satisfy it.
 		demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 	}
 	return demand
