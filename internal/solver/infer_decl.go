@@ -365,14 +365,13 @@ func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target
 }
 
 // ownedMutReadView returns the type a value built by src is checked against when it takes
-// target's owned-mutable type, and reports whether that upgrade applies. It is the decision
-// half of tryUpgradeToOwnedMut, which runs the check itself. The view is stripOwnedMut of
-// target's inner; a fully uniquely-owned source is owned at every level, so letting it flow
-// covariantly into that cell is sound the whole way down.
+// target's owned-mutable type, and reports whether that upgrade applies. It is the decision half
+// of tryUpgradeToOwnedMut, which runs the check itself. The view is stripOwnedMut of target's
+// inner, which is sound because a uniquely-owned source is owned at every level.
 //
-// The split exists for tryOverloadArm, which trials an arm under a probe with the
-// error-returning Context.Constrain so a losing arm writes nothing. Calling
-// tryUpgradeToOwnedMut there would run the accumulating checker.constrain instead.
+// The split exists for tryOverloadArm: it trials an arm with the error-returning
+// Context.Constrain so a losing arm writes nothing, where tryUpgradeToOwnedMut would run the
+// accumulating checker.constrain.
 func (c *checker) ownedMutReadView(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
 	ref, ok := target.(*soltype.RefType)
 	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
