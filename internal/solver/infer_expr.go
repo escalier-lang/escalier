@@ -1675,12 +1675,22 @@ func (c *checker) upgradeCallDemand(
 		// is not rejected on the mutability wrapper. Only the wrapper is dropped, since the
 		// check stays covariant, so `take({y: 1})` still fails on the shape.
 		//
-		// This is sound because ownedMutReadView fires only for a freshly built literal or
-		// a moved place. Nothing else refers to the value, so no live alias can observe a
-		// write the callee makes through the mutable view it receives, which is Rule 2 of
-		// the mutability-transition checker with an empty alias set. recordCallArgEffects
-		// then moves the argument, so a later use of it is a use-after-move and the
-		// uniqueness holds past the call rather than only at it.
+		// The decision is ownedMutReadView's, and bottoms out in canUpgradeToOwnedMut and
+		// freshLiteralShape over in infer_decl.go. Those admit three shapes: a freshly built
+		// literal, a moved owned place, or a borrow expression.
+		//
+		// The first two are uniquely owned, so nothing else refers to the value and no live
+		// alias can observe a write the callee makes through the mutable view it receives,
+		// which is Rule 2 of the mutability-transition checker with an empty alias set.
+		// recordCallArgEffects then moves the argument, so a later use of it is a
+		// use-after-move and the uniqueness holds past the call rather than only at it. That
+		// move is not ordered against this grant, so it would be a convention — it is a data
+		// dependency instead, since the place-move shape needs the same VarID the move engine
+		// needs, and TestInferOwnedMutUpgradeNeedsABackingMove pins the boundary.
+		//
+		// A borrow is sound for a different reason: the mutable view lets the container's
+		// field be repointed but grants no write to the referent, whose type stays invariant
+		// through the RefType arm, so the covariant check here cannot widen it.
 		check(argExprs[i], demand[i].Type, view)
 		// Pin the demand entry to the parameter's own type. The argument has been checked
 		// covariantly above, and leaving the immutable argument type here would make the
