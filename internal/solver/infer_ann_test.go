@@ -367,7 +367,7 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 // The upgrade's soundness leans on the argument being MOVED, so a later use of it is a
 // use-after-move and the uniqueness holds past the flow site rather than only at it. Nothing
 // in the call chain enforces that ordering, which would make the coupling a convention. It is
-// enforced by a data dependency instead: the place-move branch of canUpgradeToOwnedMut goes
+// enforced by a data dependency instead: the place-move branch of isUniquelyOwned goes
 // through exprPlace, which returns false unless the identifier carries a VarID, and the VarID
 // is assigned by the same liveness pre-pass that lets the move engine record a consume. Where
 // no move can be recorded, the upgrade cannot fire.

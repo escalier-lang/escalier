@@ -768,28 +768,39 @@ func (c *checker) reportedMixedOwnership(node ast.Node) bool {
 // runs at the other value-flow sites. The join is not a single source expression, so the
 // decision is made here rather than through that per-expression helper.
 func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, retExprs []ast.Expr, ret, annT soltype.Type) {
-	if ref, ok := annT.(*soltype.RefType); ok && ref.Mut && ref.Lt == nil && c.allReturnsUpgradable(retExprs) {
-		c.constrain(node, ret, stripOwnedMut(ref.Inner))
+	// The gate is ownedMutUpgrade's, reached once per return operand so a body whose returns
+	// disagree takes the ordinary path. Re-inlining the RefType test here is what let this site
+	// and ownedMutUpgrade drift apart, which #1534 records.
+	if view, ok := c.returnsOwnedMutUpgrade(retExprs, annT); ok {
+		c.constrain(node, ret, view)
 		return
 	}
 	c.constrain(node, ret, annT)
 }
 
-// allReturnsUpgradable reports whether every return operand is upgradable per
-// canUpgradeToOwnedMut, which already rejects an operand carrying an owned-mutable cell at
-// any depth. An empty set, a bare `return` with a nil operand, or any non-upgradable
-// operand makes it false, so the grant applies only when the whole join is uniquely owned
-// and immutable.
-func (c *checker) allReturnsUpgradable(retExprs []ast.Expr) bool {
+// returnsOwnedMutUpgrade reports whether EVERY return operand may take annT's owned-mutable
+// type, and returns the type they are then checked against. It is ownedMutUpgrade folded over a
+// body's returns, so the two sites cannot disagree on when the upgrade applies.
+//
+// An empty set, a bare `return` with a nil operand, or one operand that does not qualify makes
+// it false, since the annotation covers the join of every return and the join is uniquely owned
+// only when each part is.
+func (c *checker) returnsOwnedMutUpgrade(retExprs []ast.Expr, annT soltype.Type) (soltype.Type, bool) {
 	if len(retExprs) == 0 {
-		return false
+		return nil, false
 	}
+	var view soltype.Type
 	for _, e := range retExprs {
-		if e == nil || !c.canUpgradeToOwnedMut(e) {
-			return false
+		if e == nil {
+			return nil, false
 		}
+		v, ok := c.ownedMutUpgrade(e, annT)
+		if !ok {
+			return nil, false
+		}
+		view = v
 	}
-	return true
+	return view, true
 }
 
 // joinBorrows joins several mutable borrows of objects. It applies only when EVERY
@@ -1384,7 +1395,7 @@ func borrowInnerOf(t soltype.Type) (soltype.RefInner, bool) {
 // named/generalized callee, which inferIdent now resolves through instantiate — see
 // resolveFunc); both recover, so recovery no longer regresses for named callees.
 //
-// PR4 adds two #677 pieces: an EXACT all-required call demand, and the extra-arg
+// PR4 adds two #677 pieces: an EXACT all-required call supply, and the extra-arg
 // lint that rejects passing more arguments than a concrete callee declares.
 func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type {
 	// PR6: a DIRECT call to an overloaded name resolves against the overload set via
@@ -1456,16 +1467,21 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// Arity lints (#677 §4.2.3): a DIRECT call rejects too-many AND too-few arguments, for exact
 	// and inexact callees alike, since supplying extras to a call you can see is a mistake even
 	// where the lattice tolerates them. They fire only for a concrete callee. When one fires the
-	// demand is reshaped into the callee's accept-set so the synth's gate does not also report
+	// supply is reshaped into the callee's accept-set so the synth's gate does not also report
 	// arity: too-many truncates, too-few pads with fresh vars that constrain nothing.
-	demand := args
+	// supply is the argument list as the synthesized call shape's parameters. #677 names the
+	// two sides of an arrow constraint by what they do with arguments: the SUPPLIER, the
+	// subtype, demands them, and the SLOT, the supertype, supplies them. The constraint below
+	// is `callee <: callShape`, so the callee is the supplier that demands and the call shape
+	// is the slot that supplies — which is this list.
+	supply := args
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
 		// A rest param survives expansion only when it binds an unbounded number of args,
 		// so it absorbs any number of trailing ones and is never "too many". Only a
 		// fixed-arity callee trips this lint.
 		c.errs = append(c.errs, &TooManyArgsError{Call: e, Fn: fn})
-		demand = args[:len(fn.Params)]
+		supply = args[:len(fn.Params)]
 	case resolved && len(args) < requiredCount(fn):
 		c.errs = append(c.errs, &NotEnoughArgsError{Call: e, Fn: fn})
 		// Pad to whichever is larger, the declared parameter count or the required count.
@@ -1473,13 +1489,13 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		// tuple, but an INEXACT tuple rest is left unexpanded and can require more arguments
 		// than it declares parameters: `fn (a: number, ...args: [string, boolean, ...]) -> R`
 		// declares two and requires three. Padding to the parameter count alone would leave
-		// the demand below the accept-set floor, so the gate would report an arity mismatch
+		// the supply below the accept-set floor, so the gate would report an arity mismatch
 		// on top of the lint that just fired.
 		want := max(len(fn.Params), requiredCount(fn))
-		demand = make([]*soltype.FuncParam, want)
-		copy(demand, args)
+		supply = make([]*soltype.FuncParam, want)
+		copy(supply, args)
 		for i := len(args); i < want; i++ {
-			demand[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
+			supply[i] = &soltype.FuncParam{Type: c.freshAt(lvl)}
 		}
 	}
 
@@ -1487,7 +1503,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// flowing into an owned-mutable parameter takes the mutable type, the same grant the
 	// annotated declaration makes, so `f({x: 1})` and `f(cfg)` for an owned-mutable
 	// parameter type-check. The argument's shape is constrained covariantly against the
-	// parameter's immutable read view, and the demand entry for that argument is pinned to
+	// parameter's immutable read view, and the supply entry for that argument is pinned to
 	// the parameter's own type so the callee <: callShape constraint below does not re-check
 	// it strictly.
 	// consumeCallArgs still moves the argument, since an owned-mutable parameter is
@@ -1495,7 +1511,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// known. A deferred callee, one called through a `var`, keeps every argument on the
 	// strict path.
 	if resolved {
-		demand = c.upgradeCallDemand(e.Args, demand, fn, func(src ast.Node, srcT, target soltype.Type) {
+		supply = c.upgradeCallSupply(e.Args, supply, fn, func(src ast.Node, srcT, target soltype.Type) {
 			c.constrain(src, srcT, target)
 		})
 	}
@@ -1508,7 +1524,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// rejecting every call to a fixed-arity (exact) function.
 	// The shape's Throws slot is this body's sink, so constrain's covariant throws rule
 	// records what the callee raises into it. A non-throwing `never` records nothing.
-	callShape := &soltype.FuncType{Params: demand, Ret: res, Throws: c.throwsSink(lvl)}
+	callShape := &soltype.FuncType{Params: supply, Ret: res, Throws: c.throwsSink(lvl)}
 	// A resolved callee that declares nothing raises nothing, so it leaves the enclosing
 	// clause unused. Any other callee counts as raising, since its throws may still be an
 	// unsolved variable at this point. resolveOverload reaches the same rule through the same
@@ -1644,17 +1660,17 @@ func (c *checker) inferArmOverloadCall(
 	return ret
 }
 
-// upgradeCallDemand applies the immutable→mutable argument upgrade across a call's demand and
-// returns the demand it leaves behind. It is the ONE place either call path decides which
+// upgradeCallSupply applies the immutable→mutable argument upgrade across a call's supply and
+// returns the supply it leaves behind. It is the ONE place either call path decides which
 // arguments take an owned-mutable parameter's type, so a call shape and an overload arm's trial
 // agree on what a `mut` parameter accepts.
 //
 // `take({x: 1})` against `a: mut {x: number | string}` runs in three steps:
 //
-//  1. ownedMutReadView hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
+//  1. ownedMutUpgrade hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
 //  2. check runs `{x: 1} <: {x: number | string}` COVARIANTLY. That is where the widening the
 //     argument needs happens, and where a wrong shape such as `take({y: 1})` still fails.
-//  3. The demand entry becomes the parameter's own type, so the later `callee <: callShape`
+//  3. The supply entry becomes the parameter's own type, so the later `callee <: callShape`
 //     compares `mut {x: number | string}` against itself. An owned-mutable cell is invariant,
 //     and identity is what satisfies it — no subtype relation is asked for at that position.
 //
@@ -1664,15 +1680,15 @@ func (c *checker) inferArmOverloadCall(
 //
 // An argument at a rest slot takes no upgrade, since it fills one element of the gathered array
 // rather than the slot itself. The element check belongs to constrain's scatter rule.
-func (c *checker) upgradeCallDemand(
-	argExprs []ast.Expr, demand []*soltype.FuncParam, fn *soltype.FuncType,
+func (c *checker) upgradeCallSupply(
+	argExprs []ast.Expr, supply []*soltype.FuncParam, fn *soltype.FuncType,
 	check func(src ast.Node, srcT, target soltype.Type),
 ) []*soltype.FuncParam {
-	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(demand); i++ {
+	for i := 0; i < len(argExprs) && i < len(fn.Params) && i < len(supply); i++ {
 		if fn.Params[i].Rest {
 			continue
 		}
-		view, ok := c.ownedMutReadView(argExprs[i], fn.Params[i].Type)
+		view, ok := c.ownedMutUpgrade(argExprs[i], fn.Params[i].Type)
 		if !ok {
 			continue
 		}
@@ -1681,7 +1697,7 @@ func (c *checker) upgradeCallDemand(
 		// is not rejected on the mutability wrapper. Only the wrapper is dropped, since the
 		// check stays covariant, so `take({y: 1})` still fails on the shape.
 		//
-		// The decision is ownedMutReadView's, and bottoms out in canUpgradeToOwnedMut and
+		// The decision is ownedMutUpgrade's, and bottoms out in isUniquelyOwned and
 		// freshLiteralShape over in infer_decl.go. Those admit three shapes: a freshly built
 		// literal, a moved owned place, or a borrow expression.
 		//
@@ -1697,11 +1713,10 @@ func (c *checker) upgradeCallDemand(
 		// A borrow is sound for a different reason: the mutable view lets the container's
 		// field be repointed but grants no write to the referent, whose type stays invariant
 		// through the RefType arm, so the covariant check here cannot widen it.
-		check(argExprs[i], demand[i].Type, view)
+		check(argExprs[i], supply[i].Type, view)
 		// Step 3 of the walkthrough above. Upgrading the argument in place would not do,
-		// which is the reason this pins instead. An
-		// owned-mutable cell is INVARIANT, so the shape has to carry the parameter's type
-		// exactly. Wrapping the argument's own type gives `mut {x: 1}` for `take({x: 1})`
+		// which is the reason this pins instead. An owned-mutable cell is INVARIANT, so the
+		// shape has to carry the parameter's type exactly. Wrapping the argument's own type gives `mut {x: 1}` for `take({x: 1})`
 		// against `a: mut {x: number}`, rejected with `cannot constrain number <: 1`.
 		// Widening the literals first, as the unannotated `val mut q = {x: 1}` case does in
 		// inferVarDeclInit, gives `mut {x: number}` and fixes that one — but only that one.
@@ -1712,9 +1727,9 @@ func (c *checker) upgradeCallDemand(
 		// has to invent a usable one; `mut {x: 1}` there would reject the later `q.x = 2`.
 		// An argument has the parameter, and adopting it lands on the invariant position by
 		// construction whatever shape it takes.
-		demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
+		supply[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 	}
-	return demand
+	return supply
 }
 
 // inferCallArgs types a call's arguments left to right, the ONE place either call path does so.

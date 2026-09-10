@@ -551,7 +551,7 @@ func (c *checker) storedReferents(arg ast.Expr) []liveness.VarID {
 // storeExprAt returns the expression at store position i: the receiver at selfIndex, and the
 // argument at that index otherwise. ok is false when the position names nothing, which covers
 // a plain call reaching selfIndex and an argument beyond the ones the call wrote — the
-// surplus a too-few-arguments call pads the demand with.
+// surplus a too-few-arguments call pads the call shape with.
 func storeExprAt(e *ast.CallExpr, recv ast.Expr, i int) (ast.Expr, bool) {
 	if i == selfIndex {
 		return recv, recv != nil
