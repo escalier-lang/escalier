@@ -1697,12 +1697,19 @@ func (c *checker) upgradeCallDemand(
 		// covariantly in the check above, and pinning is what stops the caller's
 		// `candidate <: callShape` constraint from undoing it.
 		//
-		// The argument's own type wrapped in `mut` would not do, which is the reason this
-		// pins rather than upgrading the argument in place. An owned-mutable cell is
-		// INVARIANT, so `take({x: 1})` against `a: mut {x: number}` would carry
-		// `mut {x: 1}` into the shape and be rejected with `cannot constrain number <: 1`
-		// — the invariance check running the direction the covariant widening already
-		// settled. Only the parameter's own type is guaranteed to satisfy it.
+		// Upgrading the argument in place would not do, which is the reason this pins. An
+		// owned-mutable cell is INVARIANT, so the shape has to carry the parameter's type
+		// exactly. Wrapping the argument's own type gives `mut {x: 1}` for `take({x: 1})`
+		// against `a: mut {x: number}`, rejected with `cannot constrain number <: 1`.
+		// Widening the literals first, as the unannotated `val mut q = {x: 1}` case does in
+		// inferVarDeclInit, gives `mut {x: number}` and fixes that one — but only that one.
+		// It then rejects `a: mut {x: number | string}` and `a: mut {x: 1}`, since an
+		// invariant position admits neither a narrower nor a wider type.
+		//
+		// The difference is that `val mut q = {x: 1}` has no target to adopt, so widening
+		// has to invent a usable one; `mut {x: 1}` there would reject the later `q.x = 2`.
+		// An argument has the parameter, and adopting it lands on the invariant position by
+		// construction whatever shape it takes.
 		demand[i] = &soltype.FuncParam{Type: fn.Params[i].Type}
 	}
 	return demand
