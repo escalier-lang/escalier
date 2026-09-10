@@ -133,54 +133,27 @@ func TestCallStoreEdge(t *testing.T) {
 				"build": "fn (p: mut {value: number}, q: mut {value: number}) -> undefined",
 			},
 		},
-		// DISABLED until #1262. `p` is an owned parameter, so it was moved into build and the
-		// caller holds no path to it. Nothing escapes, and the store should record an edge the
-		// way it does into a local. The check reports an escape because it asks only whether
-		// the root is a parameter, without separating a borrow parameter from an owned one.
-		// #1262 explains why narrowing that test has to land with the exclusivity pass in #794.
-		/*
-			"StoreIntoOwnedParameterTargetRecordsAnEdge": {
-				src: `
-					declare fn store<'a, 'b, 'c>(
-						target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
-						item: &'a mut {value: number},
-					) -> undefined
-
-					fn build(p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined {
-						val mut b = {value: 2}
-						store(&mut p, &mut b)
-					}
-				`,
-				want: nil,
-				types: map[string]string{
-					"store": "fn <'a>(target: &mut {peer: &'a mut {value: number}, spare: &mut {value: number}}, " +
-						"item: &'a mut {value: number}) -> undefined",
-					"build": "fn (p: mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined",
-				},
+		// An auto-borrowed argument names no borrow expression, so the local it carries is the
+		// place's own root. The target is an owned parameter, moved into build and out of the
+		// caller's reach, so the store records an edge the way it does into a local and nothing
+		// escapes. TestStoreIntoOwnedParameter covers the written-out `&mut` form.
+		"AutoBorrowedArgumentIntoOwnedParameterRecordsAnEdge": {
+			src: `
+				declare fn store<'a, 'c>(
+					target: &'c mut {peer: &'a {value: number}},
+					item: &'a {value: number},
+				) -> undefined
+				fn build(p: mut {peer: &{value: number}}) -> undefined {
+					val b = {value: 2}
+					store(&mut p, b)
+				}
+			`,
+			want: nil,
+			types: map[string]string{
+				"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
+				"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
 			},
-		*/
-		// DISABLED until #1262. The auto-borrowed form of the case above. The argument names no
-		// borrow expression, so the local it carries is the place's own root, but the target is
-		// still an owned parameter and still nothing the caller can reach.
-		/*
-			"AutoBorrowedArgumentIntoOwnedParameterRecordsAnEdge": {
-				src: `
-					declare fn store<'a, 'c>(
-						target: &'c mut {peer: &'a {value: number}},
-						item: &'a {value: number},
-					) -> undefined
-					fn build(p: mut {peer: &{value: number}}) -> undefined {
-						val b = {value: 2}
-						store(&mut p, b)
-					}
-				`,
-				want: nil,
-				types: map[string]string{
-					"store": "fn <'a>(target: &mut {peer: &'a {value: number}}, item: &'a {value: number}) -> undefined",
-					"build": "fn (p: mut {peer: &{value: number}}) -> undefined",
-				},
-			},
-		*/
+		},
 		// DISABLED until #1263. The store aliases a.peer to b, so the returned tuple hands the
 		// caller two mutable paths to one object. That is the shape a GC'd target makes unsafe,
 		// and nothing reports it. The wording and span below are a guess at what the
