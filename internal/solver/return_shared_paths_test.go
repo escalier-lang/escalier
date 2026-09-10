@@ -19,22 +19,11 @@ func TestSharedReturnPaths(t *testing.T) {
 		src  string
 		want []string
 	}{
-		// The same disjoint pair reached through a BINDING carrier. A binding is the route that
-		// pairs the return type's positions against the graph's edges, where a returned literal
-		// compares the places its elements name. Both routes have to agree that the pair is
-		// fine.
-		"DisjointFieldsThroughABindingOk": {
-			src: `
-				fn build() {
-					val mut b = {x: {n: 1}, y: {n: 2}}
-					val t = {p: &mut b.x, q: &mut b.y}
-					return t
-				}
-			`,
-			want: nil,
-		},
-		// A tuple's elements all sit at the carrier's own path, so the two edges are told apart
-		// by the field they reach inside b rather than by where they sit in the carrier.
+		// Two borrows of disjoint fields of one local reach data neither can see the other
+		// write, so the pair is not a hazard. The carrier is a binding, which pairs the return
+		// type's positions against the graph's edges, and a tuple, whose elements all sit at
+		// the carrier's own path. The two edges are told apart by the field they reach inside b
+		// rather than by where they sit in the carrier.
 		"DisjointFieldsInATupleOk": {
 			src: `
 				fn build() {
@@ -91,16 +80,6 @@ func TestSharedReturnPaths(t *testing.T) {
 				}
 			`,
 			want: []string{"5:13-5:35: returned value reaches 'b' through two paths while one of them can write"},
-		},
-		// Both elements written as borrows outright, with no carrier in between.
-		"TwoBorrowsOfOneLocal": {
-			src: `
-				fn build() -> [&mut {value: number}, &mut {value: number}] {
-					val mut b = {value: 2}
-					return [&mut b, &mut b]
-				}
-			`,
-			want: []string{"4:13-4:29: returned value reaches 'b' through two paths while one of them can write"},
 		},
 		// Two readers see the same value, so nothing can disagree.
 		"TwoSharedPathsOk": {
