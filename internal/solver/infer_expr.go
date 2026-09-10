@@ -1428,6 +1428,17 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	if ft, ok := callee.(*soltype.FuncType); ok && len(ft.TypeParams) > 0 {
 		callee = c.ctx.instantiateFuncBinder(ft, lvl)
 	}
+	// A callee whose rest slot is a union of tuples admits a call when SOME member admits it,
+	// so each member becomes a candidate and the call resolves through the same trial machinery
+	// an overload set uses. `next(...value: [] | [TNext])` accepts both `i.next()` and
+	// `i.next(v)`, and rejects a wrong `v` against the element rather than against the slot.
+	// This runs after the generic instantiation above so an arm carries the call's own
+	// type-parameter bindings rather than the binder's.
+	if fn, ok := resolveFunc(callee); ok {
+		if arms, ok := c.ctx.distributeUnionRest(fn, newSeenPairs()); ok {
+			return c.inferArmOverloadCall(scope, lvl, e, arms, consumeRef, hasConsumeRef)
+		}
+	}
 	args := make([]*soltype.FuncParam, len(e.Args))
 	for i, a := range e.Args {
 		args[i] = &soltype.FuncParam{Type: c.inferExpr(scope, lvl, a)}
@@ -1445,7 +1456,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 		// A tuple-typed rest param expands to one positional param per element, so the lints, the
 		// owned-mutable upgrade, and consumeCallArgs below read plain positions rather than
 		// comparing an argument against the whole tuple.
-		fn = expandTupleRest(fn)
+		fn = c.ctx.expandTupleRest(fn, newSeenPairs())
 	}
 	demand := args
 	switch {

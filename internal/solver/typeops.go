@@ -2,6 +2,7 @@ package solver
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -1974,12 +1975,13 @@ func objectHasSpread(t soltype.Type) bool {
 
 // hasRestSpread reports whether any element of elems is a `...P` spread.
 func hasRestSpread(elems []soltype.Type) bool {
-	for _, el := range elems {
-		if _, ok := el.(*soltype.RestSpreadType); ok {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(elems, isRestSpread)
+}
+
+// isRestSpread reports whether a tuple element is a `...P` spread.
+func isRestSpread(t soltype.Type) bool {
+	_, ok := t.(*soltype.RestSpreadType)
+	return ok
 }
 
 // strLitType builds the string-literal type for one key name, the form a projected object or
