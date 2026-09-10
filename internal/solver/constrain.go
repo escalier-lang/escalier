@@ -141,7 +141,8 @@ func unwrapSelf(t soltype.Type) soltype.Type {
 	if self, ok := t.(*soltype.SelfType); ok {
 		return self.Class
 	}
-	return t}
+	return t
+}
 
 // restIndex is the position of f's typed rest param, or -1 when it has none. A rest param
 // is always last, since resolveFuncTypeAnn rejects any other position, so the index is
