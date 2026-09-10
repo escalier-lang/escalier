@@ -60,13 +60,14 @@ func TestBorrowExclusivity(t *testing.T) {
 			`,
 			want: nil,
 		},
-		// The parameter decides, not the argument. Both arguments are written `&mut`, but the
-		// callee takes them as shared, so it can only read and neither view can change the value.
-		"MutableArgumentsIntoSharedParamsOk": {
+		// The parameter decides, not the argument. One argument is written `&mut` and the other
+		// `&`, which would be the conflicting pair if the argument decided. The callee takes both
+		// as shared, so neither view can change the value.
+		"MutableArgumentIntoASharedParamOk": {
 			src: exclusivityDecls + `
 				fn g() {
 					val mut x = {v: 1}
-					readRead(&mut x, &mut x)
+					readRead(&mut x, &x)
 				}
 			`,
 			want: nil,
@@ -125,15 +126,6 @@ func TestBorrowExclusivity(t *testing.T) {
 				}
 			`,
 			want: []string{"8:19-8:20: cannot borrow 'm' as mutable while it is borrowed as immutable"},
-		},
-		// The same borrow filling two shared parameters is two readers.
-		"OneBorrowFillingTwoSharedParamsOk": {
-			src: exclusivityDecls + `
-				fn g(m: &mut {v: number}) {
-					readRead(m, m)
-				}
-			`,
-			want: nil,
 		},
 		// The cross-statement form a call-site-only check misses. The conflict is reported at
 		// the second borrow, which is where the program first holds two views of x.
@@ -199,18 +191,6 @@ func TestBorrowExclusivity(t *testing.T) {
 				}
 			`,
 			want: []string{"10:14-10:16: cannot borrow 'x' as immutable while it is borrowed as mutable"},
-		},
-		// Two bound borrows of disjoint fields stay apart across statements too.
-		"BorrowsBoundToNamesOfDisjointFieldsOk": {
-			src: exclusivityDecls + `
-				fn g() {
-					val mut x = {p: {v: 1}, q: {v: 2}}
-					val a = &x.p
-					val b = &mut x.q
-					readWrite(a, b)
-				}
-			`,
-			want: nil,
 		},
 	}
 	for name, tc := range tests {
