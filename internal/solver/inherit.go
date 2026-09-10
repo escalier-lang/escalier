@@ -206,12 +206,19 @@ func (c *checker) inheritedHalf(
 	name string,
 	half memberHalf,
 ) (soltype.ObjTypeElem, *soltype.ClassType, bool) {
-	return c.inheritedHalfWalk(def, sub, name, half, set.NewSet[string]())
+	// sub is both the class whose chain is walked and the receiver `Self` resolves at, since the
+	// override check reads the inherited half as the declaring class offers it TO sub.
+	return c.inheritedHalfWalk(def, sub, sub, name, half, set.NewSet[string]())
 }
 
+// recv is the class the walk started from and stays fixed as it climbs, while sub advances to
+// each superclass in turn. The two differ past the first level: for `C extends B extends A`,
+// sub is B by the time the walk reaches A, and a member A declares `-> Self` has to project to
+// C rather than to B. Reading it at sub would let C redeclare that member as `-> B`, a widening
+// the override check must reject.
 func (c *checker) inheritedHalfWalk(
 	def *ClassDef,
-	sub *soltype.ClassType,
+	sub, recv *soltype.ClassType,
 	name string,
 	half memberHalf,
 	visited set.Set[string],
@@ -227,12 +234,13 @@ func (c *checker) inheritedHalfWalk(
 			continue
 		}
 		if member, found := declaredHalf(superDef.Body, name, half); found {
-			// `Self` resolves at sub, the class the walk started from, so an inherited member
-			// declared `-> Self` reads as the subclass here too. The class substitution still
-			// takes superInstance, the arguments the `extends` clause writes.
-			return projectClassMember(superDef, superInstance, projectSelf(superDef, sub, member)), superInstance, true
+			// `Self` resolves at recv, the class the walk started from, so an inherited member
+			// declared `-> Self` reads as that class however many levels up it was declared.
+			// The class substitution still takes superInstance, the arguments the `extends`
+			// clause writes.
+			return projectClassMember(superDef, superInstance, projectSelf(superDef, recv, member)), superInstance, true
 		}
-		if member, owner, found := c.inheritedHalfWalk(superDef, superInstance, name, half, visited); found {
+		if member, owner, found := c.inheritedHalfWalk(superDef, superInstance, recv, name, half, visited); found {
 			return member, owner, true
 		}
 	}

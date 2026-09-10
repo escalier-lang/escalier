@@ -824,14 +824,16 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 //
 // An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
 // reference, and a TypeofType renders as the identifier it names rather than the value's type, so
-// both are leaves. A RecursiveVarType renders as its binder's name, so it is one too. An alias or
-// class reference is not, even though one with no type arguments renders as a bare name: its
+// both are leaves. A RecursiveVarType renders as its binder's name, so it is one too. A SelfType
+// renders as the bare word `Self` and carries no argument list, so it is a leaf as well: eliding
+// it would replace the spelling the source wrote with an ellipsis that says less. An alias or
+// class reference is NOT one, even though one with no type arguments renders as a bare name: its
 // argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
 		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
-		*RecursiveVarType:
+		*RecursiveVarType, *SelfType:
 		return true
 	}
 	return false

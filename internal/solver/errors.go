@@ -1484,7 +1484,9 @@ func (e *SelfTypeNameError) Message() string {
 }
 
 // SelfInInputPositionError fires when `Self` is written in a CONTRAVARIANT position of a class
-// member: a direct parameter such as `eq(self, other: Self) -> boolean`.
+// member, which is a DIRECT parameter such as `eq(self, other: Self) -> boolean`. A parameter
+// nested inside another parameter is not one, which is why the message says "direct": a `Self`
+// in a callback's own parameter list stays legal.
 //
 // `Self` denotes the class the receiver belongs to, so on a `B extends A` an inherited member
 // declared `-> Self` yields B. In an output that is sound and is the point. In a direct
@@ -1506,7 +1508,7 @@ func (e *SelfInInputPositionError) Span() ast.Span      { return e.Ref.Span() }
 func (e *SelfInInputPositionError) Related() []ast.Span { return nil }
 func (e *SelfInInputPositionError) isSolverError()      {}
 func (e *SelfInInputPositionError) Message() string {
-	return "\"Self\" cannot be written in a parameter position; it denotes the receiver's own class, " +
+	return "\"Self\" cannot be written in a direct parameter position; it denotes the receiver's own class, " +
 		"so a subclass would demand an argument its superclass accepts — write the class by name instead"
 }
 

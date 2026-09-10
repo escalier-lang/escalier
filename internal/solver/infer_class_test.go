@@ -2481,7 +2481,7 @@ func TestInferClassSelfType(t *testing.T) {
 // The member keeps its shape after the report, so `a.eq(b)` draws no second diagnostic
 // cascading from this one.
 func TestInferSelfTypeInAParameterRejected(t *testing.T) {
-	const msg = "2:19-2:23: \"Self\" cannot be written in a parameter position; it denotes the " +
+	const msg = "2:19-2:23: \"Self\" cannot be written in a direct parameter position; it denotes the " +
 		"receiver's own class, so a subclass would demand an argument its superclass accepts — " +
 		"write the class by name instead"
 	t.Run("a direct parameter is rejected", func(t *testing.T) {
@@ -2501,6 +2501,43 @@ func TestInferSelfTypeInAParameterRejected(t *testing.T) {
 		_, _, errs := inferSource(t,
 			"declare class Box {\n  each(self, cb: fn (arr: Self) -> boolean) -> number,\n}")
 		require.Empty(t, errs)
+	})
+}
+
+// The override check reads an inherited member as the declaring class offers it TO the class
+// redeclaring it, so a `-> Self` member is compared at that class however many levels up it was
+// declared. The walk climbs one superclass at a time, and reading `Self` at the class the walk
+// currently sits on rather than the one it started from would compare against an intermediate:
+// for `C extends B extends A`, against B instead of C.
+//
+// That is what makes the widening case below the load-bearing one. `-> B` on C is compared
+// against `-> C` and rejected; under the intermediate reading it would be compared against
+// `-> B` and pass.
+func TestInferSelfTypeInAnOverrideCheck(t *testing.T) {
+	chain := func(redeclared string) string {
+		return "declare class A {\n  m(self) -> Self,\n}\n" +
+			"declare class B extends A {\n  constructor(mut self),\n}\n" +
+			"declare class C extends B {\n  constructor(mut self),\n  m(self) -> " + redeclared + ",\n}"
+	}
+	t.Run("redeclaring at the receiving class is accepted", func(t *testing.T) {
+		_, _, errs := inferSource(t, chain("C"))
+		require.Empty(t, errs)
+	})
+	t.Run("redeclaring at an intermediate class is a widening", func(t *testing.T) {
+		_, _, errs := inferSource(t, chain("B"))
+		require.Equal(t, []string{
+			"9:3-9:15: class `C` redeclares inherited member `m` with type `fn () -> B`, " +
+				"which is not compatible with `fn () -> C` declared by `A`",
+		}, messagesWithSpan(t, errs))
+	})
+	t.Run("one level behaves the same way", func(t *testing.T) {
+		_, _, errs := inferSource(t,
+			"declare class A {\n  m(self) -> Self,\n}\n"+
+				"declare class B extends A {\n  constructor(mut self),\n  m(self) -> A,\n}")
+		require.Equal(t, []string{
+			"6:3-6:15: class `B` redeclares inherited member `m` with type `fn () -> A`, " +
+				"which is not compatible with `fn () -> B` declared by `A`",
+		}, messagesWithSpan(t, errs))
 	})
 }
 
