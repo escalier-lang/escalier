@@ -94,7 +94,9 @@ func TestBorrowExclusivity(t *testing.T) {
 			want: []string{"9:22-9:30: cannot borrow 'x.p' as mutable while it is borrowed as immutable"},
 		},
 		// A whole binding contains its fields, so borrowing x.p and then x reaches overlapping
-		// data even though the paths differ in length.
+		// data even though the paths differ in length. The message names both places, since
+		// only part of x is the part already borrowed and the reader cannot tell which from
+		// the blamed borrow alone.
 		"WholeBindingOverlapsItsField": {
 			src: `
 				declare fn readWhole(a: &{v: number}, b: &mut {p: {v: number}}) -> undefined
@@ -103,7 +105,7 @@ func TestBorrowExclusivity(t *testing.T) {
 					readWhole(&x.p, &mut x)
 				}
 			`,
-			want: []string{"5:22-5:28: cannot borrow 'x' as mutable while it is borrowed as immutable"},
+			want: []string{"5:22-5:28: cannot borrow 'x' as mutable while 'x.p' is borrowed as immutable"},
 		},
 		// Separate bindings share no data.
 		"DisjointRootsOk": {
