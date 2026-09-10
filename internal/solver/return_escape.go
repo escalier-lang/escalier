@@ -84,6 +84,29 @@ func (e *EscapingBorrowError) Message() string {
 	return fmt.Sprintf("borrowed value '%s' does not live long enough to escape the function", e.LocalName)
 }
 
+// ReturnedBorrowAlsoLeftError fires when a returned borrow names a local that leaves the frame
+// somewhere else too, so the return is not the only path to it. That is the condition #1264's
+// exemption rests on, and the reason it is denied here.
+//
+// It is distinct from EscapingBorrowError because the local's lifetime is not the problem. A
+// return ends the frame, so a borrow leaving through it alone would be fine. What breaks is the
+// second path: a store hands one to the caller's object, and a consuming argument moves the
+// local into the callee.
+type ReturnedBorrowAlsoLeftError struct {
+	// LocalName is the local reached twice, for the message.
+	LocalName string
+	// node is the returned expression, and other the expression it also leaves through.
+	node  ast.Node
+	other ast.Span
+}
+
+func (*ReturnedBorrowAlsoLeftError) isSolverError()        {}
+func (e *ReturnedBorrowAlsoLeftError) Span() ast.Span      { return e.node.Span() }
+func (e *ReturnedBorrowAlsoLeftError) Related() []ast.Span { return []ast.Span{e.other} }
+func (e *ReturnedBorrowAlsoLeftError) Message() string {
+	return fmt.Sprintf("'%s' leaves the function at another point too, so the return is not the only path to it", e.LocalName)
+}
+
 // escapeSite is one value flowing out of the frame whose escape decision is deferred to
 // resolveComponentEscapes. It holds the outgoing expression and the CFG point it leaves the
 // frame at. The expression doubles as the diagnostic blame and as the source whose carried
@@ -149,6 +172,17 @@ func (c *checker) resolveComponentEscapes(
 			consumed = true
 			continue
 		}
+		// A return that lost its exemption is not a dangling borrow. The frame ends at the
+		// return, so the borrow would be fine on its own; what breaks is the second path the
+		// other flow-out left behind, which is what the report names.
+		if es.isReturn {
+			if id, other, ok := leavesElsewhere(escaping, outOfFrame); ok {
+				c.report(&ReturnedBorrowAlsoLeftError{
+					LocalName: c.varIDToName(id), node: es.expr, other: other.Span(),
+				})
+				continue
+			}
+		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
 	c.applyReturnStrips(strips)
@@ -174,18 +208,38 @@ func (c *checker) resolveComponentEscapes(
 //
 // Every site is scanned before any is decided, so a store written after the return in the source
 // counts the same as one written before it.
-func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) set.Set[liveness.VarID] {
-	out := set.NewSet[liveness.VarID]()
+func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) map[liveness.VarID]ast.Node {
+	out := map[liveness.VarID]ast.Node{}
 	for _, es := range c.fn.escapeSites {
 		if es.isReturn {
 			continue
 		}
 		graph := flowBorrowGraph.fieldBorrowGraphBefore(es.stmtRef)
 		for _, id := range c.escapingLocalsOf(es.expr, graph).ToSlice() {
-			out.Add(id)
+			// The first site wins, so a local leaving twice blames the earliest one rather
+			// than whichever the walk reached last.
+			if _, seen := out[id]; !seen {
+				out[id] = es.expr
+			}
 		}
 	}
 	return out
+}
+
+// leavesElsewhere reports whether any local in reached also leaves the frame outside a return,
+// and returns the expression the first such one leaves through for the diagnostic's related span.
+func leavesElsewhere(
+	reached set.Set[liveness.VarID],
+	outOfFrame map[liveness.VarID]ast.Node,
+) (liveness.VarID, ast.Node, bool) {
+	ids := reached.ToSlice()
+	slices.Sort(ids)
+	for _, id := range ids {
+		if other, ok := outOfFrame[id]; ok {
+			return id, other, true
+		}
+	}
+	return 0, nil, false
 }
 
 // componentMoveCovers reports whether the escape of es is a self-contained connected-component
@@ -223,14 +277,15 @@ func (c *checker) localsLeavingOutsideAReturn(flowBorrowGraph *flowBorrowGraph) 
 // container records it; see borrow_store.go.
 func (c *checker) componentMoveCovers(
 	es escapeSite, escaping set.Set[liveness.VarID],
-	outOfFrame set.Set[liveness.VarID],
+	outOfFrame map[liveness.VarID]ast.Node,
 	info *liveness.MoveInfo,
 	fieldBorrowGraph map[liveness.VarID][]fieldBorrow,
 ) bool {
 	e, stmtRef := es.expr, es.stmtRef
 	// A return earns the exemption when none of the locals it carries leaves the frame
 	// elsewhere. Any other site has to carry an owned aggregate.
-	exemptAsReturn := es.isReturn && escaping.Intersection(outOfFrame).Len() == 0
+	_, _, alsoLeaves := leavesElsewhere(escaping, outOfFrame)
+	exemptAsReturn := es.isReturn && !alsoLeaves
 	if !exemptAsReturn && !c.escapesAsOwnedCarrier(e, fieldBorrowGraph) {
 		return false
 	}
