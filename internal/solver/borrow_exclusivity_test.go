@@ -218,6 +218,108 @@ func TestBorrowExclusivity(t *testing.T) {
 	}
 }
 
+// TestExplicitBorrowArgs covers #1541: a borrow parameter takes a borrow, so the call writes
+// one. What stays implicit is a method call's receiver, whose mode the signature already names.
+func TestExplicitBorrowArgs(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// A bare place filling a shared parameter reports, naming the borrow it needs.
+		"BarePlaceIntoASharedParam": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					write(&mut x)
+					readRead(x, &x)
+				}
+			`,
+			want: []string{"10:15-10:16: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+		// The mutable parameter asks for `&mut`, so the message names that instead.
+		"BarePlaceIntoAMutableParam": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					write(x)
+				}
+			`,
+			want: []string{"9:12-9:13: this argument is borrowed by the callee, so write the borrow: `&mut`"},
+		},
+		// Writing the borrow is what the rule asks for.
+		"WrittenBorrowsOk": {
+			src: exclusivityDecls + `
+				fn g() {
+					val mut x = {v: 1}
+					val mut y = {v: 2}
+					readWrite(&x, &mut y)
+				}
+			`,
+			want: nil,
+		},
+		// A value that is ALREADY a borrow is handed on rather than borrowed afresh, so there
+		// is no borrow missing at this call and nothing to write.
+		"PassingAnExistingBorrowOk": {
+			src: exclusivityDecls + `
+				fn g(m: &mut {v: number}) {
+					write(m)
+				}
+			`,
+			want: nil,
+		},
+		// An owned parameter is moved into the callee rather than borrowed, so it needs no
+		// borrow written and the rule leaves it alone.
+		"OwnedParamTakesABarePlaceOk": {
+			src: `
+				declare fn consume(a: {v: number}) -> undefined
+				fn g() {
+					val x = {v: 1}
+					consume(x)
+				}
+			`,
+			want: nil,
+		},
+		// The receiver of a method call keeps auto-borrowing. `bump(mut self)` names the mode
+		// in the signature, and `c.bump()` has no second reading for a written borrow to
+		// disambiguate.
+		"MethodReceiverStillAutoBorrowsOk": {
+			src: `
+				class Counter {
+					n: number,
+					bump(mut self) -> undefined { self.n = 1 },
+				}
+				fn g() {
+					val mut c = Counter(0)
+					c.bump()
+				}
+			`,
+			want: nil,
+		},
+		// A method's own arguments are arguments like any other, so the receiver's exemption
+		// does not extend to them.
+		"MethodArgumentsAreNotExempt": {
+			src: `
+				class Holder {
+					v: number,
+					take(self, a: &{v: number}) -> undefined {},
+				}
+				fn g() {
+					val h = Holder(0)
+					val x = {v: 1}
+					h.take(x)
+				}
+			`,
+			want: []string{"9:13-9:14: this argument is borrowed by the callee, so write the borrow: `&`"},
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
 // storeEffectDecls declares a callee that writes its second argument into its first, plus the
 // helpers the cases read the aliased data back through. `'a` at both item and target's peer
 // field is what makes the signature declare a store.
