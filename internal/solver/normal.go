@@ -1742,33 +1742,57 @@ func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 // with, so two sets whose receivers disagree would fuse into a member mixing them. Such a
 // member is ill-formed for its readers: classes.go takes Signatures[0].SelfParam as the
 // receiver of the whole member, and buildMemberSigs reports
-// MethodOverloadReceiverMismatchError for the same mixture at a declaration. One arm of a
-// well-formed member therefore speaks for all of them, which is why comparing the two
-// representatives is enough.
+// MethodOverloadReceiverMismatchError for the same mixture at a declaration.
+//
+// Optionality meets the way a property's does. `m?` on both sides stays optional, since an
+// object omitting the member satisfies both; `m?` against a required `m` is required, since
+// the meet demands what either side demands. Dropping it would turn a value that omits the
+// member from a member of the meet into a non-member.
 func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
 	if a.Static != b.Static {
 		return nil, false
 	}
-	if !equalSelfParam(methodReceiver(a), methodReceiver(b), &alphaCtx{}) {
+	aRecv, aAgrees := methodReceiver(a)
+	bRecv, bAgrees := methodReceiver(b)
+	if !aAgrees || !bAgrees || !equalSelfParam(aRecv, bRecv, &alphaCtx{}) {
 		return nil, false
 	}
 	sigs, ok := c.fuseSignatureSets(a.Signatures, b.Signatures, c.meetMethodSig)
 	if !ok {
 		return nil, false
 	}
-	return &soltype.MethodElem{Name: a.Name, Signatures: sigs, Static: a.Static}, true
+	return &soltype.MethodElem{
+		Name:       a.Name,
+		Signatures: sigs,
+		Static:     a.Static,
+		Optional:   a.Optional && b.Optional,
+	}, true
 }
 
-// methodReceiver returns the receiver a method member takes, read off its first arm.
-// buildMemberSigs rejects a declaration whose arms disagree on the receiver, so every arm
-// of a well-formed member carries the same one and the first speaks for all of them. This
-// is the reading classes.go gives the same field. An empty signature list has no receiver
-// to report and yields nil, which equalSelfParam accepts against another nil.
-func methodReceiver(m *soltype.MethodElem) *soltype.FuncParam {
+// methodReceiver returns the receiver a method member takes, and whether EVERY arm agrees on
+// it. classes.go reads the same field off the first arm alone, which is sound for a member
+// that agrees with itself.
+//
+// A member can fail to. buildMemberSigs rejects a declaration whose arms disagree on receiver
+// mutability, but it appends each arm to the member before reporting, so a class that drew
+// that error still carries the mixed receivers in its body. Reading the first arm alone here
+// would let two such members concatenate into one member mixing receivers — the shape the
+// guard in meetMethods exists to keep out, reached through the recovery path rather than
+// through a well-formed declaration.
+//
+// An empty signature list has no receiver to report and yields nil, which equalSelfParam
+// accepts against another nil.
+func methodReceiver(m *soltype.MethodElem) (*soltype.FuncParam, bool) {
 	if len(m.Signatures) == 0 {
-		return nil
+		return nil, true
 	}
-	return m.Signatures[0].SelfParam
+	recv := m.Signatures[0].SelfParam
+	for _, sig := range m.Signatures[1:] {
+		if !equalSelfParam(recv, sig.SelfParam, &alphaCtx{}) {
+			return nil, false
+		}
+	}
+	return recv, true
 }
 
 // fuseSignatureSets meets the signature sets of two members that share a name, returning

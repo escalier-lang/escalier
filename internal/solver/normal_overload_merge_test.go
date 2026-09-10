@@ -130,3 +130,72 @@ func TestOverloadReceiverMismatchStaysUnfused(t *testing.T) {
 	_, ok := c.meetObjects(method("a", true), method("b", false))
 	require.False(t, ok, "methods whose receivers disagree keep both atoms")
 }
+
+// Optionality meets the way a property's does. Two optional methods fuse to an optional one,
+// since an object omitting the member satisfies both sides of the meet; an optional against a
+// required one fuses to required, since the meet demands what either side demands. Dropping the
+// marker would turn a value that omits the member from a member of the meet into a non-member.
+func TestObjectMethodMeetKeepsOptionality(t *testing.T) {
+	method := func(field string, param soltype.Type, optional bool) *soltype.ObjectType {
+		return &soltype.ObjectType{
+			Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: field, Type: num()},
+				&soltype.MethodElem{Name: "m", Optional: optional, Signatures: []*soltype.FuncType{
+					{Params: []*soltype.FuncParam{{Pattern: &soltype.IdentPat{Name: "x"}, Type: param}}, Ret: num()},
+				}},
+			},
+			Inexact: true,
+		}
+	}
+	tests := []struct {
+		name       string
+		aOpt, bOpt bool
+		want       string
+	}{
+		{"both optional stays optional", true, true,
+			"{a: number, b: number, m?(x: number | string) -> number, ...}"},
+		{"optional against required is required", true, false,
+			"{a: number, b: number, m(x: number | string) -> number, ...}"},
+		{"neither optional stays required", false, false,
+			"{a: number, b: number, m(x: number | string) -> number, ...}"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &Context{}
+			fused, ok := c.meetObjects(method("a", num(), tt.aOpt), method("b", str(), tt.bOpt))
+			require.True(t, ok)
+			require.Equal(t, tt.want, soltype.Print(fused))
+		})
+	}
+}
+
+// A member whose OWN arms disagree on the receiver keeps the objects apart. buildMemberSigs
+// rejects such a declaration, but it appends each arm before reporting, so a class that drew
+// that error still carries the mixed receivers in its body. Reading the first arm alone would
+// let two such members concatenate into a member mixing receivers, which is exactly what the
+// receiver guard exists to prevent.
+func TestSelfInconsistentOverloadStaysUnfused(t *testing.T) {
+	c := &Context{}
+	self := func(mut bool) *soltype.FuncParam {
+		p := &soltype.FuncParam{Pattern: &soltype.IdentPat{Name: "self"}}
+		if mut {
+			p.Type = &soltype.RefType{Mut: true}
+		}
+		return p
+	}
+	// Both members agree on their FIRST arm, so a first-arm-only guard would pass them.
+	mixed := func(field string, param soltype.Type) *soltype.ObjectType {
+		return &soltype.ObjectType{
+			Elems: []soltype.ObjTypeElem{
+				&soltype.PropertyElem{Name: field, Type: num()},
+				&soltype.MethodElem{Name: "m", Signatures: []*soltype.FuncType{
+					{SelfParam: self(false), Params: []*soltype.FuncParam{{Type: param}}, Ret: num()},
+					{SelfParam: self(true), Params: []*soltype.FuncParam{{Type: param}}, Ret: str()},
+				}},
+			},
+			Inexact: true,
+		}
+	}
+	_, ok := c.meetObjects(mixed("a", num()), mixed("b", str()))
+	require.False(t, ok, "a member whose own arms disagree on the receiver keeps both atoms")
+}
