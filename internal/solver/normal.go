@@ -1730,24 +1730,17 @@ func (c *Context) joinObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 	return nil, false
 }
 
-// meetMethods fuses two methods that share a name by meeting their signature sets,
-// whether either side carries one signature or an overload set. Two identical methods
-// never reach here, since meetObjElem's equal-member check returns one of them first, so
-// the sets that do reach here always differ. Static-ness must agree, since a static method
-// lives on the constructor value and an instance method on the instance, so the two are
-// not the same member.
+// meetMethods fuses two methods that share a name by meeting their signature sets, whether
+// either side carries one signature or an overload set. meetObjElem's equal-member check
+// returns one side whole for two identical methods, so the sets reaching here always differ.
 //
-// The receivers must agree as well, and that check belongs here rather than inside
-// fuseSignatureSets. Under the concatenation each arm keeps the receiver it was written
-// with, so two sets whose receivers disagree would fuse into a member mixing them. Such a
-// member is ill-formed for its readers: classes.go takes Signatures[0].SelfParam as the
-// receiver of the whole member, and buildMemberSigs reports
-// MethodOverloadReceiverMismatchError for the same mixture at a declaration.
+// Static-ness must agree: a static method lives on the constructor value and an instance method
+// on the instance, so the two are not the same member. Receivers must agree too, and that check
+// belongs here rather than in fuseSignatureSets, since under the concatenation each arm keeps
+// its own — methodReceiver says what agreement means and how a member can lack it.
 //
-// Optionality meets the way a property's does. `m?` on both sides stays optional, since an
-// object omitting the member satisfies both; `m?` against a required `m` is required, since
-// the meet demands what either side demands. Dropping it would turn a value that omits the
-// member from a member of the meet into a non-member.
+// Optionality meets the way a property's does: optional on both sides stays optional, since an
+// object omitting the member satisfies both, and optional against required is required.
 func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bool) {
 	if a.Static != b.Static {
 		return nil, false
@@ -1769,19 +1762,15 @@ func (c *Context) meetMethods(a, b *soltype.MethodElem) (soltype.ObjTypeElem, bo
 	}, true
 }
 
-// methodReceiver returns the receiver a method member takes, and whether EVERY arm agrees on
-// it. classes.go reads the same field off the first arm alone, which is sound for a member
-// that agrees with itself.
+// methodReceiver returns the receiver a method member takes, and whether EVERY arm agrees on it.
+// An empty signature list has no receiver and yields nil, which equalSelfParam accepts against
+// another nil. classes.go reads the same field off the first arm alone, sound for a member that
+// agrees with itself.
 //
 // A member can fail to. buildMemberSigs rejects a declaration whose arms disagree on receiver
-// mutability, but it appends each arm to the member before reporting, so a class that drew
-// that error still carries the mixed receivers in its body. Reading the first arm alone here
-// would let two such members concatenate into one member mixing receivers — the shape the
-// guard in meetMethods exists to keep out, reached through the recovery path rather than
-// through a well-formed declaration.
-//
-// An empty signature list has no receiver to report and yields nil, which equalSelfParam
-// accepts against another nil.
+// mutability, but it appends each arm BEFORE reporting, so a class that drew that error still
+// carries mixed receivers in its body. Reading the first arm alone here would let two such
+// members concatenate into one mixing receivers, which is what meetMethods' guard prevents.
 func methodReceiver(m *soltype.MethodElem) (*soltype.FuncParam, bool) {
 	if len(m.Signatures) == 0 {
 		return nil, true
@@ -1795,32 +1784,27 @@ func methodReceiver(m *soltype.MethodElem) (*soltype.FuncParam, bool) {
 	return recv, true
 }
 
-// fuseSignatureSets meets the signature sets of two members that share a name, returning
-// the arms of the fused member.
+// fuseSignatureSets meets the signature sets of two members that share a name, returning the
+// arms of the fused member.
 //
-// An overload set denotes the INTERSECTION of its arms — methodReadType and ctorReadType in
-// constrain.go build exactly that IntersectionType — so the meet of two sets is the
-// intersection of every arm of both:
+// An overload set denotes the INTERSECTION of its arms, which methodReadType and ctorReadType
+// build, so the meet of two sets is the intersection of every arm of both:
 //
 //	(A ∧ B) ∧ (C ∧ D)  =  A ∧ B ∧ C ∧ D
 //
-// which is the concatenation of the two lists. There is no question of which arm of one
-// pairs with which arm of the other, because ∧ is associative, commutative and idempotent.
-// Sets of different lengths, and arms that line up on nothing, fall out of that for free.
+// which is the concatenation of the two lists. ∧ being associative, commutative and idempotent
+// is what makes arm pairing a non-question, so sets of different lengths and arms that line up
+// on nothing fall out for free. newIntersection canonicalizes the result — flatten, dedupe,
+// drop an arm a sibling subsumes, sort — which also keeps the stored set deterministic for
+// resolveOverload.
 //
-// newIntersection canonicalizes the concatenation. It flattens a nested set, drops to one
-// copy of an arm both sides carry, drops an arm a sibling already subsumes, and sorts into
-// a canonical order so the stored set is deterministic for resolveOverload to read.
+// exact leads on a one-against-one pair, and is meetMethodSig for a method and meetFuncs for a
+// constructor. It fuses `(x: A) -> B` and `(x: A) -> C` into `(x: A) -> B ∧ C`, sharper than the
+// two-arm intersection, so the concatenation is the fallback rather than the rule everywhere.
 //
-// exact is tried first on a one-against-one pair, and is meetMethodSig for a method and
-// meetFuncs for a constructor. It fuses `(x: A) -> B` and `(x: A) -> C` into the single arm
-// `(x: A) -> B ∧ C`, which is sharper than the two-arm intersection, so the exact fuse
-// leads and the concatenation is the fallback rather than the rule everywhere.
-//
-// A canonicalized result that is not a function or an intersection of functions is not a
-// signature set, so this bails rather than build a member its readers could not use. That
-// costs an atom and no precision: meetObjects keeps the two unfused atoms, which denote the
-// meet exactly.
+// A canonicalized result that is not a function or an intersection of functions is no signature
+// set, so this bails rather than build a member its readers could not use. That costs an atom
+// and no precision, since the two unfused atoms denote the meet exactly.
 func (c *Context) fuseSignatureSets(
 	a, b []*soltype.FuncType, exact func(a, b *soltype.FuncType) (*soltype.FuncType, bool),
 ) ([]*soltype.FuncType, bool) {
