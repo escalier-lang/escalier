@@ -1,0 +1,11 @@
+export declare val obj3: {
+    foo(msg: string, flag: boolean) -> string,
+    get bar() -> boolean,
+    set bar(value: boolean) -> undefined
+}
+
+// `obj3` is immutable, and "hello" is not the boolean its setter takes, so
+// this store reports twice and the package emits nothing.
+fn main() -> undefined {
+    obj3.bar = "hello"
+}

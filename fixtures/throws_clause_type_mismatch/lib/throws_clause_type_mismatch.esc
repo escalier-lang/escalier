@@ -1,0 +1,5 @@
+// The body throws an Error, which the declared `throws string` does not
+// admit, so the package emits nothing.
+export fn throwTypeIsWrong(value: string) -> undefined throws string {
+    if value != "" { value } else { throw Error("value is empty") }
+}

@@ -1,0 +1,6 @@
+type Point = {x: number, y: number}
+val p: Point = {x: 5, y: 10}
+
+// `z` is not a key of Point, so the pattern is rejected and the package
+// emits nothing.
+val {x, y, z} = p

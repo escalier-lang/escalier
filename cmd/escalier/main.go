@@ -33,7 +33,9 @@ func main() {
 		if *buildStdlibDir != "" {
 			_ = os.Setenv("ESCALIER_STDLIB_DIR", *buildStdlibDir)
 		}
-		build(os.Stdout, os.Stderr, buildCmd.Args())
+		if !build(os.Stdout, os.Stderr, buildCmd.Args()) {
+			os.Exit(1)
+		}
 	case "format":
 		err := formatCmd.Parse(os.Args[2:])
 		if err != nil {

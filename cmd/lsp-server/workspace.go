@@ -79,6 +79,18 @@ func (s *Server) compilePackage() (any, error) {
 		return nil, errors.New(string(errorsJSON))
 	}
 
+	// A type error stops the write for the same reason it stops the CLI. The JS
+	// below lowers declarations the checker rejected, and the `.d.ts` beside it
+	// asserts the types it rejected them for. Returning here also skips the
+	// `RemoveAll`, so the artifacts from the last build that did check survive.
+	if len(output.TypeErrors) > 0 {
+		messages := make([]string, len(output.TypeErrors))
+		for i, err := range output.TypeErrors {
+			messages[i] = err.Message()
+		}
+		return nil, errors.New(strings.Join(messages, "\n"))
+	}
+
 	// Write output files to the build/ directory in the virtual filesystem.
 	// Remove any stale artifacts from a previous build first.
 	buildDir := filepath.Join(rootPath, "build")

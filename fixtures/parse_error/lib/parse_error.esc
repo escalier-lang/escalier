@@ -1,0 +1,3 @@
+// The initializer is missing, so the declaration does not parse and the
+// package emits nothing.
+export val broken =

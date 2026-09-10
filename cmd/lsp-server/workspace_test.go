@@ -1,8 +1,10 @@
 package main
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,6 +45,89 @@ func libCacheKeys(s *Server) set.Set[string] {
 }
 
 // --- refreshLibFilesCache ---
+
+// writeLibFile replaces the workspace's single lib source with src. compilePackage
+// reads the cached file list rather than the filesystem, so the cache is refreshed
+// here to match what was just written.
+func writeLibFile(t *testing.T, s *Server, root, src string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "lib", "index.esc"), []byte(src), 0o644))
+	require.NoError(t, s.refreshLibFilesCache())
+}
+
+// buildDirFiles returns the paths under the workspace's build/ directory,
+// relative to that directory, so a test can name what a compile emitted.
+func buildDirFiles(t *testing.T, root string) []string {
+	t.Helper()
+	buildDir := filepath.Join(root, "build")
+	var found []string
+	err := filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(buildDir, path)
+		if err != nil {
+			return err
+		}
+		found = append(found, rel)
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(t, err)
+	sort.Strings(found)
+	return found
+}
+
+// A type error stops the write, and the artifacts the last clean compile
+// produced stay on disk rather than being replaced by output lowered from the
+// rejected tree.
+func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotCheck(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/index.esc"})
+	writeLibFile(t, s, root, "export val n: number = 1\n")
+
+	_, err := s.compilePackage()
+	require.NoError(t, err)
+	clean := buildDirFiles(t, root)
+	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"}, clean)
+
+	dts, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.d.ts"))
+	require.NoError(t, err)
+
+	writeLibFile(t, s, root, `export val n: number = "not a number"`+"\n")
+
+	_, err = s.compilePackage()
+	require.Error(t, err)
+	require.Equal(t, `"not a number" cannot be assigned to number`, err.Error())
+
+	require.Equal(t, clean, buildDirFiles(t, root))
+	after, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.d.ts"))
+	require.NoError(t, err)
+	require.Equal(t, string(dts), string(after))
+}
+
+// A parse error stops the write at the same point, so the same artifacts survive.
+func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/index.esc"})
+	writeLibFile(t, s, root, "export val n: number = 1\n")
+
+	_, err := s.compilePackage()
+	require.NoError(t, err)
+	clean := buildDirFiles(t, root)
+	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"}, clean)
+
+	writeLibFile(t, s, root, "export val broken =\n")
+
+	_, err = s.compilePackage()
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Expected an expression")
+
+	require.Equal(t, clean, buildDirFiles(t, root))
+}
 
 func TestRefreshLibFilesCache_PopulatesFromDisk(t *testing.T) {
 	s, root := newTestServer(t, []string{
