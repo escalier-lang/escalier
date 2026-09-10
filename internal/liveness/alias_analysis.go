@@ -252,6 +252,19 @@ func DetermineAliasSource(expr ast.Expr) AliasSource {
 	case *ast.AwaitExpr:
 		return appendStepToLeaves(DetermineAliasSource(e.Arg), AwaitOf{})
 
+	// A borrow is deliberately NOT an alias source, even though `&x` does alias x. The
+	// obvious arm is to pass through to the operand, and doing that makes the transition
+	// check in internal/solver/transitions.go cover the binding shapes borrow exclusivity
+	// already covers, so each such program draws two diagnostics for one conflict.
+	// `val a = &x` followed by `val b = &mut x` reports both "cannot borrow 'x' as mutable
+	// while it is borrowed as immutable" and "cannot assign 'x' to immutable 'a'".
+	//
+	// Falling through to the default arm would leave that trap unlabelled, so the case is
+	// written out. #1532 tracks holding both checks in one structure, which is what makes
+	// the pass-through safe to add.
+	case *ast.BorrowExpr:
+		return unknownSource()
+
 	// Property access: the value projects into the object. Append
 	// PropertyOf(name) so each leaf records the additional descent.
 	case *ast.MemberExpr:
