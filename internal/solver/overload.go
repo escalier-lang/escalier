@@ -129,38 +129,28 @@ func (c *checker) markCallRaised(fn *soltype.FuncType) {
 	}
 }
 
-// tryOverloadArm reports whether inst accepts a call with the given argument types, applying the
-// argument constraints to inst's params as it goes. inst is one positional shape of a
-// freshly-instantiated arm. It runs under a probe opened by the caller, so on a false return
-// closeProbe(_, false) rolls back every bound it appended.
+// tryOverloadArm reports whether inst, one positional shape of a freshly-instantiated arm,
+// accepts a call with the given argument types. It runs under a probe the caller opened, so a
+// false return rolls back every bound it appended, and it uses the error-returning
+// Context.Constrain so a rejected argument never reaches c.errs.
 //
 // The check is the SAME one the ordinary path runs: build a call shape from the arguments and
-// constrain the candidate against it. Arity, the per-argument check, the rest slot's absorb and
-// scatter rules, the return and the throws edge are then decided by one body of code for a
-// one-signature callee and for an arm of a set alike. That is the point of #1518. Three
-// divergences came from having two: the missing argument moves #1508 fixed, the missing
-// owned-mutable upgrade #1519 fixed, and the missing rest expansion this change fixes.
+// constrain the candidate against it. Arity, the per-argument check, the absorb and scatter
+// rules and the return are then decided by one body of code either way, which is the point of
+// #1518. The shape is exact with every parameter required, giving accept-set [n, n], so the
+// constraint holds iff required(inst) <= n <= upper(inst) — the window the arity gate used to
+// test directly.
 //
-// The shape is built EXACT with every parameter required, so its accept-set is [n, n] and the
-// constraint reads "the candidate must accept exactly n arguments" — it holds iff
-// required(inst) <= n <= upper(inst), the same window the arity gate used to test directly.
+// On a match it returns the warnings the accepting constraints produced, for the caller to
+// surface at the call. hasHardError draws the accept line, so an arm that warns still matches.
+// A non-match returns nil, dropping a rejected arm's diagnostics.
 //
-// It uses the error-returning Context.Constrain rather than the accumulating checker.constrain,
-// so a rejected argument never reaches c.errs even before the probe's errs rollback. On a match
-// it returns the warnings the accepting constraints produced, so the caller can surface them at
-// the call. An arm that warns still counts as a match, since hasHardError draws the accept line.
-// A non-match returns nil, keeping a rejected arm's diagnostics dropped.
-//
-// The shape's Ret and Throws are FRESH variables rather than the enclosing body's, because a
-// losing trial must leave a bound on neither. resolveOverload takes the winner's own Ret, which
-// is sharper than what the shape derives, and wires the winner's throws against the real sink
-// once an arm has been chosen.
-//
-// Wiring the real sink into the shape would make dispatch depend on the caller's `throws`
-// clause. Advancing a raising generator from a body that declares no clause would then fail
-// `"boom" <: never` inside every trial and report "no matching overload" rather than the missing
-// clause. An overload set dispatches on arguments, so a throws mismatch is a diagnostic about
-// the call and never a reason to pass over an arm.
+// The shape's Ret and Throws are FRESH variables, since a losing trial must leave a bound on
+// neither; resolveOverload takes the winner's own Ret and wires its throws against the real
+// sink once an arm is chosen. Wiring that sink into the shape instead would make dispatch
+// depend on the caller's `throws` clause: advancing a raising generator from a body with no
+// clause would fail `"boom" <: never` inside every trial and report "no matching overload"
+// rather than the missing clause. An overload set dispatches on arguments.
 func (c *checker) tryOverloadArm(
 	lvl int, args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
 ) (bool, []SolverError) {
