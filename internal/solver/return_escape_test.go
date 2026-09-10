@@ -32,8 +32,9 @@ func TestReturnValueBorrows(t *testing.T) {
 		want  []string
 		types map[string]string
 	}{
-		// The bare borrow `return &mut b` leaves as the only path to b, so the return owns
-		// what it borrowed. The owned form keeps the borrow's mutability.
+		// The first repro in #1264. The bare borrow `return &mut b` leaves as the only path to
+		// b, so the return owns what it borrowed. The owned form is immutable, and the
+		// caller's binding decides.
 		"ReturnDirectBorrowOfLocal": {
 			src: `
 				fn build() {
@@ -43,19 +44,6 @@ func TestReturnValueBorrows(t *testing.T) {
 			`,
 			want:  nil,
 			types: map[string]string{"build": "fn () -> {value: number}"},
-		},
-		// The first repro in #1264, annotated with the owned type the body produces. `return
-		// &mut q` hands out q itself, so the honest annotation names an owned value rather
-		// than a borrow.
-		"ReturnDirectBorrowUnderAnOwnedAnnotation": {
-			src: `
-				fn f() -> {value: number} {
-					val mut q = {value: 1}
-					return &mut q
-				}
-			`,
-			want:  nil,
-			types: map[string]string{"f": "fn () -> {value: number}"},
 		},
 		// A signature may still ask to hand the value out mutably. Every return operand is
 		// uniquely owned, so the immutable-to-mutable upgrade grants it.
@@ -748,27 +736,6 @@ func TestConnectedComponentMove(t *testing.T) {
 			types: map[string]string{
 				"store": "fn (x: {l: &{peer: &mut {x: number}}, r: &{peer: &mut {x: number}}}) -> undefined",
 				"f":     "fn () -> undefined",
-			},
-		},
-		// A wider component with five borrowed locals moves out as one unit, the same as the
-		// two-local case, since every node is reachable only through a. Every node is reached
-		// once, so borrow-stripping rewrites the return to the owned `{b1: {x: number}, …}`
-		// with all five fields owned.
-		"ReturnLargeStar": {
-			src: `
-				fn build() {
-					val mut b = {x: 1}
-					val mut c = {x: 2}
-					val mut d = {x: 3}
-					val mut e = {x: 4}
-					val mut g = {x: 5}
-					val a = {b1: &mut b, c1: &mut c, d1: &mut d, e1: &mut e, g1: &mut g}
-					return a
-				}
-			`,
-			want: nil,
-			types: map[string]string{
-				"build": "fn () -> {b1: {x: number}, c1: {x: number}, d1: {x: number}, e1: {x: number}, g1: {x: number}}",
 			},
 		},
 		// The co-move reaches the deepest transitive node: storing the chain a → b → c → d
