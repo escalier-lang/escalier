@@ -356,17 +356,28 @@ func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 // canUpgradeToOwnedMut inspects for the syntactic fresh-literal fast path and the
 // place-move path.
 func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
-	ref, ok := target.(*soltype.RefType)
-	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
+	view, ok := c.ownedMutReadView(src, target)
+	if !ok {
 		return false
 	}
-	// Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}` field
-	// inside a non-mut container is rejected at the annotation site (#779), so stripOwnedMut
-	// is a defensive no-op for most target types. It still lets a uniquely-owned source
-	// flow covariantly into any owned-mut cell that reaches here. A fully uniquely-owned
-	// source is owned at every level, so the upgrade is sound the whole way down.
-	c.constrain(site, srcT, stripOwnedMut(ref.Inner))
+	c.constrain(site, srcT, view)
 	return true
+}
+
+// ownedMutReadView returns the type a value built by src is checked against when it takes
+// target's owned-mutable type, and reports whether that upgrade applies. It is the decision half
+// of tryUpgradeToOwnedMut, which runs the check itself. The view is stripOwnedMut of target's
+// inner, which is sound because a uniquely-owned source is owned at every level.
+//
+// The split exists for tryOverloadArm: it trials an arm with the error-returning
+// Context.Constrain so a losing arm writes nothing, where tryUpgradeToOwnedMut would run the
+// accumulating checker.constrain.
+func (c *checker) ownedMutReadView(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
+	ref, ok := target.(*soltype.RefType)
+	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {
+		return nil, false
+	}
+	return stripOwnedMut(ref.Inner), true
 }
 
 // canUpgradeToOwnedMut reports whether the value built by src may be granted an

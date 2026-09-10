@@ -364,6 +364,45 @@ func TestInferOwnedMutFieldWrite(t *testing.T) {
 	})
 }
 
+// The upgrade's soundness leans on the argument being MOVED, so a later use of it is a
+// use-after-move and the uniqueness holds past the flow site rather than only at it. Nothing
+// in the call chain enforces that ordering, which would make the coupling a convention. It is
+// enforced by a data dependency instead: the place-move branch of canUpgradeToOwnedMut goes
+// through exprPlace, which returns false unless the identifier carries a VarID, and the VarID
+// is assigned by the same liveness pre-pass that lets the move engine record a consume. Where
+// no move can be recorded, the upgrade cannot fire.
+//
+// Module top level is where the two come apart, since the pre-pass does not run there. A fresh
+// literal still upgrades: it carries no identifier, so there is no alias to invalidate and no
+// move to need. A place move does not, and is rejected on the mutability wrapper.
+func TestInferOwnedMutUpgradeNeedsABackingMove(t *testing.T) {
+	t.Run("a fresh literal upgrades at top level, needing no move", func(t *testing.T) {
+		_, _, errs := inferSource(t, `val m: mut {x: number} = {x: 1}`)
+		require.Empty(t, errs)
+	})
+	t.Run("a place move does not upgrade at top level", func(t *testing.T) {
+		_, _, errs := inferSource(t, "val cfg = {x: 1}\nval m: mut {x: number} = cfg")
+		require.Equal(t,
+			[]string{"2:12-2:13: cannot constrain immutable object <: mutable object"},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("the same place move upgrades inside a function, and consumes", func(t *testing.T) {
+		const src = `fn f() {
+	val cfg = {x: 1}
+	val m: mut {x: number} = cfg
+}`
+		_, _, errs := inferSource(t, src)
+		require.Empty(t, errs)
+
+		_, _, errs = inferSource(t, `fn f() {
+	val cfg = {x: 1}
+	val m: mut {x: number} = cfg
+	cfg.x
+}`)
+		require.Equal(t, []string{"4:2-4:7: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
+	})
+}
+
 // A source carrying an already-owned-mutable cell is not upgraded, even when the cell is
 // nested inside a fresh literal. The covariant read view the upgrade constrains against
 // would widen that cell's element type, so the source falls through to the strict mut<:mut
@@ -386,6 +425,49 @@ func TestInferOwnedMutNestedOwnedMutRejected(t *testing.T) {
 }`
 		_, _, errs := inferSource(t, src)
 		require.Equal(t, []string{"1:15-1:16: cannot constrain immutable object <: mutable object"}, messagesWithSpan(t, errs))
+	})
+	t.Run("call argument", func(t *testing.T) {
+		src := `declare fn take(a: mut {p: {x: number | string}}) -> number
+fn f() -> number {
+	val inner: mut {x: number} = {x: 0}
+	return take({p: inner})
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"1:24-1:25: cannot constrain immutable object <: mutable object"},
+			messagesWithSpan(t, errs))
+	})
+}
+
+// The guard above is what makes a WIDER owned-mutable parameter safe to adopt. `take({x: 1})`
+// against `a: mut {x: number | string}` hands the callee a cell it may write a string into,
+// which is sound only because the argument is freshly built or moved, leaving the caller no
+// view of it at a narrower type.
+//
+// A pre-existing `mut` cell is exactly the case where such a view would survive, so it takes no
+// upgrade and falls through to the strict path, which rejects the widening.
+func TestInferOwnedMutArgumentIntoAWiderParam(t *testing.T) {
+	const take = "declare fn take(a: mut {x: number | string}) -> number\n"
+	t.Run("a fresh literal adopts the wider parameter", func(t *testing.T) {
+		_, _, errs := inferSource(t, take+"val r = take({x: 1})")
+		require.Empty(t, errs)
+	})
+	t.Run("a moved variable does too, and is consumed", func(t *testing.T) {
+		src := take + `fn g() -> number {
+	val cfg = {x: 1}
+	val n = take(cfg)
+	return cfg.x
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"5:9-5:14: use of moved value 'cfg'"}, messagesWithSpan(t, errs))
+	})
+	t.Run("a pre-existing mut cell does not, so the widening is rejected", func(t *testing.T) {
+		src := take + `fn g() -> number {
+	val cfg: mut {x: number} = {x: 1}
+	return take(cfg)
+}`
+		_, _, errs := inferSource(t, src)
+		require.Equal(t, []string{"4:9-4:18: cannot constrain string <: number"},
+			messagesWithSpan(t, errs))
 	})
 }
 

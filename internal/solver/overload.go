@@ -67,7 +67,7 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 			c.closeProbe(p, false)
 			continue
 		}
-		matched, diags := c.tryOverloadArm(args, inst)
+		matched, diags := c.tryOverloadArm(args, call.Args, inst)
 		c.closeProbe(p, matched)
 		if matched {
 			// tryOverloadArm runs the error-returning engine, so a warning the winning arm
@@ -97,25 +97,27 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes}), nil
 }
 
-// tryOverloadArm reports whether inst accepts a call with the given argument types,
-// applying the argument constraints to inst's params as it goes. inst is a
-// freshly-instantiated arm. It runs under a probe opened by the caller, so on a false
-// return closeProbe(_, false) rolls back every bound it appended. It uses the
-// error-returning Context.Constrain rather than the accumulating checker.constrain, so a
-// rejected argument never reaches c.errs even before the probe's errs rollback.
+// tryOverloadArm reports whether inst, a freshly-instantiated arm, accepts a call with the given
+// argument types, applying the argument constraints to inst's params as it goes. It runs under a
+// probe the caller opened, so a false return rolls back every bound it appended, and it uses the
+// error-returning Context.Constrain so a rejected argument never reaches c.errs. On a match it
+// returns the warnings the accepting constraints produced, for the caller to surface at the
+// call; hasHardError draws the accept line, so an argument that warns still matches. A non-match
+// returns nil, dropping a rejected arm's diagnostics.
 //
-// On a match it also returns the warnings the accepting constraints produced, so the
-// caller can surface them at the call. An arg that passes still counts as a match even when
-// it warns, since hasHardError draws the accept line, so the returned slice holds only
-// warnings. A non-match returns nil, keeping a rejected arm's diagnostics dropped.
+// Arity reuses acceptSet (#677), so the overload gate and the FuncType<:FuncType gate cannot
+// drift. A count outside it is a non-match unless the arm is inexact or has a rest. An `Array<E>`
+// rest slot says what each argument it absorbs must be, so those are checked against E; an
+// inexact tail says nothing, so those stay arity-only.
 //
-// Arity follows the direct-call accept-set from #677, reusing acceptSet so the overload
-// arity gate and the FuncType<:FuncType constraint gate can never drift. A count below
-// acceptSet's lower bound is too few, and a count above its upper bound is too many.
-// Either is a non-match, unless the arm is inexact or has a rest. An `Array<E>` rest slot
-// says what each argument it absorbs must be, so those are checked against E. An inexact
-// tail says nothing about what it absorbs, so those stay arity-only.
-func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (bool, []SolverError) {
+// argExprs are the source expressions behind args, index for index, read only to decide the
+// owned-mutable upgrade — so `take({x: 1})` matches an arm declaring `a: mut {x: number}`, as it
+// does a one-signature callee. It reads ownedMutReadView rather than tryUpgradeToOwnedMut to stay
+// on Context.Constrain. An argument past the end of argExprs, or at a rest slot, takes no
+// upgrade; a rest slot's argument fills one element of the gathered array rather than the slot.
+func (c *checker) tryOverloadArm(
+	args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
+) (bool, []SolverError) {
 	n := len(args)
 	if lo, hi := acceptSet(inst); n < lo || n > hi {
 		return false, nil
@@ -144,7 +146,37 @@ func (c *checker) tryOverloadArm(args []soltype.Type, inst *soltype.FuncType) (b
 			}
 			break
 		}
-		errs := c.ctx.Constrain(arg, inst.Params[i].Type)
+		target := inst.Params[i].Type
+		if i < len(argExprs) {
+			// A `mut` parameter takes an IMMUTABLE argument when that argument is uniquely
+			// owned, so the check narrows to the parameter's immutable read view instead of
+			// rejecting `take({x: 1})` against `a: mut {x: number}` on the mutability
+			// wrapper. Only the wrapper is dropped: the shape is still checked covariantly,
+			// so `take({y: 1})` still fails.
+			//
+			// The decision is ownedMutReadView's, and bottoms out in canUpgradeToOwnedMut
+			// and freshLiteralShape over in infer_decl.go. Those admit three shapes: a
+			// freshly built literal, a moved owned place, or a borrow expression.
+			//
+			// The first two are uniquely owned, so nothing else refers to the value and no
+			// live alias can observe a write the callee makes through the mutable view it
+			// receives, which is Rule 2 of the mutability-transition checker with an empty
+			// alias set. consumeCallArgs then moves the argument, so a later use of it is a
+			// use-after-move and the uniqueness holds past the call rather than only at it.
+			// A borrow is sound for a different reason: the mutable view lets the
+			// container's field be repointed but grants no write to the referent, whose
+			// type stays invariant through the RefType arm, so the covariant check here
+			// cannot widen it.
+			//
+			// inferCall pins its demand entry rather than narrowing, because its
+			// `callee <: callShape` constraint would otherwise re-check the argument
+			// strictly. Resolution emits no such constraint, so narrowing is the whole of it
+			// here.
+			if view, ok := c.ownedMutReadView(argExprs[i], target); ok {
+				target = view
+			}
+		}
+		errs := c.ctx.Constrain(arg, target)
 		if hasHardError(errs) {
 			return false, nil
 		}
