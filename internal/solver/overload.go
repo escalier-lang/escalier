@@ -132,25 +132,22 @@ func (c *checker) markCallRaised(fn *soltype.FuncType) {
 // tryOverloadArm reports whether inst, one positional shape of a freshly-instantiated arm,
 // accepts a call with the given argument types. It runs under a probe the caller opened, so a
 // false return rolls back every bound it appended, and it uses the error-returning
-// Context.Constrain so a rejected argument never reaches c.errs.
+// Context.Constrain so a rejected argument never reaches c.errs. On a match it returns the
+// warnings the accepting constraints produced, for the caller to surface at the call;
+// hasHardError draws the accept line, so an arm that warns still matches.
 //
 // The check is the SAME one the ordinary path runs: build a call shape from the arguments and
-// constrain the candidate against it. Arity, the per-argument check, the absorb and scatter
-// rules and the return are then decided by one body of code either way, which is the point of
-// #1518. The shape is exact with every parameter required, giving accept-set [n, n], so the
-// constraint holds iff required(inst) <= n <= upper(inst) — the window the arity gate used to
-// test directly.
+// constrain the candidate against it, so arity, the per-argument check, the absorb and scatter
+// rules and the return are decided by one body of code either way. The shape is exact with every
+// parameter required, giving accept-set [n, n], so the constraint holds iff
+// required(inst) <= n <= upper(inst).
 //
-// On a match it returns the warnings the accepting constraints produced, for the caller to
-// surface at the call. hasHardError draws the accept line, so an arm that warns still matches.
-// A non-match returns nil, dropping a rejected arm's diagnostics.
-//
-// The shape's Ret and Throws are FRESH variables, since a losing trial must leave a bound on
-// neither; resolveOverload takes the winner's own Ret and wires its throws against the real
-// sink once an arm is chosen. Wiring that sink into the shape instead would make dispatch
-// depend on the caller's `throws` clause: advancing a raising generator from a body with no
-// clause would fail `"boom" <: never` inside every trial and report "no matching overload"
-// rather than the missing clause. An overload set dispatches on arguments.
+// Its Ret and Throws are FRESH variables, since a losing trial must leave a bound on neither.
+// resolveOverload takes the winner's own Ret and wires its throws against the real sink once an
+// arm is chosen; wiring that sink in here would make dispatch depend on the caller's `throws`
+// clause, so advancing a raising generator from a body with no clause would fail
+// `"boom" <: never` in every trial and report "no matching overload" rather than the missing
+// clause.
 func (c *checker) tryOverloadArm(
 	lvl int, args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
 ) (bool, []SolverError) {

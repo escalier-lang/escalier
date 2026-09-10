@@ -1646,27 +1646,18 @@ func (c *checker) inferArmOverloadCall(
 
 // upgradeCallDemand applies the immutable→mutable argument upgrade across a call's demand and
 // returns the demand it leaves behind. It is the ONE place either call path decides which
-// arguments take an owned-mutable parameter's type, so a shape built here and an overload arm's
-// trial agree on what a `mut` parameter accepts.
+// arguments take an owned-mutable parameter's type, so a call shape and an overload arm's trial
+// agree on what a `mut` parameter accepts.
 //
-// A uniquely-owned argument flowing into an owned-mutable parameter takes the mutable type, the
-// same grant the annotated declaration makes, so `f({x: 1})` and `f(cfg)` type-check for an
-// owned-mutable parameter. The argument's shape is checked covariantly against the parameter's
-// immutable read view, and that argument's demand entry is then PINNED to the parameter's own
-// type, so the callee <: callShape constraint re-checks it as param<:param rather than strictly
-// rejecting the immutable argument.
+// An upgraded argument is checked covariantly against the parameter's immutable read view, and
+// its demand entry is then PINNED to the parameter's own type, so the callee <: callShape
+// constraint re-checks it as param<:param rather than rejecting the immutable argument outright.
+// check runs that covariant check: inferCall passes the accumulating constrain, since its callee
+// is settled, and an overload trial passes the error-returning one, since a losing arm must
+// write nothing.
 //
-// check runs the covariant check, and is what differs between the two callers. inferCall passes
-// the accumulating constrain, since its callee is settled. An overload trial passes the
-// error-returning one, since a losing arm must write nothing.
-//
-// An argument at a rest slot takes no upgrade. It fills one element of the gathered array rather
-// than the slot itself, so there is no parameter type to upgrade it against: pairing the two
-// would check `f(1)` against `fn (...xs: mut Array<number>) -> R` as `1 <: Array<number>`. The
-// element check belongs to constrain's scatter rule instead.
-//
-// consumeCallArgs still moves an upgraded argument, since an owned-mutable parameter is
-// concrete-owned.
+// An argument at a rest slot takes no upgrade, since it fills one element of the gathered array
+// rather than the slot itself. The element check belongs to constrain's scatter rule.
 func (c *checker) upgradeCallDemand(
 	argExprs []ast.Expr, demand []*soltype.FuncParam, fn *soltype.FuncType,
 	check func(src ast.Node, srcT, target soltype.Type),
@@ -1686,14 +1677,12 @@ func (c *checker) upgradeCallDemand(
 }
 
 // inferCallArgs types a call's arguments left to right, the ONE place either call path does so.
-// The result is index-aligned with e.Args, which is what lets the argument rules read the source
-// expression behind an argument — the owned-mutable upgrade needs it to tell a uniquely-owned
-// argument from a live one.
+// The result is index-aligned with e.Args, which is what lets the owned-mutable upgrade read the
+// source expression behind an argument to tell a uniquely-owned one from a live one.
 //
-// The enclosing statement's CFG point must be read BEFORE this runs. Inferring a child that
-// contains statements, such as an `if` argument, overwrites c.fn.currentStmt, so reading the
-// point afterward would record an argument move against an inner branch instead of this call's
-// statement.
+// The enclosing statement's CFG point must be read BEFORE this runs: inferring an argument that
+// contains statements, such as an `if`, overwrites c.fn.currentStmt, so reading the point
+// afterward would record an argument move against an inner branch.
 func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltype.Type {
 	args := make([]soltype.Type, len(e.Args))
 	for i, a := range e.Args {
@@ -1703,18 +1692,10 @@ func (c *checker) inferCallArgs(scope *Scope, lvl int, e *ast.CallExpr) []soltyp
 }
 
 // recordCallArgEffects moves the arguments a call consumes and records the borrow edges its
-// signature stores. It is the ONE place both call paths run those two, against whichever
-// signature the call resolved to: the single shape inferCall read off the callee, or the arm
-// resolveOverload picked. Keeping them here is what stops one path from forgetting them, which
-// is how #1508 came about.
-//
-// Passing an owned argument to a bare owned parameter moves it, while a `&`/`&mut` parameter
-// auto-borrows and leaves the argument usable. An arity-mismatched call still moves each
-// argument that lines up with a parameter, so `store(p, p)` moves the first p and a later use of
-// p is a use-after-move; consumeCallArgs skips the extra arguments that have no parameter. A
-// borrow argument the signature stores into another argument, or into a method's receiver,
-// aliases the two for as long as the target lives, and recordCallStoreEdges records that rather
-// than leaving the alias invisible to the escape check and the component move.
+// signature stores, through consumeCallArgs and recordCallStoreEdges. It is the ONE place both
+// call paths run those two, against whichever signature the call resolved to: the shape inferCall
+// read off the callee, or the arm resolveOverload picked. Keeping them here is what stops one
+// path from forgetting them, which is how #1508 came about.
 //
 // fn is nil when no arm accepted the call. Nothing is moved then, since no signature says which
 // arguments a call that does not type-check would have consumed.
