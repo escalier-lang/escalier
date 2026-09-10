@@ -365,21 +365,14 @@ func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target
 }
 
 // ownedMutReadView returns the type a value built by src is checked against when it takes
-// target's owned-mutable type, and reports whether that upgrade applies at all. It is the
-// decision half of tryUpgradeToOwnedMut, split out so a caller that must not write into
-// c.errs can run the same test and then check the source itself.
+// target's owned-mutable type, and reports whether that upgrade applies. It is the decision
+// half of tryUpgradeToOwnedMut, which runs the check itself. The view is stripOwnedMut of
+// target's inner; a fully uniquely-owned source is owned at every level, so letting it flow
+// covariantly into that cell is sound the whole way down.
 //
-// The view is stripOwnedMut of target's inner, the immutable read of the owned-mutable
-// cell. Under the lazy deep-mut form the inner is already bare, and a nested `mut {x}`
-// field inside a non-mut container is rejected at the annotation site (#779), so
-// stripOwnedMut is a defensive no-op for most target types. It still lets a uniquely-owned
-// source flow covariantly into any owned-mut cell that reaches here. A fully uniquely-owned
-// source is owned at every level, so the upgrade is sound the whole way down.
-//
-// tryOverloadArm is the caller that needs the split. It trials an arm under a probe with
-// the error-returning Context.Constrain, so a losing arm's rejected argument never reaches
-// c.errs. Calling tryUpgradeToOwnedMut there would run the accumulating checker.constrain
-// instead and blame a losing arm's failure at the call.
+// The split exists for tryOverloadArm, which trials an arm under a probe with the
+// error-returning Context.Constrain so a losing arm writes nothing. Calling
+// tryUpgradeToOwnedMut there would run the accumulating checker.constrain instead.
 func (c *checker) ownedMutReadView(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
 	ref, ok := target.(*soltype.RefType)
 	if !ok || !ref.Mut || ref.Lt != nil || !c.canUpgradeToOwnedMut(src) {

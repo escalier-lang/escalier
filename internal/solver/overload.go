@@ -97,38 +97,31 @@ func (c *checker) resolveOverload(lvl int, b ValueBinding, args []soltype.Type, 
 	return c.report(&NoMatchingOverloadError{Call: call, Candidates: b.Schemes}), nil
 }
 
-// tryOverloadArm reports whether inst accepts a call with the given argument types,
-// applying the argument constraints to inst's params as it goes. inst is a
-// freshly-instantiated arm. It runs under a probe opened by the caller, so on a false
-// return closeProbe(_, false) rolls back every bound it appended. It uses the
-// error-returning Context.Constrain rather than the accumulating checker.constrain, so a
-// rejected argument never reaches c.errs even before the probe's errs rollback.
+// tryOverloadArm reports whether inst, a freshly-instantiated arm, accepts a call with the
+// given argument types, applying the argument constraints to inst's params as it goes. It
+// runs under a probe the caller opened, so a false return rolls back every bound it
+// appended, and it uses the error-returning Context.Constrain so a rejected argument never
+// reaches c.errs.
 //
-// On a match it also returns the warnings the accepting constraints produced, so the
-// caller can surface them at the call. An arg that passes still counts as a match even when
-// it warns, since hasHardError draws the accept line, so the returned slice holds only
-// warnings. A non-match returns nil, keeping a rejected arm's diagnostics dropped.
+// On a match it returns the warnings the accepting constraints produced, for the caller to
+// surface at the call. hasHardError draws the accept line, so an argument that warns still
+// matches. A non-match returns nil, dropping a rejected arm's diagnostics.
 //
-// Arity follows the direct-call accept-set from #677, reusing acceptSet so the overload
-// arity gate and the FuncType<:FuncType constraint gate can never drift. A count below
-// acceptSet's lower bound is too few, and a count above its upper bound is too many.
-// Either is a non-match, unless the arm is inexact or has a rest. An `Array<E>` rest slot
-// says what each argument it absorbs must be, so those are checked against E. An inexact
-// tail says nothing about what it absorbs, so those stay arity-only.
+// Arity reuses acceptSet (#677), so the overload gate and the FuncType<:FuncType gate cannot
+// drift. A count outside it is a non-match unless the arm is inexact or has a rest. An
+// `Array<E>` rest slot says what each argument it absorbs must be, so those are checked
+// against E; an inexact tail says nothing, so those stay arity-only.
 //
-// argExprs are the source expressions behind args, index for index, and are read only to
-// decide the owned-mutable upgrade — a uniquely-owned argument fills a `mut` parameter, so
-// `take({x: 1})` matches an arm declaring `a: mut {x: number}`. inferCall grants the same
-// thing through tryUpgradeToOwnedMut for a callee it resolved to one signature, and an
-// argument accepted there must be accepted here too, or adding an unrelated second arm to a
-// set would break a call that compiled. The upgrade is taken through ownedMutReadView rather
-// than tryUpgradeToOwnedMut so the check stays on Context.Constrain and a losing arm writes
-// no errors. A shorter argExprs, which a hand-built call in a test may give, leaves the
-// arguments past its end on the ordinary path.
+// argExprs are the source expressions behind args, index for index, read only to decide the
+// owned-mutable upgrade: a uniquely-owned argument fills a `mut` parameter, so `take({x: 1})`
+// matches an arm declaring `a: mut {x: number}`. inferCall grants the same thing for a
+// one-signature callee, and an argument accepted there has to be accepted here — otherwise
+// adding an unrelated second arm breaks a call that compiled. It goes through
+// ownedMutReadView rather than tryUpgradeToOwnedMut to stay on Context.Constrain. An
+// argument past the end of argExprs takes the ordinary path.
 //
-// A rest slot takes no upgrade. An argument there fills one element of the array the slot
-// gathers rather than the slot itself, so there is no parameter type to upgrade it against.
-// inferCall skips a rest slot for the same reason.
+// A rest slot takes no upgrade, since an argument there fills one element of the gathered
+// array rather than the slot itself. inferCall skips one for the same reason.
 func (c *checker) tryOverloadArm(
 	args []soltype.Type, argExprs []ast.Expr, inst *soltype.FuncType,
 ) (bool, []SolverError) {
