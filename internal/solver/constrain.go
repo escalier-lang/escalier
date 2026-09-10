@@ -150,10 +150,25 @@ func restIndex(f *soltype.FuncType) int {
 // restArity is the inclusive range of argument counts a rest param of type t binds: a tuple's
 // length at both ends, an inexact tuple's ceiling at ∞, and [0, ∞) for every other shape. This
 // is the count a CALL must satisfy; an absorbing rest param is decided by prefixRequiredCount.
+//
+// A tuple still carrying an unresolved `...P` spread counts only its FIXED elements toward the
+// floor and has no ceiling. A spread over a type parameter stands for an unknown number of
+// positions, so `...args: [...T, string]` binds one argument when T is empty and any larger
+// number when it is not. Counting the spread as one element would put the range at [2, 2] and
+// reject both ends: `f("a")` as too few and `f(1, "a", true)` as too many.
 func restArity(t soltype.Type) (lo, hi int) {
 	tup, ok := t.(*soltype.TupleType)
 	if !ok {
 		return 0, unboundedArity
+	}
+	if hasRestSpread(tup.Elems) {
+		fixed := 0
+		for _, elem := range tup.Elems {
+			if !isRestSpread(elem) {
+				fixed++
+			}
+		}
+		return fixed, unboundedArity
 	}
 	if tup.Inexact {
 		return len(tup.Elems), unboundedArity

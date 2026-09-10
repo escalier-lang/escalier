@@ -90,11 +90,30 @@ func TestInferSpreadTupleRest(t *testing.T) {
 		// residual: the call is checked for arity and its arguments are left alone. Checking
 		// them against the slot would ask for `1 <: [...T, string]`, which is neither true nor
 		// what the slot means.
+		//
+		// The argument at the trailing `string` position is deliberately a NUMBER. Passing a
+		// string there would pass whether or not that position is being enforced, so it could
+		// not tell arity-only apart from a slot that checks its fixed suffix.
 		_, _, errs := inferSource(t, `
 			declare fn f<T>(...args: [...T, string]) -> number
-			val r = f(1, "a")
+			val r = f(1, 2)
 		`)
 		require.Empty(t, errs)
+	})
+	t.Run("an unresolved spread stands for any number of positions", func(t *testing.T) {
+		// The floor counts the FIXED elements alone and there is no ceiling, since `...T`
+		// stands for an unknown number of positions: `[...T, string]` binds one argument when
+		// T is empty and any larger number when it is not. Counting the spread as one element
+		// would put the range at [2, 2] and reject both ends.
+		const decl = "declare fn f<T>(...args: [...T, string]) -> number\n"
+		for _, call := range []string{`f("a")`, "f(1, 2)", `f(1, "a", true)`} {
+			_, _, errs := inferSource(t, decl+"val r = "+call)
+			require.Empty(t, errs, "%s must be accepted on arity", call)
+		}
+		_, _, errs := inferSource(t, decl+"val r = f()")
+		require.Equal(t,
+			[]string{"2:9-2:12: Not enough arguments: expected at least 1, but got 0"},
+			messagesWithSpan(t, errs), "the fixed element is still required")
 	})
 }
 
