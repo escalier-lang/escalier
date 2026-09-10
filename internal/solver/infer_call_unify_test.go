@@ -20,21 +20,38 @@ import (
 // gate read the tuple's length and passed, then the rest branch found no element type on a
 // tuple slot and checked nothing at all.
 func TestInferOverloadArmExpandsTupleRest(t *testing.T) {
-	const arm2 = "declare fn f(a: boolean) -> string\n"
 	t.Run("a matching call accepts either way", func(t *testing.T) {
-		alone, _, errs := inferSource(t, "declare fn f(...xs: [number, string]) -> number\nval r = f(1, \"a\")")
+		alone, _, errs := inferSource(t, `
+			declare fn f(...xs: [number, string]) -> number
+			val r = f(1, "a")
+		`)
 		require.Empty(t, errs)
-		set, _, errs := inferSource(t, "declare fn f(...xs: [number, string]) -> number\n"+arm2+"val r = f(1, \"a\")")
+
+		set, _, errs := inferSource(t, `
+			declare fn f(...xs: [number, string]) -> number
+			declare fn f(a: boolean) -> string
+			val r = f(1, "a")
+		`)
 		require.Empty(t, errs)
 		require.Equal(t, alone["r"], set["r"])
 	})
 	t.Run("a mismatched element is rejected either way", func(t *testing.T) {
-		_, _, errs := inferSource(t, "declare fn f(...xs: [number, string]) -> number\nval r = f(1, 2)")
-		require.Equal(t, []string{"2:14-2:15: cannot constrain 2 <: string"}, messagesWithSpan(t, errs))
+		_, _, errs := inferSource(t, `
+			declare fn f(...xs: [number, string]) -> number
+			val r = f(1, 2)
+		`)
+		require.Equal(t, []string{"3:17-3:18: cannot constrain 2 <: string"},
+			messagesWithSpan(t, errs))
 
-		_, _, errs = inferSource(t, "declare fn f(...xs: [number, string]) -> number\n"+arm2+"val r = f(1, 2)")
+		// The set reports its candidates instead of blaming the argument, which is the
+		// reporting difference between the two paths rather than a difference in checking.
+		_, _, errs = inferSource(t, `
+			declare fn f(...xs: [number, string]) -> number
+			declare fn f(a: boolean) -> string
+			val r = f(1, 2)
+		`)
 		require.Equal(t, []string{
-			"3:9-3:16: No matching overload for this call\n" +
+			"4:12-4:19: No matching overload for this call\n" +
 				"  fn (...xs: [number, string]) -> number\n" +
 				"  fn (a: boolean) -> string",
 		}, messagesWithSpan(t, errs))
