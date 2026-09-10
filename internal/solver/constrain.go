@@ -38,34 +38,22 @@ func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 }
 
 // expandTupleRest returns f with a tuple-typed rest param replaced by one positional param per
-// tuple element, so the rules that walk a parameter list read ordinary positions instead of each
+// tuple element, so the rules that walk a parameter list read ordinary positions rather than each
 // growing a rest case. The expanded form is never stored or printed, so a diagnostic still names
 // the written type. An inference variable stays a rest param for the gather rule to bind, which
-// is why the tuple is read by a direct assertion.
+// is why the tuple is read by a direct assertion. seen is the caller's expansion guard, shared
+// with the evaluator so a recursive alias behind a spread closes as it does at a constraint site.
 //
-// Two tuple shapes need work before the positions fall out.
+// A tuple carrying `...P` spreads grounds first through groundTuple, since a spread stands for
+// several positions rather than one: `Function.bind` writes `...args: [...A, ...B]`, where
+// argument 0 belongs to the element `...A` places there rather than to the spread itself. A
+// spread that never grounds, over a type parameter say, leaves the slot a rest param, arity-only.
 //
-// A tuple carrying `...P` spread elements is grounded first, since a spread stands for several
-// positions rather than one. `Function.bind` writes `...args: [...A, ...B]`, and pairing argument
-// 0 with the whole `...A` would check it against a spread rather than against the element the
-// spread places there. groundTuple splices each operand's own elements in, expanding a named
-// alias on the way, and reports false for a spread that never grounds — over a type parameter,
-// say. The slot then stays a rest param, arity-only, which is the inert-residual reading a
-// symbolic operand already gets everywhere else.
-//
-// An INEXACT tuple expands its fixed prefix into positions and marks the function inexact, which
-// is the representation `fn (a: A, ...)` already has. `...xs: [A, ...]` and `fn (x: A, ...)` say
-// the same thing — at least an A, then any number more the signature says nothing about — so
-// they resolve to the same FuncType and behave identically everywhere: the same accept-set of
-// [required, ∞), the same subtyping, and the same too-many-arguments lint at a direct call.
-//
-// That lint firing is deliberate. #677 §4.2.3 rejects extra arguments "for exact and inexact
-// callees alike, since supplying extras to a call you can see is a mistake even where the
-// lattice tolerates them". The `...` is a width marker for subtyping, not permission for a
-// caller who can see the signature to pass arguments it ignores.
-//
-// seen is the caller's expansion guard, shared with the evaluator so a recursive alias reached
-// through a spread closes the same way it does at a constraint site.
+// An INEXACT tuple expands its fixed prefix and marks the function inexact, which is the
+// representation `fn (x: A, ...)` already has, so the two spellings resolve to one FuncType and
+// behave identically. That includes the too-many-arguments lint at a direct call: #677 §4.2.3
+// rejects extras "for exact and inexact callees alike", so the `...` widens the accept-set for
+// subtyping without letting a caller who can see the signature pass arguments it ignores.
 func (c *Context) expandTupleRest(f *soltype.FuncType, seen *seenPairs) *soltype.FuncType {
 	k := restIndex(f)
 	if k < 0 {
@@ -97,21 +85,16 @@ func (c *Context) expandTupleRest(f *soltype.FuncType, seen *seenPairs) *soltype
 }
 
 // distributeUnionRest turns a rest slot typed as a UNION of tuples into one candidate signature
-// per member, and reports false for a slot of any other shape.
+// per member, and reports false for a slot of any other shape. A member that is not a tuple names
+// no positions to expand, so the whole slot stays as written.
 //
 // `[] | [T]` is how TypeScript spells an optional argument in a rest position, and it is what the
-// committed tree writes for the iteration protocol: `next(...value: [] | [TNext])` on Iterator,
-// AsyncIterator, Generator and AsyncGenerator. A union slot admits a call when SOME member admits
-// it, which is a disjunction the lattice deliberately does not resolve — reading the slot as one
-// type would check argument 0 against the whole union and say nothing about the element.
-//
-// A disjunction the call must choose between is what overload resolution already does, so each
-// member becomes a candidate arm and the call resolves through resolveOverload: arms are trialled
-// under a probe, the first that accepts wins, and the losers roll back. Every member is expanded
-// through expandTupleRest, so an arm reads as ordinary positions.
-//
-// Every member must be a tuple. One that is not names no positions to expand, so the whole slot
-// stays as written and the ordinary path handles it.
+// tree writes for the iteration protocol: `next(...value: [] | [TNext])` on Iterator,
+// AsyncIterator, Generator and AsyncGenerator. Such a slot admits a call when SOME member admits
+// it. Reading it as one type would check argument 0 against the whole union and say nothing about
+// the element, so each member becomes a candidate and resolveOverload picks one — the same trial
+// machinery an overload set uses. Each is expanded through expandTupleRest first, so a candidate
+// reads as ordinary positions.
 func (c *Context) distributeUnionRest(f *soltype.FuncType, seen *seenPairs) ([]*soltype.FuncType, bool) {
 	k := restIndex(f)
 	if k < 0 {
@@ -146,15 +129,14 @@ func restIndex(f *soltype.FuncType) int {
 	return -1
 }
 
-// restArity is the inclusive range of argument counts a rest param of type t binds: a tuple's
-// length at both ends, an inexact tuple's ceiling at ∞, and [0, ∞) for every other shape. This
-// is the count a CALL must satisfy; an absorbing rest param is decided by prefixRequiredCount.
+// restArity is the inclusive range of argument counts a rest param of type t binds: an exact
+// tuple's length at both ends, an inexact tuple's length up to ∞, a tuple carrying an unresolved
+// `...P` spread its FIXED element count up to ∞, and [0, ∞) for every other shape. This is the
+// count a CALL must satisfy; an absorbing rest param is decided by prefixRequiredCount.
 //
-// A tuple still carrying an unresolved `...P` spread counts only its FIXED elements toward the
-// floor and has no ceiling. A spread over a type parameter stands for an unknown number of
-// positions, so `...args: [...T, string]` binds one argument when T is empty and any larger
-// number when it is not. Counting the spread as one element would put the range at [2, 2] and
-// reject both ends: `f("a")` as too few and `f(1, "a", true)` as too many.
+// A spread stands for an unknown number of positions, so counting it as one element would put
+// `[...T, string]` at [2, 2] and reject both ends — `f("a")`, right when T is empty, and
+// `f(1, "a", true)`, right when T has two.
 func restArity(t soltype.Type) (lo, hi int) {
 	tup, ok := t.(*soltype.TupleType)
 	if !ok {
