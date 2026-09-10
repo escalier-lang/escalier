@@ -1469,11 +1469,11 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// where the lattice tolerates them. They fire only for a concrete callee. When one fires the
 	// supply is reshaped into the callee's accept-set so the synth's gate does not also report
 	// arity: too-many truncates, too-few pads with fresh vars that constrain nothing.
-	// supply is the argument list as the synthesized call shape's parameters. #677 names the
-	// two sides of an arrow constraint by what they do with arguments: the SUPPLIER, the
-	// subtype, demands them, and the SLOT, the supertype, supplies them. The constraint below
-	// is `callee <: callShape`, so the callee is the supplier that demands and the call shape
-	// is the slot that supplies — which is this list.
+	// supply holds the argument types, and becomes the synthesized call shape's parameter list
+	// below. It is NOT the callee's parameter list, which is what its old name `demand`
+	// suggested. The constraint is `callee <: callShape`, and under #677's accept-set reading
+	// the callee is the side that demands arguments while the call shape is the side that
+	// provides them.
 	supply := args
 	switch {
 	case resolved && !hasRest(fn) && len(args) > len(fn.Params):
