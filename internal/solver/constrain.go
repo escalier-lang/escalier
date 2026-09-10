@@ -84,6 +84,21 @@ func (c *Context) expandTupleRest(f *soltype.FuncType, seen *seenPairs) *soltype
 	return &expanded
 }
 
+// callCandidates returns the positional shapes a call to f is checked against — the ONE place a
+// callee signature becomes the form the argument and arity rules read. Both the single-signature
+// path in inferCall and the per-arm trial in resolveOverload go through it, so the two cannot
+// drift on how a rest slot is read.
+//
+// A rest slot typed as a union of tuples yields one shape per member, since the call matches when
+// some member matches. Every other slot yields one shape, with a tuple rest expanded to plain
+// positions. A slot neither rule reads stays a rest param for the absorb and scatter rules.
+func (c *Context) callCandidates(f *soltype.FuncType, seen *seenPairs) []*soltype.FuncType {
+	if arms, ok := c.distributeUnionRest(f, seen); ok {
+		return arms
+	}
+	return []*soltype.FuncType{c.expandTupleRest(f, seen)}
+}
+
 // distributeUnionRest turns a rest slot typed as a UNION of tuples into one candidate signature
 // per member, and reports false for a slot of any other shape. A member that is not a tuple names
 // no positions to expand, so the whole slot stays as written.
