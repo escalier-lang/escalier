@@ -154,12 +154,19 @@ func (c *checker) tryOverloadArm(
 			// wrapper. Only the wrapper is dropped: the shape is still checked covariantly,
 			// so `take({y: 1})` still fails.
 			//
-			// This is sound because ownedMutReadView fires only for a freshly built literal
-			// or a moved place. Nothing else refers to the value, so no live alias can
-			// observe a write the callee makes through the mutable view it receives, which
-			// is Rule 2 of the mutability-transition checker with an empty alias set.
-			// consumeCallArgs then moves the argument, so a later use of it is a
+			// The decision is ownedMutReadView's, and bottoms out in canUpgradeToOwnedMut
+			// and freshLiteralShape over in infer_decl.go. Those admit three shapes: a
+			// freshly built literal, a moved owned place, or a borrow expression.
+			//
+			// The first two are uniquely owned, so nothing else refers to the value and no
+			// live alias can observe a write the callee makes through the mutable view it
+			// receives, which is Rule 2 of the mutability-transition checker with an empty
+			// alias set. consumeCallArgs then moves the argument, so a later use of it is a
 			// use-after-move and the uniqueness holds past the call rather than only at it.
+			// A borrow is sound for a different reason: the mutable view lets the
+			// container's field be repointed but grants no write to the referent, whose
+			// type stays invariant through the RefType arm, so the covariant check here
+			// cannot widen it.
 			//
 			// inferCall pins its demand entry rather than narrowing, because its
 			// `callee <: callShape` constraint would otherwise re-check the argument
