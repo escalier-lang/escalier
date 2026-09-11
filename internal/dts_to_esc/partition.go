@@ -93,15 +93,21 @@ var stdPackages = []struct {
 		// unresolved supertype costs the subclass its whole inherited
 		// surface, not one member.
 		//
-		// Three cases this set stops short of. `IteratorResult` and its
+		// `Symbol` and its constructor half are here because the
+		// declarations above key sixteen members off seven well-known
+		// symbols — `Symbol.iterator`, `Symbol.asyncIterator`,
+		// `Symbol.dispose` and the rest. The computed keys that name
+		// them are unsupported today and so resolve nothing, which is
+		// the only reason the reference does not already fail.
+		//
+		// Two cases this set stops short of. `IteratorResult` and its
 		// two arms stay in `std:iterator`, since
 		// registerIteratorResultAliases binds them on every Context and
-		// they resolve with no declaration in reach. `Symbol` stays in
-		// `std:symbol`, which `Array` already reached across a package
-		// boundary. The `Intl.*` options bags stay in `std:intl`,
-		// because the reference to them is written with a qualifier
-		// that package does not declare and is broken wherever they
-		// live. See #1403.
+		// they resolve with no declaration in reach. The `Intl.*`
+		// options bags stay in `std:intl`, which flattens the namespace
+		// and declares them bare, so the qualifier written against them
+		// names nothing wherever they live. Rewriting the reference is
+		// the fix, not moving the declaration. See #1403.
 		// `BuiltinIteratorReturn` is the second type argument of the
 		// `IteratorObject` that `ArrayIterator` extends. Its own body
 		// is `= intrinsic`, a TypeScript compiler keyword with no
@@ -114,6 +120,7 @@ var stdPackages = []struct {
 		"Iterator", "IteratorObject",
 		"AsyncIterator", "AsyncIteratorObject",
 		"Disposable", "AsyncDisposable",
+		"Symbol", "SymbolConstructor",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -140,9 +147,6 @@ var stdPackages = []struct {
 		"RegExpMatchArray", "RegExpExecArray",
 		"RegExpIndicesArray",
 		"RegExpStringIterator",
-	}},
-	{"std:symbol", "std/symbol.esc", []string{
-		"Symbol", "SymbolConstructor",
 	}},
 	{"std:object", "std/object.esc", []string{
 		"Object", "ObjectConstructor",

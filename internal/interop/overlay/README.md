@@ -18,13 +18,13 @@ that file's operation:
 
 ```
 overlay/drop.esc               drops whole symbols that belong to no package
-overlay/std/symbol.add.esc     adds to the package written to data/std/symbol.esc
-overlay/std/array.replace.esc  replaces members of that package's declarations
+overlay/std/set.add.esc        adds to the package written to data/std/set.esc
+overlay/std/prelude.replace.esc  replaces members of that package's declarations
 overlay/std/date.drop.esc      drops declarations or members of that package
 ```
 
 The name before the operation is the package's file basename, so
-`std/symbol.add.esc` applies to `std:symbol` and `web/dom.replace.esc`
+`std/set.add.esc` applies to `std:set` and `web/dom.replace.esc`
 applies to `web:dom`.
 
 A per-declaration marker would be the alternative, and the parser has
@@ -40,7 +40,7 @@ package does not already have is appended whole; a declaration it has is
 extended member by member.
 
 ```
-// overlay/std/symbol.add.esc
+// overlay/std/prelude.add.esc
 export declare interface SymbolConstructor {
     readonly customMatcher: unique symbol,
 }

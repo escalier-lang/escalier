@@ -230,11 +230,10 @@ func TestRun_GenerateWritesTheTree(t *testing.T) {
 		"--- stderr ---\n%s--- tree ---\n%s\n--- std/prelude.esc ---\n%s",
 		report, strings.Join(treeOf(t, escDir), "\n"), contents), snaps.Inline(`--- stderr ---
 discovered 1 lib files
-wrote 2 packages under <esc-dir>
+wrote 1 packages under <esc-dir>
 --- tree ---
 node/README.md
 std/prelude.esc
-std/symbol.esc
 --- std/prelude.esc ---
 @js("Array")
 export declare class Array<T> {
@@ -243,6 +242,13 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean,
     static readonly prototype: Array<any>
 }
+
+export declare interface SymbolConstructor {
+    readonly iterator: unique symbol
+}
+
+@js("Symbol")
+export declare var Symbol: SymbolConstructor
 
 @js("Symbol.iterator")
 export declare val iteratorKey: unique symbol

@@ -79,12 +79,12 @@ The shortcut is structural: it fires when the package declares a top-level class
 whose name matches the URI segment, ignoring case and the underscores that
 separate words in a package name. That is what pairs `std:weak_ref` with
 `WeakRef`. `std:string`, `std:number`, `std:boolean`, `std:bigint`,
-`std:regexp`, `std:symbol`, `std:object`, `std:function`, `std:date`,
-`std:map`, `std:set`, and `std:weak_ref` all qualify. `std:math` declares no
+`std:regexp`, `std:object`, `std:function`, `std:date`, `std:map`,
+`std:set`, and `std:weak_ref` all qualify. `std:math` declares no
 `Math` class, so its binding stays the lowercase namespace `math`.
 
-`Array` and `Promise` are on neither list, because neither needs an import at
-all. See the prelude below.
+`Array`, `Promise` and `Symbol` are on neither list, because none of them needs
+an import at all. See the prelude below.
 
 Other exports of a shortcut package are reachable as namespace members on the
 same binding. Where a name collides, class statics win.
@@ -133,8 +133,8 @@ One package needs no import. `std:prelude` declares the types the language's own
 rules name — `Array`, `Promise`, `Iterable`, `AsyncIterable`, `Generator`, and
 `AsyncGenerator` — and every file starts with its exports in scope. It also
 declares what those six name in their own members, such as `ArrayLike`,
-`PromiseLike` and `Awaited`, since the prelude cannot reach a sibling package by
-import.
+`PromiseLike`, `Awaited` and `Symbol`, since the prelude cannot reach a sibling
+package by import.
 
 ```escalier
 val nums = [1, 2, 3]
