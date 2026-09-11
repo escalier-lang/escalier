@@ -2719,7 +2719,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// field, resolves through the projected class body by direct member lookup rather
 	// than the structural field-requirement below — the constraint path reads only
 	// PropertyElems and cannot see a method or getter (M5 B1).
-	if res, ok := c.projectedMember(lvl, blame, name, recvCarrier); ok {
+	if res, ok := c.projectedMember(lvl, blame, name, recv, recvCarrier); ok {
 		return res
 	}
 	// A `self` receiver inside a class body binds to the full instance object, which

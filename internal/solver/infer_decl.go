@@ -138,6 +138,20 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.constructsFreshInstance(d.Init):
+		// An unannotated `val mut c = C(…)` constructs an owned-mutable instance, the class
+		// twin of the fresh-literal upgrade below. A constructor call mints an instance no
+		// one else holds, so granting it the mutable type aliases nothing, exactly the
+		// reasoning a fresh literal uses. Without this the binding stays immutable and a
+		// `mut self` method is unreachable on a value the caller just built and solely owns.
+		// The instance itself is wrapped, not the variable the call result arrives as.
+		// Wrapping the variable would leave its own name in the coalesced binding, so `c`
+		// would render `mut (T0 | Counter)` instead of `mut Counter`.
+		if ct, ok := classCarrier(initT); ok {
+			ref := soltype.NewRef(true, nil, ct)
+			c.recordProv(ref, d.Init, OwnedMutConstruction)
+			initT = ref
+		}
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
 		// constructed literal constructs an owned-mutable value. This mirrors the
@@ -466,6 +480,23 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 	}
 	_, ok := leaf.(*ast.BorrowExpr)
 	return ok
+}
+
+// constructsFreshInstance reports whether e is a call to a class value, which mints an
+// instance the binding solely owns. The callee's type carries a ConstructorElem, which is
+// what distinguishes `C(0)` from an ordinary call whose result may be an object the callee
+// already held and handed out. An ordinary call is not fresh and must not upgrade.
+func (c *checker) constructsFreshInstance(e ast.Expr) bool {
+	call, ok := e.(*ast.CallExpr)
+	if !ok {
+		return false
+	}
+	callee := c.info.TypeOf(call.Callee)
+	if callee == nil {
+		return false
+	}
+	_, isClassValue := classValueCarrier(callee)
+	return isClassValue
 }
 
 // freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal

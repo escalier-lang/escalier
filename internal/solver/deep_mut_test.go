@@ -469,3 +469,164 @@ func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
 			errorMessagesOf(errs))
 	})
 }
+
+// --- #1558: a `mut self` member needs a mutable receiver ---
+
+// A method declaring `mut self` needs mutable access to the instance, and the receiver it
+// is reached through decides whether there is any. The check runs on an instance reached
+// from outside the class as much as on the `self` a body reads, so `c.bump()` and
+// `self.bump()` answer the same way for the same receiver.
+func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
+	const items = `
+		class Items {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+			read(self) -> number { return self.n },
+		}
+`
+	const want = "cannot constrain immutable Items <: mutable Items"
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "a `mut` parameter lends",
+			src:  items + `fn go(i: mut Items) -> number { i.bump()  return 0 }`,
+		},
+		{
+			name: "an immutable parameter does not",
+			src:  items + `fn go(i: Items) -> number { i.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "a plain method needs nothing",
+			src:  items + `fn go(i: Items) -> number { return i.read() }`,
+		},
+		{
+			name: "a `val mut` binding of a constructor call lends",
+			src:  items + `fn go() -> number { val mut i = Items(1)  i.bump()  return 0 }`,
+		},
+		{
+			name: "a plain `val` binding of the same call does not",
+			src:  items + `fn go() -> number { val i = Items(1)  i.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "a `mut` receiver lends through a field",
+			src: items + `
+				class Config {
+					items: Items,
+					constructor(mut self, items: Items) { self.items = items },
+				}
+				fn go(c: mut Config) -> number { c.items.bump()  return 0 }`,
+		},
+		{
+			name: "an immutable receiver does not lend through a field",
+			src: items + `
+				class Config {
+					items: Items,
+					constructor(mut self, items: Items) { self.items = items },
+				}
+				fn go(c: Config) -> number { c.items.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "`mut self` inside a body lends to a field's method",
+			src: items + `
+				class Sub {
+					it: Items,
+					constructor(mut self, it: Items) { self.it = it },
+					go(mut self) { self.it.bump() },
+				}`,
+		},
+		{
+			name: "plain `self` inside a body does not",
+			src: items + `
+				class Sub {
+					it: Items,
+					constructor(mut self, it: Items) { self.it = it },
+					go(self) { self.it.bump() },
+				}`,
+			errs: []string{want},
+		},
+		{
+			name: "an inherited `mut self` method is checked at the subclass",
+			src: `
+				class Base {
+					n: number,
+					constructor(mut self, n: number) { self.n = n },
+					bump(mut self) { self.n = 1 },
+				}
+				class Derived extends Base {
+					constructor(mut self) { super(0) },
+				}
+				fn go(d: Derived) -> number { d.bump()  return 0 }`,
+			errs: []string{"cannot constrain immutable Base <: mutable Base"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
+// Every arm of an overloaded `mut self` method needs the same mutable receiver, since the
+// arms share one member and the check reads the receiver before an arm is chosen.
+func TestOverloadedMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
+	const src = `
+		class C {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			f(mut self, x: number) -> number { return x },
+			f(mut self, x: string) -> string { return x },
+		}
+		val %s c = C(0)
+		val r = c.f(1)
+	`
+	t.Run("a `val mut` receiver lends", func(t *testing.T) {
+		values, _, errs := inferSource(t, fmt.Sprintf(src, "mut"))
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "number", values["r"])
+	})
+	t.Run("a plain `val` receiver does not", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable C <: mutable C"},
+			errorMessagesOf(errs))
+	})
+}
+
+// A constructor call mints an instance the binding solely owns, so `val mut` upgrades it
+// the way it upgrades a fresh literal. An ordinary call may hand back something the callee
+// already held, so it does not upgrade.
+func TestValMutUpgradesAConstructorCall(t *testing.T) {
+	t.Run("a constructor call", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Counter {
+				count: number,
+				constructor(mut self, count: number) { self.count = count },
+			}
+			val mut c = Counter(0)`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "mut Counter", values["c"])
+	})
+	t.Run("an ordinary call returning an instance", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Counter {
+				count: number,
+				constructor(mut self, count: number) { self.count = count },
+			}
+			declare fn shared() -> Counter
+			val mut c = shared()`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "Counter", values["c"])
+	})
+}

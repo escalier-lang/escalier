@@ -842,7 +842,7 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 // field-requirement path, which threads the read-through-borrow and read-after-write
 // rules a direct lookup would drop; a method or getter member reaches valueProp only
 // through a class instance, since class bodies are the only source of those elements.
-func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
 	ct, ok := classCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
@@ -870,6 +870,11 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
+	// A member declaring `mut self` needs mutable access to the instance, on an instance
+	// reached from outside the class as much as on the `self` classBodyMember serves. Both
+	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
+	// receiver.
+	c.checkReceiverMut(blame, recv, memberSelfParam(member))
 	return c.memberValue(lvl, blame, member), true
 }
 
