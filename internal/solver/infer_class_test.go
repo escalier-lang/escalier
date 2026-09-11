@@ -2285,8 +2285,12 @@ func TestInferClassMethodTypeParamsInstantiatePerCall(t *testing.T) {
 }
 
 // A bound a BODY forces is enforced at the call, for a method as for a generic function.
-// It is recorded on the binder's variable rather than written in the source, so a rule
-// reading only the declared constraint would lose it.
+// What the body records is a link, not the bound itself. Calling `f` inside `g` freshens
+// `f`'s binder to a variable carrying `string`, then records `U <:` that variable. `U`
+// never gains `string` of its own, so `g` still renders as `fn <U>(u: U) -> U` and its
+// declared constraint stays empty. The call instantiates the whole chain and propagates
+// `1` along it, reaching `1 <: string`. A rule reading only the declared constraint would
+// see `U` unbounded and lose this.
 func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
 	const callee = "fn f<A: string>(a: A) -> A { return a }\n"
 	const want = "cannot constrain 1 <: string"
@@ -2306,9 +2310,16 @@ func TestInferMethodBodyInferredBoundMatchesTheFunctionForm(t *testing.T) {
 	require.Equal(t, []string{want}, errorMessagesOf(methodErrs))
 }
 
-// A bound naming a SIBLING binder is resolved but not enforced, for a method exactly as
-// for a generic function. The two forms are written side by side here so the parity is
-// what the test asserts rather than the behavior of either alone.
+// A bound naming a SIBLING binder is recorded and propagated, and still admits the call
+// below, for a method exactly as for a generic function. `B: A` becomes `B <: A` on the
+// binder's variable, so constraining `"y" <: B` propagates to `"y" <: A`. `A` is itself
+// an inference variable with no upper bound, so the argument joins the `1` that `a`
+// contributed and `A` solves to `1 | "y"`. The bound has nothing to fail against.
+// Bounding `A` in turn, as `<A: number, B: A>`, gives that propagation something to
+// reach. The second pair below writes it that way and the argument is rejected.
+//
+// The two forms are written side by side here so the parity is what the test asserts
+// rather than the behavior of either alone.
 func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	_, _, fnErrs := inferSource(t, `
 		fn pair<A, B: A>(a: A, b: B) -> A { return a }
@@ -2323,6 +2334,21 @@ func TestInferMethodSiblingBoundMatchesTheFunctionForm(t *testing.T) {
 	`)
 	require.Empty(t, messagesWithSpan(t, fnErrs))
 	require.Equal(t, messagesWithSpan(t, fnErrs), messagesWithSpan(t, methodErrs))
+
+	_, _, boundedFnErrs := inferSource(t, `
+		fn pair<A: number, B: A>(a: A, b: B) -> A { return a }
+		val r = pair(1, "y")
+	`)
+	_, _, boundedMethodErrs := inferSource(t, `
+		class C {
+			pair<A: number, B: A>(self, a: A, b: B) -> A { return a },
+		}
+		val c = C()
+		val r = c.pair(1, "y")
+	`)
+	want := []string{`cannot constrain "y" <: number`}
+	require.Equal(t, want, errorMessagesOf(boundedFnErrs))
+	require.Equal(t, want, errorMessagesOf(boundedMethodErrs))
 }
 
 // The signature a caller reads carries the binder under its written name and the bound
