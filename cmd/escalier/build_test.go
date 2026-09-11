@@ -94,8 +94,7 @@ func TestLoadSources(t *testing.T) {
 		assert.Len(t, sources, 1)
 		assert.Len(t, idToSource, 1)
 		assert.Equal(t, validFile, sources[0].Path)
-		assert.Contains(t, stderr.String(), "does not have .esc extension")
-		assert.Contains(t, stderr.String(), invalidFile)
+		assert.Equal(t, invalidFile+": file does not have .esc extension\n", stderr.String())
 	})
 
 	t.Run("empty file list", func(t *testing.T) {

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -72,7 +73,9 @@ func buildDirFiles(t *testing.T, root string) []string {
 		if err != nil {
 			return err
 		}
-		found = append(found, rel)
+		// ToSlash so the paths read the same however the platform spells a separator,
+		// since the expectations below are written with `/`.
+		found = append(found, filepath.ToSlash(rel))
 		return nil
 	})
 	if os.IsNotExist(err) {
@@ -124,7 +127,15 @@ func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
 
 	_, err = s.compilePackage()
 	require.Error(t, err)
-	require.Contains(t, err.Error(), "Expected an expression")
+	// The error is the marshalled parse errors, whose spans carry a SourceID derived
+	// from the file's path under a per-run temp directory. Decoding and asserting the
+	// message keeps the whole diagnostic pinned without pinning that id.
+	var parseErrs []struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(err.Error()), &parseErrs))
+	require.Len(t, parseErrs, 1)
+	require.Equal(t, "Expected an expression", parseErrs[0].Message)
 
 	require.Equal(t, clean, buildDirFiles(t, root))
 }
