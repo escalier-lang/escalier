@@ -36,13 +36,13 @@ import (
 //     the call boundary. This is sound. The component move already keeps the nodes alive.
 //   - A parameter borrow is never stripped, since it carries no local edge.
 
-// returnStripFor returns the index of the return whose value is e and the owned type its
+// ownedReturnType returns the index of the return whose value is e and the owned type its
 // borrows strip to, when e's reachable borrow graph is a tree. ok is false when e is not a
 // return value, when the carrier is not a direct place, literal, or borrow, when the graph is
 // not a tree, or when the walk changes nothing. snapshot is the flow-sensitive borrow-edge
 // graph at this return's program point, which resolveComponentEscapes reads from the dataflow
 // and passes in.
-func (c *checker) returnStripFor(
+func (c *checker) ownedReturnType(
 	e ast.Expr,
 	snapshot map[liveness.VarID][]fieldBorrow,
 ) (int, soltype.Type, bool) {
@@ -64,8 +64,8 @@ func (c *checker) returnStripFor(
 	return idx, stripped, true
 }
 
-// applyReturnStrips writes the collected rewrites onto the function's return types, or writes
-// none of them.
+// commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
+// writes none of them.
 //
 // A function's returns are unioned, and Escalier rejects a union that mixes an owned member
 // with a borrowed one. Rewriting only some of them builds exactly that. In
@@ -79,7 +79,7 @@ func (c *checker) returnStripFor(
 // only the first return strips, since a parameter borrow carries no local edge. Owning that one
 // and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
 // function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
-func (c *checker) applyReturnStrips(strips map[int]soltype.Type) {
+func (c *checker) commitOwnedReturnTypes(strips map[int]soltype.Type) {
 	if len(strips) == 0 {
 		return
 	}
@@ -137,7 +137,7 @@ func (c *checker) carrierGraph(e ast.Expr, snapshot map[liveness.VarID][]fieldBo
 		root := liveness.VarID(c.varIDCounter)
 		c.varIDCounter++
 		// The carrier has no binding, so nothing in the graph describes its borrows. Record the
-		// edges it carries under the synthetic root, so returnStripFor can treat it like
+		// edges it carries under the synthetic root, so ownedReturnType can treat it like
 		// a binding whose edges the eager walk had recorded. A `&mut b` borrow records one edge
 		// at the root path, which is what makes `return &mut b` strip to b's owned type.
 		c.recordBorrowSources(root, nil, e)

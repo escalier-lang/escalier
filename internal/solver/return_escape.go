@@ -166,7 +166,7 @@ func (c *checker) resolveComponentEscapes(
 			// no cycle — the return value is the sole owner of each node, so owning them in the
 			// type is honest. The rewrites are collected here and applied together, since one
 			// return left borrowed holds back the rest.
-			if idx, stripped, ok := c.returnStripFor(es.expr, fieldBorrowGraph); ok {
+			if idx, stripped, ok := c.ownedReturnType(es.expr, fieldBorrowGraph); ok {
 				strips[idx] = stripped
 			}
 			consumed = true
@@ -185,7 +185,7 @@ func (c *checker) resolveComponentEscapes(
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
-	c.applyReturnStrips(strips)
+	c.commitOwnedReturnTypes(strips)
 	c.fn.escapeSites = nil
 	return consumed
 }
@@ -265,7 +265,7 @@ func leavesElsewhere(
 // requirement stands.
 //
 // Two borrows of one local CAN leave together in a single returned value. The move accepts it,
-// and returnStripFor then declines to re-type it, so both stay borrowed. #1263 covers reporting
+// and ownedReturnType then declines to re-type it, so both stay borrowed. #1263 covers reporting
 // that.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
