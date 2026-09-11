@@ -1,6 +1,7 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -299,5 +300,172 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 fn caller(a: mut {p: {x: number}}) { foo(a) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
+	})
+}
+
+// --- #617: receiver mutability reaches a field through every receiver shape ---
+
+// mutReceiverCarriers is the five ways a source can name the receiver a nested write goes
+// through. Each entry builds a program writing `c.inner.n = 1` through a receiver whose
+// mutability the caller picks, so one table exercises the mutable and immutable halves of
+// the same rule.
+//
+// An inline object annotation and a `mut self` receiver already carried mutability into a
+// field. An alias, an interface, and a class instance did not: an alias failed the object
+// assertion in fieldReadBorrow, and a class field never reached that function at all.
+var mutReceiverCarriers = []struct {
+	name string
+	// src takes the receiver's mutability, `mut ` or empty.
+	src func(mutability string) string
+}{
+	{
+		name: "inline object annotation",
+		src: func(m string) string {
+			return "fn go(c: " + m + "{inner: {n: number}}) -> number { c.inner.n = 1  return 0 }"
+		},
+	},
+	{
+		name: "type alias to an object",
+		src: func(m string) string {
+			return `
+				type Config = {inner: {n: number}}
+				fn go(c: ` + m + `Config) -> number { c.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "declare interface",
+		src: func(m string) string {
+			return `
+				export declare interface Config { inner: {n: number} }
+				fn go(c: ` + m + `Config) -> number { c.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "class instance",
+		src: func(m string) string {
+			return `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+				}
+				fn go(b: ` + m + `Box) -> number { b.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "class body through the receiver",
+		src: func(m string) string {
+			return `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+					grow(` + m + `self) { self.inner.n = 1 },
+				}`
+		},
+	},
+}
+
+// A `mut` receiver lends its mutability to a field, so a write through that field is
+// legal however the receiver's type is spelled.
+func TestMutReceiverReachesAFieldThroughEveryCarrier(t *testing.T) {
+	for _, tc := range mutReceiverCarriers {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src("mut "))
+			require.Empty(t, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// An immutable receiver lends nothing, so the same write is rejected. This is the half
+// that makes the rule a permission rather than a default, and it held for every carrier
+// before the mutable half did.
+func TestImmutableReceiverRejectsAFieldWriteThroughEveryCarrier(t *testing.T) {
+	const want = "cannot constrain immutable object <: mutable object"
+	for _, tc := range mutReceiverCarriers {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src(""))
+			require.Equal(t, []string{want}, errorMessagesOf(errs))
+		})
+	}
+}
+
+// Mutability carries through each link of a chained read, not just the first, so
+// `c.a.b.n = 1` is legal through a `mut` receiver and rejected through an immutable one.
+func TestMutReceiverReachesAChainedField(t *testing.T) {
+	const src = `
+		class Inner {
+			b: {n: number},
+			constructor(mut self, b: {n: number}) { self.b = b },
+		}
+		type Outer = {a: Inner}
+		fn go(c: %sOuter) -> number { c.a.b.n = 1  return 0 }`
+	t.Run("mut receiver", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, "mut "))
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+	t.Run("immutable receiver", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable object <: mutable object"},
+			errorMessagesOf(errs))
+	})
+}
+
+// A field the source marked `mut` keeps its mutability under an immutable receiver. That
+// is interior mutability: the receiver decides for a field that did not ask, and this
+// field asked. Only a class body can write the shape, #779 rejecting it on an object type
+// annotation.
+func TestAnExplicitMutFieldSurvivesAnImmutableReceiver(t *testing.T) {
+	const src = `
+		class Cell { n: number }
+		class Holder { readonly inner: mut Cell }
+		fn poke(h: %sHolder) -> number { h.inner.n = 1  return 0 }`
+	for _, mutability := range []string{"mut ", ""} {
+		t.Run("receiver "+mutability, func(t *testing.T) {
+			_, _, errs := inferSource(t, fmt.Sprintf(src, mutability))
+			require.Empty(t, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// Routing a class field read through the structural path keeps what the projected-member
+// path did for it: the field's type still resolves at the instance's type arguments, and a
+// field no class in the chain declares still reports the miss.
+func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
+	t.Run("a generic field projects to the instance's argument", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> {
+				inner: T,
+				constructor(mut self, inner: T) { self.inner = inner },
+			}
+			val b = Box({n: 1})
+			val r = b.inner`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "{n: 1}", values["r"])
+	})
+	t.Run("an inherited field reads through a subclass", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Animal {
+				name: string,
+				constructor(mut self, name: string) { self.name = name },
+			}
+			class Dog extends Animal {
+				constructor(mut self, name: string) { super(name) },
+			}
+			val d = Dog("rex")
+			val r = d.name`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "string", values["r"])
+	})
+	t.Run("a field no class declares still reports", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box {
+				n: number,
+				constructor(mut self, n: number) { self.n = n },
+			}
+			val b = Box(1)
+			val r = b.nope`)
+		require.Equal(t,
+			[]string{"object is missing property: nope"},
+			errorMessagesOf(errs))
 	})
 }

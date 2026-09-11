@@ -852,6 +852,15 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 		return pathResult{}, false
 	}
 	member, found := c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
+	// A field declines here, the way objectMember and classBodyMember decline one, so a
+	// class field read takes the structural path below in valueProp. That path is where
+	// the read-through-borrow rule lives, and reading a field's type straight off the
+	// projected body skips it: the field would come back bare and a write through a `mut`
+	// receiver would be rejected (#617). A method, getter, or setter still resolves here,
+	// since the structural requirement cannot express those.
+	if _, isProp := member.(*soltype.PropertyElem); found && isProp {
+		return pathResult{}, false
+	}
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
