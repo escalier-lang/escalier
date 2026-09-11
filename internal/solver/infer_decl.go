@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -138,6 +139,22 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
+		// An unannotated `val mut d = f()` whose call returns an owned value binds it
+		// owned-mutable, the call twin of the fresh-literal upgrade below. An owned return
+		// type says the caller holds the only reference, so granting the binding mutable
+		// access aliases nothing, the same reasoning a fresh literal uses. Without this a
+		// `mut self` method would be unreachable on a value a factory just built and handed
+		// over, which is how a class with validation or a hidden constructor is written.
+		//
+		// The value is wrapped, not the variable the result arrives as. Wrapping the
+		// variable would leave its own name in the coalesced binding, so `d` would render
+		// `mut (T0 | Counter)` instead of `mut Counter`.
+		if inner := c.ownedCarrier(initT); inner != nil {
+			ref := soltype.NewRef(true, nil, inner)
+			c.recordProv(ref, d.Init, OwnedMutConstruction)
+			initT = ref
+		}
 	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && freshLiteralShape(d.Init, c.acceptsBorrowLeaf):
 		// An unannotated `val mut q = {…}` / `var mut q = {…}` from a freshly
 		// constructed literal constructs an owned-mutable value. This mirrors the
@@ -466,6 +483,108 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 	}
 	_, ok := leaf.(*ast.BorrowExpr)
 	return ok
+}
+
+// callReturnsOwned reports whether e is a call whose result is an owned value. An owned
+// return type is the callee's statement that it kept nothing, so the caller holds the only
+// reference to what comes back. A callee that did keep the value returns a borrow instead,
+// which ownedCarrier declines.
+func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
+	if _, ok := e.(*ast.CallExpr); !ok {
+		return false
+	}
+	return c.ownedCarrier(t) != nil
+}
+
+// ownedCarrier resolves t to the value an owned result denotes, or nil when the result is
+// not one the caller solely owns. It is the ownership twin of classCarrier and the other
+// lookup carriers, and differs from them in one way that matters: a lower bound it does not
+// accept fails the walk instead of being skipped.
+//
+// That difference is the soundness line. A lookup reads a member off whichever bound
+// carries it, so skipping the rest is right. This grants exclusive mutable access, so every
+// value the variable may hold at run time has to be owned. A variable joining an owned
+// result and a borrow must resolve to nothing, not to the owned half.
+//
+// A borrow is tested at every level rather than only at the top, since a call result reaches
+// the binding as a variable with the return among its lower bounds. Peeling the reference
+// first would read `&Counter` as an owned `Counter` and hand the binding exclusive mutable
+// access to a value the callee kept.
+func (c *checker) ownedCarrier(t soltype.Type) soltype.RefInner {
+	return c.ownedCarrierSeen(t, &ownedSeen{
+		aliases: set.NewSet[string](),
+		vars:    set.NewSet[*soltype.TypeVarType](),
+	})
+}
+
+// ownedSeen holds the aliases and variables on the CURRENT path of ownedCarrier's walk, so
+// a cycle through either stops it rather than recursing forever. It mirrors spreadSeen,
+// which guards the spread-operand walk the same way.
+//
+// Both sets are path-scoped: an entry is removed once its branch is done. A variable's
+// lower bounds are siblings rather than a chain, and two of them reaching the same alias or
+// the same variable is ordinary — a call result arrives with the same alias recorded twice.
+// A walk-scoped set would read the second as a cycle and decline the whole resolution.
+type ownedSeen struct {
+	aliases set.Set[string]
+	vars    set.Set[*soltype.TypeVarType]
+}
+
+// ownedCarrierSeen is ownedCarrier's walk, carrying the path it has followed so far.
+func (c *checker) ownedCarrierSeen(t soltype.Type, seen *ownedSeen) soltype.RefInner {
+	if isBorrowType(t) {
+		return nil
+	}
+	switch t := t.(type) {
+	case *soltype.RefType:
+		// An owned-mutable cell, already carrying what the upgrade grants. Its inner is the
+		// value, so the wrap is not nested.
+		return c.ownedCarrierSeen(t.Inner, seen)
+	case *soltype.AliasType:
+		// An alias owns whatever its body owns, so the decision follows the chain. An alias
+		// naming a primitive has nothing to make mutable and declines here. The handle is
+		// what comes back rather than the body, so the binding renders under the name the
+		// source wrote: `mut RTCConfiguration`, not the field list it stands for.
+		if seen.aliases.Contains(t.Name) {
+			return nil
+		}
+		seen.aliases.Add(t.Name)
+		defer seen.aliases.Remove(t.Name)
+		if c.ownedCarrierSeen(c.ctx.expandAlias(t), seen) == nil {
+			return nil
+		}
+		return t
+	case *soltype.TypeVarType:
+		// A variable reached twice on one path is a cycle in the bound graph, which the
+		// direct self-edge skip below does not catch: `v1 <: v2` with `v2 <: v1` walks
+		// between the two until the stack runs out.
+		if seen.vars.Contains(t) {
+			return nil
+		}
+		seen.vars.Add(t)
+		defer seen.vars.Remove(t)
+		var found soltype.RefInner
+		for _, lb := range t.LowerBounds {
+			if lb == soltype.Type(t) {
+				// A vacuous self-edge names no value the variable holds, so it is skipped
+				// rather than declining the variable the way a cycle does.
+				continue
+			}
+			inner := c.ownedCarrierSeen(lb, seen)
+			if inner == nil || (found != nil && !equalType(found, inner)) {
+				return nil
+			}
+			found = inner
+		}
+		return found
+	case *soltype.ObjectType:
+		return t
+	case *soltype.TupleType:
+		return t
+	case *soltype.ClassType:
+		return t
+	}
+	return nil
 }
 
 // freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal

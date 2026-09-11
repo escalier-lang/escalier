@@ -93,6 +93,9 @@ func TestInferClassBasic(t *testing.T) {
 			},
 		},
 		{
+			// `val mut` on a constructor call builds an owned-mutable instance, which is
+			// what a `mut self` method needs. A plain `val` binding cannot reach one, which
+			// TestMutSelfMethodNeedsAMutableReceiver pins.
 			name: "MutSelfMethod",
 			src: `
 				class Counter {
@@ -100,10 +103,10 @@ func TestInferClassBasic(t *testing.T) {
 					constructor(mut self, count: number) { self.count = count },
 					increment(mut self) -> number { return self.count },
 				}
-				val c = Counter(0)
+				val mut c = Counter(0)
 				val n = c.increment()
 			`,
-			wantValues: map[string]string{"c": "Counter", "n": "number"},
+			wantValues: map[string]string{"c": "mut Counter", "n": "number"},
 		},
 		{
 			name: "Getter",

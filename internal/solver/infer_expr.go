@@ -2719,7 +2719,7 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 	// field, resolves through the projected class body by direct member lookup rather
 	// than the structural field-requirement below — the constraint path reads only
 	// PropertyElems and cannot see a method or getter (M5 B1).
-	if res, ok := c.projectedMember(lvl, blame, name, recvCarrier); ok {
+	if res, ok := c.projectedMember(lvl, blame, name, recv, recvCarrier); ok {
 		return res
 	}
 	// A `self` receiver inside a class body binds to the full instance object, which
@@ -2785,7 +2785,32 @@ func (c *checker) valueProp(lvl int, blame ast.Node, provNode ast.Node, name str
 // the new borrow.
 func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Type, name string, lvl int) soltype.Type {
 	_, recvMut, recvLt := soltype.UnwrapRef(recv)
-	obj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType)
+	carrier := soltype.CarrierOf(recv)
+	// An alias and a class name the same field list an object type writes inline, so each
+	// resolves to that list before the read. Without this a receiver annotated `mut Config`
+	// or `mut Box` would fall to the unknown-shape branch below and lose its mutability,
+	// while the inline `mut {…}` spelling of the same type kept it.
+	//
+	// expandAlias unfolds one level, so the chain is followed to its end: `type Config =
+	// Inner` names an alias whose own body may be another. Each name is recorded so a cycle
+	// stops the walk rather than spinning it.
+	seenAliases := set.NewSet[string]()
+	for {
+		at, isAlias := carrier.(*soltype.AliasType)
+		if !isAlias || seenAliases.Contains(at.Name) {
+			break
+		}
+		seenAliases.Add(at.Name)
+		carrier = c.ctx.expandAlias(at)
+	}
+	if ct, isClass := classCarrier(carrier); isClass {
+		// Projected at the instance's arguments, so a field typed `T` reads as the
+		// argument `Box<number>` supplies rather than as the declared parameter.
+		if body, ok := c.ctx.projectClassBody(ct); ok {
+			carrier = body
+		}
+	}
+	obj, ok := carrier.(*soltype.ObjectType)
 	if !ok {
 		return fieldVar
 	}
@@ -2796,18 +2821,18 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	switch fieldType := prop.Type.(type) {
 	case *soltype.RefType:
 		if fieldType.Lt == nil {
-			// An owned-mutable field cell — formerly an explicit `mut {x}` field, the
-			// awkward interior-mutability shape now rejected at the annotation site
-			// (#779). Read it as a receiver-bounded borrow, capping `mut` by the
-			// receiver's mutability. The lazy deep-mut form does not mint these for a
-			// plain `mut {a: {x}}`; that field is bare, handled by the bare arm below.
-			// This arm is therefore defensive — kept for any owned-mut cell that still
-			// reaches a read.
+			// An owned-mutable field cell, which a class body writes as `mut Box<T>`. Read
+			// it as a receiver-bounded borrow that keeps the field's own mutability rather
+			// than capping it by the receiver's. That is interior mutability: a field the
+			// source marked `mut` stays writable through an immutable receiver, which is
+			// what `readonly inner: mut Box<T>` asks for. The receiver decides the
+			// mutability of a field that did NOT ask, and the bare arm below does that.
+			// An object type annotation cannot write this shape, #779 rejecting it there.
 			lt := recvLt
 			if lt == nil {
 				lt = c.ctx.freshLifetime(lvl)
 			}
-			return &soltype.RefType{Mut: fieldType.Mut && recvMut, Lt: lt, Inner: fieldType.Inner}
+			return &soltype.RefType{Mut: fieldType.Mut, Lt: lt, Inner: fieldType.Inner}
 		}
 		if !fieldType.Mut {
 			// Flat copy-out of an immutable borrow field. Immutable borrows are
@@ -2819,11 +2844,17 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 			return fieldType
 		}
 		return fieldVar
-	case *soltype.ObjectType, *soltype.TupleType:
+	case *soltype.ObjectType, *soltype.TupleType, *soltype.ClassType, *soltype.AliasType:
 		// A bare object/tuple field a borrowed receiver lends is read as a
 		// receiver-bounded borrow whose mutability follows the receiver (PR 14): a
 		// mutable borrow yields `&mut`, an immutable one `&`. This is where the lazy
 		// deep-mut rule lives — under a `&mut {a: {x}}` receiver, `p.a` reads `&mut {x}`.
+		//
+		// A class-typed or alias-typed field lends the same way, so a chain keeps carrying
+		// mutability when one of its links names a declaration instead of writing an object
+		// inline. `config.certificates.push(x)` is that case: `certificates` is typed
+		// `Array<T>`, a class, and capping the chain there would leave it unwritable
+		// through a `mut` receiver.
 		lt := recvLt
 		if lt == nil {
 			// An owned receiver yields the field's owned value, not a borrow, so a

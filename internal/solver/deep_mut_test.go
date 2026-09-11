@@ -1,8 +1,10 @@
 package solver
 
 import (
+	"fmt"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -299,5 +301,703 @@ func TestNestedWriteInfersMutContainerAndRoundTrips(t *testing.T) {
 fn caller(a: mut {p: {x: number}}) { foo(a) }`
 		_, _, errs := inferSource(t, src)
 		require.Empty(t, errs)
+	})
+}
+
+// --- #617: receiver mutability reaches a field through every receiver shape ---
+
+// mutReceiverCarriers is the five ways a source can name the receiver a nested write goes
+// through. Each entry builds a program writing `c.inner.n = 1` through a receiver whose
+// mutability the caller picks, so one table exercises the mutable and immutable halves of
+// the same rule.
+//
+// An inline object annotation and a `mut self` receiver already carried mutability into a
+// field. An alias, an interface, and a class instance did not: an alias failed the object
+// assertion in fieldReadBorrow, and a class field never reached that function at all.
+var mutReceiverCarriers = []struct {
+	name string
+	// src takes the receiver's mutability, `mut ` or empty.
+	src func(mutability string) string
+}{
+	{
+		name: "inline object annotation",
+		src: func(m string) string {
+			return "fn go(c: " + m + "{inner: {n: number}}) -> number { c.inner.n = 1  return 0 }"
+		},
+	},
+	{
+		name: "type alias to an object",
+		src: func(m string) string {
+			return `
+				type Config = {inner: {n: number}}
+				fn go(c: ` + m + `Config) -> number { c.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "declare interface",
+		src: func(m string) string {
+			return `
+				export declare interface Config { inner: {n: number} }
+				fn go(c: ` + m + `Config) -> number { c.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "class instance",
+		src: func(m string) string {
+			return `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+				}
+				fn go(b: ` + m + `Box) -> number { b.inner.n = 1  return 0 }`
+		},
+	},
+	{
+		name: "class body through the receiver",
+		src: func(m string) string {
+			return `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+					grow(` + m + `self) { self.inner.n = 1 },
+				}`
+		},
+	},
+}
+
+// A `mut` receiver lends its mutability to a field, so a write through that field is
+// legal however the receiver's type is spelled.
+func TestMutReceiverReachesAFieldThroughEveryCarrier(t *testing.T) {
+	for _, tc := range mutReceiverCarriers {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src("mut "))
+			require.Empty(t, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// An immutable receiver lends nothing, so the same write is rejected. This is the half
+// that makes the rule a permission rather than a default, and it held for every carrier
+// before the mutable half did.
+func TestImmutableReceiverRejectsAFieldWriteThroughEveryCarrier(t *testing.T) {
+	const want = "cannot constrain immutable object <: mutable object"
+	for _, tc := range mutReceiverCarriers {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src(""))
+			require.Equal(t, []string{want}, errorMessagesOf(errs))
+		})
+	}
+}
+
+// Mutability carries through each link of a chained read, not just the first, so
+// `c.a.b.n = 1` is legal through a `mut` receiver and rejected through an immutable one.
+func TestMutReceiverReachesAChainedField(t *testing.T) {
+	const src = `
+		class Inner {
+			b: {n: number},
+			constructor(mut self, b: {n: number}) { self.b = b },
+		}
+		type Outer = {a: Inner}
+		fn go(c: %sOuter) -> number { c.a.b.n = 1  return 0 }`
+	t.Run("mut receiver", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, "mut "))
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+	t.Run("immutable receiver", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable object <: mutable object"},
+			errorMessagesOf(errs))
+	})
+}
+
+// A field the source marked `mut` keeps its mutability under an immutable receiver. That
+// is interior mutability: the receiver decides for a field that did not ask, and this
+// field asked. Only a class body can write the shape, #779 rejecting it on an object type
+// annotation.
+func TestAnExplicitMutFieldSurvivesAnImmutableReceiver(t *testing.T) {
+	const src = `
+		class Cell { n: number }
+		class Holder { readonly inner: mut Cell }
+		fn poke(h: %sHolder) -> number { h.inner.n = 1  return 0 }`
+	for _, mutability := range []string{"mut ", ""} {
+		t.Run("receiver "+mutability, func(t *testing.T) {
+			_, _, errs := inferSource(t, fmt.Sprintf(src, mutability))
+			require.Empty(t, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// Routing a class field read through the structural path keeps what the projected-member
+// path did for it: the field's type still resolves at the instance's type arguments, and a
+// field no class in the chain declares still reports the miss.
+func TestAClassFieldReadKeepsItsProjectionAndItsMiss(t *testing.T) {
+	t.Run("a generic field projects to the instance's argument", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Box<T> {
+				inner: T,
+				constructor(mut self, inner: T) { self.inner = inner },
+			}
+			val b = Box({n: 1})
+			val r = b.inner`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "{n: 1}", values["r"])
+	})
+	t.Run("an inherited field reads through a subclass", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			class Animal {
+				name: string,
+				constructor(mut self, name: string) { self.name = name },
+			}
+			class Dog extends Animal {
+				constructor(mut self, name: string) { super(name) },
+			}
+			val d = Dog("rex")
+			val r = d.name`)
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "string", values["r"])
+	})
+	t.Run("a field no class declares still reports", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class Box {
+				n: number,
+				constructor(mut self, n: number) { self.n = n },
+			}
+			val b = Box(1)
+			val r = b.nope`)
+		require.Equal(t,
+			[]string{"object is missing property: nope"},
+			errorMessagesOf(errs))
+	})
+}
+
+// --- #1558: a `mut self` member needs a mutable receiver ---
+
+// A method declaring `mut self` needs mutable access to the instance, and the receiver it
+// is reached through decides whether there is any. The check runs on an instance reached
+// from outside the class as much as on the `self` a body reads, so `c.bump()` and
+// `self.bump()` answer the same way for the same receiver.
+func TestMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
+	const items = `
+		class Items {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+			read(self) -> number { return self.n },
+		}
+`
+	const want = "cannot constrain immutable Items <: mutable Items"
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "a `mut` parameter lends",
+			src:  items + `fn go(i: mut Items) -> number { i.bump()  return 0 }`,
+		},
+		{
+			name: "an immutable parameter does not",
+			src:  items + `fn go(i: Items) -> number { i.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "a plain method needs nothing",
+			src:  items + `fn go(i: Items) -> number { return i.read() }`,
+		},
+		{
+			name: "a `val mut` binding of a constructor call lends",
+			src:  items + `fn go() -> number { val mut i = Items(1)  i.bump()  return 0 }`,
+		},
+		{
+			name: "a plain `val` binding of the same call does not",
+			src:  items + `fn go() -> number { val i = Items(1)  i.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "a `mut` receiver lends through a field",
+			src: items + `
+				class Config {
+					items: Items,
+					constructor(mut self, items: Items) { self.items = items },
+				}
+				fn go(c: mut Config) -> number { c.items.bump()  return 0 }`,
+		},
+		{
+			name: "an immutable receiver does not lend through a field",
+			src: items + `
+				class Config {
+					items: Items,
+					constructor(mut self, items: Items) { self.items = items },
+				}
+				fn go(c: Config) -> number { c.items.bump()  return 0 }`,
+			errs: []string{want},
+		},
+		{
+			name: "`mut self` inside a body lends to a field's method",
+			src: items + `
+				class Sub {
+					it: Items,
+					constructor(mut self, it: Items) { self.it = it },
+					go(mut self) { self.it.bump() },
+				}`,
+		},
+		{
+			name: "plain `self` inside a body does not",
+			src: items + `
+				class Sub {
+					it: Items,
+					constructor(mut self, it: Items) { self.it = it },
+					go(self) { self.it.bump() },
+				}`,
+			errs: []string{want},
+		},
+		{
+			name: "an inherited `mut self` method is checked at the subclass",
+			src: `
+				class Base {
+					n: number,
+					constructor(mut self, n: number) { self.n = n },
+					bump(mut self) { self.n = 1 },
+				}
+				class Derived extends Base {
+					constructor(mut self) { super(0) },
+				}
+				fn go(d: Derived) -> number { d.bump()  return 0 }`,
+			errs: []string{"cannot constrain immutable Base <: mutable Base"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
+// Every arm of an overloaded `mut self` method needs the same mutable receiver, since the
+// arms share one member and the check reads the receiver before an arm is chosen.
+func TestOverloadedMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
+	const src = `
+		class C {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			f(mut self, x: number) -> number { return x },
+			f(mut self, x: string) -> string { return x },
+		}
+		val %s c = C(0)
+		val r = c.f(1)
+	`
+	t.Run("a `val mut` receiver lends", func(t *testing.T) {
+		values, _, errs := inferSource(t, fmt.Sprintf(src, "mut"))
+		require.Empty(t, messagesWithSpan(t, errs))
+		require.Equal(t, "number", values["r"])
+	})
+	t.Run("a plain `val` receiver does not", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable C <: mutable C"},
+			errorMessagesOf(errs))
+	})
+}
+
+// An owned return type means the caller holds the only reference to the result, so a
+// `val mut` binding of a call upgrades it to an owned-mutable value. A borrow return says
+// the opposite — the callee kept the value and lent it — so that one does not upgrade.
+//
+// The result reaches the binding as a variable carrying the return among its lower bounds,
+// so the borrow test runs at every level of that walk. Peeling the reference first would
+// read `&Counter` as an owned `Counter` and hand the binding exclusive mutable access to a
+// value someone else still holds.
+func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
+	const counter = `
+		class Counter {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+		}
+`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a constructor call",
+			src:  counter + "val mut d = Counter(0)",
+			want: "mut Counter",
+		},
+		{
+			name: "a declared function returning an owned instance",
+			src:  counter + "declare fn shared() -> Counter\nval mut d = shared()",
+			want: "mut Counter",
+		},
+		{
+			name: "a factory returning a fresh instance",
+			src:  counter + "fn make() -> Counter { return Counter(0) }\nval mut d = make()",
+			want: "mut Counter",
+		},
+		{
+			name: "a static factory",
+			src:  counter + "class F { static of() -> Counter { return Counter(0) }, }\nval mut d = F.of()",
+			want: "mut Counter",
+		},
+		{
+			name: "a declared function already returning `mut`",
+			src:  counter + "declare fn made() -> mut Counter\nval mut d = made()",
+			want: "mut Counter",
+		},
+		{
+			name: "an owned object return",
+			src:  "declare fn obj() -> {x: number}\nval mut d = obj()",
+			want: "mut {x: number}",
+		},
+		{
+			name: "an owned tuple return",
+			src:  "declare fn tup() -> [number, number]\nval mut d = tup()",
+			want: "mut [number, number]",
+		},
+		{
+			name: "an immutable borrow return keeps its borrow",
+			src:  counter + "declare fn peek() -> &Counter\nval mut d = peek()",
+			want: "&Counter",
+		},
+		{
+			name: "a mutable borrow return keeps its borrow",
+			src:  counter + "declare fn peek() -> &mut Counter\nval mut d = peek()",
+			want: "&mut Counter",
+		},
+		{
+			name: "a primitive return has nothing to make mutable",
+			src:  "declare fn num() -> number\nval mut d = num()",
+			want: "number",
+		},
+		{
+			name: "a plain `val` binding does not upgrade",
+			src:  counter + "declare fn shared() -> Counter\nval d = shared()",
+			want: "Counter",
+		},
+		{
+			// An interface and an alias name what their body names, so the decision follows
+			// the chain and the handle is what the binding renders under.
+			name: "an interface return",
+			src:  "export declare interface I { n: number }\ndeclare fn make() -> I\nval mut d = make()",
+			want: "mut I",
+		},
+		{
+			name: "an alias return",
+			src:  "type A = {n: number}\ndeclare fn make() -> A\nval mut d = make()",
+			want: "mut A",
+		},
+		{
+			name: "an alias chain two deep",
+			src:  "type A0 = {n: number}\ntype A1 = A0\ndeclare fn make() -> A1\nval mut d = make()",
+			want: "mut A1",
+		},
+		{
+			name: "an alias naming a primitive has nothing to make mutable",
+			src:  "type N = number\ndeclare fn make() -> N\nval mut d = make()",
+			want: "N",
+		},
+		{
+			name: "a borrow return reached through an alias keeps its borrow",
+			src:  "type A = {n: number}\ndeclare fn make() -> &A\nval mut d = make()",
+			want: "&A",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["d"])
+		})
+	}
+}
+
+// An alias chain is followed to its end. expandAlias unfolds one level, so `type C2 = C1`
+// over `type C1 = Config` needs the walk to run twice before the field list appears. Only
+// the first hop resolved once, which left a receiver two aliases deep behaving like one of
+// unknown shape and losing its mutability.
+//
+// A cycle cannot reach the walk — the productivity check rejects `type A = A` and the
+// mutual pair at the declaration — so the case below pins that the walk terminates on one
+// rather than that it reports.
+func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "two aliases over an object",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				fn go(c: mut A1) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "four aliases over an object",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				type A2 = A1
+				type A3 = A2
+				fn go(c: mut A3) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "two aliases over an interface",
+			src: `
+				export declare interface Config { inner: {n: number} }
+				type C1 = Config
+				type C2 = C1
+				fn go(c: mut C2) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "two aliases over a class",
+			src: `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+				}
+				type B1 = Box
+				type B2 = B1
+				fn go(c: mut B2) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "a generic alias over a generic alias",
+			src: `
+				type Inner<T> = {inner: T}
+				type Holder<T> = Inner<T>
+				fn go(c: mut Holder<{n: number}>) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "an immutable receiver still rejects through a chain",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				fn go(c: A1) -> number { c.inner.n = 1  return 0 }`,
+			errs: []string{"cannot constrain immutable object <: mutable object"},
+		},
+		{
+			name: "a self-referential alias is rejected at the declaration",
+			src: `
+				type A = A
+				fn go(c: mut A) -> number { c.inner.n = 1  return 0 }`,
+			errs: []string{
+				"recursive type alias `A` reaches itself without passing under a type " +
+					"constructor, so no lap of the recursion emits any structure and the alias " +
+					"names no type; wrap the recursive reference in an object, tuple, or function type",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
+// The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
+// the `mut` its fields carry: an interface whose field is a generic class carrying a
+// `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,
+// and `std:array` declares `push(mut self, ...items: mut Array<T>) -> number`.
+//
+// `config.certificates.push(cert)` exercises both halves of this change at once. The
+// receiver's mutability has to reach the field, and then satisfy `push`'s own `mut self`.
+// The carrier table above only writes a field, so it stops short of the second half.
+//
+// The receiver is a `&mut` borrow and the argument a `&` one, the borrowed forms a caller
+// holding neither value outright would write. `push` takes `item: &T` to match: with an
+// owned `item: T` the borrowed argument reports that it does not outlive the parameter,
+// which is the borrow checker doing its job and not what this test is about.
+//
+// `List` stands in for `Array` so the case does not depend on the prelude, and the field is
+// written without `mut` because that is the spelling #1554 moves the tree to; inside an
+// interface the two behave alike, #779 stripping the `mut`.
+func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
+	const decls = `
+		export declare class RTCCertificate { expires: number }
+		export declare class List<T> {
+			length: number,
+			push(mut self, item: &T) -> number,
+			at(self, index: number) -> T,
+		}
+		export declare interface RTCConfiguration {
+			certificates: List<RTCCertificate>,
+		}
+`
+	const cannotMutate = "cannot constrain immutable List<RTCCertificate> <: mutable List<RTCCertificate>"
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "a mutator through a `&mut` receiver",
+			src: decls + `fn go(config: &mut RTCConfiguration, cert: &RTCCertificate) -> number {
+				return config.certificates.push(cert)
+			}`,
+		},
+		{
+			name: "a mutator through a `&` receiver",
+			src: decls + `fn go(config: &RTCConfiguration, cert: &RTCCertificate) -> number {
+				return config.certificates.push(cert)
+			}`,
+			errs: []string{cannotMutate},
+		},
+		{
+			name: "a field read through a `&` receiver",
+			src:  decls + `fn go(config: &RTCConfiguration) -> number { return config.certificates.length }`,
+		},
+		{
+			name: "a `self` method through a `&` receiver",
+			src: decls + `fn go(config: &RTCConfiguration) -> RTCCertificate {
+				return config.certificates.at(0)
+			}`,
+		},
+		{
+			// The owned counterpart, where the caller holds both values outright rather
+			// than borrowing them. `declare fn` is what hands over an owned value today;
+			// `declare val` is the direct spelling and reports a missing initializer
+			// instead, which is #1260.
+			name: "a mutator on an owned `mut` receiver",
+			src: decls + `
+				declare fn makeConfig() -> RTCConfiguration
+				declare fn makeCert() -> RTCCertificate
+				fn go() -> number {
+					val mut config = makeConfig()
+					val cert = makeCert()
+					return config.certificates.push(&cert)
+				}`,
+		},
+		{
+			name: "a mutator on an owned immutable receiver",
+			src: decls + `
+				declare fn makeConfig() -> RTCConfiguration
+				declare fn makeCert() -> RTCCertificate
+				fn go() -> number {
+					val config = makeConfig()
+					val cert = makeCert()
+					return config.certificates.push(&cert)
+				}`,
+			errs: []string{cannotMutate},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
+// ownedCarrier's walk guards the current path against a cycle through a variable as well as
+// through an alias. The bound graph is built by constraint solving rather than written by
+// hand, so it is a graph and not a tree: `v1 <: v2` with `v2 <: v1` walks between the two
+// until the stack runs out, which is a fatal error rather than a recoverable panic. The
+// skip for a direct `v <: v` edge does not catch that, being one hop shorter.
+//
+// The guard is path-scoped, so two lower bounds reaching the same variable stay independent.
+// These build the shapes directly, since constraint solving is what produces them and the
+// source that would is not obvious.
+func TestOwnedCarrierGuardsItsWalk(t *testing.T) {
+	obj := func() *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "n", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}}
+	}
+	tests := []struct {
+		name string
+		// build returns the type to resolve, and whether resolving it should find a value.
+		build func(c *checker) (soltype.Type, bool)
+	}{
+		{
+			name: "a two-variable cycle declines",
+			build: func(c *checker) (soltype.Type, bool) {
+				v1, v2 := c.freshAt(0), c.freshAt(0)
+				v1.LowerBounds = []soltype.Type{v2}
+				v2.LowerBounds = []soltype.Type{v1}
+				return v1, false
+			},
+		},
+		{
+			name: "a direct self-edge is skipped rather than declining the variable",
+			build: func(c *checker) (soltype.Type, bool) {
+				v := c.freshAt(0)
+				v.LowerBounds = []soltype.Type{v, obj()}
+				return v, true
+			},
+		},
+		{
+			name: "two bounds reaching one variable still resolve",
+			build: func(c *checker) (soltype.Type, bool) {
+				inner := c.freshAt(0)
+				inner.LowerBounds = []soltype.Type{obj()}
+				outer := c.freshAt(0)
+				outer.LowerBounds = []soltype.Type{inner, inner}
+				return outer, true
+			},
+		},
+		{
+			name: "a diamond resolves",
+			build: func(c *checker) (soltype.Type, bool) {
+				shared := c.freshAt(0)
+				shared.LowerBounds = []soltype.Type{obj()}
+				left, right := c.freshAt(0), c.freshAt(0)
+				left.LowerBounds = []soltype.Type{shared}
+				right.LowerBounds = []soltype.Type{shared}
+				top := c.freshAt(0)
+				top.LowerBounds = []soltype.Type{left, right}
+				return top, true
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestChecker()
+			ty, wantFound := tt.build(c)
+			if wantFound {
+				require.NotNil(t, c.ownedCarrier(ty))
+				return
+			}
+			require.Nil(t, c.ownedCarrier(ty))
+		})
+	}
+}
+
+// A `mut self` method is reachable on an owned call result bound with `val mut`, which is
+// the point of the upgrade above: a factory is how a class with validation or a private
+// constructor is written, and its result would otherwise be unusable.
+func TestMutSelfMethodReachableOnAnOwnedCallResult(t *testing.T) {
+	const src = `
+		class Counter {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+		}
+		fn make() -> Counter { return Counter(0) }
+		fn go() -> number { val %s d = make()  d.bump()  return 0 }`
+	t.Run("a `val mut` binding reaches it", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, "mut"))
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+	t.Run("a plain `val` binding does not", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable Counter <: mutable Counter"},
+			errorMessagesOf(errs))
 	})
 }

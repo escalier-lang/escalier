@@ -842,7 +842,7 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 // field-requirement path, which threads the read-through-borrow and read-after-write
 // rules a direct lookup would drop; a method or getter member reaches valueProp only
 // through a class instance, since class bodies are the only source of those elements.
-func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
+func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
 	ct, ok := classCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
@@ -852,6 +852,15 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 		return pathResult{}, false
 	}
 	member, found := c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).ReadMember, set.NewSet[string]())
+	// A field declines here, the way objectMember and classBodyMember decline one, so a
+	// class field read takes the structural path below in valueProp. That path is where
+	// the read-through-borrow rule lives, and reading a field's type straight off the
+	// projected body skips it: the field would come back bare and a write through a `mut`
+	// receiver would be rejected (#617). A method, getter, or setter still resolves here,
+	// since the structural requirement cannot express those.
+	if _, isProp := member.(*soltype.PropertyElem); found && isProp {
+		return pathResult{}, false
+	}
 	if !found {
 		// The miss is rare, so project the whole body here to render the diagnostic at
 		// the instance's arguments rather than the declared type parameters.
@@ -861,6 +870,11 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, carrier 
 		c.errs = append(c.errs, err)
 		return pathResult{value: &soltype.ErrorType{}}, true
 	}
+	// A member declaring `mut self` needs mutable access to the instance, on an instance
+	// reached from outside the class as much as on the `self` classBodyMember serves. Both
+	// call the same check, so `c.bump()` and `self.bump()` answer the same way for the same
+	// receiver.
+	c.checkReceiverMut(blame, recv, memberSelfParam(member))
 	return c.memberValue(lvl, blame, member), true
 }
 
@@ -893,26 +907,10 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 // classValueCarrier, and like them it declines a var whose bounds disagree, since there is no
 // one member list to read in that case.
 func objectCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
-	switch t := t.(type) {
-	case *soltype.ObjectType:
-		return t, true
-	case *soltype.TypeVarType:
-		var found *soltype.ObjectType
-		for _, lb := range t.LowerBounds {
-			obj, ok := lb.(*soltype.ObjectType)
-			if !ok {
-				continue
-			}
-			if found != nil && !equalType(found, obj) {
-				return nil, false
-			}
-			found = obj
-		}
-		if found != nil {
-			return found, true
-		}
-	}
-	return nil, false
+	return soleLowerBound(t, func(x soltype.Type) (*soltype.ObjectType, bool) {
+		obj, ok := x.(*soltype.ObjectType)
+		return obj, ok
+	})
 }
 
 // projectedClassMember looks name up on ct's class body, then walks the declared
@@ -1048,6 +1046,44 @@ func (s *selfSubst) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterR
 
 func (s *selfSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
+// soleLowerBound resolves t to the single value pick accepts: t itself, or the one accepted
+// value among an unresolved variable's lower bounds. A class instance and an object both
+// flow through the bound graph as a variable carrying the concrete type among its bounds
+// rather than as a bare type, so a lookup off a binding has to read through one.
+//
+// A variable whose accepted bounds disagree resolves to nothing, since there is no one
+// value to read. That covers a join of two classes and a join of the same class at
+// different arguments. A bound pick rejects is skipped rather than failing the walk, which
+// is what a lookup wants: a member is read off whichever bound carries it.
+//
+// A vacuous `v <: v` self-edge names no value the variable holds and is skipped, the same
+// edge readCarrier drops.
+func soleLowerBound[T soltype.Type](t soltype.Type, pick func(soltype.Type) (T, bool)) (T, bool) {
+	if got, ok := pick(t); ok {
+		return got, true
+	}
+	var zero T
+	v, isVar := t.(*soltype.TypeVarType)
+	if !isVar {
+		return zero, false
+	}
+	found, seen := zero, false
+	for _, lb := range v.LowerBounds {
+		if lb == soltype.Type(v) {
+			continue
+		}
+		got, ok := pick(lb)
+		if !ok {
+			continue
+		}
+		if seen && !equalType(found, got) {
+			return zero, false
+		}
+		found, seen = got, true
+	}
+	return found, seen
+}
+
 // classCarrier resolves a receiver to the class instance it reads as: a ClassType
 // directly, or a type variable whose lower bounds carry one — the same look-through
 // resolveFunc uses to find a concrete callee behind a binding var, since a class
@@ -1061,26 +1097,10 @@ func (s *selfSubst) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { 
 // different arguments such as `Box(1)` and `Box("s")`, whose members differ by
 // argument. Member access on such a union rides the nominal-vs-structural rule in C1.
 func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
-	switch t := t.(type) {
-	case *soltype.ClassType:
-		return t, true
-	case *soltype.TypeVarType:
-		var found *soltype.ClassType
-		for _, lb := range t.LowerBounds {
-			ct, ok := lb.(*soltype.ClassType)
-			if !ok {
-				continue
-			}
-			if found != nil && !equalType(found, ct) {
-				return nil, false
-			}
-			found = ct
-		}
-		if found != nil {
-			return found, true
-		}
-	}
-	return nil, false
+	return soleLowerBound(t, func(x soltype.Type) (*soltype.ClassType, bool) {
+		ct, ok := x.(*soltype.ClassType)
+		return ct, ok
+	})
 }
 
 // memberValue produces the value a member access yields: a property's or getter's
@@ -1352,31 +1372,14 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 // same look-through classCarrier uses for an instance. A var with two different class-value
 // lower bounds is ambiguous and left to the structural path.
 func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
-	switch t := t.(type) {
-	case *soltype.ObjectType:
-		if _, ok := t.Constructor(); ok {
-			return t, true
+	return soleLowerBound(t, func(x soltype.Type) (*soltype.ObjectType, bool) {
+		obj, ok := x.(*soltype.ObjectType)
+		if !ok {
+			return nil, false
 		}
-	case *soltype.TypeVarType:
-		var found *soltype.ObjectType
-		for _, lb := range t.LowerBounds {
-			obj, ok := lb.(*soltype.ObjectType)
-			if !ok {
-				continue
-			}
-			if _, hasCtor := obj.Constructor(); !hasCtor {
-				continue
-			}
-			if found != nil && !equalType(found, obj) {
-				return nil, false
-			}
-			found = obj
-		}
-		if found != nil {
-			return found, true
-		}
-	}
-	return nil, false
+		_, hasCtor := obj.Constructor()
+		return obj, hasCtor
+	})
 }
 
 // typeSubst rewrites a generic body's type-parameter and lifetime-parameter vars to
