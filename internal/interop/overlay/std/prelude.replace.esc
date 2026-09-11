@@ -38,7 +38,7 @@
 // it, the other replaces it because something does. An optional
 // parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
 //
-// `PromiseLike` carries the same two rules, and lives in `std:async`
+// `PromiseLike` carries the same two rules. It lives in `std:async`,
 // beside the rest of the async surface.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
@@ -53,8 +53,8 @@ export declare class Promise<T, E = never> {
 // body that does not catch it rethrows it to the caller, so a value the
 // caller may pass freely would escape past what `E` says this generator
 // raises. Constraining the parameter to `E` is what keeps that claim
-// true. TypeScript writes `e: any`, which carries no such rule. The rule
-// is the same for both generator flavours below.
+// true. TypeScript writes `e: any`, which carries no such rule. Both
+// declarations below state it, the synchronous one and the async one.
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> {
     throw(e: E) -> IteratorResult<T, TReturn>,
 }

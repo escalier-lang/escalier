@@ -1,8 +1,9 @@
 DISABLED until #1457.
 
-Importing `std:prelude` panics the compiler before this fixture reaches a
-diagnostic. The `Array` class's instance alias prunes to a RestSpreadType and
+Importing a pseudo-package panics the compiler before this fixture reaches a
+diagnostic. A class's instance alias prunes to a RestSpreadType and
 InferComponent asserts an *ObjectType on it, at the typeAlias.Type
 assertion in internal/checker/infer_module.go.
 
-Re-enable by deleting this file once `import "std:prelude"` loads.
+Re-enable by deleting this file once `import "std:date"` loads. The build
+output is regenerated then, with `UPDATE_FIXTURES=true go test ./cmd/...`.

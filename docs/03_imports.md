@@ -78,11 +78,10 @@ val d: Date = Date()          // construct — no `new` keyword
 The shortcut is structural: it fires when the package declares a top-level class
 whose name matches the URI segment, ignoring case and the underscores that
 separate words in a package name. That is what pairs `std:weak_ref` with
-`WeakRef`. `std:string`,
-`std:number`, `std:boolean`, `std:bigint`, `std:regexp`, `std:symbol`,
-`std:object`, `std:function`, `std:date`, `std:map`, `std:set`, and
-`std:weak_ref` all qualify. `std:math` declares no `Math` class, so its binding
-stays the lowercase namespace `math`.
+`WeakRef`. `std:string`, `std:number`, `std:boolean`, `std:bigint`,
+`std:regexp`, `std:symbol`, `std:object`, `std:function`, `std:date`,
+`std:map`, `std:set`, and `std:weak_ref` all qualify. `std:math` declares no
+`Math` class, so its binding stays the lowercase namespace `math`.
 
 `Array` and `Promise` are on neither list, because neither needs an import at
 all. See the prelude below.

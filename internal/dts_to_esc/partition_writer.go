@@ -354,7 +354,7 @@ func liftGlobals(stmts []dts_parser.Statement) []dts_parser.Statement {
 //   - lib.es2023.array.d.ts         (findLast, toReversed, toSorted, with, …)
 //
 // All seven `interface Array<T> { … }` declarations route to the same
-// std:array bucket; mergeDecls concatenates their `Members` slices in
+// std:prelude bucket; mergeDecls concatenates their `Members` slices in
 // statement order so that by the time `detectTrios` runs there is
 // exactly one `interface Array<T>` (with every method from every lib
 // year), one merged `interface ArrayConstructor`, and one `declare var
@@ -455,9 +455,9 @@ func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*Standal
 // Merging members and flipping a receiver need both declarations, so
 // they read `own`. Respelling a reference does not, and the references
 // outnumber the declarations by packages: `Array` and `ReadonlyArray`
-// are declared in std:array alone, and web:dom writes 119 references to
-// them. Rewriting against `own` leaves every other package spelled the
-// TypeScript way.
+// are declared in std:prelude alone, and web:dom writes 119 references
+// to them. Rewriting against `own` leaves every other package spelled
+// the TypeScript way.
 func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,

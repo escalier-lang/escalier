@@ -197,9 +197,9 @@ func TestInferTupleAnnotationSpreadIgnoresABoundFromTheBody(t *testing.T) {
 	})
 }
 
-// Resolving another annotation in the module must not swallow the diagnostic. An
-// `Array` annotation loads std:array, and that nested walk runs the same inference
-// driver with the outer module's diagnostics swapped out.
+// Resolving another annotation in the module must not swallow the diagnostic. The
+// run loads `std:prelude` for its `Array`, and that nested walk runs the same
+// inference driver with the outer module's diagnostics swapped out.
 func TestInferTupleAnnotationSpreadSurvivesAPackageLoad(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		type Bad = [...number, string]

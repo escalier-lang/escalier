@@ -143,30 +143,30 @@ func TestStdlibImport_DuplicateFlag(t *testing.T) {
 	)
 }
 
-// DISABLED until #1457. Importing `std:array` panics before any assertion here
-// is reached. The class's instance alias prunes to a `RestSpreadType` and
+// DISABLED until #1457. Importing a pseudo-package panics before any assertion
+// here is reached. The class's instance alias prunes to a `RestSpreadType` and
 // `InferComponent` asserts an `*ObjectType` on it. Re-enable by removing the
 // wrapper once that import loads.
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	/*
-		// std:array exposes `class Array<T>` — FR5 binds the class
-		// with its original capitalization (not lowercased "array").
+		// std:date exposes `class Date` — FR5 binds the class
+		// with its original capitalization (not lowercased "date").
 		fileScopes, errs := inferStdlibImportSource(t, `
-			import "std:array"
-			val isArr: boolean = Array.isArray(0)
-			val arr: Array<number> = Array(5)
+			import "std:date"
+			val now: Date = Date()
+			val stamp: number = now.getTime()
 		`)
 		require.Empty(t, errorMessages(errs))
 
 		fileScope := fileScopes[0]
-		_, hasValue := fileScope.Namespace.Values["Array"]
-		require.True(t, hasValue, "expected Array value binding")
-		_, hasType := fileScope.Namespace.Types["Array"]
-		require.True(t, hasType, "expected Array type binding")
+		_, hasValue := fileScope.Namespace.Values["Date"]
+		require.True(t, hasValue, "expected Date value binding")
+		_, hasType := fileScope.Namespace.Types["Date"]
+		require.True(t, hasType, "expected Date type binding")
 
 		// The lowercased fallback namespace should NOT be present when the
 		// shortcut fires.
-		_, hasNs := fileScope.Namespace.GetNamespace("array")
+		_, hasNs := fileScope.Namespace.GetNamespace("date")
 		require.False(t, hasNs, "single-class shortcut should suppress lowercased namespace")
 	*/
 }

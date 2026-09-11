@@ -618,10 +618,10 @@ func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 // testStdlibSource resolves the pseudo-packages the solver's own tests infer
 // against, read from testdata/stdlib.
 //
-// It supplies `std:array`, which is what makes a written `Array<T>` resolve to the
-// ingested class rather than to an unknown name. The committed
-// internal/interop/data tree is not used: it does not yet ingest cleanly, and its
-// diagnostics would land in front of every test's own.
+// It supplies `std:prelude`, whose exports every scope starts with, which is what
+// makes a written `Array<T>` resolve to the ingested class rather than to an
+// unknown name. The committed internal/interop/data tree is not used: it does not
+// yet ingest cleanly, and its diagnostics would land in front of every test's own.
 func testStdlibSource() ModuleSource {
 	return StdlibSource(filepath.Join("testdata", "stdlib"))
 }

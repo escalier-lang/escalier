@@ -82,7 +82,8 @@ func (c *Context) arrayElem(t soltype.Type) (soltype.Type, bool) {
 }
 
 // arrayOf returns an instance of the well-known `Array` over elem, and false when
-// the run resolved no `Array` to instantiate.
+// the run resolved no `Array` to instantiate. It is the inverse of arrayElem, and
+// is how a rule builds the array a value is being checked against.
 func (c *Context) arrayOf(elem soltype.Type) (soltype.Type, bool) {
 	if c.arrayClass == "" {
 		return nil, false

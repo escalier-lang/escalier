@@ -1,4 +1,4 @@
-import "std:prelude"
+import "std:date"
 
-export val isArr: boolean = Array.isArray(0)
-export val arr: Array<number> = Array(5)
+export val now: Date = Date()
+export val stamp: number = now.getTime()

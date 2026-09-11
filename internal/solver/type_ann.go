@@ -150,41 +150,23 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
-		// A written `Array<T>` the file did not import. Resolution reaches here only
-		// after resolveScopedTypeRef finds nothing, so an imported or locally declared
-		// Array has already answered and this is the stdlib one. It resolves to the same
-		// ingested class either way, so `xs.length` and `xs.push(v)` read off the
-		// declaration rather than off a wrapper carrying only an element type.
-		if ast.QualIdentToString(ta.Name) == "Array" && len(ta.TypeArgs) == 1 && c.ctx.arrayClass != "" {
-			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
-				return c.reportUnsupportedFeature(ta, "lifetime annotation on Array"), false
-			}
-			elem, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
-			if !ok {
-				// Recover the element to a fresh var and keep the Array wrapper, for the reason
-				// the Promise arm above gives: the wrapper itself is supported, and a fresh var
-				// is cascade-safe where `never` or `unknown` would provoke a second failure.
-				elem = c.freshAt(lvl)
-			}
-			t, _ := c.ctx.arrayOf(elem)
-			c.recordProv(t, ta, AnnotationType)
-			return t, true
-		}
+		// `Array` needs no arm of its own. The prelude package declares it and
+		// preludeScope binds it into an ancestor of every scope a walk runs in, so
+		// resolveScopedTypeRef above answers a written `Array<T>` whether or not the
+		// file imported one.
+
 		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
-		// Nothing claimed the name. Either it names no declaration at all, or it names a
-		// built-in above with an argument count that one does not accept. Promise takes
+		// Nothing claimed the name. Either it names no declaration at all, or it names
+		// the built-in Promise with an argument count it does not accept. Promise takes
 		// exactly one, and a user-defined Promise would have resolved through the scope
-		// before reaching here, so the name here is the built-in. Array reports the same
-		// way, but only when the run resolved one: without a stdlib the name is simply
-		// unknown, and claiming an arity for a declaration nothing supplies would say the
-		// wrong thing.
+		// before reaching here, so the name here is the built-in.
 		name := ast.QualIdentToString(ta.Name)
-		if name == "Promise" || (name == "Array" && c.ctx.arrayClass != "") {
+		if name == "Promise" {
 			c.report(&TypeArgArityMismatchError{
 				Ref: ta, Kind: BuiltinDeclKind, Name: name,
 				Required: 1, Total: 1, Got: len(ta.TypeArgs),

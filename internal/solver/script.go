@@ -7,8 +7,9 @@ import (
 // InferScript infers a script. A script is a source file whose top-level statements
 // run in source order with function-body semantics, the bin/ counterpart to a
 // library module. It returns the populated script Scope, the Info side table, and any
-// SolverErrors. The returned scope is a child of the prelude, so operators and the
-// stdlib-type placeholders resolve through the parent.
+// SolverErrors. The returned scope is a child of the run's prelude scope, so the
+// prelude package's exports resolve through the parent and the operator table
+// through its parent in turn.
 //
 // A module and a script differ in how their top-level declarations relate. InferModule
 // dependency-orders mutually-visible top-level declarations through the dep graph. A
@@ -38,13 +39,13 @@ import (
 // script-level return.
 func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
 	c := newChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 
 	// A script's statements form one linear body, so give them the same per-body
 	// context a function body gets. pushFuncCtx makes c.fn non-nil. The transition
 	// checker keys off c.fn, and runLivenessPrePass writes its liveness and alias state
-	// onto it. The node is nil because a script has no enclosing function. The prelude
-	// child is the outer scope the pre-pass resolves names against. There is no
+	// onto it. The node is nil because a script has no enclosing function. The child
+	// of the prelude scope is the outer scope the pre-pass resolves names against. There is no
 	// enclosing context to restore, so the returned previous one is discarded.
 	scriptBody := &ast.Block{Stmts: script.Stmts, Span: script.Span()}
 	c.pushFuncCtx(false, nil, 0)

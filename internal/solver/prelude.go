@@ -143,6 +143,13 @@ const preludeVarIDBase = 1 << 20
 // so the load failure is dropped rather than reported. A package that loads and
 // reports diagnostics of its own is a different matter, and those reach the run
 // the way an import's do.
+//
+// The prelude package has to be self-contained. A package it imports is inferred
+// while this layer is still empty, so that package resolves none of the prelude's
+// exports and the degraded surface is what the registry publishes for the rest of
+// the run. Nothing in the tree imports anything today, and the committed prelude
+// names sixteen types its siblings declare, so closing that gap means moving the
+// declarations rather than adding an import here. See #1403.
 func (c *checker) bindPreludeExports(scope *Scope) {
 	programVars := c.ctx.varCounter
 	c.ctx.varCounter = preludeVarIDBase
@@ -162,11 +169,12 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 	}
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference (await,
-// for-in, yield, iteration built-ins). They resolve to an opaque stub so a
-// reference to one is not an unbound name in a run whose tree supplies no
-// prelude package. A run that loads one shadows every placeholder it declares,
-// since the prelude package's exports go into a child of this scope.
+// stdlibTypePlaceholders are the names downstream type rules reference. They are
+// what `await`, `for`-`in` and `yield` are checked against, and what the
+// iteration built-ins are written in terms of. Each resolves to an opaque stub,
+// so a reference to one is not an unbound name in a run whose tree supplies no
+// prelude package. A prelude that does load shadows every placeholder it
+// declares, since its exports go into a child of this scope.
 var stdlibTypePlaceholders = []string{
 	"Promise",
 	"Iterable",

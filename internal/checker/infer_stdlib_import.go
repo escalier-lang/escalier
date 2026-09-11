@@ -362,9 +362,8 @@ func (c *Checker) bindStdlibLocal(ctx Context, pkg string, pkgNs *type_system.Na
 		ns.Types[className] = pkgNs.Types[className]
 		// TODO (§2.4): also expose other package exports as namespace
 		// members on the same binding, with static methods winning on
-		// collision. Deferred until a stdlib package actually has both
-		// a class and non-class exports — the current `std:array` stub
-		// has only the class.
+		// collision. Deferred until a stdlib package that takes the
+		// shortcut actually has both a class and non-class exports.
 		return nil
 	}
 

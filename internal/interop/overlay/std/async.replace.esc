@@ -1,6 +1,6 @@
 // `PromiseLike.then` states the same two rules its `Promise` counterpart
-// does. `Promise` itself is declared in `std:prelude`, where the two
-// rules are written out; see std/prelude.replace.esc.
+// does. `Promise` is declared in `std:prelude`. The two rules are
+// written out there, in std/prelude.replace.esc.
 export declare interface PromiseLike<T, E = never> {
     then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
     then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,

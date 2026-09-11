@@ -68,8 +68,8 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 // diagnostic that says what to fix.
 //
 // The binding shape is the FR5 rule. A package whose sole class is named after
-// it binds that class under its own capitalization, so `import "std:array"`
-// gives `Array` rather than `array.Array`. Every other package binds as a
+// it binds that class under its own capitalization, so `import "std:date"`
+// gives `Date` rather than `date.Date`. Every other package binds as a
 // namespace under its lowercased package name.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
@@ -88,8 +88,8 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 		fileScope.defineType(className, ns.Types[className])
 	}
 	// The namespace is bound whether or not the shortcut fired. A package pairs
-	// its class with other exports — `std:array` ships `FlatArray` beside
-	// `Array` — and binding only the class would leave those unreachable under
+	// its class with other exports — `std:set` ships `ReadonlySetLike` beside
+	// `Set` — and binding only the class would leave those unreachable under
 	// any name.
 	//
 	// FR5 asks for more than reachability: the other members belong on the class
@@ -103,7 +103,7 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 //
 // The shortcut fires when the package exports a class whose name matches its
 // own case-insensitively. The name comes back in its own capitalization, so
-// `std:array` binds `Array`.
+// `std:date` binds `Date`.
 //
 // A value and a type under one name is not enough to go on. A package exporting
 // `fn array` beside `type array` has both, and binding the function directly
