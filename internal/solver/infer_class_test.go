@@ -2691,7 +2691,7 @@ func TestInferClassConstructorOverloadWithARestArm(t *testing.T) {
 
 // `Self` inside a class body names the class's own instance type, which is what a
 // builder-style return needs: a method handing back the receiver's own type writes `-> Self`
-// rather than repeating the class name and its arguments. `std/array.esc` writes
+// rather than repeating the class name and its arguments. `std/prelude.esc` writes
 // `fill(mut self, value: T, start?: number, end?: number) -> Self`.
 func TestInferClassSelfType(t *testing.T) {
 	tests := []struct {

@@ -28,7 +28,7 @@ func hasRest(f *soltype.FuncType) bool {
 // slot is not an array. It looks through a borrow first, so `...items: mut Array<T>` binds the
 // same arguments `...items: Array<T>` does. The borrow describes the array a call gathers its
 // surplus arguments into and says nothing about the arguments, so it must not reach the element.
-// `std/array.esc` writes `push(mut self, ...items: mut Array<T>) -> number`, which is the form
+// `std/prelude.esc` writes `push(mut self, ...items: mut Array<T>) -> number`, which is the form
 // this reads.
 func (c *Context) restSlotElem(slot soltype.Type) (soltype.Type, bool) {
 	if ref, ok := slot.(*soltype.RefType); ok {

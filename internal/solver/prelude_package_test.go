@@ -38,7 +38,7 @@ func TestPreludeExportsResolveWithoutAnImport(t *testing.T) {
 
 // A loaded package sees the prelude too, so a sibling `.esc` file under the
 // stdlib tree names a prelude type without importing it. This is what lets the
-// declarations left behind in `std:array` go on referring to `Array`.
+// declarations left behind in `std:async` go on referring to `Promise`.
 func TestPreludeReachesALoadedPackage(t *testing.T) {
 	t.Parallel()
 

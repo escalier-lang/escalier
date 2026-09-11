@@ -124,11 +124,11 @@ type checker struct {
 	// pkgURI is the URI of the package whose declarations are being inferred,
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,
-	// so `std:array`'s `Array` and a user's `Array` are two entries in the one
+	// so `std:prelude`'s `Array` and a user's `Array` are two entries in the one
 	// nominal registry a run shares.
 	//
 	// The separator is a dot, and a URI holds a colon that no identifier may, so
-	// `std:array.Array` splits back into its parts unambiguously and the display
+	// `std:prelude.Array` splits back into its parts unambiguously and the display
 	// printers already strip it to `Array`.
 	pkgURI string
 

@@ -17,7 +17,7 @@ import (
 // URIs are well formed, which file each names, and what an importer binds for
 // one.
 //
-// A pseudo-package is one `.esc` file. `std/array.esc` is `std:array`, the
+// A pseudo-package is one `.esc` file. `std/prelude.esc` is `std:prelude`, the
 // registry keys on the full URI, and the layout is flat, so a cross-package
 // reference needs an explicit import the same as user code does.
 

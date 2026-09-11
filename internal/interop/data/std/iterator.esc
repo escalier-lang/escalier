@@ -55,9 +55,3 @@ export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | 
 export declare interface IterableIterator<T, TReturn = any, TNext = any> extends Iterator<T, TReturn, TNext> {
     [Symbol.iterator]() -> IterableIterator<T, TReturn, TNext>
 }
-
-/**
- * Defines the `TReturn` type used for built-in iterators produced by `Array`, `Map`, `Set`, and others.
- * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
- */
-export declare type BuiltinIteratorReturn = intrinsic

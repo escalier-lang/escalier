@@ -102,7 +102,13 @@ var stdPackages = []struct {
 		// because the reference to them is written with a qualifier
 		// that package does not declare and is broken wherever they
 		// live. See #1403.
-		"ArrayLike", "ConcatArray", "FlatArray", "ArrayIterator",
+		// `BuiltinIteratorReturn` is the second type argument of the
+		// `IteratorObject` that `ArrayIterator` extends. Its own body
+		// is `= intrinsic`, a TypeScript compiler keyword with no
+		// Escalier meaning, so a reference to it resolves here while
+		// the alias it names does not. #1403 carries the fix.
+		"ArrayLike", "ConcatArray", "FlatArray",
+		"ArrayIterator", "BuiltinIteratorReturn",
 		"PromiseLike", "Awaited", "PromiseWithResolvers",
 		"PromiseSettledResult", "PromiseFulfilledResult", "PromiseRejectedResult",
 		"Iterator", "IteratorObject",
@@ -174,7 +180,6 @@ var stdPackages = []struct {
 	{"std:iterator", "std/iterator.esc", []string{
 		"IterableIterator",
 		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
-		"BuiltinIteratorReturn",
 		"GeneratorFunction", "GeneratorFunctionConstructor",
 	}},
 	{"std:async", "std/async.esc", []string{
@@ -243,9 +248,11 @@ var stdPackages = []struct {
 	}},
 	{"std:disposable", "std/disposable.esc", []string{
 		// Explicit resource management: the `using` / `await using`
-		// protocol. `SuppressedError` is the one member of
-		// lib.esnext.disposable.d.ts that routes elsewhere — it is an
-		// `Error` subclass, so it joins std:error.
+		// protocol. Three members of lib.esnext.disposable.d.ts route
+		// elsewhere. `SuppressedError` is an `Error` subclass, so it
+		// joins std:error. `Disposable` and `AsyncDisposable` are
+		// supertypes of `IteratorObject` and `AsyncIteratorObject`, so
+		// they join std:prelude.
 		"DisposableStack", "DisposableStackConstructor",
 		"AsyncDisposableStack", "AsyncDisposableStackConstructor",
 	}},

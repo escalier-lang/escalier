@@ -496,6 +496,12 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
     readonly [Symbol.toStringTag]: string
 }
 
+/**
+ * Defines the `TReturn` type used for built-in iterators produced by `Array`, `Map`, `Set`, and others.
+ * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
+ */
+export declare type BuiltinIteratorReturn = intrinsic
+
 export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> ArrayIterator<T>
 }
