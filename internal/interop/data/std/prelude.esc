@@ -44,6 +44,17 @@ export declare class Array<T> {
      * @param end If not specified, length of the this object is used as its default value.
      */
     copyWithin(mut self, target: number, start: number, end?: number) -> Self,
+    /**
+     * The options bag is an inexact object. TypeScript writes
+     * `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both of those
+     * are declared in `std:intl`, which this package cannot name. The prelude is
+     * loaded before anything it could import, so an import here would resolve
+     * nothing. An inexact object accepts an options bag and rejects a
+     * non-object. Reach for `Intl.NumberFormat` where the checked options
+     * matter.
+     *
+     * Change it in internal/interop/overlay/std/prelude.replace.esc.
+     */
     toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
     /**
      * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.

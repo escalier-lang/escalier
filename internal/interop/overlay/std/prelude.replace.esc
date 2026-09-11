@@ -86,27 +86,38 @@ export declare type Awaited<T> = if T : null | undefined { T } else { if T : {..
 } { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }
 
 // `Array.toLocaleString` is the one member of the prelude that names a
-// type another package declares. TypeScript types its options bag
-// `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both bags
-// live in `std:intl`.
+// type another package declares. The JSDoc below carries the reason and
+// reaches the generated tree. What follows is the rest of the decision.
 //
-// The prelude cannot reach them. A package it imports is inferred while
-// the injection layer is still empty, so that package resolves none of
-// the prelude's exports and the degraded surface is what the registry
-// publishes. That is structural rather than temporary, so no import
-// header will fix it later.
+// The prelude's reach is structural rather than temporary. A package it
+// imports is inferred while the injection layer is still empty, so that
+// package resolves none of the prelude's exports and the degraded
+// surface is what the registry publishes. No import header fixes it
+// later, so the alternative was to move the bags here.
 //
-// Moving the bags here instead would take ten declarations, since
-// `NumberFormatOptions` names four option types that each name a
-// registry. Those would then be bound in every scope, which is a poor
-// trade for one parameter, and `std:intl` would be the package that
-// loses them.
+// That would take ten declarations, since `NumberFormatOptions` names
+// four option types that each name a registry. Exported, they would bind
+// `NumberFormatOptionsCurrencyDisplayRegistry` in every scope, which is
+// a poor trade for one parameter. Unexported, they would not inject at
+// all and `std:intl` would be the package that loses them, since the
+// partition gives a name one home.
 //
-// So the parameter is an inexact object: an options bag is accepted and
-// a non-object is not. A caller wanting the checked form reaches for
-// `Intl.NumberFormat` directly. The overload set is restated whole
-// because a name is what addresses it.
+// The overload set is restated whole because a name is what addresses
+// it. Only the two-argument signature takes a JSDoc here: the no-argument
+// one has upstream prose, and carryMemberDocs keeps that only while the
+// overlay leaves the slot empty.
 export declare class Array<T> {
+    /**
+     * The options bag is an inexact object. TypeScript writes
+     * `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both of those
+     * are declared in `std:intl`, which this package cannot name. The prelude is
+     * loaded before anything it could import, so an import here would resolve
+     * nothing. An inexact object accepts an options bag and rejects a
+     * non-object. Reach for `Intl.NumberFormat` where the checked options
+     * matter.
+     *
+     * Change it in internal/interop/overlay/std/prelude.replace.esc.
+     */
     toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
     toLocaleString(self) -> string,
 }
