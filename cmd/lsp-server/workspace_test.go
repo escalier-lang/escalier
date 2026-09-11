@@ -105,7 +105,15 @@ func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotCheck(t *testing.T) {
 
 	_, err = s.compilePackage()
 	require.Error(t, err)
-	require.Equal(t, `"not a number" cannot be assigned to number`, err.Error())
+	// Reported in the same shape as a parse error, so the assertion decodes it the same
+	// way. The span carries a SourceID derived from a per-run temp path, so the message
+	// and the count are what is pinned.
+	var typeErrs []struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(err.Error()), &typeErrs))
+	require.Len(t, typeErrs, 1)
+	require.Equal(t, `"not a number" cannot be assigned to number`, typeErrs[0].Message)
 
 	require.Equal(t, clean, buildDirFiles(t, root))
 	after, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.d.ts"))

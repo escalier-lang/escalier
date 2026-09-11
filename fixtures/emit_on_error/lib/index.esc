@@ -1,0 +1,7 @@
+// `--emit-on-error` writes this package's output even though it does not check.
+// The `.d.ts` beside the JS declares `n: number` while the JS assigns it a string,
+// which is what the flag trades away for being able to run the program.
+export val n: number = "not a number"
+
+export fn double(x: number) -> number { return x * 2 }
+export val four = double(2)

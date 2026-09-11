@@ -48,6 +48,14 @@ func (s *Server) workspaceExecuteCommand(context *glsp.Context, params *protocol
 	}
 }
 
+// reportedError is one diagnostic as the `escalier.build` command returns it. The field
+// names and shape match parser.Error's, which is what the parse-error path marshals, so
+// a client decodes one list format whichever kind of error stopped the build.
+type reportedError struct {
+	Span    ast.Span `json:"span"`
+	Message string   `json:"message"`
+}
+
 // compilePackage collects all source files, compiles the package, and writes
 // the build output (JS, source maps, .d.ts) to the build/ directory.
 func (s *Server) compilePackage() (any, error) {
@@ -83,12 +91,20 @@ func (s *Server) compilePackage() (any, error) {
 	// below lowers declarations the checker rejected, and the `.d.ts` beside it
 	// asserts the types it rejected them for. Returning here also skips the
 	// `RemoveAll`, so the artifacts from the last build that did check survive.
+	//
+	// It reports in the shape the parse errors above use, a span beside a message, so
+	// one client path reads both. A client that parses the result can put a type error
+	// on the line it belongs to rather than showing it as unplaced text.
 	if len(output.TypeErrors) > 0 {
-		messages := make([]string, len(output.TypeErrors))
+		reported := make([]reportedError, len(output.TypeErrors))
 		for i, err := range output.TypeErrors {
-			messages[i] = err.Message()
+			reported[i] = reportedError{Span: err.Span(), Message: err.Message()}
 		}
-		return nil, errors.New(strings.Join(messages, "\n"))
+		errorsJSON, err := json.Marshal(reported)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal compilation errors: %v", err)
+		}
+		return nil, errors.New(string(errorsJSON))
 	}
 
 	// Write output files to the build/ directory in the virtual filesystem.

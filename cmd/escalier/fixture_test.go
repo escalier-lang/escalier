@@ -88,6 +88,11 @@ func copyDir(src string, dst string) error {
 // skipped and why.
 const disabledMarker = "DISABLED"
 
+// emitOnErrorMarker is the file that runs a fixture with `--emit-on-error`. A fixture
+// carrying it is expected to report errors AND to write its output, which is the one
+// combination the gate otherwise rules out. Its contents are not read.
+const emitOnErrorMarker = "EMIT_ON_ERROR"
+
 func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	if reason, err := os.ReadFile(filepath.Join(fixtureDir, disabledMarker)); err == nil {
 		t.Skip(strings.TrimSpace(string(reason)))
@@ -149,17 +154,26 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 	// files, err := compiler.FindSourceFiles()
 	// require.NoError(t, err)
 
+	_, markerErr := os.Stat(filepath.Join(fixtureDir, emitOnErrorMarker))
+	emitOnError := markerErr == nil
+
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
-	buildOK := build(stdout, stderr, []string{"."})
+	buildOK := build(stdout, stderr, []string{"."}, buildOptions{emitOnError: emitOnError})
 	fmt.Println("stderr =", stderr.String())
 
-	// A package that reports an error writes nothing. The converse does not hold.
-	// A package that declares nothing succeeds and still writes no build/, so only
-	// the direction the gate promises is asserted here.
 	_, builtErr := os.Stat(filepath.Join(tmpDir, "build"))
 	emitted := builtErr == nil
-	if !buildOK {
+	switch {
+	case emitOnError:
+		// The flag exists for exactly this pair, so a fixture claiming it has to show
+		// both halves. One without errors would pass whether or not the flag worked.
+		require.False(t, buildOK, "an --emit-on-error fixture must report errors")
+		require.True(t, emitted, "--emit-on-error must write build/ despite those errors")
+	case !buildOK:
+		// A package that reports an error writes nothing. The converse does not hold.
+		// A package that declares nothing succeeds and still writes no build/, so only
+		// the direction the gate promises is asserted here.
 		require.False(t, emitted, "a package that reports errors must write no build/")
 	}
 
