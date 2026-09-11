@@ -42,8 +42,11 @@ type overloadDispatch struct {
 // a less specific arm match a more specific call, so a two-parameter arm has to be
 // tested before a one-parameter arm that would also accept the call.
 func (b *Builder) buildOverloadDispatch(arms []overloadArm, describe string) overloadDispatch {
+	// A stable sort, so two arms the comparison calls equal keep the order they were
+	// written in. The chain is first-match, and two unannotated arms both build the guard
+	// `true`, so reordering a tied pair would change which body a call runs.
 	sorted := slices.Clone(arms)
-	slices.SortFunc(sorted, func(a, b overloadArm) int {
+	slices.SortStableFunc(sorted, func(a, b overloadArm) int {
 		if len(a.params) != len(b.params) {
 			return len(b.params) - len(a.params)
 		}
@@ -172,14 +175,24 @@ func (b *Builder) bindWithDefault(ident *ast.IdentPat, slot Expr, def ast.Expr) 
 // guardFor builds the test that decides whether arm takes a call, the `typeof` checks
 // for its annotated parameters joined by `&&`. An arm whose parameters carry no
 // annotation has nothing to test and takes every call that reaches it.
+//
+// A parameter the caller may leave out — one written `x?` or one carrying a default —
+// also accepts an absent slot. The slot holds `undefined` there, which no type guard
+// admits, so without this an arm such as `fn f(x: number = 5)` would be passed over for
+// the call `f()` that is exactly its own, and the dispatch would fall through to the
+// TypeError. The binding bindWithDefault emits for that parameter would then never run.
 func guardFor(b *Builder, arm overloadArm) Expr {
 	var guards []Expr
 	for i, param := range arm.params {
 		if param.TypeAnn == nil {
 			continue
 		}
-		guards = append(guards,
-			b.buildTypeGuard(NewIdentExpr(fmt.Sprintf("param%d", i), "", nil), param.TypeAnn))
+		slot := NewIdentExpr(fmt.Sprintf("param%d", i), "", nil)
+		guard := b.buildTypeGuard(slot, param.TypeAnn)
+		if _, def := splitIdentDefault(param.Pattern); param.Optional || def != nil {
+			guard = NewBinaryExpr(absentSlot(slot), LogicalOr, guard, nil)
+		}
+		guards = append(guards, guard)
 	}
 	if len(guards) == 0 {
 		return NewLitExpr(NewBoolLit(true, nil), nil)
@@ -189,6 +202,17 @@ func guardFor(b *Builder, arm overloadArm) Expr {
 		guard = NewBinaryExpr(guard, LogicalAnd, g, nil)
 	}
 	return guard
+}
+
+// absentSlot builds the test for a dispatch slot the caller left out, which holds
+// `undefined`.
+func absentSlot(slot Expr) Expr {
+	return NewBinaryExpr(
+		NewUnaryExpr(TypeOf, slot, nil),
+		StrictEqual,
+		NewLitExpr(NewStrLit("undefined", nil), nil),
+		nil,
+	)
 }
 
 // totalSpecificity scores a parameter list for the sort above. An object type scores

@@ -236,3 +236,50 @@ func TestBuildOverloadSetDropsABodylessArm(t *testing.T) {
 		}`)
 	require.Empty(t, got)
 }
+
+// A parameter the caller may leave out accepts an absent slot. The slot holds
+// `undefined`, which no type guard admits, so an arm written `fn f(x: number = 5)`
+// would otherwise be passed over for the call `f()` that is exactly its own and the
+// dispatch would fall through to the TypeError.
+func TestBuildOverloadGuardAcceptsAnOmittedSlot(t *testing.T) {
+	tests := []struct {
+		name string
+		arm  string
+	}{
+		{name: "a defaulted parameter", arm: "fn f(x: number = 5) -> number { return x }"},
+		{name: "an optional parameter", arm: "fn f(x?: number) -> number { return 1 }"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildSource(t,
+				tt.arm+"\nfn f(a: string, b: string) -> string { return a }")
+			require.Contains(t, got,
+				`} else if (typeof param0 === "undefined" || typeof param0 === "number") {`)
+		})
+	}
+	t.Run("a required parameter still tests its type alone", func(t *testing.T) {
+		got := buildSource(t, `
+			fn f(x: number) -> number { return x }
+			fn f(a: string, b: string) -> string { return a }`)
+		require.Contains(t, got, `} else if (typeof param0 === "number") {`)
+		require.NotContains(t, got, `typeof param0 === "undefined"`)
+	})
+}
+
+// Arms the comparison calls equal keep the order they were written in. The chain is
+// first-match and two unannotated arms both build the guard `true`, so an unstable
+// sort could swap which body a call runs.
+func TestBuildOverloadTiedArmsKeepSourceOrder(t *testing.T) {
+	got := buildSource(t, `
+		class Box {
+			pick(mut self, a) { return 1 },
+			pick(mut self, b) { return 2 },
+		}`)
+	require.Contains(t, got, `    if (true) {
+      const a = param0;
+      return 1;
+    } else if (true) {
+      const b = param0;
+      return 2;
+    } else`)
+}
