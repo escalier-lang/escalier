@@ -1045,18 +1045,19 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
-	// A member's own `<T>` binder is not linked. The stub is monomorphic, so comparing a
-	// generic signature against it records the stub's fresh variables on the binder's own
-	// variable. A method returning `T` gives `T <: stubReturn`, and that edge stays. The
-	// binder then reads as bounded by a variable the source never wrote, and the class value
-	// quantifies that variable as a phantom parameter.
+	// A generic member is linked through ONE instantiation of its binder rather than through
+	// the binder itself. Comparing the binder directly would record the stub's fresh
+	// variables on the binder's own variable — a method returning `T` gives `T <: stubReturn`
+	// — and that edge stays, so the binder would read as bounded by a variable the source
+	// never wrote and the class value would quantify it as a phantom parameter.
 	//
-	// What the link buys is a sibling call made before this member's body is inferred, since
-	// such a call reads the stub. A sibling call to a generic member gets the stub's
-	// unconstrained variables instead. The signature the member ends up with is the inferred
-	// one either way, because the body pass installs it over the stub.
+	// The instantiation carries the declared bounds, so a sibling call still meets them. It
+	// is shared by every sibling call, which is the same monomorphic approximation the stub
+	// already is for a non-generic member: a caller reads one signature rather than one per
+	// call. A call from outside the class reads the inferred signature the body pass installs
+	// over the stub, and instantiates the binder per call.
 	if len(bodyFt.TypeParams) > 0 {
-		return
+		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
@@ -1328,30 +1329,47 @@ func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-// classKeepVars collects the type-parameter vars a generic class body coalesces around:
-// the class's own TypeParam vars plus every method signature's own TypeParam vars. These
+// classKeepVars collects the type-parameter vars a class body coalesces around: the
+// class's own TypeParam vars plus every binder written anywhere in its members. These
 // stay symbolic through the coalesce so member lookup can substitute an instance's
-// argument for a class parameter and instantiate a method's own parameters per call (B8).
+// argument for a class parameter and instantiate a member's own parameters per call (B8).
+//
+// A binder nested inside a member's type counts too. A parameter typed `g: fn <V>(x: V)
+// -> V` is a rank-2 callback, and coalescing `V` to a non-variable trips the guard in
+// acceptTypeParamVar, which is a panic rather than a diagnostic.
 func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectType) set.Set[*soltype.TypeVarType] {
 	keep := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range typeParams {
 		keep.Add(tp.Var)
 	}
+	collector := &binderCollector{keep: keep}
 	for _, obj := range bodies {
-		for _, elem := range obj.Elems {
-			m, ok := elem.(*soltype.MethodElem)
-			if !ok {
-				continue
-			}
-			for _, sig := range m.Signatures {
-				for _, tp := range sig.TypeParams {
-					keep.Add(tp.Var)
-				}
-			}
-		}
+		obj.Accept(collector, soltype.Positive)
 	}
 	return keep
 }
+
+// binderCollector records every type-parameter binder the types it walks quantify. It
+// rewrites nothing, so EnterType returns the zero EnterResult, which keeps each node and
+// descends into its children.
+//
+// A variable's bounds are a side graph rather than tree children, so a binder reachable
+// only through one is not collected. No binder is written there: resolveTypeParams is the
+// only thing that mints one, and it hangs it off the FuncType that quantifies it.
+type binderCollector struct {
+	keep set.Set[*soltype.TypeVarType]
+}
+
+func (v *binderCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if ft, isFunc := t.(*soltype.FuncType); isFunc {
+		for _, tp := range ft.TypeParams {
+			v.keep.Add(tp.Var)
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *binderCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // keptFlowMap maps each inference var to the kept type-parameter vars that flow into it —
 // the kept vars T for which T <: v is recorded transitively through the upper-bound graph.

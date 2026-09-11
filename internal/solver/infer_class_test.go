@@ -2435,6 +2435,56 @@ func TestInferOverloadedGenericMethod(t *testing.T) {
 	})
 }
 
+// A binder nested inside a member's type is kept through the freeze as well as the
+// member's own. A parameter typed `fn <V>(x: V) -> V` is a rank-2 callback, and
+// coalescing `V` to a non-variable trips the guard in acceptTypeParamVar, which is a
+// panic rather than a diagnostic.
+func TestInferClassKeepsANestedCallbackBinder(t *testing.T) {
+	values, _, errs := inferSource(t, `class C {
+	apply(self, g: fn <V>(x: V) -> V, y: number) -> number { return g(y) },
+}
+fn probe(c: C) { return c.apply }`)
+	require.Empty(t, messagesWithSpan(t, errs))
+	require.Equal(t,
+		"fn (c: C) -> fn (g: fn <V>(x: V) -> V, y: number) -> number",
+		values["probe"])
+}
+
+// A sibling call reads the member's signature stub, which is built before any body is
+// inferred. A generic member is linked into its stub through one instantiation of its
+// binder, so the declared bound reaches a sibling whichever order the two are written
+// in. Linking the binder itself would instead record the stub's variables on it.
+func TestInferGenericMethodBoundReachesASiblingCall(t *testing.T) {
+	const want = "cannot constrain 1 <: string"
+	t.Run("the callee is declared after the caller", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				caller(self) -> number { return self.pick(1) },
+				pick<T: string>(self, x: T) -> T { return x },
+			}
+		`)
+		require.Contains(t, errorMessagesOf(errs), want)
+	})
+	t.Run("the callee is declared before the caller", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				pick<T: string>(self, x: T) -> T { return x },
+				caller(self) -> number { return self.pick(1) },
+			}
+		`)
+		require.Contains(t, errorMessagesOf(errs), want)
+	})
+	t.Run("a sibling call inside the bound is accepted", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			class C {
+				caller(self) -> string { return self.pick("a") },
+				pick<T: string>(self, x: T) -> T { return x },
+			}
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+}
+
 // A getter and a setter cannot quantify a parameter of their own. A getter takes no
 // argument to infer one from, and a setter's single argument is the property's own type,
 // which the class fixes. Both report rather than accepting a binder nothing instantiates.
