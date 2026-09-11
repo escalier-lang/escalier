@@ -166,10 +166,9 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
 	// drop it and leave an instance's lifetime argument with nothing to replace.
 	keepLts := classKeepLifetimes(shell.lifetimeParams)
-	// The keep set is read from the members as well as from the class's own `<…>` list, so a
-	// non-generic class carrying a generic method still keeps that method's parameters. An
-	// empty set coalesces everything, which is what a class with neither kind of parameter
-	// wants.
+	// The keep set reads the members as well as the class's own `<…>` list, so a non-generic
+	// class carrying a generic method still keeps that method's parameters. An empty set
+	// coalesces everything.
 	keep := classKeepVars(typeParams, body, static)
 	flow := keptFlowMap(keep)
 	c.freezeClassBody(body, keep, flow, keepLts)
@@ -909,9 +908,8 @@ type pendingMember struct {
 	stub   *soltype.FuncType
 	apply  func(bodyFt *soltype.FuncType)
 	// generic marks a member that may quantify type parameters of its own, which only a
-	// method may. A getter takes no arguments to infer one from, and a setter's single
-	// argument is the property's own type, which the class fixes. Either would carry a
-	// binder nothing could instantiate, so one written there is reported as unsupported.
+	// method may. A getter and a setter have no call site that could instantiate a binder,
+	// so one written there is reported as unsupported.
 	generic bool
 }
 
@@ -1045,17 +1043,13 @@ func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
 	}
-	// A generic member is linked through ONE instantiation of its binder rather than through
-	// the binder itself. Comparing the binder directly would record the stub's fresh
-	// variables on the binder's own variable — a method returning `T` gives `T <: stubReturn`
-	// — and that edge stays, so the binder would read as bounded by a variable the source
-	// never wrote and the class value would quantify it as a phantom parameter.
-	//
-	// The instantiation carries the declared bounds, so a sibling call still meets them. It
-	// is shared by every sibling call, which is the same monomorphic approximation the stub
-	// already is for a non-generic member: a caller reads one signature rather than one per
-	// call. A call from outside the class reads the inferred signature the body pass installs
-	// over the stub, and instantiates the binder per call.
+	// A generic member is linked through ONE instantiation of its binder. Comparing the
+	// binder itself would record `T <: stubReturn` on the binder's own variable for a method
+	// returning `T`, and that edge stays, so `<T>` would read as bounded by a variable the
+	// source never wrote and the class value would quantify it as a phantom parameter. The
+	// instantiation carries the declared bounds, so a sibling call still meets them. A call
+	// from outside reads the inferred signature the body pass installs over the stub, and
+	// instantiates the binder per call.
 	if len(bodyFt.TypeParams) > 0 {
 		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
@@ -1131,9 +1125,8 @@ func (c *checker) inferMemberFunc(
 	if !static {
 		c.bindSelf(memberScope, recv, body)
 	}
-	// generic is true for a method and false for a getter or setter, which have no call
-	// site that could instantiate a binder. inferFunc reports a binder it is not allowed
-	// to resolve as an unsupported feature.
+	// generic is true for a method and false for a getter or setter. inferFunc reports a
+	// binder it is not allowed to resolve as an unsupported feature.
 	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, generic)
 }
 
@@ -1334,9 +1327,9 @@ func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
 // stay symbolic through the coalesce so member lookup can substitute an instance's
 // argument for a class parameter and instantiate a member's own parameters per call (B8).
 //
-// A binder nested inside a member's type counts too. A parameter typed `g: fn <V>(x: V)
-// -> V` is a rank-2 callback, and coalescing `V` to a non-variable trips the guard in
-// acceptTypeParamVar, which is a panic rather than a diagnostic.
+// A binder nested inside a member's type counts too. Coalescing the `V` of a rank-2
+// parameter `g: fn <V>(x: V) -> V` to a non-variable trips acceptTypeParamVar's guard,
+// which panics rather than reporting a diagnostic.
 func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectType) set.Set[*soltype.TypeVarType] {
 	keep := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range typeParams {
@@ -1354,8 +1347,8 @@ func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectTyp
 // descends into its children.
 //
 // A variable's bounds are a side graph rather than tree children, so a binder reachable
-// only through one is not collected. No binder is written there: resolveTypeParams is the
-// only thing that mints one, and it hangs it off the FuncType that quantifies it.
+// only through one is missed. No binder lives there. resolveTypeParams mints every one and
+// hangs it off the FuncType that quantifies it.
 type binderCollector struct {
 	keep set.Set[*soltype.TypeVarType]
 }
