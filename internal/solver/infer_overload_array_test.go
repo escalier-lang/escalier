@@ -12,43 +12,89 @@ import (
 // bare var and the arm checked nothing. Each row here writes an annotation that
 // must survive that path.
 func TestInferOverloadArmKeepsItsParameterAnnotation(t *testing.T) {
-	const secondArm = "\nfn g(a: string, b: string) -> string { return a }"
-
 	tests := []struct {
-		name   string
-		param  string
-		wantFn string
+		name string
+		src  string
+		want string
 	}{
-		{name: "array", param: "xs: Array<number>", wantFn: "fn (xs: Array<number>) -> number"},
 		{
-			name:   "nested array",
-			param:  "xs: Array<Array<string>>",
-			wantFn: "fn (xs: Array<Array<string>>) -> number",
-		},
-		{name: "mut array", param: "xs: mut Array<number>", wantFn: "fn (xs: mut Array<number>) -> number"},
-		{
-			name:   "array in a tuple",
-			param:  "xs: [Array<number>, string]",
-			wantFn: "fn (xs: [Array<number>, string]) -> number",
+			name: "array",
+			src: `
+				fn g(xs: Array<number>) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: Array<number>) -> number) & (fn (a: string, b: string) -> string)",
 		},
 		{
-			name:   "array in an object",
-			param:  "xs: {items: Array<number>}",
-			wantFn: "fn (xs: {items: Array<number>}) -> number",
+			name: "nested array",
+			src: `
+				fn g(xs: Array<Array<string>>) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: Array<Array<string>>) -> number) & (fn (a: string, b: string) -> string)",
 		},
-		{name: "promise", param: "xs: Promise<number>", wantFn: "fn (xs: Promise<number>) -> number"},
-		{name: "tuple", param: "xs: [number, string]", wantFn: "fn (xs: [number, string]) -> number"},
-		{name: "object", param: "xs: {y: number}", wantFn: "fn (xs: {y: number}) -> number"},
-		{name: "primitive", param: "xs: number", wantFn: "fn (xs: number) -> number"},
+		{
+			name: "mut array",
+			src: `
+				fn g(xs: mut Array<number>) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: mut Array<number>) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "array in a tuple",
+			src: `
+				fn g(xs: [Array<number>, string]) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: [Array<number>, string]) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "array in an object",
+			src: `
+				fn g(xs: {items: Array<number>}) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: {items: Array<number>}) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "promise",
+			src: `
+				fn g(xs: Promise<number>) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: Promise<number>) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "tuple",
+			src: `
+				fn g(xs: [number, string]) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: [number, string]) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "object",
+			src: `
+				fn g(xs: {y: number}) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: {y: number}) -> number) & (fn (a: string, b: string) -> string)",
+		},
+		{
+			name: "primitive",
+			src: `
+				fn g(xs: number) -> number { return 1 }
+				fn g(a: string, b: string) -> string { return a }
+			`,
+			want: "(fn (xs: number) -> number) & (fn (a: string, b: string) -> string)",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			values, _, errs := inferSource(t,
-				"fn g("+tt.param+") -> number { return 1 }"+secondArm)
+			values, _, errs := inferSource(t, tt.src)
 			require.Empty(t, messagesWithSpan(t, errs))
-			require.Equal(t,
-				"("+tt.wantFn+") & (fn (a: string, b: string) -> string)",
-				values["g"])
+			require.Equal(t, tt.want, values["g"])
 		})
 	}
 }
@@ -56,23 +102,23 @@ func TestInferOverloadArmKeepsItsParameterAnnotation(t *testing.T) {
 // An arm's `Array` annotation is only useful if a call is checked against its
 // element type. A wrong element has to reject, or the annotation is decoration.
 func TestInferOverloadArmChecksItsArrayElement(t *testing.T) {
-	const arms = `
-		declare fn g(xs: Array<number>) -> number
-		declare fn g(a: string, b: string) -> string
-	`
 	t.Run("a matching element accepts", func(t *testing.T) {
-		values, _, errs := inferSource(t, arms+`
+		values, _, errs := inferSource(t, `
+			declare fn g(xs: Array<number>) -> number
+			declare fn g(a: string, b: string) -> string
 			fn call(ns: Array<number>) -> number { return g(ns) }
 		`)
 		require.Empty(t, messagesWithSpan(t, errs))
 		require.Equal(t, "fn (ns: Array<number>) -> number", values["call"])
 	})
 	t.Run("a mismatched element rejects", func(t *testing.T) {
-		_, _, errs := inferSource(t, arms+`
+		_, _, errs := inferSource(t, `
+			declare fn g(xs: Array<number>) -> number
+			declare fn g(a: string, b: string) -> string
 			fn call(ss: Array<string>) -> number { return g(ss) }
 		`)
 		require.Equal(t,
-			[]string{"5:50-5:55: No matching overload for this call\n" +
+			[]string{"4:50-4:55: No matching overload for this call\n" +
 				"  fn (xs: Array<number>) -> number\n" +
 				"  fn (a: string, b: string) -> string"},
 			messagesWithSpan(t, errs))

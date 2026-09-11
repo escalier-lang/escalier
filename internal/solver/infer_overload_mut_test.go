@@ -98,19 +98,23 @@ func TestInferOverloadOwnedMutArgumentLosingArmRollsBack(t *testing.T) {
 // TestInferOverloadPathsAgreeOnAnArrayParameter covers the fully-annotated path, where
 // the same rest slot reaches the same element type.
 func TestInferOverloadRestSlotChecksElement(t *testing.T) {
-	const arms = `
-		fn g(...xs: mut Array<number>) { return 1 }
-		fn g(a: string, b: string) { return a }
-	`
 	t.Run("matching elements accept", func(t *testing.T) {
-		values, _, errs := inferSource(t, arms+`val r = g(1, 2)`)
-		require.Empty(t, errs)
+		values, _, errs := inferSource(t, `
+			fn g(...xs: mut Array<number>) { return 1 }
+			fn g(a: string, b: string) { return a }
+			val r = g(1, 2)
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
 		require.Equal(t, "1", values["r"])
 	})
 	t.Run("a mismatched element rejects", func(t *testing.T) {
-		_, _, errs := inferSource(t, arms+`val r = g(1, true)`)
+		_, _, errs := inferSource(t, `
+			fn g(...xs: mut Array<number>) { return 1 }
+			fn g(a: string, b: string) { return a }
+			val r = g(1, true)
+		`)
 		require.Equal(t,
-			[]string{"4:10-4:20: No matching overload for this call\n" +
+			[]string{"4:12-4:22: No matching overload for this call\n" +
 				"  fn (...xs: mut Array<number>) -> 1\n" +
 				"  fn (a: string, b: string) -> string"},
 			messagesWithSpan(t, errs))

@@ -135,27 +135,43 @@ func TestInferOverloadThrowsIsNotDispatch(t *testing.T) {
 // the fully-annotated pre-bind path, and the rest slot has to reach the same element
 // type there as it does on a plain callee.
 func TestInferOverloadArmArrayRestMatchesPlainCallee(t *testing.T) {
-	const sig = "declare fn f(...xs: Array<number>) -> number\n"
-	const extraArm = "declare fn f(p: boolean, q: boolean, r: boolean) -> boolean\n"
-	t.Run("matching elements accept either way", func(t *testing.T) {
-		_, _, alone := inferSource(t, sig+"val r = f(1, 2, 3)")
-		require.Empty(t, messagesWithSpan(t, alone))
-		_, _, set := inferSource(t, sig+extraArm+"val r = f(1, 2, 3)")
-		require.Empty(t, messagesWithSpan(t, set))
+	t.Run("matching elements, one signature", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn f(...xs: Array<number>) -> number
+			val r = f(1, 2, 3)
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+	t.Run("matching elements, two arms", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn f(...xs: Array<number>) -> number
+			declare fn f(p: boolean, q: boolean, r: boolean) -> boolean
+			val r = f(1, 2, 3)
+		`)
+		require.Empty(t, messagesWithSpan(t, errs))
 	})
 	// The two rejections read differently. A plain callee fails the element constraint
 	// directly, while a set reports against the whole set and renders each arm. Both
 	// spell out `Array<number>`, which is what shows the arm kept its annotation.
-	t.Run("a bad element is rejected either way", func(t *testing.T) {
-		_, _, alone := inferSource(t, sig+`val r = f(1, "a")`)
+	t.Run("a bad element, one signature", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn f(...xs: Array<number>) -> number
+			val r = f(1, "a")
+		`)
 		require.Equal(t,
-			[]string{`2:14-2:17: cannot constrain "a" <: number`},
-			messagesWithSpan(t, alone))
-		_, _, set := inferSource(t, sig+extraArm+`val r = f(1, "a")`)
+			[]string{`3:17-3:20: cannot constrain "a" <: number`},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("a bad element, two arms", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn f(...xs: Array<number>) -> number
+			declare fn f(p: boolean, q: boolean, r: boolean) -> boolean
+			val r = f(1, "a")
+		`)
 		require.Equal(t,
-			[]string{"3:9-3:18: No matching overload for this call\n" +
+			[]string{"4:12-4:21: No matching overload for this call\n" +
 				"  fn (...xs: Array<number>) -> number\n" +
 				"  fn (p: boolean, q: boolean, r: boolean) -> boolean"},
-			messagesWithSpan(t, set))
+			messagesWithSpan(t, errs))
 	})
 }
