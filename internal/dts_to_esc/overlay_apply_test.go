@@ -15,7 +15,7 @@ const overlayLib = `
 interface Array<T> { length: number; at(index: number): T | undefined; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
-interface Iterable<T> { readonly length: number; }
+interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
 `
 
@@ -122,7 +122,7 @@ export declare class Array<T> {
     static of<T>(...items: Array<T>) -> Array<T>
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `,
@@ -130,7 +130,7 @@ export declare interface Iterable<T> {
 		{
 			name: "add reaches a converted interface",
 			overlay: map[string]string{
-				"std/prelude.add.esc": "export declare interface Iterable<T> {\n" +
+				"std/prelude.add.esc": "export declare interface ArrayLike<T> {\n" +
 					"    readonly first: T,\n}\n",
 			},
 			want: `@js("Array")
@@ -141,7 +141,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number,
     readonly first: T
 }
@@ -161,7 +161,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 
@@ -183,7 +183,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `,
@@ -191,7 +191,7 @@ export declare interface Iterable<T> {
 		{
 			name: "replace stands in for a whole declaration of another kind",
 			overlay: map[string]string{
-				"std/prelude.replace.esc": "export declare type Iterable<T> = { length: number }\n",
+				"std/prelude.replace.esc": "export declare type ArrayLike<T> = { length: number }\n",
 			},
 			want: `@js("Array")
 export declare class Array<T> {
@@ -201,7 +201,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare type Iterable<T> = {
+export declare type ArrayLike<T> = {
     length: number
 }
 `,
@@ -219,7 +219,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `,
@@ -227,7 +227,7 @@ export declare interface Iterable<T> {
 		{
 			name: "drop keeps a whole declaration out of the output",
 			overlay: map[string]string{
-				"std/prelude.drop.esc": "export declare val Iterable\n",
+				"std/prelude.drop.esc": "export declare val ArrayLike\n",
 			},
 			want: `@js("Array")
 export declare class Array<T> {
@@ -320,9 +320,9 @@ func TestApplyOverlay_RejectsAnOverlayTheUpstreamSourceNoLongerBacks(t *testing.
 		{
 			name: "add colliding with a converted declaration",
 			overlay: map[string]string{
-				"std/prelude.add.esc": "export declare val Iterable\n",
+				"std/prelude.add.esc": "export declare val ArrayLike\n",
 			},
-			want: "overlay: std/prelude.add.esc adds the interface Iterable, which std:prelude " +
+			want: "overlay: std/prelude.add.esc adds the interface ArrayLike, which std:prelude " +
 				"already declares; correct an existing declaration with a replace overlay",
 		},
 		{
@@ -375,7 +375,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, mods, "std:prelude"))
@@ -543,7 +543,7 @@ export declare class Array<T> {
     indexOf(self, item: T, from: number) -> number
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
@@ -735,11 +735,11 @@ func TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters(t *testi
 		{
 			name: "add binding none at all",
 			overlay: map[string]string{
-				"std/prelude.add.esc": "export declare interface Iterable {\n" +
+				"std/prelude.add.esc": "export declare interface ArrayLike {\n" +
 					"    readonly first: unknown,\n}\n",
 			},
-			want: "overlay: std/prelude.add.esc writes Iterable, which the converted " +
-				"declaration binds as Iterable<T>; a member operation keeps the " +
+			want: "overlay: std/prelude.add.esc writes ArrayLike, which the converted " +
+				"declaration binds as ArrayLike<T>; a member operation keeps the " +
 				"converted declaration's type parameters, so the overlay restates " +
 				"them as they are",
 		},
@@ -766,10 +766,10 @@ func TestApplyOverlay_RejectsWhatAMemberOperationDoesNotRead(t *testing.T) {
 		{
 			name: "an extends clause on an interface",
 			overlay: map[string]string{
-				"std/prelude.add.esc": "export declare interface Iterable<T> " +
+				"std/prelude.add.esc": "export declare interface ArrayLike<T> " +
 					"extends Iterable<T> {\n    readonly first: T,\n}\n",
 			},
-			want: "overlay: std/prelude.add.esc writes an extends clause on Iterable, " +
+			want: "overlay: std/prelude.add.esc writes an extends clause on ArrayLike, " +
 				"which a member operation does not read; it contributes members " +
 				"alone, so drop it from the overlay",
 		},
@@ -818,7 +818,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
@@ -842,11 +842,11 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare class Iterable<T> extends Array<T> {
+export declare class ArrayLike<T> extends Array<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
-		"std/prelude.replace.esc": "export declare class Iterable<T> extends Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class ArrayLike<T> extends Array<T> {\n" +
 			"    readonly length: number,\n}\n",
 	}), "std:prelude"))
 }

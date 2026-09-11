@@ -89,7 +89,7 @@ export declare class Array<T> {
     static isArray(arg: unknown) -> boolean
 }
 
-export declare interface Iterable<T> {
+export declare interface ArrayLike<T> {
     readonly length: number
 }
 `))
@@ -105,7 +105,7 @@ func TestGenerate_IsIdempotent(t *testing.T) {
 	overlayDir := seedOverlay(t, map[string]string{
 		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    at(mut self, index: number) -> T,\n}\n",
-		"std/prelude.add.esc": "export declare interface Iterable<T> {\n" +
+		"std/prelude.add.esc": "export declare interface ArrayLike<T> {\n" +
 			"    readonly first: T,\n}\n",
 	})
 	outDir := t.TempDir()

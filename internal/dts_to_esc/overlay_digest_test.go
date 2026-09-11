@@ -17,7 +17,7 @@ const overlayMovedLib = `
 interface Array<T> { length: number; at(index: number): T | null; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
-interface Iterable<T> { readonly length: number; }
+interface ArrayLike<T> { readonly length: number; }
 declare function parseInt(string: string, radix?: number): number;
 `
 
@@ -27,7 +27,7 @@ declare function parseInt(string: string, radix?: number): number;
 var replaceOverlay = map[string]string{
 	"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 		"    at(self, index: number) -> T,\n}\n" +
-		"export declare type Iterable<T> = { length: number }\n",
+		"export declare type ArrayLike<T> = { length: number }\n",
 }
 
 // readDigests returns one sidecar's contents.
@@ -56,8 +56,8 @@ func TestOverlayDigests_RecordWritesASidecarBesideTheReplaceFile(t *testing.T) {
     "digest": "fb2b83d0692345dc"
   },
   {
-    "decl": "Iterable",
-    "digest": "21e3c1a0ad5a737a"
+    "decl": "ArrayLike",
+    "digest": "d971c35a9fcaa007"
   }
 ]
 `))
@@ -155,7 +155,7 @@ func TestOverlayDigests_ReportASidecarWithNoReplaceFile(t *testing.T) {
 	dir = seedOverlay(t, seed)
 	_, err = applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
-	require.NoFileExists(t, filepath.Join(dir, "std", "array.replace.digests.json"))
+	require.NoFileExists(t, filepath.Join(dir, "std", "prelude.replace.digests.json"))
 }
 
 // TestOverlayDigests_KeepAGetterAndASetterApart covers the one name that
@@ -199,14 +199,14 @@ const overlayDocLib = `
 interface Array<T> { length: number; /** Reads one element. */ at(index: number): T | undefined; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
-interface Iterable<T> { readonly length: number; }
+interface ArrayLike<T> { readonly length: number; }
 `
 
 const overlayEditedDocLib = `
 interface Array<T> { length: number; /** Reads the element at index. */ at(index: number): T | undefined; }
 interface ArrayConstructor { new <T>(): Array<T>; isArray(arg: unknown): boolean; }
 declare var Array: ArrayConstructor;
-interface Iterable<T> { readonly length: number; }
+interface ArrayLike<T> { readonly length: number; }
 `
 
 // TestOverlayDigests_IgnoreADocCommentEdit keeps the check on the shape
