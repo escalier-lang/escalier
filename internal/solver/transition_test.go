@@ -528,7 +528,7 @@ func TestTransitionWiringReportsMoveError(t *testing.T) {
 // return the same result.
 func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	scope.defineValue("myLocal", ValueBinding{})
 
 	first := c.collectOuterBindings(scope)
@@ -538,7 +538,10 @@ func TestCollectOuterBindingsPreludeCache(t *testing.T) {
 	for name, id := range first {
 		require.Negative(t, int(id), "outer binding %q must have a negative id", name)
 	}
-	require.Same(t, scope.parent, c.preludeNamesRoot) // prelude root was cached
+	// The cache keys on the parentless operator table, which is process-wide and
+	// never mutated. The prelude package layer between it and the module scope is
+	// per-run, so it is walked like any other scope rather than cached.
+	require.Same(t, sharedPrelude(), c.preludeNamesRoot)
 
 	// A second call returns an equal mapping, so the cached prelude names do not corrupt
 	// the result.

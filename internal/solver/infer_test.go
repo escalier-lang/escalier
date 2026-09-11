@@ -97,7 +97,7 @@ func parseModule(t *testing.T, src string) *ast.Module {
 // the checker's Context, not on the AliasType handle in scope.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {

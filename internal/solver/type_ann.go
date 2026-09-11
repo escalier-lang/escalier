@@ -58,16 +58,6 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
-		// A written `Array` settles the well-known class name before anything is resolved,
-		// so the subtyping rules that single an array out compare against a name that is
-		// already cached. It runs ahead of the scope lookup because both outcomes need it:
-		// an imported `Array` resolves below and is the same ingested class, and the
-		// fallback further down instantiates the handle directly. Resolving on a written
-		// reference rather than once per run keeps a program that never writes `Array`
-		// from loading the package at all.
-		if namesArray(ta.Name) {
-			c.resolveArrayClass()
-		}
 		// Resolve through the type scope first so a user-defined alias, class, or type
 		// parameter takes precedence over the built-in Promise stub below. A bare alias or
 		// class reference resolves here; the prelude Promise placeholder is not a class, so

@@ -216,26 +216,26 @@ func TestRun_GenerateWritesTheTree(t *testing.T) {
 	overlayDir := t.TempDir()
 	require.NoError(t, os.MkdirAll(filepath.Join(overlayDir, "std"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(overlayDir, "std", "array.add.esc"),
+		filepath.Join(overlayDir, "std", "prelude.add.esc"),
 		[]byte("@js(\"Symbol.iterator\")\nexport declare val iteratorKey: unique symbol\n"), 0o644))
 
 	var stderr strings.Builder
 	require.NoError(t, run(
 		[]string{"generate", "--overlay", overlayDir, libDir, escDir}, io.Discard, &stderr))
 
-	contents := readGenerated(t, filepath.Join(escDir, "std", "array.esc"))
+	contents := readGenerated(t, filepath.Join(escDir, "std", "prelude.esc"))
 
 	report := strings.ReplaceAll(stderr.String(), escDir, "<esc-dir>")
 	snaps.MatchInlineSnapshot(t, fmt.Sprintf(
-		"--- stderr ---\n%s--- tree ---\n%s\n--- std/array.esc ---\n%s",
+		"--- stderr ---\n%s--- tree ---\n%s\n--- std/prelude.esc ---\n%s",
 		report, strings.Join(treeOf(t, escDir), "\n"), contents), snaps.Inline(`--- stderr ---
 discovered 1 lib files
 wrote 2 packages under <esc-dir>
 --- tree ---
 node/README.md
-std/array.esc
+std/prelude.esc
 std/symbol.esc
---- std/array.esc ---
+--- std/prelude.esc ---
 @js("Array")
 export declare class Array<T> {
     length: number,
@@ -259,12 +259,12 @@ func TestRun_GenerateResolvesTheOverlayBesideTheTree(t *testing.T) {
 	escDir := filepath.Join(root, "data")
 	require.NoError(t, os.MkdirAll(filepath.Join(root, "overlay", "std"), 0o755))
 	require.NoError(t, os.WriteFile(
-		filepath.Join(root, "overlay", "std", "array.drop.esc"),
+		filepath.Join(root, "overlay", "std", "prelude.drop.esc"),
 		[]byte("export declare interface Array {\n    isArray: unknown,\n}\n"), 0o644))
 
 	require.NoError(t, run(
 		[]string{"generate", seedLib(t, arrayLib), escDir}, io.Discard, io.Discard))
 
 	require.NotContains(t,
-		readGenerated(t, filepath.Join(escDir, "std", "array.esc")), "isArray")
+		readGenerated(t, filepath.Join(escDir, "std", "prelude.esc")), "isArray")
 }

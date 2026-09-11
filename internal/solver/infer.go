@@ -158,6 +158,13 @@ type checker struct {
 	// source reports every import as unresolved rather than loading anything.
 	source ModuleSource
 
+	// prelude is the per-run scope holding the prelude package's exports, built
+	// on first request by preludeScope and shared by the entry module and every
+	// package this run loads. It sits between the process-wide operator table and
+	// a module's own declarations, so a module declaration shadows a prelude
+	// export and a file's import shadows both.
+	prelude *Scope
+
 	// loadStack is the chain of package URIs currently being loaded, outermost
 	// first. loadPackage pushes before inferring a package and pops afterwards, so
 	// an import that re-enters a URI already on it has found a cycle and the stack

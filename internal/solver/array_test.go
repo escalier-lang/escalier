@@ -148,7 +148,7 @@ func TestArrayResolvesFromInsideAnOverloadTrial(t *testing.T) {
 			val r = pick(fn (xs: Array<number>) { return xs.length })
 		`,
 	})
-	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 
 	require.Empty(t, errorMessagesOf(c.errs))
 	require.NotEmpty(t, c.ctx.arrayClass)
@@ -196,7 +196,7 @@ func TestArrayIsUnknownWithoutAStdlib(t *testing.T) {
 	module := parseModuleFiles(t, map[string]string{
 		"input.esc": `fn f(xs: Array<number>) -> number { return 1 }`,
 	})
-	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 
 	require.Equal(t, []string{"cannot find type `Array`"}, errorMessagesOf(c.errs))
 	require.Empty(t, c.ctx.arrayClass)

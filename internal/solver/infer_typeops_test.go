@@ -43,7 +43,7 @@ func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context
 	t.Helper()
 	module := parseModule(t, src)
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	nodes := make(map[string]soltype.Type, len(scope.types))
 	for name, b := range scope.types {
@@ -1560,7 +1560,7 @@ func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 		val r = f([1])
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain tuple <: [...t15, number]", errs[0].Message())
+	require.Equal(t, "cannot constrain tuple <: [...t7, number]", errs[0].Message())
 }
 
 // A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional

@@ -1,8 +1,8 @@
 DISABLED until #1457.
 
-Importing `std:array` panics the compiler before this fixture reaches a
-diagnostic. The class's instance alias prunes to a RestSpreadType and
+Importing `std:prelude` panics the compiler before this fixture reaches a
+diagnostic. The `Array` class's instance alias prunes to a RestSpreadType and
 InferComponent asserts an *ObjectType on it, at the typeAlias.Type
 assertion in internal/checker/infer_module.go.
 
-Re-enable by deleting this file once `import "std:array"` loads.
+Re-enable by deleting this file once `import "std:prelude"` loads.

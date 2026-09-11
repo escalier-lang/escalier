@@ -422,7 +422,7 @@ func TestBorrowUnionLeafBindsAsBorrow(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			module := parseModule(t, tc.src)
 			c := newTestChecker()
-			c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+			c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 			require.Empty(t, messagesWithSpan(t, c.errs))
 			leaf := findIdentPat(module, "v")
 			require.NotNil(t, leaf)

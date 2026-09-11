@@ -1,4 +1,4 @@
-import "std:array"
+import "std:prelude"
 
 export val isArr: boolean = Array.isArray(0)
 export val arr: Array<number> = Array(5)

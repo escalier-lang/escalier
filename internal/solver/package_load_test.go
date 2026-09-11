@@ -458,16 +458,14 @@ func TestDeclarationsStayVisibleAcrossFiles(t *testing.T) {
 	require.Equal(t, "Num", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
 
-// A package resolves its own declaration of a name the prelude also seeds. The
-// prelude's placeholder is in the root scope and the package's declaration is in
-// its module scope, so the nearer one has to win.
+// A package resolves its own declaration of a name the root scope also seeds. The
+// placeholder is in the root scope and the package's declaration is in its module
+// scope, so the nearer one has to win.
 //
-// `Promise` is one of the five names `stdlibTypePlaceholders` seeds, and #1240
-// moves that whole set into `std:async` and its siblings. Once a name is
-// imported rather than seeded, this case has no prelude binding to outrank and
-// the test passes without exercising the ranking. Re-point it then at whatever
-// the root scope still seeds, or drop it if the root scope seeds no types at
-// all.
+// `Promise` is one of the five names `stdlibTypePlaceholders` seeds. This run
+// supplies no `std:prelude`, so the placeholder is what the declaration outranks.
+// TestModuleDeclarationOutranksThePrelude covers the same ranking against a
+// prelude package that did load.
 func TestPackageDeclarationOutranksThePreludeSeed(t *testing.T) {
 	t.Parallel()
 
