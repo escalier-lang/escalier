@@ -1,14 +1,27 @@
 package solver
 
 import (
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// spreadFollowBudget caps how many aliases, bounds, and wrappers one operand check
-// follows. A recursive alias would otherwise walk forever, and the guards that stop
-// the evaluator are not available here. An operand that exhausts it is accepted,
-// which keeps the budget from turning a legal program into a diagnostic.
-const spreadFollowBudget = 16
+// spreadSeen records what one operand check has already followed, so a cycle ends the
+// walk instead of running forever. A depth budget would not do: the answer at the
+// cutoff has to be "accept", since a deep operand may still be a list, and a long
+// enough acyclic chain of aliases would then pass whatever it ends in. Only an alias
+// and a type variable can lead back to themselves; every other step this walk takes
+// goes one level into a finite type.
+type spreadSeen struct {
+	aliases set.Set[string]
+	vars    set.Set[*soltype.TypeVarType]
+}
+
+func newSpreadSeen() *spreadSeen {
+	return &spreadSeen{
+		aliases: set.NewSet[string](),
+		vars:    set.NewSet[*soltype.TypeVarType](),
+	}
+}
 
 // spreadableOperand reports whether t names the positional list a `...P` element
 // splices into its tuple. Three shapes qualify:
@@ -34,10 +47,7 @@ const spreadFollowBudget = 16
 // `undefined`, and `unknown`. `unknown` is on that list because it is what a vacuous
 // bound resolves to. `<T: unknown>` and `<T: any>` say no more about T than a bare
 // `<T>`, so all three are rejected alike.
-func (c *checker) spreadableOperand(t soltype.Type, budget int) bool {
-	if budget <= 0 {
-		return true
-	}
+func (c *checker) spreadableOperand(t soltype.Type, seen *spreadSeen) bool {
 	switch t := t.(type) {
 	case *soltype.TupleType:
 		return true
@@ -46,20 +56,34 @@ func (c *checker) spreadableOperand(t soltype.Type, budget int) bool {
 		return isArray
 	case *soltype.RefType:
 		// `mut Array<E>` and `&Array<E>` both reach their positions through the cell.
-		return c.spreadableOperand(t.Inner, budget-1)
+		return c.spreadableOperand(t.Inner, seen)
 	case *soltype.TypeVarType:
-		return c.someSpreadable(t.UpperBounds, budget-1)
+		// A variable already on the walk is a cycle in the bound graph, which settles
+		// nothing, so it is accepted the way any undecidable operand is.
+		if seen.vars.Contains(t) {
+			return true
+		}
+		seen.vars.Add(t)
+		return c.someSpreadable(t.UpperBounds, seen)
 	case *soltype.SkolemType:
-		return c.spreadableOperand(t.Upper, budget-1)
+		return c.spreadableOperand(t.Upper, seen)
 	case *soltype.AliasType:
-		return c.spreadableOperand(c.ctx.expandAlias(t), budget-1)
+		// An alias reached twice on one walk is recursive. Its body never settles to a
+		// list or to anything else, so the walk stops and accepts. Keying on the name
+		// rather than the reference also catches an alias that recurses through a
+		// changing argument, such as `type Nest<T> = Nest<[T]>`.
+		if seen.aliases.Contains(t.Name) {
+			return true
+		}
+		seen.aliases.Add(t.Name)
+		return c.spreadableOperand(c.ctx.expandAlias(t), seen)
 	case *soltype.UnionType:
 		// A union spreads only if every member does. One member with no positions
 		// makes the whole slot undecidable, which is what the rest-parameter rules
 		// see when they distribute the union into per-member candidates.
-		return c.everySpreadable(t.Types, budget-1)
+		return c.everySpreadable(t.Types, seen)
 	case *soltype.IntersectionType:
-		return c.someSpreadable(t.Types, budget-1)
+		return c.someSpreadable(t.Types, seen)
 	case *soltype.PrimType, *soltype.LitType, *soltype.ObjectType, *soltype.FuncType,
 		*soltype.NullType, *soltype.UndefinedType, *soltype.UnknownType,
 		*soltype.PromiseType, *soltype.GeneratorType, *soltype.TemplateLitType,
@@ -73,9 +97,9 @@ func (c *checker) spreadableOperand(t soltype.Type, budget int) bool {
 // someSpreadable reports whether any of ts is spreadable, and false for an empty
 // list. An unconstrained type parameter has no bounds and lands here, which is what
 // rejects `<T>(...args: [...T, string])`.
-func (c *checker) someSpreadable(ts []soltype.Type, budget int) bool {
+func (c *checker) someSpreadable(ts []soltype.Type, seen *spreadSeen) bool {
 	for _, t := range ts {
-		if c.spreadableOperand(t, budget) {
+		if c.spreadableOperand(t, seen) {
 			return true
 		}
 	}
@@ -84,9 +108,9 @@ func (c *checker) someSpreadable(ts []soltype.Type, budget int) bool {
 
 // everySpreadable reports whether all of ts are spreadable, and true for an empty
 // list.
-func (c *checker) everySpreadable(ts []soltype.Type, budget int) bool {
+func (c *checker) everySpreadable(ts []soltype.Type, seen *spreadSeen) bool {
 	for _, t := range ts {
-		if !c.spreadableOperand(t, budget) {
+		if !c.spreadableOperand(t, seen) {
 			return false
 		}
 	}

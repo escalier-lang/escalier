@@ -592,7 +592,7 @@ func (c *checker) resolveTupleTypeAnn(scope *Scope, ta *ast.TupleTypeAnn, lvl in
 		if rest != nil {
 			// An operand that failed to resolve already reported, so checking the fresh
 			// var standing in for it would blame one mistake twice.
-			if ok && !c.spreadableOperand(t, spreadFollowBudget) {
+			if ok && !c.spreadableOperand(t, newSpreadSeen()) {
 				c.report(&SpreadOperandNotListError{Spread: rest, Operand: t})
 			}
 			t = &soltype.RestSpreadType{Operand: t}

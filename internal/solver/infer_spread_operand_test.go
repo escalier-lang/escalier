@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -178,6 +180,40 @@ func TestInferTupleAnnotationSpreadSurvivesAPackageLoad(t *testing.T) {
 	require.Equal(t,
 		[]string{"2:15-2:24: cannot spread number into a tuple"},
 		messagesWithSpan(t, errs))
+}
+
+// The walk follows an alias chain to its end however long it is. A depth budget would
+// have to accept at its cutoff, since a deep operand may still be a list, so a chain
+// longer than the cutoff would pass whatever it ends in.
+func TestInferTupleAnnotationSpreadFollowsALongAliasChain(t *testing.T) {
+	// chain builds `type A1 = A2 … type A{n} = <last>` plus a spread of A1.
+	chain := func(n int, last string) string {
+		var b strings.Builder
+		fmt.Fprintf(&b, "type A%d = %s\n", n, last)
+		for i := n - 1; i >= 1; i-- {
+			fmt.Fprintf(&b, "type A%d = A%d\n", i, i+1)
+		}
+		b.WriteString("type Spread = [...A1]\n")
+		return b.String()
+	}
+	t.Run("a chain ending in a non-list still reports", func(t *testing.T) {
+		_, _, errs := inferSource(t, chain(40, "number"))
+		require.Equal(t,
+			[]string{"41:16-41:21: cannot spread A1 into a tuple"},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("a chain ending in a tuple is accepted", func(t *testing.T) {
+		_, _, errs := inferSource(t, chain(40, "[number, string]"))
+		require.Empty(t, messagesWithSpan(t, errs))
+	})
+}
+
+// An alias that reaches itself never settles, so the walk stops there rather than
+// following it forever. checkProductive is what reports such an alias.
+func TestInferTupleAnnotationSpreadStopsAtARecursiveAlias(t *testing.T) {
+	_, _, errs := inferSource(t, "type R = [...R]")
+	require.Len(t, errs, 1)
+	require.Contains(t, errs[0].Message(), "recursive type alias `R` reaches itself")
 }
 
 // An overload arm's signature is resolved twice, by the pre-bind and again by the
