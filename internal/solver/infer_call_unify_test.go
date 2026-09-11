@@ -139,14 +139,23 @@ func TestInferOverloadArmArrayRestMatchesPlainCallee(t *testing.T) {
 	const extraArm = "declare fn f(p: boolean, q: boolean, r: boolean) -> boolean\n"
 	t.Run("matching elements accept either way", func(t *testing.T) {
 		_, _, alone := inferSource(t, sig+"val r = f(1, 2, 3)")
-		require.Empty(t, alone)
+		require.Empty(t, messagesWithSpan(t, alone))
 		_, _, set := inferSource(t, sig+extraArm+"val r = f(1, 2, 3)")
-		require.Empty(t, set)
+		require.Empty(t, messagesWithSpan(t, set))
 	})
+	// The two rejections read differently. A plain callee fails the element constraint
+	// directly, while a set reports against the whole set and renders each arm. Both
+	// spell out `Array<number>`, which is what shows the arm kept its annotation.
 	t.Run("a bad element is rejected either way", func(t *testing.T) {
 		_, _, alone := inferSource(t, sig+`val r = f(1, "a")`)
-		require.NotEmpty(t, alone)
+		require.Equal(t,
+			[]string{`2:14-2:17: cannot constrain "a" <: number`},
+			messagesWithSpan(t, alone))
 		_, _, set := inferSource(t, sig+extraArm+`val r = f(1, "a")`)
-		require.NotEmpty(t, set, "the arm's Array<number> must still check its element")
+		require.Equal(t,
+			[]string{"3:9-3:18: No matching overload for this call\n" +
+				"  fn (...xs: Array<number>) -> number\n" +
+				"  fn (p: boolean, q: boolean, r: boolean) -> boolean"},
+			messagesWithSpan(t, set))
 	})
 }
