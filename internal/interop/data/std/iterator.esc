@@ -2,13 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
-    next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
-    return(value: TReturn) -> IteratorResult<T, TReturn>,
-    throw(e: E) -> IteratorResult<T, TReturn>,
-    [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
-}
-
 export declare interface GeneratorFunction {
     new (...args: mut Array<any>) -> Generator,
     fn (...args: mut Array<any>) -> Generator,
@@ -67,10 +60,6 @@ export declare class Iterator<T, TReturn = any, TNext = any> {
      * @param value An iterator or iterable object to convert a native iterator.
      */
     static from<T>(value: Iterator<T, unknown, undefined> | Iterable<T, unknown, undefined>) -> IteratorObject<T, undefined, unknown>
-}
-
-export declare interface Iterable<T, TReturn = any, TNext = any> {
-    [Symbol.iterator]() -> Iterator<T, TReturn, TNext>
 }
 
 /**

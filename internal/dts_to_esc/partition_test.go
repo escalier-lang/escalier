@@ -16,10 +16,10 @@ func TestRoute_ExplicitPartition(t *testing.T) {
 		name    string
 		wantURI string
 	}{
-		{"Array", "std:array"},
-		{"ArrayConstructor", "std:array"},
+		{"Array", "std:prelude"},
+		{"ArrayConstructor", "std:prelude"},
 		{"parseInt", "std:number"},
-		{"Promise", "std:async"},
+		{"Promise", "std:prelude"},
 		{"Awaited", "std:async"},
 		{"Partial", "std:object"},
 		{"URIError", "std:url"},

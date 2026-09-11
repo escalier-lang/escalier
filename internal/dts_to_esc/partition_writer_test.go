@@ -114,12 +114,12 @@ declare var Request: RequestConstructor;
 
 	// 3 buckets: std:array, web:dom, web:fetch.
 	require.Len(t, res.Buckets, 3)
-	require.Contains(t, res.Buckets, "std:array")
+	require.Contains(t, res.Buckets, "std:prelude")
 	require.Contains(t, res.Buckets, "web:dom")
 	require.Contains(t, res.Buckets, "web:fetch")
 
 	// std:array bucket has the Array trio (3 statements).
-	require.Len(t, res.Buckets["std:array"], 3)
+	require.Len(t, res.Buckets["std:prelude"], 3)
 
 	// web:dom bucket has the HTMLCanvasElement trio only (3),
 	// because Request is pinned to web:fetch.
@@ -163,7 +163,7 @@ interface Array<T> { length: number; }
 	require.True(t, dropped.Contains("eval"))
 
 	// Bucket should not include the dropped names.
-	for _, stmt := range res.Buckets["std:array"] {
+	for _, stmt := range res.Buckets["std:prelude"] {
 		name := topLevelName(stmt)
 		require.NotEqual(t, "globalThis", name)
 		require.NotEqual(t, "eval", name)
@@ -239,14 +239,14 @@ declare namespace Math {
 
 	mods, err := ConvertBuckets(res, nil)
 	require.NoError(t, err)
-	require.ElementsMatch(t, []string{"std:array", "std:math"}, keysOf(mods))
+	require.ElementsMatch(t, []string{"std:math", "std:prelude"}, keysOf(mods))
 
 	outDir := t.TempDir()
 	written, err := WriteConvertedTree(mods, outDir)
 	require.NoError(t, err)
-	require.Equal(t, []string{"std:array", "std:math"}, written)
+	require.Equal(t, []string{"std:math", "std:prelude"}, written)
 
-	arrayPath := filepath.Join(outDir, "std", "array.esc")
+	arrayPath := filepath.Join(outDir, "std", "prelude.esc")
 	mathPath := filepath.Join(outDir, "std", "math.esc")
 	require.FileExists(t, arrayPath)
 	require.FileExists(t, mathPath)
@@ -345,9 +345,9 @@ interface Array<T> {
 
 	res, err := PartitionLib([]LibInput{es5, es2015Core, es2015Iterable, es2023})
 	require.NoError(t, err)
-	require.Contains(t, res.Buckets, "std:array")
+	require.Contains(t, res.Buckets, "std:prelude")
 
-	mod, err := ConvertBucket(res.Buckets["std:array"], nil)
+	mod, err := ConvertBucket(res.Buckets["std:prelude"], nil)
 	require.NoError(t, err)
 
 	rootNS, ok := mod.Module.Namespaces.Get("")
@@ -561,7 +561,7 @@ declare var Array: ArrayConstructor;
 	res, err := PartitionLib([]LibInput{lib})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:array"], nil)
+	mod, err := ConvertBucket(res.Buckets["std:prelude"], nil)
 	require.NoError(t, err)
 
 	rootNS, _ := mod.Module.Namespaces.Get("")
@@ -668,7 +668,7 @@ func TestReportPartition_NamesDropsWithoutRoutedCounts(t *testing.T) {
 	t.Parallel()
 	res := &PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
-			"std:array": make([]dts_parser.Statement, 3),
+			"std:prelude": make([]dts_parser.Statement, 3),
 			"web:dom":   make([]dts_parser.Statement, 5),
 		},
 		Drops: []DropNote{
@@ -757,18 +757,18 @@ func TestConvertBuckets_NamesThePackageAFailedBucketBelongsTo(t *testing.T) {
 	t.Parallel()
 	_, err := ConvertBuckets(&PartitionResult{
 		Buckets: map[string][]dts_parser.Statement{
-			"std:array": {&dts_parser.ClassDecl{
+			"std:prelude": {&dts_parser.ClassDecl{
 				Name:    dts_parser.NewIdent("Array", ast.Span{}),
 				Extends: &dts_parser.PrimitiveType{Kind: dts_parser.PrimNumber},
 			}},
 		},
 	}, nil)
 	require.EqualError(t, err,
-		"converting bucket std:array: extends type for class Array isn't a type ref")
+		"converting bucket std:prelude: extends type for class Array isn't a type ref")
 
 	var convErr *BucketConvertError
 	require.ErrorAs(t, err, &convErr)
-	require.Equal(t, "std:array", convErr.Pkg())
+	require.Equal(t, "std:prelude", convErr.Pkg())
 }
 
 // Every way WriteConvertedTree can fail names the package it was working
@@ -818,21 +818,21 @@ declare var Array: ArrayConstructor;
 			},
 			message: func(outDir string) string {
 				dir := filepath.Join(outDir, "std")
-				return fmt.Sprintf("creating package dir %s for std:array: mkdir %s: not a directory", dir, dir)
+				return fmt.Sprintf("creating package dir %s for std:prelude: mkdir %s: not a directory", dir, dir)
 			},
-			pkg: "std:array",
+			pkg: "std:prelude",
 		},
 		{
 			name: "a directory where the package file belongs",
 			seed: func(t *testing.T, outDir string) map[string]*StandaloneModule {
-				require.NoError(t, os.MkdirAll(filepath.Join(outDir, "std", "array.esc"), 0o755))
+				require.NoError(t, os.MkdirAll(filepath.Join(outDir, "std", "prelude.esc"), 0o755))
 				return mods
 			},
 			message: func(outDir string) string {
-				dest := filepath.Join(outDir, "std", "array.esc")
+				dest := filepath.Join(outDir, "std", "prelude.esc")
 				return fmt.Sprintf("writing %s: open %s: is a directory", dest, dest)
 			},
-			pkg: "std:array",
+			pkg: "std:prelude",
 		},
 	}
 	for _, tc := range cases {

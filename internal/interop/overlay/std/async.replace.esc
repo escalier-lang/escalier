@@ -1,65 +1,9 @@
-// `Promise.reject` builds a promise that rejects, so what it rejects
-// with is the type of the reason it is handed. The converted signature
-// writes `-> Promise<T>`, leaving the raise slot to its `never` default
-// and saying the promise never rejects — the opposite of what this
-// function does.
-//
-// `E` defaults to `undefined` rather than `never` because `reject()`
-// with no argument rejects with `undefined`. It shadows the class's own
-// `E`, as `T` already shadows the class's `T`: a static binds neither,
-// which is why the converter threads the raise parameter through
-// instance members alone.
-//
-// The rest of the block settles what `then`, `catch`, and `finally`
-// yield. TypeScript writes `any` for every reason and threads the
-// original rejection type through unchanged, so three separate facts go
-// unsaid.
-//
-// **A handler discharges the rejection.** After `p.catch(h)` the promise
-// cannot reject with `E` any more; that is the whole point of the call.
-// The same holds for the two-handler `then`. `E` survives only where
-// nothing handles it.
-//
-// **A handler raises on its own account.** A callback that throws `F`
-// makes the result reject with `F`, and a callback returning a different
-// promise contributes that promise's rejection type rather than this
-// one's. Each callback carries its own raise variable for both.
-//
-// The receiver is `self`. Attaching a handler appends to the promise's
-// reaction lists, a write no reader can observe, and `mut self` would
-// demand unique mutable access to attach one at all. See the `Promise`
-// entry in mutability.go.
-//
-// **A handler is required.** TypeScript types every one of them
-// `| undefined | null`, so `p.finally()` is a promise that settles the
-// way `p` did and nothing else — a no-op that allocates. Requiring the
-// callback costs no real call and is what lets `then` state the
-// discharge rule: one overload leaves `E` alone because nothing handles
-// it, the other replaces it because something does. An optional
-// parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
-export declare class Promise<T, E = never> {
-    static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
-    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
-    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
-    catch<TResult = never, G = never>(self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
-    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
-}
-
 // `PromiseLike.then` states the same two rules its `Promise` counterpart
-// does.
+// does. `Promise` itself is declared in `std:prelude`, where the two
+// rules are written out; see std/prelude.replace.esc.
 export declare interface PromiseLike<T, E = never> {
     then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
     then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
-}
-
-// `throw` injects an exception at the generator's suspended yield. A
-// body that does not catch it rethrows it to the caller, so a value the
-// caller may pass freely would escape past what `E` says this generator
-// raises. Constraining the parameter to `E` is what keeps that claim
-// true. TypeScript writes `e: any`, which carries no such rule.
-export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> {
-    throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
 }
 
 // The `then` operand has to be inexact. TypeScript's `{ then(…): any }` is

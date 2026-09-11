@@ -1,0 +1,45 @@
+[
+  {
+    "decl": "AsyncGenerator",
+    "member": "throw",
+    "kind": "method",
+    "digest": "1386f0dcfb074072"
+  },
+  {
+    "decl": "Generator",
+    "member": "throw",
+    "kind": "method",
+    "digest": "e207885967150b58"
+  },
+  {
+    "decl": "Promise",
+    "member": "catch",
+    "kind": "method",
+    "digest": "3763268b9467176f"
+  },
+  {
+    "decl": "Promise",
+    "member": "constructor",
+    "kind": "constructor",
+    "digest": "456519da26d0db0b"
+  },
+  {
+    "decl": "Promise",
+    "member": "finally",
+    "kind": "method",
+    "digest": "2cef3bf8da94b7fc"
+  },
+  {
+    "decl": "Promise",
+    "member": "then",
+    "kind": "method",
+    "digest": "bcbaab6e20298969"
+  },
+  {
+    "decl": "Promise",
+    "member": "reject",
+    "kind": "method",
+    "static": true,
+    "digest": "e600e2e52c7f2fd1"
+  }
+]

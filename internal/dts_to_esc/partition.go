@@ -54,9 +54,34 @@ var stdPackages = []struct {
 	File    string
 	Members []string
 }{
+	{"std:prelude", "std/prelude.esc", []string{
+		// The types the checker's own rules name. `await e` constrains
+		// against `Promise<U>` and `for x in xs` against `Iterable<T>`,
+		// so these belong to the language's semantics rather than to a
+		// library a program opts into. Every scope starts with this
+		// package's exports already bound, which is what lets a rule
+		// reach `Promise` whether or not the file imports it.
+		//
+		// `ArrayConstructor` and `PromiseConstructor` come along because
+		// TypeScript spells a class as an instance interface, a
+		// constructor interface, and a `declare var` binding the two.
+		// detectTrios fuses that idiom into one `declare class` and runs
+		// per package, so leaving the constructor half in `std:array`
+		// would split the trio and strip `Array` of its statics.
+		//
+		// `ReadonlyArray` travels with `Array` for the same reason.
+		// fuseReadonlyTwins pairs `Foo` with `ReadonlyFoo` within one
+		// package and folds the readonly members onto the mutable
+		// declaration, which is what makes every other `Array<T>` in the
+		// tree read as `mut Array<T>`. Separating the pair drops that
+		// rewrite tree-wide.
+		"Array", "ArrayConstructor", "ReadonlyArray",
+		"Promise", "PromiseConstructor",
+		"Iterable", "AsyncIterable",
+		"Generator", "AsyncGenerator",
+	}},
 	{"std:array", "std/array.esc", []string{
-		"Array", "ArrayConstructor",
-		"ReadonlyArray", "ConcatArray", "ArrayLike",
+		"ConcatArray", "ArrayLike",
 		"ArrayIterator",
 		"FlatArray",
 	}},
@@ -123,20 +148,20 @@ var stdPackages = []struct {
 		"WeakKey", "WeakKeyTypes",
 	}},
 	{"std:iterator", "std/iterator.esc", []string{
-		"Iterator", "Iterable", "IterableIterator",
+		"Iterator", "IterableIterator",
 		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
 		"IteratorObject",
 		"BuiltinIteratorReturn",
-		"Generator", "GeneratorFunction", "GeneratorFunctionConstructor",
+		"GeneratorFunction", "GeneratorFunctionConstructor",
 	}},
 	{"std:async", "std/async.esc", []string{
-		"Promise", "PromiseConstructor", "PromiseLike",
+		"PromiseLike",
 		"PromiseFulfilledResult", "PromiseRejectedResult", "PromiseSettledResult",
 		"Awaited",
 		"PromiseWithResolvers",
-		"AsyncIterator", "AsyncIterable", "AsyncIterableIterator",
+		"AsyncIterator", "AsyncIterableIterator",
 		"AsyncIteratorObject",
-		"AsyncGenerator", "AsyncGeneratorFunction", "AsyncGeneratorFunctionConstructor",
+		"AsyncGeneratorFunction", "AsyncGeneratorFunctionConstructor",
 		"AggregateError", "AggregateErrorConstructor",
 		"PromiseConstructorLike",
 	}},
