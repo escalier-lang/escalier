@@ -211,8 +211,8 @@ const storeEffectDecls = `
 		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
 		item: &'a mut {value: number},
 	) -> undefined
-	declare fn readBorrow(x: &mut {value: number}) -> undefined
-	declare fn readShared(x: &{value: number}) -> undefined
+	declare fn readMutBorrow(x: &mut {value: number}) -> undefined
+	declare fn readImmBorrow(x: &{value: number}) -> undefined
 	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
 `
 
@@ -235,11 +235,11 @@ func TestStoreEffectLoans(t *testing.T) {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b)
-					readShared(&b)
+					readImmBorrow(&b)
 					touch(&mut a)
 				}
 			`,
-			want: []string{"14:17-14:19: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+			want: []string{"14:20-14:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
 		},
 		// Reading the item directly reaches the same data the target can write through, which
 		// the loan-against-loan check does not see because a read is not a borrow.
@@ -275,7 +275,7 @@ func TestStoreEffectLoans(t *testing.T) {
 				fn k(q: mut {value: number}, r: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &mut q, spare: &mut r}
-					readBorrow(&mut b)
+					readMutBorrow(&mut b)
 					val y = b
 					touch(&mut a)
 				}
@@ -305,13 +305,13 @@ func TestStoreEffectLoans(t *testing.T) {
 					target: &'c mut {peer: &'a {value: number}, spare: &'b mut {value: number}},
 					item: &'a {value: number},
 				) -> undefined
-				declare fn readShared(x: &{value: number}) -> undefined
+				declare fn readImmBorrow(x: &{value: number}) -> undefined
 				declare fn hold<'d>(x: &'d mut {peer: &{value: number}, spare: &mut {value: number}}) -> undefined
 				fn f(q: {value: number}, r: mut {value: number}) -> undefined {
 					val mut b = {value: 2}
 					val mut a = {peer: &q, spare: &mut r}
 					store(&mut a, &b)
-					readShared(&b)
+					readImmBorrow(&b)
 					hold(&mut a)
 				}
 			`,
@@ -326,7 +326,7 @@ func TestStoreEffectLoans(t *testing.T) {
 					val mut b = {inner: {value: 1}, other: {value: 2}}
 					val mut a = {peer: &mut q, spare: &mut r}
 					store(&mut a, &mut b.inner)
-					readBorrow(&mut b.other)
+					readMutBorrow(&mut b.other)
 					touch(&mut a)
 				}
 			`,
@@ -336,14 +336,14 @@ func TestStoreEffectLoans(t *testing.T) {
 		// the else arm comes later in the source, so it never reaches the read on the then arm.
 		"ABorrowOnOneArmDoesNotReachTheOtherOk": {
 			src: `
-				declare fn readBorrow(x: &mut {value: number}) -> undefined
+				declare fn readMutBorrow(x: &mut {value: number}) -> undefined
 				fn f(cond: boolean, x: mut {value: number}) -> undefined {
 					var a = &mut x
 					if cond {
 						val y = x
 					} else {
 						a = &mut x
-						readBorrow(a)
+						readMutBorrow(a)
 					}
 				}
 			`,
