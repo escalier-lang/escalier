@@ -44,7 +44,11 @@ export declare class Array<T> {
      * @param end If not specified, length of the this object is used as its default value.
      */
     copyWithin(mut self, target: number, start: number, end?: number) -> Self,
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions & Intl.DateTimeFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
+    /**
+     * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
+     */
+    toLocaleString(self) -> string,
     /** Iterator */
     [Symbol.iterator](self) -> ArrayIterator<T>,
     /**
@@ -163,10 +167,6 @@ export declare class Array<T> {
      * Returns a string representation of an array.
      */
     toString(self) -> string,
-    /**
-     * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
-     */
-    toLocaleString(self) -> string,
     /**
      * Removes the last element from an array and returns it.
      * If the array is empty, undefined is returned and the array is not modified.
