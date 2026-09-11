@@ -181,6 +181,10 @@ func (e *MissingWellKnownTypeError) isSolverError()      {}
 // keeps those rules to a string comparison. An annotation resolves while its
 // declaration is being bound, which is ahead of any constraint an array can reach.
 //
+// An annotation resolved under a probe is the exception, since the load declines
+// there. `resolveSigArrays` settles the name ahead of the one caller that does
+// that, the overload pre-bind in inferComponent.
+//
 // Diagnostics are dropped. A tree without a stdlib supplies no `Array` and needs
 // no report for one it never mentions. A program that does mention `Array` gets
 // the ordinary unknown-type diagnostic at the reference instead.
@@ -194,6 +198,54 @@ func (c *checker) resolveArrayClass() {
 	if cls, isClass := t.(*soltype.ClassType); isClass {
 		c.ctx.arrayClass = cls.Name
 	}
+}
+
+// resolveSigArrays resolves the well-known `Array` when any annotation in sig
+// writes it, so a later resolution of sig runs against a name that is already
+// cached. Its caller is the overload pre-bind in inferComponent, which resolves a
+// signature under a probe. `resolveArrayClass` declines to load there, and the
+// annotation would fall back to a bare var that checks nothing. Nothing is loaded
+// for a signature that does not write `Array`, or once the name is settled.
+func (c *checker) resolveSigArrays(sig ast.FuncSig) {
+	if c.ctx.arrayClass != "" {
+		return
+	}
+	f := &arrayRefFinder{}
+	for _, tp := range sig.TypeParams {
+		acceptTypeAnn(tp.Constraint, f)
+		acceptTypeAnn(tp.Default, f)
+	}
+	for _, param := range sig.Params {
+		acceptTypeAnn(param.TypeAnn, f)
+	}
+	acceptTypeAnn(sig.Return, f)
+	acceptTypeAnn(sig.Throws, f)
+	if f.found {
+		c.resolveArrayClass()
+	}
+}
+
+// acceptTypeAnn walks t with v, treating an absent optional annotation as nothing
+// to walk.
+func acceptTypeAnn(t ast.TypeAnn, v ast.Visitor) {
+	if t == nil {
+		return
+	}
+	t.Accept(v)
+}
+
+// arrayRefFinder records whether the annotations it walks write `Array` anywhere,
+// at any depth.
+type arrayRefFinder struct {
+	ast.DefaultVisitor
+	found bool
+}
+
+func (f *arrayRefFinder) EnterTypeAnn(t ast.TypeAnn) bool {
+	if ref, isRef := t.(*ast.TypeRefTypeAnn); isRef && namesArray(ref.Name) {
+		f.found = true
+	}
+	return !f.found
 }
 
 // arrayElem returns the element type of t when t is an instance of the well-known
