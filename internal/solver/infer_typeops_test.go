@@ -1419,14 +1419,16 @@ func TestInferTupleSpreadReduction(t *testing.T) {
 }
 
 // A tuple-spread residual over a type parameter renders symbolically in a function signature and
-// round-trips from parameter to return: `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`
-// keeps `[...T, number]` on both positions. The reflexive `[...T, number] <: [...T, number]` from
-// `return x` succeeds inertly by structural equality on the residual, since the abstract operand
-// never grounds.
+// round-trips from parameter to return: `fn f<T: Array<string>>(x: [...T, number]) -> [...T, number]
+// { return x }` keeps `[...T, number]` on both positions. The reflexive
+// `[...T, number] <: [...T, number]` from `return x` succeeds inertly by structural equality on the
+// residual, since the abstract operand never grounds. T is bounded by an array so the spread operand
+// is one a spread could splice; the bound does not make it ground.
 func TestInferTupleSpreadSignatureStaysSymbolic(t *testing.T) {
-	values, _, errs := inferSource(t, `fn f<T>(x: [...T, number]) -> [...T, number] { return x }`)
+	values, _, errs := inferSource(t,
+		`fn f<T: Array<string>>(x: [...T, number]) -> [...T, number] { return x }`)
 	require.Empty(t, errs)
-	require.Equal(t, "fn <T>(x: [...T, number]) -> [...T, number]", values["f"])
+	require.Equal(t, "fn <T: Array<string>>(x: [...T, number]) -> [...T, number]", values["f"])
 }
 
 // constrain reduces a ground tuple-spread annotation to the spliced tuple to check satisfaction,
@@ -1554,11 +1556,11 @@ func TestInferTupleSpreadGroundsWithResidualElements(t *testing.T) {
 // call site.
 func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		fn f<T>(x: [...T, number]) -> number { return 1 }
+		fn f<T: Array<string>>(x: [...T, number]) -> number { return 1 }
 		val r = f([1])
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain tuple <: [...t7, number]", errs[0].Message())
+	require.Equal(t, "cannot constrain tuple <: [...t15, number]", errs[0].Message())
 }
 
 // A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
@@ -1616,7 +1618,7 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 		{
 			// keyof over an abstract spread operand stays symbolic.
 			name:         "KeyofAbstractSpread",
-			src:          `fn f<T>(k: keyof [...T, boolean]) {}`,
+			src:          `fn f<T: Array<string>>(k: keyof [...T, boolean]) {}`,
 			wantSymbolic: "keyof [...T, boolean]",
 		},
 		{
@@ -1633,7 +1635,8 @@ func TestInferKeyofIndexOverSpreadTuple(t *testing.T) {
 				// A signature-level case: assert the residual renders symbolically and does not crash.
 				values, _, errs := inferSource(t, tt.src)
 				require.Empty(t, errs)
-				require.Equal(t, "fn <T>(k: "+tt.wantSymbolic+") -> undefined", values["f"])
+				require.Equal(t,
+					"fn <T: Array<string>>(k: "+tt.wantSymbolic+") -> undefined", values["f"])
 				return
 			}
 			nodes, ctx, errs := inferTypeNodes(t, tt.src)

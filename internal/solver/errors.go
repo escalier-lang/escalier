@@ -331,6 +331,18 @@ type SpreadNotTupleError struct {
 	Operand soltype.Type
 }
 
+// SpreadOperandNotListError fires when a `...P` element of a tuple ANNOTATION has an
+// operand that names no positional list, so there is nothing for the spread to
+// splice. `[...number, string]` and `[...T, string]` over an unconstrained T are the
+// two shapes it catches. It is the annotation counterpart of SpreadNotTupleError,
+// which covers the tuple-literal form, and it carries the same message so one
+// mistake reads the same written either way. Spread is the offending element and
+// carries the blame span. Operand is the type it resolved to.
+type SpreadOperandNotListError struct {
+	Spread  *ast.RestSpreadTypeAnn
+	Operand soltype.Type
+}
+
 // InexactTupleSpreadError fires when a tuple-literal spread element ([...xs]) has an
 // operand that infers to an INEXACT tuple ([number, ...]) and is not the last
 // element of the literal. An inexact tuple has unknown length, so an element written
@@ -514,6 +526,7 @@ func (*ReadonlyFieldSubtypeError) isSolverError()    {}
 func (*FuncArityMismatchError) isSolverError()       {}
 func (*TupleLengthMismatchError) isSolverError()     {}
 func (*SpreadNotTupleError) isSolverError()          {}
+func (*SpreadOperandNotListError) isSolverError()    {}
 func (*InexactTupleSpreadError) isSolverError()      {}
 func (*SpreadNotObjectError) isSolverError()         {}
 func (*MissingPropertyError) isSolverError()         {}
@@ -2606,6 +2619,23 @@ func (e *SpreadNotTupleError) Span() ast.Span      { return e.Spread.Span() }
 func (e *SpreadNotTupleError) Related() []ast.Span { return nil }
 func (e *SpreadNotTupleError) Message() string {
 	return "cannot spread " + describe(e.Operand) + " into a tuple"
+}
+
+func (e *SpreadOperandNotListError) Span() ast.Span      { return e.Spread.Span() }
+func (e *SpreadOperandNotListError) Related() []ast.Span { return nil }
+func (e *SpreadOperandNotListError) Message() string {
+	return "cannot spread " + e.operandName() + " into a tuple"
+}
+
+// operandName renders the operand the way the source wrote it. A bare reference is
+// named as written, so an unbounded `<T>` reads as `T` rather than as the variable
+// `T` resolved to. Anything else is described from its resolved type, which is what
+// the tuple-literal form does.
+func (e *SpreadOperandNotListError) operandName() string {
+	if ref, isRef := e.Spread.Value.(*ast.TypeRefTypeAnn); isRef && len(ref.TypeArgs) == 0 {
+		return ast.QualIdentToString(ref.Name)
+	}
+	return describe(e.Operand)
 }
 
 func (e *InexactTupleSpreadError) Span() ast.Span      { return e.Spread.Span() }
