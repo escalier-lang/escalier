@@ -1125,192 +1125,29 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 	if len(overloads) == 0 {
 		return []Stmt{}
 	}
-
-	// All overloads should have the same name
 	funcName := overloads[0].Name.Name
 
-	// Filter out declare-only functions (they have no body)
-	var implementedOverloads []*ast.FuncDecl
+	// A `declare fn` arm carries no body, so it contributes a signature and no code.
+	// A set that is entirely declared emits nothing at all.
+	var arms []overloadArm
 	for _, overload := range overloads {
-		if overload.Body != nil {
-			implementedOverloads = append(implementedOverloads, overload)
+		if overload.Body == nil {
+			continue
 		}
+		arms = append(arms, overloadArm{
+			params: overload.Params,
+			body:   overload.Body,
+			async:  overload.Async,
+			gen:    overload.Gen,
+			source: overload,
+		})
 	}
-
-	// If all overloads are declare-only, skip codegen
-	if len(implementedOverloads) == 0 {
+	if len(arms) == 0 {
 		return []Stmt{}
 	}
 
-	// Helper function to count the specificity of a parameter type
-	// For object types, count the number of required properties
-	countTypeSpecificity := func(param *ast.Param) int {
-		if param.TypeAnn == nil {
-			return 0
-		}
-		switch typeAnn := param.TypeAnn.(type) {
-		case *ast.ObjectTypeAnn:
-			// Count required properties (non-optional)
-			count := 0
-			for _, elem := range typeAnn.Elems {
-				if propType, ok := elem.(*ast.PropertyTypeAnn); ok {
-					if !propType.Optional {
-						count++
-					}
-				}
-			}
-			return count
-		default:
-			return 1 // Default specificity for other types
-		}
-	}
+	dispatch := b.buildOverloadDispatch(arms, "function '"+funcName+"'")
 
-	// Sort overloads by specificity (descending) so that more specific overloads
-	// are checked first. This is necessary because without arity checks, function
-	// subtyping allows less specific functions to match more specific calls.
-	// We sort by: 1) parameter count (more first), 2) type specificity (more first)
-	slices.SortFunc(implementedOverloads, func(a, b *ast.FuncDecl) int {
-		// First, compare by parameter count
-		if len(a.Params) != len(b.Params) {
-			return len(b.Params) - len(a.Params) // Descending order
-		}
-
-		// If same parameter count, compare by type specificity
-		// Calculate total specificity for each overload
-		aSpecificity := 0
-		for _, param := range a.Params {
-			aSpecificity += countTypeSpecificity(param)
-		}
-
-		bSpecificity := 0
-		for _, param := range b.Params {
-			bSpecificity += countTypeSpecificity(param)
-		}
-
-		return bSpecificity - aSpecificity // Descending order
-	})
-
-	// Collect all unique parameter names across overloads
-	// We'll use the maximum parameter count and give them generic names
-	maxParams := 0
-	for _, overload := range implementedOverloads {
-		if len(overload.Params) > maxParams {
-			maxParams = len(overload.Params)
-		}
-	}
-
-	// Generate parameter names: param0, param1, param2, ...
-	params := make([]*Param, 0, maxParams)
-	for i := 0; i < maxParams; i++ {
-		paramName := fmt.Sprintf("param%d", i)
-		params = append(params, &Param{
-			Pattern:  NewIdentPat(paramName, nil, nil),
-			Optional: false,
-			TypeAnn:  nil,
-		})
-	}
-
-	// Build the dispatch logic as nested if-else statements
-	var buildDispatchChain func(int) Stmt
-	buildDispatchChain = func(overloadIdx int) Stmt {
-		if overloadIdx >= len(implementedOverloads) {
-			// No more overloads - throw error
-			errorMsg := fmt.Sprintf("No overload matches the provided arguments for function '%s'", funcName)
-			return NewThrowStmt(
-				NewNewExpr(
-					NewIdentExpr("TypeError", "", nil),
-					[]Expr{NewLitExpr(NewStrLit(errorMsg, nil), nil)},
-					nil,
-				),
-				nil,
-			)
-		}
-
-		overload := implementedOverloads[overloadIdx]
-
-		if len(overload.Params) == 0 {
-			// No parameters - this overload always matches
-			prevInBlockScope := b.inBlockScope
-			b.inBlockScope = true
-			bodyStmts := b.buildStmts(overload.Body.Stmts)
-			b.inBlockScope = prevInBlockScope
-			return NewBlockStmt(bodyStmts, overload)
-		}
-
-		// Generate type guards for all parameters that need checking
-		// We need to check enough parameters to distinguish this overload from remaining ones
-		var guards []Expr
-		for i, param := range overload.Params {
-			if param.TypeAnn != nil {
-				paramGuard := b.buildTypeGuard(NewIdentExpr(fmt.Sprintf("param%d", i), "", nil), param.TypeAnn)
-				guards = append(guards, paramGuard)
-			}
-		}
-
-		// Combine all guards with && operators
-		var guard Expr
-		if len(guards) == 0 {
-			// No type annotations - accept anything
-			guard = NewLitExpr(NewBoolLit(true, nil), nil)
-		} else if len(guards) == 1 {
-			guard = guards[0]
-		} else {
-			// Combine multiple guards with &&
-			guard = guards[0]
-			for _, g := range guards[1:] {
-				guard = NewBinaryExpr(guard, LogicalAnd, g, nil)
-			}
-		}
-
-		// Build the body for this overload
-		prevInBlockScope := b.inBlockScope
-		b.inBlockScope = true
-
-		// Map params to expected names using buildPattern to handle all pattern types
-		var bodyStmts []Stmt
-		for j, param := range overload.Params {
-			// Create the source expression: param{j}
-			paramExpr := NewIdentExpr(fmt.Sprintf("param%d", j), "", nil)
-
-			// Use buildPattern to handle all pattern types (IdentPat, destructuring, rest, etc.)
-			// Pass export=false since these are local parameter bindings
-			_, patternStmts := b.buildPattern(param.Pattern, paramExpr, false, ast.ValKind, "")
-			bodyStmts = slices.Concat(bodyStmts, patternStmts)
-		}
-
-		bodyStmts = slices.Concat(bodyStmts, b.buildStmts(overload.Body.Stmts))
-		b.inBlockScope = prevInBlockScope
-
-		// Create if-else: if (guard) { body } else { next overload }
-		return NewIfStmt(
-			guard,
-			NewBlockStmt(bodyStmts, overload),
-			buildDispatchChain(overloadIdx+1),
-			overload,
-		)
-	}
-
-	dispatchStmt := buildDispatchChain(0)
-
-	// Check if any overload is async - if so, the generated function must be async
-	isAsync := false
-	for _, overload := range implementedOverloads {
-		if overload.Async {
-			isAsync = true
-			break
-		}
-	}
-
-	// Check if any overload is a generator - if so, the generated function must be a generator
-	isGenerator := false
-	for _, overload := range implementedOverloads {
-		if overload.Gen || (overload.Body != nil && containsYield(overload.Body.Stmts)) {
-			isGenerator = true
-			break
-		}
-	}
-
-	// Create the function declaration
 	fnDecl := &FuncDecl{
 		Name: &Identifier{
 			Name:   fullyQualifyName(funcName, nsName),
@@ -1318,13 +1155,13 @@ func (b *Builder) buildOverloadedFunc(overloads []*ast.FuncDecl, nsName string) 
 			source: overloads[0].Name,
 		},
 		TypeParams: nil,
-		Params:     params,
-		Body:       []Stmt{dispatchStmt},
+		Params:     dispatch.params,
+		Body:       dispatch.body,
 		TypeAnn:    nil,
 		declare:    false,
 		export:     b.exportDecl(nsName, b.inBlockScope),
-		async:      isAsync,
-		generator:  isGenerator,
+		async:      dispatch.async,
+		generator:  dispatch.generator,
 		span:       nil,
 		source:     overloads[0],
 	}
@@ -2336,6 +2173,8 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 	var outElems []ClassElem
 	var allStmts []Stmt
 
+	overloads := groupOverloadableElems(inElems)
+
 	for _, elem := range inElems {
 		switch e := elem.(type) {
 		case *ast.FieldElem:
@@ -2369,6 +2208,22 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// Instance fields are skipped and handled by the constructor
 		case *ast.MethodElem:
 			if e.Fn == nil {
+				continue
+			}
+			// An overloaded method is emitted once, at its first arm. JS has no
+			// overloading, and a duplicate member name is legal there with the last
+			// definition winning, so emitting one member per arm would drop every arm
+			// but the last without a word.
+			if siblings := overloads[methodGroupKey(e)]; len(siblings) > 1 {
+				// Every arm reaches here, so the later ones leave the emitting to the first.
+				if siblings[0] != elem {
+					continue
+				}
+				name, nameStmts := b.buildObjKey(e.Name)
+				allStmts = slices.Concat(allStmts, nameStmts)
+				if member := b.buildOverloadedMethod(name, e, methodArms(siblings)); member != nil {
+					outElems = append(outElems, member)
+				}
 				continue
 			}
 			params, paramStmts := b.buildParams(e.Fn.Params)
@@ -2455,6 +2310,20 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 
 		case *ast.ConstructorElem:
 			if e.Fn == nil {
+				continue
+			}
+			// Two `constructor` members in one class is a `SyntaxError`, so a class
+			// declaring more than one constructor emits a module that does not load
+			// at all. The arms are dispatched from one constructor instead.
+			if siblings := overloads[constructorGroupKey]; len(siblings) > 1 {
+				// Every arm reaches here, so the later ones leave the emitting to the first.
+				if siblings[0] != elem {
+					continue
+				}
+				member := b.buildOverloadedConstructor(e, constructorArms(siblings, derived))
+				if member != nil {
+					outElems = append(outElems, member)
+				}
 				continue
 			}
 			// Strip Fn.Params[0] (the `mut self` receiver) — it is `this`

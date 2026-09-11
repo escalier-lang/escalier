@@ -1,11 +1,11 @@
 export function process(param0) {
-  if (true) {
+  if (arguments.length === 1) {
     const config = param0;
     return "Number: " + config.value.toString();
-  } else if (true) {
+  } else if (arguments.length === 1) {
     const config = param0;
     return "String: " + config.text;
-  } else if (true) {
+  } else if (arguments.length === 1) {
     const config = param0;
     if (config.flag) {
       return "Boolean: true";
