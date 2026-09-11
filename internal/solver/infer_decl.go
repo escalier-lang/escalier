@@ -282,7 +282,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 // visible only here, so this site decides whether the source is uniquely owned and then
 // hands the solver a check it can do soundly.
 //
-// tryUpgradeToOwnedMut constrains the initializer's shape against the borrow's INNER, its
+// constrainAgainstImmutableTarget constrains the initializer's shape against the borrow's INNER, its
 // covariant read view, exactly as the non-mut path constrains against the annotation
 // directly. A borrow annotation is a reference into a caller's region, not an owned value,
 // so a source flowing into it stays on the strict path.
@@ -302,7 +302,7 @@ func (c *checker) constrainInitAgainstAnnotation(init ast.Expr, initT, annT solt
 		c.blameConstraintErrors(init, c.ctx.trialUnderProbe(initT, c.skolemizeGenericAnn(annT)))
 		return annT
 	}
-	if c.tryUpgradeToOwnedMut(init, init, initT, annT) {
+	if c.constrainAgainstImmutableTarget(init, init, initT, annT) {
 		return annT
 	}
 	c.constrain(init, initT, annT)
@@ -376,22 +376,15 @@ func (s *skolemizer) skolemizeBound(bounds []soltype.Type) soltype.Type {
 	return bounds[0].Accept(s, soltype.Positive)
 }
 
-// tryUpgradeToOwnedMut grants the immutable→mutable upgrade when a value of type srcT,
-// built by src, flows into the type target. The upgrade fires only when target is
-// owned-mutable — a RefType with Mut set and a nil lifetime — and src is uniquely owned
-// per isUniquelyOwned. It then constrains srcT against target's immutable read view,
-// stripOwnedMut of the inner, the same covariant check the non-mut path runs, and returns
-// true. Otherwise it constrains nothing and returns false, leaving the caller to run its
-// ordinary constraint against target.
+// constrainAgainstImmutableTarget constrains srcT against target's immutable form and reports
+// whether it did. It constrains nothing and reports false when target has no immutable form to
+// use, leaving the caller to run its ordinary constraint. site is the node blamed on failure.
 //
-// target is whatever owned-mutable type the value flows into at a given site, and every
-// such site routes through here: the declaration initializer's annotation, the binding
-// type of a reassignment, a `mut` parameter type, a `mut` return annotation, and a `mut`
-// field's type. site is the node blamed on failure. src is the source expression, which
-// isUniquelyOwned inspects for the syntactic fresh-literal fast path and the
-// place-move path.
-func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
-	view, ok := c.ownedMutUpgrade(src, target)
+// Every site where a value flows into an owned-mutable type routes through here: a declaration
+// initializer's annotation, a reassignment's binding type, a `mut` parameter, a `mut` return
+// annotation, and a `mut` field.
+func (c *checker) constrainAgainstImmutableTarget(site ast.Node, src ast.Expr, srcT, target soltype.Type) bool {
+	view, ok := c.immutableTargetForSource(src, target)
 	if !ok {
 		return false
 	}
@@ -399,30 +392,41 @@ func (c *checker) tryUpgradeToOwnedMut(site ast.Node, src ast.Expr, srcT, target
 	return true
 }
 
-// ownedMutUpgrade returns the type a value built by src is checked against when it takes
-// target's owned-mutable type, and reports whether that upgrade applies. It is the decision half
-// of tryUpgradeToOwnedMut, which runs the check itself. The view is stripOwnedMut of target's
-// inner, which is sound because a uniquely-owned source is owned at every level.
+// immutableTargetForSource returns the type a value built by src is checked against when it takes
+// immutableTargetForSource returns target's immutable form when src is uniquely owned, and
+// false otherwise.
 //
-// The split exists for tryOverloadArm: it trials an arm with the error-returning
-// Context.Constrain so a losing arm writes nothing, where tryUpgradeToOwnedMut would run the
-// accumulating checker.constrain.
-func (c *checker) ownedMutUpgrade(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
+// Its whole job is to run isUniquelyOwned BEFORE the conversion. immutableTarget walks the
+// target's inner to strip it, and a source that cannot be checked against the stripped form
+// should never reach that walk. Calling the two in the other order panicked on an index
+// signature during one rebase.
+//
+// It is separate from constrainAgainstImmutableTarget so tryOverloadArm can reach the decision
+// without the constraint: an arm is trialled with the error-returning Context.Constrain so a
+// losing arm writes nothing, where constrainAgainstImmutableTarget runs the accumulating
+// checker.constrain.
+func (c *checker) immutableTargetForSource(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
 	if !c.isUniquelyOwned(src) {
 		// SOUNDNESS, and the only gate that looks at the value rather than the target. It runs
 		// before the target half so a source that cannot take the upgrade never builds a view.
 		return nil, false
 	}
-	return c.ownedMutUpgradeTarget(target)
+	return c.immutableTarget(target)
 }
 
-// ownedMutUpgradeTarget is the half of ownedMutUpgrade's gate that reads only the target, so a
-// caller holding no source expression can still ask. constrainReturnAgainstAnnotation is that
-// caller: it covers the join of a body's returns rather than one expression, and the source half
-// has already been decided for it.
+// immutableTarget converts an owned-mutable target to its immutable form, stripOwnedMut of the
+// inner, and reports false when target is not owned-mutable.
+//
+// The conversion matters because a `mut` destination constrains a source in BOTH directions. The
+// RefType arm of constrain adds a reverse write-back constraint when the destination is mutable,
+// which together with the forward read make the check invariant. The immutable form carries no
+// `mut`, so constraining against it drops the write-back and leaves the covariant read alone.
+// Each caller's comment says why dropping it is sound there.
+//
+// It reads only the target, so a caller holding no source expression can still ask.
 //
 // The three gates below do two different jobs, dispatch and soundness, and each says which.
-func (c *checker) ownedMutUpgradeTarget(target soltype.Type) (soltype.Type, bool) {
+func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 	ref, ok := target.(*soltype.RefType)
 	if !ok {
 		// DISPATCH. A bare owned target needs no upgrade at all, since ordinary subtyping
