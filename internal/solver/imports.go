@@ -70,7 +70,8 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 // The binding shape is the FR5 rule. A package whose sole class is named after
 // it binds that class under its own capitalization, so `import "std:date"`
 // gives `Date` rather than `date.Date`. Every other package binds as a
-// namespace under its lowercased package name.
+// namespace under the name the statement binds it as, which is its alias when
+// one is written and the package name otherwise.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
 		return errs
@@ -94,7 +95,13 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	//
 	// FR5 asks for more than reachability: the other members belong on the class
 	// binding itself, with a static of the same name winning. That merge is #1466.
-	fileScope.defineNamespace(strings.ToLower(pkg), ns)
+	//
+	// The name is the statement's, so `as` reaches a pseudo-package the same way
+	// it reaches an npm one. It renames this namespace binding and nothing else:
+	// a shortcut-bound class keeps its own capitalization, since that binding is
+	// the class rather than the package. A package name is already lowercase, so
+	// an import with no alias binds what the URI spells.
+	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
 }
 
