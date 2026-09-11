@@ -180,27 +180,18 @@ func TestInferGenericDeclareFuncNotProducibilityChecked(t *testing.T) {
 	require.Equal(t, "fn <T>(x: number) -> T", values["make"])
 }
 
-// A method's own type parameters stay gated at the rank-1 boundary: per-instance
-// projection is not yet applied by the class-body freeze, so resolving them would
-// collapse two calls to one shared var. The method reports the type-param feature as
-// unsupported and infers monomorphically rather than panicking in the body freeze.
-func TestInferGenericMethodStillGated(t *testing.T) {
-	_, _, errs := inferSource(t, `
+// A method's own type parameters resolve the way a generic function declaration's do,
+// so the signature renders under the written names rather than reporting the binder as
+// unsupported and leaving each `T` an unbound name.
+func TestInferGenericMethodResolves(t *testing.T) {
+	values, _, errs := inferSource(t, `
 		class Box {
 			wrap<T>(self, x: T) -> T { return x }
 		}
+		fn probe(b: Box) { return b.wrap }
 	`)
-	msgs := make([]string, len(errs))
-	for i, e := range errs {
-		msgs[i] = e.Message()
-	}
-	// The gate reports the type-param feature, then the two `T` references cascade to
-	// unsupported because the parameter was never declared in scope.
-	require.Equal(t, []string{
-		"Unsupported: TypeParam",
-		"cannot find type `T`",
-		"cannot find type `T`",
-	}, msgs)
+	require.Empty(t, errs)
+	require.Equal(t, "fn (b: Box) -> fn <T>(x: T) -> T", values["probe"])
 }
 
 // A parameter whose own type is polymorphic — a rank-2 callback annotated `fn <V>(x: V) ->

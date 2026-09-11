@@ -166,15 +166,13 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// `peer: &'a mut B` writes 'a once and in an output position, so the elision rule would
 	// drop it and leave an instance's lifetime argument with nothing to replace.
 	keepLts := classKeepLifetimes(shell.lifetimeParams)
-	if len(typeParams) == 0 {
-		c.freezeClassBody(body, nil, nil, keepLts)
-		c.freezeClassBody(static, nil, nil, keepLts)
-	} else {
-		keep := classKeepVars(typeParams, body, static)
-		flow := keptFlowMap(keep)
-		c.freezeClassBody(body, keep, flow, keepLts)
-		c.freezeClassBody(static, keep, flow, keepLts)
-	}
+	// The keep set reads the members as well as the class's own `<…>` list, so a non-generic
+	// class carrying a generic method still keeps that method's parameters. An empty set
+	// coalesces everything.
+	keep := classKeepVars(typeParams, body, static)
+	flow := keptFlowMap(keep)
+	c.freezeClassBody(body, keep, flow, keepLts)
+	c.freezeClassBody(static, keep, flow, keepLts)
 
 	// Freeze both per-parameter variance vectors once every member body has refined its
 	// signature, so the walk measures each type parameter at its final occurrences. The
@@ -909,6 +907,10 @@ type pendingMember struct {
 	static bool
 	stub   *soltype.FuncType
 	apply  func(bodyFt *soltype.FuncType)
+	// generic marks a member that may quantify type parameters of its own, which only a
+	// method may. A getter and a setter have no call site that could instantiate a binder,
+	// so one written there is reported as unsupported.
+	generic bool
 }
 
 // buildMemberSigs is phase 1 of the member walk: it appends a signature stub — fresh vars
@@ -943,6 +945,7 @@ func (c *checker) buildMemberSigs(
 			}
 			pending = append(pending, pendingMember{
 				fn: elem.Fn, name: name, recv: elem.Receiver, static: elem.Static, stub: stub,
+				generic: true,
 				apply: func(bodyFt *soltype.FuncType) {
 					bodyFt.SelfParam = stub.SelfParam
 					method.Signatures[arm] = bodyFt
@@ -1026,7 +1029,7 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 		// Hand the member's name to the inferFunc call below, which sees only the member's
 		// *ast.FuncExpr and so cannot recover it. inferFunc takes and clears it.
 		c.memberName = m.name
-		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, body)
+		bodyFt := c.inferMemberFunc(scope, lvl, m.fn, m.recv, m.static, m.generic, body)
 		c.linkMemberSig(m.fn, bodyFt, m.stub)
 		m.apply(bodyFt)
 	}
@@ -1039,6 +1042,16 @@ func (c *checker) inferMemberBodies(scope *Scope, lvl int, body *soltype.ObjectT
 func (c *checker) linkMemberSig(node ast.Node, bodyFt, stub *soltype.FuncType) {
 	callable := func(ft *soltype.FuncType) *soltype.FuncType {
 		return &soltype.FuncType{Params: ft.Params, Ret: ft.Ret, Throws: ft.Throws, Inexact: ft.Inexact}
+	}
+	// A generic member is linked through ONE instantiation of its binder. Comparing the
+	// binder itself would record `T <: stubReturn` on the binder's own variable for a method
+	// returning `T`, and that edge stays, so `<T>` would read as bounded by a variable the
+	// source never wrote and the class value would quantify it as a phantom parameter. The
+	// instantiation carries the declared bounds, so a sibling call still meets them. A call
+	// from outside reads the inferred signature the body pass installs over the stub, and
+	// instantiates the binder per call.
+	if len(bodyFt.TypeParams) > 0 {
+		bodyFt = c.ctx.instantiateFuncBinder(bodyFt, bodyFt.TypeParams[0].Var.Level)
 	}
 	c.constrain(node, callable(bodyFt), callable(stub))
 }
@@ -1105,16 +1118,16 @@ func (c *checker) inferMemberFunc(
 	fn *ast.FuncExpr,
 	recv *ast.MethodReceiver,
 	static bool,
+	generic bool,
 	body *soltype.ObjectType,
 ) *soltype.FuncType {
 	memberScope := scope.Child()
 	if !static {
 		c.bindSelf(memberScope, recv, body)
 	}
-	// A method's own type parameters stay gated because their per-instance projection
-	// is not yet applied by the class-body freeze, so inferFunc reports them as
-	// unsupported.
-	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, false)
+	// generic is true for a method and false for a getter or setter. inferFunc reports a
+	// binder it is not allowed to resolve as an unsupported feature.
+	return c.inferFunc(memberScope, lvl, fn.FuncSig, fn.Body, fn, generic)
 }
 
 // appendMethodSig installs a method signature under name, merging it into an existing
@@ -1309,30 +1322,47 @@ func (v *selfMethodVisitor) EnterExpr(e ast.Expr) bool {
 	return true
 }
 
-// classKeepVars collects the type-parameter vars a generic class body coalesces around:
-// the class's own TypeParam vars plus every method signature's own TypeParam vars. These
+// classKeepVars collects the type-parameter vars a class body coalesces around: the
+// class's own TypeParam vars plus every binder written anywhere in its members. These
 // stay symbolic through the coalesce so member lookup can substitute an instance's
-// argument for a class parameter and instantiate a method's own parameters per call (B8).
+// argument for a class parameter and instantiate a member's own parameters per call (B8).
+//
+// A binder nested inside a member's type counts too. Coalescing the `V` of a rank-2
+// parameter `g: fn <V>(x: V) -> V` to a non-variable trips acceptTypeParamVar's guard,
+// which panics rather than reporting a diagnostic.
 func classKeepVars(typeParams []*soltype.TypeParam, bodies ...*soltype.ObjectType) set.Set[*soltype.TypeVarType] {
 	keep := set.NewSet[*soltype.TypeVarType]()
 	for _, tp := range typeParams {
 		keep.Add(tp.Var)
 	}
+	collector := &binderCollector{keep: keep}
 	for _, obj := range bodies {
-		for _, elem := range obj.Elems {
-			m, ok := elem.(*soltype.MethodElem)
-			if !ok {
-				continue
-			}
-			for _, sig := range m.Signatures {
-				for _, tp := range sig.TypeParams {
-					keep.Add(tp.Var)
-				}
-			}
-		}
+		obj.Accept(collector, soltype.Positive)
 	}
 	return keep
 }
+
+// binderCollector records every type-parameter binder the types it walks quantify. It
+// rewrites nothing, so EnterType returns the zero EnterResult, which keeps each node and
+// descends into its children.
+//
+// A variable's bounds are a side graph rather than tree children, so a binder reachable
+// only through one is missed. No binder lives there. resolveTypeParams mints every one and
+// hangs it off the FuncType that quantifies it.
+type binderCollector struct {
+	keep set.Set[*soltype.TypeVarType]
+}
+
+func (v *binderCollector) EnterType(t soltype.Type, _ soltype.Polarity) soltype.EnterResult {
+	if ft, isFunc := t.(*soltype.FuncType); isFunc {
+		for _, tp := range ft.TypeParams {
+			v.keep.Add(tp.Var)
+		}
+	}
+	return soltype.EnterResult{}
+}
+
+func (v *binderCollector) ExitType(t soltype.Type, _ soltype.Polarity) soltype.Type { return t }
 
 // keptFlowMap maps each inference var to the kept type-parameter vars that flow into it —
 // the kept vars T for which T <: v is recorded transitively through the upper-bound graph.
