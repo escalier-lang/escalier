@@ -392,40 +392,24 @@ func (c *checker) constrainAgainstImmutableTarget(site ast.Node, src ast.Expr, s
 	return true
 }
 
-// immutableTargetForSource returns the type a value built by src is checked against when it takes
-// immutableTargetForSource returns target's immutable form when src is uniquely owned, and
-// false otherwise.
+// immutableTargetForSource returns target's immutable form when src is uniquely owned, and false
+// otherwise.
 //
-// Its whole job is to run isUniquelyOwned BEFORE the conversion. immutableTarget walks the
-// target's inner to strip it, and a source that cannot be checked against the stripped form
-// should never reach that walk. Calling the two in the other order panicked on an index
-// signature during one rebase.
-//
-// It is separate from constrainAgainstImmutableTarget so tryOverloadArm can reach the decision
-// without the constraint: an arm is trialled with the error-returning Context.Constrain so a
-// losing arm writes nothing, where constrainAgainstImmutableTarget runs the accumulating
-// checker.constrain.
+// isUniquelyOwned runs first. A source that cannot use the result should not reach
+// immutableTarget's walk over the target's inner.
 func (c *checker) immutableTargetForSource(src ast.Expr, target soltype.Type) (soltype.Type, bool) {
 	if !c.isUniquelyOwned(src) {
-		// SOUNDNESS, and the only gate that looks at the value rather than the target. It runs
-		// before the target half so a source that cannot take the upgrade never builds a view.
 		return nil, false
 	}
 	return c.immutableTarget(target)
 }
 
-// immutableTarget converts an owned-mutable target to its immutable form, stripOwnedMut of the
-// inner, and reports false when target is not owned-mutable.
+// immutableTarget converts an owned-mutable target to its immutable form and reports false when
+// target is not owned-mutable.
 //
-// The conversion matters because a `mut` destination constrains a source in BOTH directions. The
-// RefType arm of constrain adds a reverse write-back constraint when the destination is mutable,
-// which together with the forward read make the check invariant. The immutable form carries no
-// `mut`, so constraining against it drops the write-back and leaves the covariant read alone.
-// Each caller's comment says why dropping it is sound there.
-//
-// It reads only the target, so a caller holding no source expression can still ask.
-//
-// The three gates below do two different jobs, dispatch and soundness, and each says which.
+// A `mut` destination constrains a source in both directions, because constrain's RefType arm adds
+// a reverse write-back alongside the forward read. The immutable form carries no `mut`, so
+// constraining against it drops the write-back.
 func (c *checker) immutableTarget(target soltype.Type) (soltype.Type, bool) {
 	ref, ok := target.(*soltype.RefType)
 	if !ok {
