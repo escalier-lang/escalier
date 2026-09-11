@@ -680,6 +680,33 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 			src:  counter + "declare fn shared() -> Counter\nval d = shared()",
 			want: "Counter",
 		},
+		{
+			// An interface and an alias name what their body names, so the decision follows
+			// the chain and the handle is what the binding renders under.
+			name: "an interface return",
+			src:  "export declare interface I { n: number }\ndeclare fn make() -> I\nval mut d = make()",
+			want: "mut I",
+		},
+		{
+			name: "an alias return",
+			src:  "type A = {n: number}\ndeclare fn make() -> A\nval mut d = make()",
+			want: "mut A",
+		},
+		{
+			name: "an alias chain two deep",
+			src:  "type A0 = {n: number}\ntype A1 = A0\ndeclare fn make() -> A1\nval mut d = make()",
+			want: "mut A1",
+		},
+		{
+			name: "an alias naming a primitive has nothing to make mutable",
+			src:  "type N = number\ndeclare fn make() -> N\nval mut d = make()",
+			want: "N",
+		},
+		{
+			name: "a borrow return reached through an alias keeps its borrow",
+			src:  "type A = {n: number}\ndeclare fn make() -> &A\nval mut d = make()",
+			want: "&A",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -784,55 +811,84 @@ func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 // and `std:array` declares `push(mut self, ...items: mut Array<T>) -> number`.
 //
 // `config.certificates.push(cert)` exercises both halves of this change at once. The
-// receiver's mutability has to reach the field, which is part 1, and then satisfy `push`'s
-// own `mut self`, which is part 2. The carrier table above only writes a field, so it
-// stops short of the second half.
+// receiver's mutability has to reach the field, and then satisfy `push`'s own `mut self`.
+// The carrier table above only writes a field, so it stops short of the second half.
 //
-// A read and a `self` method stay reachable through an immutable receiver, since neither
-// asks for mutable access. `List` stands in for `Array` so the case does not depend on the
-// prelude, and the field is written without `mut` because that is the spelling #1554 moves
-// the tree to; inside an interface the two behave alike, #779 stripping the `mut`.
+// The receiver is a `&mut` borrow and the argument a `&` one, the borrowed forms a caller
+// holding neither value outright would write. `push` takes `item: &T` to match: with an
+// owned `item: T` the borrowed argument reports that it does not outlive the parameter,
+// which is the borrow checker doing its job and not what this test is about.
+//
+// `List` stands in for `Array` so the case does not depend on the prelude, and the field is
+// written without `mut` because that is the spelling #1554 moves the tree to; inside an
+// interface the two behave alike, #779 stripping the `mut`.
 func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
 	const decls = `
 		export declare class RTCCertificate { expires: number }
 		export declare class List<T> {
 			length: number,
-			push(mut self, item: T) -> number,
+			push(mut self, item: &T) -> number,
 			at(self, index: number) -> T,
 		}
 		export declare interface RTCConfiguration {
 			certificates: List<RTCCertificate>,
 		}
 `
+	const cannotMutate = "cannot constrain immutable List<RTCCertificate> <: mutable List<RTCCertificate>"
 	tests := []struct {
 		name string
 		src  string
 		errs []string
 	}{
 		{
-			name: "a mutator through a `mut` receiver",
-			src: decls + `fn go(config: mut RTCConfiguration, cert: RTCCertificate) -> number {
+			name: "a mutator through a `&mut` receiver",
+			src: decls + `fn go(config: &mut RTCConfiguration, cert: &RTCCertificate) -> number {
 				return config.certificates.push(cert)
 			}`,
 		},
 		{
-			name: "a mutator through an immutable receiver",
-			src: decls + `fn go(config: RTCConfiguration, cert: RTCCertificate) -> number {
+			name: "a mutator through a `&` receiver",
+			src: decls + `fn go(config: &RTCConfiguration, cert: &RTCCertificate) -> number {
 				return config.certificates.push(cert)
 			}`,
-			errs: []string{
-				"cannot constrain immutable List<RTCCertificate> <: mutable List<RTCCertificate>",
-			},
+			errs: []string{cannotMutate},
 		},
 		{
-			name: "a field read through an immutable receiver",
-			src:  decls + `fn go(config: RTCConfiguration) -> number { return config.certificates.length }`,
+			name: "a field read through a `&` receiver",
+			src:  decls + `fn go(config: &RTCConfiguration) -> number { return config.certificates.length }`,
 		},
 		{
-			name: "a `self` method through an immutable receiver",
-			src: decls + `fn go(config: RTCConfiguration) -> RTCCertificate {
+			name: "a `self` method through a `&` receiver",
+			src: decls + `fn go(config: &RTCConfiguration) -> RTCCertificate {
 				return config.certificates.at(0)
 			}`,
+		},
+		{
+			// The owned counterpart, where the caller holds both values outright rather
+			// than borrowing them. `declare fn` is what hands over an owned value today;
+			// `declare val` is the direct spelling and reports a missing initializer
+			// instead, which is #1260.
+			name: "a mutator on an owned `mut` receiver",
+			src: decls + `
+				declare fn makeConfig() -> RTCConfiguration
+				declare fn makeCert() -> RTCCertificate
+				fn go() -> number {
+					val mut config = makeConfig()
+					val cert = makeCert()
+					return config.certificates.push(&cert)
+				}`,
+		},
+		{
+			name: "a mutator on an owned immutable receiver",
+			src: decls + `
+				declare fn makeConfig() -> RTCConfiguration
+				declare fn makeCert() -> RTCCertificate
+				fn go() -> number {
+					val config = makeConfig()
+					val cert = makeCert()
+					return config.certificates.push(&cert)
+				}`,
+			errs: []string{cannotMutate},
 		},
 	}
 	for _, tt := range tests {

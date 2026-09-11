@@ -3,6 +3,7 @@ package solver
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/provenance"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -149,7 +150,7 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 		// The value is wrapped, not the variable the result arrives as. Wrapping the
 		// variable would leave its own name in the coalesced binding, so `d` would render
 		// `mut (T0 | Counter)` instead of `mut Counter`.
-		if inner := ownedCarrier(initT); inner != nil {
+		if inner := c.ownedCarrier(initT); inner != nil {
 			ref := soltype.NewRef(true, nil, inner)
 			c.recordProv(ref, d.Init, OwnedMutConstruction)
 			initT = ref
@@ -492,7 +493,7 @@ func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
 	if _, ok := e.(*ast.CallExpr); !ok {
 		return false
 	}
-	return ownedCarrier(t) != nil
+	return c.ownedCarrier(t) != nil
 }
 
 // ownedCarrier resolves t to the value an owned result denotes, or nil when the result is
@@ -509,7 +510,15 @@ func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
 // the binding as a variable with the return among its lower bounds. Peeling the reference
 // first would read `&Counter` as an owned `Counter` and hand the binding exclusive mutable
 // access to a value the callee kept.
-func ownedCarrier(t soltype.Type) soltype.RefInner {
+func (c *checker) ownedCarrier(t soltype.Type) soltype.RefInner {
+	return c.ownedCarrierSeen(t, set.NewSet[string]())
+}
+
+// ownedCarrierSeen is ownedCarrier's walk, carrying the alias names already followed so a
+// cycle stops it. The productivity check rejects a cyclic alias at its declaration, so
+// nothing cyclic reaches here today; the set keeps the walk bounded rather than trusting
+// that check to stay in front of it.
+func (c *checker) ownedCarrierSeen(t soltype.Type, seen set.Set[string]) soltype.RefInner {
 	if isBorrowType(t) {
 		return nil
 	}
@@ -517,14 +526,33 @@ func ownedCarrier(t soltype.Type) soltype.RefInner {
 	case *soltype.RefType:
 		// An owned-mutable cell, already carrying what the upgrade grants. Its inner is the
 		// value, so the wrap is not nested.
-		return ownedCarrier(t.Inner)
+		return c.ownedCarrierSeen(t.Inner, seen)
+	case *soltype.AliasType:
+		// An alias owns whatever its body owns, so the decision follows the chain. An alias
+		// naming a primitive has nothing to make mutable and declines here. The handle is
+		// what comes back rather than the body, so the binding renders under the name the
+		// source wrote: `mut RTCConfiguration`, not the field list it stands for.
+		if seen.Contains(t.Name) {
+			return nil
+		}
+		seen.Add(t.Name)
+		// Removed once this branch is done, so the set holds the aliases on the CURRENT
+		// path rather than every alias the walk has ever reached. A variable's bounds are
+		// siblings, not a chain, and two of them naming the same alias is ordinary — the
+		// call result below arrives with the same alias recorded twice. Leaving the name in
+		// would read the second as a cycle and decline the whole resolution.
+		defer seen.Remove(t.Name)
+		if c.ownedCarrierSeen(c.ctx.expandAlias(t), seen) == nil {
+			return nil
+		}
+		return t
 	case *soltype.TypeVarType:
 		var found soltype.RefInner
 		for _, lb := range t.LowerBounds {
 			if lb == soltype.Type(t) {
 				continue
 			}
-			inner := ownedCarrier(lb)
+			inner := c.ownedCarrierSeen(lb, seen)
 			if inner == nil || (found != nil && !equalType(found, inner)) {
 				return nil
 			}
