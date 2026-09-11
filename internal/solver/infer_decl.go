@@ -495,23 +495,29 @@ func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
 	return ownedCarrier(t) != nil
 }
 
-// ownedCarrier resolves t to the value an owned result denotes: the carrier itself, or the
-// single concrete carrier among an unresolved variable's lower bounds. It mirrors
-// classCarrier's look-through, since a call result reaches a binding as a variable with the
-// result among its bounds rather than as a bare type. It declines a borrow, a variable whose
-// bounds disagree, and anything a borrow may not hold, such as a primitive.
+// ownedCarrier resolves t to the value an owned result denotes, or nil when the result is
+// not one the caller solely owns. It is the ownership twin of classCarrier and the other
+// lookup carriers, and differs from them in one way that matters: a lower bound it does not
+// accept fails the walk instead of being skipped.
+//
+// That difference is the soundness line. A lookup reads a member off whichever bound
+// carries it, so skipping the rest is right. This grants exclusive mutable access, so every
+// value the variable may hold at run time has to be owned. A variable joining an owned
+// result and a borrow must resolve to nothing, not to the owned half.
+//
+// A borrow is tested at every level rather than only at the top, since a call result reaches
+// the binding as a variable with the return among its lower bounds. Peeling the reference
+// first would read `&Counter` as an owned `Counter` and hand the binding exclusive mutable
+// access to a value the callee kept.
 func ownedCarrier(t soltype.Type) soltype.RefInner {
-	// A borrow is checked at every level rather than only at the top, since a call result
-	// reaches the binding as a variable and the borrow sits among its lower bounds. Peeling
-	// with CarrierOf first would drop the lifetime and read `&Counter` as an owned Counter,
-	// handing the binding exclusive mutable access to a value the callee kept.
-	if r, isRef := t.(*soltype.RefType); isRef {
-		if r.Lt != nil {
-			return nil
-		}
-		return ownedCarrier(r.Inner)
+	if isBorrowType(t) {
+		return nil
 	}
 	switch t := t.(type) {
+	case *soltype.RefType:
+		// An owned-mutable cell, already carrying what the upgrade grants. Its inner is the
+		// value, so the wrap is not nested.
+		return ownedCarrier(t.Inner)
 	case *soltype.TypeVarType:
 		var found soltype.RefInner
 		for _, lb := range t.LowerBounds {
@@ -519,10 +525,7 @@ func ownedCarrier(t soltype.Type) soltype.RefInner {
 				continue
 			}
 			inner := ownedCarrier(lb)
-			if inner == nil {
-				return nil
-			}
-			if found != nil && !equalType(found, inner) {
+			if inner == nil || (found != nil && !equalType(found, inner)) {
 				return nil
 			}
 			found = inner

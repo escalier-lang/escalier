@@ -690,6 +690,75 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 	}
 }
 
+// The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
+// the `mut` its fields carry: an interface whose field is a generic class carrying a
+// `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,
+// and `std:array` declares `push(mut self, ...items: mut Array<T>) -> number`.
+//
+// `config.certificates.push(cert)` exercises both halves of this change at once. The
+// receiver's mutability has to reach the field, which is part 1, and then satisfy `push`'s
+// own `mut self`, which is part 2. The carrier table above only writes a field, so it
+// stops short of the second half.
+//
+// A read and a `self` method stay reachable through an immutable receiver, since neither
+// asks for mutable access. `List` stands in for `Array` so the case does not depend on the
+// prelude, and the field is written without `mut` because that is the spelling #1554 moves
+// the tree to; inside an interface the two behave alike, #779 stripping the `mut`.
+func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
+	const decls = `
+		export declare class RTCCertificate { expires: number }
+		export declare class List<T> {
+			length: number,
+			push(mut self, item: T) -> number,
+			at(self, index: number) -> T,
+		}
+		export declare interface RTCConfiguration {
+			certificates: List<RTCCertificate>,
+		}
+`
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "a mutator through a `mut` receiver",
+			src: decls + `fn go(config: mut RTCConfiguration, cert: RTCCertificate) -> number {
+				return config.certificates.push(cert)
+			}`,
+		},
+		{
+			name: "a mutator through an immutable receiver",
+			src: decls + `fn go(config: RTCConfiguration, cert: RTCCertificate) -> number {
+				return config.certificates.push(cert)
+			}`,
+			errs: []string{
+				"cannot constrain immutable List<RTCCertificate> <: mutable List<RTCCertificate>",
+			},
+		},
+		{
+			name: "a field read through an immutable receiver",
+			src:  decls + `fn go(config: RTCConfiguration) -> number { return config.certificates.length }`,
+		},
+		{
+			name: "a `self` method through an immutable receiver",
+			src: decls + `fn go(config: RTCConfiguration) -> RTCCertificate {
+				return config.certificates.at(0)
+			}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
 // A `mut self` method is reachable on an owned call result bound with `val mut`, which is
 // the point of the upgrade above: a factory is how a class with validation or a private
 // constructor is written, and its result would otherwise be unusable.
