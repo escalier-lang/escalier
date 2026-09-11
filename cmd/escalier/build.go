@@ -175,35 +175,20 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 	return nil
 }
 
-// buildOptions carries the choices the `build` subcommand's flags express.
-type buildOptions struct {
-	// emitOnError writes a package's output even when it reports a type error. It is the
-	// escape hatch for running a program the checker rejects, which a debugging session
-	// sometimes wants and which a build that ships never does.
-	//
-	// It waives the type errors and nothing else. The build still fails, so the exit code
-	// reports it and no script reads the output as a clean one.
-	emitOnError bool
-}
-
 // build compiles each package in pkgs, writes its output, and reports whether every
-// package succeeded. A package writes nothing unless every source file loaded and the
-// package parsed and checked clean.
+// package succeeded. A package that reports a type error still writes its output, so a
+// program the checker rejects can be run, which is what an inner loop and a debugging
+// session both want. The errors reach stderr and the exit code reports the failure, so
+// nothing reads the output as a clean build.
 //
-// Two things make a rejected program not worth emitting. Codegen reads inferred types at
-// a handful of decisions, so a rejected program can lower to one that runs and does the
-// wrong thing. And the `.d.ts` beside the JS would assert the very types the checker had
-// just rejected, which a consumer then builds against.
+// A parse error is the one thing that stops the write, and not as a policy: it leaves an
+// error node in the tree that codegen has no lowering for, so CompilePackage skips lib
+// codegen rather than panicking.
 //
-// opts.emitOnError waives the type errors. Nothing waives the other two failures, for
-// reasons that are not policy. A source file that did not load takes its declarations
-// with it, and a parse error leaves an error node in the tree that codegen has no
-// lowering for at all.
-//
-// A failed build leaves whatever is in `build/` alone rather than clearing it. That
-// directory therefore holds the last artifact written, which is the last one that CHECKED
-// only while no run has waived its errors. The failure line says which kind wrote it.
-func build(stdout io.Writer, stderr io.Writer, pkgs []string, opts buildOptions) bool {
+// What this trades away is worth knowing. Codegen reads inferred types at a handful of
+// decisions, so a rejected program can lower to one that runs and does the wrong thing,
+// and the `.d.ts` asserts types the checker rejected. #1551 tracks settling that.
+func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(stderr, "failed to get current working directory:", err)
@@ -235,40 +220,25 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string, opts buildOptions)
 
 		printErrors(stderr, output, idToSource)
 
-		unlowerable := unreadable + len(output.ParseErrors)
-		errs := unlowerable + len(output.TypeErrors)
-		emit := errs == 0 || (opts.emitOnError && unlowerable == 0)
-
-		if emit {
-			for moduleName, moduleOutput := range output.CompUnits {
-				if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
-					fmt.Fprintln(stderr, err.Error())
-					_ = os.Chdir(cwd)
-					return false
-				}
+		// CompilePackage produces no compilation unit when the parse failed, so the loop
+		// writes nothing in that case without needing to test for it here.
+		for moduleName, moduleOutput := range output.CompUnits {
+			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
+				fmt.Fprintln(stderr, err.Error())
+				_ = os.Chdir(cwd)
+				return false
 			}
 		}
 		_ = os.Chdir(cwd)
 
-		if errs > 0 {
-			fmt.Fprintf(stdout, " - failed (%s)\n", failureDetail(errs, emit))
+		if errs := unreadable + len(output.ParseErrors) + len(output.TypeErrors); errs > 0 {
+			fmt.Fprintf(stdout, " - failed (%s)\n", errorCount(errs))
 			allOK = false
 			continue
 		}
 		fmt.Fprintf(stdout, " - ok (%s)\n", time.Since(start))
 	}
 	return allOK
-}
-
-// failureDetail renders what the failure line reports: how many errors the package
-// drew, and whether it wrote its output anyway. The second half is worth saying, since
-// a `build/` directory refreshed from a rejected program looks exactly like one from a
-// clean build.
-func failureDetail(errs int, emitted bool) string {
-	if emitted {
-		return errorCount(errs) + ", output written anyway"
-	}
-	return errorCount(errs)
 }
 
 // errorCount renders n as the count phrase the failure line ends with, so a

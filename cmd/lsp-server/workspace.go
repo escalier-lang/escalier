@@ -87,26 +87,6 @@ func (s *Server) compilePackage() (any, error) {
 		return nil, errors.New(string(errorsJSON))
 	}
 
-	// A type error stops the write for the same reason it stops the CLI. The JS
-	// below lowers declarations the checker rejected, and the `.d.ts` beside it
-	// asserts the types it rejected them for. Returning here also skips the
-	// `RemoveAll`, so the artifacts from the last build that did check survive.
-	//
-	// It reports in the shape the parse errors above use, a span beside a message, so
-	// one client path reads both. A client that parses the result can put a type error
-	// on the line it belongs to rather than showing it as unplaced text.
-	if len(output.TypeErrors) > 0 {
-		reported := make([]reportedError, len(output.TypeErrors))
-		for i, err := range output.TypeErrors {
-			reported[i] = reportedError{Span: err.Span(), Message: err.Message()}
-		}
-		errorsJSON, err := json.Marshal(reported)
-		if err != nil {
-			return nil, fmt.Errorf("failed to marshal compilation errors: %v", err)
-		}
-		return nil, errors.New(string(errorsJSON))
-	}
-
 	// Write output files to the build/ directory in the virtual filesystem.
 	// Remove any stale artifacts from a previous build first.
 	buildDir := filepath.Join(rootPath, "build")
@@ -144,6 +124,21 @@ func (s *Server) compilePackage() (any, error) {
 				return nil, fmt.Errorf("failed to write %s: %v", dtsPath, err)
 			}
 		}
+	}
+
+	// A type error does not stop the write, matching the CLI. The caller still hears
+	// about it, reported in the shape the parse errors above use, a span beside a
+	// message, so one client path reads both and can place a type error on its own line.
+	if len(output.TypeErrors) > 0 {
+		reported := make([]reportedError, len(output.TypeErrors))
+		for i, err := range output.TypeErrors {
+			reported[i] = reportedError{Span: err.Span(), Message: err.Message()}
+		}
+		errorsJSON, err := json.Marshal(reported)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal compilation errors: %v", err)
+		}
+		return nil, errors.New(string(errorsJSON))
 	}
 
 	return map[string]any{"success": true}, nil

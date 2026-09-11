@@ -1,5 +1,0 @@
-lib/index.esc:4:24: "not a number" cannot be assigned to number
-
-4:  export val n: number = "not a number"
-                           ^^^^^^^^^^^^^^
-

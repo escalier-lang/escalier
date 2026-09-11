@@ -305,36 +305,6 @@ func TestErrorCount(t *testing.T) {
 	}
 }
 
-func TestFailureDetail(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		errs    int
-		emitted bool
-		want    string
-	}{
-		{name: "one error, gated", errs: 1, want: "1 error"},
-		{name: "several errors, gated", errs: 3, want: "3 errors"},
-		{
-			name:    "one error, emitted anyway",
-			errs:    1,
-			emitted: true,
-			want:    "1 error, output written anyway",
-		},
-		{
-			name:    "several errors, emitted anyway",
-			errs:    3,
-			emitted: true,
-			want:    "3 errors, output written anyway",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			require.Equal(t, tt.want, failureDetail(tt.errs, tt.emitted))
-		})
-	}
-}
-
 func TestFormatTypeError(t *testing.T) {
 	t.Parallel()
 	// `π` takes two bytes, so a caret placed by byte offset would sit one

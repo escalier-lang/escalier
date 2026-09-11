@@ -19,4 +19,7 @@ export declare const fst: 5;
 export declare const other: ["foo", "bar"];
 export declare const snd: 10;
 declare const p: Point;
+declare const x: number;
+declare const y: number;
+declare const z: undefined;
 declare const x1: number;

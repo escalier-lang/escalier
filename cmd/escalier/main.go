@@ -16,8 +16,6 @@ func main() {
 	// further plumbing — the resolution order still ends up
 	// flag > env > sibling > repo-relative.
 	buildStdlibDir := buildCmd.String("stdlib-dir", "", "directory containing the stdlib `.esc` files (std/, web/, node/)")
-	buildEmitOnError := buildCmd.Bool("emit-on-error", false,
-		"write a package's output even when it reports a type error; the build still exits non-zero")
 	formatCmd := flag.NewFlagSet("format", flag.ExitOnError)
 
 	if len(os.Args) < 2 {
@@ -35,8 +33,7 @@ func main() {
 		if *buildStdlibDir != "" {
 			_ = os.Setenv("ESCALIER_STDLIB_DIR", *buildStdlibDir)
 		}
-		opts := buildOptions{emitOnError: *buildEmitOnError}
-		if !build(os.Stdout, os.Stderr, buildCmd.Args(), opts) {
+		if !build(os.Stdout, os.Stderr, buildCmd.Args()) {
 			os.Exit(1)
 		}
 	case "format":

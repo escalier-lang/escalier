@@ -86,28 +86,26 @@ func buildDirFiles(t *testing.T, root string) []string {
 	return found
 }
 
-// A type error stops the write, and the artifacts the last clean compile
-// produced stay on disk rather than being replaced by output lowered from the
-// rejected tree.
-func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotCheck(t *testing.T) {
+// A type error does not stop the write. The build/ tree is rewritten from the rejected
+// source, and the caller hears about the error through the returned diagnostics rather
+// than through a missing artifact.
+func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
 	s, root := newTestServer(t, []string{"lib/index.esc"})
 	writeLibFile(t, s, root, "export val n: number = 1\n")
 
 	_, err := s.compilePackage()
 	require.NoError(t, err)
-	clean := buildDirFiles(t, root)
-	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"}, clean)
-
-	dts, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.d.ts"))
-	require.NoError(t, err)
+	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"},
+		buildDirFiles(t, root))
+	require.Contains(t, readBuiltJS(t, root), "export const n = 1;")
 
 	writeLibFile(t, s, root, `export val n: number = "not a number"`+"\n")
 
 	_, err = s.compilePackage()
 	require.Error(t, err)
-	// Reported in the same shape as a parse error, so the assertion decodes it the same
-	// way. The span carries a SourceID derived from a per-run temp path, so the message
-	// and the count are what is pinned.
+	// Reported as a span beside a message, the shape the parse-error path uses. The span
+	// carries a SourceID derived from a per-run temp path, so the message and the count
+	// are what is pinned.
 	var typeErrs []struct {
 		Message string `json:"message"`
 	}
@@ -115,13 +113,13 @@ func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotCheck(t *testing.T) {
 	require.Len(t, typeErrs, 1)
 	require.Equal(t, `"not a number" cannot be assigned to number`, typeErrs[0].Message)
 
-	require.Equal(t, clean, buildDirFiles(t, root))
-	after, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.d.ts"))
-	require.NoError(t, err)
-	require.Equal(t, string(dts), string(after))
+	// The JS is lowered from the rejected source, which is what emitting on error means.
+	require.Contains(t, readBuiltJS(t, root), `export const n = "not a number";`)
 }
 
-// A parse error stops the write at the same point, so the same artifacts survive.
+// A parse error DOES stop the write, and not as a policy. It leaves an error node that
+// codegen has no lowering for, so CompilePackage produces no compilation unit and the
+// artifacts from the last compile that parsed stay on disk.
 func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
 	s, root := newTestServer(t, []string{"lib/index.esc"})
 	writeLibFile(t, s, root, "export val n: number = 1\n")
@@ -135,9 +133,6 @@ func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
 
 	_, err = s.compilePackage()
 	require.Error(t, err)
-	// The error is the marshalled parse errors, whose spans carry a SourceID derived
-	// from the file's path under a per-run temp directory. Decoding and asserting the
-	// message keeps the whole diagnostic pinned without pinning that id.
 	var parseErrs []struct {
 		Message string `json:"message"`
 	}
@@ -146,6 +141,15 @@ func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
 	require.Equal(t, "Expected an expression", parseErrs[0].Message)
 
 	require.Equal(t, clean, buildDirFiles(t, root))
+	require.Contains(t, readBuiltJS(t, root), "export const n = 1;")
+}
+
+// readBuiltJS returns the JS the workspace's last compile wrote.
+func readBuiltJS(t *testing.T, root string) string {
+	t.Helper()
+	js, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.js"))
+	require.NoError(t, err)
+	return string(js)
 }
 
 func TestRefreshLibFilesCache_PopulatesFromDisk(t *testing.T) {

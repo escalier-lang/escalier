@@ -24,8 +24,18 @@ export const nestedThrows = function () {
   throw "outer error";
 };
 throw "Something went wrong";
-export const throwingFunc = function (temp4) {
-  const condition = temp4;
+export function throwTypeIsWrong(temp4) {
+  const value = temp4;
+  let temp5;
+  if (value != "") {
+    temp5 = value;
+  } else {
+    throw Error("value is empty");
+  }
+  temp5;
+}
+export const throwingFunc = function (temp6) {
+  const condition = temp6;
   if (condition) {
     return "success";
   } else {

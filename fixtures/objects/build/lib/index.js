@@ -10,6 +10,7 @@ export const p = {x: 0, y: 0};
 export function main() {
   p.x = 5;
   p.y = 10;
+  obj3.bar = "hello";
 }
 export const obj4 = {a, b, c};
 //# sourceMappingURL=./index.js.map

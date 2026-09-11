@@ -1,5 +1,0 @@
-lib/throws_clause_type_mismatch.esc:4:43: Error cannot be assigned to string
-
-4:      if value != "" { value } else { throw Error("value is empty") }
-                                              ^^^^^^^^^^^^^^^^^^^^^^^
-
