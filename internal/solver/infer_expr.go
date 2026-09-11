@@ -769,42 +769,42 @@ func (c *checker) reportedMixedOwnership(node ast.Node) bool {
 	return false
 }
 
-// constrainReturnAgainstAnnotation constrains a function body's joined return type
-// against its declared return annotation, granting the immutable→mutable upgrade when
-// the return annotation is owned-mutable and EVERY return value is uniquely owned. A
-// function yields a value as owned-mutable only when each returned value is uniquely
-// owned, so a single non-upgradable return on any path blocks the grant and the strict
-// constraint runs. With the grant the joined return shape is constrained against the
-// return annotation's immutable read view, the same covariant check tryUpgradeToOwnedMut
-// runs at the other value-flow sites. The join is not a single source expression, so the
-// decision is made here rather than through that per-expression helper.
+// constrainReturnAgainstAnnotation constrains a function body's joined return type against its
+// declared return annotation. It does not change the function's return type, which is annT
+// either way; what it decides is which form of annT the body is checked against.
 func (c *checker) constrainReturnAgainstAnnotation(node ast.Node, returnsUniquelyOwned bool, ret, annT soltype.Type) {
-	// The gate is ownedMutUpgrade's, split so each half runs where it can. Re-inlining the
-	// RefType test here is what let this site and ownedMutUpgrade drift apart, which #1534
-	// records.
-	if view, ok := c.returnsOwnedMutUpgrade(returnsUniquelyOwned, annT); ok {
+	// A `mut` annotation checked strictly would reject its own body, since an owned-immutable
+	// value does not satisfy an owned-mutable type invariantly. The immutable form drops the
+	// write-back that makes it invariant, which is sound here because every return operand is
+	// uniquely owned and so has no other holder a write could surprise. One operand that is not
+	// blocks it, and the strict constraint runs.
+	//
+	// The gate is immutableTargetForSource's, split so each half runs where it can. Re-inlining
+	// the RefType test here is what let this site and immutableTargetForSource drift apart,
+	// which #1534 records.
+	if view, ok := c.immutableReturnTarget(returnsUniquelyOwned, annT); ok {
 		c.constrain(node, ret, view)
 		return
 	}
 	c.constrain(node, ret, annT)
 }
 
-// returnsOwnedMutUpgrade reports whether EVERY return operand may take annT's owned-mutable
-// type, and returns the type they are then checked against. It is ownedMutUpgrade over a body's
-// returns, so the two sites cannot disagree on when the upgrade applies.
+// immutableReturnTarget returns annT's immutable form when every return operand is uniquely
+// owned, and false otherwise. It is immutableTargetForSource over a body's returns rather than
+// one expression, so the two sites cannot disagree on when the conversion applies.
 //
-// The two halves of that gate run at different times. The target half reads annT alone and runs
-// here. The source half asks whether every operand is uniquely owned, and isUniquelyOwned reads
-// c.fn to admit a borrow leaf, so inferFunc decides it while the body's context is still
-// current and passes the answer in. Asking here would answer no for every borrow a body returns.
-func (c *checker) returnsOwnedMutUpgrade(returnsUniquelyOwned bool, annT soltype.Type) (soltype.Type, bool) {
+// The source half is decided by the caller rather than here. isUniquelyOwned reads c.fn to admit
+// a borrow leaf, and inferFunc has to ask while the body's context is still current, since
+// popFuncCtx restores the outer one before the annotation is checked. Asking here would answer
+// no for every borrow a body returns.
+func (c *checker) immutableReturnTarget(returnsUniquelyOwned bool, annT soltype.Type) (soltype.Type, bool) {
 	if !returnsUniquelyOwned {
 		return nil, false
 	}
-	return c.ownedMutUpgradeTarget(annT)
+	return c.immutableTarget(annT)
 }
 
-// allReturnsUniquelyOwned is the source half of returnsOwnedMutUpgrade's gate, folded over a
+// allReturnsUniquelyOwned is the source half of immutableReturnTarget's gate, folded over a
 // body's return operands. An empty set, a bare `return` with a nil operand, or one operand that
 // is not uniquely owned makes it false, since the annotation covers the join of every return and
 // the join is uniquely owned only when each part is.
@@ -1687,7 +1687,7 @@ func (c *checker) inferArmOverloadCall(
 //
 // `take({x: 1})` against `a: mut {x: number | string}` runs in three steps:
 //
-//  1. ownedMutUpgrade hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
+//  1. immutableTargetForSource hands back stripOwnedMut of the parameter's inner, `{x: number | string}`.
 //  2. check runs `{x: 1} <: {x: number | string}` COVARIANTLY. That is where the widening the
 //     argument needs happens, and where a wrong shape such as `take({y: 1})` still fails.
 //  3. That entry becomes the parameter's own type, so the later `callee <: callShape`
@@ -1708,7 +1708,7 @@ func (c *checker) upgradeCallShapeParams(
 		if fn.Params[i].Rest {
 			continue
 		}
-		view, ok := c.ownedMutUpgrade(argExprs[i], fn.Params[i].Type)
+		view, ok := c.immutableTargetForSource(argExprs[i], fn.Params[i].Type)
 		if !ok {
 			continue
 		}
@@ -1717,7 +1717,7 @@ func (c *checker) upgradeCallShapeParams(
 		// is not rejected on the mutability wrapper. Only the wrapper is dropped, since the
 		// check stays covariant, so `take({y: 1})` still fails on the shape.
 		//
-		// The decision is ownedMutUpgrade's, and bottoms out in isUniquelyOwned and
+		// The decision is immutableTargetForSource's, and bottoms out in isUniquelyOwned and
 		// freshLiteralShape over in infer_decl.go. Those admit three shapes: a freshly built
 		// literal, a moved owned place, or a borrow expression.
 		//
@@ -2029,11 +2029,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 		// not leave the source's lifetime forced to 'static. So `var sink = {…}; fn(p:
 		// mut {…}) { sink = p }` reports p as `mut 'static {…}`.
 		errsBefore := len(c.errs)
-		// A uniquely-owned source stored into an owned-mutable global takes the same
-		// immutable→mutable upgrade as the local reassignment path, so `sink = {x: 1}`
-		// type-checks. The carrier feeds the upgrade for the same reason it feeds the
-		// strict check below: a borrow forced to 'static satisfies the owned global.
-		if !c.tryUpgradeToOwnedMut(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
+		// A uniquely-owned source has no other holder, so the write-back an owned-mutable
+		// global would impose is unnecessary and `sink = {x: 1}` type-checks against the
+		// immutable form. The carrier feeds it for the same reason it feeds the strict check
+		// below: a borrow forced to 'static satisfies the owned global.
+		if !c.constrainAgainstImmutableTarget(e, e.Right, soltype.CarrierOf(sourceT), targetT) {
 			c.constrain(e, soltype.CarrierOf(sourceT), targetT)
 		}
 		if len(c.errs) == errsBefore {
@@ -2065,11 +2065,11 @@ func (c *checker) inferAssign(scope *Scope, lvl int, e *ast.BinaryExpr) soltype.
 			// unique, which is the borrow checker's job. Move/affine semantics (#762),
 			// under the sound borrow checker (#618), will eventually reject it.
 		}
-	} else if !c.tryUpgradeToOwnedMut(e, e.Right, sourceT, targetT) {
-		// A uniquely-owned source reassigned into an owned-mutable `var` takes the
-		// immutable→mutable upgrade, the same grant the annotated declaration makes. The
-		// upgrade fires only for a RefType target, so a union target instead routes through
-		// constrain's union-super exists rule, which trials each member under a probe.
+	} else if !c.constrainAgainstImmutableTarget(e, e.Right, sourceT, targetT) {
+		// A uniquely-owned source reassigned into an owned-mutable `var` is checked against the
+		// target's immutable form, the same reading the annotated declaration takes. Only a
+		// RefType target has one, so a union target instead routes through constrain's
+		// union-super exists rule, which trials each member under a probe.
 		c.constrain(e, sourceT, targetT)
 	}
 	if c.fn != nil && len(c.errs) == assignErrsBefore && target.VarID > 0 {
@@ -2167,7 +2167,7 @@ func (c *checker) inferMemberAssign(scope *Scope, lvl int, e *ast.BinaryExpr, m 
 	// rejects the annotation, so no source program reaches this branch today. The guard
 	// keeps the field write consistent for when one does.
 	if recvObj, ok := soltype.CarrierOf(recv).(*soltype.ObjectType); ok {
-		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.tryUpgradeToOwnedMut(e.Right, e.Right, source, prop.Type) {
+		if prop, ok := recvObj.Prop(m.Prop.Name); ok && c.constrainAgainstImmutableTarget(e.Right, e.Right, source, prop.Type) {
 			w = prop.Type
 		}
 	}
