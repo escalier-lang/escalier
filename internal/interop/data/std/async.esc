@@ -36,37 +36,12 @@ export declare interface AsyncGeneratorFunctionConstructor {
     readonly prototype: AsyncGeneratorFunction
 }
 
-export declare interface AsyncIterator<T, TReturn = any, TNext = any> {
-    next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>>,
-    return?(value?: TReturn | PromiseLike<TReturn>) -> Promise<IteratorResult<T, TReturn>>,
-    throw?(e?: any) -> Promise<IteratorResult<T, TReturn>>
-}
-
 /**
  * Describes a user-defined {@link AsyncIterator} that is also async iterable.
  */
 export declare interface AsyncIterableIterator<T, TReturn = any, TNext = any> extends AsyncIterator<T, TReturn, TNext> {
     [Symbol.asyncIterator]() -> AsyncIterableIterator<T, TReturn, TNext>
 }
-
-/**
- * Describes an {@link AsyncIterator} produced by the runtime that inherits from the intrinsic `AsyncIterator.prototype`.
- */
-export declare interface AsyncIteratorObject<T, TReturn = unknown, TNext = unknown> extends AsyncIterator<T, TReturn, TNext>, AsyncDisposable {
-    [Symbol.asyncIterator]() -> AsyncIteratorObject<T, TReturn, TNext>
-}
-
-export declare interface PromiseFulfilledResult<T> {
-    status: "fulfilled",
-    value: T
-}
-
-export declare interface PromiseRejectedResult {
-    status: "rejected",
-    reason: any
-}
-
-export declare type PromiseSettledResult<T> = PromiseFulfilledResult<T> | PromiseRejectedResult
 
 @js("AggregateError")
 export declare class AggregateError extends Error {
@@ -76,29 +51,4 @@ export declare class AggregateError extends Error {
     constructor(mut self, errors: Iterable<any>, message?: string, options?: ErrorOptions)
 }
 
-export declare interface PromiseWithResolvers<T> {
-    promise: Promise<T>,
-    resolve: fn (value: T | PromiseLike<T>) -> unknown,
-    reject: fn (reason?: any) -> unknown
-}
-
 export declare type PromiseConstructorLike = fn<T> (executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: any) -> unknown) -> unknown) -> PromiseLike<T>
-
-export declare interface PromiseLike<T, E = never> {
-    /**
-     * Attaches callbacks for the resolution and/or rejection of the Promise.
-     * @param onfulfilled The callback to execute when the Promise is resolved.
-     * @param onrejected The callback to execute when the Promise is rejected.
-     * @returns A Promise for the completion of which ever callback is executed.
-     */
-    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
-}
-
-/**
- * Recursively unwraps the "awaited type" of a type. Non-promise "thenables" should resolve to `never`. This emulates the behavior of `await`.
- */
-export declare type Awaited<T> = if T : null | undefined { T } else { if T : {...} & {
-    then(onfulfilled: infer F, ...args: infer _) -> any,
-    ...
-} { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }

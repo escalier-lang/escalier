@@ -4293,13 +4293,13 @@ func TestInferWildcardPatternRoundTrips(t *testing.T) {
 }
 
 // committedAwaitedDecl returns the `Awaited` alias as the committed tree declares it, read out
-// of internal/interop/data/std/async.esc so the test and the tree cannot drift. The declaration
+// of internal/interop/data/std/prelude.esc so the test and the tree cannot drift. The declaration
 // starts at its `export declare type Awaited` line and ends at the first line where its braces
 // balance, which is how the printer lays a multi-line alias out. Balance is read per line rather
 // than per character because the first branch, `{ T }`, closes on the opening line.
 func committedAwaitedDecl(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join("..", "interop", "data", "std", "async.esc")
+	path := filepath.Join("..", "interop", "data", "std", "prelude.esc")
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	lines := strings.Split(string(data), "\n")

@@ -68,7 +68,7 @@ func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 		"README.md":             "not an overlay file\n",
 		"drop.esc":              "export declare val eval\n",
 		"std/symbol.add.esc":    "export declare interface SymbolConstructor {\n    readonly customMatcher: unique symbol,\n}\n",
-		"std/array.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
+		"std/prelude.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
 		"std/date.drop.esc":     "export declare interface Date {\n    getYear: unknown,\n}\n",
 	})
 
@@ -87,13 +87,13 @@ func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	}
 	require.Equal(t, []entry{
 		{Path: "drop.esc", Op: OverlayDrop, PkgURI: "", Decls: 1},
-		{Path: "std/array.replace.esc", Op: OverlayReplace, PkgURI: "std:array", Decls: 1},
 		{Path: "std/date.drop.esc", Op: OverlayDrop, PkgURI: "std:date", Decls: 1},
+		{Path: "std/prelude.replace.esc", Op: OverlayReplace, PkgURI: "std:prelude", Decls: 1},
 		{Path: "std/symbol.add.esc", Op: OverlayAdd, PkgURI: "std:symbol", Decls: 1},
 	}, got)
 
 	require.Equal(t, []string{"eval"}, overlay.GlobalDrops().ToSlice())
-	require.Equal(t, []string{"std:array", "std:date", "std:symbol"}, overlay.PackageURIs())
+	require.Equal(t, []string{"std:date", "std:prelude", "std:symbol"}, overlay.PackageURIs())
 }
 
 // TestLoadOverlay_Accepts is the happy-path twin of
@@ -132,18 +132,18 @@ func TestLoadOverlay_Accepts(t *testing.T) {
 		},
 		{
 			name:      "add contributes a decorated top-level declaration",
-			path:      "std/iterator.add.esc",
+			path:      "std/symbol.add.esc",
 			body:      "@js(\"Symbol.iterator\")\nexport declare val iteratorKey: unique symbol\n",
 			wantOp:    OverlayAdd,
-			wantPkg:   "std:iterator",
+			wantPkg:   "std:symbol",
 			wantDecls: []string{"iteratorKey"},
 		},
 		{
 			name:      "replace restates the members it stands in for",
-			path:      "std/array.replace.esc",
+			path:      "std/prelude.replace.esc",
 			body:      "export declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
 			wantOp:    OverlayReplace,
-			wantPkg:   "std:array",
+			wantPkg:   "std:prelude",
 			wantDecls: []string{"Array"},
 		},
 		{

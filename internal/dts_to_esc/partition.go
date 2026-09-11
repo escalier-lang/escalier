@@ -66,8 +66,8 @@ var stdPackages = []struct {
 		// TypeScript spells a class as an instance interface, a
 		// constructor interface, and a `declare var` binding the two.
 		// detectTrios fuses that idiom into one `declare class` and runs
-		// per package, so leaving the constructor half in `std:array`
-		// would split the trio and strip `Array` of its statics.
+		// per package, so a constructor half left in another package
+		// would split the trio and strip its class of every static.
 		//
 		// `ReadonlyArray` travels with `Array` for the same reason.
 		// fuseReadonlyTwins pairs `Foo` with `ReadonlyFoo` within one
@@ -79,11 +79,35 @@ var stdPackages = []struct {
 		"Promise", "PromiseConstructor",
 		"Iterable", "AsyncIterable",
 		"Generator", "AsyncGenerator",
-	}},
-	{"std:array", "std/array.esc", []string{
-		"ConcatArray", "ArrayLike",
-		"ArrayIterator",
-		"FlatArray",
+
+		// The satellites the six above name in their own members. A
+		// package the prelude imports would be inferred before the
+		// injection layer is filled, so it would resolve none of the
+		// prelude's exports and that degraded surface is what the
+		// registry publishes. The prelude therefore cannot reach a
+		// sibling by import, and anything it names has to be declared
+		// beside it.
+		//
+		// `Disposable` and `AsyncDisposable` are here because
+		// `IteratorObject` and `AsyncIteratorObject` extend them. An
+		// unresolved supertype costs the subclass its whole inherited
+		// surface, not one member.
+		//
+		// Three cases this set stops short of. `IteratorResult` and its
+		// two arms stay in `std:iterator`, since
+		// registerIteratorResultAliases binds them on every Context and
+		// they resolve with no declaration in reach. `Symbol` stays in
+		// `std:symbol`, which `Array` already reached across a package
+		// boundary. The `Intl.*` options bags stay in `std:intl`,
+		// because the reference to them is written with a qualifier
+		// that package does not declare and is broken wherever they
+		// live. See #1403.
+		"ArrayLike", "ConcatArray", "FlatArray", "ArrayIterator",
+		"PromiseLike", "Awaited", "PromiseWithResolvers",
+		"PromiseSettledResult", "PromiseFulfilledResult", "PromiseRejectedResult",
+		"Iterator", "IteratorObject",
+		"AsyncIterator", "AsyncIteratorObject",
+		"Disposable", "AsyncDisposable",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -148,19 +172,13 @@ var stdPackages = []struct {
 		"WeakKey", "WeakKeyTypes",
 	}},
 	{"std:iterator", "std/iterator.esc", []string{
-		"Iterator", "IterableIterator",
+		"IterableIterator",
 		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
-		"IteratorObject",
 		"BuiltinIteratorReturn",
 		"GeneratorFunction", "GeneratorFunctionConstructor",
 	}},
 	{"std:async", "std/async.esc", []string{
-		"PromiseLike",
-		"PromiseFulfilledResult", "PromiseRejectedResult", "PromiseSettledResult",
-		"Awaited",
-		"PromiseWithResolvers",
-		"AsyncIterator", "AsyncIterableIterator",
-		"AsyncIteratorObject",
+		"AsyncIterableIterator",
 		"AsyncGeneratorFunction", "AsyncGeneratorFunctionConstructor",
 		"AggregateError", "AggregateErrorConstructor",
 		"PromiseConstructorLike",
@@ -228,7 +246,6 @@ var stdPackages = []struct {
 		// protocol. `SuppressedError` is the one member of
 		// lib.esnext.disposable.d.ts that routes elsewhere — it is an
 		// `Error` subclass, so it joins std:error.
-		"Disposable", "AsyncDisposable",
 		"DisposableStack", "DisposableStackConstructor",
 		"AsyncDisposableStack", "AsyncDisposableStackConstructor",
 	}},

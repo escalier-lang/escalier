@@ -20,7 +20,7 @@ func TestRoute_ExplicitPartition(t *testing.T) {
 		{"ArrayConstructor", "std:prelude"},
 		{"parseInt", "std:number"},
 		{"Promise", "std:prelude"},
-		{"Awaited", "std:async"},
+		{"Awaited", "std:prelude"},
 		{"Partial", "std:object"},
 		{"URIError", "std:url"},
 		{"encodeURIComponent", "std:url"},
@@ -124,12 +124,12 @@ func TestRoute_LibSetGaps(t *testing.T) {
 		sourceFile string
 		wantURI    string
 	}{
-		{"FlatArray", "lib.es2019.array.d.ts", "std:array"},
+		{"FlatArray", "lib.es2019.array.d.ts", "std:prelude"},
 		{"BigIntToLocaleStringOptions", "lib.es2020.bigint.d.ts", "std:bigint"},
 		{"RegExpIndicesArray", "lib.es2022.regexp.d.ts", "std:regexp"},
-		{"PromiseWithResolvers", "lib.es2024.promise.d.ts", "std:async"},
+		{"PromiseWithResolvers", "lib.es2024.promise.d.ts", "std:prelude"},
 		{"ReadonlySetLike", "lib.esnext.collection.d.ts", "std:set"},
-		{"Disposable", "lib.esnext.disposable.d.ts", "std:disposable"},
+		{"Disposable", "lib.esnext.disposable.d.ts", "std:prelude"},
 		{"AsyncDisposableStack", "lib.esnext.disposable.d.ts", "std:disposable"},
 		{"SuppressedError", "lib.esnext.disposable.d.ts", "std:error"},
 		{"DecoratorContext", "lib.decorators.d.ts", "std:decorators"},
@@ -174,7 +174,7 @@ func TestPackageList_IncludesDOMAndIsSorted(t *testing.T) {
 	list := PackageList()
 	require.NotEmpty(t, list)
 	require.Contains(t, list, "web:dom")
-	require.Contains(t, list, "std:array")
+	require.Contains(t, list, "std:prelude")
 	for i := 1; i < len(list); i++ {
 		require.Less(t, list[i-1], list[i],
 			"PackageList must be sorted; %q !< %q at %d",
@@ -184,9 +184,9 @@ func TestPackageList_IncludesDOMAndIsSorted(t *testing.T) {
 
 func TestPackageForURI(t *testing.T) {
 	t.Parallel()
-	got, ok := PackageForURI("std:array")
+	got, ok := PackageForURI("std:prelude")
 	require.True(t, ok)
-	require.Equal(t, "std/array.esc", got.File)
+	require.Equal(t, "std/prelude.esc", got.File)
 
 	got, ok = PackageForURI("web:dom")
 	require.True(t, ok)

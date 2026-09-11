@@ -147,9 +147,9 @@ const preludeVarIDBase = 1 << 20
 // The prelude package has to be self-contained. A package it imports is inferred
 // while this layer is still empty, so that package resolves none of the prelude's
 // exports and the degraded surface is what the registry publishes for the rest of
-// the run. Nothing in the tree imports anything today, and the committed prelude
-// names sixteen types its siblings declare, so closing that gap means moving the
-// declarations rather than adding an import here. See #1403.
+// the run. Anything the prelude names is therefore declared beside it, which is
+// what the `std:prelude` entry in internal/dts_to_esc/partition.go routes. That
+// entry records the names the set stops short of and why.
 func (c *checker) bindPreludeExports(scope *Scope) {
 	programVars := c.ctx.varCounter
 	c.ctx.varCounter = preludeVarIDBase

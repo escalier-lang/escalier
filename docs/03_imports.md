@@ -131,7 +131,10 @@ site from the callee's type, so `Date()` lowers to `new Date()`.
 
 One package needs no import. `std:prelude` declares the types the language's own
 rules name — `Array`, `Promise`, `Iterable`, `AsyncIterable`, `Generator`, and
-`AsyncGenerator` — and every file starts with its exports in scope.
+`AsyncGenerator` — and every file starts with its exports in scope. It also
+declares what those six name in their own members, such as `ArrayLike`,
+`PromiseLike` and `Awaited`, since the prelude cannot reach a sibling package by
+import.
 
 ```escalier
 val nums = [1, 2, 3]

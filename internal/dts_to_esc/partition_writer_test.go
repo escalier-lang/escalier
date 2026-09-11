@@ -92,7 +92,7 @@ interface ServiceWorkerGlobalScope { readonly clients: Clients; }
 
 func TestPartitionLib_RoutesByName(t *testing.T) {
 	t.Parallel()
-	// Array → std:array (explicit map). HTMLCanvasElement → web:dom
+	// Array → std:prelude (explicit map). HTMLCanvasElement → web:dom
 	// (DOM residual via lib.dom.d.ts source). Request → web:fetch
 	// (explicit standalone sibling, even though declared in lib.dom.d.ts).
 	es5 := parseLib(t, "lib.es5.d.ts", `
@@ -112,13 +112,13 @@ declare var Request: RequestConstructor;
 	res, err := PartitionLib([]LibInput{es5, dom})
 	require.NoError(t, err)
 
-	// 3 buckets: std:array, web:dom, web:fetch.
+	// 3 buckets: std:prelude, web:dom, web:fetch.
 	require.Len(t, res.Buckets, 3)
 	require.Contains(t, res.Buckets, "std:prelude")
 	require.Contains(t, res.Buckets, "web:dom")
 	require.Contains(t, res.Buckets, "web:fetch")
 
-	// std:array bucket has the Array trio (3 statements).
+	// std:prelude bucket has the Array trio (3 statements).
 	require.Len(t, res.Buckets["std:prelude"], 3)
 
 	// web:dom bucket has the HTMLCanvasElement trio only (3),
@@ -611,7 +611,7 @@ export declare class Array<T> {
 // with `mut`. The rewrite translates between the two vocabularies.
 //
 // The declarations it keys off sit in one bucket while the references
-// sit in many. std:array declares both names below and std:string
+// sit in many. std:prelude declares both names below and std:string
 // references both without declaring either, so a rewrite reading only
 // its own bucket's twins leaves every other package spelled the
 // TypeScript way.
@@ -882,7 +882,7 @@ interface Iterator<T, TResult, TNext> extends IteratorObject<T, TResult, TNext> 
 	require.NoError(t, err)
 
 	var iter *dts_parser.InterfaceDecl
-	for _, stmt := range res.Buckets["std:iterator"] {
+	for _, stmt := range res.Buckets["std:prelude"] {
 		if id, ok := stmt.(*dts_parser.InterfaceDecl); ok && id.Name.Name == "Iterator" {
 			iter = id
 		}
@@ -1067,7 +1067,7 @@ declare global {
 	res, err := PartitionLib([]LibInput{script, module_})
 	require.NoError(t, err)
 
-	mod, err := ConvertBucket(res.Buckets["std:iterator"], nil)
+	mod, err := ConvertBucket(res.Buckets["std:prelude"], nil)
 	require.NoError(t, err)
 	printed, err := RenderStandaloneModule(mod)
 	require.NoError(t, err)

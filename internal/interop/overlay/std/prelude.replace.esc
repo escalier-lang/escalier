@@ -38,8 +38,7 @@
 // it, the other replaces it because something does. An optional
 // parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
 //
-// `PromiseLike` carries the same two rules. It lives in `std:async`,
-// beside the rest of the async surface.
+// `PromiseLike` below carries the same two rules.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
     finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
@@ -62,3 +61,26 @@ export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = 
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> {
     throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
 }
+
+// `PromiseLike.then` states the same two rules its `Promise`
+// counterpart does.
+export declare interface PromiseLike<T, E = never> {
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
+}
+
+// The `then` operand has to be inexact. TypeScript's `{ then(…): any }` is
+// width-tolerant, so the check matches any object carrying a `then` member
+// whatever else it carries. The converter lowers a `.d.ts` object type literal
+// to an exact Escalier object, which matches only an object holding that one
+// member and nothing else, and no real thenable is that. `Awaited<T>` then took
+// the `else` arm for every promise and reduced to `T` instead of unwrapping it.
+// The `, ...` marker is what makes the operand say what TypeScript's says.
+//
+// This entry retires once the converter lowers a `.d.ts` object type literal to
+// an inexact Escalier object, which is the same fix for every inline object
+// annotation in the tree rather than for this one.
+export declare type Awaited<T> = if T : null | undefined { T } else { if T : {...} & {
+    then(onfulfilled: infer F, ...args: infer _) -> any,
+    ...
+} { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }
