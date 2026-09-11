@@ -87,12 +87,16 @@ func TestModuleDeclarationOutranksThePrelude(t *testing.T) {
 // A file's import outranks the prelude export of the same name. An import binds
 // into the file scope, which is a child of the module scope, so it is nearer
 // still.
+//
+// The package is named after the class it declares, so the FR5 shortcut binds
+// `Widget` itself rather than a namespace to reach it through. That is what puts
+// the two bindings under one name, which a qualified `pkg.Widget` would not do.
 func TestFileImportOutranksThePrelude(t *testing.T) {
 	t.Parallel()
 
 	res := inferAgainstStdlib(t, `
-		import "std:other"
-		val w = other.Widget("hi")
+		import "std:widget"
+		val w = Widget("hi")
 		val s: string = w.label
 	`, map[string]string{
 		"std/prelude.esc": `
@@ -100,7 +104,7 @@ func TestFileImportOutranksThePrelude(t *testing.T) {
 				size: number,
 			}
 		`,
-		"std/other.esc": `
+		"std/widget.esc": `
 			export class Widget {
 				label: string,
 			}
@@ -108,6 +112,8 @@ func TestFileImportOutranksThePrelude(t *testing.T) {
 	})
 
 	require.Empty(t, errorMessagesOf(res.Errors))
+	// Only the imported `Widget` has a label, so reading one says which binding
+	// the bare reference resolved to.
 	require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "s")))
 }
 

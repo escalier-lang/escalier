@@ -76,7 +76,7 @@ sharing its name, at that member's position, so a second run leaves the
 tree byte-identical.
 
 ```
-// overlay/std/array.replace.esc
+// overlay/std/prelude.replace.esc
 export declare interface Array<T> {
     sort(compareFn?: fn (a: T, b: T) -> number) -> Self,
 }

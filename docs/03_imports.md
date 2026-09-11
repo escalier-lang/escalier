@@ -162,9 +162,9 @@ in one of two modes.
   arise from the language itself: method dispatch on a string or number literal,
   the regex shape behind a regex literal. No identifier enters scope. This is the
   checker knowing what the language guarantees about its own values.
-- **Named.** Naming a class, type, or value — `Error`, `parseInt`, `Partial`,
-  `Symbol` — requires the explicit import. The bindings exposed are exactly the
-  package's top-level declarations.
+- **Named.** Naming a class, type, or value — `Error`, `parseInt`, `Partial` —
+  requires the explicit import. The bindings exposed are exactly the package's
+  top-level declarations.
 
 Shape-loading is per-file and additive, and it never satisfies an explicit
 reference. `"ab".toUpperCase()` works without an import; `String.raw(…)` needs
