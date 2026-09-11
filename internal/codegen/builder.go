@@ -2215,6 +2215,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// definition winning, so emitting one member per arm would drop every arm
 			// but the last without a word.
 			if siblings := overloads[methodGroupKey(e)]; len(siblings) > 1 {
+				// Every arm reaches here, so the later ones leave the emitting to the first.
 				if siblings[0] != elem {
 					continue
 				}
@@ -2315,6 +2316,7 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 			// declaring more than one constructor emits a module that does not load
 			// at all. The arms are dispatched from one constructor instead.
 			if siblings := overloads[constructorGroupKey]; len(siblings) > 1 {
+				// Every arm reaches here, so the later ones leave the emitting to the first.
 				if siblings[0] != elem {
 					continue
 				}
