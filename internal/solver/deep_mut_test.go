@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -899,6 +900,80 @@ func TestMutSelfMethodOnAGenericFieldOfAnInterface(t *testing.T) {
 				return
 			}
 			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
+// ownedCarrier's walk guards the current path against a cycle through a variable as well as
+// through an alias. The bound graph is built by constraint solving rather than written by
+// hand, so it is a graph and not a tree: `v1 <: v2` with `v2 <: v1` walks between the two
+// until the stack runs out, which is a fatal error rather than a recoverable panic. The
+// skip for a direct `v <: v` edge does not catch that, being one hop shorter.
+//
+// The guard is path-scoped, so two lower bounds reaching the same variable stay independent.
+// These build the shapes directly, since constraint solving is what produces them and the
+// source that would is not obvious.
+func TestOwnedCarrierGuardsItsWalk(t *testing.T) {
+	obj := func() *soltype.ObjectType {
+		return &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+			&soltype.PropertyElem{Name: "n", Type: &soltype.PrimType{Prim: soltype.NumPrim}},
+		}}
+	}
+	tests := []struct {
+		name string
+		// build returns the type to resolve, and whether resolving it should find a value.
+		build func(c *checker) (soltype.Type, bool)
+	}{
+		{
+			name: "a two-variable cycle declines",
+			build: func(c *checker) (soltype.Type, bool) {
+				v1, v2 := c.freshAt(0), c.freshAt(0)
+				v1.LowerBounds = []soltype.Type{v2}
+				v2.LowerBounds = []soltype.Type{v1}
+				return v1, false
+			},
+		},
+		{
+			name: "a direct self-edge is skipped rather than declining the variable",
+			build: func(c *checker) (soltype.Type, bool) {
+				v := c.freshAt(0)
+				v.LowerBounds = []soltype.Type{v, obj()}
+				return v, true
+			},
+		},
+		{
+			name: "two bounds reaching one variable still resolve",
+			build: func(c *checker) (soltype.Type, bool) {
+				inner := c.freshAt(0)
+				inner.LowerBounds = []soltype.Type{obj()}
+				outer := c.freshAt(0)
+				outer.LowerBounds = []soltype.Type{inner, inner}
+				return outer, true
+			},
+		},
+		{
+			name: "a diamond resolves",
+			build: func(c *checker) (soltype.Type, bool) {
+				shared := c.freshAt(0)
+				shared.LowerBounds = []soltype.Type{obj()}
+				left, right := c.freshAt(0), c.freshAt(0)
+				left.LowerBounds = []soltype.Type{shared}
+				right.LowerBounds = []soltype.Type{shared}
+				top := c.freshAt(0)
+				top.LowerBounds = []soltype.Type{left, right}
+				return top, true
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := newTestChecker()
+			ty, wantFound := tt.build(c)
+			if wantFound {
+				require.NotNil(t, c.ownedCarrier(ty))
+				return
+			}
+			require.Nil(t, c.ownedCarrier(ty))
 		})
 	}
 }

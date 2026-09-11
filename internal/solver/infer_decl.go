@@ -511,14 +511,27 @@ func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
 // first would read `&Counter` as an owned `Counter` and hand the binding exclusive mutable
 // access to a value the callee kept.
 func (c *checker) ownedCarrier(t soltype.Type) soltype.RefInner {
-	return c.ownedCarrierSeen(t, set.NewSet[string]())
+	return c.ownedCarrierSeen(t, &ownedSeen{
+		aliases: set.NewSet[string](),
+		vars:    set.NewSet[*soltype.TypeVarType](),
+	})
 }
 
-// ownedCarrierSeen is ownedCarrier's walk, carrying the alias names already followed so a
-// cycle stops it. The productivity check rejects a cyclic alias at its declaration, so
-// nothing cyclic reaches here today; the set keeps the walk bounded rather than trusting
-// that check to stay in front of it.
-func (c *checker) ownedCarrierSeen(t soltype.Type, seen set.Set[string]) soltype.RefInner {
+// ownedSeen holds the aliases and variables on the CURRENT path of ownedCarrier's walk, so
+// a cycle through either stops it rather than recursing forever. It mirrors spreadSeen,
+// which guards the spread-operand walk the same way.
+//
+// Both sets are path-scoped: an entry is removed once its branch is done. A variable's
+// lower bounds are siblings rather than a chain, and two of them reaching the same alias or
+// the same variable is ordinary — a call result arrives with the same alias recorded twice.
+// A walk-scoped set would read the second as a cycle and decline the whole resolution.
+type ownedSeen struct {
+	aliases set.Set[string]
+	vars    set.Set[*soltype.TypeVarType]
+}
+
+// ownedCarrierSeen is ownedCarrier's walk, carrying the path it has followed so far.
+func (c *checker) ownedCarrierSeen(t soltype.Type, seen *ownedSeen) soltype.RefInner {
 	if isBorrowType(t) {
 		return nil
 	}
@@ -532,24 +545,29 @@ func (c *checker) ownedCarrierSeen(t soltype.Type, seen set.Set[string]) soltype
 		// naming a primitive has nothing to make mutable and declines here. The handle is
 		// what comes back rather than the body, so the binding renders under the name the
 		// source wrote: `mut RTCConfiguration`, not the field list it stands for.
-		if seen.Contains(t.Name) {
+		if seen.aliases.Contains(t.Name) {
 			return nil
 		}
-		seen.Add(t.Name)
-		// Removed once this branch is done, so the set holds the aliases on the CURRENT
-		// path rather than every alias the walk has ever reached. A variable's bounds are
-		// siblings, not a chain, and two of them naming the same alias is ordinary — the
-		// call result below arrives with the same alias recorded twice. Leaving the name in
-		// would read the second as a cycle and decline the whole resolution.
-		defer seen.Remove(t.Name)
+		seen.aliases.Add(t.Name)
+		defer seen.aliases.Remove(t.Name)
 		if c.ownedCarrierSeen(c.ctx.expandAlias(t), seen) == nil {
 			return nil
 		}
 		return t
 	case *soltype.TypeVarType:
+		// A variable reached twice on one path is a cycle in the bound graph, which the
+		// direct self-edge skip below does not catch: `v1 <: v2` with `v2 <: v1` walks
+		// between the two until the stack runs out.
+		if seen.vars.Contains(t) {
+			return nil
+		}
+		seen.vars.Add(t)
+		defer seen.vars.Remove(t)
 		var found soltype.RefInner
 		for _, lb := range t.LowerBounds {
 			if lb == soltype.Type(t) {
+				// A vacuous self-edge names no value the variable holds, so it is skipped
+				// rather than declining the variable the way a cycle does.
 				continue
 			}
 			inner := c.ownedCarrierSeen(lb, seen)
