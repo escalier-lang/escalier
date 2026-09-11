@@ -150,7 +150,8 @@ func TestStdlibImport_DuplicateFlag(t *testing.T) {
 func TestStdlibImport_SingleClassShortcut(t *testing.T) {
 	/*
 		// std:date exposes `class Date` — FR5 binds the class
-		// with its original capitalization (not lowercased "date").
+		// with its original capitalization. It does not bind the
+		// lowercased `date`.
 		fileScopes, errs := inferStdlibImportSource(t, `
 			import "std:date"
 			val now: Date = Date()
