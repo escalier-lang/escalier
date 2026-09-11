@@ -81,11 +81,6 @@ func (b *Builder) buildOverloadDispatch(arms []overloadArm, describe string) ove
 		}
 		arm := sorted[idx]
 		armBody := slices.Concat(arm.prelude, b.buildArmBindings(arm))
-		if len(arm.params) == 0 {
-			// An arm taking nothing has no guard to write, so it always matches and
-			// every later arm is unreachable.
-			return NewBlockStmt(armBody, arm.source)
-		}
 		return NewIfStmt(guardFor(b, arm), NewBlockStmt(armBody, arm.source), chain(idx+1), arm.source)
 	}
 
@@ -113,13 +108,15 @@ func (b *Builder) buildArmBindings(arm overloadArm) []Stmt {
 			stmts = slices.Concat(stmts, b.bindWithDefault(pattern.(*ast.IdentPat), slot, def))
 			continue
 		}
-		// A rest parameter binds the whole slot rather than gathering the slots after
-		// it. The dispatch member takes a fixed number of positional parameters, so
-		// there is nothing to gather from, and the guard the arm is chosen by already
-		// tests that one slot for an array. escalier-lang/escalier#1545 is what gives
-		// the dispatch an arity of its own so a rest arm can take a spread call.
+		// A rest parameter gathers every argument from its own position onward. The
+		// dispatch member declares a fixed number of positional parameters, so the tail
+		// past the last of them is reachable only through `arguments`. That binding
+		// exists in every function this backend emits, which writes no arrow functions.
 		if rest, isRest := pattern.(*ast.RestPat); isRest {
-			pattern = rest.Pattern
+			_, patternStmts := b.buildPattern(
+				rest.Pattern, argumentsFrom(i), false, ast.ValKind, "")
+			stmts = slices.Concat(stmts, patternStmts)
+			continue
 		}
 		// buildPattern rather than a plain assignment, so a destructuring parameter
 		// binds the same way it does outside an overload set.
@@ -172,9 +169,14 @@ func (b *Builder) bindWithDefault(ident *ast.IdentPat, slot Expr, def ast.Expr) 
 	return slices.Concat(defStmts, []Stmt{&DeclStmt{Decl: decl, span: nil, source: ident}})
 }
 
-// guardFor builds the test that decides whether arm takes a call, the `typeof` checks
-// for its annotated parameters joined by `&&`. An arm whose parameters carry no
-// annotation has nothing to test and takes every call that reaches it.
+// guardFor builds the test that decides whether arm takes a call: how many arguments it
+// accepts, the `typeof` checks for its annotated parameters, and for a rest parameter the
+// element type its tail must hold. The clauses join with `&&`, and an arm with nothing to
+// test takes every call that reaches it.
+//
+// The count is tested because the chain is first-match over arms sorted by parameter
+// count. Without it an arm of two parameters takes `f(1, 2, 3)` and drops the third,
+// leaving a rest arm that should have taken the call unreachable.
 //
 // A parameter the caller may leave out — one written `x?` or one carrying a default —
 // also accepts an absent slot. The slot holds `undefined` there, which no type guard
@@ -182,17 +184,31 @@ func (b *Builder) bindWithDefault(ident *ast.IdentPat, slot Expr, def ast.Expr) 
 // the call `f()` that is exactly its own, and the dispatch would fall through to the
 // TypeError. The binding bindWithDefault emits for that parameter would then never run.
 func guardFor(b *Builder, arm overloadArm) Expr {
-	var guards []Expr
+	restIdx, elemAnn, hasRest := restParam(arm.params)
+	guards := arityGuards(len(arm.params), requiredCount(arm.params), hasRest)
 	for i, param := range arm.params {
+		if hasRest && i == restIdx {
+			continue
+		}
 		if param.TypeAnn == nil {
 			continue
 		}
 		slot := NewIdentExpr(fmt.Sprintf("param%d", i), "", nil)
 		guard := b.buildTypeGuard(slot, param.TypeAnn)
+		// A type with no runtime test builds `true`, which the count test beside it
+		// already implies.
+		if isTrueLiteral(guard) {
+			continue
+		}
 		if _, def := splitIdentDefault(param.Pattern); param.Optional || def != nil {
 			guard = NewBinaryExpr(absentSlot(slot), LogicalOr, guard, nil)
 		}
 		guards = append(guards, guard)
+	}
+	if hasRest && elemAnn != nil {
+		if elemGuard := b.restTailGuard(restIdx, elemAnn); elemGuard != nil {
+			guards = append(guards, elemGuard)
+		}
 	}
 	if len(guards) == 0 {
 		return NewLitExpr(NewBoolLit(true, nil), nil)
@@ -403,4 +419,131 @@ func objKeyName(key ObjKey) string {
 	default:
 		return "<computed>"
 	}
+}
+
+// restParam returns the position of arm's rest parameter, the element type its tail
+// holds, and whether the arm has one. The element type comes from an `Array<T>`
+// annotation and is nil for a rest parameter annotated any other way.
+func restParam(params []*ast.Param) (int, ast.TypeAnn, bool) {
+	for i, param := range params {
+		if _, isRest := param.Pattern.(*ast.RestPat); !isRest {
+			continue
+		}
+		return i, restElemTypeAnn(param.TypeAnn), true
+	}
+	return 0, nil, false
+}
+
+// restElemTypeAnn returns the element type of a rest parameter's `Array<T>`
+// annotation, and nil when the annotation is anything else.
+func restElemTypeAnn(typeAnn ast.TypeAnn) ast.TypeAnn {
+	if mut, isMut := typeAnn.(*ast.MutableTypeAnn); isMut {
+		typeAnn = mut.Target
+	}
+	ref, isRef := typeAnn.(*ast.TypeRefTypeAnn)
+	if !isRef || !isArrayTypeRef(ref) || len(ref.TypeArgs) != 1 {
+		return nil
+	}
+	return ref.TypeArgs[0]
+}
+
+// requiredCount counts the leading parameters a caller has to pass. A parameter
+// written `x?` or carrying a default may be left out, and a rest parameter ends the
+// count because it accepts any number of arguments including none.
+func requiredCount(params []*ast.Param) int {
+	count := 0
+	for _, param := range params {
+		if _, isRest := param.Pattern.(*ast.RestPat); isRest {
+			break
+		}
+		if _, def := splitIdentDefault(param.Pattern); param.Optional || def != nil {
+			break
+		}
+		count++
+	}
+	return count
+}
+
+// arityGuards builds the tests on `arguments.length` for an arm of n parameters, of
+// which the first `required` have to be passed. An arm with a rest parameter has no
+// upper bound, so only the lower one is tested, and an arm whose parameters are all
+// required collapses to a single equality test. A bound every call already meets is
+// left out.
+func arityGuards(n int, required int, hasRest bool) []Expr {
+	length := NewMemberExpr(
+		NewIdentExpr("arguments", "", nil), NewIdentifier("length", nil), false, nil)
+	count := func(value int) Expr {
+		return NewLitExpr(NewNumLit(float64(value), nil), nil)
+	}
+	if hasRest {
+		if required == 0 {
+			return nil
+		}
+		return []Expr{NewBinaryExpr(length, GreaterThanEqual, count(required), nil)}
+	}
+	if required == n {
+		return []Expr{NewBinaryExpr(length, StrictEqual, count(n), nil)}
+	}
+	guards := []Expr{NewBinaryExpr(length, LessThanEqual, count(n), nil)}
+	if required > 0 {
+		lower := NewBinaryExpr(length, GreaterThanEqual, count(required), nil)
+		guards = append([]Expr{lower}, guards...)
+	}
+	return guards
+}
+
+// restTailGuard builds the test that every argument a rest parameter gathers holds
+// its element type, as `Array.prototype.every.call(arguments, ...)`. `prefix` is the
+// rest parameter's position, and the arguments before it are exempted by index since
+// their own guards already cover them. The result is nil when the element type has no
+// runtime test, which would otherwise emit a callback that always returns `true`.
+func (b *Builder) restTailGuard(prefix int, elemAnn ast.TypeAnn) Expr {
+	elem := NewIdentExpr("elem", "", nil)
+	test := b.buildTypeGuard(elem, elemAnn)
+	if isTrueLiteral(test) {
+		return nil
+	}
+	params := []*Param{{
+		Pattern:  NewIdentPat("elem", nil, nil),
+		Optional: false,
+		TypeAnn:  nil,
+	}}
+	if prefix > 0 {
+		params = append(params, &Param{
+			Pattern:  NewIdentPat("index", nil, nil),
+			Optional: false,
+			TypeAnn:  nil,
+		})
+		before := NewBinaryExpr(
+			NewIdentExpr("index", "", nil),
+			LessThan,
+			NewLitExpr(NewNumLit(float64(prefix), nil), nil),
+			nil,
+		)
+		test = NewBinaryExpr(before, LogicalOr, test, nil)
+	}
+	body := []Stmt{&ReturnStmt{Expr: test, span: nil, source: nil}}
+	callback := NewFuncExpr(params, body, FuncExprOptions{Async: false, Generator: false}, nil)
+	return arrayProtoCall("every", []Expr{NewIdentExpr("arguments", "", nil), callback})
+}
+
+// argumentsFrom builds the array of every argument from position i onward, which is
+// what a rest parameter binds. `Array.prototype.slice` is generic, so it reads the
+// array-like `arguments` without a copy first.
+func argumentsFrom(i int) Expr {
+	args := []Expr{NewIdentExpr("arguments", "", nil)}
+	if i > 0 {
+		args = append(args, NewLitExpr(NewNumLit(float64(i), nil), nil))
+	}
+	return arrayProtoCall("slice", args)
+}
+
+// arrayProtoCall builds `Array.prototype.<method>.call(...)`, which runs an array
+// method on the array-like `arguments`.
+func arrayProtoCall(method string, args []Expr) Expr {
+	arrayProto := NewMemberExpr(
+		NewIdentExpr("Array", "", nil), NewIdentifier("prototype", nil), false, nil)
+	fn := NewMemberExpr(arrayProto, NewIdentifier(method, nil), false, nil)
+	callee := NewMemberExpr(fn, NewIdentifier("call", nil), false, nil)
+	return NewCallExpr(callee, args, false, nil)
 }

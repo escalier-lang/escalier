@@ -51,11 +51,11 @@ func TestBuildOverloadedMethod(t *testing.T) {
 		}`)
 	require.Equal(t, `export class Box {
   grow(param0, param1) {
-    if (typeof param0 === "number" && typeof param1 === "number") {
+    if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
       const d = param0;
       const e = param1;
       return d + e;
-    } else if (typeof param0 === "number") {
+    } else if (arguments.length === 1 && typeof param0 === "number") {
       const d = param0;
       return d;
     } else throw new TypeError("No overload matches the provided arguments for method 'grow'");
@@ -74,11 +74,11 @@ func TestBuildOverloadedConstructor(t *testing.T) {
 		}`)
 	require.Equal(t, `export class Box {
   constructor(param0, param1) {
-    if (typeof param0 === "number" && typeof param1 === "number") {
+    if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
       const x = param0;
       const y = param1;
       this.x = x + y;
-    } else if (typeof param0 === "number") {
+    } else if (arguments.length === 1 && typeof param0 === "number") {
       const x = param0;
       this.x = x;
     } else throw new TypeError("No overload matches the provided arguments for constructor");
@@ -97,12 +97,12 @@ func TestBuildOverloadedConstructorInADerivedClass(t *testing.T) {
 			constructor(mut self, label: string, extra: string) { self.label = label + extra },
 		}`)
 	require.Contains(t, got, `  constructor(param0, param1) {
-    if (typeof param0 === "string" && typeof param1 === "string") {
+    if (arguments.length === 2 && typeof param0 === "string" && typeof param1 === "string") {
       super();
       const label = param0;
       const extra = param1;
       this.label = label + extra;
-    } else if (typeof param0 === "string") {
+    } else if (arguments.length === 1 && typeof param0 === "string") {
       super();
       const label = param0;
       this.label = label;
@@ -120,7 +120,7 @@ func TestBuildOverloadedConstructorKeepsAWrittenSuperCall(t *testing.T) {
 			constructor(mut self, label: string) { super()  self.label = label },
 			constructor(mut self, label: string, extra: string) { self.label = label + extra },
 		}`)
-	require.Contains(t, got, `    } else if (typeof param0 === "string") {
+	require.Contains(t, got, `    } else if (arguments.length === 1 && typeof param0 === "string") {
       const label = param0;
       super();
       this.label = label;
@@ -170,7 +170,7 @@ func TestBuildOverloadedStaticAndInstanceMethodsStayApart(t *testing.T) {
     return x;
   }`)
 	require.Contains(t, got, `  static of(param0, param1) {
-    if (typeof param0 === "number" && typeof param1 === "number") {`)
+    if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {`)
 }
 
 // A parameter default binds through the same conditional buildParams emits for an
@@ -194,21 +194,82 @@ func TestBuildOverloadArmParameterDefault(t *testing.T) {
 	})
 }
 
-// A rest parameter binds the slot it sits at rather than gathering the slots after
-// it, which is what the guard beside it already tests. Binding the rest pattern
-// itself would emit `const ...ds = param0`, a JS SyntaxError. Dispatching such an arm
-// on argument count is #1545.
+// A rest parameter gathers every argument from its own position onward. The dispatch
+// member declares one positional parameter per slot the widest arm uses, so the
+// arguments past the last of them are reachable only through `arguments`. Binding the
+// rest pattern to its own slot would take `grow(1, 2, 3)` as `ds = 1` and drop the
+// rest, and binding the pattern with its `...` still attached would emit
+// `const ...ds = param0`, a JS SyntaxError.
 func TestBuildOverloadArmRestParameter(t *testing.T) {
 	got := buildSource(t, `
 		class Box {
 			grow(mut self, ...ds: Array<number>) -> number { return 1 },
 			grow(mut self, d: number, e: number) -> number { return d + e },
 		}`)
-	require.Contains(t, got, `    } else if (Array.isArray(param0)) {
-      const ds = param0;
+	require.Equal(t, `export class Box {
+  grow(param0, param1) {
+    if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
+      const d = param0;
+      const e = param1;
+      return d + e;
+    } else if (Array.prototype.every.call(arguments, function (elem) {
+      return typeof elem === "number";
+    })) {
+      const ds = Array.prototype.slice.call(arguments);
       return 1;
-    } else`)
-	require.NotContains(t, got, "const ...ds")
+    } else throw new TypeError("No overload matches the provided arguments for method 'grow'");
+  }
+}`, got)
+}
+
+// A rest parameter that follows fixed parameters gathers the tail past them, and its
+// element test skips the positions their own guards already cover.
+func TestBuildOverloadArmRestParameterAfterAFixedOne(t *testing.T) {
+	got := buildSource(t, `
+		class Box {
+			grow(mut self, label: string, ...ds: Array<number>) -> number { return 1 },
+			grow(mut self, d: number, e: number) -> number { return d + e },
+		}`)
+	require.Equal(t, `export class Box {
+  grow(param0, param1) {
+    if (arguments.length >= 1 && typeof param0 === "string" && Array.prototype.every.call(arguments, function (elem, index) {
+      return index < 1 || typeof elem === "number";
+    })) {
+      const label = param0;
+      const ds = Array.prototype.slice.call(arguments, 1);
+      return 1;
+    } else if (arguments.length === 2 && typeof param0 === "number" && typeof param1 === "number") {
+      const d = param0;
+      const e = param1;
+      return d + e;
+    } else throw new TypeError("No overload matches the provided arguments for method 'grow'");
+  }
+}`, got)
+}
+
+// An arm whose count no call can meet is never reached, so each arm tests how many
+// arguments it takes. Without that test the two-parameter arm here takes
+// `grow(1, 2, 3)` and drops the third argument, and the rest arm below it never runs.
+func TestBuildOverloadArmsTestArgumentCount(t *testing.T) {
+	got := buildSource(t, `
+		class Box {
+			grow(mut self) -> number { return 0 },
+			grow(mut self, d: number) -> number { return d },
+			grow(mut self, d?: number) -> number { return 1 },
+		}`)
+	require.Equal(t, `export class Box {
+  grow(param0) {
+    if (arguments.length === 1 && typeof param0 === "number") {
+      const d = param0;
+      return d;
+    } else if (arguments.length <= 1 && (typeof param0 === "undefined" || typeof param0 === "number")) {
+      const d = param0;
+      return 1;
+    } else if (arguments.length === 0) {
+      return 0;
+    } else throw new TypeError("No overload matches the provided arguments for method 'grow'");
+  }
+}`, got)
 }
 
 // A numeric member key groups the same way a named one does. Routing it to the
@@ -254,14 +315,14 @@ func TestBuildOverloadGuardAcceptsAnOmittedSlot(t *testing.T) {
 			got := buildSource(t,
 				tt.arm+"\nfn f(a: string, b: string) -> string { return a }")
 			require.Contains(t, got,
-				`} else if (typeof param0 === "undefined" || typeof param0 === "number") {`)
+				`} else if (arguments.length <= 1 && (typeof param0 === "undefined" || typeof param0 === "number")) {`)
 		})
 	}
 	t.Run("a required parameter still tests its type alone", func(t *testing.T) {
 		got := buildSource(t, `
 			fn f(x: number) -> number { return x }
 			fn f(a: string, b: string) -> string { return a }`)
-		require.Contains(t, got, `} else if (typeof param0 === "number") {`)
+		require.Contains(t, got, `} else if (arguments.length === 1 && typeof param0 === "number") {`)
 		require.NotContains(t, got, `typeof param0 === "undefined"`)
 	})
 }
@@ -275,10 +336,10 @@ func TestBuildOverloadTiedArmsKeepSourceOrder(t *testing.T) {
 			pick(mut self, a) { return 1 },
 			pick(mut self, b) { return 2 },
 		}`)
-	require.Contains(t, got, `    if (true) {
+	require.Contains(t, got, `    if (arguments.length === 1) {
       const a = param0;
       return 1;
-    } else if (true) {
+    } else if (arguments.length === 1) {
       const b = param0;
       return 2;
     } else`)

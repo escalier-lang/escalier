@@ -15,3 +15,8 @@ class Box {
     static of(x: number) -> number { return x },
     static of(x: number, y: number) -> number { return x + y },
 }
+
+// A rest arm gathers every argument from its own position onward, so it takes the
+// calls the fixed arms above it are too narrow for.
+fn total(a: number, b: number) -> number { return a + b }
+fn total(...ns: Array<number>) -> number { return ns.length }
