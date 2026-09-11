@@ -24,36 +24,21 @@ func newSpreadSeen() *spreadSeen {
 }
 
 // spreadableOperand reports whether t names the positional list a `...P` element
-// splices into its tuple. Three shapes qualify:
-//
-//   - a tuple, which is what the evaluator's `reduceTuple` already splices;
-//   - an instance of the well-known `Array`, the variadic-tail form;
-//   - a type parameter bounded by either of those, which is how the stdlib tree
-//     writes one. `Function.bind` in std/function.esc binds two parameters to an
-//     owned-mutable array and spreads both, as `[...A, ...B]`.
-//
-// An alias is followed to its body and a union to its members, so `[...Pair]` over
-// `type Pair = [number, string]` qualifies and `[] | [T]` does too.
+// splices into its tuple: a tuple, an instance of the well-known `Array`, or a type
+// parameter bounded by either. An alias is followed to its body and a union to its
+// members, so `[...Pair]` over `type Pair = [number, string]` qualifies.
 //
 // Anything the check cannot decide is accepted, since rejecting a type that may yet
 // reduce to a tuple would turn a legal program into a diagnostic. A conditional, a
-// mapped key, an `infer` capture, and a recursive reference are all symbolic here.
-// So is an alias whose body is not yet filled, which `expandAlias` hands back as the
-// error sentinel. That last case is what lets the check run while an annotation is
-// being resolved rather than after every body is final.
+// mapped key, and an `infer` capture are all symbolic here. So is an alias whose body
+// is not yet filled, which `expandAlias` hands back as the error sentinel. That last
+// case is what lets the check run while an annotation is being resolved rather than
+// after every body is final.
 //
-// What is left to reject is a type with no positions under any substitution: a
-// primitive, a literal, an object, a function, a class that is not `Array`, `null`,
-// `undefined`, and `unknown`. `unknown` is on that list because it is what a vacuous
-// bound resolves to, so `<T: unknown>` says no more about T than a bare `<T>` and the
-// two are rejected alike.
-//
-// An ITERABLE is rejected with them, which #1552 covers. A class or object type
-// declaring `[Symbol.iterator]` is the same unknown-length sequence an `Array` is, so
-// the line drawn here is at one class rather than at the property that matters. It
-// costs nothing today, since the rules that read a spread understand a tuple and an
-// `Array` and nothing else, so such an operand would leave the slot arity-only even if
-// it were accepted.
+// What is left to reject has no positions under any substitution: a primitive, a
+// literal, an object, a function, a class that is not `Array`, `null`, `undefined`,
+// and `unknown`, which is what a vacuous bound resolves to. An iterable is rejected
+// with them, which #1552 covers.
 func (c *checker) spreadableOperand(t soltype.Type, seen *spreadSeen) bool {
 	switch t := t.(type) {
 	case *soltype.TupleType:
