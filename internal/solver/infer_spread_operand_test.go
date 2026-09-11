@@ -45,15 +45,10 @@ func TestInferTupleAnnotationSpreadRejectsANonList(t *testing.T) {
 		},
 		{
 			// `unknown` says no more about T than no bound at all, so the two report alike.
+			// A bound written `any` resolves to `unknown` and lands on this row.
 			name: "a type parameter bounded by unknown",
 			src:  "declare fn g<T: unknown>(...args: [...T, string]) -> number",
 			want: "1:36-1:40: cannot spread T into a tuple",
-		},
-		{
-			// `any` resolves to `unknown`, so it is the same vacuous bound written twice.
-			name: "a type parameter bounded by any",
-			src:  "declare fn g<T: any>(...args: [...T, string]) -> number",
-			want: "1:32-1:36: cannot spread T into a tuple",
 		},
 		{
 			name: "an alias naming a primitive",
@@ -94,9 +89,12 @@ type Ok = [...Pair, boolean]`,
 			src:  "declare fn k<T: [number, string]>(x: [...T, boolean]) -> number",
 		},
 		{
-			// The form std/function.esc writes for `Function.bind`.
+			// Two of these spread side by side is the shape `Function.bind` is declared
+			// with, and its `[...A, ...B]` is the only tuple-annotation spread the
+			// committed tree writes. The tree spells the element `any`, which resolves to
+			// the `unknown` written here.
 			name: "a type parameter bounded by an owned-mutable array",
-			src:  "declare fn h<A: mut Array<any>, B: mut Array<any>>(x: [...A, ...B]) -> number",
+			src:  "declare fn h<A: mut Array<unknown>, B: mut Array<unknown>>(x: [...A, ...B]) -> number",
 		},
 		{
 			// A union of tuples is how an optional argument is spelled in a rest

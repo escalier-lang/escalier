@@ -29,8 +29,8 @@ func newSpreadSeen() *spreadSeen {
 //   - a tuple, which is what the evaluator's `reduceTuple` already splices;
 //   - an instance of the well-known `Array`, the variadic-tail form;
 //   - a type parameter bounded by either of those, which is how the stdlib tree
-//     writes one. `bind<T, A: mut Array<any>, B: mut Array<any>, R>` in
-//     std/function.esc spreads `[...A, ...B]`.
+//     writes one. `Function.bind` in std/function.esc binds two parameters to an
+//     owned-mutable array and spreads both, as `[...A, ...B]`.
 //
 // An alias is followed to its body and a union to its members, so `[...Pair]` over
 // `type Pair = [number, string]` qualifies and `[] | [T]` does too.
@@ -45,8 +45,8 @@ func newSpreadSeen() *spreadSeen {
 // What is left to reject is a type with no positions under any substitution: a
 // primitive, a literal, an object, a function, a class that is not `Array`, `null`,
 // `undefined`, and `unknown`. `unknown` is on that list because it is what a vacuous
-// bound resolves to. `<T: unknown>` and `<T: any>` say no more about T than a bare
-// `<T>`, so all three are rejected alike.
+// bound resolves to, so `<T: unknown>` says no more about T than a bare `<T>` and the
+// two are rejected alike.
 func (c *checker) spreadableOperand(t soltype.Type, seen *spreadSeen) bool {
 	switch t := t.(type) {
 	case *soltype.TupleType:
