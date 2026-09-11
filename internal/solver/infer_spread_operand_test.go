@@ -111,6 +111,36 @@ type Ok = [...Pair, boolean]`,
 	}
 }
 
+// An iterable is rejected alongside the types with no positions at all, which #1552
+// covers. A class declaring `[Symbol.iterator]` is the same unknown-length sequence an
+// `Array` is, so the line is drawn at one class rather than at the property that
+// matters. Nothing downstream reads such a spread yet, so the rejection costs no legal
+// program today. Re-point these cases at acceptance when #1552 lands.
+func TestInferTupleAnnotationSpreadRejectsAnIterable(t *testing.T) {
+	const seq = `
+		class Seq {
+			next(self) -> number { return 1 },
+			[Symbol.iterator](self) -> Seq { return self },
+		}
+	`
+	t.Run("the class itself", func(t *testing.T) {
+		_, _, errs := inferSource(t, seq+`
+		type Use = [...Seq, string]
+	`)
+		require.Equal(t,
+			[]string{"7:15-7:21: cannot spread Seq into a tuple"},
+			messagesWithSpan(t, errs))
+	})
+	t.Run("a type parameter bounded by it", func(t *testing.T) {
+		_, _, errs := inferSource(t, seq+`
+		declare fn f<T: Seq>(x: [...T, string]) -> number
+	`)
+		require.Equal(t,
+			[]string{"7:28-7:32: cannot spread T into a tuple"},
+			messagesWithSpan(t, errs))
+	})
+}
+
 // An operand the check cannot decide is accepted, since it may still reduce to a
 // tuple and rejecting it would turn a legal program into a diagnostic.
 func TestInferTupleAnnotationSpreadAcceptsAnUndecidableOperand(t *testing.T) {

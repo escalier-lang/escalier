@@ -47,6 +47,13 @@ func newSpreadSeen() *spreadSeen {
 // `undefined`, and `unknown`. `unknown` is on that list because it is what a vacuous
 // bound resolves to, so `<T: unknown>` says no more about T than a bare `<T>` and the
 // two are rejected alike.
+//
+// An ITERABLE is rejected with them, which #1552 covers. A class or object type
+// declaring `[Symbol.iterator]` is the same unknown-length sequence an `Array` is, so
+// the line drawn here is at one class rather than at the property that matters. It
+// costs nothing today, since the rules that read a spread understand a tuple and an
+// `Array` and nothing else, so such an operand would leave the slot arity-only even if
+// it were accepted.
 func (c *checker) spreadableOperand(t soltype.Type, seen *spreadSeen) bool {
 	switch t := t.(type) {
 	case *soltype.TupleType:
