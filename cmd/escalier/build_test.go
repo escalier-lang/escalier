@@ -64,9 +64,10 @@ func TestLoadSources(t *testing.T) {
 		err = os.WriteFile(file2, []byte("let y = 2;"), 0644)
 		require.NoError(t, err)
 
-		stdout := &bytes.Buffer{}
-		sources, idToSource := loadSources(stdout, []string{file1, file2})
+		stderr := &bytes.Buffer{}
+		sources, idToSource, failed := loadSources(stderr, []string{file1, file2})
 
+		assert.Equal(t, 0, failed)
 		assert.Len(t, sources, 2)
 		assert.Len(t, idToSource, 2)
 		assert.Equal(t, "let x = 1;", sources[0].Contents)
@@ -85,20 +86,22 @@ func TestLoadSources(t *testing.T) {
 		err = os.WriteFile(invalidFile, []byte("content"), 0644)
 		require.NoError(t, err)
 
-		stdout := &bytes.Buffer{}
-		sources, idToSource := loadSources(stdout, []string{validFile, invalidFile})
+		stderr := &bytes.Buffer{}
+		sources, idToSource, failed := loadSources(stderr, []string{validFile, invalidFile})
 
-		// Should only load the valid file
+		// Should only load the valid file, and report the one it could not.
+		assert.Equal(t, 1, failed)
 		assert.Len(t, sources, 1)
 		assert.Len(t, idToSource, 1)
 		assert.Equal(t, validFile, sources[0].Path)
-		assert.Contains(t, stdout.String(), "does not have .esc extension")
+		assert.Equal(t, invalidFile+": file does not have .esc extension\n", stderr.String())
 	})
 
 	t.Run("empty file list", func(t *testing.T) {
-		stdout := &bytes.Buffer{}
-		sources, idToSource := loadSources(stdout, []string{})
+		stderr := &bytes.Buffer{}
+		sources, idToSource, failed := loadSources(stderr, []string{})
 
+		assert.Equal(t, 0, failed)
 		assert.Len(t, sources, 0)
 		assert.Len(t, idToSource, 0)
 	})
@@ -285,6 +288,21 @@ func TestPrintErrors(t *testing.T) {
 		result := stderr.String()
 		assert.Empty(t, result)
 	})
+}
+
+func TestErrorCount(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		n    int
+		want string
+	}{
+		{n: 1, want: "1 error"},
+		{n: 2, want: "2 errors"},
+		{n: 13, want: "13 errors"},
+	}
+	for _, tt := range tests {
+		require.Equal(t, tt.want, errorCount(tt.n))
+	}
 }
 
 func TestFormatTypeError(t *testing.T) {

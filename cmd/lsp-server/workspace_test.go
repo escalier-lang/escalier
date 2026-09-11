@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -43,6 +46,111 @@ func libCacheKeys(s *Server) set.Set[string] {
 }
 
 // --- refreshLibFilesCache ---
+
+// writeLibFile replaces the workspace's single lib source with src. compilePackage
+// reads the cached file list rather than the filesystem, so the cache is refreshed
+// here to match what was just written.
+func writeLibFile(t *testing.T, s *Server, root, src string) {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(root, "lib", "index.esc"), []byte(src), 0o644))
+	require.NoError(t, s.refreshLibFilesCache())
+}
+
+// buildDirFiles returns the paths under the workspace's build/ directory,
+// relative to that directory, so a test can name what a compile emitted.
+func buildDirFiles(t *testing.T, root string) []string {
+	t.Helper()
+	buildDir := filepath.Join(root, "build")
+	var found []string
+	err := filepath.WalkDir(buildDir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		rel, err := filepath.Rel(buildDir, path)
+		if err != nil {
+			return err
+		}
+		// ToSlash so the paths read the same however the platform spells a separator,
+		// since the expectations below are written with `/`.
+		found = append(found, filepath.ToSlash(rel))
+		return nil
+	})
+	if os.IsNotExist(err) {
+		return nil
+	}
+	require.NoError(t, err)
+	sort.Strings(found)
+	return found
+}
+
+// A type error does not stop the write. The build/ tree is rewritten from the rejected
+// source, and the caller hears about the error through the returned diagnostics rather
+// than through a missing artifact.
+func TestCompilePackageWritesDespiteATypeError(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/index.esc"})
+	writeLibFile(t, s, root, "export val n: number = 1\n")
+
+	_, err := s.compilePackage()
+	require.NoError(t, err)
+	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"},
+		buildDirFiles(t, root))
+	require.Contains(t, readBuiltJS(t, root), "export const n = 1;")
+
+	writeLibFile(t, s, root, `export val n: number = "not a number"`+"\n")
+
+	_, err = s.compilePackage()
+	require.Error(t, err)
+	// Reported as a span beside a message, the shape the parse-error path uses. The span
+	// carries a SourceID derived from a per-run temp path, so the message and the count
+	// are what is pinned.
+	var typeErrs []struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(err.Error()), &typeErrs))
+	require.Len(t, typeErrs, 1)
+	require.Equal(t, `"not a number" cannot be assigned to number`, typeErrs[0].Message)
+
+	// The JS is lowered from the rejected source, which is what emitting on error means.
+	require.Contains(t, readBuiltJS(t, root), `export const n = "not a number";`)
+}
+
+// A parse error DOES stop the write, and not as a policy. It leaves an error node that
+// codegen has no lowering for, so CompilePackage produces no compilation unit and the
+// artifacts from the last compile that parsed stay on disk.
+func TestCompilePackageKeepsArtifactsWhenTheSourceDoesNotParse(t *testing.T) {
+	s, root := newTestServer(t, []string{"lib/index.esc"})
+	writeLibFile(t, s, root, "export val n: number = 1\n")
+
+	_, err := s.compilePackage()
+	require.NoError(t, err)
+	clean := buildDirFiles(t, root)
+	require.Equal(t, []string{"lib/index.d.ts", "lib/index.js", "lib/index.js.map"}, clean)
+
+	writeLibFile(t, s, root, "export val broken =\n")
+
+	_, err = s.compilePackage()
+	require.Error(t, err)
+	var parseErrs []struct {
+		Message string `json:"message"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(err.Error()), &parseErrs))
+	require.Len(t, parseErrs, 1)
+	require.Equal(t, "Expected an expression", parseErrs[0].Message)
+
+	require.Equal(t, clean, buildDirFiles(t, root))
+	require.Contains(t, readBuiltJS(t, root), "export const n = 1;")
+}
+
+// readBuiltJS returns the JS the workspace's last compile wrote.
+func readBuiltJS(t *testing.T, root string) string {
+	t.Helper()
+	js, err := os.ReadFile(filepath.Join(root, "build", "lib", "index.js"))
+	require.NoError(t, err)
+	return string(js)
+}
 
 func TestRefreshLibFilesCache_PopulatesFromDisk(t *testing.T) {
 	s, root := newTestServer(t, []string{

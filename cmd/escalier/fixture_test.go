@@ -151,8 +151,17 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 
 	stdout := bytes.NewBuffer(nil)
 	stderr := bytes.NewBuffer(nil)
-	build(stdout, stderr, []string{"."})
+	buildOK := build(stdout, stderr, []string{"."})
 	fmt.Println("stderr =", stderr.String())
+
+	// A package writes its output whether or not it checks, so a fixture's build/ tree
+	// and its error.txt are independent. What build's answer tracks is whether anything
+	// was reported, which is what error.txt records.
+	require.Equal(t, stderr.Len() == 0, buildOK,
+		"build reports success exactly when it wrote nothing to stderr")
+
+	_, builtErr := os.Stat(filepath.Join(tmpDir, "build"))
+	emitted := builtErr == nil
 
 	// Write errors to error.txt if there are any
 	if stderr.Len() > 0 {
@@ -167,10 +176,12 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 			return
 		}
 
-		err = copyDir(filepath.Join(tmpDir, "build"), filepath.Join(fixtureDir, "build"))
-		if err != nil {
-			fmt.Fprintln(stderr, "failed to copy build directory:", err)
-			return
+		if emitted {
+			err = copyDir(filepath.Join(tmpDir, "build"), filepath.Join(fixtureDir, "build"))
+			if err != nil {
+				fmt.Fprintln(stderr, "failed to copy build directory:", err)
+				return
+			}
 		}
 
 		// Copy error.txt if it exists
@@ -215,6 +226,15 @@ func checkFixture(t *testing.T, repoRoot string, fixtureDir string) {
 			t.Errorf("error.txt was expected but not generated")
 		}
 		// If neither exists, that's fine - no errors expected or generated
+
+		// With no output tree there is nothing to walk, and the fixture must not
+		// have committed one either.
+		if !emitted {
+			_, err := os.Stat(filepath.Join(fixtureDir, "build"))
+			require.True(t, os.IsNotExist(err),
+				"fixture committed a build/ directory for a package that reports errors")
+			return
+		}
 
 		// Check if all of the files are the same
 		buildDir := filepath.Join(tmpDir, "build")

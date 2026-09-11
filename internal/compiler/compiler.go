@@ -276,28 +276,37 @@ func CompilePackage(sources []*ast.Source) CompilerOutput {
 
 		libNS = inferCtx.Scope.Namespace
 
-		builder := &codegen.Builder{}
-		jsMod := builder.BuildTopLevelDecls(depGraph)
-		dtsMod := builder.BuildDefinitions(depGraph, libNS)
-
-		printer := codegen.NewPrinter()
-		jsOutput := printer.PrintModule(jsMod)
-
-		jsFile := "./index.js"
-		sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
-
-		outmap := "./index.js.map"
-		jsOutput += "//# sourceMappingURL=" + outmap + "\n"
-
-		printer = codegen.NewPrinter()
-		dtsOutput := printer.PrintModule(dtsMod)
-
 		output.ParseErrors = append(output.ParseErrors, parseErrors...)
 		output.TypeErrors = append(output.TypeErrors, typeErrors...)
-		output.CompUnits["lib/index"] = CompUnitOutput{
-			JS:        jsOutput,
-			SourceMap: sourceMap,
-			DTS:       dtsOutput,
+
+		// A parse error leaves an error node in the tree where a declaration or type
+		// annotation belongs, and codegen has no lowering for one. `buildTypeAnn`
+		// panics with `unknown type: <error>` on reaching it. Inference above
+		// tolerates those nodes, so only the emit half is skipped and the diagnostics
+		// still reach the caller. A type error needs no such skip. The tree is well
+		// formed, so codegen runs and the caller decides whether to keep its output.
+		if len(parseErrors) == 0 {
+			builder := &codegen.Builder{}
+			jsMod := builder.BuildTopLevelDecls(depGraph)
+			dtsMod := builder.BuildDefinitions(depGraph, libNS)
+
+			printer := codegen.NewPrinter()
+			jsOutput := printer.PrintModule(jsMod)
+
+			jsFile := "./index.js"
+			sourceMap := codegen.GenerateSourceMap(sources, jsMod, jsFile)
+
+			outmap := "./index.js.map"
+			jsOutput += "//# sourceMappingURL=" + outmap + "\n"
+
+			printer = codegen.NewPrinter()
+			dtsOutput := printer.PrintModule(dtsMod)
+
+			output.CompUnits["lib/index"] = CompUnitOutput{
+				JS:        jsOutput,
+				SourceMap: sourceMap,
+				DTS:       dtsOutput,
+			}
 		}
 	}
 

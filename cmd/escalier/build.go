@@ -16,16 +16,21 @@ import (
 	"github.com/escalier-lang/escalier/internal/compiler"
 )
 
-// loadSources reads and validates source files, returning a slice of sources and a map for quick lookup
-func loadSources(stdout io.Writer, files []string) ([]*ast.Source, map[int]*ast.Source) {
+// loadSources reads and validates each file in files. It returns the sources it
+// loaded, a lookup from source ID to source, and the number of files it could not
+// read. A file that fails to load takes its declarations out of the package, so a
+// non-zero count means the compile ran against an incomplete tree.
+func loadSources(stderr io.Writer, files []string) ([]*ast.Source, map[int]*ast.Source, int) {
 	sources := make([]*ast.Source, 0, len(files))
 	idToSource := make(map[int]*ast.Source)
 	nextID := 0
+	failed := 0
 
 	for _, file := range files {
 		source, err := loadSource(file, nextID)
 		if err != nil {
-			fmt.Fprintln(stdout, err.Error())
+			fmt.Fprintf(stderr, "%s: %s\n", file, err.Error())
+			failed++
 			continue
 		}
 
@@ -34,7 +39,7 @@ func loadSources(stdout io.Writer, files []string) ([]*ast.Source, map[int]*ast.
 		nextID++
 	}
 
-	return sources, idToSource
+	return sources, idToSource, failed
 }
 
 // loadSource reads a single source file and creates an ast.Source
@@ -73,7 +78,6 @@ func printErrors(stderr io.Writer, output compiler.CompilerOutput, idToSource ma
 
 	// TODO: sort by err.Location()
 	for _, err := range output.TypeErrors {
-		fmt.Fprintf(os.Stderr, "Type Error: %#v\n", err)
 		source, ok := idToSource[err.Span().SourceID]
 		if !ok {
 			fmt.Fprintln(stderr, "source not found for error")
@@ -171,13 +175,27 @@ func writeModuleOutputs(stderr io.Writer, moduleName string, output compiler.Com
 	return nil
 }
 
-func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
+// build compiles each package in pkgs, writes its output, and reports whether every
+// package succeeded. A package that reports a type error still writes its output, so a
+// program the checker rejects can be run, which is what an inner loop and a debugging
+// session both want. The errors reach stderr and the exit code reports the failure, so
+// nothing reads the output as a clean build.
+//
+// A parse error is the one thing that stops the write, and not as a policy: it leaves an
+// error node in the tree that codegen has no lowering for, so CompilePackage skips lib
+// codegen rather than panicking.
+//
+// What this trades away is worth knowing. Codegen reads inferred types at a handful of
+// decisions, so a rejected program can lower to one that runs and does the wrong thing,
+// and the `.d.ts` asserts types the checker rejected. #1551 tracks settling that.
+func build(stdout io.Writer, stderr io.Writer, pkgs []string) bool {
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(stderr, "failed to get current working directory:", err)
-		return
+		return false
 	}
 
+	allOK := true
 	for _, pkg := range pkgs {
 		start := time.Now()
 		fmt.Fprint(stdout, "building: ", pkg)
@@ -185,6 +203,7 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
 		err := os.Chdir(pkg)
 		if err != nil {
 			fmt.Fprintf(stderr, "failed to change directory to %s: %v\n", pkg, err)
+			allOK = false
 			continue
 		}
 
@@ -192,25 +211,41 @@ func build(stdout io.Writer, stderr io.Writer, pkgs []string) {
 		if err != nil {
 			fmt.Fprintf(stderr, "failed to find source files for %s: %v\n", pkg, err)
 			_ = os.Chdir(cwd)
+			allOK = false
 			continue
 		}
 
-		sources, idToSource := loadSources(stdout, files)
+		sources, idToSource, unreadable := loadSources(stderr, files)
 		output := compiler.CompilePackage(sources)
 
 		printErrors(stderr, output, idToSource)
 
+		// CompilePackage produces no compilation unit when the parse failed, so the loop
+		// writes nothing in that case without needing to test for it here.
 		for moduleName, moduleOutput := range output.CompUnits {
 			if err := writeModuleOutputs(stderr, moduleName, moduleOutput); err != nil {
 				fmt.Fprintln(stderr, err.Error())
 				_ = os.Chdir(cwd)
-				return
+				return false
 			}
 		}
-
-		duration := time.Since(start)
-		fmt.Fprintf(stdout, " - ok (%s)\n", duration)
-
 		_ = os.Chdir(cwd)
+
+		if errs := unreadable + len(output.ParseErrors) + len(output.TypeErrors); errs > 0 {
+			fmt.Fprintf(stdout, " - failed (%s)\n", errorCount(errs))
+			allOK = false
+			continue
+		}
+		fmt.Fprintf(stdout, " - ok (%s)\n", time.Since(start))
 	}
+	return allOK
+}
+
+// errorCount renders n as the count phrase the failure line ends with, so a
+// single error reads "1 error" rather than "1 errors".
+func errorCount(n int) string {
+	if n == 1 {
+		return "1 error"
+	}
+	return fmt.Sprintf("%d errors", n)
 }
