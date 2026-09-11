@@ -57,11 +57,11 @@ func (c *checker) ownedReturnType(
 	if !isTreeReachable(graph, root) {
 		return 0, nil, false
 	}
-	stripped := stripBorrowTree(c.fn.returns[idx], root, nil, graph)
-	if stripped == c.fn.returns[idx] {
+	owned := stripBorrowTree(c.fn.returns[idx], root, nil, graph)
+	if owned == c.fn.returns[idx] {
 		return 0, nil, false
 	}
-	return idx, stripped, true
+	return idx, owned, true
 }
 
 // commitOwnedReturnTypes writes every collected rewrite onto the function's return types, or
@@ -79,19 +79,19 @@ func (c *checker) ownedReturnType(
 // only the first return strips, since a parameter borrow carries no local edge. Owning that one
 // and leaving `return p` borrowed would union `mut B` with `&'a mut B` and reject the whole
 // function. Holding the rewrite back leaves both borrowed, which is uniform and checks.
-func (c *checker) commitOwnedReturnTypes(strips map[int]soltype.Type) {
-	if len(strips) == 0 {
+func (c *checker) commitOwnedReturnTypes(ownedReturns map[int]soltype.Type) {
+	if len(ownedReturns) == 0 {
 		return
 	}
 	for i, t := range c.fn.returns {
-		if _, rewritten := strips[i]; rewritten {
+		if _, rewritten := ownedReturns[i]; rewritten {
 			continue
 		}
 		if ref, isRef := t.(*soltype.RefType); isRef && ref.Lt != nil {
 			return
 		}
 	}
-	for i, t := range strips {
+	for i, t := range ownedReturns {
 		c.fn.returns[i] = t
 	}
 }

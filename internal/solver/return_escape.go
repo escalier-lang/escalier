@@ -133,8 +133,8 @@ func (c *checker) resolveComponentEscapes(
 ) bool {
 	consumed := false
 	outOfFrame := c.localsLeavingOutsideAReturn(flowBorrowGraph)
-	// Return index to the owned type its borrows strip to. Applied after every site is decided.
-	strips := map[int]soltype.Type{}
+	// Return index to the owned type its borrows strip to. Committed after every site is decided.
+	ownedReturns := map[int]soltype.Type{}
 	for _, es := range c.fn.escapeSites {
 		// The flow-sensitive borrow-edge graph at this site's program point. A borrow cleared by an
 		// earlier reassignment is gone here, and one set on a reaching branch is joined in. Passed
@@ -164,10 +164,10 @@ func (c *checker) resolveComponentEscapes(
 			}
 			// When the moved graph is a tree — every borrowed local reached exactly once with
 			// no cycle — the return value is the sole owner of each node, so owning them in the
-			// type is honest. The rewrites are collected here and applied together, since one
+			// type is honest. The rewrites are collected here and committed together, since one
 			// return left borrowed holds back the rest.
-			if idx, stripped, ok := c.ownedReturnType(es.expr, fieldBorrowGraph); ok {
-				strips[idx] = stripped
+			if idx, owned, ok := c.ownedReturnType(es.expr, fieldBorrowGraph); ok {
+				ownedReturns[idx] = owned
 			}
 			consumed = true
 			continue
@@ -185,7 +185,7 @@ func (c *checker) resolveComponentEscapes(
 		}
 		c.reportEscapingLocals(escaping, es.expr)
 	}
-	c.commitOwnedReturnTypes(strips)
+	c.commitOwnedReturnTypes(ownedReturns)
 	c.fn.escapeSites = nil
 	return consumed
 }
