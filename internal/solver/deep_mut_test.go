@@ -604,29 +604,112 @@ func TestOverloadedMutSelfMethodNeedsAMutableReceiver(t *testing.T) {
 	})
 }
 
-// A constructor call mints an instance the binding solely owns, so `val mut` upgrades it
-// the way it upgrades a fresh literal. An ordinary call may hand back something the callee
-// already held, so it does not upgrade.
-func TestValMutUpgradesAConstructorCall(t *testing.T) {
-	t.Run("a constructor call", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Counter {
-				count: number,
-				constructor(mut self, count: number) { self.count = count },
-			}
-			val mut c = Counter(0)`)
+// An owned return type means the caller holds the only reference to the result, so a
+// `val mut` binding of a call upgrades it to an owned-mutable value. A borrow return says
+// the opposite — the callee kept the value and lent it — so that one does not upgrade.
+//
+// The result reaches the binding as a variable carrying the return among its lower bounds,
+// so the borrow test runs at every level of that walk. Peeling the reference first would
+// read `&Counter` as an owned `Counter` and hand the binding exclusive mutable access to a
+// value someone else still holds.
+func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
+	const counter = `
+		class Counter {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+		}
+`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "a constructor call",
+			src:  counter + "val mut d = Counter(0)",
+			want: "mut Counter",
+		},
+		{
+			name: "a declared function returning an owned instance",
+			src:  counter + "declare fn shared() -> Counter\nval mut d = shared()",
+			want: "mut Counter",
+		},
+		{
+			name: "a factory returning a fresh instance",
+			src:  counter + "fn make() -> Counter { return Counter(0) }\nval mut d = make()",
+			want: "mut Counter",
+		},
+		{
+			name: "a static factory",
+			src:  counter + "class F { static of() -> Counter { return Counter(0) }, }\nval mut d = F.of()",
+			want: "mut Counter",
+		},
+		{
+			name: "a declared function already returning `mut`",
+			src:  counter + "declare fn made() -> mut Counter\nval mut d = made()",
+			want: "mut Counter",
+		},
+		{
+			name: "an owned object return",
+			src:  "declare fn obj() -> {x: number}\nval mut d = obj()",
+			want: "mut {x: number}",
+		},
+		{
+			name: "an owned tuple return",
+			src:  "declare fn tup() -> [number, number]\nval mut d = tup()",
+			want: "mut [number, number]",
+		},
+		{
+			name: "an immutable borrow return keeps its borrow",
+			src:  counter + "declare fn peek() -> &Counter\nval mut d = peek()",
+			want: "&Counter",
+		},
+		{
+			name: "a mutable borrow return keeps its borrow",
+			src:  counter + "declare fn peek() -> &mut Counter\nval mut d = peek()",
+			want: "&mut Counter",
+		},
+		{
+			name: "a primitive return has nothing to make mutable",
+			src:  "declare fn num() -> number\nval mut d = num()",
+			want: "number",
+		},
+		{
+			name: "a plain `val` binding does not upgrade",
+			src:  counter + "declare fn shared() -> Counter\nval d = shared()",
+			want: "Counter",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, messagesWithSpan(t, errs))
+			require.Equal(t, tt.want, values["d"])
+		})
+	}
+}
+
+// A `mut self` method is reachable on an owned call result bound with `val mut`, which is
+// the point of the upgrade above: a factory is how a class with validation or a private
+// constructor is written, and its result would otherwise be unusable.
+func TestMutSelfMethodReachableOnAnOwnedCallResult(t *testing.T) {
+	const src = `
+		class Counter {
+			n: number,
+			constructor(mut self, n: number) { self.n = n },
+			bump(mut self) { self.n = 1 },
+		}
+		fn make() -> Counter { return Counter(0) }
+		fn go() -> number { val %s d = make()  d.bump()  return 0 }`
+	t.Run("a `val mut` binding reaches it", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, "mut"))
 		require.Empty(t, messagesWithSpan(t, errs))
-		require.Equal(t, "mut Counter", values["c"])
 	})
-	t.Run("an ordinary call returning an instance", func(t *testing.T) {
-		values, _, errs := inferSource(t, `
-			class Counter {
-				count: number,
-				constructor(mut self, count: number) { self.count = count },
-			}
-			declare fn shared() -> Counter
-			val mut c = shared()`)
-		require.Empty(t, messagesWithSpan(t, errs))
-		require.Equal(t, "Counter", values["c"])
+	t.Run("a plain `val` binding does not", func(t *testing.T) {
+		_, _, errs := inferSource(t, fmt.Sprintf(src, ""))
+		require.Equal(t,
+			[]string{"cannot constrain immutable Counter <: mutable Counter"},
+			errorMessagesOf(errs))
 	})
 }

@@ -138,17 +138,19 @@ func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (solty
 	}
 	initT := c.inferExpr(scope, lvl, d.Init)
 	switch {
-	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.constructsFreshInstance(d.Init):
-		// An unannotated `val mut c = C(…)` constructs an owned-mutable instance, the class
-		// twin of the fresh-literal upgrade below. A constructor call mints an instance no
-		// one else holds, so granting it the mutable type aliases nothing, exactly the
-		// reasoning a fresh literal uses. Without this the binding stays immutable and a
-		// `mut self` method is unreachable on a value the caller just built and solely owns.
-		// The instance itself is wrapped, not the variable the call result arrives as.
-		// Wrapping the variable would leave its own name in the coalesced binding, so `c`
-		// would render `mut (T0 | Counter)` instead of `mut Counter`.
-		if ct, ok := classCarrier(initT); ok {
-			ref := soltype.NewRef(true, nil, ct)
+	case d.TypeAnn == nil && isMutableIdentPat(d.Pattern) && c.callReturnsOwned(d.Init, initT):
+		// An unannotated `val mut d = f()` whose call returns an owned value binds it
+		// owned-mutable, the call twin of the fresh-literal upgrade below. An owned return
+		// type says the caller holds the only reference, so granting the binding mutable
+		// access aliases nothing, the same reasoning a fresh literal uses. Without this a
+		// `mut self` method would be unreachable on a value a factory just built and handed
+		// over, which is how a class with validation or a hidden constructor is written.
+		//
+		// The value is wrapped, not the variable the result arrives as. Wrapping the
+		// variable would leave its own name in the coalesced binding, so `d` would render
+		// `mut (T0 | Counter)` instead of `mut Counter`.
+		if inner := ownedCarrier(initT); inner != nil {
+			ref := soltype.NewRef(true, nil, inner)
 			c.recordProv(ref, d.Init, OwnedMutConstruction)
 			initT = ref
 		}
@@ -482,21 +484,58 @@ func (c *checker) acceptsBorrowLeaf(leaf ast.Expr) bool {
 	return ok
 }
 
-// constructsFreshInstance reports whether e is a call to a class value, which mints an
-// instance the binding solely owns. The callee's type carries a ConstructorElem, which is
-// what distinguishes `C(0)` from an ordinary call whose result may be an object the callee
-// already held and handed out. An ordinary call is not fresh and must not upgrade.
-func (c *checker) constructsFreshInstance(e ast.Expr) bool {
-	call, ok := e.(*ast.CallExpr)
-	if !ok {
+// callReturnsOwned reports whether e is a call whose result is an owned value. An owned
+// return type is the callee's statement that it kept nothing, so the caller holds the only
+// reference to what comes back. A callee that did keep the value returns a borrow instead,
+// which ownedCarrier declines.
+func (c *checker) callReturnsOwned(e ast.Expr, t soltype.Type) bool {
+	if _, ok := e.(*ast.CallExpr); !ok {
 		return false
 	}
-	callee := c.info.TypeOf(call.Callee)
-	if callee == nil {
-		return false
+	return ownedCarrier(t) != nil
+}
+
+// ownedCarrier resolves t to the value an owned result denotes: the carrier itself, or the
+// single concrete carrier among an unresolved variable's lower bounds. It mirrors
+// classCarrier's look-through, since a call result reaches a binding as a variable with the
+// result among its bounds rather than as a bare type. It declines a borrow, a variable whose
+// bounds disagree, and anything a borrow may not hold, such as a primitive.
+func ownedCarrier(t soltype.Type) soltype.RefInner {
+	// A borrow is checked at every level rather than only at the top, since a call result
+	// reaches the binding as a variable and the borrow sits among its lower bounds. Peeling
+	// with CarrierOf first would drop the lifetime and read `&Counter` as an owned Counter,
+	// handing the binding exclusive mutable access to a value the callee kept.
+	if r, isRef := t.(*soltype.RefType); isRef {
+		if r.Lt != nil {
+			return nil
+		}
+		return ownedCarrier(r.Inner)
 	}
-	_, isClassValue := classValueCarrier(callee)
-	return isClassValue
+	switch t := t.(type) {
+	case *soltype.TypeVarType:
+		var found soltype.RefInner
+		for _, lb := range t.LowerBounds {
+			if lb == soltype.Type(t) {
+				continue
+			}
+			inner := ownedCarrier(lb)
+			if inner == nil {
+				return nil
+			}
+			if found != nil && !equalType(found, inner) {
+				return nil
+			}
+			found = inner
+		}
+		return found
+	case *soltype.ObjectType:
+		return t
+	case *soltype.TupleType:
+		return t
+	case *soltype.ClassType:
+		return t
+	}
+	return nil
 }
 
 // freshLiteralShape reports whether e is a primitive literal, or an object/tuple literal
