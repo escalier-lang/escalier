@@ -690,6 +690,94 @@ func TestValMutUpgradesAnOwnedCallResult(t *testing.T) {
 	}
 }
 
+// An alias chain is followed to its end. expandAlias unfolds one level, so `type C2 = C1`
+// over `type C1 = Config` needs the walk to run twice before the field list appears. Only
+// the first hop resolved once, which left a receiver two aliases deep behaving like one of
+// unknown shape and losing its mutability.
+//
+// A cycle cannot reach the walk — the productivity check rejects `type A = A` and the
+// mutual pair at the declaration — so the case below pins that the walk terminates on one
+// rather than that it reports.
+func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		errs []string
+	}{
+		{
+			name: "two aliases over an object",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				fn go(c: mut A1) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "four aliases over an object",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				type A2 = A1
+				type A3 = A2
+				fn go(c: mut A3) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "two aliases over an interface",
+			src: `
+				export declare interface Config { inner: {n: number} }
+				type C1 = Config
+				type C2 = C1
+				fn go(c: mut C2) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "two aliases over a class",
+			src: `
+				class Box {
+					inner: {n: number},
+					constructor(mut self, inner: {n: number}) { self.inner = inner },
+				}
+				type B1 = Box
+				type B2 = B1
+				fn go(c: mut B2) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "a generic alias over a generic alias",
+			src: `
+				type Inner<T> = {inner: T}
+				type Holder<T> = Inner<T>
+				fn go(c: mut Holder<{n: number}>) -> number { c.inner.n = 1  return 0 }`,
+		},
+		{
+			name: "an immutable receiver still rejects through a chain",
+			src: `
+				type A0 = {inner: {n: number}}
+				type A1 = A0
+				fn go(c: A1) -> number { c.inner.n = 1  return 0 }`,
+			errs: []string{"cannot constrain immutable object <: mutable object"},
+		},
+		{
+			name: "a self-referential alias is rejected at the declaration",
+			src: `
+				type A = A
+				fn go(c: mut A) -> number { c.inner.n = 1  return 0 }`,
+			errs: []string{
+				"recursive type alias `A` reaches itself without passing under a type " +
+					"constructor, so no lap of the recursion emits any structure and the alias " +
+					"names no type; wrap the recursive reference in an object, tuple, or function type",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			if tt.errs == nil {
+				require.Empty(t, messagesWithSpan(t, errs))
+				return
+			}
+			require.Equal(t, tt.errs, errorMessagesOf(errs))
+		})
+	}
+}
+
 // The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
 // the `mut` its fields carry: an interface whose field is a generic class carrying a
 // `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,

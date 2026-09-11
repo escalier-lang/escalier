@@ -2790,7 +2790,17 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	// resolves to that list before the read. Without this a receiver annotated `mut Config`
 	// or `mut Box` would fall to the unknown-shape branch below and lose its mutability,
 	// while the inline `mut {…}` spelling of the same type kept it.
-	if at, isAlias := carrier.(*soltype.AliasType); isAlias {
+	//
+	// expandAlias unfolds one level, so the chain is followed to its end: `type Config =
+	// Inner` names an alias whose own body may be another. Each name is recorded so a cycle
+	// stops the walk rather than spinning it.
+	seenAliases := set.NewSet[string]()
+	for {
+		at, isAlias := carrier.(*soltype.AliasType)
+		if !isAlias || seenAliases.Contains(at.Name) {
+			break
+		}
+		seenAliases.Add(at.Name)
 		carrier = c.ctx.expandAlias(at)
 	}
 	if ct, isClass := classCarrier(carrier); isClass {
