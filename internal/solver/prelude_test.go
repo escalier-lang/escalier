@@ -39,14 +39,23 @@ func TestPreludeOperatorBindings(t *testing.T) {
 
 func TestPreludeStdlibTypePlaceholders(t *testing.T) {
 	s := NewPrelude()
-	for _, name := range []string{
-		"Promise", "Iterable", "AsyncIterable",
-		"Generator", "AsyncGenerator",
-	} {
+	for _, name := range []string{"Promise", "Generator", "AsyncGenerator"} {
 		t.Run(name, func(t *testing.T) {
 			b, ok := s.GetType(name)
 			require.True(t, ok, "stdlib type %q should resolve to a placeholder", name)
 			require.IsType(t, &soltype.UnknownType{}, b.Type)
+		})
+	}
+}
+
+// `Iterable` and `AsyncIterable` get no placeholder. Iteration reads the protocol member
+// off the operand, so no rule writes either name and a stub would stand for nothing.
+func TestPreludeSeedsNoIterableStub(t *testing.T) {
+	s := NewPrelude()
+	for _, name := range []string{"Iterable", "AsyncIterable"} {
+		t.Run(name, func(t *testing.T) {
+			_, ok := s.GetType(name)
+			require.False(t, ok, "stdlib type %q should have no placeholder", name)
 		})
 	}
 }

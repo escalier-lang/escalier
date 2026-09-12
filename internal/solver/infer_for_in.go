@@ -170,7 +170,7 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
-	return nil, false
+	return c.protocolElem(t, soltype.AsyncIteratorSymbolMember)
 }
 
 // syncElemType resolves the element type of a synchronously-iterable value
@@ -201,15 +201,6 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 			return &soltype.UnknownType{}, true
 		}
 		return newUnion(c.ctx, t.Elems), true
-	case *soltype.ClassType:
-		// An array iterates its elements. This reads the element off the instance
-		// directly, which is the answer for the one container the milestone requires.
-		// The protocol lookup over the reserved symbol keys replaces it, at which point
-		// `Array` answers through its own `[Symbol.iterator]` like any other iterable.
-		if elem, isArray := c.ctx.arrayElem(t); isArray {
-			return elem, true
-		}
-		return nil, false
 	case *soltype.UnionType:
 		elems := make([]soltype.Type, 0, len(t.Types))
 		for _, branch := range t.Types {
@@ -221,5 +212,91 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 		}
 		return newUnion(c.ctx, elems), true
 	}
+	return c.protocolElem(t, soltype.IteratorSymbolMember)
+}
+
+// protocolElem returns the element type t yields through the iteration protocol, and
+// false when t declares no such member.
+//
+// It reads the member named by symbol off t's member view and takes the first type
+// argument of what calling that member evaluates to. `Array<T>` declares
+// `[Symbol.iterator](self) -> ArrayIterator<T>`, so the lookup lands on that method and
+// the element is the `T` in its return.
+//
+// Reading the argument by position rather than calling the member keeps this to a
+// projection. Every iterator type in the tree writes its element first, which is the
+// shape `Iterator<T, TReturn, TNext>` fixes and every declaration extending it keeps.
+// A member returning something with no type argument yields nothing readable and
+// declines, so the operand is reported not iterable rather than iterating `unknown`.
+func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, bool) {
+	body, viewed := c.iterationView(t)
+	if !viewed {
+		return nil, false
+	}
+	member, found := body.ReadMember(symbol)
+	if !found {
+		return nil, false
+	}
+	ret, returns := memberReturn(member)
+	if !returns {
+		return nil, false
+	}
+	return firstTypeArg(ret)
+}
+
+// memberReturn returns what calling member evaluates to, covering the two ways the
+// protocol member is written. A declaration writes it as a method,
+// `[Symbol.iterator](self) -> Iterator<T>`, and an object literal writes it as a
+// property holding a function. An overloaded method answers from its first arm, since
+// every arm of an iterator member returns the same element.
+func memberReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
+	switch member := member.(type) {
+	case *soltype.MethodElem:
+		if len(member.Signatures) == 0 {
+			return nil, false
+		}
+		return member.Signatures[0].Ret, true
+	case *soltype.PropertyElem:
+		fn, isFunc := member.Type.(*soltype.FuncType)
+		if !isFunc {
+			return nil, false
+		}
+		return fn.Ret, true
+	}
 	return nil, false
+}
+
+// iterationView returns the member list a protocol lookup reads t's `[Symbol.iterator]`
+// off. A class instance projects its body with the arguments it is reached at, an
+// interface reference expands to the object it stands for, and an object literal's type
+// is already that object. Every other type carries no members and declines.
+func (c *checker) iterationView(t soltype.Type) (*soltype.ObjectType, bool) {
+	switch t := t.(type) {
+	case *soltype.ObjectType:
+		return t, true
+	case *soltype.ClassType:
+		return c.ctx.projectClassBody(t)
+	case *soltype.AliasType:
+		obj, isObj := c.ctx.expandAlias(t).(*soltype.ObjectType)
+		return obj, isObj
+	}
+	return nil, false
+}
+
+// firstTypeArg returns the first type argument of a nominal reference, and false for a
+// type carrying none.
+func firstTypeArg(t soltype.Type) (soltype.Type, bool) {
+	var args []soltype.Type
+	switch t := t.(type) {
+	case *soltype.ClassType:
+		args = t.TypeArgs
+	case *soltype.AliasType:
+		args = t.TypeArgs
+	default:
+		return nil, false
+	}
+	if len(args) == 0 {
+		return nil, false
+	}
+	return args[0], true
 }
