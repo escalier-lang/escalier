@@ -300,17 +300,53 @@ func TestInferModuleTypeAliasBinds(t *testing.T) {
 	require.Equal(t, "number", types["Foo"])
 }
 
-// A `val` with no initializer can't be inferred in M2 (annotation-driven binding
-// needs TypeAnn support that lands later); it reports MissingInitializerError and
-// binds NOTHING, so a later reference still fails as an unknown identifier rather
-// than silently resolving to a placeholder.
+// An ambient decl describes a value the runtime already provides, so its annotation is
+// the binding's type and there is nothing to initialize.
+func TestInferModuleAmbientDeclBindsItsAnnotation(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want map[string]string
+	}{
+		{
+			name: "AnAmbientVal",
+			src:  `declare val x: number`,
+			want: map[string]string{"x": "number"},
+		},
+		{
+			name: "AnAmbientVar",
+			src:  `declare var x: string`,
+			want: map[string]string{"x": "string"},
+		},
+		{
+			// The binding is reachable from the rest of the module, which is the point
+			// of declaring it.
+			name: "AndTheNameResolves",
+			src: `
+				declare val x: number
+				val y = x
+			`,
+			want: map[string]string{"x": "number", "y": "number"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, values)
+		})
+	}
+}
+
+// Without an annotation an ambient decl says nothing about what the value holds, so it
+// reports MissingInitializerError and binds NOTHING. A later reference then fails as an
+// unknown identifier rather than silently resolving to a placeholder.
 func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
-	src := `declare val x: number`
+	src := `declare val x`
 	values, _, errs := inferSource(t, src)
 	require.Len(t, errs, 1)
 	require.Equal(t, "1:1-1:14: Variable declaration requires an initializer: x", msgWithSpan(t, errs[0]))
-	// M2.5: the error self-blames from the decl node (whose span, per the parser,
-	// covers the binder but not the trailing annotation).
+	// M2.5: the error self-blames from the decl node, whose span covers the binder.
 	require.Equal(t, "declare val x", spanText(src, errs[0].Span()))
 	require.Empty(t, values)
 }
@@ -319,7 +355,7 @@ func TestInferModuleVarDeclWithoutInitializer(t *testing.T) {
 // genuine unknown-identifier error, not a silent resolution to a placeholder.
 func TestInferModuleNoInitializerDoesNotLeakBinding(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		declare val x: number
+		declare val x
 		val y = x
 	`)
 	require.Len(t, errs, 2)

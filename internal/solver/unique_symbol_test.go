@@ -78,3 +78,21 @@ func TestUniqueSymbolIsALeafKeyedOnItsID(t *testing.T) {
 	// Its rank is its own, so the tie-breaker never asserts another kind to it.
 	require.NotEqual(t, typeKindOrder(first), typeKindOrder(&soltype.PrimType{Prim: soltype.SymPrim}))
 }
+
+// `std:prelude` reaches the well-known symbols through `declare var Symbol:
+// SymbolConstructor`, so a member off that binding is the particular symbol the
+// constructor declares rather than the whole `symbol` primitive.
+func TestAWellKnownSymbolReachesItsOwnType(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare class SymbolConstructor {
+			readonly iterator: unique symbol,
+			readonly asyncIterator: unique symbol,
+		}
+		declare var Symbol: SymbolConstructor
+		val it = Symbol.iterator
+		val asyncIt = Symbol.asyncIterator
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "unique symbol#0", values["it"])
+	require.Equal(t, "unique symbol#1", values["asyncIt"])
+}
