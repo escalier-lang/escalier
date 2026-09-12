@@ -265,10 +265,11 @@ func TestForInFollowsAnAliasToTheIterable(t *testing.T) {
 	require.Equal(t, "fn (n: Nums) -> number", values["use"])
 }
 
-// A delegate states all three of its slots in the iterator its protocol member hands
-// back, so `yield from` forwards what the delegation finishes with and what it accepts
-// from a sent value, not the element alone. A declaration writing fewer arguments states
-// fewer slots and the rest fall back to what a tuple gives.
+// An iterator states three slots. `Iterator<T, TReturn, TNext>` names the element, what
+// the iteration finishes with, and what it accepts from a sent value, in that order.
+// `yield from` forwards all three off the iterator its protocol member hands back, so a
+// delegation carries more than the element. A declaration writing fewer arguments states
+// fewer slots, and the rest fall back to what a tuple gives.
 //
 // The body returns the delegation's value, since a generator's own `Ret` is what its body
 // returns. Dropping that would leave the slot reading `undefined` whatever the delegate
