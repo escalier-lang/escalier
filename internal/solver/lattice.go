@@ -2,6 +2,7 @@ package solver
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -525,8 +526,60 @@ func compareSameKind(a, b soltype.Type) int {
 		// Two `Self`s order by the class each was declared in, which is the only type they
 		// carry. A `Self` and a bare class never reach here: typeKindOrder separates them.
 		return compareType(a.Class, b.(*soltype.SelfType).Class)
+	case *soltype.ClassType:
+		// Two class instances order by every field their equality reads: the qualified
+		// name, the exactness flag, then the lifetime and type arguments positionally.
+		// Reading the same fields is what keeps `compareType(a, b) == 0` and
+		// `equalType(a, b)` answering together, so two instances of one class differing
+		// only in their arguments hold a fixed position relative to each other.
+		b := b.(*soltype.ClassType)
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		if a.Final != b.Final {
+			return boolOrder(a.Final) - boolOrder(b.Final)
+		}
+		if c := compareLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs); c != 0 {
+			return c
+		}
+		return compareTypeSliceByLen(a.TypeArgs, b.TypeArgs)
+	case *soltype.AliasType:
+		// An alias reference orders by the fields its equality reads, the same three an
+		// instance of a class orders by minus the exactness flag an alias does not carry.
+		b := b.(*soltype.AliasType)
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		if c := compareLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs); c != 0 {
+			return c
+		}
+		return compareTypeSliceByLen(a.TypeArgs, b.TypeArgs)
 	}
 	return 0
+}
+
+// compareLifetimeSlice orders two lifetime-argument lists, shorter first and then
+// positionally, the shape compareTypeSlice has for types.
+func compareLifetimeSlice(a, b []soltype.Lifetime) int {
+	if c := len(a) - len(b); c != 0 {
+		return c
+	}
+	for i := range a {
+		if c := compareLifetime(a[i], b[i]); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+// compareTypeSliceByLen orders two type-argument lists, shorter first and then
+// positionally. compareTypeSlice assumes equal lengths, which two references to one
+// name need not have while a declaration's arity is still unresolved.
+func compareTypeSliceByLen(a, b []soltype.Type) int {
+	if c := len(a) - len(b); c != 0 {
+		return c
+	}
+	return compareTypeSlice(a, b)
 }
 
 func compareTypeSlice(a, b []soltype.Type) int {

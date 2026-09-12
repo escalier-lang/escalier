@@ -115,3 +115,46 @@ func TestAsyncFnWithoutAPromiseClassKeepsItsRaise(t *testing.T) {
 	require.Equal(t, `fn () -> never throws "boom"`,
 		soltype.Print(inferredValueType(t, res.Scope, "f")))
 }
+
+// promiseOf carries the declaration's own parameter defaults, so what the printer elides
+// is what a reference omitting the argument resolves to. A run whose `Promise` takes
+// other than two parameters is not the shape the async rules build, so it resolves
+// nothing and an `async fn` degrades the way it does with no `Promise` at all.
+func TestPromiseOfFollowsTheDeclaredShape(t *testing.T) {
+	tests := []struct {
+		name string
+		decl string
+		want string
+	}{
+		{
+			// The rejection slot defaults to `never` and holds `never`, an absence the
+			// reader is not owed.
+			name: "AnEmptySlotDefaultingToNeverIsElided",
+			decl: `export declare class Promise<T, E = never> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }`,
+			want: "fn () -> Promise<1>",
+		},
+		{
+			// `unknown` is what a reference omitting the argument would resolve to, so
+			// hiding the `never` this promise actually carries would misreport it.
+			name: "ASlotDefaultingToSomethingElseIsShown",
+			decl: `export declare class Promise<T, E = unknown> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }`,
+			want: "fn () -> Promise<1, never>",
+		},
+		{
+			name: "ADeclarationWithNoRejectionSlotResolvesNothing",
+			decl: `export declare class Promise<T> { then<U>(self, f: fn (v: T) -> U) -> Promise<U> }`,
+			want: "fn () -> 1",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			res := inferAgainstStdlib(t, `val f = async fn () { return 1 }`,
+				map[string]string{"std/prelude.esc": tt.decl})
+
+			require.Empty(t, errorMessagesOf(res.Errors))
+			require.Equal(t, tt.want, soltype.Print(inferredValueType(t, res.Scope, "f")))
+		})
+	}
+}
