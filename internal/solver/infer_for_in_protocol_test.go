@@ -401,3 +401,70 @@ func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
 		})
 	}
 }
+
+// A chain of aliases is followed to the nominal reference at its end, and a chain that
+// returns to a name it already walked stops rather than looping. The degenerate aliases
+// below draw a productivity report of their own; what this pins is that the slot read
+// terminates and still answers.
+func TestForInFollowsAnAliasChainWithoutLooping(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want []string
+	}{
+		{
+			name: "AChainReachingTheIterator",
+			src: `
+				type Mid<T> = Iterator<T>
+				declare class Seq { [Symbol.iterator](self) -> Mid<number> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+		},
+		{
+			name: "AnAliasNamingItself",
+			src: `
+				type Loop<T> = Loop<T>
+				declare class Seq { [Symbol.iterator](self) -> Loop<number> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: []string{
+				"recursive type alias `Loop` reaches itself without passing under a type " +
+					"constructor, so no lap of the recursion emits any structure and the alias " +
+					"names no type; wrap the recursive reference in an object, tuple, or function type",
+			},
+		},
+		{
+			name: "TwoAliasesNamingEachOther",
+			src: `
+				type A<T> = B<T>
+				type B<T> = A<T>
+				declare class Seq { [Symbol.iterator](self) -> A<number> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: []string{
+				"recursive type alias `B` reaches itself through `A` without passing under a type " +
+					"constructor, so no lap of the recursion emits any structure and the alias " +
+					"names no type; wrap the recursive reference in an object, tuple, or function type",
+				"recursive type alias `A` reaches itself through `B` without passing under a type " +
+					"constructor, so no lap of the recursion emits any structure and the alias " +
+					"names no type; wrap the recursive reference in an object, tuple, or function type",
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Equal(t, tt.want, nilIfEmpty(errorMessagesOf(errs)))
+			require.Equal(t, "fn (s: Seq) -> number", values["use"])
+		})
+	}
+}
+
+// nilIfEmpty renders an empty message list as nil, so a row expecting no diagnostic
+// leaves its want field unset rather than writing an empty slice.
+func nilIfEmpty(msgs []string) []string {
+	if len(msgs) == 0 {
+		return nil
+	}
+	return msgs
+}

@@ -253,7 +253,16 @@ func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Typ
 //
 // It stops at an alias standing for anything else, which is what an interface is: an
 // interface expands to the object describing its members, and the arguments to read are
-// the ones the reference itself supplied. A seen-set breaks a degenerate cycle.
+// the ones the reference itself supplied.
+//
+// expandAliasChain walks the same chain and cannot serve here. It follows to the end and
+// answers what the chain stands for, so an interface reference comes back as the object
+// describing its members, which carries no arguments at all. What a slot read needs is
+// the last nominal reference in the chain, which that answer has already discarded.
+//
+// A seen-set of names breaks a degenerate cycle such as `type A = B` over `type B = A`.
+// The alias is recorded before it is expanded, so a chain returning to a name it already
+// walked stops on the reference rather than looping.
 func (c *checker) iteratorReference(t soltype.Type) soltype.Type {
 	seen := set.NewSet[string]()
 	for {
