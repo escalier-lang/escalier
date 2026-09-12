@@ -903,29 +903,19 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 	return c.memberValue(lvl, blame, member), true
 }
 
-// memberCarrier peels a receiver to the shape a member lookup dispatches on. A transparent
-// alias is expanded to the type it stands for, and a `typeof v` residual is replaced by the
-// value's type. Both repeat, since an alias may name a `typeof` and a `typeof` may resolve to
-// an alias. A type that is neither is returned unchanged.
+// memberCarrier peels a receiver to the shape a member lookup dispatches on, expanding a
+// transparent alias and unwrapping a `typeof v`. Both repeat, since either may name the other.
+// A type that is neither is returned unchanged.
 //
-// Each lookup below asserts a kind: objectMember wants an ObjectType, projectedMember a
-// ClassType, classValueMember a class value's object. An alias handle and a `typeof` residual
-// are neither, so without this a receiver annotated `C` declines where the same object written
-// inline resolves. The read then falls through to the structural `{name: fieldVar}`
-// requirement, which is a PropertyElem, and a method or getter under that name is reported as
-// a missing property rather than read.
+// Every lookup below asserts a kind, and neither a handle nor a residual is one. Without this
+// a receiver annotated `C` declines where the same object written inline resolves, and the read
+// falls through to the structural `{name: fieldVar}` requirement. That requirement is a
+// PropertyElem, so a method or getter under the name is reported as missing rather than read.
 //
-// A borrow an expansion uncovers is peeled, so `type M = mut {m(self) -> number}` reads as the
-// object the way the inline `mut {m(self) -> number}` spelling does. The receiver's own borrow
-// is already off by the time a lookup calls this, and the input is returned untouched when it
-// is not a handle, so nothing else loses one.
-//
-// The walk is bounded rather than guarded by the names it has expanded. `type Id<T> = T` over
-// `Id<Id<X>>` reaches the same name twice at different arguments and has to keep going, so a
-// name-keyed guard would cut it short. maxExpandDepth is the evaluator's budget for expansion
-// along one path, and it stops a chain that never settles. Stopping returns the handle, which
-// declines the lookup rather than answering wrongly. An alias that names no type reports that
-// where it is declared, so nothing is lost by declining here.
+// A borrow an expansion uncovers is peeled, so `type M = mut {m(self) -> number}` reads the way
+// the inline spelling does. The walk is bounded rather than guarded by the names it has
+// expanded, because `type Id<T> = T` over `Id<Id<X>>` reaches one name twice at different
+// arguments and has to keep going. Running out returns the handle, which declines the lookup.
 func (c *checker) memberCarrier(t soltype.Type) soltype.Type {
 	for range maxExpandDepth {
 		switch cur := t.(type) {
