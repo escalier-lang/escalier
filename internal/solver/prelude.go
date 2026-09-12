@@ -129,27 +129,20 @@ const preludeVarIDBase = 1 << 20
 // bindPreludeExports loads the prelude package and copies what it exports into
 // scope.
 //
-// The package's variables are drawn from an id range of their own and the
-// program's counter is restored afterwards, so a program's first variable is
-// `t0` whether or not a prelude was loaded. Every run loads this package whether
-// or not the program names anything in it, and numbering every diagnostic from
-// where the prelude left off would make the whole standard library visible in
-// messages about code that never mentions it. An ordinary import is the program's
-// own doing and keeps drawing from the shared counter.
+// The package draws its variables from preludeVarIDBase and the program's
+// counter is put back afterwards, so a program's first variable is `t0` whether
+// or not a prelude loaded. Numbering a program's diagnostics from where the
+// standard library left off would put it in messages about code that never
+// mentions it.
 //
-// A run whose module source answers nothing for the URI binds nothing. The
-// solver's own tests infer against no stdlib at all, and a program that never
-// names one of these types needs no diagnostic about a package it does not use,
-// so the load failure is dropped rather than reported. A package that loads and
-// reports diagnostics of its own is a different matter, and those reach the run
-// the way an import's do.
+// A source that answers nothing for the URI binds nothing and reports nothing.
+// The solver's own tests infer against no stdlib, and a program owes no
+// diagnostic to a package it does not name. A prelude that loads and reports
+// diagnostics of its own is a different matter, and those reach the run.
 //
-// The prelude package has to be self-contained. A package it imports is inferred
-// while this layer is still empty, so that package resolves none of the prelude's
-// exports and the degraded surface is what the registry publishes for the rest of
-// the run. Anything the prelude names is therefore declared beside it, which is
-// what the `std:prelude` entry in internal/dts_to_esc/partition.go routes. That
-// entry records the names the set stops short of and why.
+// The prelude has to be self-contained, since a package it imports is inferred
+// while this layer is still empty. See the `std:prelude` entry in
+// internal/dts_to_esc/partition.go.
 func (c *checker) bindPreludeExports(scope *Scope) {
 	programVars := c.ctx.varCounter
 	c.ctx.varCounter = preludeVarIDBase
