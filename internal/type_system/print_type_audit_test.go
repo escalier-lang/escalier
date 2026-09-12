@@ -198,13 +198,39 @@ func TestPrintTypeAudit_RoundTrip(t *testing.T) {
 			},
 		})},
 
-		// CallableElem / ConstructorElem inside an object have no
-		// Escalier source syntax — they are only synthesized by the
-		// interop conversion from TypeScript `.d.ts` call/construct
-		// signatures. The printer emits `{fn (...) -> T}` /
-		// `{new fn (...) -> T}` for debug output; round-trip is
-		// covered by the no-syntax test below.
-
+		// --- the two unnamed callable members of an object ---
+		// Both are writable source: `{(x: number) -> string}` is a call signature and
+		// `{new (x: number) -> Foo}` a construct signature, so both round-trip.
+		{"object callable", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			&type_system.CallableElem{
+				Fn: type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewNumPrimType(nil)},
+					},
+					type_system.NewStrPrimType(nil), nil),
+			},
+		})},
+		{"object constructor", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			&type_system.ConstructorElem{
+				Fn: type_system.NewFuncType(nil, nil,
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewNumPrimType(nil)},
+					},
+					type_system.NewTypeRefType(nil, "Foo", nil), nil),
+			},
+		})},
+		// A generic one puts the binder between the keyword and the parameters, which is
+		// the position the header change moved it into.
+		{"object generic constructor", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
+			&type_system.ConstructorElem{
+				Fn: type_system.NewFuncType(nil,
+					[]*type_system.TypeParam{{Name: "T"}},
+					[]*type_system.FuncParam{
+						{Pattern: type_system.NewIdentPat("v"), Type: type_system.NewTypeRefType(nil, "T", nil)},
+					},
+					type_system.NewTypeRefType(nil, "Box", nil, type_system.NewTypeRefType(nil, "T", nil)), nil),
+			},
+		})},
 		// --- function: typed params, optional, multiple, with throws ---
 		{"func optional param", type_system.NewFuncType(nil, nil,
 			[]*type_system.FuncParam{
@@ -393,24 +419,6 @@ func TestPrintTypeAudit_NoSyntax(t *testing.T) {
 		typ  type_system.Type
 	}{
 		{"unique symbol", type_system.NewUniqueSymbolType(nil, 42)},
-		{"object callable", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-			&type_system.CallableElem{
-				Fn: type_system.NewFuncType(nil, nil,
-					[]*type_system.FuncParam{
-						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewNumPrimType(nil)},
-					},
-					type_system.NewStrPrimType(nil), nil),
-			},
-		})},
-		{"object constructor", type_system.NewObjectType(nil, []type_system.ObjTypeElem{
-			&type_system.ConstructorElem{
-				Fn: type_system.NewFuncType(nil, nil,
-					[]*type_system.FuncParam{
-						{Pattern: type_system.NewIdentPat("x"), Type: type_system.NewNumPrimType(nil)},
-					},
-					type_system.NewTypeRefType(nil, "Foo", nil), nil),
-			},
-		})},
 		{"global this", &type_system.GlobalThisType{}},
 		{"namespace empty", type_system.NewNamespaceType(nil, type_system.NewNamespace())},
 		{"regex", type_system.NewRegexType(nil, regexp.MustCompile(`^foo$`), nil)},

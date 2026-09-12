@@ -1001,7 +1001,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn (value: number) -> Box}",
+				"Box": "{new (value: number) -> Box}",
 				"box": "Box",
 				"a":   "number | string",
 				"b":   "number",
@@ -1016,7 +1016,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val {value} = box
 			`,
 			expectedTypes: map[string]string{
-				"Box":   "{new fn <T>(value: T) -> Box<T>}",
+				"Box":   "{new <T>(value: T) -> Box<T>}",
 				"box":   "Box<number>",
 				"value": "number",
 			},
@@ -1038,7 +1038,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = box.getValue(10)
 			`,
 			expectedTypes: map[string]string{
-				"Box": "{new fn <T>(value: T) -> Box<T>}",
+				"Box": "{new <T>(value: T) -> Box<T>}",
 				"box": "Box<number>",
 				"a":   "number | string",
 				"b":   "number",
@@ -1186,8 +1186,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val blue = Color.Hex("#0000FF")
 			`,
 			expectedTypes: map[string]string{
-				"rgb":  "{new fn (r: number, g: number, b: number) -> Color, symbol12(subject: RGB) -> [number, number, number]}",
-				"hex":  "{new fn (code: string) -> Color, symbol12(subject: Hex) -> [string]}",
+				"rgb":  "{new (r: number, g: number, b: number) -> Color, symbol12(subject: RGB) -> [number, number, number]}",
+				"hex":  "{new (code: string) -> Color, symbol12(subject: Hex) -> [string]}",
 				"red":  "Color",
 				"blue": "Color",
 			},
@@ -1225,8 +1225,8 @@ func TestCheckModuleNoErrors(t *testing.T) {
 			`,
 			expectedTypes: map[string]string{
 				"option": "MyOption<number>",
-				"some":   "{new fn <T>(value: T) -> MyOption<T>, symbol12<T>(subject: Some<T>) -> [T]}",
-				"none":   "{new fn <T>() -> MyOption<T>, symbol12<T>(subject: None<T>) -> []}",
+				"some":   "{new <T>(value: T) -> MyOption<T>, symbol12<T>(subject: Some<T>) -> [T]}",
+				"none":   "{new <T>() -> MyOption<T>, symbol12<T>(subject: None<T>) -> []}",
 				"result": "number",
 			},
 		},
@@ -1315,7 +1315,7 @@ func TestCheckModuleNoErrors(t *testing.T) {
 				val b = foo.bar("hello")
 			`,
 			expectedTypes: map[string]string{
-				"Foo": "{new fn () -> Foo}",
+				"Foo": "{new () -> Foo}",
 				"foo": "Foo",
 				"a":   "5",
 				"b":   "\"hello\"",

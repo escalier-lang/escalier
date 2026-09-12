@@ -347,7 +347,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 				// `Foo`'s class binding renders as a constructor-bearing
 				// object type — the `throws string` clause is attached to
 				// the callable signature.
-				"Foo": "{new fn (x: number) -> Foo throws string}",
+				"Foo": "{new (x: number) -> Foo throws string}",
 				// Caller-side throws inference propagates the
 				// constructor's declared throws into `make`'s
 				// inferred signature.
@@ -363,7 +363,7 @@ func TestConstructorInferredTypes(t *testing.T) {
 				val s = Box("hi")
 			`,
 			expected: map[string]string{
-				"Box": "{new fn <T>(value: T) -> Box<T>}",
+				"Box": "{new <T>(value: T) -> Box<T>}",
 				"b":   "Box<42>",
 				"s":   "Box<\"hi\">",
 			},
