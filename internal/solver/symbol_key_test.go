@@ -110,3 +110,30 @@ func TestAComputedKeyOutsideTheClosedSetIsUnsupported(t *testing.T) {
 		})
 	}
 }
+
+// A string key spelling the reserved name is declined rather than stored. Two keys
+// resolving to one member would let an ordinary property answer an iterator lookup and
+// render as the computed key, so the string form claims neither.
+func TestAStringKeySpellingTheReservedNameIsDeclined(t *testing.T) {
+	t.Run("ItIsNotStored", func(t *testing.T) {
+		_, types, errs := inferSource(t, `type T = { "@@iterator": number }`)
+		require.Equal(t, []string{"Unsupported: StrLit"}, errorMessagesOf(errs))
+		require.Equal(t, "{}", types["T"])
+	})
+
+	t.Run("ItDoesNotAnswerAnIteratorLookup", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn mk() -> { "@@iterator": fn () -> Iterator<string> }
+			fn use() { for x in mk() { x } }
+		`)
+		require.Contains(t, errorMessagesOf(errs), "Unsupported: StrLit")
+	})
+
+	// A string key that merely starts with the prefix names no well-known symbol, so it
+	// stays an ordinary member.
+	t.Run("AnUnreservedPrefixedKeyIsOrdinary", func(t *testing.T) {
+		_, types, errs := inferSource(t, `type T = { "@@whatever": number }`)
+		require.Empty(t, errorMessagesOf(errs))
+		require.Equal(t, `{"@@whatever": number}`, types["T"])
+	})
+}

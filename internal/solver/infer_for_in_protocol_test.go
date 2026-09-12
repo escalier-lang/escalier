@@ -303,3 +303,80 @@ func TestADiagnosticNamesASymbolKeyedMemberAsWritten(t *testing.T) {
 		[]string{"object is missing property: [Symbol.iterator]"},
 		errorMessagesOf(errs))
 }
+
+// An optional protocol member says the value may not carry it, so iterating one would
+// type a loop the value cannot run. Both spellings of an optional member decline.
+func TestForInRejectsAnOptionalProtocolMember(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+	}{
+		{
+			name: "AnOptionalMethod",
+			src: `
+				declare fn mk() -> { [Symbol.iterator]?(self) -> Iterator<number> }
+				fn use() { for x in mk() { x } }
+			`,
+		},
+		{
+			name: "AnOptionalProperty",
+			src: `
+				declare fn mk() -> { [Symbol.iterator]?: fn () -> Iterator<number> }
+				fn use() { for x in mk() { x } }
+			`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tt.src)
+			require.Len(t, errorMessagesOf(errs), 1)
+			require.Contains(t, errorMessagesOf(errs)[0], "is not iterable")
+		})
+	}
+}
+
+// An alias renaming another nominal reference is followed, so the slots are read in the
+// order the iterator declares them rather than the order the alias's arguments were
+// written. `Flip<number, string>` is `Iterator<string, number>`, whose element is
+// `string`.
+func TestForInFollowsAnAliasThatRenamesAnIterator(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		type Flip<A, B> = Iterator<B, A>
+		declare class Seq { [Symbol.iterator](self) -> Flip<number, string> }
+		fn use(s: Seq) { for x in s { return x } }
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn (s: Seq) -> string", values["use"])
+}
+
+// An async body delegates through `[Symbol.asyncIterator]`, so a delegate declaring only
+// that member answers. It falls back to the sync member, which is what lets an async
+// generator delegate to a plain array.
+func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnAsyncOnlyDelegate",
+			src: `
+				declare class Stream { [Symbol.asyncIterator](self) -> Iterator<string> }
+				async gen fn g(s: Stream) { yield from s }
+			`,
+			want: "fn (s: Stream) -> AsyncGenerator<string, undefined, unknown>",
+		},
+		{
+			name: "ASyncDelegateFallsBack",
+			src:  `async gen fn g(xs: Array<number>) { yield from xs }`,
+			want: "fn (xs: Array<number>) -> AsyncGenerator<number, undefined, unknown>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, values["g"])
+		})
+	}
+}

@@ -2,6 +2,7 @@ package solver
 
 import (
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -242,7 +243,34 @@ func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Typ
 	if !returns {
 		return nil, false
 	}
-	return typeArgs(ret)
+	return typeArgs(c.iteratorReference(ret))
+}
+
+// iteratorReference follows an alias that renames another nominal reference, so the slots
+// are read in the order the iterator itself declares them. `type Flip<A, B> = Iterator<B, A>`
+// permutes its arguments, and reading `Flip<number, string>` where it was written would
+// call `number` the element where the iterator it names puts `string` there.
+//
+// It stops at an alias standing for anything else, which is what an interface is: an
+// interface expands to the object describing its members, and the arguments to read are
+// the ones the reference itself supplied. A seen-set breaks a degenerate cycle.
+func (c *checker) iteratorReference(t soltype.Type) soltype.Type {
+	seen := set.NewSet[string]()
+	for {
+		alias, isAlias := t.(*soltype.AliasType)
+		if !isAlias || seen.Contains(alias.Name) {
+			return t
+		}
+		seen.Add(alias.Name)
+		switch expanded := c.ctx.expandAlias(alias).(type) {
+		case *soltype.AliasType:
+			t = expanded
+		case *soltype.ClassType:
+			return expanded
+		default:
+			return t
+		}
+	}
 }
 
 // nullaryReturn returns what calling member with no arguments evaluates to, covering the
@@ -256,9 +284,16 @@ func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Typ
 // `[Symbol.iterator](self) -> Iterator<boolean>` report the element as `number`, where the
 // call a `for`-`in` makes selects the second arm. The receiver is not a parameter, since
 // the parser peels `self` into SelfParam, so an instance member's own arity is zero.
+//
+// An optional member is declined. `[Symbol.iterator]?()` says the member may be absent,
+// and iteration has no answer for a value that does not carry it, so accepting the
+// declared return would type a loop the value cannot run.
 func nullaryReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
 	switch member := member.(type) {
 	case *soltype.MethodElem:
+		if member.Optional {
+			return nil, false
+		}
 		for _, sig := range member.Signatures {
 			if acceptsNoArguments(sig) {
 				return sig.Ret, true
@@ -267,7 +302,7 @@ func nullaryReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
 		return nil, false
 	case *soltype.PropertyElem:
 		fn, isFunc := member.Type.(*soltype.FuncType)
-		if !isFunc || !acceptsNoArguments(fn) {
+		if member.Optional || !isFunc || !acceptsNoArguments(fn) {
 			return nil, false
 		}
 		return fn.Ret, true

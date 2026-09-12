@@ -2994,14 +2994,22 @@ func constStringKey(e ast.Expr) (string, bool) {
 //
 // A computed key naming a well-known symbol, `[Symbol.iterator]`, reads as the
 // reserved member name that symbol is stored under. See internal/soltype/symbol_key.go
-// for the spelling and what it stands in for. Every other computed key carries no
-// static name and returns false so the caller can raise a structured error. Full
-// index-signature support rides M9.
+// for the spelling and what it stands in for.
+//
+// A string key spelling that reserved name is declined rather than stored, since two
+// keys resolving to one member would let `{"@@iterator": f}` answer an iterator lookup
+// and render as `[Symbol.iterator]`. Nothing else claims the spelling, so declining it
+// costs no program a member it could otherwise declare. A key naming a member under a
+// computed expression is not supported, and returns false so the caller can raise a
+// structured error.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:
 		return k.Name, true
 	case *ast.StrLit:
+		if _, reserved := soltype.SymbolOfMemberName(k.Value); reserved {
+			return "", false
+		}
 		return k.Value, true
 	case *ast.NumLit:
 		return strconv.FormatFloat(k.Value, 'f', -1, 64), true
@@ -3271,7 +3279,12 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 	// Everything else states its slots in the iterator its protocol member hands back,
 	// `Iterator<T, TReturn, TNext>`. A declaration writing fewer arguments states fewer
 	// slots, and the missing ones fall back to what a tuple gives.
-	args, viaProtocol := c.protocolIterator(t, soltype.IteratorSymbolMember)
+	//
+	// An async body delegates to an async iterable, so it reads `[Symbol.asyncIterator]`
+	// and falls back to the sync member, matching the GeneratorType arm above where an
+	// async delegate is legal only from an async body while a sync one is legal from
+	// either. A sync body reads the sync member alone.
+	args, viaProtocol := c.delegateSlots(t)
 	if !viaProtocol {
 		return nil, nil, nil, false
 	}
@@ -3284,6 +3297,17 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 		next = args[2]
 	}
 	return args[0], ret, next, true
+}
+
+// delegateSlots reads the slots a `yield from` operand states, through the async protocol
+// first when the delegating body is async and through the sync one otherwise.
+func (c *checker) delegateSlots(t soltype.Type) ([]soltype.Type, bool) {
+	if c.fn != nil && c.fn.async {
+		if args, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
+			return args, true
+		}
+	}
+	return c.protocolIterator(t, soltype.IteratorSymbolMember)
 }
 
 // meetNexts combines the Next slots a generator must satisfy at once into the single

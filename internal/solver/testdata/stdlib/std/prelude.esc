@@ -28,7 +28,7 @@ export declare class Promise<T, E = never> {
 // that member returns. `Array` declares the member so it answers the same way any
 // other iterable does.
 export declare interface Iterator<T, TReturn = undefined, TNext = unknown> {
-    next(self, value: TNext) -> IteratorResult<T, TReturn>,
+    next(self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
 }
 
 export declare interface Iterable<T, TReturn = undefined, TNext = unknown> {

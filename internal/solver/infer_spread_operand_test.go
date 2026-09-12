@@ -118,8 +118,8 @@ type Ok = [...Pair, boolean]`,
 // program today. Re-point these cases at acceptance when #1552 lands.
 func TestInferTupleAnnotationSpreadRejectsAnIterable(t *testing.T) {
 	// Declared rather than defined, so the cases turn on the shape alone. A body
-	// returning `self` reports `cannot constrain object <: class Seq` today, which
-	// #1564 covers and which has nothing to do with the spread rule under test.
+	// returning `self` reports `cannot constrain object <: class Seq`, a diagnostic
+	// #1564 tracks and one the spread rule under test has nothing to do with.
 	const seq = `
 		declare class Seq {
 			next(self) -> number,
