@@ -87,7 +87,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Dog", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Dog | Cat) & ~Dog",
+			unsimplified: "(Cat | Dog) & ~Dog",
 			want:         "Cat",
 		},
 		{
@@ -100,7 +100,7 @@ func TestSimplifyNegationsDropsDisjointComplements(t *testing.T) {
 				c.ctx.registerClass("Cat", &ClassDef{Supers: []*soltype.ClassType{cls("Animal", false)}})
 				return interT(unionT(cls("Puppy", false), cls("Cat", false)), negT(cls("Dog", false)))
 			},
-			unsimplified: "(Puppy | Cat) & ~Dog",
+			unsimplified: "(Cat | Puppy) & ~Dog",
 			want:         "Cat",
 		},
 		{

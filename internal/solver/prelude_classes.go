@@ -76,8 +76,19 @@ func (c *Context) promiseParts(t soltype.Type) (inner, errT soltype.Type, ok boo
 // promiseOf returns an instance of the `Promise` the run settled on, and false when
 // the run resolved none to instantiate. A nil errT stands for the `never` a promise
 // that cannot reject carries, so a caller with no rejection to name passes nothing.
+//
+// The instance carries the declaration's own parameter defaults rather than an assumed
+// pair, so what the printer elides is what a reference omitting the argument resolves
+// to. A `Promise<T, E = unknown>` renders its rejection slot instead of hiding a
+// `never` the declaration would not have filled. A declaration taking other than two
+// parameters is not the shape the async rules build, so it resolves nothing and the
+// caller degrades the way it does for a run with no `Promise` at all.
 func (c *Context) promiseOf(inner, errT soltype.Type) (soltype.Type, bool) {
 	if c.promiseClass == "" {
+		return nil, false
+	}
+	def, declared := c.classDef(c.promiseClass)
+	if !declared || len(def.TypeParams) != 2 {
 		return nil, false
 	}
 	if errT == nil {
@@ -86,9 +97,7 @@ func (c *Context) promiseOf(inner, errT soltype.Type) (soltype.Type, bool) {
 	return &soltype.ClassType{
 		Name:     c.promiseClass,
 		TypeArgs: []soltype.Type{inner, errT},
-		// The rejection slot is what a promise leaves empty, so the printer renders
-		// `Promise<T>` for one that cannot reject. See printedArgs.
-		Defaults: []soltype.Type{nil, &soltype.NeverType{}},
+		Defaults: paramDefaults(def.TypeParams),
 	}, true
 }
 
