@@ -399,6 +399,10 @@ func classElemIsStatic(elem ast.ClassElem) bool {
 		return e.Static
 	case *ast.ConstructorElem:
 		return true
+	case *ast.CallableElem:
+		// A call signature is reached through the class value, the same side a static is
+		// on, so it sorts with the statics.
+		return true
 	}
 	return false
 }

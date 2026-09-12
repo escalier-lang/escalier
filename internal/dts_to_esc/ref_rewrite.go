@@ -188,6 +188,10 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 		if e.Fn != nil {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}
+	case *ast.CallableElem:
+		if e.Fn != nil {
+			r.rewriteFuncSig(&e.Fn.FuncSig)
+		}
 	default:
 		panic(fmt.Sprintf("refRewriter.rewriteClassElem: unhandled class-elem type %T — extend this switch so the readonly-twin rewrite does not silently skip a new ClassElem variant", elem))
 	}

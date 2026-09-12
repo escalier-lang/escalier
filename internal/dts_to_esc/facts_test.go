@@ -72,7 +72,7 @@ func TestStdReceiversMatchTheFacts(t *testing.T) {
 
 	sort.Strings(mismatched)
 	require.Empty(t, mismatched)
-	snaps.MatchInlineSnapshot(t, compared, snaps.Inline("int(233)"))
+	snaps.MatchInlineSnapshot(t, compared, snaps.Inline("int(238)"))
 }
 
 // eachEmittedMethod calls visit for every instance method of every class the

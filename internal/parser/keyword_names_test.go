@@ -69,18 +69,27 @@ func TestKeywordsNameObjectTypeMembers(t *testing.T) {
 // rather than objTypeAnnElemInner and so needs its own sweep.
 func TestKeywordsNameClassMembers(t *testing.T) {
 	t.Parallel()
-	forms := []struct{ name, tmpl string }{
-		{"field", "declare class C {\n    %s: number\n}"},
-		{"static field", "declare class C {\n    static %s: number\n}"},
-		{"readonly field", "declare class C {\n    readonly %s: number\n}"},
-		{"method", "declare class C {\n    %s(self) -> number\n}"},
-		{"getter", "declare class C {\n    get %s(self) -> number\n}"},
-		{"setter", "declare class C {\n    set %s(mut self, v: number)\n}"},
+	forms := []struct {
+		name, tmpl string
+		// skip names a keyword this form reads as something other than a member name.
+		// `fn` alone opens a call signature, so the bare-method form does not name it;
+		// TestFnOpensAClassCallSignature covers that reading.
+		skip string
+	}{
+		{name: "field", tmpl: "declare class C {\n    %s: number\n}"},
+		{name: "static field", tmpl: "declare class C {\n    static %s: number\n}"},
+		{name: "readonly field", tmpl: "declare class C {\n    readonly %s: number\n}"},
+		{name: "method", tmpl: "declare class C {\n    %s(self) -> number\n}", skip: "fn"},
+		{name: "getter", tmpl: "declare class C {\n    get %s(self) -> number\n}"},
+		{name: "setter", tmpl: "declare class C {\n    set %s(mut self, v: number)\n}"},
 	}
 	for _, form := range forms {
 		t.Run(form.name, func(t *testing.T) {
 			t.Parallel()
 			for _, keyword := range keywordTexts() {
+				if keyword == form.skip {
+					continue
+				}
 				src := fmt.Sprintf(form.tmpl, keyword)
 				_, errors := parseScriptSrc(t, src)
 				require.Empty(t, errors, "%s should parse", src)
@@ -121,23 +130,19 @@ func TestFnAndNewClaimSignaturesInObjectTypes(t *testing.T) {
 	}
 }
 
-// A class has no call or construct signature to compete with, so `fn` and `new`
-// name methods there. This asymmetry with an object type is deliberate.
-func TestFnAndNewNameClassMethods(t *testing.T) {
+// `new` names a method in a class body. A class declares its construct signature as
+// `constructor`, so `new` competes with nothing there and keeps the name it has in every
+// other position. This asymmetry with an object type is deliberate.
+func TestNewNamesAClassMethod(t *testing.T) {
 	t.Parallel()
-	for _, keyword := range []string{"fn", "new"} {
-		t.Run(keyword, func(t *testing.T) {
-			t.Parallel()
-			src := fmt.Sprintf("declare class C {\n    %s(self) -> number\n}", keyword)
-			script, errors := parseScriptSrc(t, src)
-			require.Empty(t, errors)
-			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
-			require.Len(t, decl.Body, 1)
-			method, ok := decl.Body[0].(*ast.MethodElem)
-			require.True(t, ok, "%s should be a method", src)
-			require.Equal(t, keyword, method.Name.(*ast.IdentExpr).Name)
-		})
-	}
+	src := "declare class C {\n    new(self) -> number\n}"
+	script, errors := parseScriptSrc(t, src)
+	require.Empty(t, errors)
+	decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
+	require.Len(t, decl.Body, 1)
+	method, ok := decl.Body[0].(*ast.MethodElem)
+	require.True(t, ok, "%s should be a method", src)
+	require.Equal(t, "new", method.Name.(*ast.IdentExpr).Name)
 }
 
 // cannotBind lists the keywords that must never become a binding name. It is
@@ -449,4 +454,65 @@ func TestAChainBrokenBeforeTheDotNamesAProperty(t *testing.T) {
 	script, errors := parseScriptSrc(t, "val a = obj\n    .match(x)")
 	require.Empty(t, errors)
 	require.Len(t, script.Stmts, 1)
+}
+
+// A bare `fn` in a class body opens a call signature, the same reading an object type takes
+// for the word. The spellings that keep the name are the object type's too: a field's
+// punctuation, a quoted key, and — a class-only case, since an object type has no
+// modifiers — any modifier, none of which applies to a call signature.
+func TestFnOpensAClassCallSignature(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want ast.ClassElem
+	}{
+		{"fn opens a call signature", "declare class C {\n    fn () -> number\n}", &ast.CallableElem{}},
+		{"fn without a space is still a call signature", "declare class C {\n    fn() -> number\n}", &ast.CallableElem{}},
+		{"a quoted key reaches the fn method", "declare class C {\n    \"fn\"(self) -> number\n}", &ast.MethodElem{}},
+		{"fn names a field", "declare class C {\n    fn: number\n}", &ast.FieldElem{}},
+		{"fn names an optional field", "declare class C {\n    fn?: number\n}", &ast.FieldElem{}},
+		{"a modifier makes fn a getter's name", "declare class C {\n    get fn(self) -> number\n}", &ast.GetterElem{}},
+		{"a modifier makes fn a static method's name", "declare class C {\n    static fn() -> number\n}", &ast.MethodElem{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			script, errors := parseScriptSrc(t, tt.src)
+			require.Empty(t, errors)
+			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
+			require.Len(t, decl.Body, 1)
+			require.IsType(t, tt.want, decl.Body[0])
+		})
+	}
+}
+
+// A call signature declares a shape rather than an implementation, and it is reached through
+// the class value rather than an instance. Each rejection says which of the two it is.
+func TestAClassCallSignatureRejectsWhatItCannotCarry(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AReceiver",
+			src:  "declare class C {\n    fn (self) -> number\n}",
+			want: "call signatures cannot have a `self` receiver",
+		},
+		{
+			name: "ABody",
+			src:  "class C {\n    fn () -> number { 1 }\n}",
+			want: "call signatures cannot have a body",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			_, errors := parseScriptSrc(t, tt.src)
+			require.Len(t, errors, 1)
+			require.Equal(t, tt.want, errors[0].Message)
+		})
+	}
 }

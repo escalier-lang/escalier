@@ -68,6 +68,10 @@ func classElemSlot(elem ast.ClassElem) (memberSlot, bool) {
 		return slotFor(e.Name, e.Static, kindSetter)
 	case *ast.ConstructorElem:
 		return memberSlot{Name: "constructor", Kind: kindConstructor}, true
+	case *ast.CallableElem:
+		// A call signature carries no name, so it fills no slot. Callers pass over it the
+		// same way they pass over an unnameable key.
+		return memberSlot{}, false
 	}
 	return memberSlot{}, false
 }

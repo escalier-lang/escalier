@@ -2368,6 +2368,13 @@ func (b *Builder) buildClassElems(inElems []ast.ClassElem, derived bool) ([]Clas
 				e,
 			)
 			outElems = append(outElems, constructorMethod)
+
+		case *ast.CallableElem:
+			// A call signature emits nothing. It says the class value is callable, which
+			// only an ambient declaration can describe, and an ambient declaration emits no
+			// JavaScript. A class with a body carrying one is rejected before codegen runs;
+			// see CallSignatureRequiresDeclareError.
+			continue
 		}
 	}
 

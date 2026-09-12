@@ -1239,6 +1239,7 @@ func (*DuplicateObjectMemberError) isSolverError()          {}
 func (*DuplicateConstructorSignatureError) isSolverError()  {}
 func (*FieldInitializerNotAllowedError) isSolverError()     {}
 func (*SubclassConstructorRequiredError) isSolverError()    {}
+func (*CallSignatureRequiresDeclareError) isSolverError()   {}
 func (*WriteOnlyPropertyError) isSolverError()              {}
 func (*ReadOnlyPropertyError) isSolverError()               {}
 func (*SetterArityError) isSolverError()                    {}
@@ -1781,6 +1782,27 @@ func (e *SubclassConstructorRequiredError) Span() ast.Span      { return e.Decl.
 func (e *SubclassConstructorRequiredError) Related() []ast.Span { return nil }
 func (e *SubclassConstructorRequiredError) Message() string {
 	return "Subclasses must declare an explicit `constructor` block; constructor synthesis is not supported for classes with an `extends` clause."
+}
+
+// CallSignatureRequiresDeclareError fires when a class with a body declares a
+// `fn (…) -> T` call signature. Such a class compiles to a JavaScript `class`, and a
+// `class` is never callable, so the signature would describe something the output cannot
+// be. An ambient `declare class` describes a value the runtime already provides, which may
+// be a callable object, so it carries one.
+//
+// The signature carries the blame and the declaration is related, since the fix is to make
+// the class ambient or to drop the member.
+type CallSignatureRequiresDeclareError struct {
+	Elem *ast.CallableElem
+	Decl *ast.ClassDecl
+}
+
+func (e *CallSignatureRequiresDeclareError) Span() ast.Span { return e.Elem.Span() }
+func (e *CallSignatureRequiresDeclareError) Related() []ast.Span {
+	return []ast.Span{e.Decl.Name.Span()}
+}
+func (e *CallSignatureRequiresDeclareError) Message() string {
+	return "Only a `declare class` may declare a call signature; a class with a body compiles to a JavaScript `class`, which is not callable."
 }
 
 // spanned is a node that can carry blame without being a whole ast.Node. An

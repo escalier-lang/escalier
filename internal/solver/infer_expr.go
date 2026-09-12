@@ -1784,11 +1784,11 @@ func (c *checker) ctorOverloadArms(t soltype.Type) ([]*soltype.FuncType, bool) {
 	if !ok {
 		return nil, false
 	}
-	ctor, ok := obj.Constructor()
-	if !ok || len(ctor.Signatures) < 2 {
+	sigs := decidingSignatures(obj)
+	if len(sigs) < 2 {
 		return nil, false
 	}
-	return ctor.Signatures, true
+	return sigs, true
 }
 
 // funcIntersectionArms reports whether t is an IntersectionType whose members are all
@@ -1861,23 +1861,28 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 }
 
 // soleCallableSignature returns the one signature an object is called through, and false when
-// it carries none or carries an overload set. A call signature answers a plain call and a
-// constructor answers `new`, so an object carrying a call signature is called through that
-// one and every other object through its constructor.
+// it carries none or carries an overload set.
 //
-// A call signature decides the call whether or not it is overloaded. An overloaded one yields
-// nothing here, the same as an overloaded constructor, since no one arm is the callee and
-// inferCall routes such a call to inferArmOverloadCall instead. Falling back to a constructor
-// beside it would check the call against the wrong member.
+// A constructor decides the call when the object carries one. Escalier writes construction as
+// `Point(1, 2)` and has no `new` expression, so a class value's constructor is what `C(…)`
+// names and a call signature beside it cannot take that spelling over. `Date` declares both,
+// and `Date(…)` constructs. A call signature is reached only when there is no constructor,
+// which is the shape `Symbol` and `BigInt` have: the specification forbids constructing them,
+// so the call signature is the only way to make one.
+//
+// Whichever member decides, it decides whether or not it is overloaded. An overloaded one
+// yields nothing here, since no single arm is the callee and inferCall routes such a call to
+// inferArmOverloadCall instead. Falling through to the other member would check the call
+// against a signature the caller did not name.
 func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
-	if call, ok := t.Callable(); ok {
-		if len(call.Signatures) == 1 {
-			return call.Signatures[0], true
+	if ctor, ok := t.Constructor(); ok {
+		if len(ctor.Signatures) == 1 {
+			return ctor.Signatures[0], true
 		}
 		return nil, false
 	}
-	if ctor, ok := t.Constructor(); ok && len(ctor.Signatures) == 1 {
-		return ctor.Signatures[0], true
+	if call, ok := t.Callable(); ok && len(call.Signatures) == 1 {
+		return call.Signatures[0], true
 	}
 	return nil, false
 }

@@ -7,5 +7,6 @@ export declare class Boolean {
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> boolean,
     constructor(mut self, value?: unknown),
+    fn<T> (value?: T) -> boolean,
     static readonly prototype: Boolean
 }

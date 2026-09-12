@@ -378,6 +378,9 @@ export declare class Array<T> {
     constructor(mut self, arrayLength?: number),
     constructor(mut self, arrayLength: number),
     constructor(mut self, ...items: mut Array<T>),
+    fn (arrayLength?: number) -> mut Array<any>,
+    fn<T> (arrayLength: number) -> mut Array<T>,
+    fn<T> (...items: mut Array<T>) -> mut Array<T>,
     static isArray(arg: unknown) -> boolean,
     static readonly prototype: mut Array<any>,
     /**
@@ -401,100 +404,6 @@ export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = 
     return(value: TReturn) -> IteratorResult<T, TReturn>,
     throw(e: E) -> IteratorResult<T, TReturn>,
     [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
-}
-
-export declare interface SymbolConstructor {
-    /**
-     * A method that returns the default iterator for an object. Called by the semantics of the
-     * for-of statement.
-     */
-    readonly iterator: unique symbol,
-    /**
-     * A reference to the prototype.
-     */
-    readonly prototype: Symbol,
-    fn (description?: string | number) -> symbol,
-    /**
-     * Returns a Symbol object from the global symbol registry matching the given key if found.
-     * Otherwise, returns a new symbol with this key.
-     * @param key key to search for.
-     */
-    for(key: string) -> symbol,
-    /**
-     * Returns a key from the global symbol registry matching the given Symbol if found.
-     * Otherwise, returns a undefined.
-     * @param sym Symbol to find the key for.
-     */
-    keyFor(sym: symbol) -> string | undefined,
-    /**
-     * A method that determines if a constructor object recognizes an object as one of the
-     * constructor’s instances. Called by the semantics of the instanceof operator.
-     */
-    readonly hasInstance: unique symbol,
-    /**
-     * A Boolean value that if true indicates that an object should flatten to its array elements
-     * by Array.prototype.concat.
-     */
-    readonly isConcatSpreadable: unique symbol,
-    /**
-     * A regular expression method that matches the regular expression against a string. Called
-     * by the String.prototype.match method.
-     */
-    readonly match: unique symbol,
-    /**
-     * A regular expression method that replaces matched substrings of a string. Called by the
-     * String.prototype.replace method.
-     */
-    readonly replace: unique symbol,
-    /**
-     * A regular expression method that returns the index within a string that matches the
-     * regular expression. Called by the String.prototype.search method.
-     */
-    readonly search: unique symbol,
-    /**
-     * A function valued property that is the constructor function that is used to create
-     * derived objects.
-     */
-    readonly species: unique symbol,
-    /**
-     * A regular expression method that splits a string at the indices that match the regular
-     * expression. Called by the String.prototype.split method.
-     */
-    readonly split: unique symbol,
-    /**
-     * A method that converts an object to a corresponding primitive value.
-     * Called by the ToPrimitive abstract operation.
-     */
-    readonly toPrimitive: unique symbol,
-    /**
-     * A String value that is used in the creation of the default string description of an object.
-     * Called by the built-in method Object.prototype.toString.
-     */
-    readonly toStringTag: unique symbol,
-    /**
-     * An Object whose truthy properties are properties that are excluded from the 'with'
-     * environment bindings of the associated objects.
-     */
-    readonly unscopables: unique symbol,
-    /**
-     * A method that returns the default async iterator for an object. Called by the semantics of
-     * the for-await-of statement.
-     */
-    readonly asyncIterator: unique symbol,
-    /**
-     * A regular expression method that matches the regular expression against a string. Called
-     * by the String.prototype.matchAll method.
-     */
-    readonly matchAll: unique symbol,
-    readonly metadata: unique symbol,
-    /**
-     * A method that is used to release resources held by an object. Called by the semantics of the `using` statement.
-     */
-    readonly dispose: unique symbol,
-    /**
-     * A method that is used to asynchronously release resources held by an object. Called by the semantics of the `await using` statement.
-     */
-    readonly asyncDispose: unique symbol
 }
 
 @js("Iterator")
@@ -754,22 +663,115 @@ export declare class Promise<T, E = never> {
 }
 
 @js("Symbol")
-export declare var Symbol: SymbolConstructor
-
-export declare interface Symbol {
+export declare class Symbol {
     /**
      * Converts a Symbol object to a symbol.
      */
-    [Symbol.toPrimitive](hint: string) -> symbol,
+    [Symbol.toPrimitive](self, hint: string) -> symbol,
     readonly [Symbol.toStringTag]: string,
     /**
      * Expose the [[Description]] internal slot of a symbol directly.
      */
     readonly description: string | undefined,
     /** Returns a string representation of an object. */
-    toString() -> string,
+    toString(self) -> string,
     /** Returns the primitive value of the specified object. */
-    valueOf() -> symbol
+    valueOf(self) -> symbol,
+    /**
+     * A method that returns the default iterator for an object. Called by the semantics of the
+     * for-of statement.
+     */
+    static readonly iterator: unique symbol,
+    /**
+     * A reference to the prototype.
+     */
+    static readonly prototype: Symbol,
+    /**
+     * Returns a new unique Symbol value.
+     * @param  description Description of the new Symbol object.
+     */
+    fn (description?: string | number) -> symbol,
+    /**
+     * Returns a Symbol object from the global symbol registry matching the given key if found.
+     * Otherwise, returns a new symbol with this key.
+     * @param key key to search for.
+     */
+    static for(key: string) -> symbol,
+    /**
+     * Returns a key from the global symbol registry matching the given Symbol if found.
+     * Otherwise, returns a undefined.
+     * @param sym Symbol to find the key for.
+     */
+    static keyFor(sym: symbol) -> string | undefined,
+    /**
+     * A method that determines if a constructor object recognizes an object as one of the
+     * constructor’s instances. Called by the semantics of the instanceof operator.
+     */
+    static readonly hasInstance: unique symbol,
+    /**
+     * A Boolean value that if true indicates that an object should flatten to its array elements
+     * by Array.prototype.concat.
+     */
+    static readonly isConcatSpreadable: unique symbol,
+    /**
+     * A regular expression method that matches the regular expression against a string. Called
+     * by the String.prototype.match method.
+     */
+    static readonly match: unique symbol,
+    /**
+     * A regular expression method that replaces matched substrings of a string. Called by the
+     * String.prototype.replace method.
+     */
+    static readonly replace: unique symbol,
+    /**
+     * A regular expression method that returns the index within a string that matches the
+     * regular expression. Called by the String.prototype.search method.
+     */
+    static readonly search: unique symbol,
+    /**
+     * A function valued property that is the constructor function that is used to create
+     * derived objects.
+     */
+    static readonly species: unique symbol,
+    /**
+     * A regular expression method that splits a string at the indices that match the regular
+     * expression. Called by the String.prototype.split method.
+     */
+    static readonly split: unique symbol,
+    /**
+     * A method that converts an object to a corresponding primitive value.
+     * Called by the ToPrimitive abstract operation.
+     */
+    static readonly toPrimitive: unique symbol,
+    /**
+     * A String value that is used in the creation of the default string description of an object.
+     * Called by the built-in method Object.prototype.toString.
+     */
+    static readonly toStringTag: unique symbol,
+    /**
+     * An Object whose truthy properties are properties that are excluded from the 'with'
+     * environment bindings of the associated objects.
+     */
+    static readonly unscopables: unique symbol,
+    /**
+     * A method that returns the default async iterator for an object. Called by the semantics of
+     * the for-await-of statement.
+     */
+    static readonly asyncIterator: unique symbol,
+    /**
+     * A regular expression method that matches the regular expression against a string. Called
+     * by the String.prototype.matchAll method.
+     */
+    static readonly matchAll: unique symbol,
+    static readonly metadata: unique symbol,
+    /**
+     * A method that is used to release resources held by an object. Called by the semantics of the `using` statement.
+     */
+    static readonly dispose: unique symbol,
+    /**
+     * A method that is used to asynchronously release resources held by an object. Called by the semantics of the `await using` statement.
+     */
+    static readonly asyncDispose: unique symbol
 }
 
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> extends AsyncIteratorObject<T, TReturn, TNext> {

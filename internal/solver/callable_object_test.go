@@ -137,19 +137,6 @@ func TestAnOverloadedCallSignatureResolvesAnArm(t *testing.T) {
 			`,
 			want: "boolean",
 		},
-		{
-			// A constructor sits beside the arms and answers `new`, not this call.
-			name: "WithAConstructorBesideIt",
-			src: `
-				declare val f: {
-					fn () -> string,
-					fn (a: number, b: number) -> boolean,
-					new (a: number, b: number, c: number) -> number,
-				}
-				val r = f()
-			`,
-			want: "string",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -158,6 +145,34 @@ func TestAnOverloadedCallSignatureResolvesAnArm(t *testing.T) {
 			require.Equal(t, tt.want, values["r"])
 		})
 	}
+}
+
+// A constructor decides the call when an object carries one, so a call signature beside it is
+// not what `f(…)` reads. Escalier writes construction as `Point(1, 2)` and has no `new`
+// expression, so the two members compete for one spelling and the constructor keeps it. The
+// call signature is reached only where there is no constructor, which is the shape `Symbol`
+// and `BigInt` have.
+func TestAConstructorDecidesTheCallOverACallSignature(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare val f: {
+			fn (a: string) -> string,
+			new (a: number) -> number,
+		}
+		val r = f(1)
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "number", values["r"])
+
+	// The arms the call resolves against are the constructor's, so an argument the call
+	// signature would accept is checked against the constructor instead.
+	_, _, errs = inferSource(t, `
+		declare val f: {
+			fn (a: string) -> string,
+			new (a: number) -> number,
+		}
+		val r = f("x")
+	`)
+	require.Equal(t, []string{`cannot constrain "x" <: number`}, errorMessagesOf(errs))
 }
 
 // A constructor and a call signature occupy separate merge slots, so an object carrying both

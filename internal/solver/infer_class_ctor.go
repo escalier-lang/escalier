@@ -15,10 +15,18 @@ import (
 // value parameters. With none it synthesizes one from the instance fields, unless the class
 // extends a superclass — a subclass must declare its own constructor to call `super`, so a
 // missing one is reported and a field-based constructor is synthesized for recovery.
-func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType, ctors []*ast.ConstructorElem) []*soltype.FuncType {
+func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType, ctors []*ast.ConstructorElem, hasCallSig bool) []*soltype.FuncType {
 	if len(ctors) == 0 {
 		if decl.Extends != nil {
 			c.report(&SubclassConstructorRequiredError{Decl: decl})
+		}
+		// A class declaring a call signature and no constructor is callable and not
+		// constructible, and synthesizing one would make `Symbol(…)` construct instead of
+		// call. The specification forbids `new Symbol()` and `new BigInt()`, so having no
+		// constructor is what makes constructing them unrepresentable rather than merely
+		// discouraged.
+		if hasCallSig {
+			return nil
 		}
 		return []*soltype.FuncType{c.synthesizeConstructor(self, body)}
 	}

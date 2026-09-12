@@ -750,6 +750,12 @@ func (v *DependencyVisitor) EnterClassElem(elem ast.ClassElem) bool {
 		if e.Fn != nil {
 			e.Fn.Accept(v)
 		}
+	case *ast.CallableElem:
+		// A call signature has no name to skip, so only its signature is walked. Its
+		// annotations name types the class depends on the same way a constructor's do.
+		if e.Fn != nil {
+			e.Fn.Accept(v)
+		}
 	}
 	return false
 }

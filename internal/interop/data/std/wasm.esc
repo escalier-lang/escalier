@@ -5,7 +5,8 @@
 @js("WebAssembly.CompileError")
 export declare class CompileError extends Error {
     static prototype: CompileError,
-    constructor(mut self, message?: string)
+    constructor(mut self, message?: string),
+    fn (message?: string) -> CompileError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Global) */
@@ -29,7 +30,8 @@ export declare class Instance {
 @js("WebAssembly.LinkError")
 export declare class LinkError extends Error {
     static prototype: LinkError,
-    constructor(mut self, message?: string)
+    constructor(mut self, message?: string),
+    fn (message?: string) -> LinkError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory) */
@@ -59,7 +61,8 @@ export declare class Module {
 @js("WebAssembly.RuntimeError")
 export declare class RuntimeError extends Error {
     static prototype: RuntimeError,
-    constructor(mut self, message?: string)
+    constructor(mut self, message?: string),
+    fn (message?: string) -> RuntimeError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table) */
