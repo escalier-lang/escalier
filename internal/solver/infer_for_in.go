@@ -210,11 +210,11 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 // protocolElem returns the element type t yields through the iteration protocol, and
 // false when t declares no such member. It is protocolIterator's first slot.
 func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, bool) {
-	args, found := c.protocolIterator(t, symbol)
-	if !found || len(args) == 0 {
+	typeArgs, found := c.protocolIterator(t, symbol)
+	if !found || len(typeArgs) == 0 {
 		return nil, false
 	}
-	return args[0], true
+	return typeArgs[0], true
 }
 
 // protocolIterator returns the type arguments of the iterator the member named by symbol
@@ -243,7 +243,7 @@ func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Typ
 	if !returns {
 		return nil, false
 	}
-	return typeArgs(c.iteratorReference(ret))
+	return nominalTypeArgs(c.iteratorReference(ret))
 }
 
 // iteratorReference follows an alias that renames another nominal reference, so the slots
@@ -341,20 +341,20 @@ func (c *checker) iterationView(t soltype.Type) (*soltype.ObjectType, bool) {
 	return nil, false
 }
 
-// typeArgs returns the type arguments of a nominal reference, and false for a type
-// carrying none.
-func typeArgs(t soltype.Type) ([]soltype.Type, bool) {
-	var args []soltype.Type
+// nominalTypeArgs returns the type arguments of a nominal reference, and false for a
+// type carrying none.
+func nominalTypeArgs(t soltype.Type) ([]soltype.Type, bool) {
+	var typeArgs []soltype.Type
 	switch t := t.(type) {
 	case *soltype.ClassType:
-		args = t.TypeArgs
+		typeArgs = t.TypeArgs
 	case *soltype.AliasType:
-		args = t.TypeArgs
+		typeArgs = t.TypeArgs
 	default:
 		return nil, false
 	}
-	if len(args) == 0 {
+	if len(typeArgs) == 0 {
 		return nil, false
 	}
-	return args, true
+	return typeArgs, true
 }

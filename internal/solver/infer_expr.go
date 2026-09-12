@@ -3269,27 +3269,27 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 	// and falls back to the sync member, matching the GeneratorType arm above where an
 	// async delegate is legal only from an async body while a sync one is legal from
 	// either. A sync body reads the sync member alone.
-	args, viaProtocol := c.delegateSlots(t)
+	typeArgs, viaProtocol := c.delegateSlots(t)
 	if !viaProtocol {
 		return nil, nil, nil, false
 	}
 	var ret soltype.Type = &soltype.UndefinedType{}
-	if len(args) > 1 {
-		ret = args[1]
+	if len(typeArgs) > 1 {
+		ret = typeArgs[1]
 	}
 	var next soltype.Type
-	if len(args) > 2 {
-		next = args[2]
+	if len(typeArgs) > 2 {
+		next = typeArgs[2]
 	}
-	return args[0], ret, next, true
+	return typeArgs[0], ret, next, true
 }
 
 // delegateSlots reads the slots a `yield from` operand states, through the async protocol
 // first when the delegating body is async and through the sync one otherwise.
 func (c *checker) delegateSlots(t soltype.Type) ([]soltype.Type, bool) {
 	if c.fn != nil && c.fn.async {
-		if args, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
-			return args, true
+		if typeArgs, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
+			return typeArgs, true
 		}
 	}
 	return c.protocolIterator(t, soltype.IteratorSymbolMember)
