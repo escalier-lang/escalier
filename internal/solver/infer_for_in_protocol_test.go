@@ -173,3 +173,133 @@ func TestYieldFromReadsTheIteratorProtocol(t *testing.T) {
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "fn () -> Generator<number, undefined, unknown>", values["g"])
 }
+
+// Iteration calls the protocol member with no arguments, so the signature it reads is the
+// one such a call selects. Reading the first arm regardless would report the element of a
+// signature the call never reaches.
+func TestForInReadsTheNullaryProtocolSignature(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// The first arm demands an argument, so the second is the one a bare call
+			// selects and the one the element comes from.
+			name: "AnOverloadSetAnswersFromItsNullaryArm",
+			src: `
+				declare class Seq {
+					[Symbol.iterator](self, hint: string) -> Iterator<number>,
+					[Symbol.iterator](self) -> Iterator<boolean>,
+				}
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> boolean",
+		},
+		{
+			// An optional parameter binds zero arguments, so it leaves the member
+			// callable with none.
+			name: "AnOptionalParameterLeavesTheMemberCallable",
+			src: `
+				declare class Seq { [Symbol.iterator](self, hint?: string) -> Iterator<number> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> number",
+		},
+		{
+			// So does a rest parameter, which binds zero or more.
+			name: "ARestParameterLeavesTheMemberCallable",
+			src: `
+				declare class Seq { [Symbol.iterator](self, ...hints: Array<string>) -> Iterator<number> }
+				fn use(s: Seq) { for x in s { return x } }
+			`,
+			want: "fn (s: Seq) -> number",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, values["use"])
+		})
+	}
+}
+
+// A member no bare call can reach leaves the operand un-iterable, rather than iterating
+// the element of a signature the iteration would never select.
+func TestForInRejectsAProtocolMemberDemandingAnArgument(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare class Seq { [Symbol.iterator](self, hint: string) -> Iterator<number> }
+		fn use(s: Seq) { for x in s { x } }
+	`)
+	require.Equal(t, []string{"Seq is not iterable"}, errorMessagesOf(errs))
+}
+
+// An alias is followed to what it names, so naming an iterable through one iterates.
+func TestForInFollowsAnAliasToTheIterable(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		type Nums = Array<number>
+		fn use(n: Nums) { for x in n { return x } }
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "fn (n: Nums) -> number", values["use"])
+}
+
+// A delegate states all three of its slots in the iterator its protocol member hands
+// back, so `yield from` forwards what the delegation finishes with and what it accepts
+// from a sent value, not the element alone. A declaration writing fewer arguments states
+// fewer slots and the rest fall back to what a tuple gives.
+//
+// The body returns the delegation's value, since a generator's own `Ret` is what its body
+// returns. Dropping that would leave the slot reading `undefined` whatever the delegate
+// finishes with.
+func TestYieldFromForwardsEveryProtocolSlot(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AllThreeSlotsAreForwarded",
+			src: `
+				gen fn g(xs: Iterable<string, number, boolean>) {
+					val done = yield from xs
+					return done
+				}
+			`,
+			want: "fn (xs: Iterable<string, number, boolean>) -> Generator<string, number, boolean>",
+		},
+		{
+			// `Array` declares `[Symbol.iterator](self) -> Iterator<T>`, one argument, so
+			// only the element is stated and the delegation finishes with `undefined`.
+			name: "AnUnstatedSlotFallsBack",
+			src: `
+				gen fn g(xs: Array<number>) {
+					val done = yield from xs
+					return done
+				}
+			`,
+			want: "fn (xs: Array<number>) -> Generator<number, undefined, unknown>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			values, _, errs := inferSource(t, tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, values["g"])
+		})
+	}
+}
+
+// A diagnostic names a symbol-keyed member the way the source writes it. The reserved
+// spelling it is stored under is internal, so a message showing `@@iterator` would name
+// something no source form spells.
+func TestADiagnosticNamesASymbolKeyedMemberAsWritten(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		declare fn take(s: { [Symbol.iterator](self) -> number, ... }) -> number
+		val n = take({ a: 1 })
+	`)
+	require.Equal(t,
+		[]string{"object is missing property: [Symbol.iterator]"},
+		errorMessagesOf(errs))
+}

@@ -1036,11 +1036,12 @@ type ForAwaitOutsideAsyncError struct {
 }
 
 // NotIterableError fires when the operand of `for (x in xs)` or `yield from xs` is not
-// iterable, or the operand of `for await (x in xs)` is not async-iterable. Iterability
-// resolves structurally over a tuple, a union, and a generator. Each of syncElemType,
-// asyncElemType, and delegateElemType states its own rule. Array<T> and the
-// `[Symbol.iterator]` protocol land in M7, so every other operand is reported here.
-// Await selects the message.
+// iterable. Await marks the `for await` form, whose message names the async protocol.
+//
+// An operand is iterable when the walk can read an element off it. A tuple and a
+// generator answer by rules of their own, and everything else answers by declaring
+// `[Symbol.iterator]`, or `[Symbol.asyncIterator]` for a `for await`. Each of
+// syncElemType, asyncElemType, and delegateElemType states its own rule.
 type NotIterableError struct {
 	Iterable ast.Expr
 	Type     soltype.Type
@@ -1272,7 +1273,7 @@ type MissingSelfReceiverError struct {
 func (e *MissingSelfReceiverError) Span() ast.Span      { return e.Elem.Span() }
 func (e *MissingSelfReceiverError) Related() []ast.Span { return nil }
 func (e *MissingSelfReceiverError) Message() string {
-	return "Instance member '" + e.Name + "' must declare a `self` receiver as its first parameter."
+	return "Instance member '" + soltype.DisplayMemberName(e.Name) + "' must declare a `self` receiver as its first parameter."
 }
 
 // MethodOverloadReceiverMismatchError fires when the arms of an overloaded method disagree
@@ -1302,7 +1303,7 @@ type WriteOnlyPropertyError struct {
 func (e *WriteOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
 func (e *WriteOnlyPropertyError) Related() []ast.Span { return nil }
 func (e *WriteOnlyPropertyError) Message() string {
-	return "Property '" + e.Name + "' is write-only; it has a setter but no getter or field to read."
+	return "Property '" + soltype.DisplayMemberName(e.Name) + "' is write-only; it has a setter but no getter or field to read."
 }
 
 // ReadOnlyPropertyError fires when a getter-only member is written, as in `c.value = 5`
@@ -1316,7 +1317,7 @@ type ReadOnlyPropertyError struct {
 func (e *ReadOnlyPropertyError) Span() ast.Span      { return e.Site.Span() }
 func (e *ReadOnlyPropertyError) Related() []ast.Span { return nil }
 func (e *ReadOnlyPropertyError) Message() string {
-	return "Property '" + e.Name + "' is read-only; it has a getter but no setter or field to write."
+	return "Property '" + soltype.DisplayMemberName(e.Name) + "' is read-only; it has a getter but no setter or field to write."
 }
 
 // InstancePatternNotClassError fires when the name in an instance pattern `Name { ... }`
@@ -1737,7 +1738,7 @@ type DuplicateObjectMemberError struct {
 func (e *DuplicateObjectMemberError) Span() ast.Span      { return e.Elem.Span() }
 func (e *DuplicateObjectMemberError) Related() []ast.Span { return nil }
 func (e *DuplicateObjectMemberError) Message() string {
-	return "An object type may declare '" + e.Name + "' only once."
+	return "An object type may declare '" + soltype.DisplayMemberName(e.Name) + "' only once."
 }
 
 // DuplicateConstructorSignatureError fires on the second and any later `new (…) -> T` member
@@ -1766,7 +1767,7 @@ func (e *FieldInitializerNotAllowedError) Span() ast.Span      { return e.Field.
 func (e *FieldInitializerNotAllowedError) Related() []ast.Span { return nil }
 func (e *FieldInitializerNotAllowedError) Message() string {
 	name, _ := objKeyName(e.Field.Name)
-	return "Field '" + name + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
+	return "Field '" + soltype.DisplayMemberName(name) + "' cannot have a `= expr` initializer; only static fields may use this form. Initialize instance fields in the constructor body."
 }
 
 // SubclassConstructorRequiredError fires when a class with an `extends` clause
@@ -2650,7 +2651,7 @@ func (e *SpreadNotObjectError) Message() string {
 }
 
 func (e *MissingPropertyError) Message() string {
-	return "object is missing property: " + e.Name
+	return "object is missing property: " + soltype.DisplayMemberName(e.Name)
 }
 
 func (e *InexactIntoExactError) Message() string {
@@ -2662,7 +2663,7 @@ func (e *InexactTupleIntoExactError) Message() string {
 }
 
 func (e *ExtraPropertyError) Message() string {
-	return "object has extra property: " + e.Name
+	return "object has extra property: " + soltype.DisplayMemberName(e.Name)
 }
 
 func (e *ExtraElementError) Message() string {
@@ -2670,7 +2671,7 @@ func (e *ExtraElementError) Message() string {
 }
 
 func (e *OptionalPropertyError) Message() string {
-	return "object property is optional but required: " + e.Name
+	return "object property is optional but required: " + soltype.DisplayMemberName(e.Name)
 }
 
 func (e *UnknownObjectKeyError) Message() string {

@@ -5,22 +5,19 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferForIn types a `for (x in xs)` / `for await (x in xs)` loop. The milestone
-// desugars both forms to a protocol subtype check: a sync loop needs
-// `xs <: Iterable<T>` and a `for await` needs `xs <: AsyncIterable<T>`, binding
-// the loop variable at the element type T. The full protocol resolves T through
-// the iterable's `[Symbol.iterator]()` method, which needs symbol-keyed members
-// and the real Iterable/Iterator stdlib types that both land in M7. Until then
-// the element type resolves STRUCTURALLY over the types the solver can
-// represent — a tuple, the solver's stand-in for an array, a union of tuples,
-// and a generator — and everything else is rejected as non-iterable. See
+// inferForIn types a `for (x in xs)` / `for await (x in xs)` loop, binding the loop
+// variable at the element type the operand yields.
+//
+// A sync loop reads that element through the operand's `[Symbol.iterator]`, and a
+// `for await` through its `[Symbol.asyncIterator]`, so the two protocols stay apart and a
+// sync iterable does not answer a `for await`. Two shapes resolve ahead of the lookup: a
+// tuple, which is iterable by a rule no declaration states, and a generator, which the
+// solver mints as a concrete rather than reaching through a declaration. See
 // iterableElemType.
 //
 // A `for await` outside an `async fn` is a WALK rejection symmetric to
 // AwaitOutsideAsyncError: the iterable and body are still walked so their own
-// errors surface. A `for await` accepts an AsyncGenerator, the one async iterable
-// the solver can represent, and rejects every other operand by the type rule. A
-// sync iterable is not an AsyncIterable.
+// errors surface.
 //
 // The loop contributes `undefined` to its enclosing block, since a loop is a statement
 // rather than a value. The CFG builder already decomposes a ForInStmt into a header, a body
@@ -127,18 +124,10 @@ func (c *checker) iterationRaise(t soltype.Type) (soltype.Type, bool) {
 	return nil, false
 }
 
-// iterableElemType resolves the element type T yielded by iterating a value of
-// type t, returning ok=false when t is not iterable in the current sense.
-//
-// For a `for await`, T must come from an AsyncIterable. The only one the solver can
-// represent is an AsyncGenerator, whose Yield slot is its element type. The real stdlib
-// type and the symbol-keyed protocol land with library ingestion, so every other
-// operand returns false.
-//
-// For a sync `for`, the resolution is structural (see syncElemType): a tuple
-// yields the union of its element types, a union yields the union of its
-// branches' element types, a sync generator yields its Yield slot, and every
-// other type is not iterable.
+// iterableElemType resolves the element type T yielded by iterating a value of type t,
+// returning ok=false when t yields none. The two arms differ only in which protocol
+// member they read, `[Symbol.asyncIterator]` for a `for await` and `[Symbol.iterator]`
+// for a sync `for`.
 func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bool) {
 	if await {
 		return c.asyncElemType(t)
@@ -147,10 +136,10 @@ func (c *checker) iterableElemType(await bool, t soltype.Type) (soltype.Type, bo
 }
 
 // asyncElemType resolves the element type of an asynchronously-iterable value, the
-// `for await` counterpart of syncElemType and structurally the same walk. An async
-// generator yields its Yield slot, and a union yields the union of its branches',
-// failing when any branch is not async-iterable. A sync generator is not an
-// AsyncIterable, and neither is a tuple, so both are rejected here.
+// `for await` counterpart of syncElemType and the same walk. An async generator yields
+// its Yield slot, and a union yields the union of its branches', failing when any branch
+// is not async-iterable. Everything else reads `[Symbol.asyncIterator]`. A sync generator
+// is not async-iterable, and neither is a tuple, so both are rejected here.
 func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = groundedCarrier(t)
 	switch t := t.(type) {
@@ -173,19 +162,21 @@ func (c *checker) asyncElemType(t soltype.Type) (soltype.Type, bool) {
 	return c.protocolElem(t, soltype.AsyncIteratorSymbolMember)
 }
 
-// syncElemType resolves the element type of a synchronously-iterable value
-// structurally. A borrow is peeled first — iterating `&xs` yields the same
-// elements as `xs` — and an inference variable is coalesced to its structural
-// lower-bound shape, the way inferMatch snapshots a variable scrutinee before
-// inspecting it. A tuple yields the union of its elements, so `[1, 2, 3]` yields
-// `1 | 2 | 3` and the empty tuple yields `never`. A union yields the union of its
-// branches' element types, failing if any branch is not iterable. A sync
-// generator yields its Yield slot. Every other type — a primitive, an object, a
-// class instance without the M7 iterator protocol — is not iterable.
+// syncElemType resolves the element type of a synchronously-iterable value. A borrow is
+// peeled first, since iterating `&xs` yields the same elements as `xs`, and an inference
+// variable is coalesced to its structural lower-bound shape, the way inferMatch snapshots
+// a variable scrutinee before inspecting it.
+//
+// Three shapes answer without a declaration. A tuple yields the union of its elements, so
+// `[1, 2, 3]` yields `1 | 2 | 3` and the empty tuple yields `never`. A union yields the
+// union of its branches' element types, failing if any branch is not iterable. A sync
+// generator yields its Yield slot. Everything else reads `[Symbol.iterator]`, so a class
+// or interface declaring the member yields what its own declaration says, and one
+// declaring none is not iterable.
 //
 // An inexact tuple `[number, ...]` has an open tail of unknown additional elements, so its
 // element type is the join of its listed elements with that unknown tail, which is `unknown`.
-// The precise type of the tail needs the Array<T> the tuple approximates, which lands in M7.
+// The precise type of the tail needs the `Array<T>` the tuple approximates.
 func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 	t = groundedCarrier(t)
 	switch t := t.(type) {
@@ -216,19 +207,29 @@ func (c *checker) syncElemType(t soltype.Type) (soltype.Type, bool) {
 }
 
 // protocolElem returns the element type t yields through the iteration protocol, and
-// false when t declares no such member.
-//
-// It reads the member named by symbol off t's member view and takes the first type
-// argument of what calling that member evaluates to. `Array<T>` declares
-// `[Symbol.iterator](self) -> ArrayIterator<T>`, so the lookup lands on that method and
-// the element is the `T` in its return.
-//
-// Reading the argument by position rather than calling the member keeps this to a
-// projection. Every iterator type in the tree writes its element first, which is the
-// shape `Iterator<T, TReturn, TNext>` fixes and every declaration extending it keeps.
-// A member returning something with no type argument yields nothing readable and
-// declines, so the operand is reported not iterable rather than iterating `unknown`.
+// false when t declares no such member. It is protocolIterator's first slot.
 func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, bool) {
+	args, found := c.protocolIterator(t, symbol)
+	if !found || len(args) == 0 {
+		return nil, false
+	}
+	return args[0], true
+}
+
+// protocolIterator returns the type arguments of the iterator the member named by symbol
+// hands back, and false when t declares no such member.
+//
+// It reads that member off t's member view and takes the arguments of what calling it
+// evaluates to. `Array<T>` declares `[Symbol.iterator](self) -> ArrayIterator<T>`, so the
+// lookup lands on that method and the arguments are the one `T` in its return.
+//
+// The slots are read by position rather than by calling the member, which keeps this to a
+// projection. `Iterator<T, TReturn, TNext>` fixes the order every iterator type in the tree
+// writes, so slot 0 is the element, slot 1 what the iteration finishes with, and slot 2 what
+// it accepts from a sent value. A shorter list states only the slots it carries. A member
+// returning something with no type argument yields nothing readable and declines, so the
+// operand is reported not iterable rather than iterating `unknown`.
+func (c *checker) protocolIterator(t soltype.Type, symbol string) ([]soltype.Type, bool) {
 	body, viewed := c.iterationView(t)
 	if !viewed {
 		return nil, false
@@ -237,28 +238,36 @@ func (c *checker) protocolElem(t soltype.Type, symbol string) (soltype.Type, boo
 	if !found {
 		return nil, false
 	}
-	ret, returns := memberReturn(member)
+	ret, returns := nullaryReturn(member)
 	if !returns {
 		return nil, false
 	}
-	return firstTypeArg(ret)
+	return typeArgs(ret)
 }
 
-// memberReturn returns what calling member evaluates to, covering the two ways the
-// protocol member is written. A declaration writes it as a method,
-// `[Symbol.iterator](self) -> Iterator<T>`, and an object literal writes it as a
-// property holding a function. An overloaded method answers from its first arm, since
-// every arm of an iterator member returns the same element.
-func memberReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
+// nullaryReturn returns what calling member with no arguments evaluates to, covering the
+// two ways the protocol member is written. A declaration writes it as a method,
+// `[Symbol.iterator](self) -> Iterator<T>`, and an object writes it as a property holding a
+// function.
+//
+// Iteration calls the member with no arguments, so a signature demanding one does not
+// answer and an overload set answers from the first arm that takes none. Reading arm zero
+// regardless would let `[Symbol.iterator](self, hint: string) -> Iterator<number>` beside
+// `[Symbol.iterator](self) -> Iterator<boolean>` report the element as `number`, where the
+// call a `for`-`in` makes selects the second arm. The receiver is not a parameter, since
+// the parser peels `self` into SelfParam, so an instance member's own arity is zero.
+func nullaryReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
 	switch member := member.(type) {
 	case *soltype.MethodElem:
-		if len(member.Signatures) == 0 {
-			return nil, false
+		for _, sig := range member.Signatures {
+			if acceptsNoArguments(sig) {
+				return sig.Ret, true
+			}
 		}
-		return member.Signatures[0].Ret, true
+		return nil, false
 	case *soltype.PropertyElem:
 		fn, isFunc := member.Type.(*soltype.FuncType)
-		if !isFunc {
+		if !isFunc || !acceptsNoArguments(fn) {
 			return nil, false
 		}
 		return fn.Ret, true
@@ -266,26 +275,40 @@ func memberReturn(member soltype.ObjTypeElem) (soltype.Type, bool) {
 	return nil, false
 }
 
+// acceptsNoArguments reports whether sig can be called with none. An optional parameter and
+// a rest parameter each bind zero arguments, so neither makes one required.
+func acceptsNoArguments(sig *soltype.FuncType) bool {
+	for _, param := range sig.Params {
+		if !param.Optional && !param.Rest {
+			return false
+		}
+	}
+	return true
+}
+
 // iterationView returns the member list a protocol lookup reads t's `[Symbol.iterator]`
 // off. A class instance projects its body with the arguments it is reached at, an
 // interface reference expands to the object it stands for, and an object literal's type
 // is already that object. Every other type carries no members and declines.
+//
+// The operand is normalized first, the same way the structural walk normalizes it: a
+// borrow is peeled, since iterating `&xs` reads the same members as `xs`, and an
+// inference variable is coalesced to its lower-bound shape. An alias is then followed to
+// the end of its chain, so `type Nums = Array<number>` iterates the way the class it
+// names does.
 func (c *checker) iterationView(t soltype.Type) (*soltype.ObjectType, bool) {
-	switch t := t.(type) {
+	switch t := c.expandAliasChain(groundedCarrier(t)).(type) {
 	case *soltype.ObjectType:
 		return t, true
 	case *soltype.ClassType:
 		return c.ctx.projectClassBody(t)
-	case *soltype.AliasType:
-		obj, isObj := c.ctx.expandAlias(t).(*soltype.ObjectType)
-		return obj, isObj
 	}
 	return nil, false
 }
 
-// firstTypeArg returns the first type argument of a nominal reference, and false for a
-// type carrying none.
-func firstTypeArg(t soltype.Type) (soltype.Type, bool) {
+// typeArgs returns the type arguments of a nominal reference, and false for a type
+// carrying none.
+func typeArgs(t soltype.Type) ([]soltype.Type, bool) {
 	var args []soltype.Type
 	switch t := t.(type) {
 	case *soltype.ClassType:
@@ -298,5 +321,5 @@ func firstTypeArg(t soltype.Type) (soltype.Type, bool) {
 	if len(args) == 0 {
 		return nil, false
 	}
-	return args[0], true
+	return args, true
 }

@@ -1,6 +1,10 @@
 package soltype
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/escalier-lang/escalier/internal/set"
+)
 
 // symbol_key.go names the members a declaration keys off a well-known symbol.
 //
@@ -45,19 +49,13 @@ var WellKnownSymbols = []string{
 }
 
 // wellKnownSet is WellKnownSymbols as a lookup, built once.
-var wellKnownSet = func() map[string]struct{} {
-	s := make(map[string]struct{}, len(WellKnownSymbols))
-	for _, name := range WellKnownSymbols {
-		s[name] = struct{}{}
-	}
-	return s
-}()
+var wellKnownSet = set.FromSlice(WellKnownSymbols)
 
 // SymbolMemberName returns the reserved name a member keyed off the well-known
 // symbol `Symbol.<sym>` is stored under, and false when sym names no well-known
 // symbol.
 func SymbolMemberName(sym string) (string, bool) {
-	if _, known := wellKnownSet[sym]; !known {
+	if !wellKnownSet.Contains(sym) {
 		return "", false
 	}
 	return wellKnownSymbolPrefix + sym, true
@@ -67,13 +65,21 @@ func SymbolMemberName(sym string) (string, bool) {
 // for, and false for an ordinary member name.
 func SymbolOfMemberName(name string) (string, bool) {
 	sym, found := strings.CutPrefix(name, wellKnownSymbolPrefix)
-	if !found {
-		return "", false
-	}
-	if _, known := wellKnownSet[sym]; !known {
+	if !found || !wellKnownSet.Contains(sym) {
 		return "", false
 	}
 	return sym, true
+}
+
+// DisplayMemberName renders a member name the way the source writes it, so a message
+// naming one matches what the reader wrote. A member keyed off a well-known symbol is
+// stored under a reserved name and shown as the computed key, `[Symbol.iterator]`. Every
+// other name is its own display form.
+func DisplayMemberName(name string) string {
+	if sym, isSymbol := SymbolOfMemberName(name); isSymbol {
+		return "[Symbol." + sym + "]"
+	}
+	return name
 }
 
 // IteratorSymbolMember and AsyncIteratorSymbolMember are the two members the

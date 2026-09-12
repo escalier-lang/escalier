@@ -1552,8 +1552,8 @@ func printPat(pat Pat) (string, bool) {
 // `[Symbol.iterator]`. That form re-parses as the same key, which the quoted
 // fallback would not.
 func printObjectKeyName(name string) string {
-	if sym, isSymbol := SymbolOfMemberName(name); isSymbol {
-		return "[Symbol." + sym + "]"
+	if _, isSymbol := SymbolOfMemberName(name); isSymbol {
+		return DisplayMemberName(name)
 	}
 	if isIdent(name) {
 		return name

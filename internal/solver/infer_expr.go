@@ -3259,11 +3259,31 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 		}
 		return g.Yield, g.Ret, g.Next, true
 	}
-	elem, ok := c.syncElemType(t)
-	if !ok {
+	// A tuple has no slots to forward, so it finishes with `undefined` and puts no Next
+	// requirement on the delegator.
+	if _, isTuple := carrier.(*soltype.TupleType); isTuple {
+		elem, ok := c.syncElemType(t)
+		if !ok {
+			return nil, nil, nil, false
+		}
+		return elem, &soltype.UndefinedType{}, nil, true
+	}
+	// Everything else states its slots in the iterator its protocol member hands back,
+	// `Iterator<T, TReturn, TNext>`. A declaration writing fewer arguments states fewer
+	// slots, and the missing ones fall back to what a tuple gives.
+	args, viaProtocol := c.protocolIterator(t, soltype.IteratorSymbolMember)
+	if !viaProtocol {
 		return nil, nil, nil, false
 	}
-	return elem, &soltype.UndefinedType{}, nil, true
+	var ret soltype.Type = &soltype.UndefinedType{}
+	if len(args) > 1 {
+		ret = args[1]
+	}
+	var next soltype.Type
+	if len(args) > 2 {
+		next = args[2]
+	}
+	return args[0], ret, next, true
 }
 
 // meetNexts combines the Next slots a generator must satisfy at once into the single
