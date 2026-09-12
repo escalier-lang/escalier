@@ -314,6 +314,18 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		if !ok {
 			continue
 		}
+		// An instance-side call signature says instances are callable. A class cannot say
+		// that: ast.CallableElem describes the class VALUE, which is what `Symbol("x")`
+		// calls, and there is no syntax for a callable instance. Fusing would drop the
+		// member in silence, so the trio stays split and the interface keeps it as an
+		// ast.CallableTypeAnn.
+		//
+		// No trio in the pinned lib set reaches this. The 47 interfaces carrying an
+		// instance-side call signature are callbacks such as `EventListener`, none of which
+		// has a matching constructor interface and var. A converted third-party `.d.ts` can.
+		if hasCallSignature(inst.Members) {
+			continue
+		}
 		t.byName[name] = &trioInfo{
 			instance:    inst,
 			ctorMembers: ctorMembers,
@@ -391,6 +403,17 @@ func ctorsReturning(members []dts_parser.InterfaceMember, instanceName string) b
 		found = true
 	}
 	return found
+}
+
+// hasCallSignature reports whether members holds at least one bare `(...)` member, the form
+// that makes `Symbol("x")` a call rather than a construction.
+func hasCallSignature(members []dts_parser.InterfaceMember) bool {
+	for _, m := range members {
+		if _, ok := m.(*dts_parser.CallSignature); ok {
+			return true
+		}
+	}
+	return false
 }
 
 // hasConstructSignature reports whether members holds at least one
@@ -975,6 +998,15 @@ func convertStandaloneStmt(
 			}
 			out = append(out, children...)
 		}
+		// The namespace's own trios are detected above and consumed here, so a sibling
+		// naming one of its constructor interfaces is respelled before the children leave
+		// the namespace. The module-level pass reads the top level's mapping and cannot see
+		// this one.
+		inner := make([]ast.Decl, 0, len(out))
+		for _, dd := range out {
+			inner = append(inner, dd.decl)
+		}
+		rewriteConsumedCtorRefsIn(inner, innerTrios.consumedCtor)
 		return out, nil
 
 	case *dts_parser.InterfaceDecl:
@@ -1127,7 +1159,8 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //   - GetterSignature   → GetterElem
 //   - SetterSignature   → SetterElem
 //   - ConstructSignature (static side only) → ConstructorElem
-//   - CallSignature (static side: bare-call form like `Boolean(x)`) → CallableElem
+//   - CallSignature → CallableElem, from the constructor side only. It is the bare-call
+//     form, `Boolean(x)`.
 //   - IndexSignature is skipped for the MVP — it has no direct class-elem mapping.
 func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDecl, error) {
 	className := info.instance.Name.Name
@@ -1345,10 +1378,9 @@ func interfaceMemberToClassElem(
 		// becomes the class's own call signature, which is what makes the fused class
 		// callable as well as constructible.
 		//
-		// Only the constructor side declares one. A call signature on the instance side
-		// would say an instance is callable, which a class body cannot express, so it is
-		// skipped the way an index signature is. No trio instance interface in the pinned
-		// lib set declares one; a converted third-party `.d.ts` can.
+		// Only the constructor side reaches here. detectTrios declines a trio whose
+		// instance interface declares a call signature, since a class cannot say that
+		// instances are callable, so this guard is a backstop rather than a live path.
 		if !static {
 			return nil, nil
 		}

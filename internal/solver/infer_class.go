@@ -154,7 +154,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// now, so the view is complete, and it shares each own element pointer so phase 2's
 	// signature installs and field refinements still land on the registered body.
 	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), pending)
-	callFns := c.inferCallSignatures(declScope, lvl, decl)
+	callFns := c.inferCallSignatures(bodyScope, lvl, decl)
 	ctorFns := c.inferConstructor(bodyScope, lvl, decl, self, body, ctors, len(callFns) > 0)
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
@@ -833,6 +833,10 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 // A call signature carries no body, so nothing is walked: inferFunc reads the annotation the
 // way it reads a declared method's. It may quantify type parameters of its own —
 // `BooleanConstructor` writes `<T>(value?: T): boolean` — so generic resolution is on.
+//
+// It reads bodyScope rather than declScope, so `Self` resolves in its annotations the way it
+// does in a method's. The class's own type parameters are in scope either way, bodyScope being
+// a child of declScope.
 //
 // Only a `declare class` may carry one. A class with a body compiles to a JavaScript `class`,
 // and a `class` is never callable, so a call signature there would describe something the

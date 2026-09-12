@@ -1470,8 +1470,7 @@ declare var CSSFontFaceRule: {
 // Trio fusion folds `interface FooConstructor` into `class Foo`, so the constructor
 // interface's name no longer denotes anything. A reference to it is respelled `typeof Foo`,
 // which names what the interface named: the class value, carrying the constructor and the
-// statics. Without the respelling the emitted tree carries a dangling name, which is where
-// `cannot find type ArrayConstructor` came from.
+// statics. That respelling is what keeps the emitted tree free of a dangling name.
 func TestStandalone_AConsumedConstructorReferenceBecomesTypeof(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1553,4 +1552,49 @@ interface BoxConstructor {
 `)
 	require.Contains(t, printed, "BoxConstructor")
 	require.NotContains(t, printed, "typeof Box")
+}
+
+// A namespace detects its own trios, so a sibling naming one of the constructor interfaces it
+// consumed is respelled against that namespace's mapping. The module-level pass reads the top
+// level's mapping and cannot see a namespace-local one.
+func TestStandalone_ANamespaceLocalConsumedConstructorIsRespelled(t *testing.T) {
+	_, printed := convertSlice(t, `
+declare namespace N {
+    interface Box {
+        value: number;
+    }
+    interface BoxConstructor {
+        new (v: number): Box;
+    }
+    var Box: BoxConstructor;
+    interface Other {
+        maker: BoxConstructor;
+    }
+}
+`)
+	require.Contains(t, printed, "maker: typeof Box")
+	require.NotContains(t, printed, "BoxConstructor")
+}
+
+// An instance-side call signature says instances are callable, which a class cannot say:
+// `ast.CallableElem` describes the class value. Fusing would drop the member in silence, so the
+// trio stays split and the interface keeps it.
+func TestStandalone_ATrioWithACallableInstanceStaysSplit(t *testing.T) {
+	astModule, printed := convertSlice(t, `
+interface Callable {
+    (x: number): string;
+    tag: string;
+}
+interface CallableConstructor {
+    new (): Callable;
+}
+declare var Callable: CallableConstructor;
+`)
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok, "root namespace exists")
+	for _, d := range rootNS.Decls {
+		_, isClass := d.(*ast.ClassDecl)
+		require.False(t, isClass, "the trio must not fuse")
+	}
+	require.Contains(t, printed, "(x: number) -> string", "the instance callable survives")
 }
