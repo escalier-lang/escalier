@@ -40,13 +40,39 @@ func TestPreludeOperatorBindings(t *testing.T) {
 func TestPreludeStdlibTypePlaceholders(t *testing.T) {
 	s := NewPrelude()
 	for _, name := range []string{
-		"Promise", "Iterable", "AsyncIterable",
+		"Iterable", "AsyncIterable",
 		"Generator", "AsyncGenerator",
 	} {
 		t.Run(name, func(t *testing.T) {
 			b, ok := s.GetType(name)
 			require.True(t, ok, "stdlib type %q should resolve to a placeholder", name)
 			require.IsType(t, &soltype.UnknownType{}, b.Type)
+		})
+	}
+}
+
+// `Promise` gets no placeholder. Its rules read the class the prelude declares, and
+// resolveTypeAnn has no arm of its own for the name, so a stub would stand between a
+// missing declaration and the report naming it.
+func TestPreludeSeedsNoPromiseStub(t *testing.T) {
+	_, ok := NewPrelude().GetType("Promise")
+	require.False(t, ok, "`Promise` should have no placeholder")
+}
+
+// Both spellings of a `Promise` reference report the same missing declaration when the
+// run's tree supplies no prelude. The stub used to answer the argument-less one with
+// `unknown`, which reached the async return check as a type that is not a promise and
+// reported that instead of the name it could not find.
+func TestAPromiseReferenceWithNoPreludeIsAnUnboundName(t *testing.T) {
+	for _, src := range []string{
+		`declare fn f() -> Promise`,
+		`declare fn f() -> Promise<number>`,
+	} {
+		t.Run(src, func(t *testing.T) {
+			res := inferAgainstStdlib(t, src, map[string]string{})
+			require.Equal(t,
+				[]string{"cannot find type `Promise`"},
+				errorMessagesOf(res.Errors))
 		})
 	}
 }
