@@ -477,7 +477,10 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 			}
 			switch elem := elem.(type) {
 			case *CallableElem:
-				result += printFuncType(elem.Fn, pt)
+				// A call signature is unnamed, so its parameter list opens the member.
+				// The `fn ` header printFuncType writes for a standalone function type
+				// would name a member here.
+				result += printFuncSig("", elem.Fn, false, pt)
 			case *ConstructorElem:
 				result += "new " + printFuncType(elem.Fn, pt)
 			case *MethodElem:

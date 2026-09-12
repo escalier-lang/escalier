@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// A class declaring `callable(…) -> T` is callable as well as constructible. The specification
+// A class declaring `(…) -> T` is callable as well as constructible. The specification
 // forbids `new Symbol()`, so a call signature is the only way to make a symbol, and the fused
 // `Symbol` class in `std:prelude` declares one and no constructor.
 func TestACallSignatureMakesAClassCallable(t *testing.T) {
@@ -20,7 +20,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			name: "TheClassValueIsCalled",
 			src: `
 				declare class Sym {
-					callable(desc?: string) -> symbol,
+					(desc?: string) -> symbol,
 				}
 				val s = Sym("x")
 			`,
@@ -32,7 +32,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			name: "AStaticBesideItStillReads",
 			src: `
 				declare class Sym {
-					callable(desc?: string) -> symbol,
+					(desc?: string) -> symbol,
 					static readonly iterator: unique symbol,
 				}
 				val it = Sym.iterator
@@ -46,7 +46,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			name: "ItMayBeGeneric",
 			src: `
 				declare class B {
-					callable<T>(v: T) -> boolean,
+					<T>(v: T) -> boolean,
 				}
 				val b = B(1)
 			`,
@@ -58,8 +58,8 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			name: "AnOverloadedSignatureResolvesAnArm",
 			src: `
 				declare class N {
-					callable() -> number,
-					callable(v: string) -> boolean,
+					() -> number,
+					(v: string) -> boolean,
 				}
 				val r = N("x")
 			`,
@@ -70,7 +70,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			// The class value is a subtype of the function its signature names.
 			name: "TheClassValueFillsAFunctionParameter",
 			src: `
-				declare class Sym { callable(desc: string) -> symbol }
+				declare class Sym { (desc: string) -> symbol }
 				declare fn take(f: fn (d: string) -> symbol) -> number
 				val r = take(Sym)
 			`,
@@ -83,7 +83,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 			src: `
 				declare class D {
 					constructor(mut self, n: number),
-					callable(n: number) -> string,
+					(n: number) -> string,
 					x: number,
 				}
 				val d = D(1)
@@ -107,7 +107,7 @@ func TestACallSignatureMakesAClassCallable(t *testing.T) {
 func TestACallSignatureNeedsAnAmbientClass(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class C {
-			callable() -> number
+			() -> number
 		}
 	`)
 	require.Equal(t, []string{
@@ -120,14 +120,14 @@ func TestACallSignatureNeedsAnAmbientClass(t *testing.T) {
 func TestACallSignatureSeesTheClassTypeParameters(t *testing.T) {
 	_, types, errs := inferSource(t, `
 		declare class Wrap<T> {
-			callable(v: T) -> T,
+			(v: T) -> T,
 		}
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "Wrap<T>", types["Wrap"])
 }
 
-// A bare `callable(…) -> T` target asks whether the class value is callable as that function, so it
+// A bare `(…) -> T` target asks whether the class value is callable as that function, so it
 // reads the member a call reads. An object target naming a call signature asks whether the
 // value carries that member, which is structural. The two coincide for a class declaring only
 // a call signature and part ways for one declaring both.
@@ -135,9 +135,9 @@ func TestAFunctionTargetAsksCallabilityAndAnObjectTargetAsksForTheMember(t *test
 	// No constructor, so the call signature is both the member and what a call reads.
 	t.Run("WithOnlyACallSignature", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			declare class Sym { callable(n: number) -> string }
+			declare class Sym { (n: number) -> string }
 			declare fn take(f: fn (n: number) -> string) -> number
-			declare fn takeObj(f: { fn (n: number) -> string }) -> number
+			declare fn takeObj(f: { (n: number) -> string }) -> number
 			val a = take(Sym)
 			val b = takeObj(Sym)
 		`)
@@ -152,7 +152,7 @@ func TestAFunctionTargetAsksCallabilityAndAnObjectTargetAsksForTheMember(t *test
 		const decl = `
 			declare class D {
 				constructor(mut self, n: number),
-				callable(n: number) -> string,
+				(n: number) -> string,
 				x: number,
 			}
 		`
@@ -164,7 +164,7 @@ func TestAFunctionTargetAsksCallabilityAndAnObjectTargetAsksForTheMember(t *test
 		require.Equal(t, "number", values["a"])
 
 		values, _, errs = inferSource(t, decl+`
-			declare fn takeObj(f: { fn (n: number) -> string }) -> number
+			declare fn takeObj(f: { (n: number) -> string }) -> number
 			val b = takeObj(D)
 		`)
 		require.Empty(t, errorMessagesOf(errs))

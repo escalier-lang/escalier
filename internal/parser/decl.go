@@ -869,24 +869,15 @@ modifiers_done:
 		}
 	}
 
-	// `callable` is a contextual keyword at the start of a class element, the way
-	// `constructor` above is. It opens the unnamed call signature that makes the class value
-	// callable, so the two unnamed members of a class body are spelled alike.
+	// A member opening with `(` or `<` is a call signature, the unnamed member that makes
+	// the class value callable. It carries no name, and no other member may start with
+	// either token. An object type reads the same spelling, so the two positions agree.
 	//
-	// It names a member instead when a field's punctuation follows it, or when a modifier
-	// stands before it, since no modifier applies to a call signature. `callable: T` is a
-	// field and `get callable(self)` a getter.
-	if token.Type == Identifier && token.Value == "callable" &&
-		!isStatic && !isAsync && !isGen && !isPrivate && !isReadonly && !isGet && !isSet {
-		isField := false
-		// nolint: exhaustive
-		switch p.lexer.peek2().Type {
-		case Colon, Question, Comma, CloseBrace, Equal:
-			isField = true
-		}
-		if !isField {
-			return p.parseCallableElem(start)
-		}
+	// The constructor keeps its name because JavaScript gives it one: `Foo.constructor`
+	// reaches the same member. A call signature has no such handle, so there is no name to
+	// keep.
+	if startsASignature(token.Type) {
+		return p.parseCallableElem(start)
 	}
 
 	name := p.objExprKey()
@@ -1475,24 +1466,22 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 	return decl
 }
 
-// parseCallableElem parses an unnamed `callable(...) -> T` call signature in a class body. The
-// `callable` token has not yet been consumed. parseClassElemInner has already ruled out every
-// modifier, since a modifier makes `callable` the member's name instead.
+// parseCallableElem parses an unnamed `(...) -> T` call signature in a class body, starting at
+// its `(` or its type-parameter list.
 //
-// It is the class twin of the `fn (...) -> T` member an object type annotation writes, and it
-// reads its parameters, return and `throws` the way a method does.
+// It is the class twin of the same member an object type annotation writes, and it reads its
+// parameters, return and `throws` the way a method does.
 func (p *Parser) parseCallableElem(start ast.Location) ast.ClassElem {
-	p.lexer.consume() // consume `callable`
 	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 	params := []*ast.Param{}
 	if next := p.lexer.peek(); next.Type != OpenParen {
-		p.reportError(next.Span, "Expected '(' after 'callable'")
+		p.reportError(next.Span, "Expected '(' after a call signature's type parameters")
 	} else {
 		p.lexer.consume() // consume '('
 		// A call signature is reached through the class value rather than an instance, so
 		// `self` names nothing here. The receiver is read and reported rather than skipped,
-		// so `callable(self)` says why instead of failing on the parameter list.
+		// so `(self) -> T` says why instead of failing on the parameter list.
 		if receiver := p.selfReceiver(); receiver != nil {
 			p.reportError(receiver.Span_, "call signatures cannot have a `self` receiver")
 			if p.lexer.peek().Type == Comma {

@@ -6,7 +6,7 @@
 export declare class CompileError extends Error {
     static prototype: CompileError,
     constructor(mut self, message?: string),
-    callable(message?: string) -> CompileError
+    (message?: string) -> CompileError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Global) */
@@ -31,7 +31,7 @@ export declare class Instance {
 export declare class LinkError extends Error {
     static prototype: LinkError,
     constructor(mut self, message?: string),
-    callable(message?: string) -> LinkError
+    (message?: string) -> LinkError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Memory) */
@@ -62,7 +62,7 @@ export declare class Module {
 export declare class RuntimeError extends Error {
     static prototype: RuntimeError,
     constructor(mut self, message?: string),
-    callable(message?: string) -> RuntimeError
+    (message?: string) -> RuntimeError
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Table) */

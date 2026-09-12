@@ -12,12 +12,12 @@ import (
 // constructor answers `new`, a call signature answers a plain call, and an object may carry
 // either, both, or neither.
 func TestACallSignatureMakesAnObjectCallable(t *testing.T) {
-	const decl = `type F = { fn (n: number) -> string, tag: string }`
+	const decl = `type F = { (n: number) -> string, tag: string }`
 
 	t.Run("ItRendersAsWritten", func(t *testing.T) {
 		_, types, errs := inferSource(t, decl)
 		require.Empty(t, errorMessagesOf(errs))
-		require.Equal(t, "{fn (n: number) -> string, tag: string}", types["F"])
+		require.Equal(t, "{(n: number) -> string, tag: string}", types["F"])
 	})
 
 	t.Run("TheObjectIsCalled", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestACallSignatureMakesAnObjectCallable(t *testing.T) {
 // a parameter declared as that function.
 func TestACallableObjectFillsAFunctionParameter(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		type F = { fn (n: number) -> string }
+		type F = { (n: number) -> string }
 		declare val f: F
 		declare fn take(g: fn (n: number) -> string) -> number
 		val r = take(f)
@@ -67,7 +67,7 @@ func TestACallableObjectFillsAFunctionParameter(t *testing.T) {
 // call signature. The rule runs one way, as it does for a construct signature.
 func TestAFunctionDoesNotFillACallSignatureRequirement(t *testing.T) {
 	_, _, errs := inferSource(t, `
-		type F = { fn (n: number) -> string }
+		type F = { (n: number) -> string }
 		declare fn take(f: F) -> number
 		declare fn g(n: number) -> string
 		val r = take(g)
@@ -77,14 +77,14 @@ func TestAFunctionDoesNotFillACallSignatureRequirement(t *testing.T) {
 		errorMessagesOf(errs))
 }
 
-// Several `fn (…) -> T` members are the arms of one overloaded call signature, the way
+// Several `(…) -> T` members are the arms of one overloaded call signature, the way
 // TypeScript writes one, rather than several members the object could not hold.
 func TestSeveralCallSignaturesAreOneOverloadedMember(t *testing.T) {
 	_, types, errs := inferSource(t, `
-		type F = { fn (n: number) -> string, fn (s: string) -> number }
+		type F = { (n: number) -> string, (s: string) -> number }
 	`)
 	require.Empty(t, errorMessagesOf(errs))
-	require.Equal(t, "{fn (n: number) -> string; fn (s: string) -> number}", types["F"])
+	require.Equal(t, "{(n: number) -> string; (s: string) -> number}", types["F"])
 }
 
 // A constructor and a call signature are separate members. `SymbolConstructor` needs the call
@@ -92,15 +92,15 @@ func TestSeveralCallSignaturesAreOneOverloadedMember(t *testing.T) {
 // both.
 func TestAConstructorAndACallSignatureAreSeparateMembers(t *testing.T) {
 	t.Run("BothAreKept", func(t *testing.T) {
-		_, types, errs := inferSource(t, `type F = { fn (n: number) -> string, new (n: number) -> string }`)
+		_, types, errs := inferSource(t, `type F = { (n: number) -> string, new (n: number) -> string }`)
 		require.Empty(t, errorMessagesOf(errs))
-		require.Equal(t, "{fn (n: number) -> string, new (n: number) -> string}", types["F"])
+		require.Equal(t, "{(n: number) -> string, new (n: number) -> string}", types["F"])
 	})
 
 	// A constructor does not answer a call-signature requirement.
 	t.Run("AConstructorDoesNotFillACallSignature", func(t *testing.T) {
 		_, _, errs := inferSource(t, `
-			type Call = { fn (n: number) -> string }
+			type Call = { (n: number) -> string }
 			type Ctor = { new (n: number) -> string }
 			declare fn take(f: Call) -> number
 			declare val c: Ctor
@@ -124,7 +124,7 @@ func TestAnOverloadedCallSignatureResolvesAnArm(t *testing.T) {
 		{
 			name: "TheNullaryArm",
 			src: `
-				declare val f: { fn () -> string, fn (a: number, b: number) -> boolean }
+				declare val f: { () -> string, (a: number, b: number) -> boolean }
 				val r = f()
 			`,
 			want: "string",
@@ -132,7 +132,7 @@ func TestAnOverloadedCallSignatureResolvesAnArm(t *testing.T) {
 		{
 			name: "TheTwoArgumentArm",
 			src: `
-				declare val f: { fn () -> string, fn (a: number, b: number) -> boolean }
+				declare val f: { () -> string, (a: number, b: number) -> boolean }
 				val r = f(1, 2)
 			`,
 			want: "boolean",
@@ -155,7 +155,7 @@ func TestAnOverloadedCallSignatureResolvesAnArm(t *testing.T) {
 func TestAConstructorDecidesTheCallOverACallSignature(t *testing.T) {
 	values, _, errs := inferSource(t, `
 		declare val f: {
-			fn (a: string) -> string,
+			(a: string) -> string,
 			new (a: number) -> number,
 		}
 		val r = f(1)
@@ -167,7 +167,7 @@ func TestAConstructorDecidesTheCallOverACallSignature(t *testing.T) {
 	// signature would accept is checked against the constructor instead.
 	_, _, errs = inferSource(t, `
 		declare val f: {
-			fn (a: string) -> string,
+			(a: string) -> string,
 			new (a: number) -> number,
 		}
 		val r = f("x")
@@ -180,8 +180,8 @@ func TestAConstructorDecidesTheCallOverACallSignature(t *testing.T) {
 // since both answer the empty name.
 func TestAnObjectWithBothCallableMembersStillFuses(t *testing.T) {
 	values, _, errs := inferSource(t, `
-		type A = { fn () -> string, new () -> number, x: number }
-		type B = { fn () -> string, new () -> number, y: number }
+		type A = { () -> string, new () -> number, x: number }
+		type B = { () -> string, new () -> number, y: number }
 		declare fn take(v: A & B) -> number
 		declare val v: A & B
 		val r = take(v)

@@ -531,23 +531,23 @@ export declare class VideoFrame {
 }
 
 export declare interface AudioDataOutputCallback {
-    fn (output: AudioData) -> unknown
+    (output: AudioData) -> unknown
 }
 
 export declare interface EncodedAudioChunkOutputCallback {
-    fn (output: EncodedAudioChunk, metadata?: EncodedAudioChunkMetadata) -> unknown
+    (output: EncodedAudioChunk, metadata?: EncodedAudioChunkMetadata) -> unknown
 }
 
 export declare interface EncodedVideoChunkOutputCallback {
-    fn (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) -> unknown
+    (chunk: EncodedVideoChunk, metadata?: EncodedVideoChunkMetadata) -> unknown
 }
 
 export declare interface VideoFrameOutputCallback {
-    fn (output: VideoFrame) -> unknown
+    (output: VideoFrame) -> unknown
 }
 
 export declare interface WebCodecsErrorCallback {
-    fn (error: DOMException) -> unknown
+    (error: DOMException) -> unknown
 }
 
 export declare type ImageBufferSource = AllowSharedBufferSource | ReadableStream

@@ -911,25 +911,26 @@ func (p *Parser) objTypeAnnElemInner() ast.ObjTypeAnnElem {
 		return ast.NewRestSpreadTypeAnn(value, p.elemSpanFrom(start))
 	}
 
-	// A `new (x: number) -> T` construct signature and a `fn (x: number) -> T` call
-	// signature. Each claims its keyword only where a signature follows, so `fn: number`
-	// and `new?: T` still declare properties under those names.
+	// A member opening with `(` or `<` is a call signature. It carries no name, and no
+	// other member may start with either token, so the parameter list alone identifies it.
+	// A class body reads the same spelling, so the two positions agree.
+	if startsASignature(token.Type) {
+		return ast.NewCallableTypeAnn(p.funcTypeAnnTail(token), p.elemSpanFrom(start))
+	}
+
+	// A `new (x: number) -> T` construct signature. `new` claims the keyword only where a
+	// signature follows, so `new?: T` still declares a property under that name, and a
+	// method spelled `new(x: number) -> T` differs from it only in whitespace, so the
+	// signature wins there. Write the method with a string key, `"new"(x: number) -> T`.
+	// A class body has no construct signature to compete with — it writes `constructor`,
+	// the name JavaScript gives the same member — so `new` names a method there.
 	//
-	// A method does collide: `fn(x: number) -> T` differs from the call signature only in
-	// whitespace, and a signature must not hinge on that, so the signature wins. Write a
-	// method of either name with a string key, `"fn"(x: number) -> T`. A class body has
-	// no call or construct signature to compete with, so `fn` and `new` name methods
-	// there directly.
-	//
-	// Both signatures parse through the same tail the `fn` annotation uses, which gives
-	// them type parameters, an inexact marker, and a `throws` clause for free.
-	if (token.Type == New || token.Type == Fn) && startsASignature(p.lexer.peek2().Type) {
-		p.lexer.consume() // consume 'new' or 'fn'
-		fn := p.funcTypeAnnTail(token)
-		if token.Type == New {
-			return ast.NewConstructorTypeAnn(fn, p.elemSpanFrom(start))
-		}
-		return ast.NewCallableTypeAnn(fn, p.elemSpanFrom(start))
+	// It parses through the same tail the `fn` annotation uses, which gives it type
+	// parameters, an inexact marker, and a `throws` clause for free. So does the call
+	// signature above.
+	if token.Type == New && startsASignature(p.lexer.peek2().Type) {
+		p.lexer.consume() // consume 'new'
+		return ast.NewConstructorTypeAnn(p.funcTypeAnnTail(token), p.elemSpanFrom(start))
 	}
 
 	mod := ""

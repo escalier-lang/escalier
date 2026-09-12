@@ -46,10 +46,10 @@ export declare class DateTimeFormat {
     format(mut self, date?: Date | number) -> string,
     resolvedOptions(mut self) -> ResolvedDateTimeFormatOptions,
     constructor(mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions),
-    callable(locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
+    (locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: DateTimeFormatOptions) -> mut Array<string>,
     constructor(mut self, locales?: string | mut Array<string>, options?: DateTimeFormatOptions),
-    callable(locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
+    (locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: DateTimeFormatOptions) -> mut Array<string>,
     static readonly prototype: DateTimeFormat
 }
@@ -84,12 +84,12 @@ export declare class PluralRules {
     resolvedOptions(mut self) -> ResolvedPluralRulesOptions,
     select(mut self, n: number) -> LDMLPluralRule,
     constructor(mut self, locales?: string | Array<string>, options?: PluralRulesOptions),
-    callable(locales?: string | Array<string>, options?: PluralRulesOptions) -> PluralRules,
+    (locales?: string | Array<string>, options?: PluralRulesOptions) -> PluralRules,
     static supportedLocalesOf(locales: string | Array<string>, options?: {
         localeMatcher?: "lookup" | "best fit"
     }) -> mut Array<string>,
     constructor(mut self, locales?: LocalesArgument, options?: PluralRulesOptions),
-    callable(locales?: LocalesArgument, options?: PluralRulesOptions) -> PluralRules,
+    (locales?: LocalesArgument, options?: PluralRulesOptions) -> PluralRules,
     static supportedLocalesOf(locales: LocalesArgument, options?: {
         localeMatcher?: "lookup" | "best fit"
     }) -> mut Array<string>
@@ -134,10 +134,10 @@ export declare class NumberFormat {
     format(mut self, value: number) -> string,
     resolvedOptions(mut self) -> ResolvedNumberFormatOptions,
     constructor(mut self, locales?: LocalesArgument, options?: NumberFormatOptions),
-    callable(locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
+    (locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
     static supportedLocalesOf(locales: LocalesArgument, options?: NumberFormatOptions) -> mut Array<string>,
     constructor(mut self, locales?: string | mut Array<string>, options?: NumberFormatOptions),
-    callable(locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
+    (locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: NumberFormatOptions) -> mut Array<string>,
     static readonly prototype: NumberFormat
 }
@@ -812,10 +812,10 @@ export declare class Collator {
     compare(mut self, x: string, y: string) -> number,
     resolvedOptions(mut self) -> ResolvedCollatorOptions,
     constructor(mut self, locales?: LocalesArgument, options?: CollatorOptions),
-    callable(locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
+    (locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
     static supportedLocalesOf(locales: LocalesArgument, options?: CollatorOptions) -> mut Array<string>,
     constructor(mut self, locales?: string | mut Array<string>, options?: CollatorOptions),
-    callable(locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
+    (locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
     static supportedLocalesOf(locales: string | mut Array<string>, options?: CollatorOptions) -> mut Array<string>
 }
 

@@ -227,7 +227,7 @@ func (s *SetterElem) Accept(v Visitor) {
 }
 func (s *SetterElem) Span() Span { return s.Span_ }
 
-// CallableElem represents an unnamed `callable(...) -> T` call signature in a class body. It makes
+// CallableElem represents an unnamed `(...) -> T` call signature in a class body. It makes
 // the class value callable: `Symbol("desc")` calls it where `Symbol()` alone would construct.
 //
 // The specification forbids constructing `Symbol` and `BigInt`, so a call signature is the

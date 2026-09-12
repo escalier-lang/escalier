@@ -883,11 +883,11 @@ export declare class RTCTrackEvent extends Event {
 }
 
 export declare interface RTCPeerConnectionErrorCallback {
-    fn (error: DOMException) -> unknown
+    (error: DOMException) -> unknown
 }
 
 export declare interface RTCSessionDescriptionCallback {
-    fn (description: RTCSessionDescriptionInit) -> unknown
+    (description: RTCSessionDescriptionInit) -> unknown
 }
 
 export declare type RTCRtpTransform = RTCRtpScriptTransform

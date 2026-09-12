@@ -1169,7 +1169,7 @@ declare var Symbol: SymbolConstructor;
 	require.Equal(t, 0, interfaces, "both interfaces consumed")
 	require.Equal(t, 0, vars, "the binding consumed")
 
-	require.Contains(t, printed, "callable(description?: string | number) -> symbol",
+	require.Contains(t, printed, "(description?: string | number) -> symbol",
 		"the call signature reaches the class, which is what makes the fused Symbol callable")
 	// No `new` is declared, so the class has no constructor. That is the shape that makes
 	// `new Symbol()` unrepresentable rather than merely discouraged.

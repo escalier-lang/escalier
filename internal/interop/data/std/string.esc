@@ -366,7 +366,7 @@ export declare class String {
         raw: Array<string> | ArrayLike<string>
     }, ...substitutions: mut Array<any>) -> string,
     constructor(mut self, value?: unknown),
-    callable(value?: unknown) -> string,
+    (value?: unknown) -> string,
     static readonly prototype: String,
     static fromCharCode(...codes: mut Array<number>) -> string
 }

@@ -2330,16 +2330,16 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 		want  string
 	}{
 		{
-			// The `fn (…) -> T` call signature, printed for a
+			// The unnamed `(…) -> T` call signature, printed for a
 			// CallableTypeAnn. `ArrayConstructor` carries three of them.
 			name:  "call signature in an interface",
-			input: "declare interface C {\n    fn (n?: number) -> Array<any>\n}",
-			want:  "declare interface C {\n    fn (n?: number) -> Array<any>\n}",
+			input: "declare interface C {\n    (n?: number) -> Array<any>\n}",
+			want:  "declare interface C {\n    (n?: number) -> Array<any>\n}",
 		},
 		{
 			name:  "generic call signature beside a construct signature",
-			input: "declare interface C {\n    new<T> (n: number) -> T,\n    fn<T> (n: number) -> T\n}",
-			want:  "declare interface C {\n    new<T> (n: number) -> T,\n    fn<T> (n: number) -> T\n}",
+			input: "declare interface C {\n    new<T> (n: number) -> T,\n    <T>(n: number) -> T\n}",
+			want:  "declare interface C {\n    new<T> (n: number) -> T,\n    <T>(n: number) -> T\n}",
 		},
 		{
 			// `Promise.prototype.catch` and `String.prototype.match`.
@@ -2443,7 +2443,7 @@ func TestPrintRoundTripsConverterOutput(t *testing.T) {
 
 	// The keyed form of those same names is valid JavaScript and stays accepted.
 	// One case per class of keyword: a reserved word, a literal, an accessor
-	// modifier, a type name, and the two an object type reads as signatures. The
+	// modifier, a type name, and `new`, which an object type reads as a signature. The
 	// printer emits each bare, so the output has to parse back as the same key.
 	t.Run("keyword keys in an object literal", func(t *testing.T) {
 		literalTests := []struct {

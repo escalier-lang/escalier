@@ -460,11 +460,8 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 			p.printBlock(e.Fn.Body)
 		}
 	case *ast.CallableElem:
-		// A call signature is unnamed, so `callable` is the whole of what precedes its
-		// parameters, and it carries no receiver and no body. It prints the way
-		// `constructor` above does, which is what pairs the two unnamed members of a class
-		// body.
-		p.writeString("callable")
+		// A call signature is unnamed, so its parameter list opens the member. It carries
+		// no receiver and no body.
 		p.printMethodSig(&e.Fn.FuncSig, nil)
 	}
 }
@@ -1557,7 +1554,10 @@ func (p *Printer) printObjTypeAnnElem(elem ast.ObjTypeAnnElem) {
 	}
 	switch e := elem.(type) {
 	case *ast.CallableTypeAnn:
-		p.printFuncTypeAnn(e.Fn)
+		// Unnamed, like the class member above, so nothing precedes the parameters. The
+		// `fn` a standalone function type annotation writes would name a member here.
+		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
+		p.printFuncTypeAnnParams(e.Fn)
 	case *ast.ConstructorTypeAnn:
 		p.writeString("new")
 		p.printFuncTypeAnnTail(e.Fn)
@@ -1835,7 +1835,15 @@ func (p *Printer) printFuncTypeAnn(typ *ast.FuncTypeAnn) {
 // and an object type's `new (…) -> T` member share it, mirroring the parser's split.
 func (p *Printer) printFuncTypeAnnTail(typ *ast.FuncTypeAnn) {
 	p.printGenericParams(typ.LifetimeParams, typ.TypeParams)
-	p.writeString(" (")
+	p.space()
+	p.printFuncTypeAnnParams(typ)
+}
+
+// printFuncTypeAnnParams prints a signature's parameter list, return and `throws`, with the
+// generic parameters already written by the caller. An unnamed call signature writes them
+// itself, since it has no keyword to put a space after.
+func (p *Printer) printFuncTypeAnnParams(typ *ast.FuncTypeAnn) {
+	p.writeString("(")
 	for i, param := range typ.Params {
 		p.printPattern(param.Pattern)
 		if param.Optional {

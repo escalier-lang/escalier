@@ -143,8 +143,8 @@ export declare class Object {
      */
     static groupBy<K: PropertyKey, T>(items: Iterable<T>, keySelector: fn (item: T, index: number) -> K) -> Partial<Record<K, mut Array<T>>>,
     constructor(mut self, value?: unknown),
-    callable() -> any,
-    callable(value: unknown) -> any,
+    () -> any,
+    (value: unknown) -> any,
     /** A reference to the prototype for a class of objects. */
     static readonly prototype: Object,
     /**

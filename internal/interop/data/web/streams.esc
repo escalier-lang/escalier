@@ -348,47 +348,47 @@ export declare class WritableStreamDefaultWriter<W = any> {
 }
 
 export declare interface QueuingStrategySize<T = any> {
-    fn (chunk: T) -> number
+    (chunk: T) -> number
 }
 
 export declare interface TransformerFlushCallback<O> {
-    fn (controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
+    (controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface TransformerStartCallback<O> {
-    fn (controller: TransformStreamDefaultController<O>) -> any
+    (controller: TransformStreamDefaultController<O>) -> any
 }
 
 export declare interface TransformerTransformCallback<I, O> {
-    fn (chunk: I, controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
+    (chunk: I, controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkAbortCallback {
-    fn (reason?: any) -> undefined | PromiseLike<undefined>
+    (reason?: any) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkCloseCallback {
-    fn () -> undefined | PromiseLike<undefined>
+    () -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkStartCallback {
-    fn (controller: WritableStreamDefaultController) -> any
+    (controller: WritableStreamDefaultController) -> any
 }
 
 export declare interface UnderlyingSinkWriteCallback<W> {
-    fn (chunk: W, controller: WritableStreamDefaultController) -> undefined | PromiseLike<undefined>
+    (chunk: W, controller: WritableStreamDefaultController) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourceCancelCallback {
-    fn (reason?: any) -> undefined | PromiseLike<undefined>
+    (reason?: any) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourcePullCallback<R> {
-    fn (controller: ReadableStreamController<R>) -> undefined | PromiseLike<undefined>
+    (controller: ReadableStreamController<R>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourceStartCallback<R> {
-    fn (controller: ReadableStreamController<R>) -> any
+    (controller: ReadableStreamController<R>) -> any
 }
 
 export declare type ReadableStreamController<T> = ReadableStreamDefaultController<T> | ReadableByteStreamController

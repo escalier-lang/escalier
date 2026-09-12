@@ -89,23 +89,19 @@ func TestKeywordsNameClassMembers(t *testing.T) {
 	}
 }
 
-// `fn` and `new` are the two keywords an object type reads as a signature rather
-// than a member name, because `fn(…)` and `fn (…)` differ only in whitespace. A
-// property keeps the name, and a string key reaches the method.
-func TestFnAndNewClaimSignaturesInObjectTypes(t *testing.T) {
+// `new` is the one keyword an object type reads as a signature rather than a member name,
+// because `new(…)` and `new (…)` differ only in whitespace. A property keeps the name, and a
+// string key reaches the method.
+func TestNewClaimsTheConstructSignatureInObjectTypes(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
 		src  string
 		want ast.ObjTypeAnnElem
 	}{
-		{"fn opens a call signature", "{fn () -> number}", &ast.CallableTypeAnn{}},
-		{"fn without a space is still a call signature", "{fn() -> number}", &ast.CallableTypeAnn{}},
 		{"new opens a construct signature", "{new () -> number}", &ast.ConstructorTypeAnn{}},
-		{"a string key reaches the fn method", `{"fn"() -> number}`, &ast.MethodTypeAnn{}},
 		{"a string key reaches the new method", `{"new"() -> number}`, &ast.MethodTypeAnn{}},
 		{"another keyword stays a method", "{catch() -> number}", &ast.MethodTypeAnn{}},
-		{"fn names a property", "{fn: number}", &ast.PropertyTypeAnn{}},
 		{"new names an optional property", "{new?: number}", &ast.PropertyTypeAnn{}},
 	}
 	for _, tt := range tests {
@@ -121,9 +117,9 @@ func TestFnAndNewClaimSignaturesInObjectTypes(t *testing.T) {
 	}
 }
 
-// A class has no call or construct signature spelled `fn` or `new` to compete with, so both
-// name methods there. A class writes its construct signature as `constructor` and its call
-// signature as `callable`. This asymmetry with an object type is deliberate.
+// `fn` and `new` name methods in a class body. A class writes its construct signature as
+// `constructor` and its call signature as a bare parameter list, so neither word competes with
+// anything there.
 func TestFnAndNewNameClassMethods(t *testing.T) {
 	t.Parallel()
 	for _, keyword := range []string{"fn", "new"} {
@@ -141,36 +137,64 @@ func TestFnAndNewNameClassMethods(t *testing.T) {
 	}
 }
 
-// `callable` is a contextual keyword at the start of a class element, the way `constructor` is.
-// It opens the unnamed call signature, so a class body spells its two unnamed members alike.
-// The spellings that keep the name are `constructor`'s too: a field's punctuation, a quoted
-// key, and any modifier, none of which applies to a call signature.
-func TestCallableOpensAClassCallSignature(t *testing.T) {
+// A member opening with `(` or `<` is a call signature, in a class body and in an object type
+// alike. No other member may start with either token, so the parameter list alone identifies it
+// and nothing has to be reserved. `constructor` keeps its name because JavaScript gives it one —
+// `Foo.constructor` reaches the same member — and a call signature has no such handle.
+func TestABareParameterListOpensACallSignature(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name string
-		src  string
-		want ast.ClassElem
-	}{
-		{"callable opens a call signature", "declare class C {\n    callable() -> number\n}", &ast.CallableElem{}},
-		{"a quoted key reaches the callable method", "declare class C {\n    \"callable\"(self) -> number\n}", &ast.MethodElem{}},
-		{"callable names a field", "declare class C {\n    callable: number\n}", &ast.FieldElem{}},
-		{"callable names an optional field", "declare class C {\n    callable?: number\n}", &ast.FieldElem{}},
-		{"a modifier makes callable a getter's name", "declare class C {\n    get callable(self) -> number\n}", &ast.GetterElem{}},
-		{"a modifier makes callable a static method's name", "declare class C {\n    static callable() -> number\n}", &ast.MethodElem{}},
-		// `fn` competes with nothing in a class body, so it keeps naming a method.
-		{"fn still names a method", "declare class C {\n    fn(self) -> number\n}", &ast.MethodElem{}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			script, errors := parseScriptSrc(t, tt.src)
-			require.Empty(t, errors)
-			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
-			require.Len(t, decl.Body, 1)
-			require.IsType(t, tt.want, decl.Body[0])
-		})
-	}
+	t.Run("InAClassBody", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name string
+			src  string
+			want ast.ClassElem
+		}{
+			{"a parameter list opens one", "declare class C {\n    () -> number\n}", &ast.CallableElem{}},
+			{"so does a type-parameter list", "declare class C {\n    <T>(v: T) -> T\n}", &ast.CallableElem{}},
+			// Every word keeps its meaning as a member name, since none is reserved.
+			{"fn names a method", "declare class C {\n    fn(self) -> number\n}", &ast.MethodElem{}},
+			{"callable names a method", "declare class C {\n    callable(self) -> number\n}", &ast.MethodElem{}},
+			{"callable names a field", "declare class C {\n    callable: number\n}", &ast.FieldElem{}},
+			{"constructor still opens a constructor", "class C {\n    constructor(mut self) {}\n}", &ast.ConstructorElem{}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				script, errors := parseScriptSrc(t, tt.src)
+				require.Empty(t, errors)
+				decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
+				require.Len(t, decl.Body, 1)
+				require.IsType(t, tt.want, decl.Body[0])
+			})
+		}
+	})
+
+	t.Run("InAnObjectType", func(t *testing.T) {
+		t.Parallel()
+		tests := []struct {
+			name string
+			src  string
+			want ast.ObjTypeAnnElem
+		}{
+			{"a parameter list opens one", "{(a: number, b: string) -> boolean}", &ast.CallableTypeAnn{}},
+			{"so does a type-parameter list", "{<T>(v: T) -> T}", &ast.CallableTypeAnn{}},
+			{"beside an ordinary member", "{(a: number) -> boolean, tag: string}", &ast.CallableTypeAnn{}},
+			// `fn` is no longer reserved here either, so it names a member like any word.
+			{"fn names a method", "{fn(x: number) -> number}", &ast.MethodTypeAnn{}},
+			{"fn names a property", "{fn: number}", &ast.PropertyTypeAnn{}},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+				typeAnn, errors := parseTypeAnnSrc(t, tt.src)
+				require.Empty(t, errors)
+				obj, ok := typeAnn.(*ast.ObjectTypeAnn)
+				require.True(t, ok, "%s should be an object type", tt.src)
+				require.IsType(t, tt.want, obj.Elems[0])
+			})
+		}
+	})
 }
 
 // A call signature declares a shape rather than an implementation, and it is reached through
@@ -184,12 +208,12 @@ func TestAClassCallSignatureRejectsWhatItCannotCarry(t *testing.T) {
 	}{
 		{
 			name: "AReceiver",
-			src:  "declare class C {\n    callable(self) -> number\n}",
+			src:  "declare class C {\n    (self) -> number\n}",
 			want: "call signatures cannot have a `self` receiver",
 		},
 		{
 			name: "ABody",
-			src:  "class C {\n    callable() -> number { 1 }\n}",
+			src:  "class C {\n    () -> number { 1 }\n}",
 			want: "call signatures cannot have a body",
 		},
 	}
