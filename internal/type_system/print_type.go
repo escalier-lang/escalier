@@ -482,7 +482,11 @@ func printObjectType(t *ObjectType, pt func(Type) string) string {
 				// would name a member here.
 				result += printFuncSig("", elem.Fn, false, pt)
 			case *ConstructorElem:
-				result += "new " + printFuncType(elem.Fn, pt)
+				// `new ` is the header rather than a prefix on one. printFuncType writes
+				// `fn ` for a standalone function type, and concatenating onto that gave
+				// `new fn (…) -> T`, which no grammar reads: the parser takes `new` as the
+				// construct-signature keyword, and `fn` after it would be a member name.
+				result += printFuncSig("new ", elem.Fn, false, pt)
 			case *MethodElem:
 				// Print one entry per overload arm. For a single-arm
 				// (non-overloaded) method this matches the historical

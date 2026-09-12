@@ -851,7 +851,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Container { item: mut {x: number} }
 			`,
 			expectedTypes: map[string]string{
-				"Container": "{new fn <'a>(item: mut 'a {x: number}) -> Container<'a>}",
+				"Container": "{new <'a>(item: mut 'a {x: number}) -> Container<'a>}",
 			},
 		},
 		"PointPrimitivesNoLifetime": {
@@ -859,7 +859,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Point { x: number, y: number }
 			`,
 			expectedTypes: map[string]string{
-				"Point": "{new fn (x: number, y: number) -> Point}",
+				"Point": "{new (x: number, y: number) -> Point}",
 			},
 		},
 		"PairOfRefs": {
@@ -867,7 +867,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				class Pair { first: mut {x: number}, second: mut {x: number} }
 			`,
 			expectedTypes: map[string]string{
-				"Pair": "{new fn <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
+				"Pair": "{new <'a, 'b>(first: mut 'a {x: number}, second: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 		},
 		"GuardOnlyParamNotCaptured": {
@@ -887,7 +887,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: mut {x: number}) -> C}",
+				"C": "{new (p: mut {x: number}) -> C}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 0,
@@ -906,7 +906,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn (p: {x: number}) -> C}",
+				"C": "{new (p: {x: number}) -> C}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 0,
@@ -955,7 +955,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Pair": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Pair<'a, 'b>}",
+				"Pair": "{new <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Pair<'a, 'b>}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"Pair": 2,
@@ -976,7 +976,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"Wrap": "{new fn <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Wrap<'a, 'b>}",
+				"Wrap": "{new <'a, 'b>(a: mut 'a {x: number}, b: mut 'b {x: number}) -> Wrap<'a, 'b>}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"Wrap": 2,
@@ -1097,7 +1097,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> C<'a>}",
+				"C": "{new <'a>([a: mut 'a {x: number}, b: mut {x: number}]) -> C<'a>}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 1,
@@ -1114,7 +1114,7 @@ func TestInferConstructorLifetimeTypes(t *testing.T) {
 				}
 			`,
 			expectedTypes: map[string]string{
-				"C": "{new fn <'a>(p: mut 'a {x: number}) -> C<'a>}",
+				"C": "{new <'a>(p: mut 'a {x: number}) -> C<'a>}",
 			},
 			expectedInstanceLifetimes: map[string]int{
 				"C": 1,
@@ -1169,7 +1169,7 @@ func TestCtorCapturesViaWrappingCall(t *testing.T) {
 	actual := collectBindingTypes(ns)
 	got, ok := actual["C"]
 	require.True(t, ok, "binding C not found")
-	assert.Equal(t, "{new fn <'a>(p: mut 'a {y: number}) -> C<'a>}", got)
+	assert.Equal(t, "{new <'a>(p: mut 'a {y: number}) -> C<'a>}", got)
 }
 
 // TestCallSiteAliasFromLifetimeUnion exercises the LifetimeUnion call-site

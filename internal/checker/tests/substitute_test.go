@@ -411,8 +411,8 @@ func TestSubstituteTypeParamsInObjElem(t *testing.T) {
 	// Substitute type parameters in the entire object
 	result := SubstituteTypeParams(objType, substitutions)
 
-	assert.Equal(t, "{readonly test?: T, method(self, x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, (x: T) -> U, new fn (init: V) -> U, ...T}", objType.String())
-	assert.Equal(t, "{readonly test?: number, method(self, x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, (x: number) -> string, new fn (init: boolean) -> string, ...number}", result.String())
+	assert.Equal(t, "{readonly test?: T, method(self, x: T) -> U, get getter(self) -> T, set setter(mut self, value: V) -> undefined, (x: T) -> U, new (init: V) -> U, ...T}", objType.String())
+	assert.Equal(t, "{readonly test?: number, method(self, x: number) -> string, get getter(self) -> number, set setter(mut self, value: boolean) -> undefined, (x: number) -> string, new (init: boolean) -> string, ...number}", result.String())
 }
 
 // Phase 10.5 regression: when the same type-parameter substitute is used
