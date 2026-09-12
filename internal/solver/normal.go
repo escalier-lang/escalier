@@ -889,6 +889,10 @@ func (c *Context) valueFamilyOf(t soltype.Type) valueFamily {
 		return primFamily(t.Prim)
 	case *soltype.LitType:
 		return litFamily(t.Lit)
+	case *soltype.UniqueSymbolType:
+		// A unique symbol is a symbol, so it draws from the same family the primitive does
+		// and is disjoint from every other primitive for the same reason.
+		return symbolFamily
 	case *soltype.NullType:
 		return nullFamily
 	case *soltype.UndefinedType:

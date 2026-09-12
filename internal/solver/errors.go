@@ -3073,6 +3073,11 @@ func describe(t soltype.Type) string {
 		// A skolem renders under its source parameter name, so a rejected `return 5`
 		// against `fn <T>(x: T) -> T` reads `cannot constrain 5 <: T`.
 		return t.Name
+	case *soltype.UniqueSymbolType:
+		// A rejected pair of symbols reads under the same form the printer gives, so the
+		// ids that tell them apart are what a reader compares. Without this arm both sides
+		// render `?` and the message says nothing about which symbols were involved.
+		return soltype.Print(t)
 	}
 	return "?"
 }

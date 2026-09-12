@@ -1174,6 +1174,20 @@ type SelfType struct {
 	Class *ClassType
 }
 
+// UniqueSymbolType is one particular symbol, the type a `unique symbol` annotation
+// names. `SymbolConstructor` declares `readonly iterator: unique symbol`, and the type
+// of `Symbol.iterator` is that one symbol rather than the whole `symbol` primitive.
+//
+// ID is what tells two of them apart. A symbol has no written form a reader could
+// compare, so two are the same type exactly when they came from the same declaration,
+// and the id is what carries that. It is minted per run and means nothing across runs.
+//
+// Every unique symbol is a subtype of `symbol`, and no two distinct ones are subtypes of
+// each other. That pair of rules is the whole of its place in the lattice.
+type UniqueSymbolType struct {
+	ID int
+}
+
 // TemplateLitType is the residual template literal type operator, such as
 // `on${T}`. Quasis holds the fixed string segments and Interps the interpolated
 // types between them, so Quasis has exactly one more entry than Interps. Like KeyofType
@@ -1333,6 +1347,7 @@ func (*ClassType) isType()           {}
 func (*AliasType) isType()           {}
 func (*SkolemType) isType()          {}
 func (*SelfType) isType()            {}
+func (*UniqueSymbolType) isType()    {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).

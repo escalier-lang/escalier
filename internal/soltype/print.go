@@ -951,6 +951,11 @@ func (p *namedPrinter) printType(t Type) string {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
+	case *UniqueSymbolType:
+		// A symbol has no written form, so the rendered one names the kind and the id that
+		// tells two apart. A reader comparing two rendered symbols is comparing the same
+		// thing the solver does.
+		return "unique symbol#" + strconv.Itoa(t.ID)
 	case *SelfType:
 		// A `Self` renders as the word the source wrote, not as the class it was declared in.
 		// That is the whole point of keeping it a kind of its own: `me(self) -> Self` on a
