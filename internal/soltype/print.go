@@ -603,6 +603,10 @@ func freeTypeVars(t Type) []*TypeVarType {
 					for _, sig := range e.Signatures {
 						walk(sig)
 					}
+				case *CallableElem:
+					for _, sig := range e.Signatures {
+						walk(sig)
+					}
 				case *SpreadElem:
 					walk(e.Type)
 				case *MappedElem:
@@ -1240,6 +1244,15 @@ func (p *namedPrinter) printObjElem(e ObjTypeElem) string {
 		arms := make([]string, len(e.Signatures))
 		for i, sig := range e.Signatures {
 			arms[i] = "new " + p.printFuncTail(sig)
+		}
+		return strings.Join(arms, "; ")
+	case *CallableElem:
+		// A call signature renders unnamed, `fn (params) -> ret`, the way the source writes
+		// it among an object's members. An overloaded one renders its arms joined by `; `,
+		// as a constructor and a method do.
+		arms := make([]string, len(e.Signatures))
+		for i, sig := range e.Signatures {
+			arms[i] = "fn " + p.printFuncTail(sig)
 		}
 		return strings.Join(arms, "; ")
 	case *SpreadElem:

@@ -1844,20 +1844,40 @@ func resolveFunc(t soltype.Type) (*soltype.FuncType, bool) {
 	case *soltype.FuncType:
 		return t, true
 	case *soltype.ObjectType:
-		if ctor, ok := t.Constructor(); ok && len(ctor.Signatures) == 1 {
-			return ctor.Signatures[0], true
-		}
+		return soleCallableSignature(t)
 	case *soltype.TypeVarType:
 		for _, lb := range t.LowerBounds {
 			switch lb := lb.(type) {
 			case *soltype.FuncType:
 				return lb, true
 			case *soltype.ObjectType:
-				if ctor, ok := lb.Constructor(); ok && len(ctor.Signatures) == 1 {
-					return ctor.Signatures[0], true
+				if sig, ok := soleCallableSignature(lb); ok {
+					return sig, true
 				}
 			}
 		}
+	}
+	return nil, false
+}
+
+// soleCallableSignature returns the one signature an object is called through, and false when
+// it carries none or carries an overload set. A call signature answers a plain call and a
+// constructor answers `new`, so an object carrying a call signature is called through that
+// one and every other object through its constructor.
+//
+// A call signature decides the call whether or not it is overloaded. An overloaded one yields
+// nothing here, the same as an overloaded constructor, since no one arm is the callee and
+// inferCall routes such a call to inferArmOverloadCall instead. Falling back to a constructor
+// beside it would check the call against the wrong member.
+func soleCallableSignature(t *soltype.ObjectType) (*soltype.FuncType, bool) {
+	if call, ok := t.Callable(); ok {
+		if len(call.Signatures) == 1 {
+			return call.Signatures[0], true
+		}
+		return nil, false
+	}
+	if ctor, ok := t.Constructor(); ok && len(ctor.Signatures) == 1 {
+		return ctor.Signatures[0], true
 	}
 	return nil, false
 }

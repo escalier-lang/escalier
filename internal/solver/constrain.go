@@ -1159,10 +1159,15 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 			}
 		} else if sup, ok := super.(*soltype.FuncType); ok {
+			// An object with a call signature is a subtype of the matching function type. That
+			// is what the signature says: the object is callable with those parameters.
+			if call, ok := sub.Callable(); ok {
+				return c.constrain(overloadReadType(call.Signatures), sup, seen, mutCtx)
+			}
 			// An object with a constructor signature is a subtype of the matching function
 			// type; codegen makes the constructor behave as a plain function where expected.
 			if ctor, ok := sub.Constructor(); ok {
-				return c.constrain(ctorReadType(ctor), sup, seen, mutCtx)
+				return c.constrain(overloadReadType(ctor.Signatures), sup, seen, mutCtx)
 			}
 		} else if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
@@ -1201,7 +1206,21 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				// cannot fill one.
 				if superCtor, ok := superElem.(*soltype.ConstructorElem); ok {
 					if subCtor, has := sub.Constructor(); has {
-						errs = append(errs, c.constrain(ctorReadType(subCtor), ctorReadType(superCtor), seen, mutCtx)...)
+						errs = append(errs, c.constrain(overloadReadType(subCtor.Signatures), overloadReadType(superCtor.Signatures), seen, mutCtx)...)
+					} else {
+						errs = append(errs, &CannotConstrainError{Sub: sub, Super: sup})
+					}
+					continue
+				}
+				// A call-signature requirement is the plain-call twin of the constructor one
+				// above, satisfied by the source's own call signature checked covariantly. The
+				// two are separate members, so a constructor does not fill it.
+				if superCall, ok := superElem.(*soltype.CallableElem); ok {
+					if subCall, has := sub.Callable(); has {
+						errs = append(errs, c.constrain(
+							overloadReadType(subCall.Signatures),
+							overloadReadType(superCall.Signatures),
+							seen, mutCtx)...)
 					} else {
 						errs = append(errs, &CannotConstrainError{Sub: sub, Super: sup})
 					}
@@ -2165,24 +2184,24 @@ func methodReadType(elem *soltype.MethodElem) soltype.Type {
 	return &soltype.IntersectionType{Types: arms}
 }
 
-// ctorReadType returns the callable value a class value's constructor stands for. A single
-// signature reads as itself, and an overloaded constructor as the intersection of its arms, so
-// a comparison against it weighs the arms together through the arrow-decomposition rule rather
-// than picking one. It is the constructor twin of methodReadType, without the receiver strip,
-// since a constructor declares no receiver in its callable signature. An element carrying no
-// signature reads as the error sentinel.
+// overloadReadType returns the callable value an unnamed overload set stands for, the arms a
+// class value's constructor or an object's call signature carries. A single signature reads as
+// itself, and an overload set as the intersection of its arms, so a comparison against it
+// weighs the arms together through the arrow-decomposition rule rather than picking one. It is
+// the twin of methodReadType, without the receiver strip, since neither member declares a
+// receiver in its callable signature. An empty set reads as the error sentinel.
 //
 // This is the lattice's reading, which is what an assignment and a `super(…)` call take. A
 // direct call picks one arm instead, through inferArmOverloadCall.
-func ctorReadType(elem *soltype.ConstructorElem) soltype.Type {
-	switch len(elem.Signatures) {
+func overloadReadType(sigs []*soltype.FuncType) soltype.Type {
+	switch len(sigs) {
 	case 0:
 		return &soltype.ErrorType{}
 	case 1:
-		return elem.Signatures[0]
+		return sigs[0]
 	}
-	arms := make([]soltype.Type, len(elem.Signatures))
-	for i, sig := range elem.Signatures {
+	arms := make([]soltype.Type, len(sigs))
+	for i, sig := range sigs {
 		arms[i] = sig
 	}
 	return &soltype.IntersectionType{Types: arms}

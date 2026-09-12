@@ -718,13 +718,14 @@ type mergeKey struct {
 // objElemKind is the part of a mergeKey that says which group of members an element belongs to.
 // mergeKeyOf switches over every ObjTypeElem variant and panics on one it does not name, so a
 // new element kind has to state whether it merges by name or stands alone rather than silently
-// sharing another kind's key. The call signature escalier-lang/escalier#992 adds is the next
-// such kind, and it stands alone.
+// sharing another kind's key. A constructor and a call signature each stand alone, and on
+// separate keys, since an object may carry both.
 type objElemKind uint8
 
 const (
 	kindNamed objElemKind = iota
 	kindConstructor
+	kindCallable
 	kindMapped
 	kindSpread
 )
@@ -735,6 +736,10 @@ func mergeKeyOf(elem soltype.ObjTypeElem) mergeKey {
 		return mergeKey{kind: kindNamed, name: soltype.ObjElemName(elem)}
 	case *soltype.ConstructorElem:
 		return mergeKey{kind: kindConstructor}
+	case *soltype.CallableElem:
+		// A call signature is unnamed like a constructor, and the two are different members,
+		// so each gets its own key rather than sharing the unnamed one.
+		return mergeKey{kind: kindCallable}
 	case *soltype.MappedElem:
 		// A mapped member and a spread each stand for a group of members the evaluator has not
 		// computed yet, so neither reaches a merge: reduceObject expands both into field groups

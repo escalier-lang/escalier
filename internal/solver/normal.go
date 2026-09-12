@@ -1601,24 +1601,24 @@ func mergeableElems(o *soltype.ObjectType) ([]soltype.ObjTypeElem, bool) {
 func fusableMember(e soltype.ObjTypeElem) bool {
 	switch e.(type) {
 	case *soltype.PropertyElem, *soltype.MethodElem, *soltype.GetterElem,
-		*soltype.SetterElem, *soltype.ConstructorElem:
+		*soltype.SetterElem, *soltype.ConstructorElem, *soltype.CallableElem:
 		return true
 	}
 	return false
 }
 
-// hasRepeatedName reports whether two members of one object share a name. Its
-// callers rule out spread and mapped members first, so a constructor is the only
-// member that names the empty string, and an object holds at most one. The empty
-// key therefore never collides with itself here.
+// hasRepeatedName reports whether two members of one object occupy the same merge slot. It
+// keys on mergeKeyOf rather than on the name, because a constructor and a call signature both
+// answer the empty name and an object may carry one of each. Keying on the name alone would
+// read `{fn () -> string, new () -> Foo}` as a repeat and leave it unfused.
 func hasRepeatedName(elems []soltype.ObjTypeElem) bool {
-	seen := set.NewSet[string]()
+	seen := set.NewSet[mergeKey]()
 	for _, e := range elems {
-		name := soltype.ObjElemName(e)
-		if seen.Contains(name) {
+		key := mergeKeyOf(e)
+		if seen.Contains(key) {
 			return true
 		}
-		seen.Add(name)
+		seen.Add(key)
 	}
 	return false
 }
@@ -1692,6 +1692,18 @@ func (c *Context) meetObjElem(a, b soltype.ObjTypeElem) (soltype.ObjTypeElem, bo
 			return nil, false
 		}
 		return &soltype.ConstructorElem{Signatures: sigs}, true
+	case *soltype.CallableElem:
+		b, ok := b.(*soltype.CallableElem)
+		if !ok {
+			return nil, false
+		}
+		// Two call signatures meet through the signature-set rule a constructor's do. Neither
+		// carries a receiver, so there is nothing to guard beyond the arms.
+		sigs, ok := c.fuseSignatureSets(a.Signatures, b.Signatures, meetCtorSig(c))
+		if !ok {
+			return nil, false
+		}
+		return &soltype.CallableElem{Signatures: sigs}, true
 	}
 	return nil, false
 }
