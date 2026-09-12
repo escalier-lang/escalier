@@ -63,7 +63,7 @@ func CarrierOf(t Type) Type {
 
 // BorrowableType reports whether t may sit inside a RefType — i.e. whether it is a
 // RefInner. A TypeVarType is borrowable mid-inference, with its content invariant
-// deferred to constrain time; PrimType / LitType / FuncType / PromiseType are not.
+// deferred to constrain time. PrimType, LitType and FuncType are not borrowable.
 func BorrowableType(t Type) bool {
 	_, ok := t.(RefInner)
 	return ok

@@ -13,3 +13,11 @@ export declare class Array<T> {
     at(self, index: number) -> T | undefined,
     push(mut self, item: T) -> number,
 }
+
+// The `Promise` an `async fn` returns and an `await` unwraps. `E` is what the
+// promise may reject with, and defaults to the `never` a promise that cannot
+// reject carries. The members below are the ones the tests exercise.
+export declare class Promise<T, E = never> {
+    then<U, F = never>(self, onfulfilled: fn (value: T) -> U throws F) -> Promise<U, E | F>,
+    catch<U, F = never>(self, onrejected: fn (reason: E) -> U throws F) -> Promise<T | U, F>,
+}

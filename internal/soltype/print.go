@@ -645,11 +645,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Operand)
 		case *RecursiveType:
 			walk(t.Body)
-		case *PromiseType:
-			walk(t.Inner)
-			if t.Err != nil {
-				walk(t.Err)
-			}
 		case *GeneratorType:
 			walk(t.Yield)
 			walk(t.Ret)
@@ -839,6 +834,33 @@ func isPrintLeaf(t Type) bool {
 	return false
 }
 
+// printedArgs renders a nominal reference's type arguments, dropping a trailing slot
+// that carries nothing. `Promise<number, never>` renders as `Promise<number>`, the
+// same suppression printThrowsClause applies to a signature that raises nothing.
+//
+// The slot has to be `never` and default to `never`. That pairing is what marks it as an
+// absence rather than a value. It is the shape of an error or raise slot a declaration
+// leaves empty, since no value has type `never`. A default carrying a real type is still
+// shown, because `Box<T = number>` written bare resolves to `Box<number>` and a reader is
+// owed that.
+//
+// Only a trailing run is dropped, since an argument is addressed by position and an
+// earlier one cannot be left out. A reference whose instantiation site had no
+// declaration in reach has no Defaults and keeps every argument.
+func (p *namedPrinter) printedArgs(typeArgs, defaults []Type) []string {
+	args := make([]string, len(typeArgs))
+	for i, a := range typeArgs {
+		args[i] = p.printType(a)
+	}
+	for i := len(args) - 1; i >= 0 && i < len(defaults); i-- {
+		if defaults[i] == nil || !isNever(defaults[i]) || !isNever(typeArgs[i]) {
+			break
+		}
+		args = args[:i]
+	}
+	return args
+}
+
 // printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
 // stored type already matches the surface annotation the user wrote, so the
 // printer needs no special elision pass — `mut {a: {x}}` is stored and printed
@@ -952,16 +974,15 @@ func (p *namedPrinter) printType(t Type) string {
 		if p.qualify {
 			name = t.Name // full qualified name for a collision-free identity key
 		}
-		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
+		args := p.printedArgs(t.TypeArgs, t.Defaults)
+		if len(args) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
-		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
+		parts := make([]string, 0, len(t.LifetimeArgs)+len(args))
 		for _, la := range t.LifetimeArgs {
 			parts = append(parts, p.printLifetime(la))
 		}
-		for _, a := range t.TypeArgs {
-			parts = append(parts, p.printType(a))
-		}
+		parts = append(parts, args...)
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *AliasType:
 		// An alias reference renders under its own name, with a `<...>` argument list when
@@ -974,16 +995,15 @@ func (p *namedPrinter) printType(t Type) string {
 		if p.qualify {
 			name = t.Name // full qualified name for a collision-free identity key
 		}
-		if len(t.TypeArgs) == 0 && len(t.LifetimeArgs) == 0 {
+		args := p.printedArgs(t.TypeArgs, t.Defaults)
+		if len(args) == 0 && len(t.LifetimeArgs) == 0 {
 			return name
 		}
-		parts := make([]string, 0, len(t.LifetimeArgs)+len(t.TypeArgs))
+		parts := make([]string, 0, len(t.LifetimeArgs)+len(args))
 		for _, la := range t.LifetimeArgs {
 			parts = append(parts, p.printLifetime(la))
 		}
-		for _, a := range t.TypeArgs {
-			parts = append(parts, p.printType(a))
-		}
+		parts = append(parts, args...)
 		return name + "<" + strings.Join(parts, ", ") + ">"
 	case *FuncType:
 		return "fn " + p.printFuncTail(t)
@@ -1039,15 +1059,6 @@ func (p *namedPrinter) printType(t Type) string {
 		// A reference to the enclosing knot's binder renders as that binder's bare name, so
 		// `μX0.{next: X0}` names one binding twice.
 		return t.DisplayName()
-	case *PromiseType:
-		// A promise that can reject renders its rejection type as a second argument,
-		// `Promise<T, E>`. A promise that cannot reject resolves its Err to `never` and
-		// renders the one-argument `Promise<T>`, the same suppression printThrowsClause
-		// applies to a signature that raises nothing.
-		if t.Rejects() {
-			return "Promise<" + p.printType(t.Inner) + ", " + p.printType(t.Err) + ">"
-		}
-		return "Promise<" + p.printType(t.Inner) + ">"
 	case *GeneratorType:
 		// A generator that can raise renders its raise type as a fourth argument,
 		// `Generator<Y, R, N, E>`, the same shape `Promise<T, E>` takes. One that cannot

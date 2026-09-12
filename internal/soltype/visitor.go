@@ -157,26 +157,6 @@ func (t *ObjectType) Accept(v TypeVisitor, pol Polarity) Type {
 	return v.ExitType(out, pol)
 }
 
-func (t *PromiseType) Accept(v TypeVisitor, pol Polarity) Type {
-	e := v.EnterType(t, pol)
-	if e.SkipChildren {
-		return v.ExitType(skipReplace(t, e), pol)
-	}
-	cur := descendReplacement(t, e)
-	inner := cur.Inner.Accept(v, pol) // covariant, no auto-flatten
-	// The rejection type is the asynchronous exceptional exit, so it walks at the same
-	// polarity as the payload. A nil Err is the `never` shorthand and has nothing to walk.
-	errT := cur.Err
-	if errT != nil {
-		errT = errT.Accept(v, pol)
-	}
-	out := cur
-	if inner != cur.Inner || errT != cur.Err {
-		out = &PromiseType{Inner: inner, Err: errT}
-	}
-	return v.ExitType(out, pol)
-}
-
 func (t *GeneratorType) Accept(v TypeVisitor, pol Polarity) Type {
 	e := v.EnterType(t, pol)
 	if e.SkipChildren {
@@ -205,10 +185,10 @@ func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// The operand walks in the current polarity, the same single-child covariant visit
-	// PromiseType uses. The residual is inert in M9 PR1a — the visit rebuilds it around a
-	// rewritten operand without reducing the operator, so extrude/coalesce/freshenAbove
-	// carry `keyof T` through untouched. The evaluator's reduction lands in PR1b.
+	// The operand walks in the current polarity, a single-child covariant visit. The
+	// residual is inert in M9 PR1a — the visit rebuilds it around a rewritten operand
+	// without reducing the operator, so extrude/coalesce/freshenAbove carry `keyof T`
+	// through untouched. The evaluator's reduction lands in PR1b.
 	operand := cur.Operand.Accept(v, pol)
 	out := cur
 	if operand != cur.Operand {
@@ -362,11 +342,11 @@ func (t *RecursiveType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// The body walks in the current polarity, the same single-child covariant visit PromiseType
-	// uses. A knot stands for the type its body unfolds to, and unfolding introduces no variance
-	// flip. Binder is the binding this node owns rather than a type to rewrite, so it carries
-	// through and every reference to it inside the rewritten body stays bound to it. That split is
-	// how a knot crosses a level boundary intact. extrude freshens the body's inference variables
+	// The body walks in the current polarity, a single-child covariant visit. A knot stands
+	// for the type its body unfolds to, and unfolding introduces no variance flip. Binder is
+	// the binding this node owns rather than a type to rewrite, so it carries through and
+	// every reference to it inside the rewritten body stays bound to it. That split is how a
+	// knot crosses a level boundary intact. extrude freshens the body's inference variables
 	// and leaves the binder alone.
 	body := cur.Body.Accept(v, pol)
 	out := cur
@@ -480,7 +460,7 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 		// LifetimeArgs and Lt are lifetimes, not Types, so Accept never walks them; a
 		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
 		// ClassType before this rebuild, so cur already holds the freshened lifetimes.
-		out = &ClassType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs, Lt: cur.Lt, Final: cur.Final, Variant: cur.Variant}
+		out = &ClassType{Name: cur.Name, TypeArgs: args, Defaults: cur.Defaults, LifetimeArgs: cur.LifetimeArgs, Lt: cur.Lt, Final: cur.Final, Variant: cur.Variant}
 	}
 	return v.ExitType(out, pol)
 }
@@ -523,7 +503,7 @@ func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 		// LifetimeArgs are lifetimes, not Types, so Accept never walks them; a
 		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
 		// AliasType before this rebuild, so cur already holds the freshened lifetimes.
-		out = &AliasType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs}
+		out = &AliasType{Name: cur.Name, TypeArgs: args, Defaults: cur.Defaults, LifetimeArgs: cur.LifetimeArgs}
 	}
 	return v.ExitType(out, pol)
 }

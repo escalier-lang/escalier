@@ -116,7 +116,7 @@ func (c *checker) preludeScope() *Scope {
 	}
 	c.prelude = sharedPrelude().Child()
 	c.bindPreludeExports(c.prelude)
-	c.resolveArrayClass()
+	c.resolvePreludeClasses()
 	return c.prelude
 }
 
@@ -135,10 +135,11 @@ const preludeVarIDBase = 1 << 20
 // standard library left off would put it in messages about code that never
 // mentions it.
 //
-// A source that answers nothing for the URI binds nothing and reports nothing.
-// The solver's own tests infer against no stdlib, and a program owes no
-// diagnostic to a package it does not name. A prelude that loads and reports
-// diagnostics of its own is a different matter, and those reach the run.
+// A source that answers nothing for the URI binds nothing and reports nothing
+// here. The report belongs to resolvePreludeClasses, which names the classes it
+// could not find rather than the package that did not answer, since that is what
+// a reader has to fix. A prelude that loads and reports diagnostics of its own is
+// a different matter, and those reach the run.
 //
 // The prelude has to be self-contained, since a package it imports is inferred
 // while this layer is still empty. See the `std:prelude` entry in
@@ -162,14 +163,18 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 	}
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference. They are
-// what `await`, `for`-`in` and `yield` are checked against, and what the
-// iteration built-ins are written in terms of. Each resolves to an opaque stub,
-// so a reference to one is not an unbound name in a run whose tree supplies no
-// prelude package. A prelude that does load shadows every placeholder it
-// declares, since its exports go into a child of this scope.
+// stdlibTypePlaceholders are the names a built-in type rule still resolves itself.
+// Each binds an opaque stub, so a reference to one is not an unbound name in a run
+// whose tree supplies no prelude package. A prelude that does load shadows every
+// placeholder it declares, since its exports go into a child of this scope.
+//
+// `Promise` is not here. Its rules read the class the prelude declares, and
+// resolveTypeAnn has no arm of its own for the name, so a written `Promise<T, E>`
+// against a tree with no prelude is an unbound name and says so. A stub would answer
+// the argument-less spelling alone and resolve it to `unknown`, which turns that
+// report into a later complaint that an `async fn` returns something other than a
+// promise.
 var stdlibTypePlaceholders = []string{
-	"Promise",
 	"Iterable",
 	"AsyncIterable",
 	"Generator",

@@ -35,8 +35,9 @@ import (
 // A function type holds its body unevaluated, so `{value: number, rest: fn () -> X0}` stops at the
 // thunk and recurses only when a caller forces `rest`.
 //
-// A `Promise` and a generator hold their payload unevaluated for the same reason. An async loop that
-// yields to the event loop each lap is legitimate and must not be rejected:
+// A generator holds its payload unevaluated for the same reason. A class instance is one of the
+// shapes the walk does not decide, so a `Promise` reads as inhabited whatever its payload is. An
+// async loop that yields to the event loop each lap is legitimate and must not be rejected:
 //
 //	async fn serve() {
 //	    val req = await accept()
@@ -157,9 +158,9 @@ func finitelyInhabited(t soltype.Type) bool {
 		return false
 	case *soltype.RecursiveType:
 		return finitelyInhabited(t.Body)
-	case *soltype.FuncType, *soltype.PromiseType, *soltype.GeneratorType:
-		// A closure, a promise, and a generator each hold their payload unevaluated, so building one
-		// runs none of the code that would produce that payload.
+	case *soltype.FuncType, *soltype.GeneratorType:
+		// A closure and a generator each hold their payload unevaluated, so building one runs none
+		// of the code that would produce that payload.
 		return true
 	case *soltype.ObjectType:
 		// Only a required property and a spread are read. A method, a getter, a setter, and a

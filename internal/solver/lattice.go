@@ -2,6 +2,7 @@ package solver
 
 import (
 	"sort"
+	"strings"
 
 	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
@@ -471,14 +472,6 @@ func compareSameKind(a, b soltype.Type) int {
 			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
 		}
 		return compareObjectFields(a, b)
-	case *soltype.PromiseType:
-		b := b.(*soltype.PromiseType)
-		if c := compareType(a.Inner, b.Inner); c != 0 {
-			return c
-		}
-		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises
-		// differing only in whether the rejection slot was written compare equal here.
-		return compareType(a.ErrOrNever(), b.ErrOrNever())
 	case *soltype.GeneratorType:
 		b := b.(*soltype.GeneratorType)
 		if a.Async != b.Async {
@@ -533,8 +526,60 @@ func compareSameKind(a, b soltype.Type) int {
 		// Two `Self`s order by the class each was declared in, which is the only type they
 		// carry. A `Self` and a bare class never reach here: typeKindOrder separates them.
 		return compareType(a.Class, b.(*soltype.SelfType).Class)
+	case *soltype.ClassType:
+		// Two class instances order by every field their equality reads: the qualified
+		// name, the exactness flag, then the lifetime and type arguments positionally.
+		// Reading the same fields is what keeps `compareType(a, b) == 0` and
+		// `equalType(a, b)` answering together, so two instances of one class differing
+		// only in their arguments hold a fixed position relative to each other.
+		b := b.(*soltype.ClassType)
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		if a.Final != b.Final {
+			return boolOrder(a.Final) - boolOrder(b.Final)
+		}
+		if c := compareLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs); c != 0 {
+			return c
+		}
+		return compareTypeSliceByLen(a.TypeArgs, b.TypeArgs)
+	case *soltype.AliasType:
+		// An alias reference orders by the fields its equality reads, the same three an
+		// instance of a class orders by minus the exactness flag an alias does not carry.
+		b := b.(*soltype.AliasType)
+		if a.Name != b.Name {
+			return strings.Compare(a.Name, b.Name)
+		}
+		if c := compareLifetimeSlice(a.LifetimeArgs, b.LifetimeArgs); c != 0 {
+			return c
+		}
+		return compareTypeSliceByLen(a.TypeArgs, b.TypeArgs)
 	}
 	return 0
+}
+
+// compareLifetimeSlice orders two lifetime-argument lists, shorter first and then
+// positionally, the shape compareTypeSlice has for types.
+func compareLifetimeSlice(a, b []soltype.Lifetime) int {
+	if c := len(a) - len(b); c != 0 {
+		return c
+	}
+	for i := range a {
+		if c := compareLifetime(a[i], b[i]); c != 0 {
+			return c
+		}
+	}
+	return 0
+}
+
+// compareTypeSliceByLen orders two type-argument lists, shorter first and then
+// positionally. compareTypeSlice assumes equal lengths, which two references to one
+// name need not have while a declaration's arity is still unresolved.
+func compareTypeSliceByLen(a, b []soltype.Type) int {
+	if c := len(a) - len(b); c != 0 {
+		return c
+	}
+	return compareTypeSlice(a, b)
 }
 
 func compareTypeSlice(a, b []soltype.Type) int {
@@ -814,24 +859,30 @@ func typeKindOrder(t soltype.Type) int {
 		return 7
 	case *soltype.ObjectType:
 		return 8
-	case *soltype.PromiseType:
-		return 9
 	case *soltype.GeneratorType:
-		return 10
+		return 9
 	case *soltype.FuncType:
-		return 11
+		return 10
 	case *soltype.UnionType:
-		return 12
+		return 11
 	case *soltype.IntersectionType:
-		return 13
+		return 12
 	case *soltype.NegationType:
-		return 14
+		return 13
 	case *soltype.NullType:
-		return 15
+		return 14
 	case *soltype.UndefinedType:
-		return 16
+		return 15
 	case *soltype.SelfType:
+		return 16
+	case *soltype.ClassType:
 		return 17
+	case *soltype.AliasType:
+		return 18
 	}
-	return 18
+	// Every residual shares the last rank. compareSameKind asserts b to a's own type,
+	// so a kind reaching that function needs a rank of its own here: two kinds sharing
+	// one rank and both carrying a branch there would assert across them. The residuals
+	// are safe because none of them has a branch.
+	return 19
 }

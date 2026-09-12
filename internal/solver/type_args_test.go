@@ -744,3 +744,68 @@ func TestClassBoundConstructionNotDoubleReported(t *testing.T) {
 	require.Len(t, errs, 1)
 	require.Equal(t, "cannot constrain 1 <: string", errs[0].Message())
 }
+
+// TestEmptyNeverSlotIsElided covers the trailing type argument a declaration leaves
+// empty. A slot that is `never` and defaults to `never` carries nothing, so it is
+// dropped from the rendered form the way printThrowsClause drops a `throws` clause
+// that raises nothing. A default carrying a real type is not an absence and stays.
+func TestEmptyNeverSlotIsElided(t *testing.T) {
+	const decls = `
+		declare class Task<T, E = never> {
+			run(self) -> T,
+			fail(self, reason: E) -> never,
+		}
+		declare class Box<T = number> { get(self) -> T }
+	`
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			name: "AnEmptySlotIsDropped",
+			src:  `type Result = Task<number>`,
+			want: "Task<number>",
+		},
+		{
+			name: "AFilledSlotIsShown",
+			src:  `type Result = Task<number, string>`,
+			want: "Task<number, string>",
+		},
+		{
+			// Writing the default out reads the same as leaving it off, since the two
+			// resolve to one type.
+			name: "WritingTheEmptySlotReadsTheSame",
+			src:  `type Result = Task<number, never>`,
+			want: "Task<number>",
+		},
+		{
+			// `number` is a value rather than an absence, so a reader is owed it.
+			name: "AnInformativeDefaultIsKept",
+			src:  `type Result = Box`,
+			want: "Box<number>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, types, errs := inferSource(t, decls+tt.src)
+			require.Empty(t, errorMessagesOf(errs))
+			require.Equal(t, tt.want, types["Result"])
+		})
+	}
+}
+
+// A class's own handle carries the same defaults a reference to it does, so the
+// constructor the class value exposes renders its return the way a written reference
+// renders. Without them `Task` would read as `{new () -> Task<never, never>}` beside a
+// `Task<number>` a reference renders, one type shown two ways.
+func TestAClassHandleElidesItsOwnEmptySlot(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare class Task<T, E = never> {
+			run(self) -> T,
+			fail(self, reason: E) -> never,
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{new () -> Task<never>}", values["Task"])
+}

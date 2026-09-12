@@ -31,8 +31,40 @@ func seedStdlib(t *testing.T, files map[string]string) string {
 	return dir
 }
 
-// inferAgainstStdlib infers src against a pseudo-package tree built from files.
+// minimalPreludeClasses declares the two classes the checker's own rules name. A tree
+// carrying neither reports a missing prelude class, which is a broken standard library
+// rather than a configuration to infer against, so every tree a test builds gets these
+// unless the test's subject is the prelude itself.
+const minimalPreludeClasses = `
+export declare class Array<T> { at(self, index: number) -> T | undefined }
+export declare class Promise<T, E = never> { then<U>(self, f: fn (v: T) -> U) -> Promise<U, E> }
+`
+
+// withPreludeClasses returns files with minimalPreludeClasses appended to its
+// `std:prelude`, adding the package when the tree has none. The caller's own
+// declarations come first, so a prelude-focused test still reads the way it wrote it.
+func withPreludeClasses(files map[string]string) map[string]string {
+	const rel = "std/prelude.esc"
+	merged := make(map[string]string, len(files)+1)
+	for path, contents := range files {
+		merged[path] = contents
+	}
+	merged[rel] = merged[rel] + minimalPreludeClasses
+	return merged
+}
+
+// inferAgainstStdlib infers src against a pseudo-package tree built from files, with the
+// prelude classes the checker's own rules name merged in. A test whose subject is those
+// classes calls inferAgainstExactStdlib instead, so what it declares is the whole tree.
 func inferAgainstStdlib(t *testing.T, src string, files map[string]string) *ModuleResult {
+	t.Helper()
+	return inferAgainstExactStdlib(t, src, withPreludeClasses(files))
+}
+
+// inferAgainstExactStdlib infers src against exactly the tree files describes, merging
+// nothing. It is for a test that declares its own `Array` or `Promise`, or means to
+// declare neither.
+func inferAgainstExactStdlib(t *testing.T, src string, files map[string]string) *ModuleResult {
 	t.Helper()
 	return InferModuleWithSource(parseModule(t, src), StdlibSource(seedStdlib(t, files)))
 }
@@ -191,7 +223,7 @@ func TestStdlibImportRejectsMalformedURIs(t *testing.T) {
 			if test.messages == nil {
 				// The not-found message names the tree's root, so it is built
 				// against the directory this case actually ran in.
-				dir := seedStdlib(t, files)
+				dir := seedStdlib(t, withPreludeClasses(files))
 				res := InferModuleWithSource(parseModule(t, test.src), StdlibSource(dir))
 				require.Equal(t, []string{
 					`cannot resolve import "std:nonexistent": unknown package "nonexistent" ` +

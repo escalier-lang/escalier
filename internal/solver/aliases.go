@@ -273,7 +273,7 @@ func (c *checker) buildAliasInstance(scope *Scope, at *soltype.AliasType, ref *a
 		return &soltype.AliasType{Name: at.Name, LifetimeArgs: ltArgs}
 	}
 	c.checkTypeArgBounds(params, args, ltParams, ltArgs, ref)
-	return &soltype.AliasType{Name: at.Name, TypeArgs: args, LifetimeArgs: ltArgs}
+	return &soltype.AliasType{Name: at.Name, TypeArgs: args, Defaults: paramDefaults(params), LifetimeArgs: ltArgs}
 }
 
 // resolveLifetimeArgs resolves a reference's `<'a, ...>` lifetime arguments and checks their

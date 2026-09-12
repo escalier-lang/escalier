@@ -135,7 +135,6 @@ func TestBorrowableType(t *testing.T) {
 		{"primitive is not borrowable", &PrimType{Prim: NumPrim}, false},
 		{"literal is not borrowable", &LitType{Lit: &NumLit{Value: 5}}, false},
 		{"function is not borrowable", &FuncType{Ret: &PrimType{Prim: NumPrim}}, false},
-		{"promise is not borrowable", &PromiseType{Inner: &PrimType{Prim: NumPrim}}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

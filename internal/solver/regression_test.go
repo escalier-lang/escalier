@@ -38,7 +38,7 @@ func TestInferModuleRecursiveRecordTerminates(t *testing.T) {
 // this, tooling can query a `val`'s type via Info but not a `fn`'s.
 func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 	module := parseModule(t, `fn foo(x: number) -> number { return x }`)
-	_, info, errs := InferModule(module)
+	_, info, errs := InferModule(module, testStdlibSource())
 	require.Empty(t, errs)
 
 	var foo *ast.FuncDecl
@@ -65,7 +65,7 @@ func TestInferModuleFuncDeclRecordsInfoType(t *testing.T) {
 // TestInferModuleFuncDeclRecordsInfoType, whose fixture is monomorphic.)
 func TestInferModulePolymorphicFuncDeclInfoNeedsPrintScheme(t *testing.T) {
 	module := parseModule(t, `fn id(x) { return x }`)
-	_, info, errs := InferModule(module)
+	_, info, errs := InferModule(module, testStdlibSource())
 	require.Empty(t, errs)
 
 	var id *ast.FuncDecl

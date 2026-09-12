@@ -976,7 +976,13 @@ func (c *checker) freshClassInstance(ct *soltype.ClassType, lvl int) *soltype.Cl
 			ltArgs[i] = c.ctx.freshLifetime(lvl)
 		}
 	}
-	return &soltype.ClassType{Name: ct.Name, TypeArgs: typeArgs, LifetimeArgs: ltArgs, Final: ct.Final}
+	return &soltype.ClassType{
+		Name:         ct.Name,
+		TypeArgs:     typeArgs,
+		Defaults:     paramDefaults(def.TypeParams),
+		LifetimeArgs: ltArgs,
+		Final:        ct.Final,
+	}
 }
 
 // applyLeafExtras resolves a destructured leaf's optional type annotation

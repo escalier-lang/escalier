@@ -410,3 +410,81 @@ func TestCompareTypeDistinctRefsWithUnnamedLifetimes(t *testing.T) {
 	require.False(t, equalType(r1, r2), "precondition: distinct LifetimeVars are not equalType")
 	require.NotEqual(t, 0, compareType(r1, r2), "distinct unnamed-lifetime borrows must compare unequal")
 }
+
+// compareType is a total order over the types it compares, so `compareType(a, b) == 0`
+// has to mean the two are equal. A nominal reference reaching the tie-breaker with no
+// branch of its own returned 0 for every pair, which let two distinct instances of one
+// class hold no fixed position relative to each other in a sorted list.
+func TestCompareTypeSeparatesNominalReferences(t *testing.T) {
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	str := &soltype.PrimType{Prim: soltype.StrPrim}
+	tests := []struct {
+		name string
+		a, b soltype.Type
+	}{
+		{
+			name: "ClassesDifferingInAnArgument",
+			a:    &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num}},
+			b:    &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{str}},
+		},
+		{
+			name: "ClassesDifferingInTheirName",
+			a:    &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num}},
+			b:    &soltype.ClassType{Name: "Box", TypeArgs: []soltype.Type{num}},
+		},
+		{
+			// Two references to one name need not carry the same count while the
+			// declaration's arity is unresolved, so the shorter list sorts first.
+			name: "ClassesDifferingInArity",
+			a:    &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num}},
+			b:    &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num, str}},
+		},
+		{
+			name: "ClassesDifferingInFinality",
+			a:    &soltype.ClassType{Name: "Point"},
+			b:    &soltype.ClassType{Name: "Point", Final: true},
+		},
+		{
+			name: "AliasesDifferingInAnArgument",
+			a:    &soltype.AliasType{Name: "Iterator", TypeArgs: []soltype.Type{num}},
+			b:    &soltype.AliasType{Name: "Iterator", TypeArgs: []soltype.Type{str}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.False(t, equalType(tt.a, tt.b))
+			ab, ba := compareType(tt.a, tt.b), compareType(tt.b, tt.a)
+			require.NotZero(t, ab, "unequal types must not compare equal")
+			require.Equal(t, -ab, ba, "the order must be antisymmetric")
+		})
+	}
+}
+
+// Two references that ARE equal still compare equal, so the branches above narrow the
+// order without splitting a pair equality joins.
+func TestCompareTypeKeepsEqualNominalReferencesEqual(t *testing.T) {
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	a := &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num}}
+	b := &soltype.ClassType{Name: "Promise", TypeArgs: []soltype.Type{num}}
+	require.True(t, equalType(a, b))
+	require.Zero(t, compareType(a, b))
+}
+
+// A class instance and an alias reference are different kinds, so the tie-breaker never
+// sees one of each. compareSameKind asserts the second operand to the first's own type,
+// which two kinds sharing one rank would cross. Sorting a union holding both is what
+// reaches it.
+func TestCompareTypeOrdersAClassAgainstAnAlias(t *testing.T) {
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	cls := &soltype.ClassType{Name: "Point", TypeArgs: []soltype.Type{num}}
+	alias := &soltype.AliasType{Name: "Iterator", TypeArgs: []soltype.Type{num}}
+
+	require.NotEqual(t, typeKindOrder(cls), typeKindOrder(alias))
+	ab, ba := compareType(cls, alias), compareType(alias, cls)
+	require.NotZero(t, ab)
+	require.Equal(t, -ab, ba)
+
+	require.NotPanics(t, func() {
+		newUnion(&Context{}, []soltype.Type{alias, cls})
+	})
+}
