@@ -3094,6 +3094,8 @@ func primName(p soltype.Prim) string {
 		return "string"
 	case soltype.BoolPrim:
 		return "boolean"
+	case soltype.SymPrim:
+		return "symbol"
 	}
 	return "?"
 }

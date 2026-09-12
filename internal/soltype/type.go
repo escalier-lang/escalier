@@ -62,18 +62,23 @@ func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
 	return v.UpperBounds
 }
 
-// Prim is the closed set of primitives M1 carries. Mirrors the type_system
-// package's Prim enum, but only the three M1's tests exercise; M2+ extends
-// Prim (BigIntPrim, SymbolPrim) and Lit (BigIntLit, NullLit, UndefinedLit)
-// to the full type_system set as the parser bridge surfaces them. The
-// additions are inert from constrain's perspective — same prim/literal arms
-// with one more concrete each — so the deferral is purely scope, not design.
+// Prim is the closed set of primitives. Mirrors the type_system package's Prim
+// enum. BigIntPrim and the literal kinds BigIntLit, NullLit and UndefinedLit are
+// still absent, and each is inert from constrain's perspective — the same prim
+// and literal arms with one more concrete — so their absence is scope rather
+// than design.
+//
+// SymPrim is the type of every symbol, the one a `unique symbol` is a subtype
+// of. A symbol carries no literal kind: two symbols with the same description
+// are still different values, so nothing about a symbol is written down the way
+// a number or a string is.
 type Prim int
 
 const (
 	NumPrim Prim = iota
 	StrPrim
 	BoolPrim
+	SymPrim
 )
 
 type PrimType struct{ Prim Prim }

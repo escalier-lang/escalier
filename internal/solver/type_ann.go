@@ -21,6 +21,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.SymbolTypeAnn:
+		return c.annPrim(ta, soltype.SymPrim), true
 	case *ast.NeverTypeAnn:
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is

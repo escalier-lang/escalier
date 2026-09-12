@@ -1591,6 +1591,8 @@ func printPrim(p Prim) string {
 		return "string"
 	case BoolPrim:
 		return "boolean"
+	case SymPrim:
+		return "symbol"
 	}
 	panic(fmt.Sprintf("printPrim: unhandled Prim %d", p))
 }

@@ -860,8 +860,8 @@ func (f *knotFinder) EnterType(t soltype.Type, pol soltype.Polarity) soltype.Ent
 func (f *knotFinder) ExitType(t soltype.Type, pol soltype.Polarity) soltype.Type { return t }
 
 // valueFamily is a set of runtime values no value outside it belongs to, so two atoms drawn
-// from different families are disjoint and their meet is `never`. Five families cover the
-// primitives and the two absence markers, and a sixth, refCellFamily, covers the borrows no
+// from different families are disjoint and their meet is `never`. Six families cover the
+// primitives and the two absence markers, and a seventh, refCellFamily, covers the borrows no
 // primitive can be.
 //
 // Objects, tuples, functions, and class instances are deliberately absent. They are disjoint
@@ -877,6 +877,7 @@ const (
 	booleanFamily
 	nullFamily
 	undefinedFamily
+	symbolFamily
 	refCellFamily
 )
 
@@ -932,6 +933,8 @@ func primFamily(p soltype.Prim) valueFamily {
 		return stringFamily
 	case soltype.BoolPrim:
 		return booleanFamily
+	case soltype.SymPrim:
+		return symbolFamily
 	}
 	return notValueAtom
 }
