@@ -143,3 +143,42 @@ func TestPreludeStdlibNamesAreTypesNotValues(t *testing.T) {
 	_, ok := s.GetValue("Promise")
 	require.False(t, ok)
 }
+
+// A program numbers its own unique symbols from zero however many the prelude declares,
+// the same way it numbers its type variables from `t0`. `SymbolConstructor` alone declares
+// seventeen, and a diagnostic about code that never names one should not start at
+// `unique symbol#17`.
+func TestPreludeSymbolsDoNotAdvanceTheProgramsNumbering(t *testing.T) {
+	const src = `
+		declare class C { readonly a: unique symbol, readonly b: unique symbol }
+		declare fn takeA(s: C["a"]) -> number
+		declare val c: C
+		val n = takeA(c.b)
+	`
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "APreludeDeclaringSymbolsOfItsOwn",
+			files: map[string]string{"std/prelude.esc": `
+				export declare class SymbolConstructor {
+					readonly iterator: unique symbol,
+					readonly asyncIterator: unique symbol,
+				}
+			`},
+		},
+		{
+			name:  "APreludeDeclaringNone",
+			files: map[string]string{},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := inferAgainstStdlib(t, src, tt.files)
+			require.Equal(t,
+				[]string{"cannot constrain unique symbol#1 <: unique symbol#0"},
+				errorMessagesOf(res.Errors))
+		})
+	}
+}

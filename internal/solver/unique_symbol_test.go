@@ -96,3 +96,44 @@ func TestAWellKnownSymbolReachesItsOwnType(t *testing.T) {
 	require.Equal(t, "unique symbol#0", values["it"])
 	require.Equal(t, "unique symbol#1", values["asyncIt"])
 }
+
+// A unique symbol names one particular symbol the way a literal names one particular
+// value, so the two follow the same rules for a mutable binding and for match coverage.
+func TestUniqueSymbolBehavesLikeALiteralOfItsPrimitive(t *testing.T) {
+	const decl = `
+		declare class C {
+			readonly a: unique symbol,
+			readonly b: unique symbol,
+		}
+		declare val c: C
+	`
+
+	// A `var` holding one widens to `symbol` so it can later hold another, the way
+	// `var n = 5` widens to `number`.
+	t.Run("AVarHoldingOneWidensToSymbol", func(t *testing.T) {
+		values, _, errs := inferSource(t, decl+`
+			fn f() {
+				var s = c.a
+				s = c.b
+				return s
+			}
+		`)
+		require.Empty(t, errorMessagesOf(errs))
+		require.Equal(t, "fn () -> symbol", values["f"])
+	})
+
+	// A program mints a fresh symbol whenever it likes, so no set of `unique symbol` arms
+	// enumerates `symbol` and a match over it needs a catch-all.
+	t.Run("AMatchOverSymbolNeedsACatchAll", func(t *testing.T) {
+		_, _, errs := inferSource(t, decl+`
+			fn f(s: symbol) {
+				return match s {
+					x: C["a"] => 1
+				}
+			}
+		`)
+		require.Equal(t,
+			[]string{"match is not exhaustive; `symbol` admits values no pattern names, so add a catch-all branch"},
+			errorMessagesOf(errs))
+	})
+}

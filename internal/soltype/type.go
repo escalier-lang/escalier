@@ -571,12 +571,13 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 	return nil, false
 }
 
-// UncountableKeys reports whether a key set names infinitely many keys: a `string`/`number` prim or
-// a union holding one. The caller must ground it first, since an abstract operand reads as countable.
+// UncountableKeys reports whether a key set names infinitely many keys: a `string`, `number` or
+// `symbol` prim, or a union holding one. The caller must ground it first, since an abstract
+// operand reads as countable.
 func UncountableKeys(t Type) bool {
 	switch t := t.(type) {
 	case *PrimType:
-		return t.Prim == StrPrim || t.Prim == NumPrim
+		return t.Prim == StrPrim || t.Prim == NumPrim || t.Prim == SymPrim
 	case *UnionType:
 		for _, member := range t.Types {
 			if UncountableKeys(member) {
