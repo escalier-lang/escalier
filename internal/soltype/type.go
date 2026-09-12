@@ -955,6 +955,15 @@ type ClassType struct {
 	// TypeArgs are the type arguments, one per class type parameter, checked per position
 	// by the variance the class registry records for that parameter.
 	TypeArgs []Type
+	// Defaults are the declaration's type-parameter defaults, one per position and nil
+	// where a parameter has none, so the printer can drop a trailing argument the reader
+	// would infer anyway: `Promise<number, never>` renders `Promise<number>` because
+	// `never` is what `E` defaults to. It is nil where the instantiation site had no
+	// declaration in reach, and the printer then shows every argument.
+	//
+	// The declaration's defaults, not the instance's, so a rebuild carries them through
+	// unchanged while TypeArgs are substituted around them.
+	Defaults []Type
 	// LifetimeArgs are the lifetime arguments, one per class lifetime parameter, so `Ref<'x, T>`
 	// supplies arg 'x. They name the lifetime of borrowed data the instance holds, distinct from Lt.
 	LifetimeArgs []Lifetime
@@ -983,6 +992,9 @@ type AliasType struct {
 	// TypeArgs are the type arguments a generic reference supplies, one per alias type
 	// parameter, substituted into the body at expansion. A non-generic reference carries none.
 	TypeArgs []Type
+	// Defaults are the declaration's type-parameter defaults, read by the printer to drop a
+	// trailing argument a reference could have left out. See ClassType.Defaults.
+	Defaults []Type
 	// LifetimeArgs are the lifetime arguments a lifetime-generic reference supplies, one per
 	// alias lifetime parameter, so `Foo<'a>` and `Foo<'b>` are distinct nodes rather than
 	// colliding. They join Name and TypeArgs in the instance identity the recursion guard and

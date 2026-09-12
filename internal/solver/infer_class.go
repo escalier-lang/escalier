@@ -637,10 +637,27 @@ func (c *checker) buildClassInstance(scope *Scope, ct *soltype.ClassType, ref *a
 	return &soltype.ClassType{
 		Name:         ct.Name,
 		TypeArgs:     args,
+		Defaults:     paramDefaults(params),
 		LifetimeArgs: ltArgs,
 		Final:        ct.Final,
 		Variant:      ct.Variant,
 	}
+}
+
+// paramDefaults returns each parameter's default in declaration order, nil where a
+// parameter has none. The printer reads it to drop a trailing argument a reference
+// could have left out, so `Promise<number>` renders back the way it was written
+// rather than as `Promise<number, never>`. It answers nil for a class whose
+// parameters have not resolved yet, which prints every argument.
+func paramDefaults(params []*soltype.TypeParam) []soltype.Type {
+	if len(params) == 0 {
+		return nil
+	}
+	defaults := make([]soltype.Type, len(params))
+	for i, tp := range params {
+		defaults[i] = tp.Default
+	}
+	return defaults
 }
 
 // lookupClassBinding resolves a written type name to its scope TypeBinding, honoring

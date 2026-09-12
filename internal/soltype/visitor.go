@@ -480,7 +480,7 @@ func (t *ClassType) Accept(v TypeVisitor, pol Polarity) Type {
 		// LifetimeArgs and Lt are lifetimes, not Types, so Accept never walks them; a
 		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
 		// ClassType before this rebuild, so cur already holds the freshened lifetimes.
-		out = &ClassType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs, Lt: cur.Lt, Final: cur.Final, Variant: cur.Variant}
+		out = &ClassType{Name: cur.Name, TypeArgs: args, Defaults: cur.Defaults, LifetimeArgs: cur.LifetimeArgs, Lt: cur.Lt, Final: cur.Final, Variant: cur.Variant}
 	}
 	return v.ExitType(out, pol)
 }
@@ -523,7 +523,7 @@ func (t *AliasType) Accept(v TypeVisitor, pol Polarity) Type {
 		// LifetimeArgs are lifetimes, not Types, so Accept never walks them; a
 		// lifetime-aware visitor freshens them in its EnterType, replacing the whole
 		// AliasType before this rebuild, so cur already holds the freshened lifetimes.
-		out = &AliasType{Name: cur.Name, TypeArgs: args, LifetimeArgs: cur.LifetimeArgs}
+		out = &AliasType{Name: cur.Name, TypeArgs: args, Defaults: cur.Defaults, LifetimeArgs: cur.LifetimeArgs}
 	}
 	return v.ExitType(out, pol)
 }
