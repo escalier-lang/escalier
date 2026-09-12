@@ -2977,20 +2977,54 @@ func constStringKey(e ast.Expr) (string, bool) {
 // objKeyName reads the static field name of an object-literal key. Object field
 // names are strings, so an identifier label, a string-literal key, or a numeric
 // key all map to a field. A numeric key is coerced to its string form the way
-// JavaScript does, so {0: v} names the field "0". A computed key ({[k]: v}) carries
-// no static name and returns false so the caller can raise a structured error.
-// Full index-signature support rides M9.
+// JavaScript does, so {0: v} names the field "0".
+//
+// A computed key naming a well-known symbol, `[Symbol.iterator]`, reads as the
+// reserved member name that symbol is stored under. See internal/soltype/symbol_key.go
+// for the spelling and what it stands in for.
+//
+// A string key spelling that reserved name is declined rather than stored, since two
+// keys resolving to one member would let `{"@@iterator": f}` answer an iterator lookup
+// and render as `[Symbol.iterator]`. Nothing else claims the spelling, so declining it
+// costs no program a member it could otherwise declare. A key naming a member under a
+// computed expression is not supported, and returns false so the caller can raise a
+// structured error.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:
 		return k.Name, true
 	case *ast.StrLit:
+		if _, reserved := soltype.SymbolOfMemberName(k.Value); reserved {
+			return "", false
+		}
 		return k.Value, true
 	case *ast.NumLit:
 		return strconv.FormatFloat(k.Value, 'f', -1, 64), true
+	case *ast.ComputedKey:
+		return wellKnownSymbolMember(k.Expr)
 	default:
 		return "", false
 	}
+}
+
+// wellKnownSymbolMember reads the reserved member name a computed key stands for when
+// the key is a well-known symbol written as `Symbol.<name>`, and false otherwise.
+//
+// The match is on the written form rather than on what `Symbol` resolves to. A module
+// that binds its own `Symbol` therefore has its `[Symbol.iterator]` read as the
+// well-known one, which is the closed-set assumption soltype's symbol_key.go records.
+// Resolving the receiver needs the value scope, which a type annotation's member walk
+// does not have in reach.
+func wellKnownSymbolMember(key ast.Expr) (string, bool) {
+	member, isMember := key.(*ast.MemberExpr)
+	if !isMember || member.OptChain || member.Prop == nil {
+		return "", false
+	}
+	receiver, isIdent := member.Object.(*ast.IdentExpr)
+	if !isIdent || receiver.Name != "Symbol" {
+		return "", false
+	}
+	return soltype.SymbolMemberName(member.Prop.Name)
 }
 
 // identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns
@@ -3218,11 +3252,47 @@ func (c *checker) delegateElemType(t soltype.Type) (soltype.Type, soltype.Type, 
 		}
 		return g.Yield, g.Ret, g.Next, true
 	}
-	elem, ok := c.syncElemType(t)
-	if !ok {
+	// A tuple has no slots to forward, so it finishes with `undefined` and puts no Next
+	// requirement on the delegator.
+	if _, isTuple := carrier.(*soltype.TupleType); isTuple {
+		elem, ok := c.syncElemType(t)
+		if !ok {
+			return nil, nil, nil, false
+		}
+		return elem, &soltype.UndefinedType{}, nil, true
+	}
+	// Everything else states its slots in the iterator its protocol member hands back,
+	// `Iterator<T, TReturn, TNext>`. A declaration writing fewer arguments states fewer
+	// slots, and the missing ones fall back to what a tuple gives.
+	//
+	// An async body delegates to an async iterable, so it reads `[Symbol.asyncIterator]`
+	// and falls back to the sync member, matching the GeneratorType arm above where an
+	// async delegate is legal only from an async body while a sync one is legal from
+	// either. A sync body reads the sync member alone.
+	typeArgs, viaProtocol := c.delegateSlots(t)
+	if !viaProtocol {
 		return nil, nil, nil, false
 	}
-	return elem, &soltype.UndefinedType{}, nil, true
+	var ret soltype.Type = &soltype.UndefinedType{}
+	if len(typeArgs) > 1 {
+		ret = typeArgs[1]
+	}
+	var next soltype.Type
+	if len(typeArgs) > 2 {
+		next = typeArgs[2]
+	}
+	return typeArgs[0], ret, next, true
+}
+
+// delegateSlots reads the slots a `yield from` operand states, through the async protocol
+// first when the delegating body is async and through the sync one otherwise.
+func (c *checker) delegateSlots(t soltype.Type) ([]soltype.Type, bool) {
+	if c.fn != nil && c.fn.async {
+		if typeArgs, found := c.protocolIterator(t, soltype.AsyncIteratorSymbolMember); found {
+			return typeArgs, true
+		}
+	}
+	return c.protocolIterator(t, soltype.IteratorSymbolMember)
 }
 
 // meetNexts combines the Next slots a generator must satisfy at once into the single

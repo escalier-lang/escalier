@@ -39,10 +39,7 @@ func TestPreludeOperatorBindings(t *testing.T) {
 
 func TestPreludeStdlibTypePlaceholders(t *testing.T) {
 	s := NewPrelude()
-	for _, name := range []string{
-		"Iterable", "AsyncIterable",
-		"Generator", "AsyncGenerator",
-	} {
+	for _, name := range []string{"Generator", "AsyncGenerator"} {
 		t.Run(name, func(t *testing.T) {
 			b, ok := s.GetType(name)
 			require.True(t, ok, "stdlib type %q should resolve to a placeholder", name)
@@ -51,12 +48,18 @@ func TestPreludeStdlibTypePlaceholders(t *testing.T) {
 	}
 }
 
-// `Promise` gets no placeholder. Its rules read the class the prelude declares, and
-// resolveTypeAnn has no arm of its own for the name, so a stub would stand between a
-// missing declaration and the report naming it.
-func TestPreludeSeedsNoPromiseStub(t *testing.T) {
-	_, ok := NewPrelude().GetType("Promise")
-	require.False(t, ok, "`Promise` should have no placeholder")
+// The names no rule resolves itself get no placeholder. `Promise` is read through the
+// class the prelude declares, and `Iterable` and `AsyncIterable` through the protocol
+// member on the operand, so a stub for any of the three would stand between a missing
+// declaration and the report naming it.
+func TestPreludeSeedsNoStubForAResolvedName(t *testing.T) {
+	s := NewPrelude()
+	for _, name := range []string{"Promise", "Iterable", "AsyncIterable"} {
+		t.Run(name, func(t *testing.T) {
+			_, ok := s.GetType(name)
+			require.False(t, ok, "stdlib type %q should have no placeholder", name)
+		})
+	}
 }
 
 // Both spellings of a `Promise` reference report the same missing declaration when the

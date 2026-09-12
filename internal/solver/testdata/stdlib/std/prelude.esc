@@ -12,6 +12,7 @@ export declare class Array<T> {
     length: number,
     at(self, index: number) -> T | undefined,
     push(mut self, item: T) -> number,
+    [Symbol.iterator](self) -> Iterator<T>,
 }
 
 // The `Promise` an `async fn` returns and an `await` unwraps. `E` is what the
@@ -20,4 +21,28 @@ export declare class Array<T> {
 export declare class Promise<T, E = never> {
     then<U, F = never>(self, onfulfilled: fn (value: T) -> U throws F) -> Promise<U, E | F>,
     catch<U, F = never>(self, onrejected: fn (reason: E) -> U throws F) -> Promise<T | U, F>,
+}
+
+// The iteration protocol. `for x in xs` reads its element type by looking up
+// `[Symbol.iterator]` on the operand and reading the first type argument of what
+// that member returns. `Array` declares the member so it answers the same way any
+// other iterable does.
+export declare interface Iterator<T, TReturn = undefined, TNext = unknown> {
+    next(self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+}
+
+export declare interface Iterable<T, TReturn = undefined, TNext = unknown> {
+    [Symbol.iterator](self) -> Iterator<T, TReturn, TNext>,
+}
+
+// The asynchronous half. `for await x in xs` reads `[Symbol.asyncIterator]` instead,
+// so the two protocols name their own iterator and neither answers the other's loop.
+// Advancing an async iterator hands back a promise of the result rather than the
+// result, which is what an awaiting loop unwraps.
+export declare interface AsyncIterator<T, TReturn = undefined, TNext = unknown> {
+    next(self, ...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>>,
+}
+
+export declare interface AsyncIterable<T, TReturn = undefined, TNext = unknown> {
+    [Symbol.asyncIterator](self) -> AsyncIterator<T, TReturn, TNext>,
 }
