@@ -1546,7 +1546,15 @@ func printPat(pat Pat) (string, bool) {
 // a bare label when the name is a valid identifier, otherwise a quoted string
 // key (e.g. "a-b", a key that came from a string-literal property). This keeps
 // the rendered object parseable; an unquoted "a-b" would corrupt the type.
+//
+// A member keyed off a well-known symbol is stored under a reserved name and
+// rendered back as the computed key the source wrote, so `@@iterator` reads as
+// `[Symbol.iterator]`. That form re-parses as the same key, which the quoted
+// fallback would not.
 func printObjectKeyName(name string) string {
+	if sym, isSymbol := SymbolOfMemberName(name); isSymbol {
+		return "[Symbol." + sym + "]"
+	}
 	if isIdent(name) {
 		return name
 	}

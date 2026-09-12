@@ -2990,9 +2990,13 @@ func constStringKey(e ast.Expr) (string, bool) {
 // objKeyName reads the static field name of an object-literal key. Object field
 // names are strings, so an identifier label, a string-literal key, or a numeric
 // key all map to a field. A numeric key is coerced to its string form the way
-// JavaScript does, so {0: v} names the field "0". A computed key ({[k]: v}) carries
-// no static name and returns false so the caller can raise a structured error.
-// Full index-signature support rides M9.
+// JavaScript does, so {0: v} names the field "0".
+//
+// A computed key naming a well-known symbol, `[Symbol.iterator]`, reads as the
+// reserved member name that symbol is stored under. See internal/soltype/symbol_key.go
+// for the spelling and what it stands in for. Every other computed key carries no
+// static name and returns false so the caller can raise a structured error. Full
+// index-signature support rides M9.
 func objKeyName(k ast.ObjKey) (string, bool) {
 	switch k := k.(type) {
 	case *ast.IdentExpr:
@@ -3001,9 +3005,31 @@ func objKeyName(k ast.ObjKey) (string, bool) {
 		return k.Value, true
 	case *ast.NumLit:
 		return strconv.FormatFloat(k.Value, 'f', -1, 64), true
+	case *ast.ComputedKey:
+		return wellKnownSymbolMember(k.Expr)
 	default:
 		return "", false
 	}
+}
+
+// wellKnownSymbolMember reads the reserved member name a computed key stands for when
+// the key is a well-known symbol written as `Symbol.<name>`, and false otherwise.
+//
+// The match is on the written form rather than on what `Symbol` resolves to. A module
+// that binds its own `Symbol` therefore has its `[Symbol.iterator]` read as the
+// well-known one, which is the closed-set assumption soltype's symbol_key.go records.
+// Resolving the receiver needs the value scope, which a type annotation's member walk
+// does not have in reach.
+func wellKnownSymbolMember(key ast.Expr) (string, bool) {
+	member, isMember := key.(*ast.MemberExpr)
+	if !isMember || member.OptChain || member.Prop == nil {
+		return "", false
+	}
+	receiver, isIdent := member.Object.(*ast.IdentExpr)
+	if !isIdent || receiver.Name != "Symbol" {
+		return "", false
+	}
+	return soltype.SymbolMemberName(member.Prop.Name)
 }
 
 // identPatName reads the name of an IdentPat. M2 binds IdentPat-only patterns
