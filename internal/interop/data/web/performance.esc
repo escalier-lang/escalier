@@ -443,7 +443,7 @@ export declare class PerformanceTiming {
 }
 
 export declare interface PerformanceObserverCallback {
-    fn (entries: PerformanceObserverEntryList, observer: PerformanceObserver) -> unknown
+    (entries: PerformanceObserverEntryList, observer: PerformanceObserver) -> unknown
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/performance) */

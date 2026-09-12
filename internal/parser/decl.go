@@ -869,6 +869,17 @@ modifiers_done:
 		}
 	}
 
+	// A member opening with `(` or `<` is a call signature, the unnamed member that makes
+	// the class value callable. It carries no name, and no other member may start with
+	// either token. An object type reads the same spelling, so the two positions agree.
+	//
+	// The constructor keeps its name because JavaScript gives it one: `Foo.constructor`
+	// reaches the same member. A call signature has no such handle, so there is no name to
+	// keep.
+	if startsASignature(token.Type) {
+		return p.parseCallableElem(start)
+	}
+
 	name := p.objExprKey()
 	if name == nil {
 		return nil
@@ -1453,4 +1464,53 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 	span := ast.NewSpan(start, end, p.lexer.source.ID)
 	decl := ast.NewEnumDecl(name, typeParams, elems, export, declare, span)
 	return decl
+}
+
+// parseCallableElem parses an unnamed `(...) -> T` call signature in a class body, starting at
+// its `(` or its type-parameter list.
+//
+// It is the class twin of the same member an object type annotation writes, and it reads its
+// parameters, return and `throws` the way a method does.
+func (p *Parser) parseCallableElem(start ast.Location) ast.ClassElem {
+	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
+
+	params := []*ast.Param{}
+	if next := p.lexer.peek(); next.Type != OpenParen {
+		p.reportError(next.Span, "Expected '(' after a call signature's type parameters")
+	} else {
+		p.lexer.consume() // consume '('
+		// A call signature is reached through the class value rather than an instance, so
+		// `self` names nothing here. The receiver is read and reported rather than skipped,
+		// so `(self) -> T` says why instead of failing on the parameter list.
+		if receiver := p.selfReceiver(); receiver != nil {
+			p.reportError(receiver.Span_, "call signatures cannot have a `self` receiver")
+			if p.lexer.peek().Type == Comma {
+				p.lexer.consume()
+			}
+		}
+		if p.lexer.peek().Type != CloseParen {
+			params = parseDelimSeq(p, CloseParen, Comma, p.param)
+		}
+		p.expect(CloseParen, AlwaysConsume)
+	}
+
+	var returnType ast.TypeAnn
+	if p.lexer.peek().Type == Arrow {
+		p.lexer.consume()
+		returnType = p.typeAnn()
+	}
+	throwsType := p.throwsClause()
+
+	// A body is read and reported rather than left for the next element to trip on. A call
+	// signature declares a shape, so only a `declare class` may carry one.
+	if p.lexer.peek().Type == OpenBrace {
+		block := p.block()
+		p.reportError(block.Span, "call signatures cannot have a body")
+	}
+
+	span := ast.Span{Start: start, End: p.lexer.currentLoc(), SourceID: p.lexer.source.ID}
+	return &ast.CallableElem{
+		Fn:    ast.NewFuncExpr(lifetimeParams, typeParams, params, returnType, throwsType, false, nil, span),
+		Span_: span,
+	}
 }

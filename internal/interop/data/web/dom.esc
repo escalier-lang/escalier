@@ -6119,7 +6119,7 @@ export declare class EventCounts extends Map<string, number> {
 }
 
 export declare interface EventListener {
-    fn (evt: Event) -> unknown
+    (evt: Event) -> unknown
 }
 
 export declare interface EventListenerObject {
@@ -18701,7 +18701,7 @@ export declare fn vmin(value: number) -> CSSUnitValue
 export declare fn vw(value: number) -> CSSUnitValue
 
 export declare interface BlobCallback {
-    fn (blob: Blob | null) -> unknown
+    (blob: Blob | null) -> unknown
 }
 
 export declare interface CustomElementConstructor {
@@ -18709,91 +18709,91 @@ export declare interface CustomElementConstructor {
 }
 
 export declare interface ErrorCallback {
-    fn (err: DOMException) -> unknown
+    (err: DOMException) -> unknown
 }
 
 export declare interface FileCallback {
-    fn (file: File) -> unknown
+    (file: File) -> unknown
 }
 
 export declare interface FileSystemEntriesCallback {
-    fn (entries: mut Array<FileSystemEntry>) -> unknown
+    (entries: mut Array<FileSystemEntry>) -> unknown
 }
 
 export declare interface FileSystemEntryCallback {
-    fn (entry: FileSystemEntry) -> unknown
+    (entry: FileSystemEntry) -> unknown
 }
 
 export declare interface FrameRequestCallback {
-    fn (time: DOMHighResTimeStamp) -> unknown
+    (time: DOMHighResTimeStamp) -> unknown
 }
 
 export declare interface FunctionStringCallback {
-    fn (data: string) -> unknown
+    (data: string) -> unknown
 }
 
 export declare interface IdleRequestCallback {
-    fn (deadline: IdleDeadline) -> unknown
+    (deadline: IdleDeadline) -> unknown
 }
 
 export declare interface IntersectionObserverCallback {
-    fn (entries: mut Array<IntersectionObserverEntry>, observer: IntersectionObserver) -> unknown
+    (entries: mut Array<IntersectionObserverEntry>, observer: IntersectionObserver) -> unknown
 }
 
 export declare interface LockGrantedCallback {
-    fn (lock: Lock | null) -> any
+    (lock: Lock | null) -> any
 }
 
 export declare interface MediaSessionActionHandler {
-    fn (details: MediaSessionActionDetails) -> unknown
+    (details: MediaSessionActionDetails) -> unknown
 }
 
 export declare interface MutationCallback {
-    fn (mutations: mut Array<MutationRecord>, observer: MutationObserver) -> unknown
+    (mutations: mut Array<MutationRecord>, observer: MutationObserver) -> unknown
 }
 
 export declare interface NotificationPermissionCallback {
-    fn (permission: NotificationPermission) -> unknown
+    (permission: NotificationPermission) -> unknown
 }
 
 export declare interface OnBeforeUnloadEventHandlerNonNull {
-    fn (event: Event) -> string | null
+    (event: Event) -> string | null
 }
 
 export declare interface OnErrorEventHandlerNonNull {
-    fn (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) -> any
+    (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) -> any
 }
 
 export declare interface PositionCallback {
-    fn (position: GeolocationPosition) -> unknown
+    (position: GeolocationPosition) -> unknown
 }
 
 export declare interface PositionErrorCallback {
-    fn (positionError: GeolocationPositionError) -> unknown
+    (positionError: GeolocationPositionError) -> unknown
 }
 
 export declare interface RemotePlaybackAvailabilityCallback {
-    fn (available: boolean) -> unknown
+    (available: boolean) -> unknown
 }
 
 export declare interface ReportingObserverCallback {
-    fn (reports: mut Array<Report>, observer: ReportingObserver) -> unknown
+    (reports: mut Array<Report>, observer: ReportingObserver) -> unknown
 }
 
 export declare interface ResizeObserverCallback {
-    fn (entries: mut Array<ResizeObserverEntry>, observer: ResizeObserver) -> unknown
+    (entries: mut Array<ResizeObserverEntry>, observer: ResizeObserver) -> unknown
 }
 
 export declare interface VideoFrameRequestCallback {
-    fn (now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) -> unknown
+    (now: DOMHighResTimeStamp, metadata: VideoFrameCallbackMetadata) -> unknown
 }
 
 export declare interface ViewTransitionUpdateCallback {
-    fn () -> any
+    () -> any
 }
 
 export declare interface VoidFunction {
-    fn () -> unknown
+    () -> unknown
 }
 
 export declare interface HTMLElementTagNameMap {

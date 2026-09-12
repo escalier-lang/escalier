@@ -1412,8 +1412,14 @@ func (c *checker) classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) 
 		if !ok {
 			return nil, false
 		}
-		_, hasCtor := obj.Constructor()
-		return obj, hasCtor
+		// Either unnamed callable member marks the object as a class value. A class
+		// declaring a call signature and no constructor carries only the former, which is
+		// the shape `Symbol` has, and its statics are read the same way.
+		if _, hasCtor := obj.Constructor(); hasCtor {
+			return obj, true
+		}
+		_, hasCall := obj.Callable()
+		return obj, hasCall
 	})
 }
 

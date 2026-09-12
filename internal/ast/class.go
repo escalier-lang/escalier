@@ -226,3 +226,28 @@ func (s *SetterElem) Accept(v Visitor) {
 	v.ExitClassElem(s)
 }
 func (s *SetterElem) Span() Span { return s.Span_ }
+
+// CallableElem represents an unnamed `(...) -> T` call signature in a class body. It makes
+// the class value callable: `Symbol("desc")` calls it where `Symbol()` alone would construct.
+//
+// The specification forbids constructing `Symbol` and `BigInt`, so a call signature is the
+// only way to make one, and trio fusion has nowhere else to put the `SymbolConstructor` member
+// that declares it. `Fn.Body` is nil: a call signature declares a shape rather than an
+// implementation, so only a `declare class` may carry one.
+type CallableElem struct {
+	declDoc
+	Fn    *FuncExpr
+	Span_ Span
+	commentSlots
+}
+
+func (*CallableElem) IsClassElem() {}
+func (c *CallableElem) Accept(v Visitor) {
+	if v.EnterClassElem(c) {
+		if c.Fn != nil {
+			c.Fn.Accept(v)
+		}
+	}
+	v.ExitClassElem(c)
+}
+func (c *CallableElem) Span() Span { return c.Span_ }

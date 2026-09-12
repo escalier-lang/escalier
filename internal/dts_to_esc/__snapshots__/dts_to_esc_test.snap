@@ -7,6 +7,8 @@ export declare class Boolean {
     valueOf(self) -> boolean,
     /** Constructs a new Boolean wrapper around a value. */
     constructor(mut self, value?: unknown),
+    /** Coerces a value to a primitive boolean. */
+    <T>(value?: T) -> boolean,
     /** The Boolean prototype object. */
     static readonly prototype: Boolean
 }

@@ -154,7 +154,23 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// now, so the view is complete, and it shares each own element pointer so phase 2's
 	// signature installs and field refinements still land on the registered body.
 	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), pending)
-	ctorFns := c.inferConstructor(bodyScope, lvl, decl, self, body, ctors)
+	callFns := c.inferCallSignatures(bodyScope, lvl, decl)
+	ctorFns := c.walkConstructorBodies(bodyScope, lvl, self, body, ctors)
+	if len(ctorFns) == 0 {
+		// A subclass must declare its own constructor to call `super`, so a missing one is
+		// reported here and the synthesis below stands in for recovery.
+		if decl.Extends != nil {
+			c.report(&SubclassConstructorRequiredError{Decl: decl})
+		}
+		// A class declaring a call signature and no constructor is callable and not
+		// constructible, so nothing is synthesized. Synthesizing one would make
+		// `Symbol(…)` construct instead of call, and the specification forbids
+		// `new Symbol()`, so having no constructor is what makes constructing it
+		// unrepresentable rather than merely discouraged.
+		if len(callFns) == 0 {
+			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(self, body)}
+		}
+	}
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
@@ -190,21 +206,21 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	c.queueInheritedMemberCheck(def, self, decl)
 
 	if quiet() && paramsClean {
-		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns))
+		c.reportUnusedTypeParams(typeParams, decl.TypeParams, classDeclTypes(def, ctorFns, callFns))
 	}
 
-	return c.classValue(self, ctorFns, static), &ast.NodeProvenance{Node: decl}, true
+	return c.classValue(self, ctorFns, callFns, static), &ast.NodeProvenance{Node: decl}, true
 }
 
 // classDeclTypes returns every type a class declaration writes, so a walk over them covers each
 // position that could name one of the class's type parameters. That is the instance and static
-// members, every constructor signature, and the `extends` and `implements` targets.
+// members, every constructor and call signature, and the `extends` and `implements` targets.
 //
 // A method's `self` receiver is dropped, since every method names the class in it and counting
 // that would make each parameter look used. stripSelfReceiver is the same helper variance
 // inference uses for the same reason. Every other position of a member's signature counts,
 // `throws` included, since walking the object that holds them descends into the whole of each.
-func classDeclTypes(def *ClassDef, ctors []*soltype.FuncType) []soltype.Type {
+func classDeclTypes(def *ClassDef, ctors, calls []*soltype.FuncType) []soltype.Type {
 	var out []soltype.Type
 	// The stripped members are handed back inside an object rather than one by one, so the
 	// caller walks a type and the visitor's own member traversal reaches each position.
@@ -233,6 +249,12 @@ func classDeclTypes(def *ClassDef, ctors []*soltype.FuncType) []soltype.Type {
 		bare.SelfParam = nil
 		bare.Ret = &soltype.NeverType{}
 		out = append(out, &bare)
+	}
+	// A call signature is the class's value binding too, and its return is its own rather
+	// than the class handle, so it is walked whole. A parameter written only in
+	// `(v: T) -> T` is reached here and nowhere else.
+	for _, fn := range calls {
+		out = append(out, fn)
 	}
 	// Appended one at a time, since Go does not spread a slice of a concrete type into a
 	// slice of the interface it satisfies.
@@ -278,9 +300,23 @@ func (c *checker) bindScriptClass(scope *Scope, lvl int, decl *ast.ClassDecl) {
 // A `Self` written in a constructor or a static member resolves at self, the class the value
 // constructs. There is no subclass to defer to: a class value is reached by name rather than
 // through a receiver, so the declaring class IS the answer.
-func (c *checker) classValue(self *soltype.ClassType, ctorFns []*soltype.FuncType, static *soltype.ObjectType) soltype.Type {
-	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+1)
-	elems = append(elems, &soltype.ConstructorElem{Signatures: ctorFns})
+func (c *checker) classValue(
+	self *soltype.ClassType,
+	ctorFns, callFns []*soltype.FuncType,
+	static *soltype.ObjectType,
+) soltype.Type {
+	elems := make([]soltype.ObjTypeElem, 0, len(static.Elems)+2)
+	// A class declaring a call signature and no constructor carries no ConstructorElem at
+	// all, so nothing constructs it. inferConstructor synthesizes none for that shape.
+	if len(ctorFns) > 0 {
+		elems = append(elems, &soltype.ConstructorElem{Signatures: ctorFns})
+	}
+	// A class declaring `(…) -> T` is callable as well as constructible, so the value
+	// carries a CallableElem beside the constructor. `Symbol("desc")` reads that member and
+	// `Symbol()` alone would read the constructor.
+	if len(callFns) > 0 {
+		elems = append(elems, &soltype.CallableElem{Signatures: callFns})
+	}
 	elems = append(elems, static.Elems...)
 	value := &soltype.ObjectType{Elems: elems}
 	resolved, ok := value.Accept(&selfSubst{recv: self}, soltype.Positive).(*soltype.ObjectType)
@@ -804,6 +840,36 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 		return b.Type, true
 	}
 	return nil, false
+}
+
+// inferCallSignatures types every `(…) -> T` member a class declares, in source order, so
+// an overloaded call signature keeps its arms in the order the source wrote them.
+//
+// A call signature carries no body, so nothing is walked: inferFunc reads the annotation the
+// way it reads a declared method's. It may quantify type parameters of its own —
+// `BooleanConstructor` writes `<T>(value?: T): boolean` — so generic resolution is on.
+//
+// It reads bodyScope rather than declScope, so `Self` resolves in its annotations the way it
+// does in a method's. The class's own type parameters are in scope either way, bodyScope being
+// a child of declScope.
+//
+// Only a `declare class` may carry one. A class with a body compiles to a JavaScript `class`,
+// and a `class` is never callable, so a call signature there would describe something the
+// output cannot be.
+func (c *checker) inferCallSignatures(scope *Scope, lvl int, decl *ast.ClassDecl) []*soltype.FuncType {
+	var sigs []*soltype.FuncType
+	for _, elem := range decl.Body {
+		call, isCall := elem.(*ast.CallableElem)
+		if !isCall {
+			continue
+		}
+		if !decl.Declare() {
+			c.report(&CallSignatureRequiresDeclareError{Elem: call, Decl: decl})
+			continue
+		}
+		sigs = append(sigs, c.inferFunc(scope.Child(), lvl, call.Fn.FuncSig, nil, call, true))
+	}
+	return sigs
 }
 
 // collectConstructors returns the explicit constructor elements of a class, in source order.

@@ -67,13 +67,25 @@ func rewriteConsumedCtorRefs(mod *StandaloneModule, consumedCtor map[string]stri
 	if len(consumedCtor) == 0 {
 		return
 	}
-	rw := &refRewriter{consumedCtor: consumedCtor}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
-		for _, decl := range ns.Decls {
-			rw.rewriteDecl(decl)
-		}
+		rewriteConsumedCtorRefsIn(ns.Decls, consumedCtor)
 		return true
 	})
+}
+
+// rewriteConsumedCtorRefsIn respells the references in one group of declarations against one
+// mapping. A `declare namespace` detects its own trios, so its children are rewritten against
+// that namespace's mapping alone, before they are flattened into the module. Two namespaces may
+// each declare a `FooConstructor`, and the two name different trios, so the mappings are never
+// merged.
+func rewriteConsumedCtorRefsIn(decls []ast.Decl, consumedCtor map[string]string) {
+	if len(consumedCtor) == 0 {
+		return
+	}
+	rw := &refRewriter{consumedCtor: consumedCtor}
+	for _, decl := range decls {
+		rw.rewriteDecl(decl)
+	}
 }
 
 type refRewriter struct {
@@ -185,6 +197,10 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}
 	case *ast.ConstructorElem:
+		if e.Fn != nil {
+			r.rewriteFuncSig(&e.Fn.FuncSig)
+		}
+	case *ast.CallableElem:
 		if e.Fn != nil {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}

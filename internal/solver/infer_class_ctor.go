@@ -9,19 +9,19 @@ import (
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
-// inferConstructor produces a class's constructors as FuncTypes returning the instance, one
-// per declared constructor and in source order. Each explicit constructor has its body walked
-// so field assignments refine the instance fields, then a callable signature built from its
-// value parameters. With none it synthesizes one from the instance fields, unless the class
-// extends a superclass — a subclass must declare its own constructor to call `super`, so a
-// missing one is reported and a field-based constructor is synthesized for recovery.
-func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, self *soltype.ClassType, body *soltype.ObjectType, ctors []*ast.ConstructorElem) []*soltype.FuncType {
-	if len(ctors) == 0 {
-		if decl.Extends != nil {
-			c.report(&SubclassConstructorRequiredError{Decl: decl})
-		}
-		return []*soltype.FuncType{c.synthesizeConstructor(self, body)}
-	}
+// walkConstructorBodies produces a FuncType per declared constructor, in source order. Each
+// has its body walked so field assignments refine the instance fields, then a callable
+// signature built from its value parameters. A class declaring none yields none.
+//
+// What a class with no declared constructor gets instead is the caller's decision, since it
+// turns on whether the class declares a call signature as well. See inferClassDecl.
+func (c *checker) walkConstructorBodies(
+	scope *Scope,
+	lvl int,
+	self *soltype.ClassType,
+	body *soltype.ObjectType,
+	ctors []*ast.ConstructorElem,
+) []*soltype.FuncType {
 	out := make([]*soltype.FuncType, len(ctors))
 	for i, ctor := range ctors {
 		out[i] = c.walkConstructorBody(scope, lvl, self, body, ctor)
@@ -29,9 +29,9 @@ func (c *checker) inferConstructor(scope *Scope, lvl int, decl *ast.ClassDecl, s
 	return out
 }
 
-// synthesizeConstructor builds the implicit constructor of a class with no explicit
-// one: a function taking one parameter per required instance field, in declaration
-// order, and returning the instance. An optional field is omitted, matching its
+// synthesizeConstructor builds the implicit constructor of a class that declares no explicit
+// one and no call signature: a function taking one parameter per required instance field, in
+// declaration order, and returning the instance. An optional field is omitted, matching its
 // omission from the required set.
 func (c *checker) synthesizeConstructor(self *soltype.ClassType, body *soltype.ObjectType) *soltype.FuncType {
 	var params []*soltype.FuncParam

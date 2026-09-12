@@ -1129,17 +1129,14 @@ declare var Array: ArrayConstructor;
 	}
 }
 
-// A constructor interface with a call signature and no `new` describes
-// something callable and not constructible. fuseTrio has no class elem
-// for a call signature, so the fused class could be neither called nor
-// constructed. The trio passes through instead, keeping the call
-// signature on the interface, until #1412 gives a class somewhere to
-// hold one.
+// A constructor interface with a call signature and no `new` describes something callable and
+// not constructible. It fuses like every other trio, and the call signature becomes the class's
+// own, so the fused class is callable even though nothing can construct it. The specification
+// forbids `new Symbol()`, which is why the call signature is the only way to make one.
 //
-// `SymbolConstructor` below is verbatim from lib.es2015.symbol.d.ts.
-// `BigIntConstructor` is the same shape and the only other one in the
-// pinned lib set.
-func TestStandalone_TrioNotFusedWhenTheConstructorIsOnlyCallable(t *testing.T) {
+// `SymbolConstructor` below is verbatim from lib.es2015.symbol.d.ts. `BigIntConstructor` is the
+// same shape and the only other one in the pinned lib set.
+func TestStandalone_ACallSignatureOnlyConstructorStillFuses(t *testing.T) {
 	const slice = `
 interface Symbol {
     toString(): string;
@@ -1168,12 +1165,15 @@ declare var Symbol: SymbolConstructor;
 			vars++
 		}
 	}
-	require.Equal(t, 0, classes, "no class synthesized")
-	require.Equal(t, 2, interfaces, "both interfaces survive")
-	require.Equal(t, 1, vars, "the binding survives")
+	require.Equal(t, 1, classes, "the trio fuses into one class")
+	require.Equal(t, 0, interfaces, "both interfaces consumed")
+	require.Equal(t, 0, vars, "the binding consumed")
 
-	require.Contains(t, printed, "fn (description?: string | number) -> symbol",
-		"the call signature survives, which is the whole point of holding back")
+	require.Contains(t, printed, "(description?: string | number) -> symbol",
+		"the call signature reaches the class, which is what makes the fused Symbol callable")
+	// No `new` is declared, so the class has no constructor. That is the shape that makes
+	// `new Symbol()` unrepresentable rather than merely discouraged.
+	require.NotContains(t, printed, "constructor(")
 
 	parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
 		&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
@@ -1470,8 +1470,7 @@ declare var CSSFontFaceRule: {
 // Trio fusion folds `interface FooConstructor` into `class Foo`, so the constructor
 // interface's name no longer denotes anything. A reference to it is respelled `typeof Foo`,
 // which names what the interface named: the class value, carrying the constructor and the
-// statics. Without the respelling the emitted tree carries a dangling name, which is where
-// `cannot find type ArrayConstructor` came from.
+// statics. That respelling is what keeps the emitted tree free of a dangling name.
 func TestStandalone_AConsumedConstructorReferenceBecomesTypeof(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -1538,20 +1537,64 @@ declare var Box: BoxConstructor;
 	}
 }
 
-// An unfused constructor interface keeps its name, so a reference to it is left alone.
-// `SymbolConstructor` is the case that matters: it declares no `new`, so detectTrios declines
-// it and the interface stays.
+// An unfused constructor interface keeps its name, so a reference to it is left alone. A
+// constructor interface with no matching `declare var` is not a trio at all, so nothing
+// consumes it.
 func TestStandalone_AnUnfusedConstructorReferenceIsUntouched(t *testing.T) {
 	_, printed := convertSlice(t, `
 interface Box<T> {
     value: T;
 }
 interface BoxConstructor {
-    <T>(value: T): Box<T>;
+    new <T>(value: T): Box<T>;
     readonly self: BoxConstructor;
 }
-declare var Box: BoxConstructor;
 `)
 	require.Contains(t, printed, "BoxConstructor")
 	require.NotContains(t, printed, "typeof Box")
+}
+
+// A namespace detects its own trios, so a sibling naming one of the constructor interfaces it
+// consumed is respelled against that namespace's mapping. The module-level pass reads the top
+// level's mapping and cannot see a namespace-local one.
+func TestStandalone_ANamespaceLocalConsumedConstructorIsRespelled(t *testing.T) {
+	_, printed := convertSlice(t, `
+declare namespace N {
+    interface Box {
+        value: number;
+    }
+    interface BoxConstructor {
+        new (v: number): Box;
+    }
+    var Box: BoxConstructor;
+    interface Other {
+        maker: BoxConstructor;
+    }
+}
+`)
+	require.Contains(t, printed, "maker: typeof Box")
+	require.NotContains(t, printed, "BoxConstructor")
+}
+
+// An instance-side call signature says instances are callable, which a class cannot say:
+// `ast.CallableElem` describes the class value. Fusing would drop the member in silence, so the
+// trio stays split and the interface keeps it.
+func TestStandalone_ATrioWithACallableInstanceStaysSplit(t *testing.T) {
+	astModule, printed := convertSlice(t, `
+interface Callable {
+    (x: number): string;
+    tag: string;
+}
+interface CallableConstructor {
+    new (): Callable;
+}
+declare var Callable: CallableConstructor;
+`)
+	rootNS, ok := astModule.Module.Namespaces.Get("")
+	require.True(t, ok, "root namespace exists")
+	for _, d := range rootNS.Decls {
+		_, isClass := d.(*ast.ClassDecl)
+		require.False(t, isClass, "the trio must not fuse")
+	}
+	require.Contains(t, printed, "(x: number) -> string", "the instance callable survives")
 }

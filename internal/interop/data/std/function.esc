@@ -47,6 +47,7 @@ export declare class Function {
      * @param args A list of arguments the function accepts.
      */
     constructor(mut self, ...args: mut Array<string>),
+    (...args: mut Array<string>) -> Function,
     static readonly prototype: Function
 }
 

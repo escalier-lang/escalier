@@ -111,9 +111,12 @@ export declare class RegExp {
     /** @deprecated A legacy feature for browser compatibility */
     compile(mut self, pattern: string, flags?: string) -> Self,
     constructor(mut self, pattern: RegExp | string, flags?: string),
+    (pattern: RegExp | string, flags?: string) -> RegExp,
     static readonly [Symbol.species]: typeof RegExp,
     constructor(mut self, pattern: RegExp | string),
     constructor(mut self, pattern: string, flags?: string),
+    (pattern: RegExp | string) -> RegExp,
+    (pattern: string, flags?: string) -> RegExp,
     static readonly "prototype": RegExp,
     /** @deprecated A legacy feature for browser compatibility */
     static "$1": string,

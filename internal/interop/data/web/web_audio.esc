@@ -902,11 +902,11 @@ export declare class WaveShaperNode extends AudioNode {
 }
 
 export declare interface DecodeErrorCallback {
-    fn (error: DOMException) -> unknown
+    (error: DOMException) -> unknown
 }
 
 export declare interface DecodeSuccessCallback {
-    fn (decodedData: AudioBuffer) -> unknown
+    (decodedData: AudioBuffer) -> unknown
 }
 
 export declare type AudioContextLatencyCategory = "balanced" | "interactive" | "playback"

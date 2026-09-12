@@ -314,25 +314,18 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 		if !ok {
 			continue
 		}
-		// A constructor side whose only callable form is a call
-		// signature would lose it: fuseTrio has no class elem to put
-		// one on, so the fused class could be neither called nor
-		// constructed. `SymbolConstructor` and `BigIntConstructor` are
-		// the two, and the specification forbids `new` on both, so the
-		// call signature is the only way to make one. They stay
-		// interfaces until #1412 gives a class somewhere to hold it.
+		// An instance-side call signature says instances are callable. A class cannot say
+		// that: ast.CallableElem describes the class VALUE, which is what `Symbol("x")`
+		// calls, and there is no syntax for a callable instance. Fusing would drop the
+		// member in silence, so the trio stays split and the interface keeps it as an
+		// ast.CallableTypeAnn.
 		//
-		// This reaches only the named form. An inline constructor side
-		// is required to carry a `new`, so it never has a call
-		// signature as its only callable form. One that has both still
-		// loses the call — `CompileError`, `LinkError` and
-		// `RuntimeError` in `lib.dom.d.ts` are the three — which is
-		// the same loss the 19 named trios that already fuse take, and
-		// #1412 covers all of them together.
-		if hasCallSignature(ctorMembers) && !hasConstructSignature(ctorMembers) {
+		// No trio in the pinned lib set reaches this. The 47 interfaces carrying an
+		// instance-side call signature are callbacks such as `EventListener`, none of which
+		// has a matching constructor interface and var. A converted third-party `.d.ts` can.
+		if hasCallSignature(inst.Members) {
 			continue
 		}
-
 		t.byName[name] = &trioInfo{
 			instance:    inst,
 			ctorMembers: ctorMembers,
@@ -412,9 +405,8 @@ func ctorsReturning(members []dts_parser.InterfaceMember, instanceName string) b
 	return found
 }
 
-// hasCallSignature reports whether members holds at least one bare
-// `(...)` member, the form that makes `Symbol("x")` a call rather than
-// a construction.
+// hasCallSignature reports whether members holds at least one bare `(...)` member, the form
+// that makes `Symbol("x")` a call rather than a construction.
 func hasCallSignature(members []dts_parser.InterfaceMember) bool {
 	for _, m := range members {
 		if _, ok := m.(*dts_parser.CallSignature); ok {
@@ -1006,6 +998,15 @@ func convertStandaloneStmt(
 			}
 			out = append(out, children...)
 		}
+		// The namespace's own trios are detected above and consumed here, so a sibling
+		// naming one of its constructor interfaces is respelled before the children leave
+		// the namespace. The module-level pass reads the top level's mapping and cannot see
+		// this one.
+		inner := make([]ast.Decl, 0, len(out))
+		for _, dd := range out {
+			inner = append(inner, dd.decl)
+		}
+		rewriteConsumedCtorRefsIn(inner, innerTrios.consumedCtor)
 		return out, nil
 
 	case *dts_parser.InterfaceDecl:
@@ -1157,11 +1158,11 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //   - PropertySignature → FieldElem
 //   - GetterSignature   → GetterElem
 //   - SetterSignature   → SetterElem
-//   - ConstructSignature (static side only) → ConstructorElem
-//   - CallSignature (static side: bare-call form like `Boolean(x)`) and
-//     IndexSignature are skipped for the MVP — they have no direct class-
-//     elem mapping. §6 may revisit (e.g. lower the bare-call form into a
-//     static factory).
+//   - ConstructSignature → ConstructorElem, built by fuseTrio rather than here, since
+//     one `constructor` holds every arm
+//   - CallSignature → CallableElem, from the constructor side only. It is the bare-call
+//     form, `Boolean(x)`.
+//   - IndexSignature is skipped for the MVP — it has no direct class-elem mapping.
 func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDecl, error) {
 	className := info.instance.Name.Name
 	typeParams, err := convertTypeParams(info.instance.TypeParams)
@@ -1243,7 +1244,7 @@ func fuseTrio(info *trioInfo, nsPath string, facts *ReceiverFacts) (*ast.ClassDe
 // interfaceMemberToClassElem converts an interface member to a class elem,
 // keying the static flag off the caller (instance side vs constructor side
 // of the trio). Returns (nil, nil) for member kinds with no class-elem
-// representation (CallSignature, IndexSignature).
+// representation (IndexSignature).
 //
 // nsPath and className address the class being fused. The receiver
 // classification reads them for the tiers keyed by an owner, which are the
@@ -1373,9 +1374,51 @@ func interfaceMemberToClassElem(
 		elem.SetDoc(doc)
 		return elem, nil
 
-	case *dts_parser.CallSignature, *dts_parser.IndexSignature, *dts_parser.ConstructSignature:
-		// Skip — no direct class-elem mapping in the MVP. ConstructSignature
-		// is handled by the caller for the static side.
+	case *dts_parser.CallSignature:
+		// A bare-call form such as `Boolean(x)`. It carries no name and no receiver, so it
+		// becomes the class's own call signature, which is what makes the fused class
+		// callable as well as constructible.
+		//
+		// Only the constructor side reaches here. detectTrios declines a trio whose
+		// instance interface declares a call signature, since a class cannot say that
+		// instances are callable, so this guard is a backstop rather than a live path.
+		if !static {
+			return nil, nil
+		}
+		typeParams, err := convertTypeParams(m.TypeParams)
+		if err != nil {
+			return nil, fmt.Errorf("call signature: type params: %w", err)
+		}
+		params, err := convertParams(m.Params)
+		if err != nil {
+			return nil, fmt.Errorf("call signature: params: %w", err)
+		}
+		var ret ast.TypeAnn
+		if m.ReturnType != nil {
+			ret, err = convertReturnTypeAnn(m.ReturnType)
+			if err != nil {
+				return nil, fmt.Errorf("call signature: return: %w", err)
+			}
+		}
+		span := convertSpan(m.Span())
+		elem := &ast.CallableElem{
+			Fn:    ast.NewFuncExpr(nil, typeParams, params, ret, nil, false, nil, span),
+			Span_: span,
+		}
+		elem.SetDoc(doc)
+		return elem, nil
+
+	case *dts_parser.ConstructSignature:
+		// Reached only from the instance loop, where a `new (…)` member describes
+		// something an instance cannot be. The constructor side never arrives here:
+		// fuseTrio intercepts its construct signatures and passes them to
+		// constructSignatureToCtorElem, because a class carries exactly one
+		// `constructor` holding every arm as an overload, so the arms have to be
+		// gathered by the caller rather than converted one at a time.
+		return nil, nil
+
+	case *dts_parser.IndexSignature:
+		// Skipped for the MVP — it has no class-elem mapping at all. See #1417.
 		return nil, nil
 
 	default:

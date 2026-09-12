@@ -1159,15 +1159,12 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 				return []SolverError{&CannotConstrainError{Sub: sub, Super: super}}
 			}
 		} else if sup, ok := super.(*soltype.FuncType); ok {
-			// An object with a call signature is a subtype of the matching function type. That
-			// is what the signature says: the object is callable with those parameters.
-			if call, ok := sub.Callable(); ok {
-				return c.constrain(overloadReadType(call.Signatures), sup, seen, mutCtx)
-			}
-			// An object with a constructor signature is a subtype of the matching function
-			// type; codegen makes the constructor behave as a plain function where expected.
-			if ctor, ok := sub.Constructor(); ok {
-				return c.constrain(overloadReadType(ctor.Signatures), sup, seen, mutCtx)
+			// An object carrying either unnamed callable member is a subtype of the matching
+			// function type. A constructor decides when the object carries one, the same
+			// member soleCallableSignature reads for a direct call, so a comparison and a
+			// call agree on which signature the object answers with.
+			if sigs := decidingSignatures(sub); sigs != nil {
+				return c.constrain(overloadReadType(sigs), sup, seen, mutCtx)
 			}
 		} else if sup, ok := super.(*soltype.ObjectType); ok {
 			// One ObjectType <: ObjectType rule serves both uses the M2 arm
@@ -1212,9 +1209,18 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 					}
 					continue
 				}
-				// A call-signature requirement is the plain-call twin of the constructor one
-				// above, satisfied by the source's own call signature checked covariantly. The
-				// two are separate members, so a constructor does not fill it.
+				// A call-signature requirement is the plain-call twin of the constructor
+				// one above, satisfied by the source's own call signature checked
+				// covariantly. The two are separate members, so a constructor does not
+				// fill it.
+				//
+				// This asks a different question from the FuncType target above. A bare
+				// `fn (…) -> T` target asks whether the object is callable as that
+				// function, which decidingSignatures answers. An object target naming a
+				// call signature asks whether the object carries that member, which is
+				// structural. `Date` declares both members, so it fills
+				// `fn (n: number) -> Date` and `{fn (n: number) -> string}` and neither
+				// of the two crossed.
 				if superCall, ok := superElem.(*soltype.CallableElem); ok {
 					if subCall, has := sub.Callable(); has {
 						errs = append(errs, c.constrain(
@@ -2182,6 +2188,20 @@ func methodReadType(elem *soltype.MethodElem) soltype.Type {
 		arms[i] = callableView(sig)
 	}
 	return &soltype.IntersectionType{Types: arms}
+}
+
+// decidingSignatures returns the arms of the unnamed callable member an object answers a call
+// with, and nil when it carries neither. A constructor decides when the object carries one, for
+// the reason soleCallableSignature gives: Escalier writes construction as `Point(1, 2)` and has
+// no `new` expression, so a call signature beside a constructor cannot take that spelling over.
+func decidingSignatures(obj *soltype.ObjectType) []*soltype.FuncType {
+	if ctor, ok := obj.Constructor(); ok {
+		return ctor.Signatures
+	}
+	if call, ok := obj.Callable(); ok {
+		return call.Signatures
+	}
+	return nil
 }
 
 // overloadReadType returns the callable value an unnamed overload set stands for, the arms a
