@@ -253,22 +253,27 @@ func (c *checker) resolveObjectTypeAnn(scope *Scope, ta *ast.ObjectTypeAnn, lvl 
 		}
 	}
 	if unsupported {
-		c.reportUnsupportedFeature(ta, "object type member other than a property, spread, mapped member, `new` signature, method, or accessor")
+		c.reportUnsupportedFeature(ta, "object type member other than a property, spread, mapped member, call or `new` signature, method, or accessor")
 	}
 	t := &soltype.ObjectType{Elems: elems, Inexact: ta.Inexact}
 	c.recordProv(t, ta, AnnotationType)
 	return t, true
 }
 
-// objAnnLowering lowers the members of one object type annotation. It carries the only state a
-// member needs from its siblings, which is whether a construct signature was already seen: an
-// object type holds at most one, so a second is reported rather than emitted.
+// objAnnLowering lowers the members of one object type annotation. It carries the state a
+// member needs from its siblings, which is what has already been seen of the two unnamed
+// callable members. An object type holds at most one construct signature, so a second is
+// reported rather than emitted. It holds at most one call signature element, so a second call
+// signature becomes a further arm of the first rather than a second element.
 type objAnnLowering struct {
 	c     *checker
 	scope *Scope
 	lvl   int
 	// sawCtor records that a `new (…) -> T` member was already lowered.
 	sawCtor bool
+	// callable is the element the first `fn (…) -> T` member produced, nil until one is
+	// lowered. A later one appends its arm here.
+	callable *soltype.CallableElem
 }
 
 // lower turns one written member into the element it contributes to the object.
@@ -346,6 +351,17 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		return &soltype.ConstructorElem{
 			Signatures: []*soltype.FuncType{l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)},
 		}, true
+	case *ast.CallableTypeAnn:
+		// An overloaded call signature is written as several `fn (…) -> T` members, the way
+		// TypeScript writes one. They are arms of one element, so the second and later ones
+		// extend the first rather than adding an element the object could not hold.
+		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		if l.callable != nil {
+			l.callable.Signatures = append(l.callable.Signatures, sig)
+			return nil, true
+		}
+		l.callable = &soltype.CallableElem{Signatures: []*soltype.FuncType{sig}}
+		return l.callable, true
 	case *ast.RestSpreadTypeAnn:
 		src, ok := l.c.resolveTypeAnn(l.scope, elem.Value, l.lvl)
 		if !ok {

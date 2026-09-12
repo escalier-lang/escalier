@@ -73,7 +73,7 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 	if !ok {
 		return nil, false
 	}
-	return ctorReadType(ctor), true
+	return overloadReadType(ctor.Signatures), true
 }
 
 // superVarID is the synthetic binding the move dataflow tracks in place of "the superclass

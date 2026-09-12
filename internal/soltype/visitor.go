@@ -691,6 +691,12 @@ func AcceptObjElem(e ObjTypeElem, v TypeVisitor, pol Polarity) ObjTypeElem {
 			return e
 		}
 		return &ConstructorElem{Signatures: sigs}
+	case *CallableElem:
+		sigs, changed := acceptSignatures(e.Signatures, v, pol)
+		if !changed {
+			return e
+		}
+		return &CallableElem{Signatures: sigs}
 	case *SpreadElem:
 		// The operand walks in the current polarity, the covariant visit KeyofType applies to its
 		// single operand. The spread is inert — the visit rebuilds it around a rewritten operand

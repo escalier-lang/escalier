@@ -425,6 +425,19 @@ func (e *SetterElem) ThrowsOrNever() Type {
 // exactly one signature.
 type ConstructorElem struct{ Signatures []*FuncType }
 
+// CallableElem is the call signature an object carries, the `fn (params) -> ret` an object
+// type annotation writes among its members. An object holding one is callable, so
+// `f(1)` over `declare val f: {fn (n: number) -> string, tag: string}` reads `string`.
+//
+// It is the structural twin of ConstructorElem. A constructor answers `new`, a callable
+// answers a plain call, and an object may carry either, both, or neither. `SymbolConstructor`
+// in `std:prelude` is the case that needs one on its own: the specification forbids
+// `new Symbol()`, so its call signature is the only way to make a symbol.
+//
+// An overloaded call signature holds its arms in Signatures, ordered as the source declares
+// them, the same shape MethodElem and ConstructorElem use.
+type CallableElem struct{ Signatures []*FuncType }
+
 // SpreadElem is a `...A` object spread written as an element of an ObjectType, the object twin of
 // the tuple's RestSpreadType (M9 PR5). `{...A, x: T}` is an ObjectType whose first element is a
 // SpreadElem over A. An object carrying one is a residual: constrain passes it through untouched,
@@ -437,6 +450,7 @@ func (*MethodElem) isObjTypeElem()      {}
 func (*GetterElem) isObjTypeElem()      {}
 func (*SetterElem) isObjTypeElem()      {}
 func (*ConstructorElem) isObjTypeElem() {}
+func (*CallableElem) isObjTypeElem()    {}
 func (*MappedElem) isObjTypeElem()      {}
 func (*SpreadElem) isObjTypeElem()      {}
 
@@ -481,6 +495,12 @@ func ObjElemName(e ObjTypeElem) string {
 	case *SetterElem:
 		return e.Name
 	case *ConstructorElem:
+		return ""
+	case *CallableElem:
+		// A callable is unnamed for the reason a constructor is. The two share the empty key,
+		// so a name-keyed pairing can hand one to the other; every site that acts on either
+		// asserts the kind after the pairing rather than trusting the key. objElemKindOrder in
+		// the solver gives them separate ranks so an ordering never asserts across them.
 		return ""
 	case *SpreadElem:
 		// A spread is anonymous. It only appears in an unreduced object, and the name-keyed
@@ -716,6 +736,31 @@ func (o *ObjectType) Constructor() (*ConstructorElem, bool) {
 		}
 	}
 	return nil, false
+}
+
+// Callable returns the object's call signature element, and false when it carries none. It
+// is the plain-call twin of Constructor. An object type annotation declares at most one call
+// signature element, whose Signatures hold every arm it wrote.
+func (o *ObjectType) Callable() (*CallableElem, bool) {
+	for _, e := range o.Elems {
+		if call, ok := e.(*CallableElem); ok {
+			return call, true
+		}
+	}
+	return nil, false
+}
+
+// signaturesOf returns the overload arms of the two unnamed callable member kinds, and nil
+// for every other kind. A caller that treats a constructor and a call signature alike reads
+// this rather than switching on the kind twice.
+func signaturesOf(e ObjTypeElem) []*FuncType {
+	switch e := e.(type) {
+	case *ConstructorElem:
+		return e.Signatures
+	case *CallableElem:
+		return e.Signatures
+	}
+	return nil
 }
 
 // AsProperty narrows an ObjTypeElem to its *PropertyElem. It is used at sites that
@@ -1528,9 +1573,9 @@ func levelOfElem(e ObjTypeElem) int {
 		return max(selfLevel(e.SelfParam), LevelOf(e.Type), throwsLevel(e.Throws))
 	case *SetterElem:
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param), throwsLevel(e.Throws))
-	case *ConstructorElem:
+	case *ConstructorElem, *CallableElem:
 		m := 0
-		for _, sig := range e.Signatures {
+		for _, sig := range signaturesOf(e) {
 			m = max(m, LevelOf(sig))
 		}
 		return m

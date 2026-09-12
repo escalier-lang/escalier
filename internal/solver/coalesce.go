@@ -1739,15 +1739,10 @@ func equalObjElem(a, b soltype.ObjTypeElem, ctx *alphaCtx) bool {
 			equalTypeWith(a.ThrowsOrNever(), b.ThrowsOrNever(), ctx)
 	case *soltype.ConstructorElem:
 		b, ok := b.(*soltype.ConstructorElem)
-		if !ok || len(a.Signatures) != len(b.Signatures) {
-			return false
-		}
-		for i := range a.Signatures {
-			if !equalTypeWith(a.Signatures[i], b.Signatures[i], ctx) {
-				return false
-			}
-		}
-		return true
+		return ok && equalSignaturesWith(a.Signatures, b.Signatures, ctx)
+	case *soltype.CallableElem:
+		b, ok := b.(*soltype.CallableElem)
+		return ok && equalSignaturesWith(a.Signatures, b.Signatures, ctx)
 	case *soltype.SpreadElem:
 		b, ok := b.(*soltype.SpreadElem)
 		return ok && equalTypeWith(a.Type, b.Type, ctx)
@@ -1836,6 +1831,20 @@ func sameLifetimeSlice(a, b []soltype.Lifetime, ctx *alphaCtx) bool {
 	}
 	for i := range a {
 		if !ctx.sameLifetime(a[i], b[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// equalSignaturesWith compares two overload sets arm by arm, the equality the two unnamed
+// callable member kinds share.
+func equalSignaturesWith(a, b []*soltype.FuncType, ctx *alphaCtx) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if !equalTypeWith(a[i], b[i], ctx) {
 			return false
 		}
 	}

@@ -684,6 +684,8 @@ func compareObjElem(a, b soltype.ObjTypeElem) int {
 		return compareType(a.ThrowsOrNever(), b.ThrowsOrNever())
 	case *soltype.ConstructorElem:
 		return compareSignatures(a.Signatures, b.(*soltype.ConstructorElem).Signatures)
+	case *soltype.CallableElem:
+		return compareSignatures(a.Signatures, b.(*soltype.CallableElem).Signatures)
 	case *soltype.SpreadElem:
 		return compareType(a.Type, b.(*soltype.SpreadElem).Type)
 	case *soltype.MappedElem:
@@ -723,12 +725,14 @@ func objElemKindOrder(e soltype.ObjTypeElem) int {
 		return 3
 	case *soltype.ConstructorElem:
 		return 4
-	case *soltype.SpreadElem:
+	case *soltype.CallableElem:
 		return 5
-	case *soltype.MappedElem:
+	case *soltype.SpreadElem:
 		return 6
+	case *soltype.MappedElem:
+		return 7
 	}
-	return 7
+	return 8
 }
 
 // compareSelfParam orders two method or accessor receivers. A missing receiver
