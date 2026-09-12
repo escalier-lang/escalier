@@ -141,18 +141,38 @@ func TestForInRejectsWhatDeclaresNoProtocolMember(t *testing.T) {
 	}
 }
 
-// A sync member does not answer a `for await`, and the two symbols stay apart. Nothing
-// in the test stdlib declares `[Symbol.asyncIterator]`, so the class below is what says
-// the async lookup reads its own member.
+// A `for await` reads `[Symbol.asyncIterator]`, so the two protocols stay apart and
+// neither answers the other's loop. `testdata/stdlib/std/prelude.esc` declares
+// `AsyncIterable` beside `Iterable`, each naming its own iterator.
 func TestForAwaitReadsTheAsyncMember(t *testing.T) {
 	t.Run("AnAsyncMemberAnswers", func(t *testing.T) {
 		values, _, errs := inferSource(t, `
-			declare class Stream { [Symbol.asyncIterator](self) -> Iterator<string> }
+			declare class Stream { [Symbol.asyncIterator](self) -> AsyncIterator<string> }
 			declare fn mk() -> Stream
 			async fn use() -> Promise<string> { for await x in mk() { return x } return "" }
 		`)
 		require.Empty(t, errorMessagesOf(errs))
 		require.Equal(t, "fn () -> Promise<string>", values["use"])
+	})
+
+	t.Run("TheDeclaredAsyncIterableAnswers", func(t *testing.T) {
+		values, _, errs := inferSource(t, `
+			declare fn mk() -> AsyncIterable<string>
+			async fn use() -> Promise<string> { for await x in mk() { return x } return "" }
+		`)
+		require.Empty(t, errorMessagesOf(errs))
+		require.Equal(t, "fn () -> Promise<string>", values["use"])
+	})
+
+	// The sync protocol does not answer a `for await` either, so the two are apart in
+	// both directions.
+	t.Run("AnAsyncMemberDoesNotAnswerASyncLoop", func(t *testing.T) {
+		_, _, errs := inferSource(t, `
+			declare fn mk() -> AsyncIterable<string>
+			fn use(xs: AsyncIterable<string>) { for x in xs { x } }
+		`)
+		require.Equal(t, []string{"AsyncIterable<string, undefined, unknown> is not iterable"},
+			errorMessagesOf(errs))
 	})
 
 	t.Run("ASyncMemberDoesNotAnswerAForAwait", func(t *testing.T) {
@@ -361,7 +381,7 @@ func TestYieldFromInAnAsyncBodyReadsTheAsyncMember(t *testing.T) {
 		{
 			name: "AnAsyncOnlyDelegate",
 			src: `
-				declare class Stream { [Symbol.asyncIterator](self) -> Iterator<string> }
+				declare class Stream { [Symbol.asyncIterator](self) -> AsyncIterator<string> }
 				async gen fn g(s: Stream) { yield from s }
 			`,
 			want: "fn (s: Stream) -> AsyncGenerator<string, undefined, unknown>",
