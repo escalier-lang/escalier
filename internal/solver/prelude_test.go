@@ -160,12 +160,14 @@ func TestPreludeSymbolsDoNotAdvanceTheProgramsNumbering(t *testing.T) {
 		files map[string]string
 	}{
 		{
+			// The shape the committed tree writes, so the fixture cannot drift from it.
 			name: "APreludeDeclaringSymbolsOfItsOwn",
 			files: map[string]string{"std/prelude.esc": `
-				export declare class SymbolConstructor {
+				export declare interface SymbolConstructor {
 					readonly iterator: unique symbol,
 					readonly asyncIterator: unique symbol,
 				}
+				export declare var Symbol: SymbolConstructor
 			`},
 		},
 		{
