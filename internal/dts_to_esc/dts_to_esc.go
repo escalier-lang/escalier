@@ -1158,7 +1158,8 @@ func attachJSDecorator(decl ast.Decl, arg string) {
 //   - PropertySignature → FieldElem
 //   - GetterSignature   → GetterElem
 //   - SetterSignature   → SetterElem
-//   - ConstructSignature (static side only) → ConstructorElem
+//   - ConstructSignature → ConstructorElem, built by fuseTrio rather than here, since
+//     one `constructor` holds every arm
 //   - CallSignature → CallableElem, from the constructor side only. It is the bare-call
 //     form, `Boolean(x)`.
 //   - IndexSignature is skipped for the MVP — it has no direct class-elem mapping.
@@ -1407,9 +1408,17 @@ func interfaceMemberToClassElem(
 		elem.SetDoc(doc)
 		return elem, nil
 
-	case *dts_parser.IndexSignature, *dts_parser.ConstructSignature:
-		// Skip — no direct class-elem mapping in the MVP. ConstructSignature
-		// is handled by the caller for the static side.
+	case *dts_parser.ConstructSignature:
+		// Reached only from the instance loop, where a `new (…)` member describes
+		// something an instance cannot be. The constructor side never arrives here:
+		// fuseTrio intercepts its construct signatures and passes them to
+		// constructSignatureToCtorElem, because a class carries exactly one
+		// `constructor` holding every arm as an overload, so the arms have to be
+		// gathered by the caller rather than converted one at a time.
+		return nil, nil
+
+	case *dts_parser.IndexSignature:
+		// Skipped for the MVP — it has no class-elem mapping at all. See #1417.
 		return nil, nil
 
 	default:
