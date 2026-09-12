@@ -306,7 +306,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
 		return &soltype.MethodElem{
 			Name:       name,
 			Signatures: []*soltype.FuncType{sig},
@@ -321,7 +321,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		// The value read and what reading it raises both come from the one resolved
 		// signature. An absent `throws` clause leaves the signature's Throws nil, and nil is
 		// the `never` shorthand GetterElem uses too, so it carries over with no special case.
-		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
 		return &soltype.GetterElem{Name: name, Type: sig.Ret, Throws: sig.Throws}, true
 	case *ast.SetterTypeAnn:
 		name, ok := objKeyName(elem.Name)
@@ -329,7 +329,7 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 			l.c.reportUnsupported(elem.Name)
 			return nil, true
 		}
-		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
 		// A well-formed setter declares exactly one value parameter beyond the receiver, the
 		// value being assigned. Report any other count and then build the element from the
 		// first parameter, or from `unknown` when there is none, so the object still carries a
@@ -349,13 +349,13 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 		}
 		l.sawCtor = true
 		return &soltype.ConstructorElem{
-			Signatures: []*soltype.FuncType{l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)},
+			Signatures: []*soltype.FuncType{l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)},
 		}, true
 	case *ast.CallableTypeAnn:
 		// An overloaded call signature is written as several `fn (…) -> T` members, the way
 		// TypeScript writes one. They are arms of one element, so the second and later ones
 		// extend the first rather than adding an element the object could not hold.
-		sig := l.c.resolveSigTypeAnn(l.scope, elem.Fn, l.lvl)
+		sig := l.c.mustResolveFuncTypeAnn(l.scope, elem.Fn, l.lvl)
 		if l.callable != nil {
 			l.callable.Signatures = append(l.callable.Signatures, sig)
 			return nil, true
@@ -374,15 +374,18 @@ func (l *objAnnLowering) lower(elem ast.ObjTypeAnnElem) (soltype.ObjTypeElem, bo
 	return nil, false
 }
 
-// resolveSigTypeAnn lowers the `(…) -> R throws E` tail a method, getter, or setter shares with
-// a `fn` annotation. resolveFuncTypeAnn recovers every unsupported part of a signature to a
-// fresh var, so it always yields a FuncType and its ok result is always true. Anything else is a
-// wiring bug rather than a source error, so fail loudly instead of dropping the member.
-func (c *checker) resolveSigTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) *soltype.FuncType {
+// mustResolveFuncTypeAnn is resolveFuncTypeAnn narrowed to the concrete type it always yields.
+// It lowers the `(…) -> R throws E` tail that a method, getter, setter, and the two unnamed
+// callable members share with a `fn` annotation.
+//
+// resolveFuncTypeAnn recovers every unsupported part of a signature to a fresh var, so it always
+// yields a FuncType and its ok result is always true. Anything else is a wiring bug rather than
+// a source error, so fail loudly instead of dropping the member.
+func (c *checker) mustResolveFuncTypeAnn(scope *Scope, ta *ast.FuncTypeAnn, lvl int) *soltype.FuncType {
 	fn, _ := c.resolveFuncTypeAnn(scope, ta, lvl)
 	sig, isFunc := fn.(*soltype.FuncType)
 	if !isFunc {
-		panic(fmt.Sprintf("resolveSigTypeAnn: signature resolved to %T, not *soltype.FuncType", fn))
+		panic(fmt.Sprintf("mustResolveFuncTypeAnn: signature resolved to %T, not *soltype.FuncType", fn))
 	}
 	return sig
 }
