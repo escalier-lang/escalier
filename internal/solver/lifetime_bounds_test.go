@@ -374,7 +374,7 @@ func TestAlphaEqualTypesInferredRenamedLifetimes(t *testing.T) {
 		fn f<'a>(p: &'a mut {x: number}) -> &'a mut {x: number} { return p }
 		fn g<'b>(q: &'b mut {x: number}) -> &'b mut {x: number} { return q }
 		fn h<'c>(r: &'c mut {y: number}) -> &'c mut {y: number} { return r }
-	`))
+	`), testStdlibSource())
 	require.Empty(t, errs)
 	f := inferredValueType(t, scope, "f")
 	g := inferredValueType(t, scope, "g")
@@ -397,7 +397,7 @@ func TestAlphaEqualTypesInferredReturnChoice(t *testing.T) {
 		fn pair1<'a, 'b>(p: &'a mut {x: number}, q: &'b mut {x: number}) -> &'a mut {x: number} { return p }
 		fn pair2<'c, 'd>(r: &'c mut {x: number}, s: &'d mut {x: number}) -> &'c mut {x: number} { return r }
 		fn pair3<'e, 'f>(u: &'e mut {x: number}, v: &'f mut {x: number}) -> &'f mut {x: number} { return v }
-	`))
+	`), testStdlibSource())
 	require.Empty(t, errs)
 	pair1 := inferredValueType(t, scope, "pair1")
 	pair2 := inferredValueType(t, scope, "pair2")

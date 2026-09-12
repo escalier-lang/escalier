@@ -185,9 +185,10 @@ func TestArrayHelpersDeclineWhatIsNotAnArray(t *testing.T) {
 	})
 }
 
-// Without a stdlib supplying `Array`, the name is simply unknown. Nothing claims an
-// arity for a declaration nothing provides, and no handle is cached.
-func TestArrayIsUnknownWithoutAStdlib(t *testing.T) {
+// A tree supplying no `Array` is reported as a broken standard library, and the written
+// reference is then an ordinary unbound name. Nothing claims an arity for a declaration
+// nothing provides, and no handle is cached.
+func TestArrayIsReportedWithoutAStdlib(t *testing.T) {
 	t.Parallel()
 
 	c := newChecker()
@@ -196,6 +197,10 @@ func TestArrayIsUnknownWithoutAStdlib(t *testing.T) {
 	})
 	c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 
-	require.Equal(t, []string{"cannot find type `Array`"}, errorMessagesOf(c.errs))
+	require.Equal(t, []string{
+		"the standard library declares no class `Array`, which the checker needs",
+		"the standard library declares no class `Promise`, which the checker needs",
+		"cannot find type `Array`",
+	}, errorMessagesOf(c.errs))
 	require.Empty(t, c.ctx.arrayClass)
 }

@@ -117,7 +117,7 @@ func TestInferTypeAliasMissingBodyDoesNotPanic(t *testing.T) {
 	// renders one, so exercise Span() and Message() on every returned error the way the
 	// CLI and LSP formatters do.
 	require.NotPanics(t, func() {
-		_, _, errs := InferModule(module)
+		_, _, errs := InferModule(module, testStdlibSource())
 		for _, e := range errs {
 			_ = e.Span()
 			_ = e.Message()

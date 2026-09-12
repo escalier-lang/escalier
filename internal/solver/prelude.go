@@ -135,10 +135,11 @@ const preludeVarIDBase = 1 << 20
 // standard library left off would put it in messages about code that never
 // mentions it.
 //
-// A source that answers nothing for the URI binds nothing and reports nothing.
-// The solver's own tests infer against no stdlib, and a program owes no
-// diagnostic to a package it does not name. A prelude that loads and reports
-// diagnostics of its own is a different matter, and those reach the run.
+// A source that answers nothing for the URI binds nothing and reports nothing
+// here. The report belongs to resolvePreludeClasses, which names the classes it
+// could not find rather than the package that did not answer, since that is what
+// a reader has to fix. A prelude that loads and reports diagnostics of its own is
+// a different matter, and those reach the run.
 //
 // The prelude has to be self-contained, since a package it imports is inferred
 // while this layer is still empty. See the `std:prelude` entry in

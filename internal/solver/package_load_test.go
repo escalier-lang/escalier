@@ -13,14 +13,44 @@ import (
 // sourceOf returns a ModuleSource over a fixed set of packages, each written as
 // Escalier source. A URI the map does not hold reports the same way a missing
 // file would.
+//
+// `std:prelude` carries minimalPreludeClasses on top of whatever the caller wrote for
+// it, so a test about imports is not also a test about a standard library missing the
+// classes the checker's own rules name.
 func sourceOf(t *testing.T, packages map[string]string) ModuleSource {
 	t.Helper()
+	withPrelude := make(map[string]string, len(packages)+1)
+	for uri, src := range packages {
+		withPrelude[uri] = src
+	}
+	withPrelude[preludeURI] = withPrelude[preludeURI] + minimalPreludeClasses
 	return func(uri string) (*ast.Module, string, error) {
-		src, ok := packages[uri]
+		src, ok := withPrelude[uri]
 		if !ok {
 			return nil, "", fmt.Errorf("no such package")
 		}
 		return parseModuleFiles(t, map[string]string{uri + ".esc": src}), uri + ".esc", nil
+	}
+}
+
+// preludeFallback wraps source so `std:prelude` answers with minimalPreludeClasses when
+// source answers nothing for it. A test writing its own source inline is about the
+// packages it names, not about a standard library missing the classes the checker's own
+// rules read.
+func preludeFallback(t *testing.T, source ModuleSource) ModuleSource {
+	t.Helper()
+	return func(uri string) (*ast.Module, string, error) {
+		if source != nil {
+			if module, path, err := source(uri); err == nil {
+				return module, path, nil
+			}
+		}
+		if uri == preludeURI {
+			return parseModuleFiles(t, map[string]string{
+				"prelude.esc": minimalPreludeClasses,
+			}), "prelude.esc", nil
+		}
+		return nil, "", fmt.Errorf("no such package")
 	}
 }
 
@@ -232,11 +262,15 @@ func TestImportOfAnUnknownPackageReports(t *testing.T) {
 func TestImportWithNoModuleSourceReports(t *testing.T) {
 	t.Parallel()
 
-	_, _, errs := InferModule(parseModule(t, `import "anything"`))
+	_, _, errs := InferModule(parseModule(t, `import "anything"`), nil)
 
-	require.Equal(t,
-		[]string{`cannot resolve import "anything": this inference run was given no module source`},
-		errorMessagesOf(errs))
+	// A nil source answers nothing for `std:prelude` either, so the run reports the
+	// classes it could not find beside the import it could not resolve.
+	require.Equal(t, []string{
+		"the standard library declares no class `Array`, which the checker needs",
+		"the standard library declares no class `Promise`, which the checker needs",
+		`cannot resolve import "anything": this inference run was given no module source`,
+	}, errorMessagesOf(errs))
 }
 
 // An import binds into the importing file's own scope, so a sibling file of the
@@ -340,14 +374,14 @@ func TestBareImportReachesANestedNamespace(t *testing.T) {
 	// The package's own file layout is what puts `sides` in a namespace: a file
 	// under geometry/ declares into the `geometry` namespace, the same rule the
 	// entry module follows.
-	res := InferModuleWithSource(module, func(uri string) (*ast.Module, string, error) {
+	res := InferModuleWithSource(module, preludeFallback(t, func(uri string) (*ast.Module, string, error) {
 		if uri != "shapes" {
 			return nil, "", fmt.Errorf("no such package")
 		}
 		return parseModuleFiles(t, map[string]string{
 			"geometry/shapes.esc": `export val sides: number = 3`,
 		}), "shapes.esc", nil
-	})
+	}))
 
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
@@ -450,7 +484,7 @@ func TestDeclarationsStayVisibleAcrossFiles(t *testing.T) {
 			val p = Point(1)
 			val n: Num = 2
 		`,
-	}), nil)
+	}), preludeFallback(t, nil))
 
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "Color", soltype.Print(inferredValueType(t, res.Scope, "c")))
@@ -665,14 +699,14 @@ func TestBareImportOfAPathBindsItsLastSegment(t *testing.T) {
 		`),
 		// A flat filename, so the package's own export lands at its root rather
 		// than in a namespace derived from the specifier's directory.
-		func(uri string) (*ast.Module, string, error) {
+		preludeFallback(t, func(uri string) (*ast.Module, string, error) {
 			if uri != "lodash/fp" {
 				return nil, "", fmt.Errorf("no such package")
 			}
 			return parseModuleFiles(t, map[string]string{
 				"fp.esc": `export val value: number = 1`,
 			}), "fp.esc", nil
-		},
+		}),
 	)
 
 	require.Empty(t, errorMessagesOf(res.Errors))
