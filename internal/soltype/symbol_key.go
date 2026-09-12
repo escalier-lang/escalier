@@ -10,19 +10,32 @@ import (
 //
 // `interface Iterable<T> { [Symbol.iterator]() -> Iterator<T> }` declares a member
 // under a symbol rather than a string. An object element carries a plain `Name
-// string`, so each such member is stored under a reserved spelling instead: the
-// symbol's own name behind a `@@` prefix, which is how the ECMAScript spec writes
-// one. `[Symbol.iterator]` is the member `@@iterator`, and the printer renders that
-// back as it was written.
+// string` and nothing else, so each such member is stored under a reserved spelling
+// instead: the symbol's own name behind a `@@` prefix. `[Symbol.iterator]` is the
+// member `@@iterator`.
 //
-// This stands in for a `unique symbol` kind rather than being one. It is sound
-// because WellKnownSymbols is fixed and closed and each member of it has a distinct
-// name, so two declarations naming the same symbol agree on the spelling and no two
-// symbols share one. Two things it does not cover. A user cannot mint a symbol yet,
-// and once they can, a minted symbol needs an identity a name cannot carry. A
-// string-literal key spelled `"@@iterator"` collides with the reserved name, which no
-// declaration in the tree writes and nothing rejects. Both retire with the real
-// `unique symbol` kind.
+// The prefix is an internal spelling and never reaches a reader. Every name that does
+// goes through DisplayMemberName or printObjectKeyName, both of which render
+// `[Symbol.iterator]`. The `@@` form is the ECMAScript spec's own editorial notation
+// for a well-known symbol rather than anything a program writes, which is why it is
+// safe here and would not be in output.
+//
+// A key kind beside the name is the better shape, and the rest of the tree already has
+// it: `type_system.ObjTypeKey` carries `{Kind, Str, Num, Sym}`, and `ecma262.MemberKey`
+// carries `{Kind, Name}` and says it mirrors the former. Encoding into the name instead
+// is what costs the collision below. Giving an object element the same kind-plus-payload
+// key retires this file, and #1246 has to touch the key anyway, since a user-minted
+// symbol needs an id where a well-known one needs only a name.
+//
+// This stands in for a `unique symbol` kind rather than being one. It is sound because
+// WellKnownSymbols is fixed and closed and each member of it has a distinct name, so two
+// declarations naming the same symbol agree on the spelling and no two symbols share one.
+//
+// Two things it does not cover. A user cannot mint a symbol yet, and once they can, a
+// minted symbol needs an identity a name cannot carry. And a string-literal key spelling
+// the reserved name would resolve to the same member, so objKeyName declines one rather
+// than storing it — a tax no reserved spelling avoids, since every spelling is a string a
+// program can write. Both retire with the real `unique symbol` kind.
 const wellKnownSymbolPrefix = "@@"
 
 // WellKnownSymbols is every symbol `Symbol` exposes as a property, the closed set the
