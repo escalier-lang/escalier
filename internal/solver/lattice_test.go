@@ -469,3 +469,22 @@ func TestCompareTypeKeepsEqualNominalReferencesEqual(t *testing.T) {
 	require.True(t, equalType(a, b))
 	require.Zero(t, compareType(a, b))
 }
+
+// A class instance and an alias reference are different kinds, so the tie-breaker never
+// sees one of each. compareSameKind asserts the second operand to the first's own type,
+// which two kinds sharing one rank would cross. Sorting a union holding both is what
+// reaches it.
+func TestCompareTypeOrdersAClassAgainstAnAlias(t *testing.T) {
+	num := &soltype.PrimType{Prim: soltype.NumPrim}
+	cls := &soltype.ClassType{Name: "Point", TypeArgs: []soltype.Type{num}}
+	alias := &soltype.AliasType{Name: "Iterator", TypeArgs: []soltype.Type{num}}
+
+	require.NotEqual(t, typeKindOrder(cls), typeKindOrder(alias))
+	ab, ba := compareType(cls, alias), compareType(alias, cls)
+	require.NotZero(t, ab)
+	require.Equal(t, -ab, ba)
+
+	require.NotPanics(t, func() {
+		newUnion(&Context{}, []soltype.Type{alias, cls})
+	})
+}

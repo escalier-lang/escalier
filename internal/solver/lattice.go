@@ -870,11 +870,19 @@ func typeKindOrder(t soltype.Type) int {
 	case *soltype.NegationType:
 		return 13
 	case *soltype.NullType:
-		return 15
+		return 14
 	case *soltype.UndefinedType:
-		return 16
+		return 15
 	case *soltype.SelfType:
+		return 16
+	case *soltype.ClassType:
 		return 17
+	case *soltype.AliasType:
+		return 18
 	}
-	return 18
+	// Every residual shares the last rank. compareSameKind asserts b to a's own type,
+	// so a kind reaching that function needs a rank of its own here: two kinds sharing
+	// one rank and both carrying a branch there would assert across them. The residuals
+	// are safe because none of them has a branch.
+	return 19
 }
