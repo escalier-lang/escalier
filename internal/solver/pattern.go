@@ -702,7 +702,7 @@ func (c *checker) narrowToClass(
 	// Project the scrutinee's own instance when it names the same class, so its concrete
 	// arguments give the field types directly; a downcast falls back to the asserted instance.
 	projected := inst
-	if sc, ok := classCarrier(scrutinee); ok && sc.Name == ct.Name {
+	if sc, ok := c.classCarrier(scrutinee); ok && sc.Name == ct.Name {
 		projected = sc
 	}
 	if body, ok := c.ctx.projectClassBody(projected); ok {
@@ -762,7 +762,7 @@ func (c *checker) narrowToExtractor(blame ast.Node, ctor *soltype.FuncType, scru
 	c.constrain(blame, ctor.Ret, scrutinee)
 	// Read the parameters at the scrutinee's concrete arguments by substituting them
 	// directly, rather than relying on the narrowing constraint above to back-propagate them.
-	if sc, ok := classCarrier(scrutinee); ok {
+	if sc, ok := c.classCarrier(scrutinee); ok {
 		if ret, isClass := ctor.Ret.(*soltype.ClassType); isClass && ret.Name == sc.Name {
 			return ctorParamsAt(ctor.Params, ret, sc)
 		}

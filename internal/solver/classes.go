@@ -844,7 +844,7 @@ func (c *Context) ancestorInstanceWalk(ct *soltype.ClassType, name string, walke
 // rules a direct lookup would drop; a method or getter member reaches valueProp only
 // through a class instance, since class bodies are the only source of those elements.
 func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
-	ct, ok := classCarrier(carrier)
+	ct, ok := c.classCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
 	}
@@ -889,7 +889,7 @@ func (c *checker) projectedMember(lvl int, blame ast.Node, name string, recv, ca
 // MissingPropertyError already live. Only the member kinds that requirement cannot express are
 // intercepted, so this adds a path rather than diverting one.
 func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
-	obj, ok := objectCarrier(carrier)
+	obj, ok := c.objectCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
 	}
@@ -903,13 +903,55 @@ func (c *checker) objectMember(lvl int, blame ast.Node, name string, carrier sol
 	return c.memberValue(lvl, blame, member), true
 }
 
+// memberCarrier peels a receiver to the shape a member lookup dispatches on. A transparent
+// alias is expanded to the type it stands for, and a `typeof v` residual is replaced by the
+// value's type. Both repeat, since an alias may name a `typeof` and a `typeof` may resolve to
+// an alias. A type that is neither is returned unchanged.
+//
+// Each lookup below asserts a kind: objectMember wants an ObjectType, projectedMember a
+// ClassType, classValueMember a class value's object. An alias handle and a `typeof` residual
+// are neither, so without this a receiver annotated `C` declines where the same object written
+// inline resolves. The read then falls through to the structural `{name: fieldVar}`
+// requirement, which is a PropertyElem, and a method or getter under that name is reported as
+// a missing property rather than read.
+//
+// A borrow an expansion uncovers is peeled, so `type M = mut {m(self) -> number}` reads as the
+// object the way the inline `mut {m(self) -> number}` spelling does. The receiver's own borrow
+// is already off by the time a lookup calls this, and the input is returned untouched when it
+// is not a handle, so nothing else loses one.
+//
+// The walk is bounded rather than guarded by the names it has expanded. `type Id<T> = T` over
+// `Id<Id<X>>` reaches the same name twice at different arguments and has to keep going, so a
+// name-keyed guard would cut it short. maxExpandDepth is the evaluator's budget for expansion
+// along one path, and it stops a chain that never settles. Stopping returns the handle, which
+// declines the lookup rather than answering wrongly. An alias that names no type reports that
+// where it is declared, so nothing is lost by declining here.
+func (c *checker) memberCarrier(t soltype.Type) soltype.Type {
+	for range maxExpandDepth {
+		switch cur := t.(type) {
+		case *soltype.AliasType:
+			t = peelBorrows(c.ctx.expandAlias(cur))
+		case *soltype.TypeofType:
+			t = peelBorrows(cur.Ty)
+		default:
+			return t
+		}
+	}
+	return t
+}
+
 // objectCarrier reads the object type a receiver denotes: the type itself, or the single
 // object among an unresolved var's lower bounds. It mirrors classCarrier and
 // classValueCarrier, and like them it declines a var whose bounds disagree, since there is no
 // one member list to read in that case.
-func objectCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
+//
+// Each candidate goes through memberCarrier first, so a receiver written as an alias or a
+// `typeof` reads as the object it stands for. The peel is inside the pick rather than around
+// the call because a receiver reaches here as a variable carrying the alias among its lower
+// bounds, not as the alias itself.
+func (c *checker) objectCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
 	return soleLowerBound(t, func(x soltype.Type) (*soltype.ObjectType, bool) {
-		obj, ok := x.(*soltype.ObjectType)
+		obj, ok := c.memberCarrier(x).(*soltype.ObjectType)
 		return obj, ok
 	})
 }
@@ -987,7 +1029,7 @@ type memberLookup func(*soltype.ObjectType, string) (soltype.ObjTypeElem, bool)
 // depends on the generic-function machinery outside this milestone, so no method carries them
 // yet and memberValue passes the field through unchanged.
 func (c *checker) classBodyMember(lvl int, blame ast.Node, name string, recv, carrier soltype.Type) (pathResult, bool) {
-	obj, ok := carrier.(*soltype.ObjectType)
+	obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType)
 	if !ok {
 		return pathResult{}, false
 	}
@@ -1097,9 +1139,10 @@ func soleLowerBound[T soltype.Type](t soltype.Type, pick func(soltype.Type) (T, 
 // distinct classes such as `Foo(…)` and `Bar(…)`, and a join of the same class at
 // different arguments such as `Box(1)` and `Box("s")`, whose members differ by
 // argument. Member access on such a union rides the nominal-vs-structural rule in C1.
-func classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
+// Each candidate goes through memberCarrier first, for the reason objectCarrier gives.
+func (c *checker) classCarrier(t soltype.Type) (*soltype.ClassType, bool) {
 	return soleLowerBound(t, func(x soltype.Type) (*soltype.ClassType, bool) {
-		ct, ok := x.(*soltype.ClassType)
+		ct, ok := c.memberCarrier(x).(*soltype.ClassType)
 		return ct, ok
 	})
 }
@@ -1173,13 +1216,13 @@ func (c *checker) writeAccessor(name string, carrier soltype.Type) (soltype.ObjT
 // whichever it resolves as, preferring the setter half of a getter/setter pair. It returns
 // found=false for any other receiver.
 func (c *checker) writeMember(name string, carrier soltype.Type) (soltype.ObjTypeElem, bool) {
-	if ct, ok := classCarrier(carrier); ok {
+	if ct, ok := c.classCarrier(carrier); ok {
 		return c.projectedClassMember(ct, ct, name, (*soltype.ObjectType).WriteMember, set.NewSet[string]())
 	}
-	if obj, ok := carrier.(*soltype.ObjectType); ok {
+	if obj, ok := c.memberCarrier(carrier).(*soltype.ObjectType); ok {
 		return obj.WriteMember(name)
 	}
-	if obj, ok := classValueCarrier(carrier); ok {
+	if obj, ok := c.classValueCarrier(carrier); ok {
 		return obj.WriteMember(name)
 	}
 	return nil, false
@@ -1357,7 +1400,7 @@ func receiverClass(t soltype.Type) soltype.RefInner {
 // memberValue. It returns ok=false when the receiver is not a class value or carries no
 // such member, leaving both cases to the structural field-requirement path.
 func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier soltype.Type) (pathResult, bool) {
-	obj, ok := classValueCarrier(carrier)
+	obj, ok := c.classValueCarrier(carrier)
 	if !ok {
 		return pathResult{}, false
 	}
@@ -1372,9 +1415,10 @@ func (c *checker) classValueMember(lvl int, blame ast.Node, name string, carrier
 // carrying a ConstructorElem directly, or a binding var whose lower bounds carry one, the
 // same look-through classCarrier uses for an instance. A var with two different class-value
 // lower bounds is ambiguous and left to the structural path.
-func classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
+// Each candidate goes through memberCarrier first, for the reason objectCarrier gives.
+func (c *checker) classValueCarrier(t soltype.Type) (*soltype.ObjectType, bool) {
 	return soleLowerBound(t, func(x soltype.Type) (*soltype.ObjectType, bool) {
-		obj, ok := x.(*soltype.ObjectType)
+		obj, ok := c.memberCarrier(x).(*soltype.ObjectType)
 		if !ok {
 			return nil, false
 		}
