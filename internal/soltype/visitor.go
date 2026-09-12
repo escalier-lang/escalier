@@ -186,9 +186,9 @@ func (t *KeyofType) Accept(v TypeVisitor, pol Polarity) Type {
 	}
 	cur := descendReplacement(t, e)
 	// The operand walks in the current polarity, a single-child covariant visit. The
-	// residual is inert in M9 PR1a — the visit rebuilds it around a
-	// rewritten operand without reducing the operator, so extrude/coalesce/freshenAbove
-	// carry `keyof T` through untouched. The evaluator's reduction lands in PR1b.
+	// residual is inert in M9 PR1a — the visit rebuilds it around a rewritten operand
+	// without reducing the operator, so extrude/coalesce/freshenAbove carry `keyof T`
+	// through untouched. The evaluator's reduction lands in PR1b.
 	operand := cur.Operand.Accept(v, pol)
 	out := cur
 	if operand != cur.Operand {
@@ -342,10 +342,11 @@ func (t *RecursiveType) Accept(v TypeVisitor, pol Polarity) Type {
 		return v.ExitType(skipReplace(t, e), pol)
 	}
 	cur := descendReplacement(t, e)
-	// The body walks in the current polarity, a single-child covariant visit. A knot stands for the type its body unfolds to, and unfolding introduces no variance
-	// flip. Binder is the binding this node owns rather than a type to rewrite, so it carries
-	// through and every reference to it inside the rewritten body stays bound to it. That split is
-	// how a knot crosses a level boundary intact. extrude freshens the body's inference variables
+	// The body walks in the current polarity, a single-child covariant visit. A knot stands
+	// for the type its body unfolds to, and unfolding introduces no variance flip. Binder is
+	// the binding this node owns rather than a type to rewrite, so it carries through and
+	// every reference to it inside the rewritten body stays bound to it. That split is how a
+	// knot crosses a level boundary intact. extrude freshens the body's inference variables
 	// and leaves the binder alone.
 	body := cur.Body.Accept(v, pol)
 	out := cur

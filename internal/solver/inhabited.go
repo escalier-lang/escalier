@@ -35,7 +35,7 @@ import (
 // A function type holds its body unevaluated, so `{value: number, rest: fn () -> X0}` stops at the
 // thunk and recurses only when a caller forces `rest`.
 //
-// A generator holds its payload unevaluated for the same reason, and a class instance is one of the
+// A generator holds its payload unevaluated for the same reason. A class instance is one of the
 // shapes the walk does not decide, so a `Promise` reads as inhabited whatever its payload is. An
 // async loop that yields to the event loop each lap is legitimate and must not be rejected:
 //

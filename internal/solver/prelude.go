@@ -162,12 +162,13 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 	}
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference. They are
-// what `await`, `for`-`in` and `yield` are checked against, and what the
-// iteration built-ins are written in terms of. Each resolves to an opaque stub,
-// so a reference to one is not an unbound name in a run whose tree supplies no
-// prelude package. A prelude that does load shadows every placeholder it
-// declares, since its exports go into a child of this scope.
+// stdlibTypePlaceholders are the names downstream type rules reference, the ones
+// `for`-`in` and `yield` are checked against and the iteration built-ins are
+// written in terms of. Each resolves to an opaque stub, so a bare reference to one
+// is not an unbound name in a run whose tree supplies no prelude package. A prelude
+// that does load shadows every placeholder it declares, since its exports go into a
+// child of this scope, and `Promise` is one the prelude package declares as a real
+// class.
 var stdlibTypePlaceholders = []string{
 	"Promise",
 	"Iterable",

@@ -783,8 +783,8 @@ func (*RecursiveType) isRefInner()    {}
 // GeneratorType is the external face of a `gen fn`: calling one returns a generator
 // object rather than the body's value. It is a dedicated concrete rather than a
 // reference to a declared class, one stdlib generic typed ahead of library ingestion.
-// Yield is the union of the types the body's `yield` expressions
-// produce, Ret is the body's return type, and Next is the type a `yield` expression
+// Yield is the union of the types the body's `yield` expressions produce, Ret is the
+// body's return type, and Next is the type a `yield` expression
 // evaluates to, the value a caller passes back in through `next(v)`. Yield and Ret
 // are covariant; Next is contravariant, since it is an input the way a parameter is.
 // Async distinguishes an `async gen fn`'s AsyncGenerator from a sync Generator; the
@@ -792,10 +792,9 @@ func (*RecursiveType) isRefInner()    {}
 //
 // Throws is what advancing the generator may raise, the twin of FuncType.Throws for a
 // call that runs no body. A generator body does not run at the call, so what it raises
-// surfaces at `next(v)`
-// rather than to whoever obtained the generator. Like Err it is covariant and a nil
-// Throws is shorthand for `never`, so a generator that cannot raise is the zero value
-// and renders as the three-argument `Generator<Y, R, N>`.
+// surfaces at `next(v)` rather than to whoever obtained the generator. It is covariant,
+// and a nil Throws is shorthand for `never`, so a generator that cannot raise is the
+// zero value and renders as the three-argument `Generator<Y, R, N>`.
 type GeneratorType struct {
 	Yield  Type
 	Ret    Type

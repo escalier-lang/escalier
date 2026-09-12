@@ -92,6 +92,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// resolves — fills in the resolved type params. The handle carries the class's own
 	// type-parameter vars as its arguments.
 	self.TypeArgs = typeParamVars(typeParams)
+	self.Defaults = paramDefaults(typeParams)
 	self.LifetimeArgs = lifetimeParamVars(shell.lifetimeParams)
 	def.Level = lvl - 1
 	def.TypeParams = typeParams

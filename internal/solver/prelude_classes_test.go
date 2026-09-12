@@ -102,3 +102,16 @@ func TestAsyncFnWithoutAPromiseClassReadsAsItsBody(t *testing.T) {
 	require.Empty(t, errorMessagesOf(res.Errors))
 	require.Equal(t, "fn () -> 5", soltype.Print(inferredValueType(t, res.Scope, "f")))
 }
+
+// The body's raise survives the same degradation. An `async fn` normally moves it into
+// the promise's rejection slot, and with no promise to hold it the signature keeps it
+// rather than reading as a function that raises nothing.
+func TestAsyncFnWithoutAPromiseClassKeepsItsRaise(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `val f = async fn () { throw "boom" }`, map[string]string{})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, `fn () -> never throws "boom"`,
+		soltype.Print(inferredValueType(t, res.Scope, "f")))
+}

@@ -834,19 +834,15 @@ func isPrintLeaf(t Type) bool {
 	return false
 }
 
-// printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
-// stored type already matches the surface annotation the user wrote, so the
-// printer needs no special elision pass — `mut {a: {x}}` is stored and printed
-// verbatim.
 // printedArgs renders a nominal reference's type arguments, dropping a trailing slot
 // that carries nothing. `Promise<number, never>` renders as `Promise<number>`, the
 // same suppression printThrowsClause applies to a signature that raises nothing.
 //
-// The slot has to be `never` and default to `never`. That pairing is what marks it as
-// an absence rather than a value: an error or raise slot a declaration leaves empty,
-// which `never` inhabits precisely because nothing does. A default carrying a real
-// type stays on the page, since `Box<T = number>` written bare resolves to
-// `Box<number>` and a reader is owed that.
+// The slot has to be `never` and default to `never`. That pairing is what marks it as an
+// absence rather than a value. It is the shape of an error or raise slot a declaration
+// leaves empty, since no value has type `never`. A default carrying a real type is still
+// shown, because `Box<T = number>` written bare resolves to `Box<number>` and a reader is
+// owed that.
 //
 // Only a trailing run is dropped, since an argument is addressed by position and an
 // earlier one cannot be left out. A reference whose instantiation site had no
@@ -865,6 +861,10 @@ func (p *namedPrinter) printedArgs(typeArgs, defaults []Type) []string {
 	return args
 }
 
+// printType renders a coalesced type. Under the lazy deep-mut form (PR 14) the
+// stored type already matches the surface annotation the user wrote, so the
+// printer needs no special elision pass — `mut {a: {x}}` is stored and printed
+// verbatim.
 func (p *namedPrinter) printType(t Type) string {
 	if p.maxDepth > 0 {
 		if p.depth >= p.maxDepth && !isPrintLeaf(t) {

@@ -778,6 +778,7 @@ func (c *Context) meetClassArgs(a, b *soltype.ClassType) (*soltype.ClassType, bo
 	return &soltype.ClassType{
 		Name:         a.Name,
 		TypeArgs:     args,
+		Defaults:     a.Defaults,
 		LifetimeArgs: a.LifetimeArgs,
 		Lt:           a.Lt,
 		Final:        a.Final,

@@ -335,16 +335,16 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 	// An async fn cannot raise: its body's throws become the promise's rejection, so a
 	// `-> Promise<V, E>` return annotation's E is the only surface that declares them.
-	// It resolves before the body the way a sync clause does, and the three async
-	// locals below carry that one classification to every later consumer. A written E
-	// seeds the sink and
-	// every exceptional exit is checked against it. A nil sink leaves the rejection to
-	// be inferred, minted lazily by throwsSink. A `throws` clause is rejected here.
+	// It resolves before the body the way a sync clause does, and the three async locals
+	// below carry that one classification to every later consumer. A written E seeds the
+	// sink and every exceptional exit is checked against it. A nil sink leaves the
+	// rejection to be inferred, minted lazily by throwsSink. A `throws` clause is
+	// rejected here.
 	var asyncAnnT soltype.Type
 	asyncAnnOK := false
 	// asyncInner and asyncRejects are the annotation's two slots, read once here so the
 	// body check and the throws sink each take theirs. asyncIsPromise is what says the
-	// annotation was a promise at all, since either slot may legitimately be `never`.
+	// annotation was a promise at all, since either slot may legitimately hold `never`.
 	var asyncInner, asyncRejects soltype.Type
 	asyncIsPromise := false
 	if sig.Async {
@@ -511,13 +511,19 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 				c.constrain(node, ret, asyncInner) // body <: declared inner
 			}
 			ret = asyncAnnT
+			throws = nil
 		} else {
 			if sig.Return != nil && asyncAnnOK {
 				c.report(&AsyncReturnNotPromiseError{Return: sig.Return, Fn: node})
 			}
-			ret = c.wrapPromise(node, ret, throws)
+			var wrapped bool
+			ret, wrapped = c.wrapPromise(node, ret, throws)
+			// A run with no `Promise` has no rejection slot to move the raise into, so
+			// the signature keeps it rather than dropping it. See wrapPromise.
+			if wrapped {
+				throws = nil
+			}
 		}
-		throws = nil
 	} else if sig.Return != nil {
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
 			// Only constrain the body when there IS one; a bodyless (declare/ambient)
@@ -1029,20 +1035,21 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 }
 
 // wrapPromise mints the external `Promise<inner, errT>` face of an async function and
-// records its provenance (PromiseWrap) against the function node. errT is the body's
-// throws sink — nil when the body has no exceptional exit — and needs no normalizing
-// here, since readers collapse nil and an explicit `never` through ErrOrNever.
-func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
+// records its provenance against the function node. errT is the body's throws sink, nil
+// when the body has no exceptional exit, and promiseOf resolves that nil to the `never`
+// a promise that cannot reject carries.
+//
+// It reports false when the run's tree declares no `Promise`, handing back the body's
+// value unwrapped. The caller then leaves the body's raise on the function's own Throws,
+// since the rejection slot to move it into is exactly what the run is missing. The
+// signature reads as a synchronous function, which is wrong but loses nothing.
+func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) (soltype.Type, bool) {
 	wrapped, ok := c.ctx.promiseOf(inner, errT)
 	if !ok {
-		// The run's tree declares no `Promise`, so there is nothing to wrap the body's
-		// value in. Hand back the value itself rather than a half-formed promise: the
-		// signature then reads as the body's own type, which is wrong but legible, and
-		// every await against it reports on its own.
-		return inner
+		return inner, false
 	}
 	c.recordProv(wrapped, node, PromiseWrap)
-	return wrapped
+	return wrapped, true
 }
 
 // genSinks is the per-body generator state inferFunc seeds before walking a `gen fn`.

@@ -794,3 +794,18 @@ func TestEmptyNeverSlotIsElided(t *testing.T) {
 		})
 	}
 }
+
+// A class's own handle carries the same defaults a reference to it does, so the
+// constructor the class value exposes renders its return the way a written reference
+// renders. Without them `Task` would read as `{new () -> Task<never, never>}` beside a
+// `Task<number>` a reference renders, one type shown two ways.
+func TestAClassHandleElidesItsOwnEmptySlot(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare class Task<T, E = never> {
+			run(self) -> T,
+			fail(self, reason: E) -> never,
+		}
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "{new () -> Task<never>}", values["Task"])
+}
