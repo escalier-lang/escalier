@@ -378,9 +378,9 @@ export declare class Array<T> {
     constructor(mut self, arrayLength?: number),
     constructor(mut self, arrayLength: number),
     constructor(mut self, ...items: mut Array<T>),
-    fn (arrayLength?: number) -> mut Array<any>,
-    fn<T> (arrayLength: number) -> mut Array<T>,
-    fn<T> (...items: mut Array<T>) -> mut Array<T>,
+    callable(arrayLength?: number) -> mut Array<any>,
+    callable<T>(arrayLength: number) -> mut Array<T>,
+    callable<T>(...items: mut Array<T>) -> mut Array<T>,
     static isArray(arg: unknown) -> boolean,
     static readonly prototype: mut Array<any>,
     /**
@@ -690,7 +690,7 @@ export declare class Symbol {
      * Returns a new unique Symbol value.
      * @param  description Description of the new Symbol object.
      */
-    fn (description?: string | number) -> symbol,
+    callable(description?: string | number) -> symbol,
     /**
      * Returns a Symbol object from the global symbol registry matching the given key if found.
      * Otherwise, returns a new symbol with this key.

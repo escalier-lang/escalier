@@ -94,7 +94,7 @@ export declare class Number {
      */
     static parseInt(string: string, radix?: number) -> number,
     constructor(mut self, value?: unknown),
-    fn (value?: unknown) -> number,
+    callable(value?: unknown) -> number,
     static readonly prototype: Number,
     /** The largest number that can be represented in JavaScript. Equal to approximately 1.79E+308. */
     static readonly MAX_VALUE: number,

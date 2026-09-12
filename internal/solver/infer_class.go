@@ -237,7 +237,7 @@ func classDeclTypes(def *ClassDef, ctors, calls []*soltype.FuncType) []soltype.T
 	}
 	// A call signature is the class's value binding too, and its return is its own rather
 	// than the class handle, so it is walked whole. A parameter written only in
-	// `fn (v: T) -> T` is reached here and nowhere else.
+	// `callable(v: T) -> T` is reached here and nowhere else.
 	for _, fn := range calls {
 		out = append(out, fn)
 	}
@@ -296,7 +296,7 @@ func (c *checker) classValue(
 	if len(ctorFns) > 0 {
 		elems = append(elems, &soltype.ConstructorElem{Signatures: ctorFns})
 	}
-	// A class declaring `fn (…) -> T` is callable as well as constructible, so the value
+	// A class declaring `callable(…) -> T` is callable as well as constructible, so the value
 	// carries a CallableElem beside the constructor. `Symbol("desc")` reads that member and
 	// `Symbol()` alone would read the constructor.
 	if len(callFns) > 0 {
@@ -827,7 +827,7 @@ func (c *checker) resolveScopedTypeRef(scope *Scope, ref *ast.TypeRefTypeAnn, lv
 	return nil, false
 }
 
-// inferCallSignatures types every `fn (…) -> T` member a class declares, in source order, so
+// inferCallSignatures types every `callable(…) -> T` member a class declares, in source order, so
 // an overloaded call signature keeps its arms in the order the source wrote them.
 //
 // A call signature carries no body, so nothing is walked: inferFunc reads the annotation the

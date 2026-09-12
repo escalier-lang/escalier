@@ -869,16 +869,15 @@ modifiers_done:
 		}
 	}
 
-	// A bare `fn` opens a call signature, the unnamed member that makes the class value
-	// callable. This is the reading an object type takes for the same word, and a class
-	// takes it now that a class value can carry the member.
+	// `callable` is a contextual keyword at the start of a class element, the way
+	// `constructor` above is. It opens the unnamed call signature that makes the class value
+	// callable, so the two unnamed members of a class body are spelled alike.
 	//
-	// Two spellings keep the name. A field's punctuation after `fn` makes it the field
-	// `fn`, the reading `constructor` above takes. And any modifier makes it the member's
-	// name, since no modifier applies to a call signature: `get fn(self)` is a getter and
-	// `static fn(self)` a static method, matching `{readonly fn: T}` naming a property.
-	// The quoted key `"fn"(self)` reaches the method, as it does in an object type.
-	if token.Type == Fn && !isStatic && !isAsync && !isGen && !isPrivate && !isReadonly && !isGet && !isSet {
+	// It names a member instead when a field's punctuation follows it, or when a modifier
+	// stands before it, since no modifier applies to a call signature. `callable: T` is a
+	// field and `get callable(self)` a getter.
+	if token.Type == Identifier && token.Value == "callable" &&
+		!isStatic && !isAsync && !isGen && !isPrivate && !isReadonly && !isGet && !isSet {
 		isField := false
 		// nolint: exhaustive
 		switch p.lexer.peek2().Type {
@@ -1476,24 +1475,24 @@ func (p *Parser) enumDecl(start ast.Location, export bool, declare bool) ast.Dec
 	return decl
 }
 
-// parseCallableElem parses an unnamed `fn (...) -> T` call signature in a class body. The `fn`
-// token has not yet been consumed. parseClassElemInner has already ruled out every modifier,
-// since a modifier makes `fn` the member's name instead.
+// parseCallableElem parses an unnamed `callable(...) -> T` call signature in a class body. The
+// `callable` token has not yet been consumed. parseClassElemInner has already ruled out every
+// modifier, since a modifier makes `callable` the member's name instead.
 //
 // It is the class twin of the `fn (...) -> T` member an object type annotation writes, and it
 // reads its parameters, return and `throws` the way a method does.
 func (p *Parser) parseCallableElem(start ast.Location) ast.ClassElem {
-	p.lexer.consume() // consume `fn`
+	p.lexer.consume() // consume `callable`
 	lifetimeParams, typeParams := p.maybeLifetimeAndTypeParams(false)
 
 	params := []*ast.Param{}
 	if next := p.lexer.peek(); next.Type != OpenParen {
-		p.reportError(next.Span, "Expected '(' after 'fn'")
+		p.reportError(next.Span, "Expected '(' after 'callable'")
 	} else {
 		p.lexer.consume() // consume '('
 		// A call signature is reached through the class value rather than an instance, so
 		// `self` names nothing here. The receiver is read and reported rather than skipped,
-		// so `fn (self)` says why instead of failing on the parameter list.
+		// so `callable(self)` says why instead of failing on the parameter list.
 		if receiver := p.selfReceiver(); receiver != nil {
 			p.reportError(receiver.Span_, "call signatures cannot have a `self` receiver")
 			if p.lexer.peek().Type == Comma {

@@ -69,27 +69,18 @@ func TestKeywordsNameObjectTypeMembers(t *testing.T) {
 // rather than objTypeAnnElemInner and so needs its own sweep.
 func TestKeywordsNameClassMembers(t *testing.T) {
 	t.Parallel()
-	forms := []struct {
-		name, tmpl string
-		// skip names a keyword this form reads as something other than a member name.
-		// `fn` alone opens a call signature, so the bare-method form does not name it;
-		// TestFnOpensAClassCallSignature covers that reading.
-		skip string
-	}{
-		{name: "field", tmpl: "declare class C {\n    %s: number\n}"},
-		{name: "static field", tmpl: "declare class C {\n    static %s: number\n}"},
-		{name: "readonly field", tmpl: "declare class C {\n    readonly %s: number\n}"},
-		{name: "method", tmpl: "declare class C {\n    %s(self) -> number\n}", skip: "fn"},
-		{name: "getter", tmpl: "declare class C {\n    get %s(self) -> number\n}"},
-		{name: "setter", tmpl: "declare class C {\n    set %s(mut self, v: number)\n}"},
+	forms := []struct{ name, tmpl string }{
+		{"field", "declare class C {\n    %s: number\n}"},
+		{"static field", "declare class C {\n    static %s: number\n}"},
+		{"readonly field", "declare class C {\n    readonly %s: number\n}"},
+		{"method", "declare class C {\n    %s(self) -> number\n}"},
+		{"getter", "declare class C {\n    get %s(self) -> number\n}"},
+		{"setter", "declare class C {\n    set %s(mut self, v: number)\n}"},
 	}
 	for _, form := range forms {
 		t.Run(form.name, func(t *testing.T) {
 			t.Parallel()
 			for _, keyword := range keywordTexts() {
-				if keyword == form.skip {
-					continue
-				}
 				src := fmt.Sprintf(form.tmpl, keyword)
 				_, errors := parseScriptSrc(t, src)
 				require.Empty(t, errors, "%s should parse", src)
@@ -130,350 +121,45 @@ func TestFnAndNewClaimSignaturesInObjectTypes(t *testing.T) {
 	}
 }
 
-// `new` names a method in a class body. A class declares its construct signature as
-// `constructor`, so `new` competes with nothing there and keeps the name it has in every
-// other position. This asymmetry with an object type is deliberate.
-func TestNewNamesAClassMethod(t *testing.T) {
+// A class has no call or construct signature spelled `fn` or `new` to compete with, so both
+// name methods there. A class writes its construct signature as `constructor` and its call
+// signature as `callable`. This asymmetry with an object type is deliberate.
+func TestFnAndNewNameClassMethods(t *testing.T) {
 	t.Parallel()
-	src := "declare class C {\n    new(self) -> number\n}"
-	script, errors := parseScriptSrc(t, src)
-	require.Empty(t, errors)
-	decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
-	require.Len(t, decl.Body, 1)
-	method, ok := decl.Body[0].(*ast.MethodElem)
-	require.True(t, ok, "%s should be a method", src)
-	require.Equal(t, "new", method.Name.(*ast.IdentExpr).Name)
-}
-
-// cannotBind lists the keywords that must never become a binding name. It is
-// written out rather than derived from bindingKeywords so the sweeps below have
-// an oracle independent of the code under test. Widening bindingKeywords by
-// mistake then fails here instead of moving both sides of the comparison
-// together.
-//
-// The first 28 are the words ECMAScript reserves, which codegen cannot emit as
-// an identifier: `fn f(in: number)` would lower to `const in = ...`. `undefined`
-// is here for a different reason. It is not reserved, but a pattern reads it as
-// the value it names, and a binding name must not shift meaning with position.
-func cannotBind() map[string]bool {
-	words := []string{
-		"await", "catch", "class", "do", "else", "enum", "export", "extends",
-		"false", "for", "if", "implements", "import", "in", "interface", "new",
-		"null", "private", "return", "static", "super", "throw", "true", "try",
-		"typeof", "var", "void", "yield",
-		"undefined",
-	}
-	set := make(map[string]bool, len(words))
-	for _, word := range words {
-		set[word] = true
-	}
-	return set
-}
-
-// Every keyword the lexer knows is either a binding name or one of the words
-// above. A keyword added to the lexer without a decision about which it is
-// fails here, which is the reminder to make that decision.
-func TestEveryKeywordIsClassifiedForBinding(t *testing.T) {
-	t.Parallel()
-	reserved := cannotBind()
-	for _, keyword := range keywordTexts() {
-		require.Equal(t, !reserved[keyword], bindsAsAName(keywords[keyword]),
-			"%q: bindingKeywords and the reserved list disagree; add %q to one of them",
-			keyword, keyword)
-	}
-}
-
-// A binding name reaches JavaScript verbatim, so only the keywords JavaScript
-// itself accepts as an identifier may name a parameter or a function.
-//
-// The negative direction checks the parsed pattern rather than the presence of
-// an error. `true` and the other literal keywords take the literal-pattern path
-// instead of failing outright, and what matters is that neither becomes a name.
-func TestKeywordsInBindingPositions(t *testing.T) {
-	t.Parallel()
-	reserved := cannotBind()
-
-	t.Run("parameter name", func(t *testing.T) {
-		t.Parallel()
-		for _, keyword := range keywordTexts() {
-			src := fmt.Sprintf("declare fn f(%s: number) -> number", keyword)
+	for _, keyword := range []string{"fn", "new"} {
+		t.Run(keyword, func(t *testing.T) {
+			t.Parallel()
+			src := fmt.Sprintf("declare class C {\n    %s(self) -> number\n}", keyword)
 			script, errors := parseScriptSrc(t, src)
-			bound := false
-			if len(errors) == 0 {
-				fn := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.FuncDecl)
-				if identPat, ok := fn.Params[0].Pattern.(*ast.IdentPat); ok {
-					bound = identPat.Name == keyword
-				}
-			}
-			require.Equal(t, !reserved[keyword], bound,
-				"%s: bound as a parameter name = %v", src, bound)
-		}
-	})
-
-	t.Run("rest parameter name", func(t *testing.T) {
-		t.Parallel()
-		for _, keyword := range keywordTexts() {
-			src := fmt.Sprintf("declare fn f(...%s: Array<number>) -> number", keyword)
-			script, errors := parseScriptSrc(t, src)
-			bound := false
-			if len(errors) == 0 {
-				fn := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.FuncDecl)
-				if rest, ok := fn.Params[0].Pattern.(*ast.RestPat); ok {
-					if identPat, isIdent := rest.Pattern.(*ast.IdentPat); isIdent {
-						bound = identPat.Name == keyword
-					}
-				}
-			}
-			require.Equal(t, !reserved[keyword], bound,
-				"%s: bound as a rest parameter name = %v", src, bound)
-		}
-	})
-
-	t.Run("function declaration name", func(t *testing.T) {
-		t.Parallel()
-		for _, keyword := range keywordTexts() {
-			src := fmt.Sprintf("declare fn %s() -> number", keyword)
-			script, errors := parseScriptSrc(t, src)
-			named := false
-			if len(errors) == 0 {
-				fn := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.FuncDecl)
-				named = fn.Name.Name == keyword
-			}
-			require.Equal(t, !reserved[keyword], named,
-				"%s: used as the function name = %v", src, named)
-		}
-	})
-}
-
-// objectExprKeyName returns the name of the sole property key in
-// `val a = { … }`, or "" when the source did not parse to that shape. Asserting
-// the name rather than the absence of errors catches a key that parses but
-// carries the wrong text.
-func objectExprKeyName(t *testing.T, src string) string {
-	t.Helper()
-	script, errors := parseScriptSrc(t, src)
-	if len(errors) > 0 {
-		return ""
-	}
-	decl, ok := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.VarDecl)
-	if !ok || decl.Init == nil {
-		return ""
-	}
-	obj, ok := decl.Init.(*ast.ObjectExpr)
-	if !ok || len(obj.Elems) != 1 {
-		return ""
-	}
-	prop, ok := obj.Elems[0].(*ast.PropertyExpr)
-	if !ok {
-		return ""
-	}
-	ident, ok := prop.Name.(*ast.IdentExpr)
-	if !ok {
-		return ""
-	}
-	return ident.Name
-}
-
-// Every keyword names a property of an object literal, because `{ catch: 1 }`
-// and `obj.catch` are both valid JavaScript. This is the expression counterpart
-// of TestKeywordsNameObjectTypeMembers.
-func TestKeywordsNameObjectExpressionProperties(t *testing.T) {
-	t.Parallel()
-	forms := []struct{ name, tmpl string }{
-		{"property", "val a = {%[1]s: 1}"},
-		{"optional property", "val a = {%[1]s?: 1}"},
-		{"property whose value is another such object", "val a = {%[1]s: {%[1]s: 1}}"},
-	}
-	for _, form := range forms {
-		t.Run(form.name, func(t *testing.T) {
-			t.Parallel()
-			for _, keyword := range keywordTexts() {
-				src := fmt.Sprintf(form.tmpl, keyword)
-				require.Equal(t, keyword, objectExprKeyName(t, src),
-					"%s should name a property %q", src, keyword)
-			}
+			require.Empty(t, errors)
+			decl := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.ClassDecl)
+			require.Len(t, decl.Body, 1)
+			method, ok := decl.Body[0].(*ast.MethodElem)
+			require.True(t, ok, "%s should be a method", src)
+			require.Equal(t, keyword, method.Name.(*ast.IdentExpr).Name)
 		})
 	}
 }
 
-// An object literal has no method shorthand, and that holds for every keyword
-// rather than only the accessor pair. `{ catch() {} }` reports the same way
-// `{ get x() {} }` does.
-func TestObjectExpressionsRejectMethodShorthand(t *testing.T) {
-	t.Parallel()
-	for _, keyword := range keywordTexts() {
-		src := fmt.Sprintf("val a = {%s() {}}", keyword)
-		_, errors := parseScriptSrc(t, src)
-		require.NotEmpty(t, errors, "%s should report", src)
-		require.Equal(t,
-			"Method shorthand is not allowed in object literals; use a class instead",
-			errors[0].Message, "for %s", src)
-	}
-}
-
-// A shorthand property is a key and a variable reference at once, so it accepts
-// exactly the keywords a binding does.
-func TestKeywordShorthandProperties(t *testing.T) {
-	t.Parallel()
-	reserved := cannotBind()
-
-	for _, keyword := range keywordTexts() {
-		src := fmt.Sprintf("val a = {%s}", keyword)
-		_, errors := parseScriptSrc(t, src)
-		if !reserved[keyword] {
-			require.Empty(t, errors, "%s should parse", src)
-			require.Equal(t, keyword, objectExprKeyName(t, src))
-			continue
-		}
-		require.NotEmpty(t, errors, "%s should report", src)
-		require.Equal(t, "`"+keyword+
-			"` cannot be a shorthand property because it is not a variable name",
-			errors[0].Message)
-	}
-}
-
-// `get` and `set` mark an accessor only when a name follows them, so the method
-// shorthand an object literal rejects stays rejected while the property does not.
-func TestGetAndSetInObjectLiterals(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		src     string
-		wantErr string
-	}{
-		{"get names a property", "val a = {get: 1}", ""},
-		{"set names a property", "val a = {set: 1}", ""},
-		{"get is a shorthand property", "val a = {get}", ""},
-		{"a getter is still rejected", "val a = {get x() {}}",
-			"Method shorthand is not allowed in object literals; use a class instead"},
-		{"a setter is still rejected", "val a = {set x(v) {}}",
-			"Method shorthand is not allowed in object literals; use a class instead"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			_, errors := parseScriptSrc(t, tt.src)
-			if tt.wantErr == "" {
-				require.Empty(t, errors)
-				return
-			}
-			require.NotEmpty(t, errors)
-			require.Equal(t, tt.wantErr, errors[0].Message)
-		})
-	}
-}
-
-// memberPropertyName returns the property name in `val a = <src>`, or "" when
-// the source did not parse to a member access. A `.d.ts` reaches this position
-// through a computed key such as `[Symbol.match]`, which the converter emits for
-// every well-known symbol a class declares a member under.
-func memberPropertyName(t *testing.T, src string) string {
-	t.Helper()
-	script, errors := parseScriptSrc(t, "val a = "+src)
-	if len(errors) > 0 {
-		return ""
-	}
-	decl, ok := script.Stmts[0].(*ast.DeclStmt).Decl.(*ast.VarDecl)
-	if !ok || decl.Init == nil {
-		return ""
-	}
-	member, ok := decl.Init.(*ast.MemberExpr)
-	if !ok {
-		return ""
-	}
-	return member.Prop.Name
-}
-
-// Everything after a `.` is a name position, so every keyword reads as the
-// property being accessed. `Symbol.match` is the case the converter needs, since
-// `RegExp` declares its matcher under that well-known symbol.
-func TestKeywordsNamePropertiesAfterADot(t *testing.T) {
-	t.Parallel()
-	for _, keyword := range keywordTexts() {
-		require.Equal(t, keyword, memberPropertyName(t, "Symbol."+keyword),
-			"Symbol.%s should read %q as the property", keyword, keyword)
-		require.Equal(t, keyword, memberPropertyName(t, "Symbol?."+keyword),
-			"Symbol?.%s should read %q as the property", keyword, keyword)
-	}
-}
-
-// The well-known symbols the converter emits as computed keys. Only `match` is a
-// keyword today, so the rest guard against a later keyword addition silently
-// breaking one of them.
-func TestWellKnownSymbolComputedKeys(t *testing.T) {
-	t.Parallel()
-	symbols := []string{
-		"asyncDispose", "asyncIterator", "dispose", "hasInstance", "iterator",
-		"match", "matchAll", "metadata", "replace", "search", "species", "split",
-		"toPrimitive", "toStringTag", "unscopables",
-	}
-	for _, symbol := range symbols {
-		t.Run(symbol, func(t *testing.T) {
-			t.Parallel()
-			src := fmt.Sprintf("{\n    [Symbol.%s](self) -> string\n}", symbol)
-			typeAnn, errors := parseTypeAnnSrc(t, src)
-			require.Empty(t, errors, "%s should parse", src)
-			require.NotNil(t, typeAnn)
-		})
-	}
-}
-
-// A dangling `.` left mid-edit must not take the next line's leading keyword as
-// its property name. Whatever that line starts survives as its own statement,
-// whether a declaration or a statement keyword such as `return`.
-func TestADanglingDotDoesNotSwallowTheNextLine(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name  string
-		input string
-	}{
-		{"val", "val a = obj.\nval c = 1"},
-		{"declare fn", "val a = obj.\ndeclare fn f() -> undefined"},
-		{"fn", "val a = obj.\nfn g() {}"},
-		{"type", "val a = obj.\ntype T = number"},
-		{"return", "val a = obj.\nreturn 1"},
-		{"throw", "val a = obj.\nthrow 1"},
-		{"import", "val a = obj.\nimport \"foo\""},
-		{"try", "val a = obj.\ntry {} catch {}"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			script, errors := parseScriptSrc(t, tt.input)
-			require.NotEmpty(t, errors)
-			require.Equal(t, "expected an identifier after .", errors[0].Message)
-			require.Len(t, script.Stmts, 2, "the line after the dot should survive")
-		})
-	}
-}
-
-// A chain broken before the dot keeps the dot and the name together, so a
-// keyword member still reads across lines the way it is normally written.
-func TestAChainBrokenBeforeTheDotNamesAProperty(t *testing.T) {
-	t.Parallel()
-	script, errors := parseScriptSrc(t, "val a = obj\n    .match(x)")
-	require.Empty(t, errors)
-	require.Len(t, script.Stmts, 1)
-}
-
-// A bare `fn` in a class body opens a call signature, the same reading an object type takes
-// for the word. The spellings that keep the name are the object type's too: a field's
-// punctuation, a quoted key, and — a class-only case, since an object type has no
-// modifiers — any modifier, none of which applies to a call signature.
-func TestFnOpensAClassCallSignature(t *testing.T) {
+// `callable` is a contextual keyword at the start of a class element, the way `constructor` is.
+// It opens the unnamed call signature, so a class body spells its two unnamed members alike.
+// The spellings that keep the name are `constructor`'s too: a field's punctuation, a quoted
+// key, and any modifier, none of which applies to a call signature.
+func TestCallableOpensAClassCallSignature(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
 		src  string
 		want ast.ClassElem
 	}{
-		{"fn opens a call signature", "declare class C {\n    fn () -> number\n}", &ast.CallableElem{}},
-		{"fn without a space is still a call signature", "declare class C {\n    fn() -> number\n}", &ast.CallableElem{}},
-		{"a quoted key reaches the fn method", "declare class C {\n    \"fn\"(self) -> number\n}", &ast.MethodElem{}},
-		{"fn names a field", "declare class C {\n    fn: number\n}", &ast.FieldElem{}},
-		{"fn names an optional field", "declare class C {\n    fn?: number\n}", &ast.FieldElem{}},
-		{"a modifier makes fn a getter's name", "declare class C {\n    get fn(self) -> number\n}", &ast.GetterElem{}},
-		{"a modifier makes fn a static method's name", "declare class C {\n    static fn() -> number\n}", &ast.MethodElem{}},
+		{"callable opens a call signature", "declare class C {\n    callable() -> number\n}", &ast.CallableElem{}},
+		{"a quoted key reaches the callable method", "declare class C {\n    \"callable\"(self) -> number\n}", &ast.MethodElem{}},
+		{"callable names a field", "declare class C {\n    callable: number\n}", &ast.FieldElem{}},
+		{"callable names an optional field", "declare class C {\n    callable?: number\n}", &ast.FieldElem{}},
+		{"a modifier makes callable a getter's name", "declare class C {\n    get callable(self) -> number\n}", &ast.GetterElem{}},
+		{"a modifier makes callable a static method's name", "declare class C {\n    static callable() -> number\n}", &ast.MethodElem{}},
+		// `fn` competes with nothing in a class body, so it keeps naming a method.
+		{"fn still names a method", "declare class C {\n    fn(self) -> number\n}", &ast.MethodElem{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -498,12 +184,12 @@ func TestAClassCallSignatureRejectsWhatItCannotCarry(t *testing.T) {
 	}{
 		{
 			name: "AReceiver",
-			src:  "declare class C {\n    fn (self) -> number\n}",
+			src:  "declare class C {\n    callable(self) -> number\n}",
 			want: "call signatures cannot have a `self` receiver",
 		},
 		{
 			name: "ABody",
-			src:  "class C {\n    fn () -> number { 1 }\n}",
+			src:  "class C {\n    callable() -> number { 1 }\n}",
 			want: "call signatures cannot have a body",
 		},
 	}

@@ -460,14 +460,12 @@ func (p *Printer) printClassElem(elem ast.ClassElem) {
 			p.printBlock(e.Fn.Body)
 		}
 	case *ast.CallableElem:
-		// A call signature is unnamed, so `fn` is the whole of what precedes its
-		// parameters, and it carries no receiver and no body. The space before the
-		// parameter list is what separates `fn (…)` from a method named `fn`, and it is
-		// the spelling an object type's own call signature prints.
-		p.writeString("fn")
-		p.printGenericParams(e.Fn.LifetimeParams, e.Fn.TypeParams)
-		p.space()
-		p.printMethodSigNoGenerics(&e.Fn.FuncSig)
+		// A call signature is unnamed, so `callable` is the whole of what precedes its
+		// parameters, and it carries no receiver and no body. It prints the way
+		// `constructor` above does, which is what pairs the two unnamed members of a class
+		// body.
+		p.writeString("callable")
+		p.printMethodSig(&e.Fn.FuncSig, nil)
 	}
 }
 
@@ -499,18 +497,6 @@ func (p *Printer) printSetterSig(sig *ast.FuncSig, recv *ast.MethodReceiver) {
 // false only for a class setter, whose grammar has no return slot.
 func (p *Printer) printMethodSigParts(sig *ast.FuncSig, recv *ast.MethodReceiver, withReturn bool) {
 	p.printGenericParams(sig.LifetimeParams, sig.TypeParams)
-	p.printMethodSigBody(sig, recv, withReturn)
-}
-
-// printMethodSigNoGenerics prints a signature's parameter list, return and `throws` with the
-// generic parameters already written by the caller. A class call signature writes them itself,
-// so it can put the space between them and the parameter list that `fn (…)` needs.
-func (p *Printer) printMethodSigNoGenerics(sig *ast.FuncSig) {
-	p.printMethodSigBody(sig, nil, true)
-}
-
-// printMethodSigBody prints everything after the generic parameters.
-func (p *Printer) printMethodSigBody(sig *ast.FuncSig, recv *ast.MethodReceiver, withReturn bool) {
 	p.writeString("(")
 	first := true
 	params := sig.Params

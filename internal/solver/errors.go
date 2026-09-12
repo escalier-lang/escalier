@@ -1785,7 +1785,7 @@ func (e *SubclassConstructorRequiredError) Message() string {
 }
 
 // CallSignatureRequiresDeclareError fires when a class with a body declares a
-// `fn (…) -> T` call signature. Such a class compiles to a JavaScript `class`, and a
+// `callable(…) -> T` call signature. Such a class compiles to a JavaScript `class`, and a
 // `class` is never callable, so the signature would describe something the output cannot
 // be. An ambient `declare class` describes a value the runtime already provides, which may
 // be a callable object, so it carries one.

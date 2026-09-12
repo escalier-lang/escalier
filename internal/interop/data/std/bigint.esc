@@ -88,7 +88,7 @@ export declare class BigInt {
     /** Returns the primitive value of the specified object. */
     valueOf(self) -> bigint,
     readonly [Symbol.toStringTag]: "BigInt",
-    fn (value: bigint | boolean | number | string) -> bigint,
+    callable(value: bigint | boolean | number | string) -> bigint,
     static readonly prototype: BigInt,
     /**
      * Interprets the low bits of a BigInt as a 2's-complement signed integer.

@@ -235,7 +235,7 @@ export declare class Date {
      * @param ms A number from 0 to 999 that specifies the milliseconds.
      */
     constructor(mut self, year: number, monthIndex: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number),
-    fn () -> string,
+    callable() -> string,
     static readonly prototype: Date,
     /**
      * Parses a string containing a date, and returns the number of milliseconds between that date and midnight, January 1, 1970.
