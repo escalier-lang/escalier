@@ -1554,12 +1554,6 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			return false
 		}
 		return equalTypeSliceWith(a.TypeArgs, b.TypeArgs, ctx)
-	case *soltype.PromiseType:
-		b, ok := b.(*soltype.PromiseType)
-		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises
-		// differing only in whether the rejection slot was written compare equal here.
-		return ok && equalTypeWith(a.Inner, b.Inner, ctx) &&
-			equalTypeWith(a.ErrOrNever(), b.ErrOrNever(), ctx)
 	case *soltype.GeneratorType:
 		b, ok := b.(*soltype.GeneratorType)
 		// ThrowsOrNever reads both sides through the nil-is-never collapse, so two

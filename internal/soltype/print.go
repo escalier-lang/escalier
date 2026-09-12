@@ -645,11 +645,6 @@ func freeTypeVars(t Type) []*TypeVarType {
 			walk(t.Operand)
 		case *RecursiveType:
 			walk(t.Body)
-		case *PromiseType:
-			walk(t.Inner)
-			if t.Err != nil {
-				walk(t.Err)
-			}
 		case *GeneratorType:
 			walk(t.Yield)
 			walk(t.Ret)
@@ -1064,15 +1059,6 @@ func (p *namedPrinter) printType(t Type) string {
 		// A reference to the enclosing knot's binder renders as that binder's bare name, so
 		// `μX0.{next: X0}` names one binding twice.
 		return t.DisplayName()
-	case *PromiseType:
-		// A promise that can reject renders its rejection type as a second argument,
-		// `Promise<T, E>`. A promise that cannot reject resolves its Err to `never` and
-		// renders the one-argument `Promise<T>`, the same suppression printThrowsClause
-		// applies to a signature that raises nothing.
-		if t.Rejects() {
-			return "Promise<" + p.printType(t.Inner) + ", " + p.printType(t.Err) + ">"
-		}
-		return "Promise<" + p.printType(t.Inner) + ">"
 	case *GeneratorType:
 		// A generator that can raise renders its raise type as a fourth argument,
 		// `Generator<Y, R, N, E>`, the same shape `Promise<T, E>` takes. One that cannot

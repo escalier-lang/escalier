@@ -209,7 +209,7 @@ func (v *unguardedRefCollector) ExitType(t soltype.Type, _ soltype.Polarity) sol
 // lap through one emits nothing either.
 func guardsEveryOperand(t soltype.Type) bool {
 	switch t.(type) {
-	case *soltype.FuncType, *soltype.RefType, *soltype.PromiseType, *soltype.GeneratorType,
+	case *soltype.FuncType, *soltype.RefType, *soltype.GeneratorType,
 		*soltype.TemplateLitType, *soltype.ClassType, *soltype.AliasType:
 		return true
 	default:

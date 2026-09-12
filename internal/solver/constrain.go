@@ -1339,20 +1339,6 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 			return c.constrain(body, sup, seen, mutCtx)
 		}
 		// A ClassType against any other concrete falls through to the var arms below.
-	case *soltype.PromiseType:
-		if sup, ok := super.(*soltype.PromiseType); ok {
-			// PromiseType is covariant in its Inner: Promise<L> <: Promise<R> iff
-			// L <: R. No auto-flatten — `await Promise<Promise<T>>` yields
-			// `Promise<T>` (Awaited<T> lands in M9). When the two sides are unrelated
-			// concretes (e.g. Promise<L> <: Tuple), fall through to the generic
-			// CannotConstrainError below, matching the function/tuple/record arms.
-			// A promise's payload is its own annotation context, so the flag resets.
-			errs := c.constrain(sub.Inner, sup.Inner, seen, false)
-			// The rejection type is covariant like the payload, the same rule the
-			// function arm applies to Throws. A non-rejecting sub carries `never`,
-			// which constrain short-circuits, so it satisfies every super.
-			return append(errs, c.constrain(sub.ErrOrNever(), sup.ErrOrNever(), seen, false)...)
-		}
 	case *soltype.GeneratorType:
 		// Yield and Ret are covariant, what the generator hands out; Next is
 		// contravariant, the value a caller sends back in through `next(v)`, so the

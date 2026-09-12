@@ -471,14 +471,6 @@ func compareSameKind(a, b soltype.Type) int {
 			return boolOrder(a.Inexact) - boolOrder(b.Inexact)
 		}
 		return compareObjectFields(a, b)
-	case *soltype.PromiseType:
-		b := b.(*soltype.PromiseType)
-		if c := compareType(a.Inner, b.Inner); c != 0 {
-			return c
-		}
-		// ErrOrNever reads both sides through the nil-is-never collapse, so two promises
-		// differing only in whether the rejection slot was written compare equal here.
-		return compareType(a.ErrOrNever(), b.ErrOrNever())
 	case *soltype.GeneratorType:
 		b := b.(*soltype.GeneratorType)
 		if a.Async != b.Async {
@@ -814,18 +806,16 @@ func typeKindOrder(t soltype.Type) int {
 		return 7
 	case *soltype.ObjectType:
 		return 8
-	case *soltype.PromiseType:
-		return 9
 	case *soltype.GeneratorType:
-		return 10
+		return 9
 	case *soltype.FuncType:
-		return 11
+		return 10
 	case *soltype.UnionType:
-		return 12
+		return 11
 	case *soltype.IntersectionType:
-		return 13
+		return 12
 	case *soltype.NegationType:
-		return 14
+		return 13
 	case *soltype.NullType:
 		return 15
 	case *soltype.UndefinedType:

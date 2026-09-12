@@ -31,6 +31,12 @@ type Context struct {
 	// one and every such rule declines.
 	arrayClass string
 
+	// promiseClass is the qualified class name the prelude's `Promise` binds to, read
+	// off the prelude scope once per run. The await rule and the async return wrap
+	// build an instance of it, and constrain checks one against another through the
+	// ordinary nominal rule. It is empty when the run resolved no `Promise`.
+	promiseClass string
+
 	// lifetimeCounter mints the next LifetimeVar id (M4 D1). Lifetimes are a
 	// SECOND bounded sort solved by the same machinery as types: a fresh lifetime
 	// gets the next id here, its bounds are extended only through

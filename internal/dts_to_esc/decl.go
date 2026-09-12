@@ -326,11 +326,10 @@ const raiseParamName = "E"
 // where the TypeScript declaration has no slot for it. The solver reads
 // `Promise<T, E>` and `Generator<Y, R, N, E>`.
 //
-// The parameter defaults to `never`, the bottom of the raise lattice and
-// the same thing the solver reads when a reference omits the argument
-// entirely: `soltype.PromiseType` treats a nil `Err` and an explicit
-// `never` as one value. So `-> Promise<Response>` in a generated file
-// means what the declaration says it means.
+// The parameter defaults to `never`, the bottom of the raise lattice, so
+// a reference that omits the argument reads the same as one that writes
+// `never`. `-> Promise<Response>` in a generated file therefore means
+// what the declaration says it means.
 //
 // `never` is also the identity of the join that combines raise types, so
 // filling the slot with a derived rejects set later only ever adds to

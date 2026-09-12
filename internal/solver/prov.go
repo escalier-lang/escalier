@@ -79,7 +79,7 @@ const (
 	AnnotationType                          // a fresh PrimType from resolveTypeAnn (number/string/boolean)
 	WildcardAnnotation                      // a fresh var from a `_` type annotation (resolveTypeAnn), the inner the surrounding annotation infers
 	AwaitResult                             // a fresh `await`-result var from inferAwait
-	PromiseWrap                             // a PromiseType minted by wrapping an async function's external return
+	PromiseWrap                             // a `Promise` instance minted by wrapping an async function's external return
 	GeneratorWrap                           // a GeneratorType minted by wrapping a gen function's external return
 	ReturnJoin                              // a fresh return-join var from inferFunc (the union of every return point)
 	IfElseBranch                            // a fresh branch-join var from inferIfElse (the union of cons / alt)

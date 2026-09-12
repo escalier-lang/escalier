@@ -116,7 +116,7 @@ func (c *checker) preludeScope() *Scope {
 	}
 	c.prelude = sharedPrelude().Child()
 	c.bindPreludeExports(c.prelude)
-	c.resolveArrayClass()
+	c.resolvePreludeClasses()
 	return c.prelude
 }
 

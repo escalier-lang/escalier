@@ -294,14 +294,6 @@ func TestFinitelyInhabited(t *testing.T) {
 			want: true,
 		},
 		{
-			// μX0.Promise<X0>
-			name: "a Promise's payload is not built with the value around it",
-			t: muKnot(0, "X0", func(ref *soltype.RecursiveVarType) soltype.Type {
-				return &soltype.PromiseType{Inner: ref}
-			}),
-			want: true,
-		},
-		{
 			// μX0.Array<X0>
 			//
 			// A class instance is one of the shapes the walk does not decide, so it reads as

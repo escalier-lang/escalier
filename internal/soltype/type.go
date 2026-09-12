@@ -749,13 +749,9 @@ type RefType struct {
 	Inner RefInner
 }
 
-// RefInner is the sealed set of types that may sit inside a RefType. PrimType /
-// LitType / FuncType / PromiseType are deliberately excluded: a promise or function
-// reference is shared, not borrowed, and a `mut` primitive is a JS no-op. Excluding
-// PromiseType blocks borrowing the promise itself — there is no `mut Promise` or
-// `'a Promise`. It does NOT block the promise's payload from being a borrow:
-// `Promise<mut 'a Point>` is a PromiseType whose type argument is a RefType, which
-// is well-formed.
+// RefInner is the sealed set of types that may sit inside a RefType. PrimType,
+// LitType and FuncType are deliberately excluded: a function reference is shared, not
+// borrowed, and a `mut` primitive is a JS no-op.
 //
 // M4 admits ObjectType / TupleType / TypeVarType. The TypeVarType arm covers a
 // borrow whose content is still an inference variable; the content invariant — that
@@ -784,59 +780,19 @@ func (*ClassType) isRefInner()        {}
 func (*AliasType) isRefInner()        {}
 func (*RecursiveType) isRefInner()    {}
 
-// PromiseType is the result of an `async fn` and the requirement of an `await`.
-// M3 carries it as a dedicated concrete (not a generic TypeRefType), keeping the
-// scope narrow: it is the one stdlib generic the milestone needs typed (Iterable/
-// Generator wait until M5+). The real, alias-driven `Promise<T>` lookup arrives
-// with library type ingestion in M7.5 — the alias/`TypeRef` resolution machinery
-// it uses lands in M7, the real stdlib structure in M7.5; until then, an
-// `async fn () -> T` mints a
-// PromiseType{T} externally and `await e` constrains `e <: PromiseType{U}` for a
-// fresh U. Inner is covariant under subtyping (Promise<L> <: Promise<R> iff
-// L <: R) and the `await` rule does NOT recursively flatten (so awaiting
-// `Promise<Promise<T>>` yields `Promise<T>`, matching the milestone's
-// no-auto-flatten contract — flattening is `Awaited<T>`, M9).
-//
-// Err is the type the promise rejects with, the twin of FuncType.Throws for the
-// asynchronous exceptional exit. What an `async fn`'s body throws lands here rather
-// than on the function's own Throws, since a caller observes the rejection only by
-// awaiting the promise. Like Inner it is covariant, and like FuncType.Throws a nil
-// Err is shorthand for `never`; ErrOrNever collapses nil and an explicit `never`
-// so no reader tells them apart. A promise that cannot reject is therefore the
-// zero value and renders as the one-argument `Promise<T>`.
-type PromiseType struct {
-	Inner Type
-	Err   Type
-}
-
-// ErrOrNever returns the type t may reject with, resolving the nil shorthand to the
-// `never` it stands for, so callers compare one canonical value.
-func (t *PromiseType) ErrOrNever() Type {
-	if t.Err == nil {
-		return &NeverType{}
-	}
-	return t.Err
-}
-
-// Rejects reports whether t can reject: its Err carries something other than the nil
-// shorthand or an explicit `never`. The printer and the solver's raised-tracking both
-// ask this question, so it lives here to keep their answers locked together.
-func (t *PromiseType) Rejects() bool {
-	return t.Err != nil && !isNever(t.Err)
-}
-
 // GeneratorType is the external face of a `gen fn`: calling one returns a generator
-// object rather than the body's value. It is a dedicated concrete for the reason
-// PromiseType is: one stdlib generic the milestone needs typed ahead of library
-// ingestion in M7.5. Yield is the union of the types the body's `yield` expressions
+// object rather than the body's value. It is a dedicated concrete rather than a
+// reference to a declared class, one stdlib generic typed ahead of library ingestion.
+// Yield is the union of the types the body's `yield` expressions
 // produce, Ret is the body's return type, and Next is the type a `yield` expression
 // evaluates to, the value a caller passes back in through `next(v)`. Yield and Ret
 // are covariant; Next is contravariant, since it is an input the way a parameter is.
 // Async distinguishes an `async gen fn`'s AsyncGenerator from a sync Generator; the
 // two are unrelated under subtyping. Yield, Ret, and Next are always non-nil.
 //
-// Throws is what advancing the generator may raise, the twin of PromiseType.Err. A
-// generator body does not run at the call, so what it raises surfaces at `next(v)`
+// Throws is what advancing the generator may raise, the twin of FuncType.Throws for a
+// call that runs no body. A generator body does not run at the call, so what it raises
+// surfaces at `next(v)`
 // rather than to whoever obtained the generator. Like Err it is covariant and a nil
 // Throws is shorthand for `never`, so a generator that cannot raise is the zero value
 // and renders as the three-argument `Generator<Y, R, N>`.
@@ -1360,7 +1316,6 @@ func (*FuncType) isType()            {}
 func (*TupleType) isType()           {}
 func (*ObjectType) isType()          {}
 func (*RefType) isType()             {}
-func (*PromiseType) isType()         {}
 func (*GeneratorType) isType()       {}
 func (*NullType) isType()            {}
 func (*UndefinedType) isType()       {}
@@ -1440,7 +1395,7 @@ func LevelOf(t Type) int {
 	case *KeyofType:
 		// A residual operator's level is its operand's, so a `keyof T` over an out-of-level
 		// type parameter lifts the level and the freshener/extruder prune descends to
-		// freshen the operand, exactly as the single-child PromiseType arm does.
+		// freshen the operand.
 		return LevelOf(t.Operand)
 	case *IndexType:
 		// An indexed-access residual's level is the max over its two operands, so a `T[K]`
@@ -1449,7 +1404,7 @@ func LevelOf(t Type) int {
 		return max(LevelOf(t.Target), LevelOf(t.Index))
 	case *TypeofType:
 		// A `typeof x` query's level is its resolved value type's, the same single-child rule
-		// KeyofType and PromiseType follow.
+		// KeyofType follows.
 		return LevelOf(t.Ty)
 	case *CondType:
 		// A conditional residual's level is the max over its four operands, so an out-of-level
@@ -1486,15 +1441,10 @@ func LevelOf(t Type) int {
 		// solver generalizes, so it contributes nothing. That split is what carries a knot across a
 		// level boundary intact: the body's variables are freshened and the binder is left alone.
 		return LevelOf(t.Body)
-	case *PromiseType:
-		// A promise's level is the max of its payload's and its rejection type's, so an
-		// out-of-level Err lifts the level and the freshener/extruder prune descends to
-		// freshen it, the same reason the FuncType arm folds in its Throws.
-		return max(LevelOf(t.Inner), throwsLevel(t.Err))
 	case *GeneratorType:
 		// A generator's level is the max over its slots, so an out-of-level `Yield`, `Ret`,
 		// `Next`, or `Throws` lifts the level and the freshener/extruder prune descends into
-		// all of them, the same reason the PromiseType arm folds in its `Err`.
+		// all of them, the same reason the FuncType arm folds in its `Throws`.
 		return max(
 			max(LevelOf(t.Yield), LevelOf(t.Ret)),
 			max(LevelOf(t.Next), throwsLevel(t.Throws)),

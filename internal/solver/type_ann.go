@@ -58,70 +58,21 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 	case *ast.LitTypeAnn:
 		return c.resolveLitTypeAnn(ta)
 	case *ast.TypeRefTypeAnn:
-		// Resolve through the type scope first so a user-defined alias, class, or type
-		// parameter takes precedence over the built-in Promise stub below. A bare alias or
-		// class reference resolves here; the prelude Promise placeholder is not a class, so
-		// a `Promise<T>` reference with no user binding does not resolve here and reaches
-		// the stub.
+		// Resolve through the type scope first, which covers a user-defined alias, class,
+		// or type parameter, and the classes the prelude package declares. A written
+		// `Promise<T, E>` resolves there, so the built-in forms below are the ones the
+		// prelude carries as opaque placeholders rather than as classes.
 		if t, ok := c.resolveScopedTypeRef(scope, ta, lvl); ok {
 			return t, true
 		}
-		// The built-in Promise<T>. The prelude seeds Promise as an opaque placeholder, so
-		// an `async fn () -> Promise<T>` annotation resolves here. Any other name or arity
-		// reports unsupported with a `never` placeholder so the caller can recover by
-		// keeping the inferred type.
-		if ast.QualIdentToString(ta.Name) == "Promise" && (len(ta.TypeArgs) == 1 || len(ta.TypeArgs) == 2) {
-			// A lifetime-annotated Promise (`'a Promise<T>` or `Promise<'a, T>`) is not
-			// supported: M3's PromiseType carries no lifetime, so silently accepting it
-			// would drop the lifetime. Reject it as an unsupported feature rather than
-			// coercing to a plain Promise<T>. (Lifetimes on referenced types land with
-			// the wider TypeRef/lifetime work.)
-			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
-				return c.reportUnsupportedFeature(ta, "lifetime annotation on Promise"), false
-			}
-			inner, ok := c.resolveTypeAnn(scope, ta.TypeArgs[0], lvl)
-			if !ok {
-				// The inner annotation was unsupported and already reported its own
-				// error. The Promise itself IS supported, so keep the WRAPPER rather
-				// than collapsing the whole annotation to the bare-var recovery the
-				// caller applies on ok=false: `p: Promise<bad>` should stay Promise-
-				// shaped (so `await p` and the rendered signature read as a Promise),
-				// not degrade to an unconstrained var. Recover the inner to a fresh var
-				// — cascade-safe in BOTH directions (an initializer flowing into
-				// `Promise<freshVar>` constrains the var without failing; a `never` or
-				// `unknown` inner would instead cascade a spurious `<: never` / `<:
-				// unknown`, since constrain has no rule for either as an input).
-				//
-				// PR8 (planning/simple_sub/m3-implementation-plan.md) deliberately
-				// KEEPS this fresh var rather than substituting its ErrorType sentinel:
-				// PR8 repoints only the no-good-type recovery, and this one yields a
-				// strictly better type — the fresh var generalizes (`Promise<_>` ⇒
-				// `Promise<T0>`) where ErrorType would freeze it to `Promise<error>`.
-				inner = c.freshAt(lvl)
-			}
-			// The optional second argument names the rejection type, `Promise<T, E>`. An
-			// unwritten one leaves Err nil, the shorthand for a promise that cannot
-			// reject. A bad second argument recovers to a fresh var for the reason the
-			// payload does above.
-			var errT soltype.Type
-			if len(ta.TypeArgs) == 2 {
-				errT, ok = c.resolveTypeAnn(scope, ta.TypeArgs[1], lvl)
-				if !ok {
-					errT = c.freshAt(lvl)
-				}
-			}
-			t := &soltype.PromiseType{Inner: inner, Err: errT}
-			c.recordProv(t, ta, AnnotationType)
-			return t, true
-		}
 		// The built-in Generator and AsyncGenerator, the external face of a `gen fn` /
-		// `async gen fn`. Like Promise they resolve here only when no user binding shadows
-		// the prelude placeholder, and a lifetime annotation is rejected rather than silently
-		// dropped. Y is what the body yields, R what it returns, and N what a `yield`
-		// evaluates to; all three are required. The optional fourth argument names what
-		// advancing the generator may raise, `Generator<Y, R, N, E>`, the same shape
-		// `Promise<T, E>` takes. An unwritten one leaves Throws nil, the shorthand for a
-		// generator that cannot raise.
+		// `async gen fn`. The prelude carries each as an opaque placeholder rather than a
+		// class, so a reference reaches here once no user binding shadows it, and a
+		// lifetime annotation is rejected rather than silently dropped. Y is what the body
+		// yields, R what it returns, and N what a `yield` evaluates to; all three are
+		// required. The optional fourth argument names what advancing the generator may
+		// raise, `Generator<Y, R, N, E>`. An unwritten one leaves Throws nil, the shorthand
+		// for a generator that cannot raise.
 		if name := ast.QualIdentToString(ta.Name); (name == "Generator" || name == "AsyncGenerator") &&
 			(len(ta.TypeArgs) == 3 || len(ta.TypeArgs) == 4) {
 			if len(ta.LifetimeArgs) > 0 || ta.Lifetime != nil {
@@ -131,10 +82,9 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			for i, arg := range ta.TypeArgs {
 				slot, ok := c.resolveTypeAnn(scope, arg, lvl)
 				if !ok {
-					// Recover the slot to a fresh var and keep the Generator wrapper, for the
-					// reason the Promise arm above gives: the wrapper itself is supported, and
-					// a fresh var is cascade-safe where `never` or `unknown` would provoke a
-					// second failure.
+					// Recover the slot to a fresh var and keep the Generator wrapper. The
+					// wrapper itself is supported, and a fresh var is cascade-safe where
+					// `never` or `unknown` would provoke a second failure.
 					slot = c.freshAt(lvl)
 				}
 				slots[i] = slot
@@ -150,10 +100,11 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 			c.recordProv(t, ta, AnnotationType)
 			return t, true
 		}
-		// `Array` needs no arm of its own. The prelude package declares it and
-		// preludeScope binds it into an ancestor of every scope a walk runs in, so
-		// resolveScopedTypeRef above answers a written `Array<T>` whether or not the
-		// file imported one.
+		// `Array` and `Promise` need no arm of their own. The prelude package declares
+		// each and preludeScope binds it into an ancestor of every scope a walk runs in,
+		// so resolveScopedTypeRef above answers a written `Array<T>` or `Promise<T, E>`
+		// whether or not the file imported one. A bad argument count on either is the
+		// class's own arity report.
 
 		if t, ok := c.resolveStringIntrinsic(scope, ta, lvl); ok {
 			return t, true
@@ -161,19 +112,8 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		if t, ok := c.resolveExactnessIntrinsic(scope, ta, lvl); ok {
 			return t, true
 		}
-		// Nothing claimed the name. Either it names no declaration at all, or it names
-		// the built-in Promise with an argument count it does not accept. Promise takes
-		// exactly one, and a user-defined Promise would have resolved through the scope
-		// before reaching here, so the name here is the built-in.
-		name := ast.QualIdentToString(ta.Name)
-		if name == "Promise" {
-			c.report(&TypeArgArityMismatchError{
-				Ref: ta, Kind: BuiltinDeclKind, Name: name,
-				Required: 1, Total: 1, Got: len(ta.TypeArgs),
-			})
-			return &soltype.NeverType{}, false
-		}
-		return c.report(&UnknownTypeError{Ref: ta, Name: name}), false
+		// Nothing claimed the name, so it names no declaration the run can reach.
+		return c.report(&UnknownTypeError{Ref: ta, Name: ast.QualIdentToString(ta.Name)}), false
 	case *ast.ObjectTypeAnn:
 		return c.resolveObjectTypeAnn(scope, ta, lvl)
 	case *ast.TupleTypeAnn:

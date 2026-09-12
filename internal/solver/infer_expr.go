@@ -335,25 +335,30 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 	}
 	// An async fn cannot raise: its body's throws become the promise's rejection, so a
 	// `-> Promise<V, E>` return annotation's E is the only surface that declares them.
-	// It resolves before the body the way a sync clause does, and asyncPromise carries
-	// that one classification to every later consumer. A written E seeds the sink and
+	// It resolves before the body the way a sync clause does, and the three async
+	// locals below carry that one classification to every later consumer. A written E
+	// seeds the sink and
 	// every exceptional exit is checked against it. A nil sink leaves the rejection to
 	// be inferred, minted lazily by throwsSink. A `throws` clause is rejected here.
 	var asyncAnnT soltype.Type
 	asyncAnnOK := false
-	var asyncPromise *soltype.PromiseType
+	// asyncInner and asyncRejects are the annotation's two slots, read once here so the
+	// body check and the throws sink each take theirs. asyncIsPromise is what says the
+	// annotation was a promise at all, since either slot may legitimately be `never`.
+	var asyncInner, asyncRejects soltype.Type
+	asyncIsPromise := false
 	if sig.Async {
 		if sig.Return != nil {
 			asyncAnnT, asyncAnnOK = c.resolveTypeAnn(declScope, sig.Return, lvl)
-			if promise, isPromise := asyncAnnT.(*soltype.PromiseType); asyncAnnOK && isPromise {
-				asyncPromise = promise
+			if inner, errT, isPromise := c.ctx.promiseParts(asyncAnnT); asyncAnnOK && isPromise {
+				asyncInner, asyncRejects, asyncIsPromise = inner, errT, true
 			}
 		}
 		if sig.Throws != nil {
 			c.report(&AsyncThrowsClauseError{Throws: sig.Throws, Fn: node})
 		}
-		if asyncPromise != nil {
-			declaredThrows = asyncPromise.ErrOrNever()
+		if asyncIsPromise {
+			declaredThrows = asyncRejects
 		} else {
 			declaredThrows = nil
 		}
@@ -499,13 +504,13 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 		// The async arm also moves the body's throws. An `async fn` rejects its promise
 		// rather than raising, so the body's throws become the promise's Err and the
 		// function's own Throws stays `never`.
-		if asyncPromise != nil {
+		if asyncIsPromise {
 			// Only constrain when there IS a body, for the reason the non-async arm
 			// below spells out.
 			if hasBody {
-				c.constrain(node, ret, asyncPromise.Inner) // body <: declared inner
+				c.constrain(node, ret, asyncInner) // body <: declared inner
 			}
-			ret = asyncPromise
+			ret = asyncAnnT
 		} else {
 			if sig.Return != nil && asyncAnnOK {
 				c.report(&AsyncReturnNotPromiseError{Return: sig.Return, Fn: node})
@@ -1028,7 +1033,14 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // throws sink — nil when the body has no exceptional exit — and needs no normalizing
 // here, since readers collapse nil and an explicit `never` through ErrOrNever.
 func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
-	wrapped := &soltype.PromiseType{Inner: inner, Err: errT}
+	wrapped, ok := c.ctx.promiseOf(inner, errT)
+	if !ok {
+		// The run's tree declares no `Promise`, so there is nothing to wrap the body's
+		// value in. Hand back the value itself rather than a half-formed promise: the
+		// signature then reads as the body's own type, which is wrong but legible, and
+		// every await against it reports on its own.
+		return inner
+	}
 	c.recordProv(wrapped, node, PromiseWrap)
 	return wrapped
 }
@@ -3043,7 +3055,9 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	// diagnostic — res then stays unbound and coalesces to `never`, the right
 	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
 	// this site used is gone.
-	c.constrain(e, arg, &soltype.PromiseType{Inner: res, Err: c.throwsSink(lvl)})
+	if want, ok := c.ctx.promiseOf(res, c.throwsSink(lvl)); ok {
+		c.constrain(e, arg, want)
+	}
 	c.recordType(e, res)
 	return res
 }

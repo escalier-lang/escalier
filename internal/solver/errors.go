@@ -1385,7 +1385,6 @@ const (
 	ClassDeclKind     TypeDeclKind = "class"
 	EnumDeclKind      TypeDeclKind = "enum"
 	InterfaceDeclKind TypeDeclKind = "interface"
-	BuiltinDeclKind   TypeDeclKind = "built-in type"
 )
 
 // article returns the indefinite article that reads correctly before the kind's name, so a
@@ -2945,23 +2944,11 @@ func describe(t soltype.Type) string {
 		// diagnostic naming it matches the printer's surface form rather than the expanded
 		// body the constraint actually compares.
 		return soltype.PrintElided(t, describeMaxDepth)
-	case *soltype.PromiseType:
-		// Rendered STRUCTURALLY (Promise<inner>), unlike the nominal function/tuple/
-		// object above. That is deliberate and consistent with the Union/Intersection
-		// arms below, which also recurse: a Promise's type arguments are compact
-		// and informative (`Promise<number>`), whereas a function/tuple/record would
-		// be verbose spelled out, so those stay nominal. A promise that can reject
-		// names its rejection type as a second argument, matching soltype.Print — unless
-		// the slot holds a bare unsolved variable. inferAwait's synthesized requirement
-		// carries the body's throws sink there, internal scaffolding that says nothing
-		// about why a constraint failed, so a variable slot keeps the one-argument form.
-		if _, isVar := t.Err.(*soltype.TypeVarType); t.Rejects() && !isVar {
-			return "Promise<" + describe(t.Inner) + ", " + describe(t.Err) + ">"
-		}
-		return "Promise<" + describe(t.Inner) + ">"
 	case *soltype.GeneratorType:
-		// Structural like the Promise arm, so a rejected constraint names the slot
-		// types: `Generator<number, undefined, never>`. The raise type joins them only when
+		// Rendered structurally rather than under a bare name, so a rejected constraint
+		// names the slot types, `Generator<number, undefined, never>`. The slots are
+		// compact and say what failed, where a function or tuple spelled out would be
+		// verbose, which is why those stay nominal. The raise type joins them only when
 		// the generator can raise, matching the printer.
 		slots := describe(t.Yield) + ", " + describe(t.Ret) + ", " + describe(t.Next)
 		if t.Raises() {
@@ -2969,7 +2956,7 @@ func describe(t soltype.Type) string {
 		}
 		return t.Name() + "<" + slots + ">"
 	case *soltype.KeyofType:
-		// A `keyof` residual renders structurally, recursing like the Promise arm, so a
+		// A `keyof` residual renders structurally, recursing like the generator arm, so a
 		// rejected constraint names it `keyof <operand>` rather than the default `?`. The
 		// operand renders in describe's raw mid-constrain form, so a type-variable operand
 		// shows as `t1`, not the coalesced printer's param name. describe is the second
