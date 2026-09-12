@@ -750,19 +750,6 @@ func (o *ObjectType) Callable() (*CallableElem, bool) {
 	return nil, false
 }
 
-// signaturesOf returns the overload arms of the two unnamed callable member kinds, and nil
-// for every other kind. A caller that treats a constructor and a call signature alike reads
-// this rather than switching on the kind twice.
-func signaturesOf(e ObjTypeElem) []*FuncType {
-	switch e := e.(type) {
-	case *ConstructorElem:
-		return e.Signatures
-	case *CallableElem:
-		return e.Signatures
-	}
-	return nil
-}
-
 // AsProperty narrows an ObjTypeElem to its *PropertyElem. It is used at sites that
 // handle only properties and do not yet process the method, getter, and setter
 // kinds, so any other element reaching one is a wiring bug: a member kind added
@@ -1573,9 +1560,15 @@ func levelOfElem(e ObjTypeElem) int {
 		return max(selfLevel(e.SelfParam), LevelOf(e.Type), throwsLevel(e.Throws))
 	case *SetterElem:
 		return max(selfLevel(e.SelfParam), LevelOf(e.Param), throwsLevel(e.Throws))
-	case *ConstructorElem, *CallableElem:
+	case *ConstructorElem:
 		m := 0
-		for _, sig := range signaturesOf(e) {
+		for _, sig := range e.Signatures {
+			m = max(m, LevelOf(sig))
+		}
+		return m
+	case *CallableElem:
+		m := 0
+		for _, sig := range e.Signatures {
 			m = max(m, LevelOf(sig))
 		}
 		return m
