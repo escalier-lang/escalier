@@ -22,7 +22,7 @@ import (
 func newPathChecker(t *testing.T, src string) (*checker, *Scope) {
 	t.Helper()
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	module := parseModule(t, src)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	require.Empty(t, messagesWithSpan(t, c.errs), "the harness source must infer cleanly")

@@ -274,9 +274,9 @@ func TestGenerate_PinnedLibSet(t *testing.T) {
 	require.NotEmpty(t, res.Written)
 
 	// editedFile is the package the hand-edit below goes into. Any
-	// generated file would do. std:array is named because the pinned lib
-	// set always routes to it.
-	const editedFile = "std/array.esc"
+	// generated file would do. std:prelude is named because the pinned
+	// lib set always routes to it.
+	const editedFile = "std/prelude.esc"
 
 	first := map[string]string{}
 	for _, uri := range res.Written {

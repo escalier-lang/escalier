@@ -23,14 +23,8 @@ type Context struct {
 	varCounter int
 	probe      *Probe
 
-	// wellKnown caches the handle for each type the checker's own rules name, so a
-	// rule reaches `Promise` or `Array` without the file under inference importing
-	// it. A nil entry records a name whose package did not supply it, which keeps
-	// the diagnostic to one per run. well_known.go holds the closed set.
-	wellKnown map[wellKnownName]soltype.Type
-
-	// arrayClass is the qualified class name the well-known `Array` binds to, read
-	// off the handle once per run. The subtyping and iteration rules that single an
+	// arrayClass is the qualified class name the prelude's `Array` binds to, read
+	// off the prelude scope once per run. The subtyping and iteration rules that single an
 	// array out compare against it, so they cost a string comparison rather than a
 	// package load and answer the same inside a speculation trial as outside one.
 	// It is empty when the run resolved no `Array`, in which case no type in play is

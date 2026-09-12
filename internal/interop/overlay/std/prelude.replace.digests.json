@@ -1,5 +1,11 @@
 [
   {
+    "decl": "Array",
+    "member": "toLocaleString",
+    "kind": "method",
+    "digest": "843e665dbe8582f3"
+  },
+  {
     "decl": "AsyncGenerator",
     "member": "throw",
     "kind": "method",
@@ -8,6 +14,12 @@
   {
     "decl": "Awaited",
     "digest": "fce3e28102d0c094"
+  },
+  {
+    "decl": "Generator",
+    "member": "throw",
+    "kind": "method",
+    "digest": "e207885967150b58"
   },
   {
     "decl": "Promise",

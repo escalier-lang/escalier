@@ -3,6 +3,7 @@ package solver
 import (
 	"sync"
 
+	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
@@ -95,10 +96,78 @@ func addOperatorBindings(s *Scope) {
 	define(opFunc(str(), str(), str()), "++")
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference (await,
-// for-in, yield, iteration built-ins). M2 must make them *resolve* even though
-// the rules that consume them — and the real generic definitions — land later
-// (real ingestion is M7).
+// preludeURI is the package whose exports every scope starts from. Its
+// declarations are the types the checker's own rules name, so `await e`
+// constrains against a `Promise` the file under inference never imported.
+const preludeURI = "std:prelude"
+
+// preludeScope returns the per-run scope holding the prelude package's exports,
+// loading the package on the first request and returning the same scope on every
+// later one.
+//
+// The scope is recorded before the load runs. Inferring the prelude package goes
+// through inferPackage, which parents the package's own scope here, so the
+// package sees an empty layer rather than re-entering this and recursing. Its
+// declarations resolve against the operator table alone, which is what keeps the
+// package from depending on its own exports.
+func (c *checker) preludeScope() *Scope {
+	if c.prelude != nil {
+		return c.prelude
+	}
+	c.prelude = sharedPrelude().Child()
+	c.bindPreludeExports(c.prelude)
+	c.resolveArrayClass()
+	return c.prelude
+}
+
+// preludeVarIDBase is the first variable id the prelude package's own inference
+// draws. It sits above any id a program reaches, so the two never collide and
+// the counter can be handed back to the program untouched. See
+// bindPreludeExports.
+const preludeVarIDBase = 1 << 20
+
+// bindPreludeExports loads the prelude package and copies what it exports into
+// scope.
+//
+// The package draws its variables from preludeVarIDBase and the program's
+// counter is put back afterwards, so a program's first variable is `t0` whether
+// or not a prelude loaded. Numbering a program's diagnostics from where the
+// standard library left off would put it in messages about code that never
+// mentions it.
+//
+// A source that answers nothing for the URI binds nothing and reports nothing.
+// The solver's own tests infer against no stdlib, and a program owes no
+// diagnostic to a package it does not name. A prelude that loads and reports
+// diagnostics of its own is a different matter, and those reach the run.
+//
+// The prelude has to be self-contained, since a package it imports is inferred
+// while this layer is still empty. See the `std:prelude` entry in
+// internal/dts_to_esc/partition.go.
+func (c *checker) bindPreludeExports(scope *Scope) {
+	programVars := c.ctx.varCounter
+	c.ctx.varCounter = preludeVarIDBase
+	ns, errs := c.loadPackage(preludeURI, ast.Span{})
+	c.ctx.varCounter = programVars
+	if ns == nil {
+		return
+	}
+	for _, err := range errs {
+		c.report(err)
+	}
+	for name, b := range ns.Values {
+		scope.defineValue(name, b)
+	}
+	for name, b := range ns.Types {
+		scope.defineType(name, b)
+	}
+}
+
+// stdlibTypePlaceholders are the names downstream type rules reference. They are
+// what `await`, `for`-`in` and `yield` are checked against, and what the
+// iteration built-ins are written in terms of. Each resolves to an opaque stub,
+// so a reference to one is not an unbound name in a run whose tree supplies no
+// prelude package. A prelude that does load shadows every placeholder it
+// declares, since its exports go into a child of this scope.
 var stdlibTypePlaceholders = []string{
 	"Promise",
 	"Iterable",

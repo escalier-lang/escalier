@@ -37,6 +37,8 @@
 // discharge rule: one overload leaves `E` alone because nothing handles
 // it, the other replaces it because something does. An optional
 // parameter cannot say both, and `then(null, g)` is `catch(g)` anyway.
+//
+// `PromiseLike` below carries the same two rules.
 export declare class Promise<T, E = never> {
     static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
     finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
@@ -46,20 +48,25 @@ export declare class Promise<T, E = never> {
     constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
 }
 
-// `PromiseLike.then` states the same two rules its `Promise` counterpart
-// does.
-export declare interface PromiseLike<T, E = never> {
-    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
-}
-
 // `throw` injects an exception at the generator's suspended yield. A
 // body that does not catch it rethrows it to the caller, so a value the
 // caller may pass freely would escape past what `E` says this generator
 // raises. Constraining the parameter to `E` is what keeps that claim
-// true. TypeScript writes `e: any`, which carries no such rule.
+// true. TypeScript writes `e: any`, which carries no such rule. Both
+// declarations below state it, the synchronous one and the async one.
+export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> {
+    throw(e: E) -> IteratorResult<T, TReturn>,
+}
+
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> {
     throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
+}
+
+// `PromiseLike.then` states the same two rules its `Promise`
+// counterpart does.
+export declare interface PromiseLike<T, E = never> {
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>,
 }
 
 // The `then` operand has to be inexact. TypeScript's `{ then(…): any }` is
@@ -77,3 +84,40 @@ export declare type Awaited<T> = if T : null | undefined { T } else { if T : {..
     then(onfulfilled: infer F, ...args: infer _) -> any,
     ...
 } { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }
+
+// `Array.toLocaleString` is the one member of the prelude that names a
+// type another package declares. The JSDoc below carries the reason and
+// reaches the generated tree. What follows is the rest of the decision.
+//
+// The prelude's reach is structural rather than temporary. A package it
+// imports is inferred while the injection layer is still empty, so that
+// package resolves none of the prelude's exports and the degraded
+// surface is what the registry publishes. No import header fixes it
+// later, so the alternative was to move the bags here.
+//
+// That would take ten declarations, since `NumberFormatOptions` names
+// four option types that each name a registry. Exported, they would bind
+// `NumberFormatOptionsCurrencyDisplayRegistry` in every scope, which is
+// a poor trade for one parameter. Unexported, they would not inject at
+// all and `std:intl` would be the package that loses them, since the
+// partition gives a name one home.
+//
+// The overload set is restated whole because a name is what addresses
+// it. Only the two-argument signature takes a JSDoc here: the no-argument
+// one has upstream prose, and carryMemberDocs keeps that only while the
+// overlay leaves the slot empty.
+export declare class Array<T> {
+    /**
+     * The options bag is an inexact object. TypeScript writes
+     * `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both of those
+     * are declared in `std:intl`, which this package cannot name. The prelude is
+     * loaded before anything it could import, so an import here would resolve
+     * nothing. An inexact object accepts an options bag and rejects a
+     * non-object. Reach for `Intl.NumberFormat` where the checked options
+     * matter.
+     *
+     * Change it in internal/interop/overlay/std/prelude.replace.esc.
+     */
+    toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
+    toLocaleString(self) -> string,
+}

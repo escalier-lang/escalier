@@ -809,7 +809,7 @@ func TestMutReceiverFollowsAnAliasChain(t *testing.T) {
 // The shape the committed stdlib tree writes, and the case #1554 needs before it can drop
 // the `mut` its fields carry: an interface whose field is a generic class carrying a
 // `mut self` mutator. `web:web_rtc` declares `certificates?: mut Array<RTCCertificate>`,
-// and `std:array` declares `push(mut self, ...items: mut Array<T>) -> number`.
+// and `std:prelude` declares `push(mut self, ...items: mut Array<T>) -> number`.
 //
 // `config.certificates.push(cert)` exercises both halves of this change at once. The
 // receiver's mutability has to reach the field, and then satisfy `push`'s own `mut self`.

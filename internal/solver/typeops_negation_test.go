@@ -606,9 +606,8 @@ func TestInferMatchesPositiveSkeleton(t *testing.T) {
 	// from the class name that run settled on rather than from a literal.
 	arrayOfNum := func(t *testing.T, ctx *Context) soltype.Type {
 		t.Helper()
-		at, ok := ctx.arrayOf(num())
-		require.True(t, ok, "the test stdlib supplies Array")
-		return at
+		require.NotEmpty(t, ctx.arrayClass, "the test stdlib supplies Array")
+		return &soltype.ClassType{Name: ctx.arrayClass, TypeArgs: []soltype.Type{num()}}
 	}
 	tests := []struct {
 		name  string

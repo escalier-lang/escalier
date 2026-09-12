@@ -44,7 +44,6 @@ A function expression passed as a callback infers its parameter types from the
 higher-order function's signature:
 
 ```esc
-import "std:array"
 import "std:number"
 
 val strings: Array<string> = ["1", "2", "3"]

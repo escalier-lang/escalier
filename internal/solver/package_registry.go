@@ -10,7 +10,7 @@ import (
 //
 // A package is addressed by its full URI, the string an `import` writes. Two
 // packages that declare the same name stay distinct because every definition
-// they register is keyed under that URI, so `std:array`'s `Array` and a user's
+// they register is keyed under that URI, so `std:prelude`'s `Array` and a user's
 // `Array` name two entries in one nominal registry.
 
 // ModuleSource resolves a package URI to the module to infer for it and the

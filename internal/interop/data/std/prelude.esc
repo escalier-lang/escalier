@@ -44,7 +44,22 @@ export declare class Array<T> {
      * @param end If not specified, length of the this object is used as its default value.
      */
     copyWithin(mut self, target: number, start: number, end?: number) -> Self,
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions & Intl.DateTimeFormatOptions) -> string,
+    /**
+     * The options bag is an inexact object. TypeScript writes
+     * `Intl.NumberFormatOptions & Intl.DateTimeFormatOptions`, and both of those
+     * are declared in `std:intl`, which this package cannot name. The prelude is
+     * loaded before anything it could import, so an import here would resolve
+     * nothing. An inexact object accepts an options bag and rejects a
+     * non-object. Reach for `Intl.NumberFormat` where the checked options
+     * matter.
+     *
+     * Change it in internal/interop/overlay/std/prelude.replace.esc.
+     */
+    toLocaleString(self, locales: string | mut Array<string>, options?: {...}) -> string,
+    /**
+     * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
+     */
+    toLocaleString(self) -> string,
     /** Iterator */
     [Symbol.iterator](self) -> ArrayIterator<T>,
     /**
@@ -163,10 +178,6 @@ export declare class Array<T> {
      * Returns a string representation of an array.
      */
     toString(self) -> string,
-    /**
-     * Returns a string representation of an array. The elements are converted to string using their toLocaleString methods.
-     */
-    toLocaleString(self) -> string,
     /**
      * Removes the last element from an array and returns it.
      * If the array is empty, undefined is returned and the array is not modified.
@@ -385,8 +396,404 @@ export declare class Array<T> {
     static fromAsync<T, U>(iterableOrArrayLike: AsyncIterable<T> | Iterable<T> | ArrayLike<T>, mapFn: fn (value: Awaited<T>, index: number) -> U, thisArg?: unknown) -> Promise<mut Array<Awaited<U>>>
 }
 
+export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
+    next(...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(value: TReturn) -> IteratorResult<T, TReturn>,
+    throw(e: E) -> IteratorResult<T, TReturn>,
+    [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
+}
+
+export declare interface SymbolConstructor {
+    /**
+     * A method that returns the default iterator for an object. Called by the semantics of the
+     * for-of statement.
+     */
+    readonly iterator: unique symbol,
+    /**
+     * A reference to the prototype.
+     */
+    readonly prototype: Symbol,
+    fn (description?: string | number) -> symbol,
+    /**
+     * Returns a Symbol object from the global symbol registry matching the given key if found.
+     * Otherwise, returns a new symbol with this key.
+     * @param key key to search for.
+     */
+    for(key: string) -> symbol,
+    /**
+     * Returns a key from the global symbol registry matching the given Symbol if found.
+     * Otherwise, returns a undefined.
+     * @param sym Symbol to find the key for.
+     */
+    keyFor(sym: symbol) -> string | undefined,
+    /**
+     * A method that determines if a constructor object recognizes an object as one of the
+     * constructor’s instances. Called by the semantics of the instanceof operator.
+     */
+    readonly hasInstance: unique symbol,
+    /**
+     * A Boolean value that if true indicates that an object should flatten to its array elements
+     * by Array.prototype.concat.
+     */
+    readonly isConcatSpreadable: unique symbol,
+    /**
+     * A regular expression method that matches the regular expression against a string. Called
+     * by the String.prototype.match method.
+     */
+    readonly match: unique symbol,
+    /**
+     * A regular expression method that replaces matched substrings of a string. Called by the
+     * String.prototype.replace method.
+     */
+    readonly replace: unique symbol,
+    /**
+     * A regular expression method that returns the index within a string that matches the
+     * regular expression. Called by the String.prototype.search method.
+     */
+    readonly search: unique symbol,
+    /**
+     * A function valued property that is the constructor function that is used to create
+     * derived objects.
+     */
+    readonly species: unique symbol,
+    /**
+     * A regular expression method that splits a string at the indices that match the regular
+     * expression. Called by the String.prototype.split method.
+     */
+    readonly split: unique symbol,
+    /**
+     * A method that converts an object to a corresponding primitive value.
+     * Called by the ToPrimitive abstract operation.
+     */
+    readonly toPrimitive: unique symbol,
+    /**
+     * A String value that is used in the creation of the default string description of an object.
+     * Called by the built-in method Object.prototype.toString.
+     */
+    readonly toStringTag: unique symbol,
+    /**
+     * An Object whose truthy properties are properties that are excluded from the 'with'
+     * environment bindings of the associated objects.
+     */
+    readonly unscopables: unique symbol,
+    /**
+     * A method that returns the default async iterator for an object. Called by the semantics of
+     * the for-await-of statement.
+     */
+    readonly asyncIterator: unique symbol,
+    /**
+     * A regular expression method that matches the regular expression against a string. Called
+     * by the String.prototype.matchAll method.
+     */
+    readonly matchAll: unique symbol,
+    readonly metadata: unique symbol,
+    /**
+     * A method that is used to release resources held by an object. Called by the semantics of the `using` statement.
+     */
+    readonly dispose: unique symbol,
+    /**
+     * A method that is used to asynchronously release resources held by an object. Called by the semantics of the `await using` statement.
+     */
+    readonly asyncDispose: unique symbol
+}
+
+@js("Iterator")
+export declare class Iterator<T, TReturn = any, TNext = any> {
+    next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
+    return(mut self, value?: TReturn) -> IteratorResult<T, TReturn>,
+    throw(mut self, e?: unknown) -> IteratorResult<T, TReturn>,
+    /**
+     * Creates a native iterator from an iterator or iterable object.
+     * Returns its input if the input already inherits from the built-in Iterator class.
+     * @param value An iterator or iterable object to convert a native iterator.
+     */
+    static from<T>(value: Iterator<T, unknown, undefined> | Iterable<T, unknown, undefined>) -> IteratorObject<T, undefined, unknown>
+}
+
+export declare interface Iterable<T, TReturn = any, TNext = any> {
+    [Symbol.iterator]() -> Iterator<T, TReturn, TNext>
+}
+
+/**
+ * Describes an {@link Iterator} produced by the runtime that inherits from the intrinsic `Iterator.prototype`.
+ */
+export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> extends Iterator<T, TReturn, TNext>, Disposable {
+    [Symbol.iterator]() -> IteratorObject<T, TReturn, TNext>,
+    /**
+     * Returns this iterator.
+     */
+    [Symbol.iterator]() -> IteratorObject<T, TReturn, TNext>,
+    /**
+     * Creates an iterator whose values are the result of applying the callback to the values from this iterator.
+     * @param callbackfn A function that accepts up to two arguments to be used to transform values from the underlying iterator.
+     */
+    map<U>(callbackfn: fn (value: T, index: number) -> U) -> IteratorObject<U, undefined, unknown>,
+    /**
+     * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
+     * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
+     */
+    filter<S: T>(predicate: fn (value: T, index: number) -> boolean) -> IteratorObject<S, undefined, unknown>,
+    /**
+     * Creates an iterator whose values are those from this iterator for which the provided predicate returns true.
+     * @param predicate A function that accepts up to two arguments to be used to test values from the underlying iterator.
+     */
+    filter(predicate: fn (value: T, index: number) -> unknown) -> IteratorObject<T, undefined, unknown>,
+    /**
+     * Creates an iterator whose values are the values from this iterator, stopping once the provided limit is reached.
+     * @param limit The maximum number of values to yield.
+     */
+    take(limit: number) -> IteratorObject<T, undefined, unknown>,
+    /**
+     * Creates an iterator whose values are the values from this iterator after skipping the provided count.
+     * @param count The number of values to drop.
+     */
+    drop(count: number) -> IteratorObject<T, undefined, unknown>,
+    /**
+     * Creates an iterator whose values are the result of applying the callback to the values from this iterator and then flattening the resulting iterators or iterables.
+     * @param callback A function that accepts up to two arguments to be used to transform values from the underlying iterator into new iterators or iterables to be flattened into the result.
+     */
+    flatMap<U>(callback: fn (value: T, index: number) -> Iterator<U, unknown, undefined> | Iterable<U, unknown, undefined>) -> IteratorObject<U, undefined, unknown>,
+    /**
+     * Calls the specified callback function for all the elements in this iterator. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
+     * @param callbackfn A function that accepts up to three arguments. The reduce method calls the callbackfn function one time for each element in the iterator.
+     * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of a value from the iterator.
+     */
+    reduce(callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number) -> T) -> T,
+    reduce(callbackfn: fn (previousValue: T, currentValue: T, currentIndex: number) -> T, initialValue: T) -> T,
+    /**
+     * Calls the specified callback function for all the elements in this iterator. The return value of the callback function is the accumulated result, and is provided as an argument in the next call to the callback function.
+     * @param callbackfn A function that accepts up to three arguments. The reduce method calls the callbackfn function one time for each element in the iterator.
+     * @param initialValue If initialValue is specified, it is used as the initial value to start the accumulation. The first call to the callbackfn function provides this value as an argument instead of a value from the iterator.
+     */
+    reduce<U>(callbackfn: fn (previousValue: U, currentValue: T, currentIndex: number) -> U, initialValue: U) -> U,
+    /**
+     * Creates a new array from the values yielded by this iterator.
+     */
+    toArray() -> mut Array<T>,
+    /**
+     * Performs the specified action for each element in the iterator.
+     * @param callbackfn A function that accepts up to two arguments. forEach calls the callbackfn function one time for each element in the iterator.
+     */
+    forEach(callbackfn: fn (value: T, index: number) -> unknown) -> unknown,
+    /**
+     * Determines whether the specified callback function returns true for any element of this iterator.
+     * @param predicate A function that accepts up to two arguments. The some method calls
+     * the predicate function for each element in this iterator until the predicate returns a value
+     * true, or until the end of the iterator.
+     */
+    some(predicate: fn (value: T, index: number) -> unknown) -> boolean,
+    /**
+     * Determines whether all the members of this iterator satisfy the specified test.
+     * @param predicate A function that accepts up to two arguments. The every method calls
+     * the predicate function for each element in this iterator until the predicate returns
+     * false, or until the end of this iterator.
+     */
+    every(predicate: fn (value: T, index: number) -> unknown) -> boolean,
+    /**
+     * Returns the value of the first element in this iterator where predicate is true, and undefined
+     * otherwise.
+     * @param predicate find calls predicate once for each element of this iterator, in
+     * order, until it finds one where predicate returns true. If such an element is found, find
+     * immediately returns that element value. Otherwise, find returns undefined.
+     */
+    find<S: T>(predicate: fn (value: T, index: number) -> boolean) -> S | undefined,
+    find(predicate: fn (value: T, index: number) -> unknown) -> T | undefined,
+    readonly [Symbol.toStringTag]: string
+}
+
+/**
+ * Defines the `TReturn` type used for built-in iterators produced by `Array`, `Map`, `Set`, and others.
+ * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
+ */
+export declare type BuiltinIteratorReturn = intrinsic
+
 export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> ArrayIterator<T>
+}
+
+@js("Promise")
+export declare class Promise<T, E = never> {
+    readonly [Symbol.toStringTag]: string,
+    /**
+     * Attaches a callback that is invoked when the Promise is settled (fulfilled or rejected). The
+     * resolved value cannot be modified from the callback.
+     * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
+     * @returns A Promise for the completion of the callback.
+     */
+    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    /**
+     * Attaches a callback for only the rejection of the Promise.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of the callback.
+     */
+    catch<TResult = never, G = never>(self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    /**
+     * Creates a Promise that is resolved with an array of results when all of the provided Promises
+     * resolve, or rejected when any Promise is rejected.
+     * @param values An iterable of Promises.
+     * @returns A new Promise.
+     */
+    static all<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<Awaited<T>>>,
+    /**
+     * Creates a Promise that is resolved or rejected when any of the provided Promises are resolved
+     * or rejected.
+     * @param values An iterable of Promises.
+     * @returns A new Promise.
+     */
+    static race<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Awaited<T>>,
+    /**
+     * A reference to the prototype.
+     */
+    static readonly prototype: Promise<any>,
+    /**
+     * Creates a new Promise.
+     * @param executor A callback used to initialize the promise. This callback is passed two arguments:
+     * a resolve callback used to resolve the promise with a value or the result of another promise,
+     * and a reject callback used to reject the promise with a provided reason or error.
+     */
+    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
+    /**
+     * Creates a Promise that is resolved with an array of results when all of the provided Promises
+     * resolve, or rejected when any Promise is rejected.
+     * @param values An array of Promises.
+     * @returns A new Promise.
+     */
+    static all<T: Array<unknown> | []>(values: T) -> Promise<{
+        -readonly [P]: Awaited<T[P]> for P in keyof T
+    }>,
+    /**
+     * Creates a Promise that is resolved or rejected when any of the provided Promises are resolved
+     * or rejected.
+     * @param values An array of Promises.
+     * @returns A new Promise.
+     */
+    static race<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    /**
+     * Creates a new rejected promise for the provided reason.
+     * @param reason The reason the promise was rejected.
+     * @returns A new rejected Promise.
+     */
+    static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
+    /**
+     * Creates a new resolved promise.
+     * @returns A resolved promise.
+     */
+    static resolve() -> Promise<undefined>,
+    /**
+     * Creates a new resolved promise for the provided value.
+     * @param value A promise.
+     * @returns A promise whose internal state matches the provided promise.
+     */
+    static resolve<T>(value: T) -> Promise<Awaited<T>>,
+    /**
+     * Creates a new resolved promise for the provided value.
+     * @param value A promise.
+     * @returns A promise whose internal state matches the provided promise.
+     */
+    static resolve<T>(value: T | PromiseLike<T>) -> Promise<Awaited<T>>,
+    static readonly [Symbol.species]: PromiseConstructor,
+    /**
+     * Creates a Promise that is resolved with an array of results when all
+     * of the provided Promises resolve or reject.
+     * @param values An array of Promises.
+     * @returns A new Promise.
+     */
+    static allSettled<T: Array<unknown> | []>(values: T) -> Promise<{
+        -readonly [P]: PromiseSettledResult<Awaited<T[P]>> for P in keyof T
+    }>,
+    /**
+     * Creates a Promise that is resolved with an array of results when all
+     * of the provided Promises resolve or reject.
+     * @param values An array of Promises.
+     * @returns A new Promise.
+     */
+    static allSettled<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<mut Array<PromiseSettledResult<Awaited<T>>>>,
+    /**
+     * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
+     * @param values An array or iterable of Promises.
+     * @returns A new Promise.
+     */
+    static any<T: Array<unknown> | []>(values: T) -> Promise<Awaited<T[number]>>,
+    /**
+     * The any function returns a promise that is fulfilled by the first given promise to be fulfilled, or rejected with an AggregateError containing an array of rejection reasons if all of the given promises are rejected. It resolves all elements of the passed iterable to promises as it runs this algorithm.
+     * @param values An array or iterable of Promises.
+     * @returns A new Promise.
+     */
+    static any<T>(values: Iterable<T | PromiseLike<T>>) -> Promise<Awaited<T>>,
+    /**
+     * Creates a new Promise and returns it in an object, along with its resolve and reject functions.
+     * @returns An object with the properties `promise`, `resolve`, and `reject`.
+     *
+     * ```ts
+     * const { promise, resolve, reject } = Promise.withResolvers<T>();
+     * ```
+     */
+    static withResolvers<T>() -> PromiseWithResolvers<T>,
+    /**
+     * Takes a callback of any kind (returns or throws, synchronously or asynchronously) and wraps its result
+     * in a Promise.
+     *
+     * @param callbackFn A function that is called synchronously. It can do anything: either return
+     * a value, throw an error, or return a promise.
+     * @param args Additional arguments, that will be passed to the callback.
+     *
+     * @returns A Promise that is:
+     * - Already fulfilled, if the callback synchronously returns a value.
+     * - Already rejected, if the callback synchronously throws an error.
+     * - Asynchronously fulfilled or rejected, if the callback returns a promise.
+     */
+    static try<T, U: mut Array<unknown>>(callbackFn: fn (...args: U) -> T | PromiseLike<T>, ...args: U) -> Promise<Awaited<T>>
+}
+
+@js("Symbol")
+export declare var Symbol: SymbolConstructor
+
+export declare interface Symbol {
+    /**
+     * Converts a Symbol object to a symbol.
+     */
+    [Symbol.toPrimitive](hint: string) -> symbol,
+    readonly [Symbol.toStringTag]: string,
+    /**
+     * Expose the [[Description]] internal slot of a symbol directly.
+     */
+    readonly description: string | undefined,
+    /** Returns a string representation of an object. */
+    toString() -> string,
+    /** Returns the primitive value of the specified object. */
+    valueOf() -> symbol
+}
+
+export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> extends AsyncIteratorObject<T, TReturn, TNext> {
+    next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>, E>,
+    return(value: TReturn | PromiseLike<TReturn, E>) -> Promise<IteratorResult<T, TReturn>, E>,
+    throw(e: E) -> Promise<IteratorResult<T, TReturn>, E>,
+    [Symbol.asyncIterator]() -> AsyncGenerator<T, TReturn, TNext, E>
+}
+
+export declare interface AsyncIterator<T, TReturn = any, TNext = any> {
+    next(...value: [] | [TNext]) -> Promise<IteratorResult<T, TReturn>>,
+    return?(value?: TReturn | PromiseLike<TReturn>) -> Promise<IteratorResult<T, TReturn>>,
+    throw?(e?: any) -> Promise<IteratorResult<T, TReturn>>
+}
+
+export declare interface AsyncIterable<T, TReturn = any, TNext = any> {
+    [Symbol.asyncIterator]() -> AsyncIterator<T, TReturn, TNext>
+}
+
+/**
+ * Describes an {@link AsyncIterator} produced by the runtime that inherits from the intrinsic `AsyncIterator.prototype`.
+ */
+export declare interface AsyncIteratorObject<T, TReturn = unknown, TNext = unknown> extends AsyncIterator<T, TReturn, TNext>, AsyncDisposable {
+    [Symbol.asyncIterator]() -> AsyncIteratorObject<T, TReturn, TNext>
 }
 
 export declare type FlatArray<Arr, Depth: number> = {
@@ -394,12 +801,57 @@ export declare type FlatArray<Arr, Depth: number> = {
     recur: if Arr : Array<infer InnerArr> { FlatArray<InnerArr, [-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20][Depth]> } else { Arr }
 }[if Depth : -1 { "done" } else { "recur" }]
 
+export declare interface PromiseFulfilledResult<T> {
+    status: "fulfilled",
+    value: T
+}
+
+export declare interface PromiseRejectedResult {
+    status: "rejected",
+    reason: any
+}
+
+export declare type PromiseSettledResult<T> = PromiseFulfilledResult<T> | PromiseRejectedResult
+
+export declare interface PromiseWithResolvers<T> {
+    promise: Promise<T>,
+    resolve: fn (value: T | PromiseLike<T>) -> unknown,
+    reject: fn (reason?: any) -> unknown
+}
+
 export declare interface ConcatArray<T> {
     readonly length: number,
     join(separator?: string) -> string,
     slice(start?: number, end?: number) -> mut Array<T>
 }
 
+export declare interface PromiseLike<T, E = never> {
+    /**
+     * Attaches callbacks for the resolution and/or rejection of the Promise.
+     * @param onfulfilled The callback to execute when the Promise is resolved.
+     * @param onrejected The callback to execute when the Promise is rejected.
+     * @returns A Promise for the completion of which ever callback is executed.
+     */
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
+}
+
+/**
+ * Recursively unwraps the "awaited type" of a type. Non-promise "thenables" should resolve to `never`. This emulates the behavior of `await`.
+ */
+export declare type Awaited<T> = if T : null | undefined { T } else { if T : {...} & {
+    then(onfulfilled: infer F, ...args: infer _) -> any,
+    ...
+} { if F : fn (value: infer V, ...args: infer _) -> any { Awaited<V> } else { never } } else { T } }
+
 export declare interface ArrayLike<T> {
     readonly length: number
+}
+
+export declare interface Disposable {
+    [Symbol.dispose]() -> unknown
+}
+
+export declare interface AsyncDisposable {
+    [Symbol.asyncDispose]() -> PromiseLike<undefined>
 }

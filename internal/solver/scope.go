@@ -176,6 +176,14 @@ func (s *Scope) GetType(name string) (TypeBinding, bool) {
 	return TypeBinding{}, false
 }
 
+// ownType resolves name in this scope's own type map, without walking to the
+// parent. It is how a lookup asks for a binding this scope itself made, as
+// opposed to one an enclosing scope seeded under the same name.
+func (s *Scope) ownType(name string) (TypeBinding, bool) {
+	b, ok := s.types[name]
+	return b, ok
+}
+
 // getTypeUpTo resolves name in the type sort like GetType, but stops after
 // stop rather than walking the whole chain. It is how a lookup asks for a
 // binding the module or one of its files made, as opposed to one the prelude

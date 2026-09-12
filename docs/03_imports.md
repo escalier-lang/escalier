@@ -70,26 +70,21 @@ When a package's lowercased name matches a class declared in it, the binding
 **is** that class, named with its original capitalization.
 
 ```escalier
-import "std:array"
 import "std:date"
 
-val nums = [1, 2, 3]
-Array.isArray(nums)           // class statics
-val xs: Array<number> = []    // type position
 val d: Date = Date()          // construct — no `new` keyword
 ```
 
 The shortcut is structural: it fires when the package declares a top-level class
 whose name matches the URI segment, ignoring case and the underscores that
 separate words in a package name. That is what pairs `std:weak_ref` with
-`WeakRef`. `std:array`, `std:string`,
-`std:number`, `std:boolean`, `std:bigint`, `std:regexp`, `std:symbol`,
-`std:object`, `std:function`, `std:date`, `std:map`, `std:set`, and
-`std:weak_ref` all qualify. `std:math` declares no `Math` class, so its binding
-stays the lowercase namespace `math`.
+`WeakRef`. `std:string`, `std:number`, `std:boolean`, `std:bigint`,
+`std:regexp`, `std:object`, `std:function`, `std:date`, `std:map`,
+`std:set`, and `std:weak_ref` all qualify. `std:math` declares no
+`Math` class, so its binding stays the lowercase namespace `math`.
 
-`Promise` is not on the list. It lives in `std:async` alongside the async
-iteration protocol and `AggregateError`, so the access is `async.Promise.all(…)`.
+`Array`, `Promise` and `Symbol` are on neither list, because none of them needs
+an import at all. See the prelude below.
 
 Other exports of a shortcut package are reachable as namespace members on the
 same binding. Where a name collides, class statics win.
@@ -132,24 +127,48 @@ it lowers to. `math.sin(x)` lowers to `Math.sin(x)`, and `parseInt` from
 Construction is not carried by the decorator: codegen inserts `new` at the call
 site from the callee's type, so `Date()` lowers to `new Date()`.
 
+### The prelude
+
+One package needs no import. `std:prelude` declares the types the language's own
+rules name — `Array`, `Promise`, `Iterable`, `AsyncIterable`, `Generator`, and
+`AsyncGenerator` — and every file starts with its exports in scope. It also
+declares what those six name in their own members, such as `ArrayLike`,
+`PromiseLike`, `Awaited` and `Symbol`, since the prelude cannot reach a sibling
+package by import.
+
+```escalier
+val nums = [1, 2, 3]
+Array.isArray(nums)           // no import
+val xs: Array<number> = []
+async fn load() -> Promise<string> { return "hi" }
+```
+
+These are part of the language rather than a library a program opts into.
+`await e` is checked against `Promise<U>` and `for x in xs` against
+`Iterable<T>`, so a program cannot express those forms without them, and
+requiring an import for a type the desugaring already named would be busywork.
+
+The prelude does not shadow your own code. A declaration in the module wins over
+a prelude export of the same name, and a file's import wins over both, so
+`class Array` in your own `lib/` is the `Array` that file sees.
+
 ### The checker still knows what the language guarantees
 
-Requiring an import for every name does not mean writing `import "std:string"`
-before calling `.toUpperCase()`. Each `std:*` package loads in one of two modes.
+Requiring an import for every other name does not mean writing
+`import "std:string"` before calling `.toUpperCase()`. Each `std:*` package loads
+in one of two modes.
 
 - **Shape-loaded.** The checker loads a package's contents to satisfy needs that
   arise from the language itself: method dispatch on a string or number literal,
-  the result type of `await`, the iterable protocol behind `for x in xs`, the
-  array shape behind an array literal, the regex shape behind a regex literal.
-  No identifier enters scope. This is the checker knowing what the language
-  guarantees about its own values.
-- **Named.** Naming a class, type, or value — `Array`, `Promise`, `Error`,
-  `parseInt`, `Partial`, `Symbol` — requires the explicit import. The bindings
-  exposed are exactly the package's top-level declarations.
+  the regex shape behind a regex literal. No identifier enters scope. This is the
+  checker knowing what the language guarantees about its own values.
+- **Named.** Naming a class, type, or value — `Error`, `parseInt`, `Partial` —
+  requires the explicit import. The bindings exposed are exactly the package's
+  top-level declarations.
 
 Shape-loading is per-file and additive, and it never satisfies an explicit
-reference. `for x in xs` works without an import; `Array.from(xs)` needs
-`import "std:array"`.
+reference. `"ab".toUpperCase()` works without an import; `String.raw(…)` needs
+`import "std:string"`.
 
 ### The Web surface
 

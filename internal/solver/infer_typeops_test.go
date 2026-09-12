@@ -43,7 +43,7 @@ func inferTypeNodes(t *testing.T, src string) (map[string]soltype.Type, *Context
 	t.Helper()
 	module := parseModule(t, src)
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	nodes := make(map[string]soltype.Type, len(scope.types))
 	for name, b := range scope.types {
@@ -1560,7 +1560,7 @@ func TestInferTupleSpreadOverTypeParamStaysInert(t *testing.T) {
 		val r = f([1])
 	`)
 	require.Len(t, errs, 1)
-	require.Equal(t, "cannot constrain tuple <: [...t15, number]", errs[0].Message())
+	require.Equal(t, "cannot constrain tuple <: [...t7, number]", errs[0].Message())
 }
 
 // A `mut` spread operand `[...mut P]` is rejected at the annotation site the same way a positional
@@ -4293,13 +4293,13 @@ func TestInferWildcardPatternRoundTrips(t *testing.T) {
 }
 
 // committedAwaitedDecl returns the `Awaited` alias as the committed tree declares it, read out
-// of internal/interop/data/std/async.esc so the test and the tree cannot drift. The declaration
+// of internal/interop/data/std/prelude.esc so the test and the tree cannot drift. The declaration
 // starts at its `export declare type Awaited` line and ends at the first line where its braces
 // balance, which is how the printer lays a multi-line alias out. Balance is read per line rather
 // than per character because the first branch, `{ T }`, closes on the opening line.
 func committedAwaitedDecl(t *testing.T) string {
 	t.Helper()
-	path := filepath.Join("..", "interop", "data", "std", "async.esc")
+	path := filepath.Join("..", "interop", "data", "std", "prelude.esc")
 	data, err := os.ReadFile(path)
 	require.NoError(t, err)
 	lines := strings.Split(string(data), "\n")

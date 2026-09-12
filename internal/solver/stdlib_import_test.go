@@ -392,3 +392,49 @@ func TestStdlibShortcutFiresOnlyForAClass(t *testing.T) {
 	_, boundValue := res.FileScopes[0].values["array"]
 	require.False(t, boundValue, "the shortcut should not bind a non-class value")
 }
+
+// An `as` clause names the namespace a pseudo-package binds under, the same way
+// it does for an npm specifier. This is what lets a package re-expose a
+// namespace the converter flattened under the name its references were written
+// against, as `Intl` is.
+func TestStdlibImportBindsUnderItsAlias(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "std:intl" as Intl
+		val n: number = Intl.answer
+	`, map[string]string{
+		"std/intl.esc": `export val answer: number = 42`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	fileScope, held := res.FileScopes[0]
+	require.True(t, held)
+	_, bound := fileScope.GetNamespace("Intl")
+	require.True(t, bound, "the alias names the binding")
+	_, derived := fileScope.GetNamespace("intl")
+	require.False(t, derived, "the derived name is not bound alongside the alias")
+}
+
+// An alias renames the namespace binding and nothing else. A package whose sole
+// class is named after it still binds that class under its own capitalization,
+// since that binding is the class rather than the package.
+func TestStdlibImportAliasLeavesTheSingleClassShortcut(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "std:shapes" as S
+		val a = Shapes(1)
+		val b = S.Shapes(2)
+	`, map[string]string{
+		"std/shapes.esc": `
+			export class Shapes {
+				size: number,
+			}
+		`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Shapes", soltype.Print(inferredValueType(t, res.Scope, "a")))
+	require.Equal(t, "Shapes", soltype.Print(inferredValueType(t, res.Scope, "b")))
+}

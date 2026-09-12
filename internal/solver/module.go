@@ -12,9 +12,9 @@ import (
 
 // InferModule builds the dep graph for a single parsed module, infers every
 // top-level declaration in dep_graph SCC order, populates Info, and returns the
-// populated module Scope (a child of the prelude, so operators and the
-// stdlib-type placeholders resolve through the parent), the Info side table, and
-// any SolverErrors.
+// populated module Scope, the Info side table, and any SolverErrors. The module
+// scope is a child of the run's prelude scope, so the prelude package's exports
+// resolve through the parent and the operator table through its parent in turn.
 //
 // PR-5 replaces PR-2's source-order loop with dep_graph SCC ordering: a decl that
 // forward-references a name defined later in the source, or that mutually
@@ -66,7 +66,10 @@ type ModuleResult struct {
 func InferModuleWithSource(module *ast.Module, source ModuleSource) *ModuleResult {
 	c := newChecker()
 	c.source = source
-	scope := sharedPrelude().Child()
+	// The prelude package is loaded before anything is walked, so no rule reaches
+	// for a handle from inside a speculation trial, where a load would publish a
+	// package whose bounds a discard then truncates.
+	scope := c.preludeScope().Child()
 	fileScopes := c.bindFileImports(scope, module)
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	return &ModuleResult{
@@ -244,11 +247,6 @@ func (c *checker) inferComponent(
 			arms := make([]overloadArm, len(armDecls))
 			schemes := make([]TypeScheme, len(armDecls))
 			for i, fd := range armDecls {
-				// A written `Array` resolves through a lazy package load, which a probe
-				// declines to raise, so the annotation would read as a bare var and the
-				// arm would check nothing. Settling the name first leaves the resolution
-				// below a scope lookup against a cached class.
-				c.resolveSigArrays(fd.FuncSig)
 				// Build the signature body-free under a probe, so phase 2's inferFunc —
 				// which re-derives the signature while checking the body — stays the
 				// single reporter of any signature error.

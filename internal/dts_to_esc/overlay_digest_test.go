@@ -25,7 +25,7 @@ declare function parseInt(string: string, radix?: number): number;
 // member of the converted class and one whole declaration, the two
 // things a `replace` can stand in for.
 var replaceOverlay = map[string]string{
-	"std/array.replace.esc": "export declare class Array<T> {\n" +
+	"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 		"    at(self, index: number) -> T,\n}\n" +
 		"export declare type ArrayLike<T> = { length: number }\n",
 }
@@ -48,7 +48,7 @@ func TestOverlayDigests_RecordWritesASidecarBesideTheReplaceFile(t *testing.T) {
 	_, err := applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
 
-	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/array.replace.digests.json"), snaps.Inline(`[
+	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/prelude.replace.digests.json"), snaps.Inline(`[
   {
     "decl": "Array",
     "member": "at",
@@ -71,11 +71,11 @@ func TestOverlayDigests_RecordingTwiceLeavesTheSidecarByteIdentical(t *testing.T
 	dir := seedOverlay(t, replaceOverlay)
 	_, err := applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
-	first := readDigests(t, dir, "std/array.replace.digests.json")
+	first := readDigests(t, dir, "std/prelude.replace.digests.json")
 
 	_, err = applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
-	require.Equal(t, first, readDigests(t, dir, "std/array.replace.digests.json"))
+	require.Equal(t, first, readDigests(t, dir, "std/prelude.replace.digests.json"))
 }
 
 // TestOverlayDigests_ReportAConvertedFormThatMoved is the check the
@@ -90,8 +90,8 @@ func TestOverlayDigests_ReportAConvertedFormThatMoved(t *testing.T) {
 
 	_, err = applyOverlayIn(t, dir, overlayMovedLib, false)
 	require.EqualError(t, err,
-		"overlay: std/array.replace.esc replaces Array.at, whose converted form has "+
-			"changed since std/array.replace.digests.json recorded it; check the "+
+		"overlay: std/prelude.replace.esc replaces Array.at, whose converted form has "+
+			"changed since std/prelude.replace.digests.json recorded it; check the "+
 			"overlay against the upstream declaration, then run "+
 			"`dts_to_esc generate --update-digests`")
 }
@@ -103,8 +103,8 @@ func TestOverlayDigests_ReportAnUnrecordedReplace(t *testing.T) {
 	t.Parallel()
 	_, err := applyOverlayIn(t, seedOverlay(t, replaceOverlay), overlayLib, false)
 	require.EqualError(t, err,
-		"overlay: std/array.replace.esc replaces Array.at, and "+
-			"std/array.replace.digests.json records no digest for it; run "+
+		"overlay: std/prelude.replace.esc replaces Array.at, and "+
+			"std/prelude.replace.digests.json records no digest for it; run "+
 			"`dts_to_esc generate --update-digests` to record what the overlay "+
 			"stands in for")
 }
@@ -115,19 +115,19 @@ func TestOverlayDigests_ReportAnUnrecordedReplace(t *testing.T) {
 func TestOverlayDigests_ReportAnEntryTheOverlayNoLongerReplaces(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    length: number,\n    at(self, index: number) -> T,\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
 
 	require.NoError(t, os.WriteFile(
-		filepath.Join(dir, "std", "array.replace.esc"),
+		filepath.Join(dir, "std", "prelude.replace.esc"),
 		[]byte("export declare class Array<T> {\n    length: number,\n}\n"), 0o644))
 	_, err = applyOverlayIn(t, dir, overlayLib, false)
 	require.EqualError(t, err,
-		"overlay: std/array.replace.digests.json records a digest for Array.at, "+
-			"which std/array.replace.esc does not replace; run "+
+		"overlay: std/prelude.replace.digests.json records a digest for Array.at, "+
+			"which std/prelude.replace.esc does not replace; run "+
 			"`dts_to_esc generate --update-digests` to bring the two back in step")
 }
 
@@ -138,15 +138,15 @@ func TestOverlayDigests_ReportAnEntryTheOverlayNoLongerReplaces(t *testing.T) {
 func TestOverlayDigests_ReportASidecarWithNoReplaceFile(t *testing.T) {
 	t.Parallel()
 	seed := map[string]string{
-		"std/array.add.esc": "export declare class Array<T> {\n" +
+		"std/prelude.add.esc": "export declare class Array<T> {\n" +
 			"    static of<T>(...items: Array<T>) -> Array<T>,\n}\n",
-		"std/array.replace.digests.json": "[]\n",
+		"std/prelude.replace.digests.json": "[]\n",
 	}
 	dir := seedOverlay(t, seed)
 	_, err := applyOverlayIn(t, dir, overlayLib, false)
 	require.EqualError(t, err,
-		"overlay: std/array.replace.digests.json records digests for "+
-			"std/array.replace.esc, which is not a replace file the overlay holds; "+
+		"overlay: std/prelude.replace.digests.json records digests for "+
+			"std/prelude.replace.esc, which is not a replace file the overlay holds; "+
 			"run `dts_to_esc generate --update-digests` to remove the sidecar, or "+
 			"restore the replace file it belongs beside")
 
@@ -155,7 +155,7 @@ func TestOverlayDigests_ReportASidecarWithNoReplaceFile(t *testing.T) {
 	dir = seedOverlay(t, seed)
 	_, err = applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
-	require.NoFileExists(t, filepath.Join(dir, "std", "array.replace.digests.json"))
+	require.NoFileExists(t, filepath.Join(dir, "std", "prelude.replace.digests.json"))
 }
 
 // TestOverlayDigests_KeepAGetterAndASetterApart covers the one name that
@@ -165,14 +165,14 @@ func TestOverlayDigests_ReportASidecarWithNoReplaceFile(t *testing.T) {
 func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    get size(self) -> number | undefined,\n" +
 			"    set size(mut self, v: number | undefined),\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayKindLib, true)
 	require.NoError(t, err)
 
-	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/array.replace.digests.json"), snaps.Inline(`[
+	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/prelude.replace.digests.json"), snaps.Inline(`[
   {
     "decl": "Array",
     "member": "size",
@@ -193,7 +193,7 @@ func TestOverlayDigests_KeepAGetterAndASetterApart(t *testing.T) {
 }
 
 // overlayDocLib and overlayEditedDocLib differ only in the prose above
-// the member `std/array.replace.esc` stands in for. Prose churn is the
+// the member `std/prelude.replace.esc` stands in for. Prose churn is the
 // bulk of a TypeScript version bump, and it moves no shape.
 const overlayDocLib = `
 interface Array<T> { length: number; /** Reads one element. */ at(index: number): T | undefined; }
@@ -217,7 +217,7 @@ interface ArrayLike<T> { readonly length: number; }
 func TestOverlayDigests_IgnoreADocCommentEdit(t *testing.T) {
 	t.Parallel()
 	dir := seedOverlay(t, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    at(self, index: number) -> T,\n}\n",
 	})
 	_, err := applyOverlayIn(t, dir, overlayDocLib, true)
@@ -235,22 +235,22 @@ func TestOverlayDigests_IgnoreADocCommentEdit(t *testing.T) {
 func TestOverlayDigests_KeepTheTwoSidesOfAClassApart(t *testing.T) {
 	t.Parallel()
 	overlay := map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    static isArray(arg: unknown) -> boolean,\n}\n",
 	}
 
 	dir := seedOverlay(t, overlay)
 	_, err := applyOverlayIn(t, dir, overlayLib, false)
 	require.EqualError(t, err,
-		"overlay: std/array.replace.esc replaces static Array.isArray, and "+
-			"std/array.replace.digests.json records no digest for it; run "+
+		"overlay: std/prelude.replace.esc replaces static Array.isArray, and "+
+			"std/prelude.replace.digests.json records no digest for it; run "+
 			"`dts_to_esc generate --update-digests` to record what the overlay "+
 			"stands in for")
 
 	dir = seedOverlay(t, overlay)
 	_, err = applyOverlayIn(t, dir, overlayLib, true)
 	require.NoError(t, err)
-	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/array.replace.digests.json"), snaps.Inline(`[
+	snaps.MatchInlineSnapshot(t, readDigests(t, dir, "std/prelude.replace.digests.json"), snaps.Inline(`[
   {
     "decl": "Array",
     "member": "isArray",

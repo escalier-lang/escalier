@@ -124,11 +124,11 @@ type checker struct {
 	// pkgURI is the URI of the package whose declarations are being inferred,
 	// empty while inferring the entry module. Every class, enum, and alias
 	// registered under it keys on the URI joined to the dep_graph-qualified name,
-	// so `std:array`'s `Array` and a user's `Array` are two entries in the one
+	// so `std:prelude`'s `Array` and a user's `Array` are two entries in the one
 	// nominal registry a run shares.
 	//
 	// The separator is a dot, and a URI holds a colon that no identifier may, so
-	// `std:array.Array` splits back into its parts unambiguously and the display
+	// `std:prelude.Array` splits back into its parts unambiguously and the display
 	// printers already strip it to `Array`.
 	pkgURI string
 
@@ -157,6 +157,13 @@ type checker struct {
 	// source resolves a package URI to the module to infer for it. A run given no
 	// source reports every import as unresolved rather than loading anything.
 	source ModuleSource
+
+	// prelude is the per-run scope holding the prelude package's exports, built
+	// on first request by preludeScope and shared by the entry module and every
+	// package this run loads. It sits between the process-wide operator table and
+	// a module's own declarations, so a module declaration shadows a prelude
+	// export and a file's import shadows both.
+	prelude *Scope
 
 	// loadStack is the chain of package URIs currently being loaded, outermost
 	// first. loadPackage pushes before inferring a package and pops afterwards, so

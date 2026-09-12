@@ -68,9 +68,10 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 // diagnostic that says what to fix.
 //
 // The binding shape is the FR5 rule. A package whose sole class is named after
-// it binds that class under its own capitalization, so `import "std:array"`
-// gives `Array` rather than `array.Array`. Every other package binds as a
-// namespace under its lowercased package name.
+// it binds that class under its own capitalization, so `import "std:date"`
+// gives `Date` rather than `date.Date`. Every other package binds as a
+// namespace under the name the statement binds it as, which is its alias when
+// one is written and the package name otherwise.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
 		return errs
@@ -88,13 +89,19 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 		fileScope.defineType(className, ns.Types[className])
 	}
 	// The namespace is bound whether or not the shortcut fired. A package pairs
-	// its class with other exports — `std:array` ships `FlatArray` beside
-	// `Array` — and binding only the class would leave those unreachable under
+	// its class with other exports — `std:set` ships `ReadonlySetLike` beside
+	// `Set` — and binding only the class would leave those unreachable under
 	// any name.
 	//
 	// FR5 asks for more than reachability: the other members belong on the class
 	// binding itself, with a static of the same name winning. That merge is #1466.
-	fileScope.defineNamespace(strings.ToLower(pkg), ns)
+	//
+	// The name is the statement's, so `as` reaches a pseudo-package the same way
+	// it reaches an npm one. It renames this namespace binding and nothing else:
+	// a shortcut-bound class keeps its own capitalization, since that binding is
+	// the class rather than the package. A package name is already lowercase, so
+	// an import with no alias binds what the URI spells.
+	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
 }
 
@@ -103,7 +110,7 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 //
 // The shortcut fires when the package exports a class whose name matches its
 // own case-insensitively. The name comes back in its own capitalization, so
-// `std:array` binds `Array`.
+// `std:date` binds `Date`.
 //
 // A value and a type under one name is not enough to go on. A package exporting
 // `fn array` beside `type array` has both, and binding the function directly

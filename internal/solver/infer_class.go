@@ -112,7 +112,7 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 
 	// Bind `Self` to the class's own instance handle for the member walk below. A member
 	// signature names it for a builder-style return, where a method hands back the receiver's
-	// own type: `std/array.esc` writes `fill(mut self, value: T, start?: number, end?: number)
+	// own type: `std/prelude.esc` writes `fill(mut self, value: T, start?: number, end?: number)
 	// -> Self`. The handle carries the class's own type-parameter vars as its arguments, so
 	// `Self` inside `class Box<T>` is `Box<T>` and an instance's argument substitutes for `T`
 	// the way it does through any other reference to the class.

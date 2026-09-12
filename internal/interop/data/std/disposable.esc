@@ -2,14 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-export declare interface Disposable {
-    [Symbol.dispose]() -> unknown
-}
-
-export declare interface AsyncDisposable {
-    [Symbol.asyncDispose]() -> PromiseLike<undefined>
-}
-
 @js("DisposableStack")
 export declare class DisposableStack {
     /**

@@ -67,8 +67,8 @@ func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	dir := seedOverlay(t, map[string]string{
 		"README.md":             "not an overlay file\n",
 		"drop.esc":              "export declare val eval\n",
-		"std/symbol.add.esc":    "export declare interface SymbolConstructor {\n    readonly customMatcher: unique symbol,\n}\n",
-		"std/array.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
+		"std/set.add.esc":       "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
+		"std/prelude.replace.esc": "export declare interface Array<T> {\n    length: number,\n}\n",
 		"std/date.drop.esc":     "export declare interface Date {\n    getYear: unknown,\n}\n",
 	})
 
@@ -87,13 +87,13 @@ func TestLoadOverlay_ReadsOperationAndPackageFromTheFilename(t *testing.T) {
 	}
 	require.Equal(t, []entry{
 		{Path: "drop.esc", Op: OverlayDrop, PkgURI: "", Decls: 1},
-		{Path: "std/array.replace.esc", Op: OverlayReplace, PkgURI: "std:array", Decls: 1},
 		{Path: "std/date.drop.esc", Op: OverlayDrop, PkgURI: "std:date", Decls: 1},
-		{Path: "std/symbol.add.esc", Op: OverlayAdd, PkgURI: "std:symbol", Decls: 1},
+		{Path: "std/prelude.replace.esc", Op: OverlayReplace, PkgURI: "std:prelude", Decls: 1},
+		{Path: "std/set.add.esc", Op: OverlayAdd, PkgURI: "std:set", Decls: 1},
 	}, got)
 
 	require.Equal(t, []string{"eval"}, overlay.GlobalDrops().ToSlice())
-	require.Equal(t, []string{"std:array", "std:date", "std:symbol"}, overlay.PackageURIs())
+	require.Equal(t, []string{"std:date", "std:prelude", "std:set"}, overlay.PackageURIs())
 }
 
 // TestLoadOverlay_Accepts is the happy-path twin of
@@ -124,26 +124,26 @@ func TestLoadOverlay_Accepts(t *testing.T) {
 		},
 		{
 			name:      "add extends a declaration of its package",
-			path:      "std/symbol.add.esc",
-			body:      "export declare interface SymbolConstructor {\n    readonly customMatcher: unique symbol,\n}\n",
+			path:      "std/set.add.esc",
+			body:      "export declare interface ReadonlySetLike {\n    readonly size: number,\n}\n",
 			wantOp:    OverlayAdd,
-			wantPkg:   "std:symbol",
-			wantDecls: []string{"SymbolConstructor"},
+			wantPkg:   "std:set",
+			wantDecls: []string{"ReadonlySetLike"},
 		},
 		{
 			name:      "add contributes a decorated top-level declaration",
-			path:      "std/iterator.add.esc",
+			path:      "std/prelude.add.esc",
 			body:      "@js(\"Symbol.iterator\")\nexport declare val iteratorKey: unique symbol\n",
 			wantOp:    OverlayAdd,
-			wantPkg:   "std:iterator",
+			wantPkg:   "std:prelude",
 			wantDecls: []string{"iteratorKey"},
 		},
 		{
 			name:      "replace restates the members it stands in for",
-			path:      "std/array.replace.esc",
+			path:      "std/prelude.replace.esc",
 			body:      "export declare class Array<T> {\n    at(self, index: number) -> T,\n}\n",
 			wantOp:    OverlayReplace,
-			wantPkg:   "std:array",
+			wantPkg:   "std:prelude",
 			wantDecls: []string{"Array"},
 		},
 		{
@@ -229,21 +229,21 @@ func TestLoadOverlay_Rejects(t *testing.T) {
 	}{
 		{
 			name:  "file at the overlay root that is not the root drop file",
-			files: map[string]string{"symbol.add.esc": "export declare val x\n"},
-			want: "overlay: symbol.add.esc sits at neither the overlay root nor a " +
+			files: map[string]string{"set.add.esc": "export declare val x\n"},
+			want: "overlay: set.add.esc sits at neither the overlay root nor a " +
 				"package directory; write a package operation as " +
 				"<scheme>/<package>.<add|replace|drop>.esc and package-less drops as drop.esc",
 		},
 		{
 			name:  "no operation in the filename",
-			files: map[string]string{"std/symbol.esc": "export declare val x\n"},
-			want: "overlay: std/symbol.esc names no operation; the filename carries it, " +
-				"as in std/symbol.replace.esc",
+			files: map[string]string{"std/set.esc": "export declare val x\n"},
+			want: "overlay: std/set.esc names no operation; the filename carries it, " +
+				"as in std/set.replace.esc",
 		},
 		{
 			name:  "unknown operation",
-			files: map[string]string{"std/symbol.merge.esc": "export declare val x\n"},
-			want: "overlay: std/symbol.merge.esc names the unknown operation \"merge\"; " +
+			files: map[string]string{"std/set.merge.esc": "export declare val x\n"},
+			want: "overlay: std/set.merge.esc names the unknown operation \"merge\"; " +
 				"the operations are add, replace, and drop",
 		},
 		{
@@ -254,8 +254,8 @@ func TestLoadOverlay_Rejects(t *testing.T) {
 		},
 		{
 			name:  "file that does not parse",
-			files: map[string]string{"std/symbol.add.esc": "export declare fn (\n"},
-			want:  "overlay: std/symbol.add.esc does not parse: Expected identifier; Expected a pattern; Expected a closing paren",
+			files: map[string]string{"std/set.add.esc": "export declare fn (\n"},
+			want:  "overlay: std/set.add.esc does not parse: Expected identifier; Expected a pattern; Expected a closing paren",
 		},
 		{
 			name:  "drop entry carrying a type annotation",

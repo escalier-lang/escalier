@@ -389,16 +389,16 @@ func TestGenerateRejectsAnUnknownJSTarget(t *testing.T) {
 		"AFunction": {
 			overlay: "@js(\"Aray.isArray\")\n" +
 				"export declare fn isArray(value: unknown) -> boolean\n",
-			message: "  std:array: `@js(\"Aray.isArray\")` on \"isArray\" names no JS runtime global, " +
+			message: "  std:prelude: `@js(\"Aray.isArray\")` on \"isArray\" names no JS runtime global, " +
 				"and \"Aray\" is not a known top-level global",
 		},
 		"AClass": {
 			overlay: "@js(\"Aray\")\nexport declare class Widget {}\n",
-			message: "  std:array: `@js(\"Aray\")` on \"Widget\" names no JS runtime global",
+			message: "  std:prelude: `@js(\"Aray\")` on \"Widget\" names no JS runtime global",
 		},
 		"AValue": {
 			overlay: "@js(\"Aray.length\")\nexport declare val length: number\n",
-			message: "  std:array: `@js(\"Aray.length\")` on \"length\" names no JS runtime global, " +
+			message: "  std:prelude: `@js(\"Aray.length\")` on \"length\" names no JS runtime global, " +
 				"and \"Aray\" is not a known top-level global",
 		},
 	}
@@ -410,7 +410,7 @@ func TestGenerateRejectsAnUnknownJSTarget(t *testing.T) {
 			outDir := t.TempDir()
 			_, err := Generate(GenerateOptions{
 				LibDir:     seedLibDir(t, overlayLib),
-				OverlayDir: seedOverlay(t, map[string]string{"std/array.add.esc": test.overlay}),
+				OverlayDir: seedOverlay(t, map[string]string{"std/prelude.add.esc": test.overlay}),
 				OutDir:     outDir,
 			})
 
@@ -429,12 +429,12 @@ func TestOverlayRejectsAValueWithNoName(t *testing.T) {
 	_, err := Generate(GenerateOptions{
 		LibDir: seedLibDir(t, overlayLib),
 		OverlayDir: seedOverlay(t, map[string]string{
-			"std/array.add.esc": "@js(\"Aray.pair\")\nexport declare val [a, b]: number\n",
+			"std/prelude.add.esc": "@js(\"Aray.pair\")\nexport declare val [a, b]: number\n",
 		}),
 		OutDir: t.TempDir(),
 	})
 
 	require.EqualError(t, err,
-		"overlay: std/array.add.esc holds a value with no addressable name; "+
+		"overlay: std/prelude.add.esc holds a value with no addressable name; "+
 			"every overlay declaration is matched by name")
 }

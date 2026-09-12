@@ -110,7 +110,7 @@ func TestApplyOverlay_Operations(t *testing.T) {
 		{
 			name: "add reaches a converted class",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare class Array<T> {\n" +
+				"std/prelude.add.esc": "export declare class Array<T> {\n" +
 					"    static of<T>(...items: Array<T>) -> Array<T>,\n}\n",
 			},
 			want: `@js("Array")
@@ -130,7 +130,7 @@ export declare interface ArrayLike<T> {
 		{
 			name: "add reaches a converted interface",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare interface ArrayLike<T> {\n" +
+				"std/prelude.add.esc": "export declare interface ArrayLike<T> {\n" +
 					"    readonly first: T,\n}\n",
 			},
 			want: `@js("Array")
@@ -150,7 +150,7 @@ export declare interface ArrayLike<T> {
 		{
 			name: "add contributes a declaration no upstream source has",
 			overlay: map[string]string{
-				"std/array.add.esc": "@js(\"Symbol.iterator\")\n" +
+				"std/prelude.add.esc": "@js(\"Symbol.iterator\")\n" +
 					"export declare val iteratorKey: unique symbol\n",
 			},
 			want: `@js("Array")
@@ -172,7 +172,7 @@ export declare val iteratorKey: unique symbol
 		{
 			name: "replace substitutes a member at its own position",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    at(self, index: number) -> T,\n}\n",
 			},
 			want: `@js("Array")
@@ -191,7 +191,7 @@ export declare interface ArrayLike<T> {
 		{
 			name: "replace stands in for a whole declaration of another kind",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare type ArrayLike<T> = { length: number }\n",
+				"std/prelude.replace.esc": "export declare type ArrayLike<T> = { length: number }\n",
 			},
 			want: `@js("Array")
 export declare class Array<T> {
@@ -209,7 +209,7 @@ export declare type ArrayLike<T> = {
 		{
 			name: "drop keeps a member out of the output",
 			overlay: map[string]string{
-				"std/array.drop.esc": "export declare interface Array {\n" +
+				"std/prelude.drop.esc": "export declare interface Array {\n" +
 					"    at: unknown,\n}\n",
 			},
 			want: `@js("Array")
@@ -227,7 +227,7 @@ export declare interface ArrayLike<T> {
 		{
 			name: "drop keeps a whole declaration out of the output",
 			overlay: map[string]string{
-				"std/array.drop.esc": "export declare val ArrayLike\n",
+				"std/prelude.drop.esc": "export declare val ArrayLike\n",
 			},
 			want: `@js("Array")
 export declare class Array<T> {
@@ -243,7 +243,7 @@ export declare class Array<T> {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tt.want,
-				renderPackage(t, overlayModules(t, tt.overlay), "std:array"))
+				renderPackage(t, overlayModules(t, tt.overlay), "std:prelude"))
 		})
 	}
 }
@@ -256,7 +256,7 @@ func TestApplyOverlay_RootDropKeepsASymbolOutOfEveryPackage(t *testing.T) {
 	mods := overlayModules(t, map[string]string{
 		"drop.esc": "export declare val parseInt\n",
 	})
-	require.Contains(t, mods, "std:array")
+	require.Contains(t, mods, "std:prelude")
 	require.NotContains(t, mods, "std:number",
 		"parseInt is the only declaration routing to std:number")
 }
@@ -280,49 +280,49 @@ func TestApplyOverlay_RejectsAnOverlayTheUpstreamSourceNoLongerBacks(t *testing.
 		{
 			name: "drop naming an absent declaration",
 			overlay: map[string]string{
-				"std/array.drop.esc": "export declare val ReadonlyArray\n",
+				"std/prelude.drop.esc": "export declare val ReadonlyArray\n",
 			},
-			want: "overlay: std/array.drop.esc drops ReadonlyArray, which std:array does not declare",
+			want: "overlay: std/prelude.drop.esc drops ReadonlyArray, which std:prelude does not declare",
 		},
 		{
 			name: "drop naming an absent member",
 			overlay: map[string]string{
-				"std/array.drop.esc": "export declare interface Array {\n    sort: unknown,\n}\n",
+				"std/prelude.drop.esc": "export declare interface Array {\n    sort: unknown,\n}\n",
 			},
-			want: "overlay: std/array.drop.esc drops Array.sort, which the converted " +
+			want: "overlay: std/prelude.drop.esc drops Array.sort, which the converted " +
 				"declaration does not have",
 		},
 		{
 			name: "replace naming an absent declaration",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare val ReadonlyArray\n",
+				"std/prelude.replace.esc": "export declare val ReadonlyArray\n",
 			},
-			want: "overlay: std/array.replace.esc replaces ReadonlyArray, which std:array does not declare",
+			want: "overlay: std/prelude.replace.esc replaces ReadonlyArray, which std:prelude does not declare",
 		},
 		{
 			name: "replace naming an absent member",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    sort(mut self) -> Self,\n}\n",
 			},
-			want: "overlay: std/array.replace.esc replaces Array.sort, which the converted " +
+			want: "overlay: std/prelude.replace.esc replaces Array.sort, which the converted " +
 				"declaration does not have",
 		},
 		{
 			name: "add colliding with a converted member",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare class Array<T> {\n" +
+				"std/prelude.add.esc": "export declare class Array<T> {\n" +
 					"    at(mut self, index: number) -> T,\n}\n",
 			},
-			want: "overlay: std/array.add.esc adds Array.at, which the converted declaration " +
+			want: "overlay: std/prelude.add.esc adds Array.at, which the converted declaration " +
 				"already has; correct it with a replace overlay instead",
 		},
 		{
 			name: "add colliding with a converted declaration",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare val ArrayLike\n",
+				"std/prelude.add.esc": "export declare val ArrayLike\n",
 			},
-			want: "overlay: std/array.add.esc adds the interface ArrayLike, which std:array " +
+			want: "overlay: std/prelude.add.esc adds the interface ArrayLike, which std:prelude " +
 				"already declares; correct an existing declaration with a replace overlay",
 		},
 		{
@@ -362,7 +362,7 @@ export declare fn now() -> number
 func TestApplyOverlay_ReplaceKeepsTheConvertedMemberDoc(t *testing.T) {
 	t.Parallel()
 	mods, err := convertLibWithOverlay(t, overlayDocLib, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    at(self, index: number) -> T,\n}\n",
 	})
 	require.NoError(t, err)
@@ -378,7 +378,7 @@ export declare class Array<T> {
 export declare interface ArrayLike<T> {
     readonly length: number
 }
-`, renderPackage(t, mods, "std:array"))
+`, renderPackage(t, mods, "std:prelude"))
 }
 
 // overlayKindLib converts to a class holding a getter and a setter under
@@ -425,9 +425,9 @@ export declare class Array<T> {
     constructor(mut self)
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    get size(self) -> number | undefined,\n}\n",
-	}), "std:array"))
+	}), "std:prelude"))
 }
 
 // TestApplyOverlay_RejectsAKindChange covers the two ways an overlay can
@@ -444,30 +444,30 @@ func TestApplyOverlay_RejectsAKindChange(t *testing.T) {
 		{
 			name: "replace writing a getter as a method",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    size(self) -> number,\n}\n",
 			},
-			want: "overlay: std/array.replace.esc replaces Array.size as a method, which " +
+			want: "overlay: std/prelude.replace.esc replaces Array.size as a method, which " +
 				"the converted declaration declares as a getter and a setter; drop the " +
 				"member and add the new form to change its kind",
 		},
 		{
 			name: "replace writing the half of an accessor the declaration lacks",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    set first(mut self, v: T),\n}\n",
 			},
-			want: "overlay: std/array.replace.esc replaces Array.first as a setter, " +
+			want: "overlay: std/prelude.replace.esc replaces Array.first as a setter, " +
 				"which the converted declaration declares only as a getter; " +
 				"contribute the setter with an add overlay instead",
 		},
 		{
 			name: "add writing a getter as a field",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare class Array<T> {\n" +
+				"std/prelude.add.esc": "export declare class Array<T> {\n" +
 					"    size: number,\n}\n",
 			},
-			want: "overlay: std/array.add.esc adds Array.size as a field, which the " +
+			want: "overlay: std/prelude.add.esc adds Array.size as a field, which the " +
 				"converted declaration declares as a getter and a setter; drop the " +
 				"member and add the new form to change its kind",
 		},
@@ -498,19 +498,19 @@ export declare class Array<T> {
     constructor(mut self)
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
-			"std/array.replace.esc": "export declare class Array<T> {\n" +
+			"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 				"    find(self, x: number) -> T | undefined,\n" +
 				"    find(self, x: string) -> T | undefined,\n}\n",
-		}), "std:array"))
+		}), "std:prelude"))
 	})
 
 	t.Run("writing one name as two fields fails", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t,
-			"overlay: std/array.replace.esc replaces Array.length twice as a field; "+
+			"overlay: std/prelude.replace.esc replaces Array.length twice as a field; "+
 				"only signatures overload",
 			overlayError(t, map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    length: number,\n    length: string,\n}\n",
 			}))
 	})
@@ -518,11 +518,11 @@ export declare class Array<T> {
 	t.Run("restating one signature fails and names the member", func(t *testing.T) {
 		t.Parallel()
 		require.Equal(t,
-			"overlay: std/array.replace.esc replaces 1 of the 2 signatures of "+
+			"overlay: std/prelude.replace.esc replaces 1 of the 2 signatures of "+
 				"Array.find; a replace restates the whole overload set, since a name "+
 				"is what addresses it",
 			overlayKindError(t, map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    find(self, x: number) -> T | undefined,\n}\n",
 			}))
 	})
@@ -547,10 +547,10 @@ export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
-		"std/array.add.esc": "export declare class Array<T> {\n" +
+		"std/prelude.add.esc": "export declare class Array<T> {\n" +
 			"    indexOf(self, item: T) -> number,\n" +
 			"    indexOf(self, item: T, from: number) -> number,\n}\n",
-	}), "std:array"))
+	}), "std:prelude"))
 }
 
 // TestApplyOverlay_AddsTheOtherHalfOfAnAccessor covers the one pair of
@@ -570,9 +570,9 @@ export declare class Array<T> {
     set first(mut self, v: T)
 }
 `, renderPackage(t, overlayKindModules(t, map[string]string{
-		"std/array.add.esc": "export declare class Array<T> {\n" +
+		"std/prelude.add.esc": "export declare class Array<T> {\n" +
 			"    set first(mut self, v: T),\n}\n",
-	}), "std:array"))
+	}), "std:prelude"))
 }
 
 // TestApplyOverlay_RejectsAddingOneNameAsTwoMembers covers the clash an
@@ -590,7 +590,7 @@ func TestApplyOverlay_RejectsAddingOneNameAsTwoMembers(t *testing.T) {
 			name: "a field and a getter",
 			overlay: "export declare class Array<T> {\n" +
 				"    first: T,\n    get first(self) -> T,\n}\n",
-			want: "overlay: std/array.add.esc adds Array.first as a getter beside a " +
+			want: "overlay: std/prelude.add.esc adds Array.first as a getter beside a " +
 				"field it adds under the same name; one name holds one member, or a " +
 				"getter and a setter",
 		},
@@ -598,7 +598,7 @@ func TestApplyOverlay_RejectsAddingOneNameAsTwoMembers(t *testing.T) {
 			name: "one name as two fields",
 			overlay: "export declare class Array<T> {\n" +
 				"    first: T,\n    first: number,\n}\n",
-			want: "overlay: std/array.add.esc adds Array.first twice as a field; " +
+			want: "overlay: std/prelude.add.esc adds Array.first twice as a field; " +
 				"only signatures overload",
 		},
 	}
@@ -606,7 +606,7 @@ func TestApplyOverlay_RejectsAddingOneNameAsTwoMembers(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tt.want,
-				overlayError(t, map[string]string{"std/array.add.esc": tt.overlay}))
+				overlayError(t, map[string]string{"std/prelude.add.esc": tt.overlay}))
 		})
 	}
 }
@@ -643,7 +643,7 @@ func TestApplyOverlay_KeysAMemberOnItsSideOfTheClass(t *testing.T) {
 		{
 			name: "replace reaches the instance member alone",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    of(mut self, x: number) -> T | undefined,\n}\n",
 			},
 			want: `@js("Array")
@@ -658,7 +658,7 @@ export declare class Array<T> {
 		{
 			name: "replace reaches the static member alone",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 					"    static of(x: string) -> Array<T>,\n}\n",
 			},
 			want: `@js("Array")
@@ -673,7 +673,7 @@ export declare class Array<T> {
 		{
 			name: "add contributes the static half of a name the instance side holds",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare class Array<T> {\n" +
+				"std/prelude.add.esc": "export declare class Array<T> {\n" +
 					"    static at(x: number) -> T,\n}\n",
 			},
 			want: `@js("Array")
@@ -691,7 +691,7 @@ export declare class Array<T> {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			require.Equal(t, tt.want,
-				renderPackage(t, overlaySideModules(t, tt.overlay), "std:array"))
+				renderPackage(t, overlaySideModules(t, tt.overlay), "std:prelude"))
 		})
 	}
 }
@@ -703,11 +703,11 @@ export declare class Array<T> {
 func TestApplyOverlay_ReportsWhichSideAMemberIsMissingFrom(t *testing.T) {
 	t.Parallel()
 	_, err := convertLibWithOverlay(t, overlaySideLib, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T> {\n" +
 			"    static at(x: number) -> T,\n}\n",
 	})
 	require.EqualError(t, err,
-		"overlay: std/array.replace.esc replaces static Array.at, which the "+
+		"overlay: std/prelude.replace.esc replaces static Array.at, which the "+
 			"converted declaration does not have")
 }
 
@@ -725,20 +725,20 @@ func TestApplyOverlay_HoldsAMemberOperationToTheConvertedTypeParameters(t *testi
 		{
 			name: "replace binding another name",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare class Array<U> {\n" +
+				"std/prelude.replace.esc": "export declare class Array<U> {\n" +
 					"    at(self, index: number) -> U,\n}\n",
 			},
-			want: "overlay: std/array.replace.esc writes Array<U>, which the converted " +
+			want: "overlay: std/prelude.replace.esc writes Array<U>, which the converted " +
 				"declaration binds as Array<T>; a member operation keeps the converted " +
 				"declaration's type parameters, so the overlay restates them as they are",
 		},
 		{
 			name: "add binding none at all",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare interface ArrayLike {\n" +
+				"std/prelude.add.esc": "export declare interface ArrayLike {\n" +
 					"    readonly first: unknown,\n}\n",
 			},
-			want: "overlay: std/array.add.esc writes ArrayLike, which the converted " +
+			want: "overlay: std/prelude.add.esc writes ArrayLike, which the converted " +
 				"declaration binds as ArrayLike<T>; a member operation keeps the " +
 				"converted declaration's type parameters, so the overlay restates " +
 				"them as they are",
@@ -766,31 +766,31 @@ func TestApplyOverlay_RejectsWhatAMemberOperationDoesNotRead(t *testing.T) {
 		{
 			name: "an extends clause on an interface",
 			overlay: map[string]string{
-				"std/array.add.esc": "export declare interface ArrayLike<T> " +
+				"std/prelude.add.esc": "export declare interface ArrayLike<T> " +
 					"extends Iterable<T> {\n    readonly first: T,\n}\n",
 			},
-			want: "overlay: std/array.add.esc writes an extends clause on ArrayLike, " +
+			want: "overlay: std/prelude.add.esc writes an extends clause on ArrayLike, " +
 				"which a member operation does not read; it contributes members " +
 				"alone, so drop it from the overlay",
 		},
 		{
 			name: "a final modifier on a class",
 			overlay: map[string]string{
-				"std/array.replace.esc": "export declare final class Array<T> {\n" +
+				"std/prelude.replace.esc": "export declare final class Array<T> {\n" +
 					"    at(self, index: number) -> T,\n}\n",
 			},
-			want: "overlay: std/array.replace.esc writes a final modifier on Array, " +
+			want: "overlay: std/prelude.replace.esc writes a final modifier on Array, " +
 				"which a member operation does not read; it contributes members " +
 				"alone, so drop it from the overlay",
 		},
 		{
 			name: "a decorator on a class",
 			overlay: map[string]string{
-				"std/array.replace.esc": "@js(\"Array\")\n" +
+				"std/prelude.replace.esc": "@js(\"Array\")\n" +
 					"export declare class Array<T> {\n" +
 					"    at(self, index: number) -> T,\n}\n",
 			},
-			want: "overlay: std/array.replace.esc writes a decorator on Array, which " +
+			want: "overlay: std/prelude.replace.esc writes a decorator on Array, which " +
 				"a member operation does not read; it contributes members alone, " +
 				"so drop it from the overlay",
 		},
@@ -822,9 +822,9 @@ export declare interface ArrayLike<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
-		"std/array.replace.esc": "export declare class Array<T: unknown> {\n" +
+		"std/prelude.replace.esc": "export declare class Array<T: unknown> {\n" +
 			"    at(self, index: number) -> T,\n}\n",
-	}), "std:array"))
+	}), "std:prelude"))
 }
 
 // TestApplyOverlay_WholeDeclarationReplacementReadsWhatAMergeDoesNot is
@@ -846,7 +846,7 @@ export declare class ArrayLike<T> extends Array<T> {
     readonly length: number
 }
 `, renderPackage(t, overlayModules(t, map[string]string{
-		"std/array.replace.esc": "export declare class ArrayLike<T> extends Array<T> {\n" +
+		"std/prelude.replace.esc": "export declare class ArrayLike<T> extends Array<T> {\n" +
 			"    readonly length: number,\n}\n",
-	}), "std:array"))
+	}), "std:prelude"))
 }

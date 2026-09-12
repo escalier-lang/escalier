@@ -97,7 +97,7 @@ func parseModule(t *testing.T, src string) *ast.Module {
 // the checker's Context, not on the AliasType handle in scope.
 func inferModule(module *ast.Module) (values, types map[string]string, errs []SolverError) {
 	c := newTestChecker()
-	scope := sharedPrelude().Child()
+	scope := c.preludeScope().Child()
 	c.inferDepGraph(scope, 0, module, dep_graph.BuildDepGraph(module))
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {
@@ -618,10 +618,10 @@ func TestInferModuleNamedCalleeArityMismatchRecoversReturn(t *testing.T) {
 // testStdlibSource resolves the pseudo-packages the solver's own tests infer
 // against, read from testdata/stdlib.
 //
-// It supplies `std:array`, which is what makes a written `Array<T>` resolve to the
-// ingested class rather than to an unknown name. The committed
-// internal/interop/data tree is not used: it does not yet ingest cleanly, and its
-// diagnostics would land in front of every test's own.
+// It supplies `std:prelude`, whose exports every scope starts with, which is what
+// makes a written `Array<T>` resolve to the ingested class rather than to an
+// unknown name. The committed internal/interop/data tree is not used: it does not
+// yet ingest cleanly, and its diagnostics would land in front of every test's own.
 func testStdlibSource() ModuleSource {
 	return StdlibSource(filepath.Join("testdata", "stdlib"))
 }

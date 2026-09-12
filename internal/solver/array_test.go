@@ -148,25 +148,23 @@ func TestArrayResolvesFromInsideAnOverloadTrial(t *testing.T) {
 			val r = pick(fn (xs: Array<number>) { return xs.length })
 		`,
 	})
-	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 
 	require.Empty(t, errorMessagesOf(c.errs))
 	require.NotEmpty(t, c.ctx.arrayClass)
 }
 
-// arrayElem and arrayOf both answer against the class name the run settled on, so
-// both decline when there is nothing to compare against. arrayElem also declines an
-// instance of that class carrying the wrong number of arguments, which is not an
-// array whatever its name says.
+// arrayElem answers against the class name the run settled on, so it declines
+// when there is nothing to compare against. It also declines an instance of that
+// class carrying the wrong number of arguments, which is not an array whatever
+// its name says.
 func TestArrayHelpersDeclineWhatIsNotAnArray(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NoArrayResolved", func(t *testing.T) {
 		t.Parallel()
 		c := &Context{}
-		_, ok := c.arrayOf(num())
-		require.False(t, ok)
-		_, ok = c.arrayElem(&soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{num()}})
+		_, ok := c.arrayElem(&soltype.ClassType{Name: "Array", TypeArgs: []soltype.Type{num()}})
 		require.False(t, ok)
 	})
 	t.Run("AnotherClassOfTheSameShape", func(t *testing.T) {
@@ -196,7 +194,7 @@ func TestArrayIsUnknownWithoutAStdlib(t *testing.T) {
 	module := parseModuleFiles(t, map[string]string{
 		"input.esc": `fn f(xs: Array<number>) -> number { return 1 }`,
 	})
-	c.inferDepGraph(sharedPrelude().Child(), 0, module, dep_graph.BuildDepGraph(module))
+	c.inferDepGraph(c.preludeScope().Child(), 0, module, dep_graph.BuildDepGraph(module))
 
 	require.Equal(t, []string{"cannot find type `Array`"}, errorMessagesOf(c.errs))
 	require.Empty(t, c.ctx.arrayClass)
