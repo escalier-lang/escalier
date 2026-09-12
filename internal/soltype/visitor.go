@@ -86,6 +86,7 @@ func (t *SkolemType) Accept(v TypeVisitor, pol Polarity) Type    { return accept
 func (t *InferType) Accept(v TypeVisitor, pol Polarity) Type     { return acceptLeaf(t, v, pol) }
 func (t *MappedKeyType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
+func (t *UniqueSymbolType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 func (t *RecursiveVarType) Accept(v TypeVisitor, pol Polarity) Type { return acceptLeaf(t, v, pol) }
 
 func (t *FuncType) Accept(v TypeVisitor, pol Polarity) Type {

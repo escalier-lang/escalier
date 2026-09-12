@@ -130,10 +130,27 @@ func (c *checker) inferModuleValElse(scope *Scope, lvl int, d *ast.VarDecl) (sol
 // Walks the initializer regardless so it still surfaces its own errors, and
 // binds nothing — the caller owns scope placement.
 //
-// A `val`/`var` with no initializer needs a type annotation (TypeAnn support lands
-// in a later PR); for now it reports MissingInitializerError and returns ok=false.
+// An ambient `declare val x: T` or `declare var x: T` binds its annotation. It describes a
+// value the runtime already provides, so there is nothing to initialize and the annotation
+// is the whole of what is known. `std:prelude` writes `declare var Symbol:
+// SymbolConstructor` this way, which is how the well-known symbols become reachable as
+// values.
+//
+// Every other initializer-free form reports MissingInitializerError and binds nothing. A
+// plain `val x` names a value nothing writes, and an ambient decl with no annotation names
+// one nothing describes.
 func (c *checker) inferVarDeclInit(scope *Scope, lvl int, d *ast.VarDecl) (soltype.Type, bool) {
 	if d.Init == nil {
+		if d.Declare() && d.TypeAnn != nil {
+			t, resolved := c.resolveTypeAnn(scope, d.TypeAnn, lvl)
+			if !resolved {
+				// The annotation reported its own diagnostic. Recover to a fresh var so
+				// every reader of the binding constrains against something rather than
+				// cascading on the one fault.
+				t = c.freshAt(lvl)
+			}
+			return t, true
+		}
 		c.report(&MissingInitializerError{Decl: d})
 		return nil, false
 	}

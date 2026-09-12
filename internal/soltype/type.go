@@ -62,18 +62,23 @@ func (v *TypeVarType) BoundsAt(pol Polarity) []Type {
 	return v.UpperBounds
 }
 
-// Prim is the closed set of primitives M1 carries. Mirrors the type_system
-// package's Prim enum, but only the three M1's tests exercise; M2+ extends
-// Prim (BigIntPrim, SymbolPrim) and Lit (BigIntLit, NullLit, UndefinedLit)
-// to the full type_system set as the parser bridge surfaces them. The
-// additions are inert from constrain's perspective — same prim/literal arms
-// with one more concrete each — so the deferral is purely scope, not design.
+// Prim is the closed set of primitives. Mirrors the type_system package's Prim
+// enum. BigIntPrim and the literal kinds BigIntLit, NullLit and UndefinedLit are
+// still absent, and each is inert from constrain's perspective — the same prim
+// and literal arms with one more concrete — so their absence is scope rather
+// than design.
+//
+// SymPrim is the type of every symbol, the one a `unique symbol` is a subtype
+// of. A symbol carries no literal kind: two symbols with the same description
+// are still different values, so nothing about a symbol is written down the way
+// a number or a string is.
 type Prim int
 
 const (
 	NumPrim Prim = iota
 	StrPrim
 	BoolPrim
+	SymPrim
 )
 
 type PrimType struct{ Prim Prim }
@@ -566,12 +571,13 @@ func AsMapped(elems []ObjTypeElem) (*MappedElem, bool) {
 	return nil, false
 }
 
-// UncountableKeys reports whether a key set names infinitely many keys: a `string`/`number` prim or
-// a union holding one. The caller must ground it first, since an abstract operand reads as countable.
+// UncountableKeys reports whether a key set names infinitely many keys: a `string`, `number` or
+// `symbol` prim, or a union holding one. The caller must ground it first, since an abstract
+// operand reads as countable.
 func UncountableKeys(t Type) bool {
 	switch t := t.(type) {
 	case *PrimType:
-		return t.Prim == StrPrim || t.Prim == NumPrim
+		return t.Prim == StrPrim || t.Prim == NumPrim || t.Prim == SymPrim
 	case *UnionType:
 		for _, member := range t.Types {
 			if UncountableKeys(member) {
@@ -1169,6 +1175,20 @@ type SelfType struct {
 	Class *ClassType
 }
 
+// UniqueSymbolType is one particular symbol, the type a `unique symbol` annotation
+// names. `SymbolConstructor` declares `readonly iterator: unique symbol`, and the type
+// of `Symbol.iterator` is that one symbol rather than the whole `symbol` primitive.
+//
+// ID is what tells two of them apart. A symbol has no written form a reader could
+// compare, so two are the same type exactly when they came from the same declaration,
+// and the id is what carries that. It is minted per run and means nothing across runs.
+//
+// Every unique symbol is a subtype of `symbol`, and no two distinct ones are subtypes of
+// each other. That pair of rules is the whole of its place in the lattice.
+type UniqueSymbolType struct {
+	ID int
+}
+
 // TemplateLitType is the residual template literal type operator, such as
 // `on${T}`. Quasis holds the fixed string segments and Interps the interpolated
 // types between them, so Quasis has exactly one more entry than Interps. Like KeyofType
@@ -1328,6 +1348,7 @@ func (*ClassType) isType()           {}
 func (*AliasType) isType()           {}
 func (*SkolemType) isType()          {}
 func (*SelfType) isType()            {}
+func (*UniqueSymbolType) isType()    {}
 
 // LevelOf is the max level of any TypeVarType inside t; concrete leaves are 0.
 // Trimmed to the M1 type set (grows back as later milestones add formers).

@@ -388,10 +388,10 @@ func TestInferThrowsOnClassMembers(t *testing.T) {
 func TestInferThrowsAnnotationRecovery(t *testing.T) {
 	runThrowsErrCases(t, []throwsErrCase{
 		{
-			// `symbol` stands in for any annotation resolveTypeAnn does not support.
+			// `bigint` stands in for any annotation resolveTypeAnn does not support.
 			name:     "UnsupportedAnnotationDoesNotCascade",
-			src:      `val f: fn() -> number throws symbol = fn () -> never throws _ { throw "x" }`,
-			wantErrs: []string{"1:30-1:36: Unsupported: SymbolTypeAnn"},
+			src:      `val f: fn() -> number throws bigint = fn () -> never throws _ { throw "x" }`,
+			wantErrs: []string{"1:30-1:36: Unsupported: BigintTypeAnn"},
 		},
 	})
 }

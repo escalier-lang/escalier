@@ -1524,6 +1524,12 @@ func equalTypeWith(a, b soltype.Type, ctx *alphaCtx) bool {
 			}
 		}
 		return true
+	case *soltype.UniqueSymbolType:
+		// Two unique symbols are the same type exactly when they carry the same id, which
+		// is what says they came from one declaration. A symbol has no written form to
+		// compare instead.
+		b, ok := b.(*soltype.UniqueSymbolType)
+		return ok && a.ID == b.ID
 	case *soltype.SelfType:
 		// A `Self` equals only another `Self` over the same declaring class. It never equals
 		// that class written out, which is the distinction the kind exists to keep: a member

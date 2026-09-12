@@ -526,6 +526,10 @@ func compareSameKind(a, b soltype.Type) int {
 		// Two `Self`s order by the class each was declared in, which is the only type they
 		// carry. A `Self` and a bare class never reach here: typeKindOrder separates them.
 		return compareType(a.Class, b.(*soltype.SelfType).Class)
+	case *soltype.UniqueSymbolType:
+		// Two unique symbols order by the id that tells them apart, the only thing either
+		// carries.
+		return a.ID - b.(*soltype.UniqueSymbolType).ID
 	case *soltype.ClassType:
 		// Two class instances order by every field their equality reads: the qualified
 		// name, the exactness flag, then the lifetime and type arguments positionally.
@@ -879,10 +883,12 @@ func typeKindOrder(t soltype.Type) int {
 		return 17
 	case *soltype.AliasType:
 		return 18
+	case *soltype.UniqueSymbolType:
+		return 19
 	}
 	// Every residual shares the last rank. compareSameKind asserts b to a's own type,
 	// so a kind reaching that function needs a rank of its own here: two kinds sharing
 	// one rank and both carrying a branch there would assert across them. The residuals
 	// are safe because none of them has a branch.
-	return 19
+	return 20
 }

@@ -120,20 +120,21 @@ func (c *checker) preludeScope() *Scope {
 	return c.prelude
 }
 
-// preludeVarIDBase is the first variable id the prelude package's own inference
-// draws. It sits above any id a program reaches, so the two never collide and
-// the counter can be handed back to the program untouched. See
-// bindPreludeExports.
-const preludeVarIDBase = 1 << 20
+// preludeIDBase is the first id the prelude package's own inference draws, for both
+// the type-variable counter and the unique-symbol counter. It sits above any id a
+// program reaches, so the two never collide and each counter can be handed back to
+// the program untouched. See bindPreludeExports.
+const preludeIDBase = 1 << 20
 
 // bindPreludeExports loads the prelude package and copies what it exports into
 // scope.
 //
-// The package draws its variables from preludeVarIDBase and the program's
-// counter is put back afterwards, so a program's first variable is `t0` whether
-// or not a prelude loaded. Numbering a program's diagnostics from where the
-// standard library left off would put it in messages about code that never
-// mentions it.
+// The package draws its variables and its unique symbols from preludeIDBase and
+// the program's counters are put back afterwards, so a program's first variable is
+// `t0` and its first minted symbol is `unique symbol#0` whether or not a prelude
+// loaded. Numbering a program's diagnostics from where the standard library left off
+// would put it in messages about code that never mentions it. `SymbolConstructor`
+// alone declares seventeen unique symbols.
 //
 // A source that answers nothing for the URI binds nothing and reports nothing
 // here. The report belongs to resolvePreludeClasses, which names the classes it
@@ -145,10 +146,10 @@ const preludeVarIDBase = 1 << 20
 // while this layer is still empty. See the `std:prelude` entry in
 // internal/dts_to_esc/partition.go.
 func (c *checker) bindPreludeExports(scope *Scope) {
-	programVars := c.ctx.varCounter
-	c.ctx.varCounter = preludeVarIDBase
+	programVars, programSymbols := c.ctx.varCounter, c.ctx.symbolCounter
+	c.ctx.varCounter, c.ctx.symbolCounter = preludeIDBase, preludeIDBase
 	ns, errs := c.loadPackage(preludeURI, ast.Span{})
-	c.ctx.varCounter = programVars
+	c.ctx.varCounter, c.ctx.symbolCounter = programVars, programSymbols
 	if ns == nil {
 		return
 	}

@@ -21,6 +21,15 @@ func (c *checker) resolveTypeAnn(scope *Scope, ta ast.TypeAnn, lvl int) (soltype
 		return c.annPrim(ta, soltype.StrPrim), true
 	case *ast.BooleanTypeAnn:
 		return c.annPrim(ta, soltype.BoolPrim), true
+	case *ast.SymbolTypeAnn:
+		return c.annPrim(ta, soltype.SymPrim), true
+	case *ast.UniqueSymbolTypeAnn:
+		// Each written `unique symbol` names its own symbol, so the annotation mints one
+		// rather than resolving to a shared type. Two references to the declaration that
+		// carries it share the symbol because they share the resolved type.
+		t := c.ctx.freshSymbol()
+		c.recordProv(t, ta, AnnotationType)
+		return t, true
 	case *ast.NeverTypeAnn:
 		// `never` is the bottom of the lattice, the empty type. A mapped type's key-remapping
 		// expression names it to drop a field, `{[if K : "id" { never } else { K }]: … }`, which is

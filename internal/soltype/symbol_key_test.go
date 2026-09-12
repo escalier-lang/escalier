@@ -51,3 +51,11 @@ func TestPrintObjectKeyNameRendersASymbolKey(t *testing.T) {
 	require.Equal(t, "length", printObjectKeyName("length"))
 	require.Equal(t, `"a-b"`, printObjectKeyName("a-b"))
 }
+
+// A unique symbol carries an id rather than a type, so a walk has nothing under it to
+// visit and an unchanged one keeps its pointer.
+func TestAcceptUniqueSymbolIsALeaf(t *testing.T) {
+	sym := &UniqueSymbolType{ID: 3}
+	require.Same(t, Type(sym), sym.Accept(identityVisitor{}, Positive))
+	require.Equal(t, "unique symbol#3", Print(sym))
+}

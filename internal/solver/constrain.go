@@ -1428,6 +1428,23 @@ func (c *Context) constrain(sub, super soltype.Type, seen *seenPairs, mutCtx boo
 		if _, ok := super.(*soltype.UndefinedType); ok {
 			return nil
 		}
+	case *soltype.UniqueSymbolType:
+		// A unique symbol is a subtype of `symbol` the way a literal is a subtype of its
+		// primitive, and of another unique symbol only when the two carry one id. A symbol
+		// has no written form, so nothing weaker than identity could relate two of them:
+		// two declarations of `unique symbol` are two different values however they read.
+		if sup, ok := super.(*soltype.UniqueSymbolType); ok {
+			if sub.ID == sup.ID {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
+		if sup, ok := super.(*soltype.PrimType); ok {
+			if sup.Prim == soltype.SymPrim {
+				return nil
+			}
+			return []SolverError{&CannotConstrainError{Sub: sub, Super: sup}}
+		}
 	case *soltype.NullType:
 		// `null` relates only to itself, the twin of the UndefinedType arm above. It is
 		// unrelated to `undefined` and to every data type, matching TypeScript

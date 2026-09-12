@@ -2,12 +2,12 @@ package solver
 
 import "github.com/escalier-lang/escalier/internal/soltype"
 
-// widen lowers literal types to their primitives, recursively through the
-// structural carriers, so a mutable cell can later hold a different value of the
-// same primitive. A number literal `5` widens to `number`, `"x"` to `string`,
-// `true` to `boolean`; an ObjectType/TupleType widens each property value /
-// element in place, preserving Inexact; a RefType is peeled, its inner widened,
-// and re-wrapped via NewRef. Every other type passes through unchanged.
+// widen lowers a type naming one particular value to its primitive, recursively
+// through the structural carriers, so a mutable cell can later hold a different value
+// of the same primitive. A number literal `5` widens to `number`, `"x"` to `string`,
+// `true` to `boolean`, and a unique symbol to `symbol`; an ObjectType/TupleType widens
+// each property value / element in place, preserving Inexact; a RefType is peeled, its
+// inner widened, and re-wrapped via NewRef. Every other type passes through unchanged.
 //
 // It is the new-checker analogue of internal/checker's widenLiteral /
 // widenObjectLiterals / widenTupleLiterals (unify.go). M4 B3 calls it in two
@@ -23,6 +23,11 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 // through a `mut` receiver is itself a mutation, so the stored value widens too.
 func widen(t soltype.Type) soltype.Type {
 	switch t := t.(type) {
+	case *soltype.UniqueSymbolType:
+		// A unique symbol names one particular symbol the way a literal names one
+		// particular value, so a mutable cell holding one widens to `symbol` and can
+		// later hold another. `var s = Symbol.iterator; s = Symbol.asyncIterator`.
+		return &soltype.PrimType{Prim: soltype.SymPrim}
 	case *soltype.LitType:
 		switch t.Lit.(type) {
 		case *soltype.NumLit:

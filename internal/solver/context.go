@@ -21,7 +21,13 @@ import "github.com/escalier-lang/escalier/internal/soltype"
 // append would silently survive a Discard and corrupt committed state).
 type Context struct {
 	varCounter int
-	probe      *Probe
+
+	// symbolCounter mints the id a `unique symbol` annotation carries. Each written
+	// annotation is its own symbol, so the counter advances per annotation rather than
+	// per name, and two references to one declaration share an id because they share the
+	// resolved type rather than because they re-resolve to the same number.
+	symbolCounter int
+	probe         *Probe
 
 	// arrayClass is the qualified class name the prelude's `Array` binds to, read
 	// off the prelude scope once per run. The subtyping and iteration rules that single an
@@ -250,6 +256,16 @@ func (c *Context) freshVar(level int) *soltype.TypeVarType {
 	v := &soltype.TypeVarType{ID: c.varCounter, Level: level}
 	c.varCounter++
 	return v
+}
+
+// freshSymbol mints one particular symbol, the type a written `unique symbol` names. Each
+// call answers a symbol distinct from every other, which is what the annotation means: two
+// declarations of `unique symbol` are two values, and nothing about either is written down
+// for a reader to compare instead.
+func (c *Context) freshSymbol() *soltype.UniqueSymbolType {
+	s := &soltype.UniqueSymbolType{ID: c.symbolCounter}
+	c.symbolCounter++
+	return s
 }
 
 // freshSkolem mints a distinct rigid type parameter carrying the given source name. It

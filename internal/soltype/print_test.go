@@ -987,6 +987,9 @@ func TestPrintElided(t *testing.T) {
 			want:     "Grow<{a: {a: …}, b: {a: …}}>",
 		},
 		{"ZeroElidesNothing", alias(nest(3)), 0, "Grow<{a: {a: {a: number}}}>"},
+		// A unique symbol at the boundary keeps its id. An ellipsis would drop the only
+		// thing that tells one symbol from another.
+		{"AUniqueSymbolAtTheBoundary", alias(&UniqueSymbolType{ID: 3}), 1, "Grow<unique symbol#3>"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

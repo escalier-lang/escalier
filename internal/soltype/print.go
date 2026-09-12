@@ -819,16 +819,18 @@ func (p *namedPrinter) printTypeMinPrec(t Type, minPrec int) string {
 //
 // An InferType renders as a name in both forms, `infer U` at the binder and a bare `U` at a
 // reference, and a TypeofType renders as the identifier it names rather than the value's type, so
-// both are leaves. A RecursiveVarType renders as its binder's name, so it is one too. A SelfType
-// renders as the bare word `Self` and carries no argument list, so it is a leaf as well: eliding
-// it would replace the spelling the source wrote with an ellipsis that says less. An alias or
+// both are leaves. A UniqueSymbolType renders as the kind and the id that tells two symbols apart,
+// `unique symbol#0`, and the id is the whole of what it carries, so it is one as well. A
+// RecursiveVarType renders as its binder's name, so it is one too. A SelfType renders as the bare
+// word `Self` and carries no argument list, so it is a leaf as well: eliding it would replace the
+// spelling the source wrote with an ellipsis that says less. An alias or
 // class reference is NOT one, even though one with no type arguments renders as a bare name: its
 // argument list is exactly what a diagnostic needs bounded.
 func isPrintLeaf(t Type) bool {
 	switch t.(type) {
 	case *TypeVarType, *PrimType, *LitType, *NeverType, *UnknownType, *ErrorType,
 		*NullType, *UndefinedType, *MappedKeyType, *InferType, *TypeofType,
-		*RecursiveVarType, *SelfType:
+		*UniqueSymbolType, *RecursiveVarType, *SelfType:
 		return true
 	}
 	return false
@@ -951,6 +953,11 @@ func (p *namedPrinter) printType(t Type) string {
 			elems = append(elems, "...")
 		}
 		return "{" + strings.Join(elems, ", ") + "}"
+	case *UniqueSymbolType:
+		// A symbol has no written form, so the rendered one names the kind and the id that
+		// tells two apart. A reader comparing two rendered symbols is comparing the same
+		// thing the solver does.
+		return "unique symbol#" + strconv.Itoa(t.ID)
 	case *SelfType:
 		// A `Self` renders as the word the source wrote, not as the class it was declared in.
 		// That is the whole point of keeping it a kind of its own: `me(self) -> Self` on a
@@ -1591,6 +1598,8 @@ func printPrim(p Prim) string {
 		return "string"
 	case BoolPrim:
 		return "boolean"
+	case SymPrim:
+		return "symbol"
 	}
 	panic(fmt.Sprintf("printPrim: unhandled Prim %d", p))
 }
