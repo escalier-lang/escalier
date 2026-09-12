@@ -2983,7 +2983,7 @@ export declare class ArrayBuffer {
      * Returns a section of an ArrayBuffer.
      */
     slice(self, begin?: number, end?: number) -> ArrayBuffer,
-    static readonly [Symbol.species]: ArrayBufferConstructor,
+    static readonly [Symbol.species]: typeof ArrayBuffer,
     constructor(mut self),
     constructor(mut self, byteLength: number, options?: {
         maxByteLength?: number

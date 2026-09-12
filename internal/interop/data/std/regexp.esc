@@ -111,7 +111,7 @@ export declare class RegExp {
     /** @deprecated A legacy feature for browser compatibility */
     compile(mut self, pattern: string, flags?: string) -> Self,
     constructor(mut self, pattern: RegExp | string, flags?: string),
-    static readonly [Symbol.species]: RegExpConstructor,
+    static readonly [Symbol.species]: typeof RegExp,
     constructor(mut self, pattern: RegExp | string),
     constructor(mut self, pattern: string, flags?: string),
     static readonly "prototype": RegExp,

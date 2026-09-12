@@ -39,7 +39,7 @@ func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 		readonlyToMutable[t.readonlyName] = t.mutableName
 		mutableSet.Add(t.mutableName)
 	}
-	rw := &twinRewriter{readonlyToMutable: readonlyToMutable, mutable: mutableSet}
+	rw := &refRewriter{readonlyToMutable: readonlyToMutable, mutable: mutableSet}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
@@ -48,15 +48,46 @@ func rewriteReadonlyTwinRefs(mod *StandaloneModule, twins []readonlyTwin) {
 	})
 }
 
-type twinRewriter struct {
+// rewriteConsumedCtorRefs respells every reference to a constructor interface trio fusion
+// consumed. `interface ArrayConstructor` is folded into `class Array`, so the name no longer
+// denotes anything and `static readonly [Symbol.species]: ArrayConstructor` would not resolve.
+// `typeof Array` names the same thing the interface did, the class value carrying the
+// constructor and the statics.
+//
+// It walks the same slots rewriteReadonlyTwinRefs walks, through the same rewriter, since both
+// rules replace a reference by name.
+//
+// A `*ast.TypeRefTypeAnn`-typed slot such as ClassDecl.Extends is not respelled, because the
+// slot has no room for a `typeof`. Nothing reaches it: six constructor interfaces in
+// lib.es5.d.ts do extend one, `RangeErrorConstructor extends ErrorConstructor` among them, but
+// each is itself consumed and fuseTrio does not carry a consumed interface's Extends onto the
+// class. An instance interface extending a constructor interface would dangle, and no
+// declaration in the pinned lib set does.
+func rewriteConsumedCtorRefs(mod *StandaloneModule, consumedCtor map[string]string) {
+	if len(consumedCtor) == 0 {
+		return
+	}
+	rw := &refRewriter{consumedCtor: consumedCtor}
+	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			rw.rewriteDecl(decl)
+		}
+		return true
+	})
+}
+
+type refRewriter struct {
 	readonlyToMutable map[string]string
 	mutable           set.Set[string]
+	// consumedCtor maps a fused constructor interface's name to the instance name it fused
+	// into. Empty when the pass is not respelling those references.
+	consumedCtor map[string]string
 }
 
 // rewriteDecl dispatches over every Decl variant. The default panics
 // so a newly-added Decl type cannot silently bypass the rewrite — see
 // the same canary rationale on `classElemName` in partition_writer.go.
-func (r *twinRewriter) rewriteDecl(decl ast.Decl) {
+func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.VarDecl:
 		if d.TypeAnn != nil {
@@ -105,11 +136,11 @@ func (r *twinRewriter) rewriteDecl(decl ast.Decl) {
 			r.rewriteDecl(inner)
 		}
 	default:
-		panic(fmt.Sprintf("twinRewriter.rewriteDecl: unhandled decl type %T — extend this switch so the readonly-twin rewrite does not silently skip a new Decl variant", decl))
+		panic(fmt.Sprintf("refRewriter.rewriteDecl: unhandled decl type %T — extend this switch so the readonly-twin rewrite does not silently skip a new Decl variant", decl))
 	}
 }
 
-func (r *twinRewriter) rewriteFuncSig(sig *ast.FuncSig) {
+func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	r.rewriteTypeParams(sig.TypeParams)
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
@@ -124,7 +155,7 @@ func (r *twinRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 	}
 }
 
-func (r *twinRewriter) rewriteTypeParams(tps []*ast.TypeParam) {
+func (r *refRewriter) rewriteTypeParams(tps []*ast.TypeParam) {
 	for _, tp := range tps {
 		if tp.Constraint != nil {
 			tp.Constraint = r.rewrite(tp.Constraint)
@@ -135,7 +166,7 @@ func (r *twinRewriter) rewriteTypeParams(tps []*ast.TypeParam) {
 	}
 }
 
-func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
+func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 	switch e := elem.(type) {
 	case *ast.FieldElem:
 		if e.Type != nil {
@@ -158,7 +189,7 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 			r.rewriteFuncSig(&e.Fn.FuncSig)
 		}
 	default:
-		panic(fmt.Sprintf("twinRewriter.rewriteClassElem: unhandled class-elem type %T — extend this switch so the readonly-twin rewrite does not silently skip a new ClassElem variant", elem))
+		panic(fmt.Sprintf("refRewriter.rewriteClassElem: unhandled class-elem type %T — extend this switch so the readonly-twin rewrite does not silently skip a new ClassElem variant", elem))
 	}
 }
 
@@ -179,7 +210,7 @@ func (r *twinRewriter) rewriteClassElem(elem ast.ClassElem) {
 // Eight declarations in the pinned lib set take this shape,
 // `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
 // them.
-func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
+func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
 	}
@@ -195,7 +226,7 @@ func (r *twinRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 
 // rewrite walks a TypeAnn, rewriting twin references in every
 // reachable slot and returning the (possibly replaced) node.
-func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
+func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 	if t == nil {
 		return nil
 	}
@@ -207,6 +238,17 @@ func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		id, ok := tt.Name.(*ast.Ident)
 		if !ok {
 			return tt
+		}
+		// The constructor interface is gone, fused into the class. `typeof Array` names what
+		// `ArrayConstructor` named: the class value, carrying the constructor and the statics.
+		//
+		// Only the argument-less spelling is respelled. `typeof X` takes no arguments, so
+		// rewriting `FooConstructor<number>` would drop the `number` and say something else.
+		// detectTrios matches on the name alone, so a generic constructor interface does fuse;
+		// none in the pinned lib set is referenced with arguments, and one left alone is a
+		// visibly dangling name rather than a silently wrong type.
+		if instance, ok := r.consumedCtor[id.Name]; ok && len(tt.TypeArgs) == 0 {
+			return ast.NewTypeOfTypeAnn(ast.NewIdentifier(instance, tt.Span()), tt.Span())
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
@@ -309,11 +351,11 @@ func (r *twinRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.ErrorTypeAnn:
 		return tt
 	default:
-		panic(fmt.Sprintf("twinRewriter.rewrite: unhandled type-ann %T — extend this switch so the readonly-twin rewrite does not silently skip a new TypeAnn variant", t))
+		panic(fmt.Sprintf("refRewriter.rewrite: unhandled type-ann %T — extend this switch so the readonly-twin rewrite does not silently skip a new TypeAnn variant", t))
 	}
 }
 
-func (r *twinRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
+func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 	for _, elem := range obj.Elems {
 		switch e := elem.(type) {
 		case *ast.CallableTypeAnn:
@@ -349,12 +391,12 @@ func (r *twinRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 		case *ast.RestSpreadTypeAnn:
 			e.Value = r.rewrite(e.Value)
 		default:
-			panic(fmt.Sprintf("twinRewriter.rewriteObject: unhandled object-type-ann elem %T — extend this switch so the readonly-twin rewrite does not silently skip a new ObjTypeAnnElem variant", elem))
+			panic(fmt.Sprintf("refRewriter.rewriteObject: unhandled object-type-ann elem %T — extend this switch so the readonly-twin rewrite does not silently skip a new ObjTypeAnnElem variant", elem))
 		}
 	}
 }
 
-func (r *twinRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
+func (r *refRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
 	if fn == nil {
 		return
 	}

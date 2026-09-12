@@ -1466,3 +1466,92 @@ declare var CSSFontFaceRule: {
 	require.Empty(t, parseErrs, "printed output parses")
 	require.Len(t, parsedDecls, 1)
 }
+
+// Trio fusion folds `interface FooConstructor` into `class Foo`, so the constructor
+// interface's name no longer denotes anything. A reference to it is respelled `typeof Foo`,
+// which names what the interface named: the class value, carrying the constructor and the
+// statics. Without the respelling the emitted tree carries a dangling name, which is where
+// `cannot find type ArrayConstructor` came from.
+func TestStandalone_AConsumedConstructorReferenceBecomesTypeof(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			// The shape the committed tree writes, `[Symbol.species]` on the instance side
+			// naming the constructor interface.
+			name: "AStaticMemberNamingTheConstructorInterface",
+			input: `
+interface Box<T> {
+    readonly [Symbol.species]: BoxConstructor;
+}
+interface BoxConstructor {
+    new <T>(value: T): Box<T>;
+}
+declare var Box: BoxConstructor;
+`,
+			want: "typeof Box",
+		},
+		{
+			name: "AParameterNamingIt",
+			input: `
+interface Box<T> {
+    value: T;
+}
+interface BoxConstructor {
+    new <T>(value: T): Box<T>;
+    make(ctor: BoxConstructor): number;
+}
+declare var Box: BoxConstructor;
+`,
+			want: "typeof Box",
+		},
+		{
+			// `typeof X` takes no arguments, so a reference carrying some is left alone
+			// rather than respelled into something that says less. Nothing in the pinned
+			// lib set writes one.
+			name: "AReferenceCarryingTypeArgumentsIsLeftAlone",
+			input: `
+interface Box<T> {
+    value: T;
+}
+interface BoxConstructor<T> {
+    new (value: T): Box<T>;
+    self: BoxConstructor<number>;
+}
+declare var Box: BoxConstructor;
+`,
+			want: "BoxConstructor<number>",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, printed := convertSlice(t, tt.input)
+			require.Contains(t, printed, tt.want)
+
+			parsedDecls, parseErrs := parser.ParseDecls(context.Background(),
+				&ast.Source{Path: "out.esc", Contents: printed, ID: 1})
+			require.Empty(t, parseErrs, "printed output parses")
+			require.NotEmpty(t, parsedDecls)
+		})
+	}
+}
+
+// An unfused constructor interface keeps its name, so a reference to it is left alone.
+// `SymbolConstructor` is the case that matters: it declares no `new`, so detectTrios declines
+// it and the interface stays.
+func TestStandalone_AnUnfusedConstructorReferenceIsUntouched(t *testing.T) {
+	_, printed := convertSlice(t, `
+interface Box<T> {
+    value: T;
+}
+interface BoxConstructor {
+    <T>(value: T): Box<T>;
+    readonly self: BoxConstructor;
+}
+declare var Box: BoxConstructor;
+`)
+	require.Contains(t, printed, "BoxConstructor")
+	require.NotContains(t, printed, "typeof Box")
+}

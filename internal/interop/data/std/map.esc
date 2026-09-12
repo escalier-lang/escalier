@@ -49,7 +49,7 @@ export declare class Map<K, V> {
     constructor(mut self, entries?: Array<[K, V]> | null),
     static readonly prototype: mut Map<any, any>,
     constructor(mut self, iterable?: Iterable<[K, V]> | null),
-    static readonly [Symbol.species]: MapConstructor,
+    static readonly [Symbol.species]: typeof Map,
     /**
      * Groups members of an iterable according to the return value of the passed callback.
      * @param items An iterable.
