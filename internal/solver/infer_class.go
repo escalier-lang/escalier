@@ -155,7 +155,22 @@ func (c *checker) inferClassDecl(scope *Scope, lvl int, decl *ast.ClassDecl, ns 
 	// signature installs and field refinements still land on the registered body.
 	c.inferMemberBodies(bodyScope, lvl, c.ctx.selfView(self, body), pending)
 	callFns := c.inferCallSignatures(bodyScope, lvl, decl)
-	ctorFns := c.inferConstructor(bodyScope, lvl, decl, self, body, ctors, len(callFns) > 0)
+	ctorFns := c.walkConstructorBodies(bodyScope, lvl, self, body, ctors)
+	if len(ctorFns) == 0 {
+		// A subclass must declare its own constructor to call `super`, so a missing one is
+		// reported here and the synthesis below stands in for recovery.
+		if decl.Extends != nil {
+			c.report(&SubclassConstructorRequiredError{Decl: decl})
+		}
+		// A class declaring a call signature and no constructor is callable and not
+		// constructible, so nothing is synthesized. Synthesizing one would make
+		// `Symbol(…)` construct instead of call, and the specification forbids
+		// `new Symbol()`, so having no constructor is what makes constructing it
+		// unrepresentable rather than merely discouraged.
+		if len(callFns) == 0 {
+			ctorFns = []*soltype.FuncType{c.synthesizeConstructor(self, body)}
+		}
+	}
 
 	// Coalesce each member so lookup reads concrete member types rather than the fresh
 	// vars a field held before a constructor assignment refined it. A non-generic class
