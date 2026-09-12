@@ -3,6 +3,7 @@ package dts_to_esc
 import (
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
@@ -446,7 +447,7 @@ func mergeDecls(stmts []dts_parser.Statement) []dts_parser.Statement {
 // `ReadonlyArray<T>` for the same reason.
 func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*StandaloneModule, error) {
 	stmts, twins := fuseReadonlyTwins(stmts)
-	return convertFusedBucket(stmts, twins, twins, facts)
+	return convertFusedBucket(stmts, twins, twins, ConsumedCtorNames(stmts), facts)
 }
 
 // convertFusedBucket converts one already-fused bucket. `own` are the
@@ -461,9 +462,10 @@ func ConvertBucket(stmts []dts_parser.Statement, facts *ReceiverFacts) (*Standal
 func convertFusedBucket(
 	stmts []dts_parser.Statement,
 	own, all []readonlyTwin,
+	consumedCtor map[string]string,
 	facts *ReceiverFacts,
 ) (*StandaloneModule, error) {
-	mod, err := ConvertToStandaloneModule(&dts_parser.Module{Statements: stmts}, facts)
+	mod, err := convertStandaloneModule(&dts_parser.Module{Statements: stmts}, facts, consumedCtor)
 	if err != nil {
 		return nil, err
 	}
@@ -829,16 +831,20 @@ func ConvertBuckets(result *PartitionResult, facts *ReceiverFacts) (map[string]*
 	fused := make(map[string][]dts_parser.Statement, len(result.Buckets))
 	own := make(map[string][]readonlyTwin, len(result.Buckets))
 	var all []readonlyTwin
+	// consumedCtor is every constructor interface the tree fuses away, for the same reason
+	// `all` holds every twin: a bucket may reference one another bucket consumed.
+	consumedCtor := make(map[string]string)
 	for _, uri := range uris {
 		stmts, twins := fuseReadonlyTwins(result.Buckets[uri])
 		fused[uri] = stmts
 		own[uri] = twins
 		all = append(all, twins...)
+		maps.Copy(consumedCtor, ConsumedCtorNames(stmts))
 	}
 
 	mods := make(map[string]*StandaloneModule, len(result.Buckets))
 	for _, uri := range uris {
-		mod, err := convertFusedBucket(fused[uri], own[uri], all, facts)
+		mod, err := convertFusedBucket(fused[uri], own[uri], all, consumedCtor, facts)
 		if err != nil {
 			return nil, &BucketConvertError{pkgError{uri}, err}
 		}

@@ -374,7 +374,7 @@ export declare class Array<T> {
      * @param thisArg Value of 'this' used to invoke the mapfn.
      */
     static from<T, U>(iterable: Iterable<T> | ArrayLike<T>, mapfn: fn (v: T, k: number) -> U, thisArg?: unknown) -> mut Array<U>,
-    static readonly [Symbol.species]: ArrayConstructor,
+    static readonly [Symbol.species]: typeof Array,
     constructor(mut self, arrayLength?: number),
     constructor(mut self, arrayLength: number),
     constructor(mut self, ...items: mut Array<T>),
@@ -699,7 +699,7 @@ export declare class Promise<T, E = never> {
      * @returns A promise whose internal state matches the provided promise.
      */
     static resolve<T>(value: T | PromiseLike<T>) -> Promise<Awaited<T>>,
-    static readonly [Symbol.species]: PromiseConstructor,
+    static readonly [Symbol.species]: typeof Promise,
     /**
      * Creates a Promise that is resolved with an array of results when all
      * of the provided Promises resolve or reject.

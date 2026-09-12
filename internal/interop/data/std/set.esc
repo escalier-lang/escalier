@@ -72,7 +72,7 @@ export declare class Set<T> {
     constructor(mut self, values?: Array<T> | null),
     static readonly prototype: mut Set<any>,
     constructor(mut self, iterable?: Iterable<T> | null),
-    static readonly [Symbol.species]: SetConstructor
+    static readonly [Symbol.species]: typeof Set
 }
 
 @js("WeakSet")

@@ -185,3 +185,19 @@ func TestKeyofSkipsTheUnnamedCallableMembers(t *testing.T) {
 	}}
 	require.Equal(t, `"tag"`, soltype.Print(keyofObjectNamed(obj)))
 }
+
+// `static readonly [Symbol.species]: typeof Arr` is the shape trio fusion emits where the
+// source named the constructor interface. The annotation resolves to the class value, so the
+// declaration carrying it reports nothing.
+func TestAStaticTypeofTheOwnClassResolves(t *testing.T) {
+	values, _, errs := inferSource(t, `
+		declare class Arr {
+			static of(n: number) -> Arr,
+			static readonly [Symbol.species]: typeof Arr,
+		}
+		declare val species: typeof Arr
+		val made = species.of(1)
+	`)
+	require.Empty(t, errorMessagesOf(errs))
+	require.Equal(t, "Arr", values["made"])
+}

@@ -14,6 +14,7 @@ package dts_to_esc
 import (
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 
 	"github.com/escalier-lang/escalier/internal/ast"
@@ -75,6 +76,19 @@ type StandaloneModule struct {
 //   - Records every singleton member it skipped because the member's
 //     key has no plain-name form (see StandaloneModule.KeyDrops).
 func ConvertToStandaloneModule(dtsModule *dts_parser.Module, facts *ReceiverFacts) (*StandaloneModule, error) {
+	return convertStandaloneModule(dtsModule, facts, nil)
+}
+
+// convertStandaloneModule is ConvertToStandaloneModule with the constructor interfaces fused
+// elsewhere in the tree. A bucket may reference one another bucket consumed, so the respelling
+// reads every name the tree fused rather than only this bucket's, the same way
+// rewriteReadonlyTwinRefs reads every twin. treeConsumedCtor is nil on the single-file path,
+// where this bucket is the whole tree.
+func convertStandaloneModule(
+	dtsModule *dts_parser.Module,
+	facts *ReceiverFacts,
+	treeConsumedCtor map[string]string,
+) (*StandaloneModule, error) {
 	cctx := &convertCtx{facts: facts}
 	stmts := liftGlobals(dtsModule.Statements)
 	trios := detectTrios(stmts)
@@ -98,11 +112,32 @@ func ConvertToStandaloneModule(dtsModule *dts_parser.Module, facts *ReceiverFact
 
 	var namespaces btree.Map[string, *ast.Namespace]
 	namespaces.Set("", &ast.Namespace{Decls: decls})
-	return &StandaloneModule{
+	mod := &StandaloneModule{
 		Module:   ast.NewModule(namespaces),
 		Paths:    paths,
 		KeyDrops: cctx.keyDrops,
-	}, nil
+	}
+	rewriteConsumedCtorRefs(mod, mergedConsumedCtor(trios.consumedCtor, treeConsumedCtor))
+	return mod, nil
+}
+
+// mergedConsumedCtor unions this bucket's consumed constructor interfaces with the tree's. The
+// two agree wherever they overlap, since both come from detectTrios over the same statements.
+func mergedConsumedCtor(own, tree map[string]string) map[string]string {
+	if len(tree) == 0 {
+		return own
+	}
+	merged := make(map[string]string, len(own)+len(tree))
+	maps.Copy(merged, tree)
+	maps.Copy(merged, own)
+	return merged
+}
+
+// ConsumedCtorNames returns the constructor interfaces trio fusion consumes in one bucket,
+// mapped to the instance each fuses into. ConvertBuckets unions these across the tree before
+// converting any bucket, so a reference reaching across a package boundary is respelled too.
+func ConsumedCtorNames(stmts []dts_parser.Statement) map[string]string {
+	return detectTrios(liftGlobals(stmts)).consumedCtor
 }
 
 // docDecl pairs a converted top-level declaration with the dotted runtime
@@ -185,12 +220,15 @@ type trioInfo struct {
 }
 
 // trioTable indexes trios by the instance type name. The constructor name
-// and var name are recorded in `consumedCtor` / `consumedVar` (keyed by
-// the same instance name) so the walk can skip them.
+// and var name are recorded in `consumedCtor` / `consumedVar` so the walk
+// can skip them. consumedVar is keyed by the instance name, which is the
+// var's own name. consumedCtor is keyed by the CONSUMED name and maps to
+// the instance it fused into, so rewriteConsumedCtorRefs can respell a
+// reference to the constructor interface as `typeof <Instance>`.
 type trioTable struct {
 	byName       map[string]*trioInfo
-	consumedCtor set.Set[string] // ctor interface names
-	consumedVar  set.Set[string] // var binding names
+	consumedCtor map[string]string // ctor interface name -> instance name
+	consumedVar  set.Set[string]   // var binding names
 }
 
 // detectTrios scans a module's top-level statements for the
@@ -243,7 +281,7 @@ type trioTable struct {
 func detectTrios(stmts []dts_parser.Statement) *trioTable {
 	t := &trioTable{
 		byName:       make(map[string]*trioInfo),
-		consumedCtor: set.NewSet[string](),
+		consumedCtor: make(map[string]string),
 		consumedVar:  set.NewSet[string](),
 	}
 
@@ -301,7 +339,7 @@ func detectTrios(stmts []dts_parser.Statement) *trioTable {
 			binding:     v,
 		}
 		if ctorName != "" {
-			t.consumedCtor.Add(ctorName)
+			t.consumedCtor[ctorName] = name
 		}
 		t.consumedVar.Add(name)
 	}
@@ -480,7 +518,7 @@ func detectSingletons(stmts []dts_parser.Statement, trios *trioTable) *singleton
 	constructible := namesWithConstructSignature(stmts)
 
 	for name, iface := range interfaces {
-		if trios.byName[name] != nil || trios.consumedCtor.Contains(name) || trios.consumedVar.Contains(name) {
+		if _, ctorConsumed := trios.consumedCtor[name]; trios.byName[name] != nil || ctorConsumed || trios.consumedVar.Contains(name) {
 			continue
 		}
 		if constructible.Contains(name) {
@@ -971,7 +1009,7 @@ func convertStandaloneStmt(
 		return out, nil
 
 	case *dts_parser.InterfaceDecl:
-		if trios.consumedCtor.Contains(s.Name.Name) {
+		if _, consumed := trios.consumedCtor[s.Name.Name]; consumed {
 			return nil, nil
 		}
 		if info, ok := trios.byName[s.Name.Name]; ok {
