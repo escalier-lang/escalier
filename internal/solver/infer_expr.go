@@ -1442,7 +1442,7 @@ func (c *checker) inferCall(scope *Scope, lvl int, e *ast.CallExpr) soltype.Type
 	// ConstructorElem carries, for the reason an overloaded method does. `Array(3)` and
 	// `Array(1, 2, 3)` select different arms, so the set is weighed per arm rather than
 	// folded into one callee <: callShape constraint.
-	if arms, ok := ctorOverloadArms(callee); ok {
+	if arms, ok := c.ctorOverloadArms(callee); ok {
 		return c.inferArmOverloadCall(scope, lvl, e, arms, consumeRef, hasConsumeRef)
 	}
 	// Instantiate a generic callee so each call binds its type parameters independently. A
@@ -1779,8 +1779,8 @@ func (c *checker) recordCallArgEffects(
 // value carrying one, and false otherwise. A class declaring a single constructor is not an
 // overload set, so it stays on the ordinary callee <: callShape path where resolveFunc reads
 // its one signature and the arity lints apply.
-func ctorOverloadArms(t soltype.Type) ([]*soltype.FuncType, bool) {
-	obj, ok := classValueCarrier(t)
+func (c *checker) ctorOverloadArms(t soltype.Type) ([]*soltype.FuncType, bool) {
+	obj, ok := c.classValueCarrier(t)
 	if !ok {
 		return nil, false
 	}
@@ -2796,20 +2796,8 @@ func (c *checker) fieldReadBorrow(fieldVar *soltype.TypeVarType, recv soltype.Ty
 	// resolves to that list before the read. Without this a receiver annotated `mut Config`
 	// or `mut Box` would fall to the unknown-shape branch below and lose its mutability,
 	// while the inline `mut {…}` spelling of the same type kept it.
-	//
-	// expandAlias unfolds one level, so the chain is followed to its end: `type Config =
-	// Inner` names an alias whose own body may be another. Each name is recorded so a cycle
-	// stops the walk rather than spinning it.
-	seenAliases := set.NewSet[string]()
-	for {
-		at, isAlias := carrier.(*soltype.AliasType)
-		if !isAlias || seenAliases.Contains(at.Name) {
-			break
-		}
-		seenAliases.Add(at.Name)
-		carrier = c.ctx.expandAlias(at)
-	}
-	if ct, isClass := classCarrier(carrier); isClass {
+	carrier = c.memberCarrier(carrier)
+	if ct, isClass := c.classCarrier(carrier); isClass {
 		// Projected at the instance's arguments, so a field typed `T` reads as the
 		// argument `Box<number>` supplies rather than as the declared parameter.
 		if body, ok := c.ctx.projectClassBody(ct); ok {

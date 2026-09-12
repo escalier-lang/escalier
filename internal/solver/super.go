@@ -65,7 +65,7 @@ func (c *checker) superConstructor(lvl int, ctx *superCtx) (soltype.Type, bool) 
 	if !found || len(binding.Schemes) == 0 {
 		return nil, false
 	}
-	obj, ok := classValueCarrier(c.instantiate(binding.Schemes[0], lvl))
+	obj, ok := c.classValueCarrier(c.instantiate(binding.Schemes[0], lvl))
 	if !ok {
 		return nil, false
 	}
