@@ -33,7 +33,7 @@ func parseScript(t *testing.T, src string) *ast.Script {
 // bindings are linear locals, so this is how their generalized types are inspected.
 func inferScriptSource(t *testing.T, src string) (values, types map[string]string, errs []SolverError) {
 	t.Helper()
-	scope, _, errs := InferScript(parseScript(t, src))
+	scope, _, errs := InferScript(parseScript(t, src), testStdlibSource())
 	values = make(map[string]string, len(scope.values))
 	for name, b := range scope.values {
 		values[name] = renderScheme(b.Schemes[0])

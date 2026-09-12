@@ -83,7 +83,7 @@ func TestInferSubsumedTypeEqualsAnnotation(t *testing.T) {
 			return if b { 1 } else { n }
 		}
 		val annotated: number = 0
-	`))
+	`), testStdlibSource())
 	require.Empty(t, errs)
 
 	inferredFn := schemeType(scope.values["inferred"].Schemes[0]).(*soltype.FuncType)

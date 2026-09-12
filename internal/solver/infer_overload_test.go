@@ -406,7 +406,7 @@ func TestInferOverloadBindingSourcesAlignWithSchemes(t *testing.T) {
 	scope, _, errs := InferModule(parseModule(t, `
 		fn f(x: number) -> number { return x }
 		fn f(x: string) -> string { return x }
-	`))
+	`), testStdlibSource())
 	require.Empty(t, errs)
 	b, ok := scope.GetValue("f")
 	require.True(t, ok)

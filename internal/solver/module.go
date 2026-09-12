@@ -34,8 +34,11 @@ import (
 // criterion. Cross-file references in M2 use root-namespace short names; qualified
 // namespace-member access (`Foo.bar`) is M4, and third-party `@types`/`.d.ts`
 // ingestion (internal/resolver) is M7 — M2 engages neither.
-func InferModule(module *ast.Module) (*Scope, *Info, []SolverError) {
-	res := InferModuleWithSource(module, nil)
+// source supplies `std:prelude`, whose `Array` and `Promise` the checker's own rules
+// name. A source answering nothing for that package reports a missing prelude class
+// rather than degrading, so every run passes one.
+func InferModule(module *ast.Module, source ModuleSource) (*Scope, *Info, []SolverError) {
+	res := InferModuleWithSource(module, source)
 	return res.Scope, res.Info, res.Errors
 }
 

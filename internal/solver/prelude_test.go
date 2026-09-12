@@ -72,10 +72,10 @@ func TestAPromiseReferenceWithNoPreludeIsAnUnboundName(t *testing.T) {
 		`declare fn f() -> Promise<number>`,
 	} {
 		t.Run(src, func(t *testing.T) {
-			res := inferAgainstStdlib(t, src, map[string]string{})
-			require.Equal(t,
-				[]string{"cannot find type `Promise`"},
-				errorMessagesOf(res.Errors))
+			res := inferAgainstExactStdlib(t, src, map[string]string{})
+			// The run also reports the classes its tree does not declare, which is what
+			// leaves the reference itself an ordinary unbound name.
+			require.Contains(t, errorMessagesOf(res.Errors), "cannot find type `Promise`")
 		})
 	}
 }

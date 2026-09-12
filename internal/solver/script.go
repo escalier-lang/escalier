@@ -37,8 +37,12 @@ import (
 // the funcCtx's returns list. The script never joins that list, so the return is
 // accepted and discarded. The old checker's inferStmt applies the same no-op to a
 // script-level return.
-func InferScript(script *ast.Script) (*Scope, *Info, []SolverError) {
+//
+// source supplies `std:prelude` the way it does for a module, since a script's rules
+// name the same `Array` and `Promise` a module's do.
+func InferScript(script *ast.Script, source ModuleSource) (*Scope, *Info, []SolverError) {
 	c := newChecker()
+	c.source = source
 	scope := c.preludeScope().Child()
 
 	// A script's statements form one linear body, so give them the same per-body

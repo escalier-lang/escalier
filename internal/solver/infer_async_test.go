@@ -160,8 +160,7 @@ func TestInferAwaitOutsideAsyncTopLevelNoRelated(t *testing.T) {
 	// The awaited value is an instance of the `Promise` the prelude scope settles, the
 	// same class the await rule constrains against.
 	scope := c.preludeScope().Child()
-	promise, resolved := c.ctx.promiseOf(&soltype.PrimType{Prim: soltype.StrPrim}, nil)
-	require.True(t, resolved)
+	promise := c.ctx.promiseOf(&soltype.PrimType{Prim: soltype.StrPrim}, nil)
 	scope.defineValue("x", ValueBinding{Schemes: []TypeScheme{monoScheme(promise)}})
 	// await x, with no enclosing function context (c.fn == nil).
 	c.inferExpr(scope, 0, ast.NewAwait(identExpr("x"), testSpan()))

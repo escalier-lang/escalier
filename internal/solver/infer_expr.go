@@ -516,13 +516,8 @@ func (c *checker) inferFunc(scope *Scope, lvl int, sig ast.FuncSig, body *ast.Bl
 			if sig.Return != nil && asyncAnnOK {
 				c.report(&AsyncReturnNotPromiseError{Return: sig.Return, Fn: node})
 			}
-			var wrapped bool
-			ret, wrapped = c.wrapPromise(node, ret, throws)
-			// A run with no `Promise` has no rejection slot to move the raise into, so
-			// the signature keeps it rather than dropping it. See wrapPromise.
-			if wrapped {
-				throws = nil
-			}
+			ret = c.wrapPromise(node, ret, throws)
+			throws = nil
 		}
 	} else if sig.Return != nil {
 		if annT, ok := c.resolveTypeAnn(declScope, sig.Return, lvl); ok {
@@ -1038,18 +1033,10 @@ func sameObjectKeys(a, b *soltype.ObjectType) bool {
 // records its provenance against the function node. errT is the body's throws sink, nil
 // when the body has no exceptional exit, and promiseOf resolves that nil to the `never`
 // a promise that cannot reject carries.
-//
-// It reports false when the run's tree declares no `Promise`, handing back the body's
-// value unwrapped. The caller then leaves the body's raise on the function's own Throws,
-// since the rejection slot to move it into is exactly what the run is missing. The
-// signature reads as a synchronous function, which is wrong but loses nothing.
-func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) (soltype.Type, bool) {
-	wrapped, ok := c.ctx.promiseOf(inner, errT)
-	if !ok {
-		return inner, false
-	}
+func (c *checker) wrapPromise(node ast.Node, inner, errT soltype.Type) soltype.Type {
+	wrapped := c.ctx.promiseOf(inner, errT)
 	c.recordProv(wrapped, node, PromiseWrap)
-	return wrapped, true
+	return wrapped
 }
 
 // genSinks is the per-body generator state inferFunc seeds before walking a `gen fn`.
@@ -3096,9 +3083,7 @@ func (c *checker) inferAwait(scope *Scope, lvl int, e *ast.AwaitExpr) soltype.Ty
 	// diagnostic — res then stays unbound and coalesces to `never`, the right
 	// recovery for awaiting something broken. The M2-era isRecoveryPlaceholder guard
 	// this site used is gone.
-	if want, ok := c.ctx.promiseOf(res, c.throwsSink(lvl)); ok {
-		c.constrain(e, arg, want)
-	}
+	c.constrain(e, arg, c.ctx.promiseOf(res, c.throwsSink(lvl)))
 	c.recordType(e, res)
 	return res
 }

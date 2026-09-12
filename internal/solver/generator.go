@@ -172,11 +172,7 @@ func (c *checker) generatorNext(g *soltype.GeneratorType) *soltype.MethodElem {
 // `it.next()` alone raises nothing and `await it.next()` reaches the awaiting body's sink.
 func (c *checker) advanceSig(g *soltype.GeneratorType, result soltype.Type, params []*soltype.FuncParam) *soltype.FuncType {
 	if g.Async {
-		if ret, ok := c.ctx.promiseOf(result, g.Throws); ok {
-			return &soltype.FuncType{Params: params, Ret: ret}
-		}
-		// A run with no `Promise` has no rejection slot to carry the raise, so the
-		// signature keeps it the way a sync generator's does. See wrapPromise.
+		return &soltype.FuncType{Params: params, Ret: c.ctx.promiseOf(result, g.Throws)}
 	}
 	return &soltype.FuncType{Params: params, Ret: result, Throws: g.Throws}
 }
