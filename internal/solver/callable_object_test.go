@@ -3,6 +3,7 @@ package solver
 import (
 	"testing"
 
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -172,4 +173,15 @@ func TestAnObjectWithBothCallableMembersStillFuses(t *testing.T) {
 	`)
 	require.Empty(t, errorMessagesOf(errs))
 	require.Equal(t, "number", values["r"])
+}
+
+// `keyof` yields an object's own named keys. A call signature is unnamed, so it contributes
+// none, the way a constructor contributes none.
+func TestKeyofSkipsTheUnnamedCallableMembers(t *testing.T) {
+	obj := &soltype.ObjectType{Elems: []soltype.ObjTypeElem{
+		&soltype.CallableElem{Signatures: []*soltype.FuncType{{Ret: &soltype.PrimType{Prim: soltype.StrPrim}}}},
+		&soltype.ConstructorElem{Signatures: []*soltype.FuncType{{Ret: &soltype.PrimType{Prim: soltype.NumPrim}}}},
+		&soltype.PropertyElem{Name: "tag", Type: &soltype.PrimType{Prim: soltype.StrPrim}},
+	}}
+	require.Equal(t, `"tag"`, soltype.Print(keyofObjectNamed(obj)))
 }
