@@ -162,17 +162,21 @@ func (c *checker) bindPreludeExports(scope *Scope) {
 	}
 }
 
-// stdlibTypePlaceholders are the names downstream type rules reference and the
-// prelude package declares. Each resolves to an opaque stub, so a bare reference to
-// one is not an unbound name in a run whose tree supplies no prelude package. A
-// prelude that does load shadows every placeholder, since its exports go into a
-// child of this scope, and each of these three has a real declaration there.
+// stdlibTypePlaceholders are the names resolveTypeAnn still resolves itself. Each
+// binds an opaque stub, so a reference to one is not an unbound name in a run whose
+// tree supplies no prelude package. A prelude that does load shadows every
+// placeholder it declares, since its exports go into a child of this scope.
 //
-// `Iterable` and `AsyncIterable` are not here. Iteration reads the protocol member
-// off the operand rather than checking it against a named type, so nothing in the
-// rules writes either name and a stub would answer no question.
+// Two sorts of name are absent. `Promise` is read through the class the prelude
+// declares, and resolveTypeAnn has no arm of its own for it, so a reference against a
+// tree with no prelude is an unbound name and says so. A stub would answer the
+// argument-less spelling alone and resolve it to `unknown`, turning that report into a
+// later complaint that an `async fn` returns something other than a promise.
+//
+// `Iterable` and `AsyncIterable` are read through the protocol member on the operand
+// rather than checked against a named type, so no rule writes either name and a stub
+// would answer no question.
 var stdlibTypePlaceholders = []string{
-	"Promise",
 	"Generator",
 	"AsyncGenerator",
 }
