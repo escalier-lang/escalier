@@ -73,10 +73,11 @@ func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
 }
 
 // EnterExpr brings a function expression's own type parameters into scope. A
-// class member holds its signature as a `FuncExpr`, so `class C { m<U>(self, x:
-// U) -> U }` would otherwise read `U` as a name the package has to import. The
-// interface form of the same member is a `FuncTypeAnn` and is bound by
-// enterFuncTypeParams instead.
+// class member holds its signature as a `FuncExpr`, so
+// `closest<E: Element = Element>(mut self, selectors: string) -> E | null`
+// would otherwise read `E` as a name `web:dom` has to import, and `std:math`
+// declares one. The interface form of the same member is a `FuncTypeAnn` and is
+// bound by enterFuncTypeParams instead.
 func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
 	if fn, ok := e.(*ast.FuncExpr); ok {
 		c.push(fn.TypeParams)

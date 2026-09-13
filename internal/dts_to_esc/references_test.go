@@ -6,6 +6,7 @@ import (
 
 	"github.com/escalier-lang/escalier/internal/ast"
 	"github.com/escalier-lang/escalier/internal/parser"
+	"github.com/escalier-lang/escalier/internal/printer"
 	"github.com/stretchr/testify/require"
 )
 
@@ -110,4 +111,36 @@ func TestTypeRefNamesRecordsANameAMemberBinderShadowedEarlier(t *testing.T) {
 		"    f: U\n"+
 		"}"))
 	require.Equal(t, []string{"U"}, refs.ToSlice())
+}
+
+// A `<…>` binder shadows a name another package declares, so the reference to
+// it takes no qualifier and forces no import.
+//
+// `std:math` exports a top-level `E`, from `Math.E`, and `Element.closest` in
+// lib.dom.d.ts is `closest<E extends Element = Element>(selectors: string): E |
+// null`. Qualifying that `E` would return `math.E` to every caller that asked
+// for a subtype, and would make `web:dom` import `std:math` for a reference
+// that names nothing there.
+func TestAddImportHeadersLeavesABoundTypeParameterAlone(t *testing.T) {
+	const element = "export declare class Element {\n" +
+		"    closest<E: Element = Element>(mut self, selectors: string) -> E | null\n" +
+		"}"
+	mods := map[string]*StandaloneModule{
+		"std:math": {Module: parseSource(t, `export declare val E: number`)},
+		"web:dom":  {Module: parseSource(t, element)},
+	}
+	require.NoError(t, AddImportHeaders(mods))
+
+	dom := mods["web:dom"].Module
+	require.Empty(t, dom.Files[0].Imports, "a bound type parameter forces no import")
+
+	var decls []ast.Decl
+	dom.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		decls = append(decls, ns.Decls...)
+		return true
+	})
+	require.Len(t, decls, 1)
+	printed, err := printer.Print(decls[0], printer.DefaultOptions())
+	require.NoError(t, err)
+	require.Equal(t, element, printed)
 }

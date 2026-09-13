@@ -170,9 +170,14 @@ func condense(edges map[string][]string) [][]string {
 }
 
 // CheckGroupTiers returns an error for each group whose members span more than
-// one tier. A URI with no tier is skipped: a directory a test wrote holds
-// packages the partition never heard of, and refusing those would make the
-// check about the partition rather than about tiers.
+// one tier.
+//
+// A URI the partition does not hold contributes no tier, since a directory a
+// test wrote holds packages it never heard of and refusing those would make the
+// check about the partition rather than about tiers. Such a member is still
+// named in the diagnostic, as "unknown", and the group is judged on the tiers
+// its other members do have. Clearing the whole group instead would let one
+// unrecognized member hide a browser package cycling with a portable one.
 func CheckGroupTiers(groups PackageGroups, span ast.Span) []SolverError {
 	var errs []SolverError
 	seen := set.NewSet[string]()
@@ -189,13 +194,13 @@ func CheckGroupTiers(groups PackageGroups, span ast.Span) []SolverError {
 		for _, member := range group {
 			tier, ok := dts_to_esc.TierOf(member)
 			if !ok {
-				tiers = nil
-				break
+				tiers = append(tiers, "unknown")
+				continue
 			}
 			tiers = append(tiers, tier.String())
 			distinct.Add(tier.String())
 		}
-		if tiers == nil || distinct.Len() < 2 {
+		if distinct.Len() < 2 {
 			continue
 		}
 		errs = append(errs, &CrossTierCycleError{Members: group, Tiers: tiers, span: span})

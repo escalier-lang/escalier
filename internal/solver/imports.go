@@ -164,16 +164,30 @@ const coreURI = "web:core"
 // layer is a parent. Reporting the collision beats picking either one.
 func (c *checker) bindCoreExports(fileScope *Scope, ns *Namespace, stmt *ast.ImportStmt) []SolverError {
 	var errs []SolverError
+	shadowed := set.NewSet[string]()
+	// A value and a type of one name are two bindings, so each is checked against
+	// the declarations of its own sort. `web:core` exports the type-only
+	// `EventInit`, and a module declaring a value of that name still reads the
+	// type unprefixed.
 	for _, name := range sortedNames(ns) {
-		if c.moduleDeclared.Contains(name) {
-			errs = append(errs, &CoreImportShadowsDeclarationError{Name: name, span: stmt.Span()})
-			continue
-		}
 		if b, held := ns.Values[name]; held {
-			fileScope.defineValue(name, b)
+			if c.moduleDeclared.values.Contains(name) {
+				shadowed.Add(name)
+			} else {
+				fileScope.defineValue(name, b)
+			}
 		}
 		if b, held := ns.Types[name]; held {
-			fileScope.defineType(name, b)
+			if c.moduleDeclared.types.Contains(name) {
+				shadowed.Add(name)
+			} else {
+				fileScope.defineType(name, b)
+			}
+		}
+		if shadowed.Contains(name) {
+			errs = append(errs, &CoreImportShadowsDeclarationError{
+				Name: name, Binding: stmt.LocalName(), span: stmt.Span(),
+			})
 		}
 	}
 	return errs
@@ -194,10 +208,23 @@ func sortedNames(ns *Namespace) []string {
 	return names
 }
 
+// declaredNames is the names a module declares, split by namespace. Escalier
+// resolves a value and a type of one name separately, so a collision is per
+// namespace too.
+type declaredNames struct {
+	values set.Set[string]
+	types  set.Set[string]
+}
+
 // topLevelNames returns every name a module declares at its top level, exported
-// or not. An unexported declaration still occupies the name in its own module.
-func topLevelNames(module *ast.Module) set.Set[string] {
-	names := set.NewSet[string]()
+// or not, under the namespace it occupies. An unexported declaration still
+// occupies the name in its own module.
+//
+// A class occupies both: its name is the constructor value and the instance
+// type. A `val` or `fn` is a value alone, and a `type`, `interface` or `enum` is
+// a type alone.
+func topLevelNames(module *ast.Module) declaredNames {
+	declared := declaredNames{values: set.NewSet[string](), types: set.NewSet[string]()}
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
 		// Only the module's own top level. A declaration inside a namespace is
 		// reached through it and collides with nothing bound bare.
@@ -206,26 +233,38 @@ func topLevelNames(module *ast.Module) set.Set[string] {
 		}
 		for _, decl := range ns.Decls {
 			for _, name := range exportedNames(decl) {
-				names.Add(name)
+				switch decl.(type) {
+				case *ast.VarDecl, *ast.FuncDecl:
+					declared.values.Add(name)
+				case *ast.TypeDecl, *ast.InterfaceDecl, *ast.EnumDecl:
+					declared.types.Add(name)
+				case *ast.ClassDecl:
+					declared.values.Add(name)
+					declared.types.Add(name)
+				}
 			}
 		}
 		return true
 	})
-	return names
+	return declared
 }
 
 // CoreImportShadowsDeclarationError reports a name the core package exports
 // unprefixed that the importing module already declares.
 type CoreImportShadowsDeclarationError struct {
 	Name string
-	span ast.Span
+	// Binding is the name the import statement binds the package under, which is
+	// its alias when it wrote one. The remediation spells the qualified form with
+	// it, so `import "web:core" as dom` is told to write `dom.Event`.
+	Binding string
+	span    ast.Span
 }
 
 func (e *CoreImportShadowsDeclarationError) Message() string {
 	return fmt.Sprintf(
 		"importing %q binds %s, which this module already declares; reach the imported "+
-			"one as `core.%s` or rename the declaration",
-		coreURI, e.Name, e.Name)
+			"one as `%s.%s` or rename the declaration",
+		coreURI, e.Name, e.Binding, e.Name)
 }
 func (e *CoreImportShadowsDeclarationError) Span() ast.Span      { return e.span }
 func (e *CoreImportShadowsDeclarationError) Related() []ast.Span { return nil }
