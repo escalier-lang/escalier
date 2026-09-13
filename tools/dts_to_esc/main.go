@@ -27,12 +27,13 @@
 //
 //	    The facts come from the control-flow graph internal/ecma262
 //	    commits. --cfg classifies from the graph at that path instead,
-//	    and prints four reports about it: the join of every std:* member
+//	    and prints five reports about it: the join of every std:* member
 //	    the run emits against those facts, naming what is present on one
 //	    side only, what the curated layer did to them, what the coercion
-//	    filter dropped, and how every receiver claim compares with the
-//	    hand-written mutability sources. It is how a spec bump is
-//	    previewed before its graph is committed. See
+//	    filter dropped, how every receiver claim compares with the
+//	    hand-written mutability sources, and which returns borrow a value
+//	    the caller holds and so need a lifetime annotation written. It is
+//	    how a spec bump is previewed before its graph is committed. See
 //	    planning/ecma-262/implementation_plan.md.
 package main
 
@@ -221,15 +222,16 @@ func loadFacts(cfgPath string, stderr io.Writer) (*ecma262.Facts, *ecma262.Join,
 	return facts, ecma262.NewJoin(facts), nil
 }
 
-// writeFactReports prints the four ECMA-262 reports for a run that named
+// writeFactReports prints the five ECMA-262 reports for a run that named
 // a cfg.json, and prints nothing for one that did not.
 //
-// All four are informational. A curated entry the analysis caught up
+// All five are informational. A curated entry the analysis caught up
 // with is an entry to delete. The spec and the TypeScript lib drift
 // independently, so a name on one side only is a gap to close. FR11's
 // coercion filter is a heuristic, so what it dropped is read rather than
 // trusted. A receiver the two sources answer differently is a triage
-// item. None of them is a failed run.
+// item. A return needing an annotation is review input. None of them is
+// a failed run.
 func writeFactReports(
 	facts *ecma262.Facts,
 	join *ecma262.Join,
@@ -243,6 +245,13 @@ func writeFactReports(
 		return err
 	}
 	if err := dts_to_esc.WriteValidationReport(dts_to_esc.ValidateReceivers(facts), stderr); err != nil {
+		return err
+	}
+	// The returns axis, printed with the other per-axis reports. Receiver
+	// mutability is auto-applied and needs no such list, while every borrowing
+	// return here is an annotation someone writes into the override layer. See
+	// planning/ecma-262/return_annotations.md.
+	if err := ecma262.WriteReturnAliasReport(facts.BorrowingReturns(), stderr); err != nil {
 		return err
 	}
 	return ecma262.WriteJoinReport(join.Match(dts_to_esc.StdDeclarations(mods)), stderr)
