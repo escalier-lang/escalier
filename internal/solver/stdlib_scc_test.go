@@ -371,6 +371,41 @@ func TestACrossTierGroupReportsOnceAndStillLoads(t *testing.T) {
 	require.Contains(t, messages[0], "import cycle spans more than one runtime tier")
 }
 
+// A module that reaches none of a tree's tier-spanning groups is told nothing
+// about them. The violation is a defect in the tree, and reporting it against
+// every module compiled against that tree would blame code that never asked for
+// the group.
+func TestACrossTierGroupIsSilentForAModuleThatDoesNotReachIt(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:solo"
+		val x = 1
+	`, map[string]string{
+		"std/solo.esc":  `export declare val c: number`,
+		"web/fetch.esc": "import \"web:dom\"\nexport declare val a: number",
+		"web/dom.esc":   "import \"web:fetch\"\nexport declare val b: number",
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+}
+
+// A member the partition does not hold contributes no tier and hides nothing.
+// The group is still judged on the members that do have one, so a browser
+// package cycling with a portable one is caught whatever else rides along.
+func TestACrossTierGroupIsCaughtBesideAnUnknownMember(t *testing.T) {
+	t.Parallel()
+
+	errs := CheckGroupTiers(PackageGroups{
+		"web:dom": {"std:mystery", "web:dom", "web:fetch"},
+	}, ast.Span{})
+
+	require.Len(t, errs, 1)
+	cycleErr, ok := errs[0].(*CrossTierCycleError)
+	require.True(t, ok)
+	require.Equal(t, []string{"unknown", "browser", "portable"}, cycleErr.Tiers)
+}
+
 // crossTierCyclesInTheCommittedTree records the cross-tier cycles the shipped
 // tree currently forms, so a new one fails while the known one is worked.
 //

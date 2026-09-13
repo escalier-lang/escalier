@@ -114,6 +114,40 @@ type refRewriter struct {
 	// `LocalesArgument` declared at the top level of `std:intl` and `Intl`
 	// declared nowhere, so the head is replaced rather than prefixed.
 	flattenedQualifiers map[string]string
+	// bound counts the type parameters in scope by name, so a reference to one
+	// takes no qualifier. `std:math` declares a top-level `E`, so
+	// `closest<E: Element = Element>(mut self, selectors: string) -> E | null`
+	// would otherwise return `math.E` and every caller would get that instead of
+	// the subtype it asked for.
+	//
+	// Only the qualifier consults it. The readonly twins, the mutable wrap and
+	// the consumed-constructor respell are keyed by names the tree declares, and
+	// the elision substitutes a binder by name deliberately.
+	bound map[string]int
+}
+
+// pushTypeParams brings a `<…>` list into scope for the construct that writes
+// it, and popTypeParams takes it back out. A count rather than a flag, so an
+// inner list reusing an outer name restores the outer binding on the way out.
+func (r *refRewriter) pushTypeParams(tps []*ast.TypeParam) {
+	if len(tps) == 0 {
+		return
+	}
+	if r.bound == nil {
+		r.bound = map[string]int{}
+	}
+	for _, tp := range tps {
+		r.bound[tp.Name]++
+	}
+}
+
+func (r *refRewriter) popTypeParams(tps []*ast.TypeParam) {
+	for _, tp := range tps {
+		r.bound[tp.Name]--
+		if r.bound[tp.Name] <= 0 {
+			delete(r.bound, tp.Name)
+		}
+	}
 }
 
 // rewriteDecl dispatches over every Decl variant. The default panics
@@ -128,11 +162,15 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 	case *ast.FuncDecl:
 		r.rewriteFuncSig(&d.FuncSig)
 	case *ast.TypeDecl:
+		r.pushTypeParams(d.TypeParams)
+		defer r.popTypeParams(d.TypeParams)
 		if d.TypeAnn != nil {
 			d.TypeAnn = r.rewrite(d.TypeAnn)
 		}
 		r.rewriteTypeParams(d.TypeParams)
 	case *ast.InterfaceDecl:
+		r.pushTypeParams(d.TypeParams)
+		defer r.popTypeParams(d.TypeParams)
 		r.rewriteTypeParams(d.TypeParams)
 		for _, ext := range d.Extends {
 			r.renameTypeRefInPlace(ext)
@@ -141,6 +179,8 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 			r.rewriteObject(d.TypeAnn)
 		}
 	case *ast.ClassDecl:
+		r.pushTypeParams(d.TypeParams)
+		defer r.popTypeParams(d.TypeParams)
 		r.rewriteTypeParams(d.TypeParams)
 		if d.Extends != nil {
 			r.renameTypeRefInPlace(d.Extends)
@@ -152,6 +192,8 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 			r.rewriteClassElem(elem)
 		}
 	case *ast.EnumDecl:
+		r.pushTypeParams(d.TypeParams)
+		defer r.popTypeParams(d.TypeParams)
 		r.rewriteTypeParams(d.TypeParams)
 	case *ast.ExportAssignmentStmt:
 		// `export = Name` carries only a value-side ident — nothing to rewrite.
@@ -179,6 +221,11 @@ func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
 			ret: sig.Return, throws: sig.Throws,
 		})
 	}
+	// After the elision, so a parameter it dropped is not left in scope.
+	tps := sig.TypeParams
+	r.pushTypeParams(tps)
+	defer r.popTypeParams(tps)
+
 	r.rewriteTypeParams(sig.TypeParams)
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
@@ -262,6 +309,9 @@ func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
 }
 
 func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool {
+	if _, bound := r.bound[head.Name]; bound {
+		return false
+	}
 	qualifier, ok := r.qualifiers[head.Name]
 	if !ok {
 		return false
@@ -385,6 +435,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		// `fn <T>(x: T) -> boolean` accepts a `fn (x: string) -> boolean` while
 		// `fn (x: unknown) -> boolean` does not. A signature a declaration owns is
 		// elided in rewriteFuncSig and rewriteFnTypeAnn instead.
+		r.pushTypeParams(tt.TypeParams)
+		defer r.popTypeParams(tt.TypeParams)
+
 		r.rewriteTypeParams(tt.TypeParams)
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {

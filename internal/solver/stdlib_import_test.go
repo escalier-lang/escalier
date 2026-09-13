@@ -580,3 +580,43 @@ func TestCoreImportDoesNotShadowAModuleDeclaration(t *testing.T) {
 	// The module's own declaration is what the bare name resolves to.
 	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
 }
+
+// A value and a type of one name are two bindings, so a value the module
+// declares leaves the imported type reachable unprefixed.
+//
+// `web:core` exports `EventInit` as a type alone. A module declaring
+// `val EventInit` occupies the value namespace and nothing else, so the type
+// binds and no collision is reported.
+func TestCoreImportBindsATypeBesideADeclaredValueOfThatName(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "web:core"
+		export declare val EventInit: number
+		declare val init: EventInit
+		val b = init.bubbles
+	`, map[string]string{
+		"web/core.esc": `export declare interface EventInit { bubbles: boolean }`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "boolean", soltype.Print(inferredValueType(t, res.Scope, "b")))
+}
+
+// The remediation names the binding the import actually made, so an aliased
+// import is told to write the alias rather than `core`.
+func TestCoreImportShadowingNamesTheAliasItBound(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "web:core" as dom
+		export declare class Event { readonly mine: number }
+	`, map[string]string{
+		"web/core.esc": `export declare class Event { readonly type: string }`,
+	})
+
+	require.Equal(t, []string{
+		"importing \"web:core\" binds Event, which this module already declares; " +
+			"reach the imported one as `dom.Event` or rename the declaration",
+	}, errorMessagesOf(res.Errors))
+}
