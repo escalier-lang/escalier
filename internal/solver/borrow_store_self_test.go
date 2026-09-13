@@ -29,17 +29,17 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h.put(&mut b)
-					return h.peer
+					out.slot = h.peer
 				}
 			`,
-			want: []string{"11:13-11:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:17-11:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 		// A receiver the caller owns outlives the frame, so a borrow of a local written into
@@ -95,17 +95,17 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 					put(mut self, p: &'a mut {value: number}) -> undefined { self.peer = p },
 				}
 
-				fn build(p: mut {value: number}) -> &mut {value: number} {
+				fn build(p: mut {value: number}, out: &mut {slot: &mut {value: number}}) {
 					val mut b = {value: 2}
 					val mut h = Holder(&mut p)
 					h["put"](&mut b)
-					return h.peer
+					out.slot = h.peer
 				}
 			`,
-			want: []string{"11:13-11:19: borrowed value 'b' does not live long enough to escape the function"},
+			want: []string{"11:17-11:23: borrowed value 'b' does not live long enough to escape the function"},
 			types: map[string]string{
 				"Holder": "<'a> {new (peer: &'a mut {value: number}) -> Holder<'a>}",
-				"build":  "fn (p: mut {value: number}) -> &mut {value: number}",
+				"build":  "fn (p: mut {value: number}, out: &mut {slot: &mut {value: number}}) -> undefined",
 			},
 		},
 	}
@@ -126,8 +126,8 @@ func TestSelfReceiverStoreEdge(t *testing.T) {
 //
 // The shared lifetime sits inside the receiver's type rather than being the receiver's own
 // borrow lifetime, so what lands in the target is whatever the receiver holds. Against the
-// local target here that is an edge from the target to the receiver, which the return then
-// follows.
+// local target here that is an edge from the target to the receiver, which a later flow-out
+// then follows.
 func TestSelfReceiverIsAStoreSource(t *testing.T) {
 	_, _, errs := inferSource(t, `
 		class Holder<'a> {
@@ -135,16 +135,16 @@ func TestSelfReceiverIsAStoreSource(t *testing.T) {
 			drain(self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
 		}
 
-		fn build(p: mut {value: number}) -> &mut {value: number} {
+		fn build(p: mut {value: number}, sink: &mut {slot: &mut {value: number}}) {
 			val mut b = {value: 2}
 			val mut h = Holder(&mut b)
 			val mut o = {slot: &mut p}
 			h.drain(&mut o)
-			return o.slot
+			sink.slot = o.slot
 		}
 	`)
 	require.Equal(t, []string{
-		"12:11-12:17: borrowed value 'h' does not live long enough to escape the function",
+		"12:16-12:22: borrowed value 'h' does not live long enough to escape the function",
 	}, messagesWithSpan(t, errs))
 }
 
