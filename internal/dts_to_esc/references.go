@@ -79,15 +79,13 @@ func (c *typeRefCollector) ExitExpr(e ast.Expr) {
 	}
 }
 
-// EnterDecl visits the slots the AST walk does not reach on its own: a type
-// parameter's constraint and default, and a signature's `throws` clause.
-// `Accept` skips all three, so `class Box<T: HTMLElement>` would otherwise
-// name `HTMLElement` with nothing recording it. #1587 covers closing the gap
-// in the walk itself, which is where it belongs.
+// EnterDecl visits the slots `Accept` does not reach: a type parameter's
+// constraint and default, and a signature's `throws` clause. Without it
+// `class Box<T: HTMLElement>` names `HTMLElement` with nothing recording it.
+// #1587 covers closing the gap in the walk itself.
 //
-// It returns true, so the ordinary walk still runs and the slots it does
-// reach are collected once each. A name recorded twice costs nothing, since
-// the result is a set.
+// Returning true leaves the ordinary walk to the rest. A name recorded twice
+// costs nothing, since the result is a set.
 func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
 	c.push(typeParamsOfDecl(d))
 	switch d := d.(type) {
