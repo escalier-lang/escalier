@@ -17,15 +17,13 @@ type typeRefCollector struct {
 	names set.Set[string]
 }
 
-// EnterDecl visits the slots the AST walk does not reach on its own: a type
-// parameter's constraint and default, and a signature's `throws` clause.
-// `Accept` skips all three, so `class Box<T: HTMLElement>` would otherwise
-// name `HTMLElement` with nothing recording it. #1587 covers closing the gap
-// in the walk itself, which is where it belongs.
+// EnterDecl visits the slots `Accept` does not reach: a type parameter's
+// constraint and default, and a signature's `throws` clause. Without it
+// `class Box<T: HTMLElement>` names `HTMLElement` with nothing recording it.
+// #1587 covers closing the gap in the walk itself.
 //
-// It returns true, so the ordinary walk still runs and the slots it does
-// reach are collected once each. A name recorded twice costs nothing, since
-// the result is a set.
+// Returning true leaves the ordinary walk to the rest. A name recorded twice
+// costs nothing, since the result is a set.
 func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
 	switch d := d.(type) {
 	case *ast.ClassDecl:
@@ -59,9 +57,9 @@ func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
 // EnterTypeAnn records a `TypeRefTypeAnn`'s head name and keeps walking, so
 // the arguments of `Foo<Bar>` are collected beside `Foo` itself.
 //
-// A qualified reference contributes its FIRST segment alone. `Intl.Collator`
-// records `Intl`, since that is the name an import has to bring into scope;
-// `Collator` is read off it and belongs to no package on its own.
+// A qualified reference contributes its FIRST segment alone, since that is what
+// an import brings into scope. `Intl.Collator` records `Intl`, and `Collator`
+// is read off it.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	ref, ok := t.(*ast.TypeRefTypeAnn)
 	if !ok {
