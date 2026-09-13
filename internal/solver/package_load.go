@@ -43,6 +43,20 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		}}
 	}
 
+	// A package whose group has more than one member cannot load alone: whichever
+	// went first would reach a name its sibling has not declared yet. The whole
+	// group loads as one module and publishes a namespace each.
+	if group, held := c.groups.GroupOf(uri); held && len(group) > 1 {
+		errs := c.loadPackageGroup(sortedGroup(group), span)
+		// The surface comes back whether or not the group reported. A package that
+		// inferred with a diagnostic still declares its names, and binding nothing
+		// would turn one error inside the group into an unbound-name error on every
+		// reference in the importing file. The single-package path answers the same
+		// way.
+		ns, _ := c.packages.Lookup(uri)
+		return ns, errs
+	}
+
 	module, path, err := c.source(uri)
 	if err != nil {
 		return nil, []SolverError{&UnresolvedPackageError{

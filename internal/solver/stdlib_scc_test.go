@@ -1,0 +1,448 @@
+package solver
+
+import (
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
+	"github.com/escalier-lang/escalier/internal/soltype"
+	"github.com/stretchr/testify/require"
+)
+
+// A package importing nothing loads alone.
+func TestPackageGroupsAnAcyclicPackageIsItsOwnGroup(t *testing.T) {
+	t.Parallel()
+
+	dir := seedStdlib(t, map[string]string{
+		"std/alpha.esc": `export declare val a: number`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare val b: alpha.A
+		`,
+	})
+	groups, err := BuildPackageGroups(dir)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"std:alpha"}, groups["std:alpha"])
+	require.Equal(t, []string{"std:beta"}, groups["std:beta"])
+}
+
+// Two packages naming each other load together.
+func TestPackageGroupsAPairCycleGroups(t *testing.T) {
+	t.Parallel()
+
+	dir := seedStdlib(t, map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare val a: beta.B
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare val b: alpha.A
+		`,
+	})
+	groups, err := BuildPackageGroups(dir)
+	require.NoError(t, err)
+
+	want := []string{"std:alpha", "std:beta"}
+	require.Equal(t, want, groups["std:alpha"])
+	require.Equal(t, want, groups["std:beta"])
+}
+
+// A three-package cycle groups the same way, and a package importing into the
+// cycle without being imported back stays out of it.
+func TestPackageGroupsATripleCycleGroups(t *testing.T) {
+	t.Parallel()
+
+	dir := seedStdlib(t, map[string]string{
+		"std/alpha.esc":   "import \"std:beta\"\nexport declare val a: number",
+		"std/beta.esc":    "import \"std:gamma\"\nexport declare val b: number",
+		"std/gamma.esc":   "import \"std:alpha\"\nexport declare val g: number",
+		"std/outside.esc": "import \"std:alpha\"\nexport declare val o: number",
+	})
+	groups, err := BuildPackageGroups(dir)
+	require.NoError(t, err)
+
+	want := []string{"std:alpha", "std:beta", "std:gamma"}
+	require.Equal(t, want, groups["std:alpha"])
+	require.Equal(t, want, groups["std:beta"])
+	require.Equal(t, want, groups["std:gamma"])
+	require.Equal(t, []string{"std:outside"}, groups["std:outside"])
+}
+
+// A cycle running across schemes groups the same as one inside a scheme. The
+// group is what loads together; the scheme only says where a file sits.
+func TestPackageGroupsACrossSchemeCycleGroups(t *testing.T) {
+	t.Parallel()
+
+	dir := seedStdlib(t, map[string]string{
+		"std/prelude.esc": "import \"web:core\"\nexport declare val p: number",
+		"web/core.esc":    "import \"std:prelude\"\nexport declare val c: number",
+	})
+	groups, err := BuildPackageGroups(dir)
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"std:prelude", "web:core"}, groups["web:core"])
+}
+
+// A cycle inside one tier is permitted. The browser tier is mutually recursive
+// for real reasons, so refusing every cycle would refuse the shipped tree.
+func TestCheckGroupTiersPermitsACycleInsideATier(t *testing.T) {
+	t.Parallel()
+
+	groups := PackageGroups{
+		"web:dom":   {"web:dom", "web:webgl"},
+		"web:webgl": {"web:dom", "web:webgl"},
+	}
+	require.Empty(t, CheckGroupTiers(groups, ast.Span{}))
+}
+
+// A cycle crossing a tier is refused, naming every member and its tier.
+func TestCheckGroupTiersRefusesACycleAcrossTiers(t *testing.T) {
+	t.Parallel()
+
+	groups := PackageGroups{
+		"web:dom":   {"web:dom", "web:fetch"},
+		"web:fetch": {"web:dom", "web:fetch"},
+	}
+	errs := CheckGroupTiers(groups, ast.Span{})
+	require.Equal(t, []string{
+		"import cycle spans more than one runtime tier: web:dom (browser), web:fetch (portable); " +
+			"a cycle may not cross a tier, since every member of one loads whenever any member does",
+	}, errorMessagesOf(errs))
+}
+
+// One group reports once however many members name it.
+func TestCheckGroupTiersReportsAGroupOnce(t *testing.T) {
+	t.Parallel()
+
+	group := []string{"web:core", "web:dom", "web:fetch"}
+	groups := PackageGroups{"web:core": group, "web:dom": group, "web:fetch": group}
+	require.Len(t, CheckGroupTiers(groups, ast.Span{}), 1)
+}
+
+// A package the partition does not hold has no tier, so a group containing one
+// is left alone rather than refused. A hand-written test tree is full of them.
+func TestCheckGroupTiersIgnoresAnUntieredPackage(t *testing.T) {
+	t.Parallel()
+
+	groups := PackageGroups{
+		"std:alpha": {"std:alpha", "web:dom"},
+		"web:dom":   {"std:alpha", "web:dom"},
+	}
+	require.Empty(t, CheckGroupTiers(groups, ast.Span{}))
+}
+
+// A single-member group is never a cross-tier cycle, whatever its tier.
+func TestCheckGroupTiersIgnoresASingleton(t *testing.T) {
+	t.Parallel()
+
+	require.Empty(t, CheckGroupTiers(PackageGroups{"web:dom": {"web:dom"}}, ast.Span{}))
+}
+
+// inferAgainstCyclicStdlib infers src against a tree that may hold cycles, with
+// the prelude classes the checker's own rules name merged in.
+func inferAgainstCyclicStdlib(t *testing.T, src string, files map[string]string) *ModuleResult {
+	t.Helper()
+	return InferModuleAgainstStdlib(parseModule(t, src), seedStdlib(t, withPreludeClasses(files)))
+}
+
+// Two packages naming each other load once, and each resolves the other's
+// types. This is what a group buys: loading either one alone would reach a name
+// the other has not declared yet.
+func TestACyclicPairLoadsAndResolvesBothWays(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare class Alpha {
+				partner: beta.Beta,
+			}
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta {
+				partner: alpha.Alpha,
+			}
+		`,
+	}
+
+	t.Run("EachIsRegisteredUnderItsOwnURI", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			import "std:beta"
+			declare val a: alpha.Alpha
+			declare val b: beta.Beta
+			val fromA = a.partner
+			val fromB = b.partner
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "fromA")))
+		require.Equal(t, "Alpha", soltype.Print(inferredValueType(t, res.Scope, "fromB")))
+	})
+
+	t.Run("ImportingOneLoadsTheGroup", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			declare val a: alpha.Alpha
+			val partner = a.partner
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
+		// Both members are registered, whichever one the file imported.
+		for _, uri := range []string{"std:alpha", "std:beta"} {
+			ns, found := res.Packages.Lookup(uri)
+			require.True(t, found, "%s is not registered", uri)
+			require.NotNil(t, ns, "%s registered with no surface", uri)
+		}
+	})
+}
+
+// A three-package cycle behaves the same as a pair.
+func TestACyclicTripleLoadsAndResolves(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val next = a.next
+	`, map[string]string{
+		"std/alpha.esc": "import \"std:beta\"\nexport declare class Alpha { next: beta.Beta }",
+		"std/beta.esc":  "import \"std:gamma\"\nexport declare class Beta { next: gamma.Gamma }",
+		"std/gamma.esc": "import \"std:alpha\"\nexport declare class Gamma { next: alpha.Alpha }",
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "next")))
+}
+
+// An acyclic package still takes the single-package path, which the group map
+// leaves as a group of one.
+func TestAnAcyclicPackageStillLoadsAlone(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:math"
+		val x = math.PI
+	`, map[string]string{
+		"std/math.esc": `export val PI: number = 3`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "x")))
+}
+
+// A non-exported declaration in one member is unreachable from an importer,
+// even though the group inferred as one module and the sibling could see it.
+func TestAGroupPublishesOnlyExportedDeclarations(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare val shared: number
+			declare val secret: number
+			export declare class Alpha { partner: beta.Beta }
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	}
+
+	t.Run("AnExportedSiblingResolves", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			val n = alpha.shared
+		`, files)
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	})
+
+	t.Run("AnUnexportedOneDoesNot", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			val n = alpha.secret
+		`, files)
+		require.NotEmpty(t, errorMessagesOf(res.Errors))
+	})
+}
+
+// A group that reports a diagnostic still binds its surface. Returning nothing
+// would turn one error inside the cycle into an unbound-name error on every
+// reference in the importing file.
+func TestAReportingGroupStillBinds(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val ok = a.fine
+	`, map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare class Alpha {
+				fine: number,
+				broken: Nonexistent,
+				partner: beta.Beta,
+			}
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.Len(t, messages, 1, "only the group's own diagnostic, with no cascade: %v", messages)
+	require.Contains(t, messages[0], "cannot find type `Nonexistent`")
+	// The surface bound anyway, so the reference resolves.
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "ok")))
+}
+
+// An `as` clause on an import naming a sibling in the same cycle is refused. A
+// member is reached by its own name inside the merged module, so an alias would
+// resolve nothing; saying so beats binding nothing.
+func TestAnAliasedIntraGroupImportIsRefused(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val partner = a.partner
+	`, map[string]string{
+		"std/alpha.esc": `
+			import "std:beta" as b
+			export declare class Alpha { partner: b.Beta }
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.NotEmpty(t, messages)
+	require.Contains(t, messages[0],
+		`cannot import "std:beta" as "b": the two packages import each other and load as `+
+			`one module, where a sibling is reached by its own name; write the bare import`)
+}
+
+// Two members of one group binding the same name are refused. A member reaches
+// a sibling by that name, so the two could not be told apart.
+func TestAGroupWithCollidingBindingsIsRefused(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:url"
+		val x = 1
+	`, map[string]string{
+		"std/url.esc": "import \"web:url\"\nexport declare val a: number",
+		"web/url.esc": "import \"std:url\"\nexport declare val b: number",
+	})
+
+	// The pair also spans tiers, since `std:*` is the language tier and `web:url`
+	// is portable, so both diagnostics are correct and both are reported.
+	require.Contains(t, errorMessagesOf(res.Errors),
+		`std:url and web:url import each other and both bind "url"; a member of a cycle `+
+			`reaches a sibling by that name, so the two cannot be told apart`)
+}
+
+// A group spanning tiers is reported once and still loads, so the diagnostic
+// that says what to fix is not buried under the cycle errors it would cause.
+func TestACrossTierGroupReportsOnceAndStillLoads(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "web:fetch"
+		val x = 1
+	`, map[string]string{
+		"web/fetch.esc": "import \"web:dom\"\nexport declare val a: number",
+		"web/dom.esc":   "import \"web:fetch\"\nexport declare val b: number",
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.Len(t, messages, 1, "one diagnostic, with no cycle cascade: %v", messages)
+	require.Contains(t, messages[0], "import cycle spans more than one runtime tier")
+}
+
+// crossTierCyclesInTheCommittedTree records the cross-tier cycles the shipped
+// tree currently forms, so a new one fails while the known one is worked.
+//
+// There is one, and it is not incidental. `generate` accepts five import edges
+// that go up a tier, each a portable declaration typed against a browser type
+// the portable runtimes implement differently. Those five are what pull
+// `web:fetch`, `web:file`, `web:performance`, `web:url` and `web:websocket`
+// into `web:dom`'s component: with them the browser and portable packages form
+// one 18-member cycle, and without them the browser tier forms an 11-member one
+// of its own and the portable packages stay out of it.
+//
+// So the accepted edges cost more than the references they excuse. A tier-
+// spanning cycle means importing `web:fetch` loads the whole browser tier,
+// which is the opposite of what the portable tier is for. #1590 resolves the
+// five, and this set empties with them.
+var crossTierCyclesInTheCommittedTree = [][]string{{
+	"web:cache", "web:dom", "web:fetch", "web:file", "web:indexeddb",
+	"web:payments", "web:performance", "web:push", "web:service_worker",
+	"web:storage", "web:url", "web:web_audio", "web:web_codecs", "web:web_rtc",
+	"web:webauthn", "web:webgl", "web:websocket", "web:workers",
+}}
+
+// The committed tree forms no cross-tier cycle beyond the one recorded above.
+//
+// This is the check that says whether the shipped tree loads. `generate`
+// enforces the rule edge by edge, which a cycle can satisfy at every edge and
+// still break: a cycle is refused for spanning tiers, not for any one of its
+// edges doing so.
+func TestTheCommittedTreeFormsNoNewCrossTierCycle(t *testing.T) {
+	t.Parallel()
+
+	groups, err := BuildPackageGroups("../interop/data")
+	require.NoError(t, err)
+
+	known := set.NewSet[string]()
+	for _, cycle := range crossTierCyclesInTheCommittedTree {
+		known.Add(strings.Join(cycle, ","))
+	}
+
+	var unexpected []string
+	for _, err := range CheckGroupTiers(groups, ast.Span{}) {
+		cycleErr, ok := err.(*CrossTierCycleError)
+		require.True(t, ok, "unexpected diagnostic: %s", err.Message())
+		if !known.Contains(strings.Join(cycleErr.Members, ",")) {
+			unexpected = append(unexpected, err.Message())
+		}
+	}
+	sort.Strings(unexpected)
+	require.Empty(t, unexpected, "cross-tier cycles beyond the recorded one:\n  %s",
+		strings.Join(unexpected, "\n  "))
+}
+
+// Every cycle the committed tree forms that stays inside one tier is permitted,
+// and there are some: the browser tier is mutually recursive for real reasons.
+func TestTheCommittedTreeHasWithinTierCycles(t *testing.T) {
+	t.Parallel()
+
+	groups, err := BuildPackageGroups("../interop/data")
+	require.NoError(t, err)
+
+	seen := set.NewSet[string]()
+	within := 0
+	for _, uri := range sortedKeys(groups) {
+		group := groups[uri]
+		key := strings.Join(group, ",")
+		if len(group) < 2 || seen.Contains(key) {
+			continue
+		}
+		seen.Add(key)
+		if len(CheckGroupTiers(PackageGroups{uri: group}, ast.Span{})) == 0 {
+			within++
+		}
+	}
+	require.NotZero(t, within, "the tree is expected to form cycles inside a tier")
+}
