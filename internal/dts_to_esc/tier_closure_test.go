@@ -33,10 +33,9 @@ var knownUpwardRefs = map[string][]string{}
 // declaringPackage maps each exported top-level name in the committed tree to
 // the package URI that declares it.
 //
-// A name declared by two packages fails rather than resolving to whichever the
-// walk reached last. The partition rejects a symbol listed twice, so a
-// duplicate here means two packages generated the same name by other means,
-// and every tier answer about that name would depend on iteration order.
+// A name declared by two packages fails rather than resolving by iteration
+// order. The partition already rejects a symbol listed twice, so a duplicate
+// here means two packages generated the same name by other means.
 func declaringPackage(t *testing.T, modules map[string]*ast.Module) map[string]string {
 	t.Helper()
 	owner := map[string]string{}
