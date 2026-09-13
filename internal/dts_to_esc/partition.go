@@ -406,8 +406,9 @@ var webPackages = []struct {
 		// Binary and timing aliases named across the tier.
 		"BufferSource", "AllowSharedBufferSource",
 		"DOMHighResTimeStamp",
-		// Encoding. The stream-wrapping pair stays in web:encoding,
-		// which may name web:streams.
+		// Encoding. The pair that wraps these in a stream is in
+		// web:streams, a tier above, since a core package cannot name a
+		// stream.
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
@@ -451,6 +452,12 @@ var webPackages = []struct {
 		"TransformerStartCallback", "TransformerTransformCallback",
 		"TransformerCancelCallback",
 		"GenericTransformStream",
+		// The encoding pair. MDN files them under the Encoding API, but
+		// each extends GenericTransformStream and names a readable and a
+		// writable side, so they say more about streams than about
+		// encoding. The encoder and decoder they wrap are in web:core,
+		// which is a tier below and cannot name a stream.
+		"TextEncoderStream", "TextDecoderStream",
 		"ReadableStreamAsyncIterator", "ReadableStreamController",
 		"ReadableStreamGetReaderOptions", "ReadableStreamIteratorOptions",
 		"ReadableStreamReader", "ReadableStreamType",
@@ -748,15 +755,6 @@ var webPackages = []struct {
 	{"web:url", "web/url.esc", []string{
 		"URL", "URLSearchParams",
 		"URLSearchParamsIterator",
-	}},
-	{"web:encoding", "web/encoding.esc", []string{
-		// The encoder and decoder themselves are in web:core. What is
-		// left here is the pair that wraps them in a stream, which needs
-		// web:streams and so cannot sit in the core tier.
-		//
-		// Per MDN, the *Stream variants belong to the Encoding API,
-		// not the Streams API: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API
-		"TextEncoderStream", "TextDecoderStream",
 	}},
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
