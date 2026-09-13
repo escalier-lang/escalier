@@ -202,3 +202,188 @@ func TestBorrowExclusivity(t *testing.T) {
 		})
 	}
 }
+
+// storeEffectDecls declares a callee that writes its second argument into its first, plus the
+// helpers the cases read the aliased data back through. `'a` at both item and target's peer
+// field is what makes the signature declare a store.
+const storeEffectDecls = `
+	declare fn store<'a, 'b, 'c>(
+		target: &'c mut {peer: &'a mut {value: number}, spare: &'b mut {value: number}},
+		item: &'a mut {value: number},
+	) -> undefined
+	declare fn readMutBorrow(x: &mut {value: number}) -> undefined
+	declare fn readImmBorrow(x: &{value: number}) -> undefined
+	declare fn touch<'d>(x: &'d mut {peer: &mut {value: number}, spare: &mut {value: number}}) -> undefined
+`
+
+// TestStoreEffectLoans covers the borrow a call's store effect creates. A signature that writes
+// one argument into another leaves the target reaching the item, so the target holds a borrow
+// of it that a second borrow or a plain read has to respect.
+//
+// Each case keeps the target live past the read, since a loan lasts only as long as the binding
+// holding it. The last case drops that use to show the rule turning off.
+func TestStoreEffectLoans(t *testing.T) {
+	tests := map[string]struct {
+		src  string
+		want []string
+	}{
+		// A second mutable borrow of the stored item is a second writable path, since the
+		// target still reaches the first.
+		"SecondBorrowAfterAStore": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					readImmBorrow(&b)
+					touch(&mut a)
+				}
+			`,
+			want: []string{"14:20-14:22: cannot borrow 'b' as immutable while it is borrowed as mutable"},
+		},
+		// Reading the item directly reaches the same data the target can write through, which
+		// the loan-against-loan check does not see because a read is not a borrow.
+		"UseAfterAStore": {
+			src: storeEffectDecls + `
+				fn g(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: []string{"14:14-14:15: cannot use 'b' while it is borrowed as mutable"},
+		},
+		// Nothing reads the target after the store, so its borrow of the item is dead and the
+		// item is reachable one way again. This is the same NLL rule a named borrow follows.
+		"DeadTargetReleasesTheItemOk": {
+			src: storeEffectDecls + `
+				fn h(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					val y = b
+				}
+			`,
+			want: nil,
+		},
+		// Without the store the target reaches nothing of b's, so both the borrow and the read
+		// are the only path to it.
+		"NoStoreLeavesTheItemFreeOk": {
+			src: storeEffectDecls + `
+				fn k(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					readMutBorrow(&mut b)
+					val y = b
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// The store's own arguments are compared against each other by the loan-against-loan
+		// check, not against the loan that same call creates. Reading b to pass `&mut b` is how
+		// the store is written, so it reports nothing on its own.
+		"TheStoreCallItselfIsQuietOk": {
+			src: storeEffectDecls + `
+				fn m(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b)
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// What the store puts in the target decides whether a write can go through it. A
+		// signature storing a shared `&'a B` leaves the target able to read the item and not to
+		// write it, so a second shared borrow is two readers of one value.
+		"SharedItemStoredLeavesItReadableOk": {
+			src: `
+				declare fn store<'a, 'b, 'c>(
+					target: &'c mut {peer: &'a {value: number}, spare: &'b mut {value: number}},
+					item: &'a {value: number},
+				) -> undefined
+				declare fn readImmBorrow(x: &{value: number}) -> undefined
+				declare fn hold<'d>(x: &'d mut {peer: &{value: number}, spare: &mut {value: number}}) -> undefined
+				fn f(q: {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {value: 2}
+					val mut a = {peer: &q, spare: &mut r}
+					store(&mut a, &b)
+					readImmBorrow(&b)
+					hold(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A direct store puts the argument's own place in the target, field path and all, so
+		// the target reaches b.inner and nothing else of b. Borrowing the disjoint b.other
+		// reaches data the target cannot write.
+		"StoreOfOneFieldLeavesItsSiblingFreeOk": {
+			src: storeEffectDecls + `
+				fn f(q: mut {value: number}, r: mut {value: number}) -> undefined {
+					val mut b = {inner: {value: 1}, other: {value: 2}}
+					val mut a = {peer: &mut q, spare: &mut r}
+					store(&mut a, &mut b.inner)
+					readMutBorrow(&mut b.other)
+					touch(&mut a)
+				}
+			`,
+			want: nil,
+		},
+		// A read is weighed against the borrows that existed when it was walked. The borrow on
+		// the else arm comes later in the source, so it never reaches the read on the then arm.
+		"ABorrowOnOneArmDoesNotReachTheOtherOk": {
+			src: `
+				declare fn readMutBorrow(x: &mut {value: number}) -> undefined
+				fn f(cond: boolean, x: mut {value: number}) -> undefined {
+					var a = &mut x
+					if cond {
+						val y = x
+					} else {
+						a = &mut x
+						readMutBorrow(a)
+					}
+				}
+			`,
+			want: nil,
+		},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			_, _, errs := inferSource(t, tc.src)
+			require.Equal(t, tc.want, messagesWithSpan(t, errs))
+		})
+	}
+}
+
+// TestMutSelfIsAMutableStoreSource covers the loan a method's own receiver creates when the
+// method drains it into a parameter.
+//
+// A `mut self` receiver is a mutable RefType carrying no lifetime, the same shape an
+// owned-mutable parameter takes, so the lifetime test that decides an ordinary parameter's
+// mutability does not describe it. Reading it as shared would let the target hold a writable
+// view while the check believed it held a read-only one.
+//
+// The later SHARED borrow of h is what pins this. It conflicts with a mutable loan and not with
+// a shared one, so the diagnostic appears only when the receiver was read as mutable.
+func TestMutSelfIsAMutableStoreSource(t *testing.T) {
+	_, _, errs := inferSource(t, `
+		class Holder<'a> {
+			peer: &'a mut {value: number},
+			drain(mut self, out: &mut {slot: &'a mut {value: number}}) -> undefined { out.slot = self.peer },
+		}
+		declare fn touch<'e>(x: &'e mut {slot: &mut {value: number}}) -> undefined
+		fn build(p: mut {value: number}) -> undefined {
+			val mut h = Holder(&mut p)
+			val mut o = {slot: &mut p}
+			h.drain(&mut o)
+			val again = &h
+			touch(&mut o)
+		}
+	`)
+	require.Equal(t, []string{
+		"11:16-11:18: cannot borrow 'h' as immutable while it is borrowed as mutable",
+	}, messagesWithSpan(t, errs))
+}
