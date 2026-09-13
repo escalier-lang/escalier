@@ -173,6 +173,17 @@ step falls back to a `yet` and costs only itself. `MergedSpec.HeadRewrites`
 records what each restatement says and why it declares the same values, and the
 run fails if a pattern stops matching its head exactly once.
 
+ESMeta writes IR by hand for a handful of algorithms it cannot compile from
+`spec.html`, and `Compiler` prefers one of those to a compiled algorithm of the
+same name. Three stand in for locale-sensitive functions ECMA-262 leaves to the
+host and ECMA-402 defines in full, so on the merged specification the stub
+would hide a definition the graph could carry, and each is a single `yet` that
+the analysis reads as knowing nothing about the method. `MergedCompiler`
+declines to prefer those three and drops them from the compiled program, which
+leaves the vendored checkout alone: editing it would put the toolchain's own
+state in the way of a run. Which stubs those are is derived and the count is
+pinned, the same way the superseded clauses are.
+
 `Main` serializes ECMA-262 alone and writes the committed `cfg.json`.
 Committing a merged graph is
 [#1455](https://github.com/escalier-lang/escalier/issues/1455).
@@ -186,12 +197,17 @@ is published to a local repository and the vendored tree is never edited.
 `.scalafmt.conf` is the vendored tree's own configuration, so the Scala here
 reads like the Scala it is compiled against. `mise run format` applies it.
 
-`src/main/scala/escalier/specextract/` holds four files. `Main` runs the
-pipeline in process, `Lowering` turns `esmeta.cfg.CFG` into the schema,
-`Validation` reads the written file back and checks it, and `Schema` carries the
-case classes and the writer. The schema itself is Appendix A of the
-implementation plan, and the Go analysis reads the same shape, so a field
-renamed on one side has to be renamed on the other.
+`src/main/scala/escalier/specextract/` holds seven files. Four serialize
+ECMA-262: `Main` runs the pipeline in process, `Lowering` turns
+`esmeta.cfg.CFG` into the schema, `Validation` reads the written file back and
+checks it, and `Schema` carries the case classes and the writer. The schema
+itself is Appendix A of the implementation plan, and the Go analysis reads the
+same shape, so a field renamed on one side has to be renamed on the other.
+
+The other three read ECMA-402 in, and none of them is on the path `Main` takes.
+`MergedSpec` builds the merged document, `MergedCompiler` compiles it so
+ECMA-402's definitions win over the stubs that would hide them, and
+`MergeCheck` runs both and reports. See "The merged document" above.
 
 The lowering copies structure and makes no mutability or alias judgement. Three
 shapes need reconstruction rather than a copy, because the IR compiler has
