@@ -95,8 +95,8 @@ type refRewriter struct {
 	// into. Empty when the pass is not respelling those references.
 	consumedCtor map[string]string
 	// qualifiers maps a name another package declares to the binding that
-	// package's import makes, so `Event` becomes `core.Event`. Empty when the
-	// pass is not qualifying cross-package references.
+	// package's import makes, so `Blob` becomes `file.Blob`. Empty when the pass
+	// is not qualifying cross-package references.
 	qualifiers map[string]string
 	// substitutions replaces a reference by name with a whole type annotation,
 	// which is how a vacuous type parameter's one occurrence becomes its
