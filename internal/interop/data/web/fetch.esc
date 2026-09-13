@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -226,7 +225,7 @@ export declare fn fetch(input: RequestInfo | url.URL, init?: RequestInit) -> Pro
 
 export declare type BodyInit = streams.ReadableStream | dom.XMLHttpRequestBodyInit
 
-export declare type HeadersInit = mut Array<[string, string]> | object.Record<string, string> | Headers
+export declare type HeadersInit = mut Array<[string, string]> | Record<string, string> | Headers
 
 export declare type RequestInfo = Request | string
 

@@ -4,7 +4,6 @@
 
 import "std:error"
 import "std:function"
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:fetch"
@@ -136,13 +135,13 @@ export declare type TableKind = "anyfunc" | "externref"
 
 export declare type ExportValue = function.Function | Global | Memory | Table
 
-export declare type Exports = object.Record<string, ExportValue>
+export declare type Exports = Record<string, ExportValue>
 
 export declare type ImportValue = ExportValue | number
 
-export declare type Imports = object.Record<string, ModuleImports>
+export declare type Imports = Record<string, ModuleImports>
 
-export declare type ModuleImports = object.Record<string, ImportValue>
+export declare type ModuleImports = Record<string, ImportValue>
 
 export declare type ValueType = keyof ValueTypeMap
 

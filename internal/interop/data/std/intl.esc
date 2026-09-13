@@ -3,7 +3,6 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:date"
-import "std:object"
 
 /**
  * The `Intl.getCanonicalLocales()` method returns an array containing
@@ -239,7 +238,7 @@ export declare type RelativeTimeFormatPart = {
     type: "literal",
     value: string
 } | {
-    type: object.Exclude<NumberFormatPartTypes, "literal">,
+    type: Exclude<NumberFormatPartTypes, "literal">,
     value: string,
     unit: RelativeTimeFormatUnitSingular
 }
@@ -677,7 +676,7 @@ export declare class ListFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat/supportedLocalesOf).
      */
-    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<ListFormatOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
+    static supportedLocalesOf(locales: LocalesArgument, options?: Pick<ListFormatOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 /**
@@ -731,7 +730,7 @@ export declare class Segmenter {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter/supportedLocalesOf)
      */
-    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<SegmenterOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
+    static supportedLocalesOf(locales: LocalesArgument, options?: Pick<SegmenterOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 export declare interface ResolvedSegmenterOptions {
