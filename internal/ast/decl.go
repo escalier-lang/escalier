@@ -531,6 +531,48 @@ func (d *DeclareGlobalDecl) Accept(v Visitor) {
 // Like DeclareModuleDecl/DeclareGlobalDecl, this is an Escalier-source construct;
 // the dts_parser has its own dts_parser.NamespaceDecl for .d.ts files.
 // Declare() always returns true because namespaces are inherently ambient.
+// DeclNames returns every top-level name a declaration binds, in source order.
+//
+// A `val` or `var` binds one name per leaf of its pattern, so a destructuring
+// declaration contributes several and ForEachLeafBinding is what reads them.
+// Every other kind binds the one name it is declared under, and a declaration
+// the parser left unnamed contributes none.
+//
+// A namespace contributes its own name. Its members are reached through it and
+// are not top-level names of their own.
+func DeclNames(decl Decl) []string {
+	switch d := decl.(type) {
+	case *VarDecl:
+		var names []string
+		ForEachLeafBinding(d.Pattern, func(name string, _ int) {
+			names = append(names, name)
+		})
+		return names
+	case *FuncDecl:
+		return declIdentName(d.Name)
+	case *ClassDecl:
+		return declIdentName(d.Name)
+	case *TypeDecl:
+		return declIdentName(d.Name)
+	case *InterfaceDecl:
+		return declIdentName(d.Name)
+	case *EnumDecl:
+		return declIdentName(d.Name)
+	case *NamespaceDecl:
+		return declIdentName(d.Name)
+	}
+	return nil
+}
+
+// declIdentName returns the one name an identifier holds, and none for a
+// declaration the parser left unnamed.
+func declIdentName(id *Ident) []string {
+	if id == nil {
+		return nil
+	}
+	return []string{id.Name}
+}
+
 type NamespaceDecl struct {
 	declDoc
 	Name     *Ident

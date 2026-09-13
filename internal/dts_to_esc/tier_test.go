@@ -51,7 +51,7 @@ func TestTierMembership(t *testing.T) {
 
 	require.Equal(t, []string{
 		"std:wasm",
-		"web:compression", "web:crypto", "web:encoding", "web:fetch",
+		"web:compression", "web:crypto", "web:fetch",
 		"web:file", "web:performance", "web:streams", "web:url",
 		"web:websocket",
 	}, PackagesInTier(TierPortable))
