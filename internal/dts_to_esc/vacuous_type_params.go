@@ -8,15 +8,14 @@ import (
 // in an input position, and rewrites that occurrence to what the parameter was
 // constrained to.
 //
-// A type parameter relates two positions. One occurring once relates nothing,
-// so `<T>(value?: T) -> boolean` says exactly what `(value?: unknown) -> boolean`
-// says, and the second says it without a reader having to check.
+// A type parameter relates two positions, so one occurring once relates
+// nothing: `<T>(value?: T) -> boolean` says what `(value?: unknown) -> boolean`
+// says, without a reader having to check.
 //
-// A parameter occurring once in the RETURN is left alone. Nothing infers it, so
-// it is equally vacuous, but rewriting it changes what a call yields rather than
-// restating it. Sixteen of those come from TypeScript type predicates the
-// converter degrades to `-> boolean`, and answering them means representing the
-// predicate rather than erasing the parameter.
+// A parameter occurring once in the RETURN is left alone. It is equally
+// vacuous, but rewriting it changes what a call yields rather than restating
+// it. Sixteen come from type predicates the converter degrades to `-> boolean`,
+// and answering those means representing the predicate.
 
 // elideVacuousTypeParams rewrites every signature in the module.
 func elideVacuousTypeParams(mod *StandaloneModule) {
@@ -42,39 +41,28 @@ type sigParts struct {
 // elideVacuousIn drops each type parameter of one signature whose only
 // occurrence is a whole parameter's type.
 //
-// That restriction is what makes the rewrite safe rather than merely shorter.
-// Replacing a whole parameter's type with the parameter's constraint, or with
-// `unknown`, widens what the function accepts, so every call that type-checked
-// still does. An occurrence NESTED inside a parameter does not widen:
+// The whole-parameter restriction is what makes the rewrite safe. Replacing a
+// whole parameter's type widens what the function accepts, so every call that
+// type-checked still does. A NESTED occurrence does not widen:
 //
 //	fn each<T>(cb: fn (x: T) -> undefined)
 //
-// sits in a contravariant position, so `fn each(cb: fn (x: unknown) -> undefined)`
-// rejects the `fn (x: string) -> undefined` the generic form accepted. An
-// occurrence inside a type argument is no safer, since the argument's variance
-// decides: `ReadonlySetLike<U>` declares `has(value: U)`, so
-// `ReadonlySetLike<unknown>` is not a supertype of `ReadonlySetLike<string>`.
+// is contravariant there, so `fn each(cb: fn (x: unknown) -> undefined)` rejects
+// the `fn (x: string) -> undefined` the generic form accepted. An occurrence
+// inside a type argument is no safer, since the argument's variance decides.
 //
-// The restriction also makes shadowing moot. An inner `fn <T>` rebinding the
-// name contributes an occurrence, and any occurrence beyond the one whole
-// parameter stops the elision.
-//
-// Only a signature a declaration owns is elided: a top-level function, a class
-// member, or a member of an object type. The generated tree declares what a
-// runtime already implements, so widening a declared input cannot break the
-// implementation. A function type nested inside another annotation is left
-// alone, since its parameters are contravariant where it sits.
+// It also makes shadowing moot, since an inner `fn <T>` rebinding the name
+// contributes an occurrence and any extra occurrence stops the elision.
 func elideVacuousIn(sig sigParts) {
 	if len(*sig.typeParams) == 0 {
 		return
 	}
 	kept := make([]*ast.TypeParam, 0, len(*sig.typeParams))
 	for _, tp := range *sig.typeParams {
-		// A parameter with a default is a knob the declaration offers a caller,
-		// so it stays even when the signature relates it to nothing. That is what
-		// `Object.fromEntries<T = any>` is: its `T` occurs once only because the
+		// A parameter with a default is a knob the declaration offers a caller, so
+		// it stays. `Object.fromEntries<T = any>` occurs once only because the
 		// conversion dropped the `{ [k: string]: T }` return that used it, and the
-		// fix there is to restore the return rather than to erase the parameter.
+		// fix there is to restore the return.
 		if tp.Default != nil {
 			kept = append(kept, tp)
 			continue
