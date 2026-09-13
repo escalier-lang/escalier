@@ -344,7 +344,7 @@ func TestBuildDepGraphV2_Dependencies(t *testing.T) {
 								iterator: unique symbol,
 							}
 	
-							interface Iterable<T, TReturn = any, TNext = any> {
+							interface Iterable<T, TReturn = unknown, TNext = unknown> {
 								[Symbol.iterator]: fn () -> Iterator<T, TReturn, TNext>,
 							}
 	
