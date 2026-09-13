@@ -2049,8 +2049,12 @@ because `shared` is permanently live and mutable.
   of the enclosing function (conservative but correct — the callee may
   store the closure). `AnalyzeCaptures` already works on any FuncExpr.
   Estimated scope: ~50-100 lines of production code.
-- Concurrency / data race prevention (would require Rust-style exclusive
-  borrowing)
+- **Data race prevention.** The mutable-XOR-shared rule is enforced: a
+  mutable borrow may not be live alongside a SHARED borrow of overlapping
+  data. Two mutable borrows stay legal, per Rule 3 above. See
+  `internal/solver/borrow_exclusivity.go`, which lists the cases the check
+  does not yet reach. What stays out of scope is concurrency, which needs a
+  thread model and Rust-style exclusive borrowing on top of that rule.
 - Heap escape analysis beyond function return values
 - **Property-level alias sets:** The initial implementation uses
   variable-level alias sets — all destructured bindings from the same
