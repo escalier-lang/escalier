@@ -35,6 +35,20 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			src:  `export type F = { m<T>(v: T) -> boolean }`,
 			want: "m(v: unknown) -> boolean",
 		},
+		{
+			// std:object's freeze. The conversion dropped the constraint on `T`
+			// that named `U`, so `U` is left naming nothing.
+			name: "AParameterTheSignatureNeverNamesGoes",
+			src:  `export declare class C { static freeze<T: {}, U: string | symbol>(o: T) -> Readonly<T> }`,
+			want: "static freeze<T: {}>(o: T) -> Readonly<T>",
+		},
+		{
+			// The inner `fn <T>` binds the `T` in `x: T`, so the outer parameter
+			// names nothing and goes. The inner one stays.
+			name: "AParameterOnlyAShadowingSignatureNamesGoes",
+			src:  `export declare fn outer<T>(cb: fn <T>(x: T) -> boolean) -> undefined`,
+			want: "fn outer(cb: fn<T> (x: T) -> boolean) -> undefined",
+		},
 
 		// Left alone.
 		{
@@ -77,14 +91,6 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			want: "fn each<T>(cb: fn (x: T) -> undefined) -> undefined",
 		},
 		{
-			// An inner signature rebinding the name contributes an occurrence, so
-			// the outer parameter is left alone rather than having the inner one
-			// rewritten under it.
-			name: "AShadowedNameStays",
-			src:  `export declare fn outer<T>(cb: fn <T>(x: T) -> boolean) -> undefined`,
-			want: "fn outer<T>(cb: fn<T> (x: T) -> boolean) -> undefined",
-		},
-		{
 			name: "AParameterAnotherParameterConstrainsStays",
 			src:  `export declare class C { m<T, U: T>(self, v: T) -> U }`,
 			want: "m<T, U: T>(self, v: T) -> U",
@@ -93,6 +99,13 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			name: "AParameterUsedInAThrowsStays",
 			src:  `export declare fn f<T>(v: T) -> boolean throws T`,
 			want: "fn f<T>(v: T) -> boolean throws T",
+		},
+		{
+			// A shadowing signature's own constraint is outside the binding it
+			// introduces, so `T` there is an occurrence of the outer parameter.
+			name: "AShadowingSignaturesConstraintCountsAsAnOccurrence",
+			src:  `export declare fn outer<T>(cb: fn <T: T>(x: T) -> boolean) -> undefined`,
+			want: "fn outer<T>(cb: fn<T: T> (x: T) -> boolean) -> undefined",
 		},
 	}
 
