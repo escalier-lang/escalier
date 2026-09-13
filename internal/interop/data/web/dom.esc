@@ -6,7 +6,6 @@ import "std:date"
 import "std:error"
 import "std:function"
 import "std:map"
-import "std:object"
 import "std:set"
 import "std:typed_arrays"
 import "web:cache"
@@ -3893,7 +3892,7 @@ export declare class ClipboardItem {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/getType) */
     getType(self, type: string) -> Promise<file.Blob>,
     static prototype: ClipboardItem,
-    constructor(mut self, items: object.Record<string, string | file.Blob | PromiseLike<string | file.Blob>>, options?: ClipboardItemOptions),
+    constructor(mut self, items: Record<string, string | file.Blob | PromiseLike<string | file.Blob>>, options?: ClipboardItemOptions),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/supports_static) */
     static supports(type: string) -> boolean
 }
@@ -18728,7 +18727,7 @@ export declare interface MathMLElementTagNameMap {
 }
 
 /** @deprecated Directly use HTMLElementTagNameMap or SVGElementTagNameMap as appropriate, instead. */
-export declare type ElementTagNameMap = HTMLElementTagNameMap & object.Pick<SVGElementTagNameMap, object.Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>>
+export declare type ElementTagNameMap = HTMLElementTagNameMap & Pick<SVGElementTagNameMap, Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>>
 
 @js("Audio")
 export declare var Audio: {

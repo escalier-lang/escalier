@@ -3,7 +3,6 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:map"
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:crypto"
@@ -200,7 +199,7 @@ export declare interface RTCOutboundRtpStreamStats extends RTCSentRtpStreamStats
     nackCount?: number,
     pliCount?: number,
     qpSum?: number,
-    qualityLimitationDurations?: object.Record<string, number>,
+    qualityLimitationDurations?: Record<string, number>,
     qualityLimitationReason?: RTCQualityLimitationReason,
     qualityLimitationResolutionChanges?: number,
     remoteId?: string,
