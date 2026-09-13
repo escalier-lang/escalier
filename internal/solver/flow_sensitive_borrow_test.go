@@ -109,7 +109,7 @@ func TestFieldStoreBorrowEdges(t *testing.T) {
 				}
 			`,
 			want:  nil,
-			types: map[string]string{"f": "fn () -> mut {peer: {x: number}}"},
+			types: map[string]string{"f": "fn () -> {peer: {x: number}}"},
 		},
 		// Storing a local borrow into a field, then aliasing the carrier from a live binding
 		// outside the moved component, blocks the move and escapes: keep holds `&b` and is read

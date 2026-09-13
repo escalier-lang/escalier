@@ -158,7 +158,7 @@ func TestInferObjectRestMembersStayUsable(t *testing.T) {
 			}
 		`)
 		require.Empty(t, errs)
-		require.Equal(t, "fn (b: Box) -> mut {doubled: number, ...}", values["f"])
+		require.Equal(t, "fn (b: Box) -> {doubled: number, ...}", values["f"])
 	})
 
 	t.Run("a method in the leftover calls", func(t *testing.T) {
