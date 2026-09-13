@@ -1,9 +1,12 @@
 package solver
 
 import (
+	"sort"
+	"strings"
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
 	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
@@ -366,4 +369,80 @@ func TestACrossTierGroupReportsOnceAndStillLoads(t *testing.T) {
 	messages := errorMessagesOf(res.Errors)
 	require.Len(t, messages, 1, "one diagnostic, with no cycle cascade: %v", messages)
 	require.Contains(t, messages[0], "import cycle spans more than one runtime tier")
+}
+
+// crossTierCyclesInTheCommittedTree records the cross-tier cycles the shipped
+// tree currently forms, so a new one fails while the known one is worked.
+//
+// There is one, and it is not incidental. `generate` accepts five import edges
+// that go up a tier, each a portable declaration typed against a browser type
+// the portable runtimes implement differently. Those five are what pull
+// `web:fetch`, `web:file`, `web:performance`, `web:url` and `web:websocket`
+// into `web:dom`'s component: with them the browser and portable packages form
+// one 18-member cycle, and without them the browser tier forms an 11-member one
+// of its own and the portable packages stay out of it.
+//
+// So the accepted edges cost more than the references they excuse. A tier-
+// spanning cycle means importing `web:fetch` loads the whole browser tier,
+// which is the opposite of what the portable tier is for. #1590 resolves the
+// five, and this set empties with them.
+var crossTierCyclesInTheCommittedTree = [][]string{{
+	"web:cache", "web:dom", "web:fetch", "web:file", "web:indexeddb",
+	"web:payments", "web:performance", "web:push", "web:service_worker",
+	"web:storage", "web:url", "web:web_audio", "web:web_codecs", "web:web_rtc",
+	"web:webauthn", "web:webgl", "web:websocket", "web:workers",
+}}
+
+// The committed tree forms no cross-tier cycle beyond the one recorded above.
+//
+// This is the check that says whether the shipped tree loads. `generate`
+// enforces the rule edge by edge, which a cycle can satisfy at every edge and
+// still break: a cycle is refused for spanning tiers, not for any one of its
+// edges doing so.
+func TestTheCommittedTreeFormsNoNewCrossTierCycle(t *testing.T) {
+	t.Parallel()
+
+	groups, err := BuildPackageGroups("../interop/data")
+	require.NoError(t, err)
+
+	known := set.NewSet[string]()
+	for _, cycle := range crossTierCyclesInTheCommittedTree {
+		known.Add(strings.Join(cycle, ","))
+	}
+
+	var unexpected []string
+	for _, err := range CheckGroupTiers(groups, ast.Span{}) {
+		cycleErr, ok := err.(*CrossTierCycleError)
+		require.True(t, ok, "unexpected diagnostic: %s", err.Message())
+		if !known.Contains(strings.Join(cycleErr.Members, ",")) {
+			unexpected = append(unexpected, err.Message())
+		}
+	}
+	sort.Strings(unexpected)
+	require.Empty(t, unexpected, "cross-tier cycles beyond the recorded one:\n  %s",
+		strings.Join(unexpected, "\n  "))
+}
+
+// Every cycle the committed tree forms that stays inside one tier is permitted,
+// and there are some: the browser tier is mutually recursive for real reasons.
+func TestTheCommittedTreeHasWithinTierCycles(t *testing.T) {
+	t.Parallel()
+
+	groups, err := BuildPackageGroups("../interop/data")
+	require.NoError(t, err)
+
+	seen := set.NewSet[string]()
+	within := 0
+	for _, uri := range sortedKeys(groups) {
+		group := groups[uri]
+		key := strings.Join(group, ",")
+		if len(group) < 2 || seen.Contains(key) {
+			continue
+		}
+		seen.Add(key)
+		if len(CheckGroupTiers(PackageGroups{uri: group}, ast.Span{})) == 0 {
+			within++
+		}
+	}
+	require.NotZero(t, within, "the tree is expected to form cycles inside a tier")
 }
