@@ -130,6 +130,30 @@ var stdPackages = []struct {
 		"AsyncIterator", "AsyncIteratorObject",
 		"Disposable", "AsyncDisposable",
 		"Symbol", "SymbolConstructor",
+
+		// The utility types, which TypeScript declares global and which
+		// a program reaches without naming a package. `Partial<Config>`
+		// and `ReturnType<F>` are written the way `Promise` is, so they
+		// belong beside it rather than behind an import of `std:object`
+		// or `std:function`.
+		//
+		// The classes they were declared with stay where they are.
+		// `Object` and `Function` are reached as `object.Object` and
+		// `function.Function`, the same shape `math.E` and
+		// `number.Number` take, and neither is named by any other
+		// package. `Function` is also the one carrying
+		// `[Symbol.metadata]: decorators.DecoratorMetadata`, so moving
+		// it would pull `std:decorators` in behind it.
+		//
+		// Every name here is a type alias over its own parameters and
+		// names nothing outside this list, which is what lets the
+		// prelude hold it while importing nothing.
+		"PropertyKey",
+		"Partial", "Required", "Readonly", "Pick", "Omit", "Record",
+		"Exclude", "Extract", "NonNullable",
+		"Parameters", "ConstructorParameters", "ReturnType",
+		"InstanceType", "ThisParameterType", "OmitThisParameter",
+		"ThisType",
 	}},
 	{"std:string", "std/string.esc", []string{
 		"String", "StringConstructor",
@@ -158,19 +182,17 @@ var stdPackages = []struct {
 		"RegExpStringIterator",
 	}},
 	{"std:object", "std/object.esc", []string{
+		// The utility types this file declared upstream are in
+		// std:prelude, which is where a program reaches them unqualified.
 		"Object", "ObjectConstructor",
 		"PropertyDescriptor", "PropertyDescriptorMap",
 		"TypedPropertyDescriptor",
-		"Partial", "Required", "Readonly", "Pick", "Omit", "Record",
-		"Exclude", "Extract", "NonNullable",
-		"PropertyKey",
 	}},
 	{"std:function", "std/function.esc", []string{
+		// The signature-reading utility types are in std:prelude, beside
+		// the ones std:object contributed.
 		"Function", "FunctionConstructor", "CallableFunction",
 		"NewableFunction", "IArguments",
-		"Parameters", "ConstructorParameters", "ReturnType",
-		"InstanceType", "ThisParameterType", "OmitThisParameter",
-		"ThisType",
 	}},
 	{"std:date", "std/date.esc", []string{
 		"Date", "DateConstructor",

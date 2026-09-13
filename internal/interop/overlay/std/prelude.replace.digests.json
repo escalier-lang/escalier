@@ -26,6 +26,10 @@
     "digest": "e207885967150b58"
   },
   {
+    "decl": "NonNullable",
+    "digest": "cd845ace7ee44d0e"
+  },
+  {
     "decl": "Promise",
     "member": "catch",
     "kind": "method",
