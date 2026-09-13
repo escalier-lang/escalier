@@ -482,11 +482,10 @@ var webPackages = []struct {
 		"RsaHashedKeyGenParams", "RsaKeyAlgorithm", "RsaKeyGenParams",
 		"RsaOaepParams", "RsaOtherPrimesInfo", "RsaPssParams",
 		"HashAlgorithmIdentifier",
-		// BufferSource is a general WebIDL typedef
-		// (ArrayBuffer | ArrayBufferView) used by Fetch, Streams,
-		// WebSocket, TextDecoder, WebGL, Crypto, …; it routes to
-		// web:dom via the residual rule (it is declared in
-		// lib.dom.d.ts) rather than being pinned to any one API.
+		// BufferSource is not listed here. It is a general WebIDL
+		// typedef, ArrayBuffer | ArrayBufferView, that Fetch, Streams,
+		// WebSocket, TextDecoder, WebGL and Crypto all name, so web:core
+		// carries it rather than any one of them.
 	}},
 	{"web:workers", "web/workers.esc", []string{
 		// The document side of workers: what a page constructs and the
