@@ -76,10 +76,10 @@ const groupSourceIDOffset = 1 << 16
 // loadPackageGroup infers every member of a group as one module and publishes a
 // namespace per member.
 //
-// All members are marked loading before inference and all are published after,
-// so a lookup from outside the group during the load sees the cycle sentinel
-// rather than an empty surface. A member reached from inside the group resolves
-// through the merged module scope instead and never reaches the registry.
+// All members are marked loading before inference and published after, so a
+// lookup from outside during the load sees the cycle sentinel rather than an
+// empty surface. A member reached from inside resolves through the merged
+// module scope and never touches the registry.
 func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError {
 	if c.groupSource == nil {
 		return []SolverError{&UnresolvedPackageError{
@@ -93,10 +93,10 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		return errs
 	}
 
-	// A group spanning tiers is reported at the import that pulled it in, so a
-	// run reaching none of the tree's groups reports nothing and a run reaching
-	// one gets a span to point at. The load carries on: refusing it would report
-	// the violation and then every `import cycle` the grouping exists to prevent.
+	// Reported at the import that pulled the group in, so a run reaching none of
+	// the tree's groups reports nothing and one reaching a group gets a span to
+	// point at. The load carries on, since refusing it would bury this diagnostic
+	// under every `import cycle` the grouping exists to prevent.
 	tierErrs := CheckGroupTiers(PackageGroups{group[0]: group}, span)
 
 	module, paths, err := c.groupSource(group)
@@ -167,33 +167,22 @@ func sortedGroup(group []string) []string {
 
 // InferModuleAgainstStdlib infers module against the pseudo-packages in dir.
 //
-// It is the entry point a run with a stdlib directory uses, rather than
-// InferModuleWithSource, because loading a package needs two things the
-// directory supplies and a bare ModuleSource cannot: the groups that have to
-// load together, and a reader for a whole group at once.
-//
-// A group spanning more than one tier is reported, and still loads as a group.
-// Refusing to load it would report the violation and then every `import cycle`
-// the grouping exists to prevent.
+// It is the entry point a run with a stdlib directory uses rather than
+// InferModuleWithSource, because loading a package needs two things a bare
+// ModuleSource cannot supply: the groups that have to load together, and a
+// reader for a whole group at once.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 	groups, err := BuildPackageGroups(dir)
 	if err != nil {
-		// The directory could not be scanned, so nothing is known about which
-		// packages cycle. Every package loads alone, which is right for the tree a
-		// readable directory would have held and reports honestly for one that
-		// cycles.
+		// Nothing is known about which packages cycle, so every package loads
+		// alone. That is right for the tree a readable directory would have held
+		// and reports honestly for one that cycles.
 		result := InferModuleWithSource(module, StdlibSource(dir))
 		result.Errors = append(result.Errors, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 		return result
 	}
-	// A refused group still loads as a group. Dropping to the single-package
-	// source would report the tier violation and then every `import cycle` the
-	// grouping exists to prevent, burying the one diagnostic that says what to
-	// fix under the cascade it causes. loadPackageGroup reports the violation
-	// when it loads such a group, so a module importing none of them sees
-	// nothing.
 	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
 }
 
@@ -208,15 +197,10 @@ func (c *checker) groupKeyURI(group []string) string {
 // groupNamespace is the namespace one member's declarations land under inside a
 // merged module.
 //
-// It is the name that member's import binds, because that is what a sibling
-// writes to reach it. A member of `std:beta` reads `beta.Beta` whether it
-// imports the package or shares a group with it, so the merged module has to
-// put beta's declarations under `beta`.
-//
-// Two members deriving one name therefore cannot both be in a group. The scheme
-// is not part of the name, so `std:url` and `web:url` collide, and
-// checkGroupBindings refuses that rather than letting each publish the other's
-// exports.
+// It is the name that member's import binds, since a member of `std:beta` reads
+// `beta.Beta` whether it imports the package or shares a group with it. Two
+// members deriving one name therefore cannot both be in a group: the scheme is
+// not part of the name, so `std:url` and `web:url` collide.
 func groupNamespace(uri string) string {
 	return ast.DeriveImportName(uri)
 }
