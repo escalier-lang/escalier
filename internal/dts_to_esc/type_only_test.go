@@ -109,8 +109,8 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	require.Empty(t, b.String())
 
 	for _, e := range AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI).SoleReferrer {
-		require.True(t, OverlayRetypedSoleReferrers.Contains(e.Name),
-			"%s is referenced only by %s and is not an acknowledged overlay retype",
+		require.Equal(t, e.ReferencedBy, OverlayRetypedSoleReferrers[e.Name],
+			"%s is referenced only by %s and no overlay there is acknowledged for it",
 			e.Name, e.ReferencedBy)
 	}
 }
@@ -121,22 +121,20 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 // covers, so an empty report cannot on its own tell a clean tree from
 // one whose new finding the list happens to hide.
 //
-// Comparing the two sets catches both directions. A sole-referred name
-// the list does not cover is a new one needing a decision, and an entry
-// that no longer reads as sole-referred is stale, because the retype it
-// stands for is gone or the name moved packages.
+// Comparing the two maps catches three directions. A sole-referred name
+// the map does not cover is a new one needing a decision. An entry that no
+// longer reads as sole-referred is stale, because the retype it stands for
+// is gone or the name moved packages. An entry whose referrer changed
+// names a package whose overlay does not answer the new reference.
 func TestOverlayRetypedSoleReferrers_MatchesThePinnedLibSet(t *testing.T) {
 	t.Parallel()
 	routing := AnalyzeTypeOnlyRouting(pinnedRouting(t)).forPackage(WebDOM.URI)
 
-	sole := make([]string, 0, len(routing.SoleReferrer))
+	sole := map[string]string{}
 	for _, e := range routing.SoleReferrer {
-		sole = append(sole, e.Name)
+		sole[e.Name] = e.ReferencedBy
 	}
-	acknowledged := OverlayRetypedSoleReferrers.ToSlice()
-	sort.Strings(acknowledged)
-	sort.Strings(sole)
-	require.Equal(t, acknowledged, sole)
+	require.Equal(t, OverlayRetypedSoleReferrers, sole)
 }
 
 // TestUnreferencedDOMTypes_MatchesThePinnedLibSet keeps the gate above

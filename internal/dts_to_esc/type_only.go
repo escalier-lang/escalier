@@ -220,7 +220,8 @@ func ReportTypeOnlyRouting(result *PartitionResult, w io.Writer) error {
 
 	sole := make([]SoleReferrer, 0, len(routing.SoleReferrer))
 	for _, e := range routing.SoleReferrer {
-		if OverlayRetypedSoleReferrers.Contains(e.Name) {
+		if acknowledged, held := OverlayRetypedSoleReferrers[e.Name]; held &&
+			acknowledged == e.ReferencedBy {
 			continue
 		}
 		sole = append(sole, e)
