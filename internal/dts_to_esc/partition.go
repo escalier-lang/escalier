@@ -100,14 +100,22 @@ var stdPackages = []struct {
 		// them are unsupported today and so resolve nothing, which is
 		// the only reason the reference does not already fail.
 		//
-		// Two cases this set stops short of. `IteratorResult` and its
-		// two arms stay in `std:iterator`, since
-		// registerIteratorResultAliases binds them on every Context and
-		// they resolve with no declaration in reach. The `Intl.*`
-		// options bags stay in `std:intl`, which flattens the namespace
-		// and declares them bare, so the qualifier written against them
-		// names nothing wherever they live. Rewriting the reference is
-		// the fix, not moving the declaration. See #1403.
+		// `IteratorResult` and its two arms are here because the
+		// prelude's own `Iterator.next` returns one and the prelude
+		// imports nothing. Every other package reaches them without a
+		// qualifier for the same reason it reaches `Promise`.
+		//
+		// registerIteratorResultAliases in internal/solver/prelude.go
+		// still binds the same three shapes on every Context. The two
+		// agree member for member, `done` optional on the yield arm
+		// included. Retiring the registration for these declarations is
+		// the same move #1561 made for `Promise`, and is #1593.
+		//
+		// One case this set stops short of. The `Intl.*` options bags
+		// stay in `std:intl`, which flattens the namespace and declares
+		// them bare, so the qualifier written against them names nothing
+		// wherever they live. Rewriting the reference is the fix, not
+		// moving the declaration.
 		// `BuiltinIteratorReturn` is the second type argument of the
 		// `IteratorObject` that `ArrayIterator` extends. Its own body
 		// is `= intrinsic`, a TypeScript compiler keyword with no
@@ -115,6 +123,7 @@ var stdPackages = []struct {
 		// the alias it names does not. #1403 carries the fix.
 		"ArrayLike", "ConcatArray", "FlatArray",
 		"ArrayIterator", "BuiltinIteratorReturn",
+		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
 		"PromiseLike", "Awaited", "PromiseWithResolvers",
 		"PromiseSettledResult", "PromiseFulfilledResult", "PromiseRejectedResult",
 		"Iterator", "IteratorObject",
@@ -183,7 +192,6 @@ var stdPackages = []struct {
 	}},
 	{"std:iterator", "std/iterator.esc", []string{
 		"IterableIterator",
-		"IteratorResult", "IteratorYieldResult", "IteratorReturnResult",
 		"GeneratorFunction", "GeneratorFunctionConstructor",
 	}},
 	{"std:async", "std/async.esc", []string{
