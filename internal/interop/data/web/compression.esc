@@ -10,7 +10,7 @@ import "web:streams"
 @js("CompressionStream")
 export declare class CompressionStream extends streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
-    readonly writable: streams.WritableStream<core.BufferSource>,
+    readonly writable: streams.WritableStream<BufferSource>,
     static prototype: CompressionStream,
     constructor(mut self, format: CompressionFormat)
 }
@@ -19,7 +19,7 @@ export declare class CompressionStream extends streams.GenericTransformStream {
 @js("DecompressionStream")
 export declare class DecompressionStream extends streams.GenericTransformStream {
     readonly readable: streams.ReadableStream<typed_arrays.Uint8Array>,
-    readonly writable: streams.WritableStream<core.BufferSource>,
+    readonly writable: streams.WritableStream<BufferSource>,
     static prototype: DecompressionStream,
     constructor(mut self, format: CompressionFormat)
 }

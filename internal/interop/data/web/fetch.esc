@@ -35,7 +35,7 @@ export declare interface RequestInit {
     /** A referrer policy to set request's referrerPolicy. */
     referrerPolicy?: ReferrerPolicy,
     /** An AbortSignal to set request's signal. */
-    signal?: core.AbortSignal | null,
+    signal?: AbortSignal | null,
     /** Can only be null. Used to disassociate request from any Window. */
     window?: null
 }
@@ -174,7 +174,7 @@ export declare class Request extends Body {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Request/signal)
      */
-    readonly signal: core.AbortSignal,
+    readonly signal: AbortSignal,
     /**
      * Returns the URL of request as a string.
      *

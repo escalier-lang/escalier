@@ -48,7 +48,7 @@ export declare class NavigationPreloadManager {
 }
 
 export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMap {
-    "statechange": core.Event
+    "statechange": Event
 }
 
 /**
@@ -58,9 +58,9 @@ export declare interface ServiceWorkerEventMap extends dom.AbstractWorkerEventMa
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker)
  */
 @js("ServiceWorker")
-export declare class ServiceWorker extends core.EventTarget {
+export declare class ServiceWorker extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/statechange_event) */
-    onstatechange: (fn (this: ServiceWorker, ev: core.Event) -> any) | null,
+    onstatechange: (fn (this: ServiceWorker, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/scriptURL) */
     readonly scriptURL: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
@@ -68,16 +68,16 @@ export declare class ServiceWorker extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
     postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
     postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
-    addEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
+    addEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorker,
     constructor(mut self)
 }
 
 export declare interface ServiceWorkerContainerEventMap {
-    "controllerchange": core.Event,
+    "controllerchange": Event,
     "message": dom.MessageEvent,
     "messageerror": dom.MessageEvent
 }
@@ -89,11 +89,11 @@ export declare interface ServiceWorkerContainerEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer)
  */
 @js("ServiceWorkerContainer")
-export declare class ServiceWorkerContainer extends core.EventTarget {
+export declare class ServiceWorkerContainer extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controller) */
     readonly controller: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/controllerchange_event) */
-    oncontrollerchange: (fn (this: ServiceWorkerContainer, ev: core.Event) -> any) | null,
+    oncontrollerchange: (fn (this: ServiceWorkerContainer, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/message_event) */
     onmessage: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/messageerror_event) */
@@ -108,16 +108,16 @@ export declare class ServiceWorkerContainer extends core.EventTarget {
     register(mut self, scriptURL: string | url.URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
     startMessages(mut self) -> unknown,
-    addEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
+    addEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorkerContainer,
     constructor(mut self)
 }
 
 export declare interface ServiceWorkerRegistrationEventMap {
-    "updatefound": core.Event
+    "updatefound": Event
 }
 
 /**
@@ -127,7 +127,7 @@ export declare interface ServiceWorkerRegistrationEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration)
  */
 @js("ServiceWorkerRegistration")
-export declare class ServiceWorkerRegistration extends core.EventTarget {
+export declare class ServiceWorkerRegistration extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/active) */
     readonly active: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/installing) */
@@ -135,7 +135,7 @@ export declare class ServiceWorkerRegistration extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/navigationPreload) */
     readonly navigationPreload: NavigationPreloadManager,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/updatefound_event) */
-    onupdatefound: (fn (this: ServiceWorkerRegistration, ev: core.Event) -> any) | null,
+    onupdatefound: (fn (this: ServiceWorkerRegistration, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/pushManager) */
     readonly pushManager: push.PushManager,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/scope) */
@@ -152,10 +152,10 @@ export declare class ServiceWorkerRegistration extends core.EventTarget {
     unregister(mut self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/update) */
     update(mut self) -> Promise<undefined>,
-    addEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
-    removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
+    addEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
+    removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: ServiceWorkerRegistration,
     constructor(mut self)
 }
