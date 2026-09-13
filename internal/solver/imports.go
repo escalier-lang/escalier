@@ -195,7 +195,7 @@ func topLevelNames(module *ast.Module) declaredNames {
 			return true
 		}
 		for _, decl := range ns.Decls {
-			for _, name := range exportedNames(decl) {
+			for _, name := range ast.DeclNames(decl) {
 				switch decl.(type) {
 				case *ast.VarDecl, *ast.FuncDecl:
 					declared.values.Add(name)
