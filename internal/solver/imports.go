@@ -1,10 +1,7 @@
 package solver
 
 import (
-	"strings"
-
 	"github.com/escalier-lang/escalier/internal/ast"
-	"github.com/escalier-lang/escalier/internal/soltype"
 )
 
 // imports.go binds what a file's `import` statements name.
@@ -67,11 +64,11 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 // package to load, and reporting a second failure from the load would bury the
 // diagnostic that says what to fix.
 //
-// The binding shape is the FR5 rule. A package whose sole class is named after
-// it binds that class under its own capitalization, so `import "std:date"`
-// gives `Date` rather than `date.Date`. Every other package binds as a
-// namespace under the name the statement binds it as, which is its alias when
-// one is written and the package name otherwise.
+// One binding shape, the same one an npm import gets. The package becomes a
+// namespace under the name the statement binds it as, so `import "std:date"`
+// reads `date.Date` and every export of the package is reached the same way. A
+// class is not lifted out of its package, because a binding that mixed a class
+// with its package's other exports would answer to no declaration.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
 		return errs
@@ -83,51 +80,9 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 		return errs
 	}
 
-	_, pkg, _ := splitScheme(uri)
-	if className, ok := singleClassShortcut(ns, pkg); ok {
-		fileScope.defineValue(className, ns.Values[className])
-		fileScope.defineType(className, ns.Types[className])
-	}
-	// The namespace is bound whether or not the shortcut fired. A package pairs
-	// its class with other exports — `std:set` ships `ReadonlySetLike` beside
-	// `Set` — and binding only the class would leave those unreachable under
-	// any name.
-	//
-	// FR5 asks for more than reachability: the other members belong on the class
-	// binding itself, with a static of the same name winning. That merge is #1466.
-	//
 	// The name is the statement's, so `as` reaches a pseudo-package the same way
-	// it reaches an npm one. It renames this namespace binding and nothing else:
-	// a shortcut-bound class keeps its own capitalization, since that binding is
-	// the class rather than the package. A package name is already lowercase, so
-	// an import with no alias binds what the URI spells.
+	// it reaches an npm one. A package name is already lowercase, so an import
+	// with no alias binds what the URI spells.
 	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
-}
-
-// singleClassShortcut returns the class name a package binds directly under,
-// and false when the package binds as a namespace instead.
-//
-// The shortcut fires when the package exports a class whose name matches its
-// own case-insensitively. The name comes back in its own capitalization, so
-// `std:date` binds `Date`.
-//
-// A value and a type under one name is not enough to go on. A package exporting
-// `fn array` beside `type array` has both, and binding the function directly
-// would shadow the namespace: a member access that finds a value resolves
-// through that value's type and never reaches a namespace of the same name, so
-// every other export would become unreachable. Only a `ClassType` binding says
-// a class is what produced the pair.
-func singleClassShortcut(ns *Namespace, pkg string) (string, bool) {
-	for name := range ns.Values {
-		if !strings.EqualFold(name, pkg) {
-			continue
-		}
-		if b, hasType := ns.Types[name]; hasType {
-			if _, isClass := b.Type.(*soltype.ClassType); isClass {
-				return name, true
-			}
-		}
-	}
-	return "", false
 }

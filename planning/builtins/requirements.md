@@ -75,10 +75,9 @@ In scope:
   pseudo-package's namespace lands in the importing file. The
   earlier `?nested` shape was removed; see [implementation_plan.md](implementation_plan.md)
   §2.3 for context.
-- The **single-class shortcut** for per-class packages: when the
-  package's lowercased name matches a class declared in it, the
-  `?local` binding *is* the class for member access, construction,
-  and type position.
+- **One binding shape for every package.** An import binds the package
+  under its own name and nothing else, so a class is reached as
+  `date.Date`. A class is never lifted out of its package; see FR5.
 - **The entire DOM tree lives in one package, `web:dom`** —
   core DOM, SVG, MathML, CSSOM, XML/XPath/parsing, selection,
   history, input events, observers, animations, custom elements,
@@ -165,17 +164,17 @@ parsed copy of each `std:*` package. The user-visible model is
 the lazy-load detail is an implementation concern.
 
 **Package partition.** The canonical, full enumeration of
-every `std:*` and `web:*` package — names, contents, single-
-class shortcut eligibility, drops — lives in the partition
+every `std:*` and `web:*` package — names, contents, drops —
+lives in the partition
 table at [implementation_plan.md §6.1](implementation_plan.md#61-partition-table).
 That table is the single source of truth and the input to the
 converter's routing logic; this section sketches the *shape* of
 the partition (per-class vs bundled, the rationale for a few
 non-obvious placements) without re-enumerating every package.
 
-Per-class packages — each contains exactly one top-level class
-(and possibly related type aliases or interfaces), and is
-eligible for the single-class shortcut defined in FR5:
+Per-class packages — each contains exactly one top-level class,
+and possibly related type aliases or interfaces. They bind the same
+way every other package does; FR5 says why there is no shortcut:
 
 - `std:array` — `Array<T>`
 - `std:string`, `std:number`, `std:boolean`, `std:bigint` —
@@ -199,7 +198,7 @@ eligible for the single-class shortcut defined in FR5:
   `InstanceType`, `ThisParameterType`, `OmitThisParameter`,
   `ThisType`.
 
-Bundled packages — multiple types, no single-class shortcut:
+Bundled packages — multiple types:
 
 - `std:iterator` — `Iterator<T>`, `Iterable<T>`,
   `IterableIterator<T>`, `IteratorResult<T>`,
@@ -225,13 +224,13 @@ Bundled packages — multiple types, no single-class shortcut:
   user-level error class — no shim is provided.
 - `std:url` — `URIError`, plus the global URI-encoding functions
   `encodeURI`, `decodeURI`, `encodeURIComponent`,
-  `decodeURIComponent`. Bundled; no single-class shortcut.
+  `decodeURIComponent`. Bundled.
 
 Other `std:*` packages from the existing layout (`math`, `json`,
 `console`, `date`, `map`, `set`, `weak_ref`, `typed_arrays`,
 `reflect`, `proxy`, `intl`, `temporal`, `wasm`) are unchanged in
-structure; per-class packages (`std:date`, `std:map`, `std:set`,
-`std:weak_ref`) participate in the single-class shortcut.
+structure. `std:date`, `std:map`, `std:set` and `std:weak_ref` each
+declare one class, reached through the package binding as `date.Date`.
 
 **What `globalThis` and `eval` do.** Both drop entirely. `eval` has
 no good use case; `globalThis` was the union of every previously-
@@ -254,7 +253,7 @@ is no `builtins.esc` at the data root — the ambient tier is gone
 ```
 internal/interop/data/
     std/
-        # per-class packages (eligible for single-class shortcut)
+        # per-class packages
         array.esc, string.esc, number.esc, boolean.esc, bigint.esc,
         regexp.esc, promise.esc, symbol.esc, object.esc,
         function.esc,
@@ -387,10 +386,9 @@ they are mutually exclusive and exactly one is in effect per import
   is its own binding; no cross-import merging.
   - `import "std:math"` → `math.sin(x)`, `math.PI`
   - `import "web:webgl"` → `webgl.WebGLRenderingContext`
-  - **Exception:** when the package qualifies for the single-class
-    shortcut (FR5), the `?local` binding is the class name with its
-    original capitalization (e.g. `Array`, `Date`), not the
-    lowercase URI segment. The shortcut applies only under `?local`.
+  - `import "std:date"` → `date.Date()`, `date.Date.now()`
+  - There is no exception for a package whose class shares its name.
+    FR5 says why.
 - **`?nested`.** Bind under a scheme-named namespace with the
   package as a sub-namespace. Multiple `?nested` imports from the
   same scheme merge under disjoint sub-namespaces (one per package
@@ -419,65 +417,51 @@ The flag slot is extensible: future flags (e.g. `?type-only`,
 `?lazy`) compose with the binding-shape flags subject to their own
 per-flag compatibility rules.
 
-### FR5. Single-class shortcut
+### FR5. No single-class shortcut
 
-When a package's lowercased name matches a class declared in that
-package, the `?local` binding **is** that class, named with the
-class's original capitalization (e.g. `Array`, not `array`) — for
-member-access, constructor-call, and type-position purposes. Other
-exports of the package are still accessible as namespace members
-on the same binding.
+A package binds under its own name and nothing else, whatever it
+declares. A class inside it is reached through that binding, so
+`std:date` reads `date.Date` and `std:map` reads `map.Map`.
 
 ```escalier
-import "std:array"
 import "std:date"
+import "std:map"
 
-let nums = [1, 2, 3]
-Array.isArray(nums)         // class statics
-let xs: Array<number> = []  // type position
-Array<string>(5)            // construct (no `new` keyword)
-
-let start = Date.now()      // class statics
-let d: Date = Date()        // type and constructor
+let start = date.Date.now()      // class statics
+let d: date.Date = date.Date()   // type and constructor
+let m = map.Map()                // a sibling package, same shape
 ```
 
-**Activation rule.** The shortcut applies iff, after lowercasing
-the package's last URI segment, the package declares a top-level
-class whose name matches that lowercased segment case-insensitively.
-`std:array` declares `Array<T>`; the shortcut applies and the
-binding is `Array`. `std:math` declares no `Math` class (it's a
-namespace of free functions); no shortcut — the binding stays
-lowercase `math` and `math.sin(x)` works as a plain namespace
-access. `std:iterator` exports several types and no single
-dominant class; no shortcut, binding stays lowercase `iterator`.
+**Why there is no shortcut.** An earlier revision lifted a class out
+of a package when the package's lowercased name matched it, so
+`std:date` bound `Date` directly. Three things retired it.
 
-**Eligible packages from the FR1 partition.** `std:array` (→
-`Array`), `std:string` (→ `String`), `std:number` (→ `Number`),
-`std:boolean` (→ `Boolean`), `std:bigint` (→ `BigInt`),
-`std:regexp` (→ `RegExp`), `std:symbol` (→ `Symbol`),
-`std:object` (→ `Object`), `std:function` (→ `Function`),
-`std:date` (→ `Date`), `std:map` (→ `Map`), `std:set` (→
-`Set`), `std:weak_ref` (→ `WeakRef`). Each per-class package's
-`?local` binding is its class. `Promise` is **not** in this
-list — it lives in `std:async` (bundled, multiple top-level
-classes), so under `?local` the access is `async.Promise.all(…)`
-rather than bare `Promise.all(…)`.
+1. The most-used types no longer need an import at all. `std:prelude`
+   declares `Array`, `Iterator`, `Promise`, and `Symbol`, and the
+   prelude is injected rather than imported, so the shortcut's
+   highest-frequency cases were already served. `std:array` and
+   `std:symbol` are not packages any more.
+2. A lifted class had to carry its package's other exports, since a
+   value binding shadows a namespace of the same name. That produced a
+   type answering to no declaration: a class value with package members
+   grafted onto it. Eleven packages in the committed tree pair a
+   name-matching class with other exports, `std:number` and
+   `web:performance` among them.
+3. The rule needed a tie-break for a collision it invented. A static
+   method and a package export sharing one name had to be ordered, and
+   the ordering existed only because the two had been merged.
 
-**Disambiguation.** Under `?local` the binding `Array` resolves
-both as a namespace member (`Array.someOtherExport`) and as the
-class itself (`Array.isArray`, `Array(5)`, `Array<number>`).
-Static methods on the class take precedence when names collide
-with other package exports — a collision should be rare in
-practice given the small surface of per-class packages, but the
-rule is "class statics win" so the shortcut behavior remains
-predictable.
+**What it costs.** `date.Date.now()` is longer than `Date.now()`, and
+Escalier has no named-import form to shorten it. If that proves
+annoying, the answer is a named import such as
+`import { Date } from "std:date"`, which helps every package including
+npm ones, rather than a rule that fires for some packages and not
+others.
 
-**Not applicable to `?nested`.** That binding shape does not use
-the capitalized shortcut form; it follows the URI-segment-based
-rules in FR4. `?nested` binds under `scheme.package`, so writes
-look like `std.array.Array.isArray(nums)` — the package and class
-names are both explicit. The shortcut adds no value there because
-the class is already directly nameable.
+**Reaching a package's own exports.** Everything a package exports is a
+member of the one binding: classes, functions, values, types, and
+nested namespaces alike. Nothing is unreachable and nothing needs a
+precedence rule.
 
 ### FR6. Inter-package imports
 
@@ -1044,13 +1028,10 @@ unambiguous form given the bindings in scope at the diagnostic's
 source location. The renderer takes the type plus the importing
 file's scope and picks among:
 
-1. **Single-class shortcut.** If the file has a `?local` import
-   whose package qualifies for the single-class shortcut (FR5),
-   render as the capitalized class binding — `Array<number>`,
-   `Date.now()` — matching what the user would write.
-2. **Namespace member.** `?local` without shortcut → `math.Foo`;
-   `?nested` → `std.math.Foo`.
-3. **Not imported.** Render as the fully-qualified canonical name
+1. **Namespace member.** A `?local` import renders as `math.Foo` and
+   `date.Date`, matching what the user would write; `?nested` renders
+   as `std.math.Foo`.
+2. **Not imported.** Render as the fully-qualified canonical name
    (`std:array.Array`) and pair the diagnostic with a "did you mean
    to `import \"std:array\"`?" hint (see FR16).
 
@@ -1074,19 +1055,12 @@ a quick-fix that:
 
 1. Adds the appropriate namespace import statement
    (`import "std:async"`, `import "std:math"`, …).
-2. For single-class shortcut packages (FR5): leaves the bare
-   reference unchanged, since the import binding *is* the class
-   name in its capitalized form. `Array.isArray(...)` typed
-   without an import → quick-fix adds `import "std:array"` and
-   leaves the reference as-is; same for `Date.now`,
-   `Error(...)`, etc.
-3. For non-shortcut packages: rewrites the bare reference to
-   qualify it through the resulting namespace binding. A bare
-   `sin(x)` triggers `import "std:math"` and rewrites the call
-   to `math.sin(x)`. A bare `Promise.all([...])` triggers
-   `import "std:async"` and rewrites to `async.Promise.all([...])`
-   (Promise lives in `std:async` and is not eligible for the
-   single-class shortcut — see FR5).
+2. Rewrites the bare reference to qualify it through the binding
+   the import makes. A bare `sin(x)` triggers `import "std:math"`
+   and rewrites the call to `math.sin(x)`; `Date.now()` triggers
+   `import "std:date"` and becomes `date.Date.now()`; and
+   `Promise.all([...])` triggers `import "std:async"` and becomes
+   `async.Promise.all([...])`, since `Promise` lives there.
 
 Named imports from pseudo-packages are out of scope (see
 Non-goals), so the quick-fix only adds a namespace import. There
@@ -1312,9 +1286,8 @@ per step.
   — `Promise`, `Error`, and the utility types are now also affected.
   Mitigations: the FR16 auto-import quick-fix (hard requirement,
   not deferred); descriptive error messages on unbound names ("did
-  you mean to `import \"std:async\"`?"); the single-class shortcut
-  (FR5) keeping per-class access terse (`Array.isArray(xs)`,
-  `Date.now()`).
+  you mean to `import \"std:async\"`?"); and `std:prelude` needing no
+  import at all for `Array`, `Iterator`, `Promise` and `Symbol`.
 - **Initial bootstrap quality.** The committed files start from
   heuristic output. Bad classifications that slip past review ship
   to users. Mitigation: the files are editable, so corrections are
@@ -1471,8 +1444,7 @@ Requirements:
   after step 8. No parity check against the legacy path: it is
   deleted in the same PR rather than kept behind a flag (pre-1.0).
 - **Adaptive diagnostic rendering** (per FR15). Fixture per
-  rendering case: `?local` with single-class shortcut → lowercase;
-  `?local` without shortcut → dotted; `?nested` →
+  rendering case: `?local` → dotted; `?nested` →
   scheme.package.name; no import → fully-qualified canonical
   name plus "did you mean to import" hint.
 - **Auto-import quick-fix** (per FR16). LSP-level integration
