@@ -4,13 +4,14 @@ import (
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
-// vacuous_type_params.go drops a signature's type parameter that occurs once,
-// in an input position, and rewrites that occurrence to what the parameter was
-// constrained to.
+// vacuous_type_params.go drops a signature's type parameter that occurs at most
+// once in an input position. A single occurrence is rewritten to what the
+// parameter was constrained to.
 //
 // A type parameter relates two positions, so one occurring once relates
 // nothing: `<T>(value?: T) -> boolean` says what `(value?: unknown) -> boolean`
-// says, without a reader having to check.
+// says, without a reader having to check. One occurring nowhere relates less
+// still, and dropping it rewrites nothing.
 //
 // A parameter occurring once in the RETURN is left alone. It is equally
 // vacuous, but rewriting it changes what a call yields rather than restating
@@ -38,8 +39,9 @@ type sigParts struct {
 	throws     ast.TypeAnn
 }
 
-// elideVacuousIn drops each type parameter of one signature whose only
-// occurrence is a whole parameter's type.
+// elideVacuousIn drops each type parameter of one signature that the signature
+// names at most once. A parameter named once goes only when its one occurrence
+// is a whole parameter's type.
 //
 // The whole-parameter restriction is what makes the rewrite safe. Replacing a
 // whole parameter's type widens what the function accepts, so every call that
@@ -50,9 +52,6 @@ type sigParts struct {
 // is contravariant there, so `fn each(cb: fn (x: unknown) -> undefined)` rejects
 // the `fn (x: string) -> undefined` the generic form accepted. An occurrence
 // inside a type argument is no safer, since the argument's variance decides.
-//
-// It also makes shadowing moot, since an inner `fn <T>` rebinding the name
-// contributes an occurrence and any extra occurrence stops the elision.
 func elideVacuousIn(sig sigParts) {
 	if len(*sig.typeParams) == 0 {
 		return
@@ -86,7 +85,7 @@ func elideVacuousIn(sig sigParts) {
 				elsewhere += countTypeParamRefs(other.Default, tp.Name)
 			}
 		}
-		if whole != 1 || elsewhere != 0 {
+		if whole > 1 || elsewhere != 0 {
 			kept = append(kept, tp)
 			continue
 		}
@@ -133,10 +132,31 @@ type typeRefCounter struct {
 }
 
 func (c *typeRefCounter) EnterTypeAnn(t ast.TypeAnn) bool {
+	// A nested signature declaring the same name binds every reference under it
+	// to its own parameter, so none of them is an occurrence of the outer one.
+	// The nested parameters' own constraints and defaults sit outside that
+	// binding, so they are counted.
+	if fn, ok := t.(*ast.FuncTypeAnn); ok && bindsTypeParam(fn.TypeParams, c.name) {
+		for _, tp := range fn.TypeParams {
+			c.count += countTypeParamRefs(tp.Constraint, c.name)
+			c.count += countTypeParamRefs(tp.Default, c.name)
+		}
+		return false
+	}
 	if ref, ok := t.(*ast.TypeRefTypeAnn); ok {
 		if id, ok := ref.Name.(*ast.Ident); ok && id.Name == c.name {
 			c.count++
 		}
 	}
 	return true
+}
+
+// bindsTypeParam reports whether one of the type parameters is named name.
+func bindsTypeParam(params []*ast.TypeParam, name string) bool {
+	for _, tp := range params {
+		if tp.Name == name {
+			return true
+		}
+	}
+	return false
 }
