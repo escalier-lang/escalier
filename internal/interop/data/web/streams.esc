@@ -277,7 +277,7 @@ export declare class TextDecoderStream extends GenericTransformStream {
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoderStream) */
 @js("TextEncoderStream")
 export declare class TextEncoderStream extends GenericTransformStream {
-    readonly readable: ReadableStream<Uint8Array>,
+    readonly readable: ReadableStream<typed_arrays.Uint8Array>,
     readonly writable: WritableStream<string>,
     static prototype: TextEncoderStream,
     constructor(mut self)
