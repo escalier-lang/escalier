@@ -386,6 +386,32 @@ var webPackages = []struct {
 	File    string
 	Members []string
 }{
+	{"web:core", "web/core.esc", []string{
+		// The event model. Every package that reports progress or
+		// listens for anything names these, and none of them mentions a
+		// document or an element.
+		"Event", "EventInit",
+		"EventTarget",
+		"EventListener", "EventListenerObject",
+		"EventListenerOrEventListenerObject",
+		"EventListenerOptions", "AddEventListenerOptions",
+		// ProgressEvent is deliberately absent. Node 22 does not define it and
+		// the WinterCG minimum common API does not list it, so it routes to
+		// web:dom with the rest of the browser surface.
+		// Cancellation, which fetch, streams, and any long-running call
+		// take as a parameter.
+		"AbortController", "AbortSignal", "AbortSignalEventMap",
+		// The error every web API throws.
+		"DOMException",
+		// Binary and timing aliases named across the tier.
+		"BufferSource", "AllowSharedBufferSource",
+		"DOMHighResTimeStamp",
+		// Encoding. The stream-wrapping pair stays in web:encoding,
+		// which may name web:streams.
+		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
+		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
+		"TextDecodeOptions",
+	}},
 	{"web:fetch", "web/fetch.esc", []string{
 		"fetch",
 		"Request", "RequestInit", "RequestInfo",
@@ -725,9 +751,10 @@ var webPackages = []struct {
 		"URLSearchParamsIterator",
 	}},
 	{"web:encoding", "web/encoding.esc", []string{
-		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
-		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
-		"TextDecodeOptions",
+		// The encoder and decoder themselves are in web:core. What is
+		// left here is the pair that wraps them in a stream, which needs
+		// web:streams and so cannot sit in the core tier.
+		//
 		// Per MDN, the *Stream variants belong to the Encoding API,
 		// not the Streams API: https://developer.mozilla.org/en-US/docs/Web/API/Encoding_API
 		"TextEncoderStream", "TextDecoderStream",
