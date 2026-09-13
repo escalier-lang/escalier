@@ -1,0 +1,177 @@
+kind	name	nodes	opaque
+abstract-op	ApplyUnsignedRoundingMode	21	4
+abstract-op	AvailableNamedTimeZoneIdentifiers	53	12
+abstract-op	AvailablePrimaryTimeZoneIdentifiers	11	0
+abstract-op	BasicFormatMatcher	20	1
+abstract-op	CanonicalCodeForDisplayNames	39	12
+abstract-op	CanonicalizeLocaleList	43	0
+abstract-op	CanonicalizeUnicodeLocaleId	23	3
+abstract-op	ChainDateTimeFormat	14	1
+abstract-op	ChainNumberFormat	14	1
+abstract-op	CoerceOptionsToObject	8	0
+abstract-op	ComputeExponent	17	3
+abstract-op	ComputeExponentForMagnitude	10	2
+abstract-op	ComputeFractionalDigits	4	1
+abstract-op	CreateDateTimeFormat	111	11
+abstract-op	CreatePartsFromList	27	6
+abstract-op	CreateSegmentDataObject	12	1
+abstract-op	CreateSegmentIterator	7	0
+abstract-op	CreateSegmentsObject	6	0
+abstract-op	CurrencyDigits	2	1
+abstract-op	DateTimeStyleFormat	22	8
+abstract-op	DeconstructPattern	23	2
+abstract-op	DefaultNumberOption	13	1
+abstract-op	DurationSign	2	1
+abstract-op	FilterLocales	22	0
+abstract-op	FindBoundary	10	4
+abstract-op	FormatApproximately	4	2
+abstract-op	FormatDateTime	14	0
+abstract-op	FormatDateTimePattern	105	13
+abstract-op	FormatDateTimeRange	14	0
+abstract-op	FormatDateTimeRangeToParts	23	1
+abstract-op	FormatDateTimeToParts	22	1
+abstract-op	FormatList	11	0
+abstract-op	FormatListToParts	19	1
+abstract-op	FormatNumeric	11	0
+abstract-op	FormatNumericHours	23	0
+abstract-op	FormatNumericMinutes	26	0
+abstract-op	FormatNumericRange	13	0
+abstract-op	FormatNumericRangeToParts	22	1
+abstract-op	FormatNumericSeconds	33	0
+abstract-op	FormatNumericToParts	19	1
+abstract-op	FormatNumericToString	46	2
+abstract-op	FormatNumericUnits	54	1
+abstract-op	FormatOffsetTimeZoneIdentifier	9	0
+abstract-op	FormatRelativeTime	14	0
+abstract-op	FormatRelativeTimeToParts	24	1
+abstract-op	GetAvailableNamedTimeZoneIdentifier	8	1
+abstract-op	GetDurationUnitOptions	34	0
+abstract-op	GetLocaleBaseName	2	2
+abstract-op	GetLocaleLanguage	4	2
+abstract-op	GetLocaleRegion	7	4
+abstract-op	GetLocaleScript	5	2
+abstract-op	GetLocaleVariants	4	1
+abstract-op	GetNotationSubPattern	11	3
+abstract-op	GetNumberFormatPattern	60	7
+abstract-op	GetNumberOption	4	0
+abstract-op	GetOption	22	0
+abstract-op	GetOptionsObject	13	0
+abstract-op	GetUnsignedRoundingMode	1	1
+abstract-op	InsertUnicodeExtensionAndCanonicalize	30	1
+abstract-op	IsFractionalSecondUnitName	3	0
+abstract-op	IsSanctionedSingleUnitIdentifier	2	2
+abstract-op	IsStructurallyValidLanguageTag	23	9
+abstract-op	IsValidDateTimeFieldCode	2	1
+abstract-op	IsValidDuration	12	2
+abstract-op	IsWellFormedCurrencyCode	5	2
+abstract-op	IsWellFormedUnitIdentifier	20	1
+abstract-op	ListFormatParts	25	2
+abstract-op	LookupMatchingLocaleByPrefix	19	3
+abstract-op	MakeLocaleRecord	42	6
+abstract-op	MakePartsList	19	0
+abstract-op	NextUnitFractional	7	0
+abstract-op	PartitionDateTimePattern	16	0
+abstract-op	PartitionDateTimeRangePattern	68	1
+abstract-op	PartitionDurationFormatPattern	6	1
+abstract-op	PartitionNotationSubPattern	71	12
+abstract-op	PartitionNumberPattern	73	13
+abstract-op	PartitionNumberRangePattern	42	1
+abstract-op	PartitionPattern	18	0
+abstract-op	PartitionRelativeTimePattern	30	7
+abstract-op	ResolveLocale	65	7
+abstract-op	ResolvePlural	12	0
+abstract-op	ResolvePluralRange	20	0
+abstract-op	SetNumberFormatDigitOptions	87	2
+abstract-op	SetNumberFormatUnitOptions	38	1
+abstract-op	SingularRelativeTimeUnit	31	0
+abstract-op	StringListFromIterable	24	0
+abstract-op	StringSplitToList	14	0
+abstract-op	ToDurationRecord	66	2
+abstract-op	ToIntegerIfIntegral	10	0
+abstract-op	ToIntlMathematicalValue	44	0
+abstract-op	ToLocalTime	11	2
+abstract-op	ToRawFixed	26	8
+abstract-op	ToRawPrecision	29	10
+abstract-op	TransformCase	19	3
+abstract-op	UnicodeExtensionComponents	31	2
+abstract-op	UnwrapDateTimeFormat	13	1
+abstract-op	UnwrapNumberFormat	13	1
+abstract-op	UpdateLanguageId	31	4
+abstract-op	ValidateDurationUnitStyle	11	0
+builtin-method	Array.prototype.toLocaleString	25	1
+builtin-method	BigInt.prototype.toLocaleString	11	0
+builtin-method	Date.prototype.toLocaleDateString	12	0
+builtin-method	Date.prototype.toLocaleString	12	0
+builtin-method	Date.prototype.toLocaleTimeString	12	0
+builtin-method	Intl.Collator.prototype.resolvedOptions	9	1
+builtin-method	Intl.DateTimeFormat.prototype.formatRange	13	0
+builtin-method	Intl.DateTimeFormat.prototype.formatRangeToParts	13	0
+builtin-method	Intl.DateTimeFormat.prototype.formatToParts	10	0
+builtin-method	Intl.DateTimeFormat.prototype.resolvedOptions	12	1
+builtin-method	Intl.DisplayNames.prototype.of	16	1
+builtin-method	Intl.DisplayNames.prototype.resolvedOptions	9	1
+builtin-method	Intl.DurationFormat.prototype.format	13	1
+builtin-method	Intl.DurationFormat.prototype.formatToParts	15	1
+builtin-method	Intl.DurationFormat.prototype.resolvedOptions	9	1
+builtin-method	Intl.ListFormat.prototype.format	10	0
+builtin-method	Intl.ListFormat.prototype.formatToParts	10	0
+builtin-method	Intl.ListFormat.prototype.resolvedOptions	9	1
+builtin-method	Intl.Locale.prototype.maximize	5	1
+builtin-method	Intl.Locale.prototype.minimize	5	1
+builtin-method	Intl.Locale.prototype.toString	7	0
+builtin-method	Intl.NumberFormat.prototype.formatRange	13	0
+builtin-method	Intl.NumberFormat.prototype.formatRangeToParts	13	0
+builtin-method	Intl.NumberFormat.prototype.formatToParts	10	0
+builtin-method	Intl.NumberFormat.prototype.resolvedOptions	12	1
+builtin-method	Intl.PluralRules.prototype.resolvedOptions	10	2
+builtin-method	Intl.PluralRules.prototype.select	6	1
+builtin-method	Intl.PluralRules.prototype.selectRange	13	0
+builtin-method	Intl.RelativeTimeFormat.prototype.format	10	0
+builtin-method	Intl.RelativeTimeFormat.prototype.formatToParts	10	0
+builtin-method	Intl.RelativeTimeFormat.prototype.resolvedOptions	9	1
+builtin-method	Intl.Segmenter.prototype.resolvedOptions	9	1
+builtin-method	Intl.Segmenter.prototype.segment	10	0
+builtin-method	IntlSegmentIteratorPrototype.next	22	0
+builtin-method	IntlSegmentsPrototype [ @@iterator ]	9	0
+builtin-method	IntlSegmentsPrototype.containing	20	0
+builtin-method	Number.prototype.toLocaleString	12	0
+builtin-method	String.prototype.localeCompare	16	0
+builtin-method	String.prototype.toLocaleLowerCase	7	0
+builtin-method	String.prototype.toLocaleUpperCase	7	0
+builtin-method	get Intl.Collator.prototype.compare	11	1
+builtin-method	get Intl.DateTimeFormat.prototype.format	14	1
+builtin-method	get Intl.Locale.prototype.baseName	7	0
+builtin-method	get Intl.Locale.prototype.calendar	7	0
+builtin-method	get Intl.Locale.prototype.caseFirst	7	0
+builtin-method	get Intl.Locale.prototype.collation	7	0
+builtin-method	get Intl.Locale.prototype.hourCycle	7	0
+builtin-method	get Intl.Locale.prototype.language	7	0
+builtin-method	get Intl.Locale.prototype.numberingSystem	7	0
+builtin-method	get Intl.Locale.prototype.numeric	7	0
+builtin-method	get Intl.Locale.prototype.region	7	0
+builtin-method	get Intl.Locale.prototype.script	7	0
+builtin-method	get Intl.NumberFormat.prototype.format	14	1
+builtin-static	Collator Compare Functions	12	2
+builtin-static	DateTime Format Functions	8	0
+builtin-static	Intl.Collator	67	6
+builtin-static	Intl.Collator.supportedLocalesOf	7	1
+builtin-static	Intl.DateTimeFormat	14	1
+builtin-static	Intl.DateTimeFormat.supportedLocalesOf	7	1
+builtin-static	Intl.DisplayNames	50	8
+builtin-static	Intl.DisplayNames.supportedLocalesOf	7	1
+builtin-static	Intl.DurationFormat	36	3
+builtin-static	Intl.DurationFormat.supportedLocalesOf	7	1
+builtin-static	Intl.ListFormat	30	3
+builtin-static	Intl.ListFormat.supportedLocalesOf	7	1
+builtin-static	Intl.Locale	76	4
+builtin-static	Intl.NumberFormat	63	3
+builtin-static	Intl.NumberFormat.supportedLocalesOf	7	1
+builtin-static	Intl.PluralRules	25	1
+builtin-static	Intl.PluralRules.supportedLocalesOf	7	1
+builtin-static	Intl.RelativeTimeFormat	40	4
+builtin-static	Intl.RelativeTimeFormat.supportedLocalesOf	7	1
+builtin-static	Intl.Segmenter	25	1
+builtin-static	Intl.Segmenter.supportedLocalesOf	7	1
+builtin-static	Intl.getCanonicalLocales	8	0
+builtin-static	Intl.supportedValuesOf	37	0
+builtin-static	Number Format Functions	9	1

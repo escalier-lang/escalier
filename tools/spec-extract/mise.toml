@@ -22,6 +22,11 @@ description = "Build the vendored ESMeta assembly at esmeta/bin/esmeta"
 dir = "{{config_root}}/esmeta"
 run = "ESMETA_HOME=$PWD sbt assembly"
 
+[tasks.check-merge]
+description = "Build the merged ECMA-262 + ECMA-402 document and check it"
+dir = "{{config_root}}"
+run = "sbt 'runMain escalier.specextract.MergeCheck'"
+
 [tasks.serialize-cfg]
 description = "Regenerate cfg.json from the pinned ECMA-262 revision"
 dir = "{{config_root}}"
