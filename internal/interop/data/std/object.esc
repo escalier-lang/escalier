@@ -203,7 +203,7 @@ export declare class Object {
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.
      */
-    static freeze<T: {}, U: string | bigint | number | boolean | symbol>(o: T) -> Readonly<T>,
+    static freeze<T: {}>(o: T) -> Readonly<T>,
     /**
      * Prevents the modification of existing property attributes and values, and prevents the addition of new properties.
      * @param o Object on which to lock the attributes.
