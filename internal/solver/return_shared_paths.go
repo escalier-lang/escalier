@@ -18,8 +18,8 @@ import (
 // Two paths of the SAME mutability are fine. Two readers see one unchanging value. Two writers
 // are Rule 3, which allows several mutable references to one value while their types match, and
 // the GC'd target means a second writer cannot dangle the first's reference. The hazard is the
-// MIX. A shared borrow's type promises the value does not change under it, and narrowing rests
-// on that promise, so a write through the other path falsifies it.
+// MIX. An immutable borrow's type promises the value does not change under it, and narrowing
+// rests on that promise, so a write through the other path falsifies it.
 //
 // The borrow-edge graph cannot answer this on its own. addBorrowEdge keeps one edge per route
 // into the referent, so the two borrows of b in that tuple, which take the same route, collapse
