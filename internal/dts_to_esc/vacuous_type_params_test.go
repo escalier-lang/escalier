@@ -57,8 +57,8 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			// Object.fromEntries. Its parameter is vacuous only because the
 			// conversion dropped the return that used it.
 			name: "ADefaultedParameterStays",
-			src:  `export declare class C { static m<T = any>(entries: Iterable<T>) -> {} }`,
-			want: "static m<T = any>(entries: Iterable<T>) -> {}",
+			src:  `export declare class C { static m<T = unknown>(entries: Iterable<T>) -> {} }`,
+			want: "static m<T = unknown>(entries: Iterable<T>) -> {}",
 		},
 		{
 			// std:set's difference. #1579 asks for `ReadonlySetLike<unknown>` here,
