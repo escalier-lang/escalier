@@ -165,11 +165,9 @@ type checker struct {
 	// stdlib directory was scanned, in which case every package loads alone.
 	groups PackageGroups
 	// activeGroup holds the members of the group currently being inferred as one
-	// module. An import naming one of them binds nothing: the member's
-	// declarations are already in the merged module scope under the namespace its
-	// synthetic path put them in, which is the name the import would have bound.
-	// Binding it again would shadow the live declarations with a registry lookup
-	// that cannot succeed yet.
+	// module. An import naming one of them binds nothing, since its declarations
+	// are already in the merged module scope under the name the import would
+	// have bound.
 	activeGroup set.Set[string]
 
 	// moduleDeclared holds the top-level names of the module whose imports are

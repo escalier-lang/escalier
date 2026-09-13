@@ -77,11 +77,6 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 
 	uri := stmt.PackageName
-	// A member of the group being inferred right now is already in the module
-	// scope, under the namespace its declarations landed in, which is the name a
-	// bare import of it binds. Binding it again would shadow live declarations
-	// with a registry lookup that cannot succeed until the whole group publishes.
-	//
 	// An `as` clause is refused rather than skipped. A member's declarations are
 	// reached by qualified name — `beta.Beta` — and nothing binds those names
 	// under a second prefix, so an alias would silently resolve nothing. The
