@@ -42,10 +42,10 @@ import (
 // share it. Which position reaches which referent is unknown there, so the group is skipped
 // rather than guessed at.
 //
-// A borrow edge records no mutability, so a returned literal's element that is not a written
-// `&mut` counts as a path that does not write even when it holds a mutable borrow. `return
-// [a.peer, &mut b]` over `val a = {peer: &mut b}` is two writers, which Rule 3 allows, and it
-// reports as a mix. Closing that needs fieldBorrow to carry the borrow's mutability.
+// #1600: a borrow edge records no mutability, so a returned literal's element that is not a
+// written `&mut` counts as a path that does not write even when it holds a mutable borrow.
+// `return [a.peer, &mut b]` over `val a = {peer: &mut b}` is two writers, which Rule 3 allows,
+// and it reports as a mix. Closing that needs fieldBorrow to carry the borrow's mutability.
 
 // SharedReturnPathsError reports a returned value that reaches one local through a path that
 // writes and a path that reads.
