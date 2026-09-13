@@ -75,6 +75,15 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	}
 
 	uri := stmt.PackageName
+	// A member of the group being inferred right now is already in the module
+	// scope, under the namespace its synthetic path put its declarations in. That
+	// is the same name this import would bind, so binding it again would shadow
+	// live declarations with a registry lookup that cannot succeed until the whole
+	// group publishes.
+	if c.activeGroup.Contains(uri) {
+		return nil
+	}
+
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
 		return errs

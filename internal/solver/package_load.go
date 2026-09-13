@@ -43,6 +43,17 @@ func (c *checker) loadPackage(uri string, span ast.Span) (*Namespace, []SolverEr
 		}}
 	}
 
+	// A package whose group has more than one member cannot load alone: whichever
+	// went first would reach a name its sibling has not declared yet. The whole
+	// group loads as one module and publishes a namespace each.
+	if group, held := c.groups.GroupOf(uri); held && len(group) > 1 {
+		if errs := c.loadPackageGroup(sortedGroup(group), span); len(errs) > 0 {
+			return nil, errs
+		}
+		ns, _ := c.packages.Lookup(uri)
+		return ns, nil
+	}
+
 	module, path, err := c.source(uri)
 	if err != nil {
 		return nil, []SolverError{&UnresolvedPackageError{

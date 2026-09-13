@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/soltype"
 	"github.com/stretchr/testify/require"
 )
 
@@ -136,4 +137,135 @@ func TestCheckGroupTiersIgnoresASingleton(t *testing.T) {
 	t.Parallel()
 
 	require.Empty(t, CheckGroupTiers(PackageGroups{"web:dom": {"web:dom"}}, ast.Span{}))
+}
+
+// inferAgainstCyclicStdlib infers src against a tree that may hold cycles, with
+// the prelude classes the checker's own rules name merged in.
+func inferAgainstCyclicStdlib(t *testing.T, src string, files map[string]string) *ModuleResult {
+	t.Helper()
+	return InferModuleAgainstStdlib(parseModule(t, src), seedStdlib(t, withPreludeClasses(files)))
+}
+
+// Two packages naming each other load once, and each resolves the other's
+// types. This is what a group buys: loading either one alone would reach a name
+// the other has not declared yet.
+func TestACyclicPairLoadsAndResolvesBothWays(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare class Alpha {
+				partner: beta.Beta,
+			}
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta {
+				partner: alpha.Alpha,
+			}
+		`,
+	}
+
+	t.Run("EachIsRegisteredUnderItsOwnURI", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			import "std:beta"
+			declare val a: alpha.Alpha
+			declare val b: beta.Beta
+			val fromA = a.partner
+			val fromB = b.partner
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "fromA")))
+		require.Equal(t, "Alpha", soltype.Print(inferredValueType(t, res.Scope, "fromB")))
+	})
+
+	t.Run("ImportingOneLoadsTheGroup", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			declare val a: alpha.Alpha
+			val partner = a.partner
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "partner")))
+		// Both members are registered, whichever one the file imported.
+		for _, uri := range []string{"std:alpha", "std:beta"} {
+			ns, found := res.Packages.Lookup(uri)
+			require.True(t, found, "%s is not registered", uri)
+			require.NotNil(t, ns, "%s registered with no surface", uri)
+		}
+	})
+}
+
+// A three-package cycle behaves the same as a pair.
+func TestACyclicTripleLoadsAndResolves(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val next = a.next
+	`, map[string]string{
+		"std/alpha.esc": "import \"std:beta\"\nexport declare class Alpha { next: beta.Beta }",
+		"std/beta.esc":  "import \"std:gamma\"\nexport declare class Beta { next: gamma.Gamma }",
+		"std/gamma.esc": "import \"std:alpha\"\nexport declare class Gamma { next: alpha.Alpha }",
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "Beta", soltype.Print(inferredValueType(t, res.Scope, "next")))
+}
+
+// An acyclic package still takes the single-package path, which the group map
+// leaves as a group of one.
+func TestAnAcyclicPackageStillLoadsAlone(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:math"
+		val x = math.PI
+	`, map[string]string{
+		"std/math.esc": `export val PI: number = 3`,
+	})
+
+	require.Empty(t, errorMessagesOf(res.Errors))
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "x")))
+}
+
+// A non-exported declaration in one member is unreachable from an importer,
+// even though the group inferred as one module and the sibling could see it.
+func TestAGroupPublishesOnlyExportedDeclarations(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare val shared: number
+			declare val secret: number
+			export declare class Alpha { partner: beta.Beta }
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	}
+
+	t.Run("AnExportedSiblingResolves", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			val n = alpha.shared
+		`, files)
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+	})
+
+	t.Run("AnUnexportedOneDoesNot", func(t *testing.T) {
+		res := inferAgainstCyclicStdlib(t, `
+			import "std:alpha"
+			val n = alpha.secret
+		`, files)
+		require.NotEmpty(t, errorMessagesOf(res.Errors))
+	})
 }
