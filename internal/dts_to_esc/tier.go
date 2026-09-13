@@ -3,8 +3,6 @@ package dts_to_esc
 import (
 	"fmt"
 	"sort"
-
-	"github.com/escalier-lang/escalier/internal/set"
 )
 
 // tier.go assigns each pseudo-package to a runtime tier and orders the
@@ -129,29 +127,4 @@ func PackagesInTier(tier Tier) []string {
 	}
 	sort.Strings(uris)
 	return uris
-}
-
-// AcceptedUpwardEdges lists the import edges that go up a tier and are allowed
-// to, keyed by the importing package and naming the references that force each.
-//
-// An entry belongs here only while a decision is outstanding. A declaration the
-// pinned `.d.ts` types against a browser type that a portable runtime
-// implements differently or not at all needs a portable form written for it,
-// which is a change to the declaration or an overlay rather than to this table.
-// Recording the edge keeps the run green until that form is written.
-//
-// An edge absent from this table fails `generate`, so a new one is caught at
-// the run that introduces it.
-var AcceptedUpwardEdges = map[string][]string{}
-
-// acceptsUpwardEdge reports whether every reference forcing an edge is one
-// AcceptedUpwardEdges records for that importer.
-func acceptsUpwardEdge(from string, names []string) bool {
-	accepted := set.FromSlice(AcceptedUpwardEdges[from])
-	for _, name := range names {
-		if !accepted.Contains(name) {
-			return false
-		}
-	}
-	return true
 }
