@@ -75,6 +75,11 @@ func (v *mockVisitor) EnterObjTypeAnnElem(e ObjTypeAnnElem) bool {
 	return !v.skipNodes["ObjTypeAnnElem"]
 }
 
+func (v *mockVisitor) EnterLifetimeAnn(l LifetimeAnnNode) bool {
+	v.enterCalls = append(v.enterCalls, "EnterLifetimeAnn")
+	return !v.skipNodes["LifetimeAnn"]
+}
+
 func (v *mockVisitor) ExitLit(l Lit) {
 	v.exitCalls = append(v.exitCalls, "ExitLit")
 }
@@ -115,58 +120,47 @@ func (v *mockVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {
 	v.exitCalls = append(v.exitCalls, "ExitObjTypeAnnElem")
 }
 
+func (v *mockVisitor) ExitLifetimeAnn(l LifetimeAnnNode) {
+	v.exitCalls = append(v.exitCalls, "ExitLifetimeAnn")
+}
+
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	visitor := &DefaultVisitor{}
+	emptyBlock := Block{
+		Stmts: nil,
+		Span:  Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0},
+	}
 
-	// Test all Enter methods return true
-	if !visitor.EnterLit(nil) {
-		t.Error("EnterLit should return true")
-	}
-	if !visitor.EnterPat(nil) {
-		t.Error("EnterPat should return true")
-	}
-	if !visitor.EnterExpr(nil) {
-		t.Error("EnterExpr should return true")
-	}
-	if !visitor.EnterObjExprElem(nil) {
-		t.Error("EnterObjExprElem should return true")
-	}
-	if !visitor.EnterStmt(nil) {
-		t.Error("EnterStmt should return true")
-	}
-	if !visitor.EnterDecl(nil) {
-		t.Error("EnterDecl should return true")
-	}
-	if !visitor.EnterTypeAnn(nil) {
-		t.Error("EnterTypeAnn should return true")
-	}
-	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}}) {
-		t.Error("EnterBlock should return true")
-	}
-	if !visitor.EnterObjTypeAnnElem(nil) {
-		t.Error("EnterObjTypeAnnElem should return true")
-	}
+	require.True(t, visitor.EnterLit(nil))
+	require.True(t, visitor.EnterPat(nil))
+	require.True(t, visitor.EnterExpr(nil))
+	require.True(t, visitor.EnterObjExprElem(nil))
+	require.True(t, visitor.EnterStmt(nil))
+	require.True(t, visitor.EnterDecl(nil))
+	require.True(t, visitor.EnterTypeAnn(nil))
+	require.True(t, visitor.EnterBlock(emptyBlock))
+	require.True(t, visitor.EnterObjTypeAnnElem(nil))
+	require.True(t, visitor.EnterLifetimeAnn(nil))
 }
 
 func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
 	visitor := &DefaultVisitor{}
 
-	// Test all Exit methods can be called without panicking
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("Exit methods should not panic: %v", r)
-		}
-	}()
-
-	visitor.ExitLit(nil)
-	visitor.ExitPat(nil)
-	visitor.ExitExpr(nil)
-	visitor.ExitObjExprElem(nil)
-	visitor.ExitStmt(nil)
-	visitor.ExitDecl(nil)
-	visitor.ExitTypeAnn(nil)
-	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
-	visitor.ExitObjTypeAnnElem(nil)
+	require.NotPanics(t, func() {
+		visitor.ExitLit(nil)
+		visitor.ExitPat(nil)
+		visitor.ExitExpr(nil)
+		visitor.ExitObjExprElem(nil)
+		visitor.ExitStmt(nil)
+		visitor.ExitDecl(nil)
+		visitor.ExitTypeAnn(nil)
+		visitor.ExitBlock(Block{
+			Stmts: nil,
+			Span:  Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0},
+		})
+		visitor.ExitObjTypeAnnElem(nil)
+		visitor.ExitLifetimeAnn(nil)
+	})
 }
 
 func TestErrorExpr_Accept(t *testing.T) {
@@ -393,4 +387,109 @@ func TestObjectTypeAnn_Accept_SkipsMemberChildren(t *testing.T) {
 	obj.Accept(visitor)
 
 	require.Equal(t, []string{"EnterTypeAnn", "EnterObjTypeAnnElem"}, visitor.enterCalls)
+}
+
+// declSpan is the span every node in the declaration-walk tests below carries.
+// None of them reads a position, so one span serves all of them.
+var declSpan = Span{Start: Location{Offset: 0}, End: Location{Offset: 1}, SourceID: 0}
+
+// typeParam builds a `<T: number = string>` binder, whose constraint and
+// default are the two type slots a quantifier list contributes to the walk.
+func typeParam(name string) *TypeParam {
+	tp := NewTypeParam(name, NewNumberTypeAnn(declSpan), NewStringTypeAnn(declSpan), declSpan)
+	return &tp
+}
+
+// lifetimeParam builds a `<'b: 'a>` binder, whose one bound is the lifetime the
+// walk reaches.
+func lifetimeParam(name, bound string) *LifetimeParam {
+	return NewLifetimeParam(name, []*LifetimeAnn{NewLifetimeAnn(bound, declSpan)}, declSpan)
+}
+
+// Each declaration kind that takes a `<…>` quantifier list walks it: a type
+// parameter's constraint and default, and a lifetime parameter's bounds. A
+// function declaration walks its `throws` clause too.
+//
+// A visitor answering "what does this declaration name" reads `class
+// Box<T: Target>` through this walk, so `Target` is reachable only if the
+// constraint is in it.
+func TestDeclAccept_WalksTheQuantifierList(t *testing.T) {
+	name := NewIdentifier("D", declSpan)
+
+	cases := []struct {
+		name  string
+		decl  Decl
+		enter []string
+	}{
+		{
+			name: "a class",
+			decl: NewClassDecl(name, []*LifetimeParam{lifetimeParam("b", "a")},
+				[]*TypeParam{typeParam("T")}, nil, nil, nil, false, true, false, declSpan),
+			enter: []string{"EnterDecl", "EnterLifetimeAnn", "EnterTypeAnn", "EnterTypeAnn"},
+		},
+		{
+			name: "an interface",
+			decl: NewInterfaceDecl(name, []*LifetimeParam{lifetimeParam("b", "a")},
+				[]*TypeParam{typeParam("T")}, nil, NewObjectTypeAnn(nil, declSpan), false, true, declSpan),
+			enter: []string{"EnterDecl", "EnterLifetimeAnn", "EnterTypeAnn", "EnterTypeAnn", "EnterTypeAnn"},
+		},
+		{
+			name:  "an enum, which takes no lifetime parameters",
+			decl:  NewEnumDecl(name, []*TypeParam{typeParam("T")}, nil, false, true, declSpan),
+			enter: []string{"EnterDecl", "EnterTypeAnn", "EnterTypeAnn"},
+		},
+		{
+			name: "a function, whose throws clause the walk reaches too",
+			decl: NewFuncDecl(name, []*LifetimeParam{lifetimeParam("b", "a")},
+				[]*TypeParam{typeParam("T")}, nil, nil, NewBooleanTypeAnn(declSpan),
+				nil, false, true, false, declSpan),
+			enter: []string{"EnterDecl", "EnterLifetimeAnn", "EnterTypeAnn", "EnterTypeAnn", "EnterTypeAnn"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			visitor := newMockVisitor()
+			tc.decl.Accept(visitor)
+			require.Equal(t, tc.enter, visitor.enterCalls)
+		})
+	}
+}
+
+// A type alias takes both sorts of binder, and the constructor takes only the
+// type ones, so its lifetime list is set on the node.
+func TestTypeDeclAccept_WalksTheQuantifierList(t *testing.T) {
+	decl := NewTypeDecl(NewIdentifier("A", declSpan), []*TypeParam{typeParam("T")},
+		NewNumberTypeAnn(declSpan), false, true, declSpan)
+	decl.LifetimeParams = []*LifetimeParam{lifetimeParam("b", "a")}
+
+	visitor := newMockVisitor()
+	decl.Accept(visitor)
+
+	require.Equal(t, []string{
+		"EnterDecl",
+		"EnterLifetimeAnn", // 'b's bound, the 'a in <'b: 'a>
+		"EnterTypeAnn",     // T's constraint
+		"EnterTypeAnn",     // T's default
+		"EnterTypeAnn",     // the alias body
+	}, visitor.enterCalls)
+}
+
+// A type annotation holds a lifetime in two positions and the walk reaches
+// each: the `'a` in a borrow such as `mut 'a Point`, and the `'a` written as an
+// argument in `Ref<'a>`.
+func TestTypeAnnAccept_WalksLifetimeUseSites(t *testing.T) {
+	ref := NewRefTypeAnn(NewIdentifier("Ref", declSpan), nil, declSpan)
+	ref.LifetimeArgs = []LifetimeAnnNode{NewLifetimeAnn("a", declSpan)}
+	borrow := NewBorrowTypeAnn(true, NewLifetimeAnn("a", declSpan), ref, declSpan)
+
+	visitor := newMockVisitor()
+	borrow.Accept(visitor)
+
+	require.Equal(t, []string{
+		"EnterTypeAnn",     // the borrow
+		"EnterLifetimeAnn", // the borrow's own 'a
+		"EnterTypeAnn",     // Ref
+		"EnterLifetimeAnn", // Ref's lifetime argument
+	}, visitor.enterCalls)
 }

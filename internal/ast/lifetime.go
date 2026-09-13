@@ -7,6 +7,7 @@ package ast
 type LifetimeAnnNode interface {
 	isLifetimeAnnNode()
 	Span() Span
+	Accept(v Visitor)
 }
 
 // LifetimeAnn represents a single lifetime in source code (e.g. 'a). Used
@@ -23,6 +24,10 @@ func NewLifetimeAnn(name string, span Span) *LifetimeAnn {
 }
 func (l *LifetimeAnn) Span() Span       { return l.span }
 func (*LifetimeAnn) isLifetimeAnnNode() {}
+func (l *LifetimeAnn) Accept(v Visitor) {
+	v.EnterLifetimeAnn(l)
+	v.ExitLifetimeAnn(l)
+}
 
 // LifetimeParam is a lifetime binder in a <…> quantifier list. Bounds are the
 // lifetimes this one must outlive. In <'a, 'b: 'a>, 'b has the bound {'a}, read

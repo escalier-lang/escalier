@@ -475,6 +475,7 @@ func (c *ConstructorTypeAnn) Accept(v Visitor) {
 
 func (m *MethodTypeAnn) Accept(v Visitor) {
 	if v.EnterObjTypeAnnElem(m) {
+		acceptReceiver(v, m.Receiver)
 		m.Fn.Accept(v)
 	}
 	v.ExitObjTypeAnnElem(m)
@@ -482,6 +483,7 @@ func (m *MethodTypeAnn) Accept(v Visitor) {
 
 func (g *GetterTypeAnn) Accept(v Visitor) {
 	if v.EnterObjTypeAnnElem(g) {
+		acceptReceiver(v, g.Receiver)
 		g.Fn.Accept(v)
 	}
 	v.ExitObjTypeAnnElem(g)
@@ -489,6 +491,7 @@ func (g *GetterTypeAnn) Accept(v Visitor) {
 
 func (s *SetterTypeAnn) Accept(v Visitor) {
 	if v.EnterObjTypeAnnElem(s) {
+		acceptReceiver(v, s.Receiver)
 		s.Fn.Accept(v)
 	}
 	v.ExitObjTypeAnnElem(s)
@@ -593,6 +596,12 @@ func NewRefTypeAnn(name QualIdent, typeArgs []TypeAnn, span Span) *TypeRefTypeAn
 }
 func (t *TypeRefTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
+		if t.Lifetime != nil {
+			t.Lifetime.Accept(v)
+		}
+		for _, arg := range t.LifetimeArgs {
+			arg.Accept(v)
+		}
 		for _, typeArg := range t.TypeArgs {
 			typeArg.Accept(v)
 		}
@@ -633,15 +642,8 @@ func NewFuncTypeAnn(
 }
 func (t *FuncTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
-		// Visit type parameters and their constraints
-		for _, tp := range t.TypeParams {
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(v)
-			}
-			if tp.Default != nil {
-				tp.Default.Accept(v)
-			}
-		}
+		acceptLifetimeParams(v, t.LifetimeParams)
+		acceptTypeParams(v, t.TypeParams)
 		for _, param := range t.Params {
 			param.Pattern.Accept(v)
 			if param.TypeAnn != nil {
@@ -909,6 +911,9 @@ func NewBorrowTypeAnn(mut bool, lifetime LifetimeAnnNode, inner TypeAnn, span Sp
 }
 func (t *RefTypeAnn) Accept(v Visitor) {
 	if v.EnterTypeAnn(t) {
+		if t.Lifetime != nil {
+			t.Lifetime.Accept(v)
+		}
 		t.Inner.Accept(v)
 	}
 	v.ExitTypeAnn(t)
