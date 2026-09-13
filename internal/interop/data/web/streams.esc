@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:typed_arrays"
+import "web:core"
+
 export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
 }
@@ -157,11 +160,11 @@ export declare interface UnderlyingSource<R = any> {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy)
  */
 @js("ByteLengthQueuingStrategy")
-export declare class ByteLengthQueuingStrategy extends QueuingStrategy<ArrayBufferView> {
+export declare class ByteLengthQueuingStrategy extends QueuingStrategy<typed_arrays.ArrayBufferView> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/highWaterMark) */
     readonly highWaterMark: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ByteLengthQueuingStrategy/size) */
-    readonly size: QueuingStrategySize<ArrayBufferView>,
+    readonly size: QueuingStrategySize<typed_arrays.ArrayBufferView>,
     static prototype: ByteLengthQueuingStrategy,
     constructor(mut self, init: QueuingStrategyInit)
 }
@@ -198,7 +201,7 @@ export declare class ReadableByteStreamController {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/close) */
     close(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/enqueue) */
-    enqueue(mut self, chunk: ArrayBufferView) -> unknown,
+    enqueue(mut self, chunk: typed_arrays.ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableByteStreamController/error) */
     error(mut self, e?: unknown) -> unknown,
     static prototype: ReadableByteStreamController,
@@ -209,22 +212,22 @@ export declare class ReadableByteStreamController {
 @js("ReadableStreamBYOBReader")
 export declare class ReadableStreamBYOBReader extends ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
-    read<T: ArrayBufferView>(mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
+    read<T: typed_arrays.ArrayBufferView>(mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
     releaseLock(mut self) -> unknown,
     static prototype: ReadableStreamBYOBReader,
-    constructor(mut self, stream: ReadableStream<Uint8Array>)
+    constructor(mut self, stream: ReadableStream<typed_arrays.Uint8Array>)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest) */
 @js("ReadableStreamBYOBRequest")
 export declare class ReadableStreamBYOBRequest {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/view) */
-    readonly view: ArrayBufferView | null,
+    readonly view: typed_arrays.ArrayBufferView | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respond) */
     respond(mut self, bytesWritten: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBRequest/respondWithNewView) */
-    respondWithNewView(mut self, view: ArrayBufferView) -> unknown,
+    respondWithNewView(mut self, view: typed_arrays.ArrayBufferView) -> unknown,
     static prototype: ReadableStreamBYOBRequest,
     constructor(mut self)
 }

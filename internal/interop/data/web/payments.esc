@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "web:core"
+import "web:dom"
+
 export declare interface AddressErrors {
     addressLine?: string,
     city?: string,
@@ -57,7 +60,7 @@ export declare interface PaymentItem {
     pending?: boolean
 }
 
-export declare interface PaymentMethodChangeEventInit extends PaymentRequestUpdateEventInit {
+export declare interface PaymentMethodChangeEventInit extends dom.PaymentRequestUpdateEventInit {
     methodDetails?: any,
     methodName?: string
 }
@@ -94,7 +97,7 @@ export declare interface PaymentValidationErrors {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent)
  */
 @js("PaymentMethodChangeEvent")
-export declare class PaymentMethodChangeEvent extends PaymentRequestUpdateEvent {
+export declare class PaymentMethodChangeEvent extends dom.PaymentRequestUpdateEvent {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodDetails) */
     readonly methodDetails: any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentMethodChangeEvent/methodName) */
@@ -105,8 +108,8 @@ export declare class PaymentMethodChangeEvent extends PaymentRequestUpdateEvent 
 
 export declare interface PaymentRequestEventMap {
     "paymentmethodchange": PaymentMethodChangeEvent,
-    "shippingaddresschange": PaymentRequestUpdateEvent,
-    "shippingoptionchange": PaymentRequestUpdateEvent
+    "shippingaddresschange": dom.PaymentRequestUpdateEvent,
+    "shippingoptionchange": dom.PaymentRequestUpdateEvent
 }
 
 /**
@@ -126,19 +129,19 @@ export declare class PaymentRequest extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/shippingaddresschange_event)
      */
-    onshippingaddresschange: (fn (this: PaymentRequest, ev: PaymentRequestUpdateEvent) -> any) | null,
+    onshippingaddresschange: (fn (this: PaymentRequest, ev: dom.PaymentRequestUpdateEvent) -> any) | null,
     /**
      * @deprecated
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/shippingoptionchange_event)
      */
-    onshippingoptionchange: (fn (this: PaymentRequest, ev: PaymentRequestUpdateEvent) -> any) | null,
+    onshippingoptionchange: (fn (this: PaymentRequest, ev: dom.PaymentRequestUpdateEvent) -> any) | null,
     /**
      * @deprecated
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequest/shippingAddress)
      */
-    readonly shippingAddress: PaymentAddress | null,
+    readonly shippingAddress: dom.PaymentAddress | null,
     /**
      * @deprecated
      *
@@ -166,7 +169,7 @@ export declare class PaymentRequest extends EventTarget {
 }
 
 export declare interface PaymentResponseEventMap {
-    "payerdetailchange": PaymentRequestUpdateEvent
+    "payerdetailchange": dom.PaymentRequestUpdateEvent
 }
 
 /**
@@ -182,7 +185,7 @@ export declare class PaymentResponse extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/methodName) */
     readonly methodName: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/payerdetailchange_event) */
-    onpayerdetailchange: (fn (this: PaymentResponse, ev: PaymentRequestUpdateEvent) -> any) | null,
+    onpayerdetailchange: (fn (this: PaymentResponse, ev: dom.PaymentRequestUpdateEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/payerEmail) */
     readonly payerEmail: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/payerName) */
@@ -192,7 +195,7 @@ export declare class PaymentResponse extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/requestId) */
     readonly requestId: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/shippingAddress) */
-    readonly shippingAddress: PaymentAddress | null,
+    readonly shippingAddress: dom.PaymentAddress | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/shippingOption) */
     readonly shippingOption: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentResponse/complete) */

@@ -2,18 +2,23 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "web:core"
+import "web:dom"
+import "web:fetch"
+import "web:url"
+
 export declare interface WorkerOptions {
-    credentials?: RequestCredentials,
+    credentials?: fetch.RequestCredentials,
     name?: string,
     type?: WorkerType
 }
 
 export declare interface AbstractWorker {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/error_event) */
-    onerror: (fn (this: AbstractWorker, ev: ErrorEvent) -> any) | null,
-    addEventListener<K: keyof AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    onerror: (fn (this: AbstractWorker, ev: dom.ErrorEvent) -> any) | null,
+    addEventListener<K: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K: keyof dom.AbstractWorkerEventMap>(type: K, listener: fn (this: AbstractWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown
 }
 
@@ -25,16 +30,16 @@ export declare class SharedWorker extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/SharedWorker/port)
      */
-    readonly port: MessagePort,
-    addEventListener<K: keyof AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
+    readonly port: dom.MessagePort,
+    addEventListener<K: keyof dom.AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
-    removeEventListener<K: keyof AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
+    removeEventListener<K: keyof dom.AbstractWorkerEventMap>(mut self, type: K, listener: fn (this: SharedWorker, ev: dom.AbstractWorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: SharedWorker,
-    constructor(mut self, scriptURL: string | URL, options?: string | WorkerOptions)
+    constructor(mut self, scriptURL: string | url.URL, options?: string | WorkerOptions)
 }
 
-export declare interface WorkerEventMap extends AbstractWorkerEventMap, MessageEventTargetEventMap {}
+export declare interface WorkerEventMap extends dom.AbstractWorkerEventMap, dom.MessageEventTargetEventMap {}
 
 /**
  * This Web Workers API interface represents a background task that can be easily created and can send messages back to its creator. Creating a worker is as simple as calling the Worker() constructor and specifying a script to be run in the worker thread.
@@ -48,8 +53,8 @@ export declare class Worker extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worker/postMessage)
      */
-    postMessage(mut self, message: unknown, transfer: mut Array<Transferable>) -> unknown,
-    postMessage(mut self, message: unknown, options?: StructuredSerializeOptions) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
     /**
      * Aborts worker's associated global environment.
      *
@@ -61,7 +66,7 @@ export declare class Worker extends EventTarget {
     removeEventListener<K: keyof WorkerEventMap>(mut self, type: K, listener: fn (this: Worker, ev: WorkerEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: Worker,
-    constructor(mut self, scriptURL: string | URL, options?: WorkerOptions)
+    constructor(mut self, scriptURL: string | url.URL, options?: WorkerOptions)
 }
 
 export declare type WorkerType = "classic" | "module"

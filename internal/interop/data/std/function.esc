@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:decorators"
+
 @js("Function")
 export declare class Function {
     /**
@@ -41,7 +43,7 @@ export declare class Function {
     readonly length: number,
     arguments: any,
     caller: Function,
-    [Symbol.metadata]: DecoratorMetadata | null,
+    [Symbol.metadata]: decorators.DecoratorMetadata | null,
     /**
      * Creates a new function.
      * @param args A list of arguments the function accepts.

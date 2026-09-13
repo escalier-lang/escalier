@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "web:core"
+import "web:dom"
+
 export declare interface PerformanceMarkOptions {
     detail?: any,
     startTime?: DOMHighResTimeStamp
@@ -32,7 +35,7 @@ export declare interface PerformanceEventMap {
 @js("Performance")
 export declare class Performance extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Performance/eventCounts) */
-    readonly eventCounts: EventCounts,
+    readonly eventCounts: dom.EventCounts,
     /**
      * @deprecated
      *

@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:error"
+import "std:typed_arrays"
+
 export declare interface AddEventListenerOptions extends EventListenerOptions {
     once?: boolean,
     passive?: boolean,
@@ -98,7 +101,7 @@ export declare class AbortSignal extends EventTarget {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMException)
  */
 @js("DOMException")
-export declare class DOMException extends Error {
+export declare class DOMException extends error.Error {
     /**
      * @deprecated
      *
@@ -399,13 +402,13 @@ export declare class TextEncoder extends TextEncoderCommon {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encode)
      */
-    encode(mut self, input?: string) -> Uint8Array,
+    encode(mut self, input?: string) -> typed_arrays.Uint8Array,
     /**
      * Runs the UTF-8 encoder on source, stores the result of that operation into destination, and returns the progress made as an object wherein read is the number of converted code units of source and written is the number of bytes modified in destination.
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/TextEncoder/encodeInto)
      */
-    encodeInto(mut self, source: string, destination: Uint8Array) -> TextEncoderEncodeIntoResult,
+    encodeInto(mut self, source: string, destination: typed_arrays.Uint8Array) -> TextEncoderEncodeIntoResult,
     static prototype: TextEncoder,
     constructor(mut self)
 }
@@ -419,9 +422,9 @@ export declare interface TextEncoderCommon {
     readonly encoding: string
 }
 
-export declare type AllowSharedBufferSource = ArrayBuffer | ArrayBufferView
+export declare type AllowSharedBufferSource = typed_arrays.ArrayBuffer | typed_arrays.ArrayBufferView
 
-export declare type BufferSource = ArrayBufferView | ArrayBuffer
+export declare type BufferSource = typed_arrays.ArrayBufferView | typed_arrays.ArrayBuffer
 
 export declare type DOMHighResTimeStamp = number
 

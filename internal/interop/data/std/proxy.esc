@@ -2,6 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:function"
+import "std:object"
+
 export declare interface ProxyHandler<T: {...}> {
     /**
      * A trap method for a function call.
@@ -13,13 +16,13 @@ export declare interface ProxyHandler<T: {...}> {
      * @param target The original object which is being proxied.
      * @param newTarget The constructor that was originally called.
      */
-    construct?(target: T, argArray: mut Array<any>, newTarget: Function) -> {...},
+    construct?(target: T, argArray: mut Array<any>, newTarget: function.Function) -> {...},
     /**
      * A trap for `Object.defineProperty()`.
      * @param target The original object which is being proxied.
      * @returns A `Boolean` indicating whether or not the property has been defined.
      */
-    defineProperty?(target: T, property: string | symbol, attributes: PropertyDescriptor) -> boolean,
+    defineProperty?(target: T, property: string | symbol, attributes: object.PropertyDescriptor) -> boolean,
     /**
      * A trap for the `delete` operator.
      * @param target The original object which is being proxied.
@@ -39,7 +42,7 @@ export declare interface ProxyHandler<T: {...}> {
      * @param target The original object which is being proxied.
      * @param p The name of the property whose description should be retrieved.
      */
-    getOwnPropertyDescriptor?(target: T, p: string | symbol) -> PropertyDescriptor | undefined,
+    getOwnPropertyDescriptor?(target: T, p: string | symbol) -> object.PropertyDescriptor | undefined,
     /**
      * A trap for the `[[GetPrototypeOf]]` internal method.
      * @param target The original object which is being proxied.

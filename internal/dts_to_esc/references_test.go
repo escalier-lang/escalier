@@ -50,12 +50,14 @@ func TestTypeRefNamesReachesEverySlot(t *testing.T) {
 	}
 }
 
-// A qualified reference contributes its first segment alone. `Intl.Collator`
-// needs an import of `Intl`, and `Collator` is read off it.
-func TestTypeRefNamesRecordsTheHeadOfAQualifiedName(t *testing.T) {
+// A qualified reference contributes both ends. The head is normally the name an
+// import brings into scope. The last segment matters where namespace flattening
+// left the head naming nothing, which is what happened to `Intl`: `std:intl`
+// declares `Collator` at the top level and declares no `Intl`.
+func TestTypeRefNamesRecordsBothEndsOfAQualifiedName(t *testing.T) {
 	refs := TypeRefNames(parseSource(t, `export type A = Intl.Collator`))
 	require.True(t, refs.Contains("Intl"))
-	require.False(t, refs.Contains("Collator"))
+	require.True(t, refs.Contains("Collator"))
 }
 
 func TestDeclaredNamesCoversEveryDeclarationKind(t *testing.T) {

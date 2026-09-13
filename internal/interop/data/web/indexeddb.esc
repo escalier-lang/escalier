@@ -2,6 +2,10 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:date"
+import "web:core"
+import "web:dom"
+
 export declare interface IDBDatabaseInfo {
     name?: string,
     version?: number
@@ -141,7 +145,7 @@ export declare class IDBDatabase extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/objectStoreNames)
      */
-    readonly objectStoreNames: DOMStringList,
+    readonly objectStoreNames: dom.DOMStringList,
     onabort: (fn (this: IDBDatabase, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBDatabase/close_event) */
     onclose: (fn (this: IDBDatabase, ev: Event) -> any) | null,
@@ -397,7 +401,7 @@ export declare class IDBObjectStore {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBObjectStore/indexNames)
      */
-    readonly indexNames: DOMStringList,
+    readonly indexNames: dom.DOMStringList,
     /**
      * Returns the key path of the store, or null if none.
      *
@@ -654,7 +658,7 @@ export declare class IDBTransaction extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/objectStoreNames)
      */
-    readonly objectStoreNames: DOMStringList,
+    readonly objectStoreNames: dom.DOMStringList,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/abort_event) */
     onabort: (fn (this: IDBTransaction, ev: Event) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/IDBTransaction/complete_event) */
@@ -698,7 +702,7 @@ export declare class IDBVersionChangeEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: IDBVersionChangeEventInit)
 }
 
-export declare type IDBValidKey = number | string | Date | BufferSource | mut Array<IDBValidKey>
+export declare type IDBValidKey = number | string | date.Date | BufferSource | mut Array<IDBValidKey>
 
 export declare type IDBCursorDirection = "next" | "nextunique" | "prev" | "prevunique"
 

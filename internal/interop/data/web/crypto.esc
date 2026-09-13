@@ -2,6 +2,10 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:object"
+import "std:typed_arrays"
+import "web:core"
+
 export declare interface AesCbcParams extends Algorithm {
     iv: BufferSource
 }
@@ -160,7 +164,7 @@ export declare class Crypto {
      */
     readonly subtle: SubtleCrypto,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Crypto/getRandomValues) */
-    getRandomValues<T: ArrayBufferView | null>(self, array: T) -> T,
+    getRandomValues<T: typed_arrays.ArrayBufferView | null>(self, array: T) -> T,
     /**
      * Available only in secure contexts.
      *
@@ -200,19 +204,19 @@ export declare class CryptoKey {
 @js("SubtleCrypto")
 export declare class SubtleCrypto {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/decrypt) */
-    decrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    decrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveBits) */
-    deriveBits(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, length?: number | null) -> Promise<ArrayBuffer>,
+    deriveBits(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, length?: number | null) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveKey) */
     deriveKey(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/digest) */
-    digest(mut self, algorithm: AlgorithmIdentifier, data: BufferSource) -> Promise<ArrayBuffer>,
+    digest(mut self, algorithm: AlgorithmIdentifier, data: BufferSource) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/encrypt) */
-    encrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    encrypt(mut self, algorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, key: CryptoKey, data: BufferSource) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/exportKey) */
     exportKey(mut self, format: "jwk", key: CryptoKey) -> Promise<JsonWebKey>,
-    exportKey(mut self, format: Exclude<KeyFormat, "jwk">, key: CryptoKey) -> Promise<ArrayBuffer>,
-    exportKey(mut self, format: KeyFormat, key: CryptoKey) -> Promise<ArrayBuffer | JsonWebKey>,
+    exportKey(mut self, format: object.Exclude<KeyFormat, "jwk">, key: CryptoKey) -> Promise<typed_arrays.ArrayBuffer>,
+    exportKey(mut self, format: KeyFormat, key: CryptoKey) -> Promise<typed_arrays.ArrayBuffer | JsonWebKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/generateKey) */
     generateKey(mut self, algorithm: "Ed25519" | {
         name: "Ed25519"
@@ -222,19 +226,19 @@ export declare class SubtleCrypto {
     generateKey(mut self, algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/importKey) */
     importKey(mut self, format: "jwk", keyData: JsonWebKey, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Array<KeyUsage>) -> Promise<CryptoKey>,
-    importKey(mut self, format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
+    importKey(mut self, format: object.Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/sign) */
-    sign(mut self, algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, data: BufferSource) -> Promise<ArrayBuffer>,
+    sign(mut self, algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, data: BufferSource) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey) */
     unwrapKey(mut self, format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: mut Array<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/verify) */
     verify(mut self, algorithm: AlgorithmIdentifier | RsaPssParams | EcdsaParams, key: CryptoKey, signature: BufferSource, data: BufferSource) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/wrapKey) */
-    wrapKey(mut self, format: KeyFormat, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams) -> Promise<ArrayBuffer>,
+    wrapKey(mut self, format: KeyFormat, key: CryptoKey, wrappingKey: CryptoKey, wrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams) -> Promise<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/deriveKey) */
     deriveKey(mut self, algorithm: AlgorithmIdentifier | EcdhKeyDeriveParams | HkdfParams | Pbkdf2Params, baseKey: CryptoKey, derivedKeyType: AlgorithmIdentifier | AesDerivedKeyParams | HmacImportParams | HkdfParams | Pbkdf2Params, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
     generateKey(mut self, algorithm: AlgorithmIdentifier, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKeyPair | CryptoKey>,
-    importKey(mut self, format: Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
+    importKey(mut self, format: object.Exclude<KeyFormat, "jwk">, keyData: BufferSource, algorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/SubtleCrypto/unwrapKey) */
     unwrapKey(mut self, format: KeyFormat, wrappedKey: BufferSource, unwrappingKey: CryptoKey, unwrapAlgorithm: AlgorithmIdentifier | RsaOaepParams | AesCtrParams | AesCbcParams | AesGcmParams, unwrappedKeyAlgorithm: AlgorithmIdentifier | RsaHashedImportParams | EcKeyImportParams | HmacImportParams | AesKeyAlgorithm, extractable: boolean, keyUsages: Iterable<KeyUsage>) -> Promise<CryptoKey>,
     static prototype: SubtleCrypto,
@@ -247,7 +251,7 @@ export declare var crypto: Crypto
 
 export declare type AlgorithmIdentifier = Algorithm | string
 
-export declare type BigInteger = Uint8Array
+export declare type BigInteger = typed_arrays.Uint8Array
 
 export declare type HashAlgorithmIdentifier = AlgorithmIdentifier
 

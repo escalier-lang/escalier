@@ -2,9 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:intl"
+
 @js("Int8Array")
 export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -330,7 +332,7 @@ export declare class Int8Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint8Array")
 export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -656,7 +658,7 @@ export declare class Uint8Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint8ClampedArray")
 export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -982,7 +984,7 @@ export declare class Uint8ClampedArray<TArrayBuffer: ArrayBufferLike> {
 
 @js("Int16Array")
 export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1308,7 +1310,7 @@ export declare class Int16Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint16Array")
 export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1634,7 +1636,7 @@ export declare class Uint16Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Int32Array")
 export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -1960,7 +1962,7 @@ export declare class Int32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Uint32Array")
 export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -2286,7 +2288,7 @@ export declare class Uint32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Float32Array")
 export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -2612,7 +2614,7 @@ export declare class Float32Array<TArrayBuffer: ArrayBufferLike> {
 
 @js("Float64Array")
 export declare class Float64Array<TArrayBuffer: ArrayBufferLike> {
-    toLocaleString(self, locales: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     [Symbol.iterator](self) -> ArrayIterator<number>,
     /**
      * Returns an array of key, value pairs for every entry in the array
@@ -3614,7 +3616,7 @@ export declare class BigInt64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLi
      */
     subarray(mut self, begin?: number, end?: number) -> BigInt64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
@@ -3910,7 +3912,7 @@ export declare class BigUint64Array<TArrayBuffer: ArrayBufferLike = ArrayBufferL
      */
     subarray(mut self, begin?: number, end?: number) -> BigUint64Array<TArrayBuffer>,
     /** Converts the array to a string by using the current locale. */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /** Returns a string representation of the array. */
     toString(self) -> string,
     /** Returns the primitive value of the specified object. */
@@ -4266,7 +4268,7 @@ export declare class Float16Array<TArrayBuffer: ArrayBufferLike = ArrayBufferLik
     /**
      * Converts a number to a string by using the current locale.
      */
-    toLocaleString(self, locales?: string | mut Array<string>, options?: Intl.NumberFormatOptions) -> string,
+    toLocaleString(self, locales?: string | mut Array<string>, options?: intl.NumberFormatOptions) -> string,
     /**
      * Copies the array and returns the copy with the elements in reverse order.
      */

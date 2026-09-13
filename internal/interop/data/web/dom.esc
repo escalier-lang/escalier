@@ -2,6 +2,33 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:date"
+import "std:error"
+import "std:function"
+import "std:map"
+import "std:math"
+import "std:object"
+import "std:set"
+import "std:typed_arrays"
+import "web:cache"
+import "web:core"
+import "web:crypto"
+import "web:fetch"
+import "web:file"
+import "web:indexeddb"
+import "web:payments"
+import "web:performance"
+import "web:service_worker"
+import "web:storage"
+import "web:streams"
+import "web:url"
+import "web:web_audio"
+import "web:web_codecs"
+import "web:web_rtc"
+import "web:webauthn"
+import "web:webgl"
+import "web:websocket"
+
 export declare interface FileSystemDirectoryHandleAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> FileSystemDirectoryHandleAsyncIterator<T>
 }
@@ -49,7 +76,7 @@ export declare interface AudioConfiguration {
 }
 
 export declare interface BlobEventInit {
-    data: Blob,
+    data: file.Blob,
     timecode?: DOMHighResTimeStamp
 }
 
@@ -146,13 +173,13 @@ export declare interface ContentVisibilityAutoStateChangeEventInit extends Event
 }
 
 export declare interface CredentialCreationOptions {
-    publicKey?: PublicKeyCredentialCreationOptions,
+    publicKey?: webauthn.PublicKeyCredentialCreationOptions,
     signal?: AbortSignal
 }
 
 export declare interface CredentialRequestOptions {
     mediation?: CredentialMediationRequirement,
-    publicKey?: PublicKeyCredentialRequestOptions,
+    publicKey?: webauthn.PublicKeyCredentialRequestOptions,
     signal?: AbortSignal
 }
 
@@ -479,7 +506,7 @@ export declare interface MIDIConnectionEventInit extends EventInit {
 }
 
 export declare interface MIDIMessageEventInit extends EventInit {
-    data?: Uint8Array
+    data?: typed_arrays.Uint8Array
 }
 
 export declare interface MIDIOptions {
@@ -515,7 +542,7 @@ export declare interface MediaEncodingConfiguration extends MediaConfiguration {
 }
 
 export declare interface MediaEncryptedEventInit extends EventInit {
-    initData?: ArrayBuffer | null,
+    initData?: typed_arrays.ArrayBuffer | null,
     initDataType?: string
 }
 
@@ -526,7 +553,7 @@ export declare interface MediaImage {
 }
 
 export declare interface MediaKeyMessageEventInit extends EventInit {
-    message: ArrayBuffer,
+    message: typed_arrays.ArrayBuffer,
     messageType: MediaKeyMessageType
 }
 
@@ -865,7 +892,7 @@ export declare interface ShadowRootInit {
 }
 
 export declare interface ShareData {
-    files?: mut Array<File>,
+    files?: mut Array<file.File>,
     text?: string,
     title?: string,
     url?: string
@@ -1031,11 +1058,11 @@ export declare interface WindowPostMessageOptions extends StructuredSerializeOpt
 }
 
 export declare interface WorkletOptions {
-    credentials?: RequestCredentials
+    credentials?: fetch.RequestCredentials
 }
 
 export declare interface WriteParams {
-    data?: BufferSource | Blob | string | null,
+    data?: BufferSource | file.Blob | string | null,
     position?: number | null,
     size?: number | null,
     type: WriteCommandType
@@ -1384,7 +1411,7 @@ export declare class BeforeUnloadEvent extends Event {
 @js("BlobEvent")
 export declare class BlobEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent/data) */
-    readonly data: Blob,
+    readonly data: file.Blob,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/BlobEvent/timecode) */
     readonly timecode: DOMHighResTimeStamp,
     static prototype: BlobEvent,
@@ -3873,9 +3900,9 @@ export declare class ClipboardItem {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/types) */
     readonly types: Array<string>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/getType) */
-    getType(self, type: string) -> Promise<Blob>,
+    getType(self, type: string) -> Promise<file.Blob>,
     static prototype: ClipboardItem,
-    constructor(mut self, items: Record<string, string | Blob | PromiseLike<string | Blob>>, options?: ClipboardItemOptions),
+    constructor(mut self, items: object.Record<string, string | file.Blob | PromiseLike<string | file.Blob>>, options?: ClipboardItemOptions),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ClipboardItem/supports_static) */
     static supports(type: string) -> boolean
 }
@@ -3991,7 +4018,7 @@ export declare class CustomEvent<T = any> extends Event {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/CustomStateSet) */
 @js("CustomStateSet")
-export declare class CustomStateSet extends Set<string> {
+export declare class CustomStateSet extends set.Set<string> {
     forEach(self, callbackfn: fn (value: string, key: string, parent: CustomStateSet) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: CustomStateSet,
     constructor(mut self)
@@ -4089,8 +4116,8 @@ export declare class DOMMatrix extends DOMMatrixReadOnly {
     translateSelf(mut self, tx?: number, ty?: number, tz?: number) -> DOMMatrix,
     static prototype: DOMMatrix,
     constructor(mut self, init?: string | mut Array<number>),
-    static fromFloat32Array(array32: Float32Array) -> DOMMatrix,
-    static fromFloat64Array(array64: Float64Array) -> DOMMatrix,
+    static fromFloat32Array(array32: typed_arrays.Float32Array) -> DOMMatrix,
+    static fromFloat64Array(array64: typed_arrays.Float64Array) -> DOMMatrix,
     static fromMatrix(other?: DOMMatrixInit) -> DOMMatrix
 }
 
@@ -4174,9 +4201,9 @@ export declare class DOMMatrixReadOnly {
     skewX(mut self, sx?: number) -> DOMMatrix,
     skewY(mut self, sy?: number) -> DOMMatrix,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/toFloat32Array) */
-    toFloat32Array(self) -> Float32Array,
+    toFloat32Array(self) -> typed_arrays.Float32Array,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/toFloat64Array) */
-    toFloat64Array(self) -> Float64Array,
+    toFloat64Array(self) -> typed_arrays.Float64Array,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/toJSON) */
     toJSON(self) -> any,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/DOMMatrixReadOnly/transformPoint) */
@@ -4186,8 +4213,8 @@ export declare class DOMMatrixReadOnly {
     toString(self) -> string,
     static prototype: DOMMatrixReadOnly,
     constructor(mut self, init?: string | mut Array<number>),
-    static fromFloat32Array(array32: Float32Array) -> DOMMatrixReadOnly,
-    static fromFloat64Array(array64: Float64Array) -> DOMMatrixReadOnly,
+    static fromFloat32Array(array32: typed_arrays.Float32Array) -> DOMMatrixReadOnly,
+    static fromFloat64Array(array64: typed_arrays.Float64Array) -> DOMMatrixReadOnly,
     static fromMatrix(other?: DOMMatrixInit) -> DOMMatrixReadOnly
 }
 
@@ -4507,7 +4534,7 @@ export declare class DataTransfer {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransfer/files)
      */
-    readonly files: FileList,
+    readonly files: file.FileList,
     /**
      * Returns a DataTransferItemList object, with the drag data.
      *
@@ -4572,7 +4599,7 @@ export declare class DataTransferItem {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransferItem/getAsFile)
      */
-    getAsFile(self) -> File | null,
+    getAsFile(self) -> file.File | null,
     /**
      * Invokes the callback with the string data as the argument, if the drag data item kind is text.
      *
@@ -4604,7 +4631,7 @@ export declare class DataTransferItemList {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/DataTransferItemList/add)
      */
     add(mut self, data: string, type: string) -> DataTransferItem | null,
-    add(mut self, data: File) -> DataTransferItem | null,
+    add(mut self, data: file.File) -> DataTransferItem | null,
     /**
      * Removes all the entries in the drag data store.
      *
@@ -5090,11 +5117,11 @@ export declare class Document extends Node {
      */
     createEvent(mut self, eventInterface: "AnimationEvent") -> AnimationEvent,
     createEvent(mut self, eventInterface: "AnimationPlaybackEvent") -> AnimationPlaybackEvent,
-    createEvent(mut self, eventInterface: "AudioProcessingEvent") -> AudioProcessingEvent,
+    createEvent(mut self, eventInterface: "AudioProcessingEvent") -> web_audio.AudioProcessingEvent,
     createEvent(mut self, eventInterface: "BeforeUnloadEvent") -> BeforeUnloadEvent,
     createEvent(mut self, eventInterface: "BlobEvent") -> BlobEvent,
     createEvent(mut self, eventInterface: "ClipboardEvent") -> ClipboardEvent,
-    createEvent(mut self, eventInterface: "CloseEvent") -> CloseEvent,
+    createEvent(mut self, eventInterface: "CloseEvent") -> websocket.CloseEvent,
     createEvent(mut self, eventInterface: "CompositionEvent") -> CompositionEvent,
     createEvent(mut self, eventInterface: "ContentVisibilityAutoStateChangeEvent") -> ContentVisibilityAutoStateChangeEvent,
     createEvent(mut self, eventInterface: "CustomEvent") -> CustomEvent,
@@ -5109,7 +5136,7 @@ export declare class Document extends Node {
     createEvent(mut self, eventInterface: "FormDataEvent") -> FormDataEvent,
     createEvent(mut self, eventInterface: "GamepadEvent") -> GamepadEvent,
     createEvent(mut self, eventInterface: "HashChangeEvent") -> HashChangeEvent,
-    createEvent(mut self, eventInterface: "IDBVersionChangeEvent") -> IDBVersionChangeEvent,
+    createEvent(mut self, eventInterface: "IDBVersionChangeEvent") -> indexeddb.IDBVersionChangeEvent,
     createEvent(mut self, eventInterface: "InputEvent") -> InputEvent,
     createEvent(mut self, eventInterface: "KeyboardEvent") -> KeyboardEvent,
     createEvent(mut self, eventInterface: "MIDIConnectionEvent") -> MIDIConnectionEvent,
@@ -5121,11 +5148,11 @@ export declare class Document extends Node {
     createEvent(mut self, eventInterface: "MessageEvent") -> MessageEvent,
     createEvent(mut self, eventInterface: "MouseEvent") -> MouseEvent,
     createEvent(mut self, eventInterface: "MouseEvents") -> MouseEvent,
-    createEvent(mut self, eventInterface: "OfflineAudioCompletionEvent") -> OfflineAudioCompletionEvent,
+    createEvent(mut self, eventInterface: "OfflineAudioCompletionEvent") -> web_audio.OfflineAudioCompletionEvent,
     createEvent(mut self, eventInterface: "PageRevealEvent") -> PageRevealEvent,
     createEvent(mut self, eventInterface: "PageSwapEvent") -> PageSwapEvent,
     createEvent(mut self, eventInterface: "PageTransitionEvent") -> PageTransitionEvent,
-    createEvent(mut self, eventInterface: "PaymentMethodChangeEvent") -> PaymentMethodChangeEvent,
+    createEvent(mut self, eventInterface: "PaymentMethodChangeEvent") -> payments.PaymentMethodChangeEvent,
     createEvent(mut self, eventInterface: "PaymentRequestUpdateEvent") -> PaymentRequestUpdateEvent,
     createEvent(mut self, eventInterface: "PictureInPictureEvent") -> PictureInPictureEvent,
     createEvent(mut self, eventInterface: "PointerEvent") -> PointerEvent,
@@ -5133,15 +5160,15 @@ export declare class Document extends Node {
     createEvent(mut self, eventInterface: "ProgressEvent") -> ProgressEvent,
     createEvent(mut self, eventInterface: "PromiseRejectionEvent") -> PromiseRejectionEvent,
     createEvent(mut self, eventInterface: "RTCDTMFToneChangeEvent") -> RTCDTMFToneChangeEvent,
-    createEvent(mut self, eventInterface: "RTCDataChannelEvent") -> RTCDataChannelEvent,
-    createEvent(mut self, eventInterface: "RTCErrorEvent") -> RTCErrorEvent,
-    createEvent(mut self, eventInterface: "RTCPeerConnectionIceErrorEvent") -> RTCPeerConnectionIceErrorEvent,
-    createEvent(mut self, eventInterface: "RTCPeerConnectionIceEvent") -> RTCPeerConnectionIceEvent,
-    createEvent(mut self, eventInterface: "RTCTrackEvent") -> RTCTrackEvent,
+    createEvent(mut self, eventInterface: "RTCDataChannelEvent") -> web_rtc.RTCDataChannelEvent,
+    createEvent(mut self, eventInterface: "RTCErrorEvent") -> web_rtc.RTCErrorEvent,
+    createEvent(mut self, eventInterface: "RTCPeerConnectionIceErrorEvent") -> web_rtc.RTCPeerConnectionIceErrorEvent,
+    createEvent(mut self, eventInterface: "RTCPeerConnectionIceEvent") -> web_rtc.RTCPeerConnectionIceEvent,
+    createEvent(mut self, eventInterface: "RTCTrackEvent") -> web_rtc.RTCTrackEvent,
     createEvent(mut self, eventInterface: "SecurityPolicyViolationEvent") -> SecurityPolicyViolationEvent,
     createEvent(mut self, eventInterface: "SpeechSynthesisErrorEvent") -> SpeechSynthesisErrorEvent,
     createEvent(mut self, eventInterface: "SpeechSynthesisEvent") -> SpeechSynthesisEvent,
-    createEvent(mut self, eventInterface: "StorageEvent") -> StorageEvent,
+    createEvent(mut self, eventInterface: "StorageEvent") -> storage.StorageEvent,
     createEvent(mut self, eventInterface: "SubmitEvent") -> SubmitEvent,
     createEvent(mut self, eventInterface: "TextEvent") -> TextEvent,
     createEvent(mut self, eventInterface: "ToggleEvent") -> ToggleEvent,
@@ -5150,7 +5177,7 @@ export declare class Document extends Node {
     createEvent(mut self, eventInterface: "TransitionEvent") -> TransitionEvent,
     createEvent(mut self, eventInterface: "UIEvent") -> UIEvent,
     createEvent(mut self, eventInterface: "UIEvents") -> UIEvent,
-    createEvent(mut self, eventInterface: "WebGLContextEvent") -> WebGLContextEvent,
+    createEvent(mut self, eventInterface: "WebGLContextEvent") -> webgl.WebGLContextEvent,
     createEvent(mut self, eventInterface: "WheelEvent") -> WheelEvent,
     createEvent(mut self, eventInterface: string) -> Event,
     /**
@@ -5287,7 +5314,7 @@ export declare class Document extends Node {
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Document/open)
      */
     open(mut self, unused1?: string, unused2?: string) -> Document,
-    open(mut self, url: string | URL, name: string, features: string) -> WindowProxy | null,
+    open(mut self, url: string | url.URL, name: string, features: string) -> WindowProxy | null,
     /**
      * Returns a Boolean value that indicates whether a specified command can be successfully executed using execCommand, given the current state of the document.
      * @param commandId Specifies a command identifier.
@@ -5565,7 +5592,7 @@ export declare class Element extends Node {
     closest<K: keyof HTMLElementTagNameMap>(mut self, selector: K) -> HTMLElementTagNameMap[K] | null,
     closest<K: keyof SVGElementTagNameMap>(mut self, selector: K) -> SVGElementTagNameMap[K] | null,
     closest<K: keyof MathMLElementTagNameMap>(mut self, selector: K) -> MathMLElementTagNameMap[K] | null,
-    closest<E: Element = Element>(mut self, selectors: string) -> E | null,
+    closest<E: Element = Element>(mut self, selectors: string) -> math.E | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Element/computedStyleMap) */
     computedStyleMap(mut self) -> StylePropertyMapReadOnly,
     /**
@@ -5804,7 +5831,7 @@ export declare class ElementInternals extends ARIAMixin {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ElementInternals/setFormValue)
      */
-    setFormValue(mut self, value: File | string | FormData | null, state?: File | string | FormData | null) -> unknown,
+    setFormValue(mut self, value: file.File | string | FormData | null, state?: file.File | string | FormData | null) -> unknown,
     /**
      * Marks internals's target element as suffering from the constraints indicated by the flags argument, and sets the element's validation message to message. If anchor is specified, the user agent might use it to indicate problems with the constraints of internals's target element when the form owner is validated interactively or reportValidity() is called.
      *
@@ -5838,7 +5865,7 @@ export declare class ErrorEvent extends Event {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/EventCounts) */
 @js("EventCounts")
-export declare class EventCounts extends Map<string, number> {
+export declare class EventCounts extends map.Map<string, number> {
     forEach(self, callbackfn: fn (value: number, key: string, parent: EventCounts) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: EventCounts,
     constructor(mut self)
@@ -5893,7 +5920,7 @@ export declare class EventSource extends EventTarget {
     removeEventListener(mut self, type: string, listener: fn (this: EventSource, event: MessageEvent) -> any, options?: boolean | EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | EventListenerOptions) -> unknown,
     static prototype: EventSource,
-    constructor(mut self, url: string | URL, eventSourceInitDict?: EventSourceInit),
+    constructor(mut self, url: string | url.URL, eventSourceInitDict?: EventSourceInit),
     static readonly CONNECTING: 0,
     static readonly OPEN: 1,
     static readonly CLOSED: 2
@@ -5982,7 +6009,7 @@ export declare class FileSystemFileHandle extends FileSystemHandle {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/createWritable) */
     createWritable(mut self, options?: FileSystemCreateWritableOptions) -> Promise<FileSystemWritableFileStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemFileHandle/getFile) */
-    getFile(self) -> Promise<File>,
+    getFile(self) -> Promise<file.File>,
     static prototype: FileSystemFileHandle,
     constructor(mut self)
 }
@@ -6010,7 +6037,7 @@ export declare class FileSystemHandle {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream)
  */
 @js("FileSystemWritableFileStream")
-export declare class FileSystemWritableFileStream extends WritableStream {
+export declare class FileSystemWritableFileStream extends streams.WritableStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/seek) */
     seek(mut self, position: number) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FileSystemWritableFileStream/truncate) */
@@ -6121,9 +6148,9 @@ export declare interface FontFaceSource {
 @js("FormData")
 export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/append) */
-    append(mut self, name: string, value: string | Blob) -> unknown,
+    append(mut self, name: string, value: string | file.Blob) -> unknown,
     append(mut self, name: string, value: string) -> unknown,
-    append(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    append(mut self, name: string, blobValue: file.Blob, filename?: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/delete) */
     delete(mut self, name: string) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/get) */
@@ -6133,9 +6160,9 @@ export declare class FormData {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/has) */
     has(self, name: string) -> boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/FormData/set) */
-    set(mut self, name: string, value: string | Blob) -> unknown,
+    set(mut self, name: string, value: string | file.Blob) -> unknown,
     set(mut self, name: string, value: string) -> unknown,
-    set(mut self, name: string, blobValue: Blob, filename?: string) -> unknown,
+    set(mut self, name: string, blobValue: file.Blob, filename?: string) -> unknown,
     forEach(self, callbackfn: fn (value: FormDataEntryValue, key: string, parent: FormData) -> unknown, thisArg?: unknown) -> unknown,
     [Symbol.iterator](self) -> FormDataIterator<[string, FormDataEntryValue]>,
     /** Returns an array of key, value pairs for every entry in the list. */
@@ -7265,8 +7292,8 @@ export declare class HTMLCanvasElement extends HTMLElement {
      */
     getContext(self, contextId: "2d", options?: CanvasRenderingContext2DSettings) -> CanvasRenderingContext2D | null,
     getContext(self, contextId: "bitmaprenderer", options?: ImageBitmapRenderingContextSettings) -> ImageBitmapRenderingContext | null,
-    getContext(self, contextId: "webgl", options?: WebGLContextAttributes) -> WebGLRenderingContext | null,
-    getContext(self, contextId: "webgl2", options?: WebGLContextAttributes) -> WebGL2RenderingContext | null,
+    getContext(self, contextId: "webgl", options?: webgl.WebGLContextAttributes) -> webgl.WebGLRenderingContext | null,
+    getContext(self, contextId: "webgl2", options?: webgl.WebGLContextAttributes) -> webgl.WebGL2RenderingContext | null,
     getContext(self, contextId: string, options?: unknown) -> RenderingContext | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLCanvasElement/toBlob) */
     toBlob(self, callback: BlobCallback, type?: string, quality?: number) -> unknown,
@@ -8146,7 +8173,7 @@ export declare class HTMLIFrameElement extends HTMLElement {
      */
     name: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLIFrameElement/referrerPolicy) */
-    referrerPolicy: ReferrerPolicy,
+    referrerPolicy: fetch.ReferrerPolicy,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLIFrameElement/sandbox) */
     get sandbox(self) -> DOMTokenList,
     set sandbox(mut self, value: string),
@@ -8380,7 +8407,7 @@ export declare class HTMLInputElement extends HTMLElement {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement/files)
      */
-    files: FileList | null,
+    files: file.FileList | null,
     /**
      * Retrieves a reference to the form that the object is embedded in.
      *
@@ -8551,7 +8578,7 @@ export declare class HTMLInputElement extends HTMLElement {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/HTMLInputElement/valueAsDate)
      */
-    valueAsDate: Date | null,
+    valueAsDate: date.Date | null,
     /**
      * Returns the input field value as a number.
      *
@@ -10932,7 +10959,7 @@ export declare class HashChangeEvent extends Event {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight) */
 @js("Highlight")
-export declare class Highlight extends Set<AbstractRange> {
+export declare class Highlight extends set.Set<AbstractRange> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/priority) */
     priority: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Highlight/type) */
@@ -10944,7 +10971,7 @@ export declare class Highlight extends Set<AbstractRange> {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/HighlightRegistry) */
 @js("HighlightRegistry")
-export declare class HighlightRegistry extends Map<string, Highlight> {
+export declare class HighlightRegistry extends map.Map<string, Highlight> {
     forEach(self, callbackfn: fn (value: Highlight, key: string, parent: HighlightRegistry) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: HighlightRegistry,
     constructor(mut self)
@@ -10970,9 +10997,9 @@ export declare class History {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/go) */
     go(mut self, delta?: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/pushState) */
-    pushState(mut self, data: unknown, unused: string, url?: string | URL | null) -> unknown,
+    pushState(mut self, data: unknown, unused: string, url?: string | url.URL | null) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/History/replaceState) */
-    replaceState(mut self, data: unknown, unused: string, url?: string | URL | null) -> unknown,
+    replaceState(mut self, data: unknown, unused: string, url?: string | url.URL | null) -> unknown,
     static prototype: History,
     constructor(mut self)
 }
@@ -11046,7 +11073,7 @@ export declare class ImageData {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ImageData/data)
      */
-    readonly data: Uint8ClampedArray,
+    readonly data: typed_arrays.Uint8ClampedArray,
     /**
      * Returns the actual dimensions of the data in the ImageData object, in pixels.
      *
@@ -11061,7 +11088,7 @@ export declare class ImageData {
     readonly width: number,
     static prototype: ImageData,
     constructor(mut self, sw: number, sh: number, settings?: ImageDataSettings),
-    constructor(mut self, data: Uint8ClampedArray, sw: number, sh?: number, settings?: ImageDataSettings)
+    constructor(mut self, data: typed_arrays.Uint8ClampedArray, sw: number, sh?: number, settings?: ImageDataSettings)
 }
 
 /**
@@ -11223,7 +11250,7 @@ export declare class KeyframeEffect extends AnimationEffect {
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint) */
 @js("LargestContentfulPaint")
-export declare class LargestContentfulPaint extends PerformanceEntry {
+export declare class LargestContentfulPaint extends performance.PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint/element) */
     readonly element: Element | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/LargestContentfulPaint/id) */
@@ -11336,7 +11363,7 @@ export declare class Location {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Location/assign)
      */
-    assign(mut self, url: string | URL) -> unknown,
+    assign(mut self, url: string | url.URL) -> unknown,
     /**
      * Reloads the current page.
      *
@@ -11348,7 +11375,7 @@ export declare class Location {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Location/replace)
      */
-    replace(mut self, url: string | URL) -> unknown,
+    replace(mut self, url: string | url.URL) -> unknown,
     static prototype: Location,
     constructor(mut self)
 }
@@ -11451,7 +11478,7 @@ export declare class MIDIInput extends MIDIPort {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIInputMap)
  */
 @js("MIDIInputMap")
-export declare class MIDIInputMap extends Map<string, MIDIInput> {
+export declare class MIDIInputMap extends map.Map<string, MIDIInput> {
     forEach(self, callbackfn: fn (value: MIDIInput, key: string, parent: MIDIInputMap) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIInputMap,
     constructor(mut self)
@@ -11465,7 +11492,7 @@ export declare class MIDIInputMap extends Map<string, MIDIInput> {
 @js("MIDIMessageEvent")
 export declare class MIDIMessageEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIMessageEvent/data) */
-    readonly data: Uint8Array | null,
+    readonly data: typed_arrays.Uint8Array | null,
     static prototype: MIDIMessageEvent,
     constructor(mut self, type: string, eventInitDict?: MIDIMessageEventInit)
 }
@@ -11495,7 +11522,7 @@ export declare class MIDIOutput extends MIDIPort {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/MIDIOutputMap)
  */
 @js("MIDIOutputMap")
-export declare class MIDIOutputMap extends Map<string, MIDIOutput> {
+export declare class MIDIOutputMap extends map.Map<string, MIDIOutput> {
     forEach(self, callbackfn: fn (value: MIDIOutput, key: string, parent: MIDIOutputMap) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: MIDIOutputMap,
     constructor(mut self)
@@ -11620,7 +11647,7 @@ export declare class MediaDevices extends EventTarget {
 @js("MediaEncryptedEvent")
 export declare class MediaEncryptedEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent/initData) */
-    readonly initData: ArrayBuffer | null,
+    readonly initData: typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaEncryptedEvent/initDataType) */
     readonly initDataType: string,
     static prototype: MediaEncryptedEvent,
@@ -11659,7 +11686,7 @@ export declare class MediaError {
 @js("MediaKeyMessageEvent")
 export declare class MediaKeyMessageEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyMessageEvent/message) */
-    readonly message: ArrayBuffer,
+    readonly message: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/MediaKeyMessageEvent/messageType) */
     readonly messageType: MediaKeyMessageType,
     static prototype: MediaKeyMessageEvent,
@@ -12526,7 +12553,7 @@ export declare class Navigator extends NavigatorAutomationInformation {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/serviceWorker)
      */
-    readonly serviceWorker: ServiceWorkerContainer,
+    readonly serviceWorker: service_worker.ServiceWorkerContainer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/userActivation) */
     readonly userActivation: UserActivation,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/wakeLock) */
@@ -12552,7 +12579,7 @@ export declare class Navigator extends NavigatorAutomationInformation {
      */
     requestMediaKeySystemAccess(mut self, keySystem: string, supportedConfigurations: mut Array<MediaKeySystemConfiguration>) -> Promise<MediaKeySystemAccess>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/sendBeacon) */
-    sendBeacon(mut self, url: string | URL, data?: BodyInit | null) -> boolean,
+    sendBeacon(mut self, url: string | url.URL, data?: fetch.BodyInit | null) -> boolean,
     /**
      * Available only in secure contexts.
      *
@@ -12597,7 +12624,7 @@ export declare interface NavigatorContentUtils {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Navigator/registerProtocolHandler)
      */
-    registerProtocolHandler(scheme: string, url: string | URL) -> unknown
+    registerProtocolHandler(scheme: string, url: string | url.URL) -> unknown
 }
 
 export declare interface NavigatorCookies {
@@ -13111,7 +13138,7 @@ export declare class OffscreenCanvas extends EventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/OffscreenCanvas/convertToBlob)
      */
-    convertToBlob(mut self, options?: ImageEncodeOptions) -> Promise<Blob>,
+    convertToBlob(mut self, options?: ImageEncodeOptions) -> Promise<file.Blob>,
     /**
      * Returns an object that exposes an API for drawing on the OffscreenCanvas object. contextId specifies the desired API: "2d", "bitmaprenderer", "webgl", or "webgl2". options is handled by that API.
      *
@@ -13123,8 +13150,8 @@ export declare class OffscreenCanvas extends EventTarget {
      */
     getContext(self, contextId: "2d", options?: unknown) -> OffscreenCanvasRenderingContext2D | null,
     getContext(self, contextId: "bitmaprenderer", options?: unknown) -> ImageBitmapRenderingContext | null,
-    getContext(self, contextId: "webgl", options?: unknown) -> WebGLRenderingContext | null,
-    getContext(self, contextId: "webgl2", options?: unknown) -> WebGL2RenderingContext | null,
+    getContext(self, contextId: "webgl", options?: unknown) -> webgl.WebGLRenderingContext | null,
+    getContext(self, contextId: "webgl2", options?: unknown) -> webgl.WebGL2RenderingContext | null,
     getContext(self, contextId: OffscreenRenderingContextId, options?: unknown) -> OffscreenRenderingContext | null,
     /**
      * Returns a newly created ImageBitmap object with the image in the OffscreenCanvas object. The image in the OffscreenCanvas object is replaced with a new blank image.
@@ -13251,7 +13278,7 @@ export declare interface ParentNode extends Node {
     querySelector<K: keyof MathMLElementTagNameMap>(selectors: K) -> MathMLElementTagNameMap[K] | null,
     /** @deprecated */
     querySelector<K: keyof HTMLElementDeprecatedTagNameMap>(selectors: K) -> HTMLElementDeprecatedTagNameMap[K] | null,
-    querySelector<E: Element = Element>(selectors: string) -> E | null,
+    querySelector<E: Element = Element>(selectors: string) -> math.E | null,
     /**
      * Returns all element descendants of node that match selectors.
      *
@@ -13262,7 +13289,7 @@ export declare interface ParentNode extends Node {
     querySelectorAll<K: keyof MathMLElementTagNameMap>(selectors: K) -> NodeListOf<MathMLElementTagNameMap[K]>,
     /** @deprecated */
     querySelectorAll<K: keyof HTMLElementDeprecatedTagNameMap>(selectors: K) -> NodeListOf<HTMLElementDeprecatedTagNameMap[K]>,
-    querySelectorAll<E: Element = Element>(selectors: string) -> NodeListOf<E>,
+    querySelectorAll<E: Element = Element>(selectors: string) -> NodeListOf<math.E>,
     /**
      * Replace all children of node with nodes, while replacing strings in nodes with equivalent Text nodes.
      *
@@ -13328,14 +13355,14 @@ export declare class PaymentAddress {
 @js("PaymentRequestUpdateEvent")
 export declare class PaymentRequestUpdateEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PaymentRequestUpdateEvent/updateWith) */
-    updateWith(mut self, detailsPromise: PaymentDetailsUpdate | PromiseLike<PaymentDetailsUpdate>) -> unknown,
+    updateWith(mut self, detailsPromise: payments.PaymentDetailsUpdate | PromiseLike<payments.PaymentDetailsUpdate>) -> unknown,
     static prototype: PaymentRequestUpdateEvent,
     constructor(mut self, type: string, eventInitDict?: PaymentRequestUpdateEventInit)
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming) */
 @js("PerformanceEventTiming")
-export declare class PerformanceEventTiming extends PerformanceEntry {
+export declare class PerformanceEventTiming extends performance.PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming/cancelable) */
     readonly cancelable: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceEventTiming/processingEnd) */
@@ -15958,7 +15985,7 @@ export declare class ScreenOrientation extends EventTarget {
 }
 
 export declare interface ScriptProcessorNodeEventMap {
-    "audioprocess": AudioProcessingEvent
+    "audioprocess": web_audio.AudioProcessingEvent
 }
 
 /**
@@ -15968,7 +15995,7 @@ export declare interface ScriptProcessorNodeEventMap {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode)
  */
 @js("ScriptProcessorNode")
-export declare class ScriptProcessorNode extends AudioNode {
+export declare class ScriptProcessorNode extends web_audio.AudioNode {
     /**
      * @deprecated
      *
@@ -15980,7 +16007,7 @@ export declare class ScriptProcessorNode extends AudioNode {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/ScriptProcessorNode/audioprocess_event)
      */
-    onaudioprocess: (fn (this: ScriptProcessorNode, ev: AudioProcessingEvent) -> any) | null,
+    onaudioprocess: (fn (this: ScriptProcessorNode, ev: web_audio.AudioProcessingEvent) -> any) | null,
     addEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: EventListenerOrEventListenerObject, options?: boolean | AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof ScriptProcessorNodeEventMap>(mut self, type: K, listener: fn (this: ScriptProcessorNode, ev: ScriptProcessorNodeEventMap[K]) -> any, options?: boolean | EventListenerOptions) -> unknown,
@@ -17035,10 +17062,10 @@ export declare class UIEvent extends Event {
     constructor(mut self, type: string, eventInitDict?: UIEventInit)
 }
 
-export declare type webkitURL = URL
+export declare type webkitURL = url.URL
 
 @js("webkitURL")
-export declare var webkitURL: typeof URL
+export declare var webkitURL: typeof url.URL
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/UserActivation) */
 @js("UserActivation")
@@ -17172,7 +17199,7 @@ export declare class ViewTransition {
 }
 
 @js("ViewTransitionTypeSet")
-export declare class ViewTransitionTypeSet extends Set<string> {
+export declare class ViewTransitionTypeSet extends set.Set<string> {
     forEach(self, callbackfn: fn (value: string, key: string, parent: ViewTransitionTypeSet) -> unknown, thisArg?: unknown) -> unknown,
     static prototype: ViewTransitionTypeSet,
     constructor(mut self)
@@ -17264,9 +17291,9 @@ export declare class WebTransport {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/datagrams) */
     readonly datagrams: WebTransportDatagramDuplexStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/incomingBidirectionalStreams) */
-    readonly incomingBidirectionalStreams: ReadableStream,
+    readonly incomingBidirectionalStreams: streams.ReadableStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/incomingUnidirectionalStreams) */
-    readonly incomingUnidirectionalStreams: ReadableStream,
+    readonly incomingUnidirectionalStreams: streams.ReadableStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/ready) */
     readonly ready: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/close) */
@@ -17274,9 +17301,9 @@ export declare class WebTransport {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/createBidirectionalStream) */
     createBidirectionalStream(mut self, options?: WebTransportSendStreamOptions) -> Promise<WebTransportBidirectionalStream>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransport/createUnidirectionalStream) */
-    createUnidirectionalStream(mut self, options?: WebTransportSendStreamOptions) -> Promise<WritableStream>,
+    createUnidirectionalStream(mut self, options?: WebTransportSendStreamOptions) -> Promise<streams.WritableStream>,
     static prototype: WebTransport,
-    constructor(mut self, url: string | URL, options?: WebTransportOptions)
+    constructor(mut self, url: string | url.URL, options?: WebTransportOptions)
 }
 
 /**
@@ -17287,9 +17314,9 @@ export declare class WebTransport {
 @js("WebTransportBidirectionalStream")
 export declare class WebTransportBidirectionalStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportBidirectionalStream/readable) */
-    readonly readable: ReadableStream,
+    readonly readable: streams.ReadableStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportBidirectionalStream/writable) */
-    readonly writable: WritableStream,
+    readonly writable: streams.WritableStream,
     static prototype: WebTransportBidirectionalStream,
     constructor(mut self)
 }
@@ -17312,9 +17339,9 @@ export declare class WebTransportDatagramDuplexStream {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream/outgoingMaxAge) */
     outgoingMaxAge: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream/readable) */
-    readonly readable: ReadableStream,
+    readonly readable: streams.ReadableStream,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebTransportDatagramDuplexStream/writable) */
-    readonly writable: WritableStream,
+    readonly writable: streams.WritableStream,
     static prototype: WebTransportDatagramDuplexStream,
     constructor(mut self)
 }
@@ -17584,7 +17611,7 @@ export declare class Window extends EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/moveTo) */
     moveTo(mut self, x: number, y: number) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/open) */
-    open(mut self, url?: string | URL, target?: string, features?: string) -> WindowProxy | null,
+    open(mut self, url?: string | url.URL, target?: string, features?: string) -> WindowProxy | null,
     /**
      * Posts a message to the given window. Messages can be structured objects, e.g. nested objects and arrays, can contain JavaScript values (strings, numbers, Date objects, etc), and can contain certain data objects such as File Blob, FileList, and ArrayBuffer objects.
      *
@@ -17657,7 +17684,7 @@ export declare interface WindowEventHandlersEventMap {
     "pageswap": Event,
     "popstate": PopStateEvent,
     "rejectionhandled": PromiseRejectionEvent,
-    "storage": StorageEvent,
+    "storage": storage.StorageEvent,
     "unhandledrejection": PromiseRejectionEvent,
     "unload": Event
 }
@@ -17698,7 +17725,7 @@ export declare interface WindowEventHandlers {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/rejectionhandled_event) */
     onrejectionhandled: (fn (this: WindowEventHandlers, ev: PromiseRejectionEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/storage_event) */
-    onstorage: (fn (this: WindowEventHandlers, ev: StorageEvent) -> any) | null,
+    onstorage: (fn (this: WindowEventHandlers, ev: storage.StorageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/unhandledrejection_event) */
     onunhandledrejection: (fn (this: WindowEventHandlers, ev: PromiseRejectionEvent) -> any) | null,
     /**
@@ -17715,7 +17742,7 @@ export declare interface WindowEventHandlers {
 
 export declare interface WindowLocalStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/localStorage) */
-    readonly localStorage: Storage
+    readonly localStorage: storage.Storage
 }
 
 export declare interface WindowOrWorkerGlobalScope {
@@ -17724,19 +17751,19 @@ export declare interface WindowOrWorkerGlobalScope {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/caches)
      */
-    readonly caches: CacheStorage,
+    readonly caches: cache.CacheStorage,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated) */
     readonly crossOriginIsolated: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crypto) */
-    readonly crypto: Crypto,
+    readonly crypto: crypto.Crypto,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/indexedDB) */
-    readonly indexedDB: IDBFactory,
+    readonly indexedDB: indexeddb.IDBFactory,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext) */
     readonly isSecureContext: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/origin) */
     readonly origin: string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/performance) */
-    readonly performance: Performance,
+    readonly performance: performance.Performance,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/atob) */
     atob(data: string) -> string,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/btoa) */
@@ -17749,7 +17776,7 @@ export declare interface WindowOrWorkerGlobalScope {
     createImageBitmap(image: ImageBitmapSource, options?: ImageBitmapOptions) -> Promise<ImageBitmap>,
     createImageBitmap(image: ImageBitmapSource, sx: number, sy: number, sw: number, sh: number, options?: ImageBitmapOptions) -> Promise<ImageBitmap>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/fetch) */
-    fetch(input: RequestInfo | URL, init?: RequestInit) -> Promise<Response>,
+    fetch(input: fetch.RequestInfo | url.URL, init?: fetch.RequestInit) -> Promise<fetch.Response>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/queueMicrotask) */
     queueMicrotask(callback: VoidFunction) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/reportError) */
@@ -17764,7 +17791,7 @@ export declare interface WindowOrWorkerGlobalScope {
 
 export declare interface WindowSessionStorage {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/sessionStorage) */
-    readonly sessionStorage: Storage
+    readonly sessionStorage: storage.Storage
 }
 
 /**
@@ -17783,7 +17810,7 @@ export declare class Worklet {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Worklet/addModule)
      */
-    addModule(mut self, moduleURL: string | URL, options?: WorkletOptions) -> Promise<undefined>,
+    addModule(mut self, moduleURL: string | url.URL, options?: WorkletOptions) -> Promise<undefined>,
     static prototype: Worklet,
     constructor(mut self)
 }
@@ -17907,8 +17934,8 @@ export declare class XMLHttpRequest extends XMLHttpRequestEventTarget {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/XMLHttpRequest/open)
      */
-    open(mut self, method: string, url: string | URL) -> unknown,
-    open(mut self, method: string, url: string | URL, async: boolean, username?: string | null, password?: string | null) -> unknown,
+    open(mut self, method: string, url: string | url.URL) -> unknown,
+    open(mut self, method: string, url: string | url.URL, async: boolean, username?: string | null, password?: string | null) -> unknown,
     /**
      * Acts as if the `Content-Type` header value for a response is mime. (It does not change the header.)
      *
@@ -18378,7 +18405,7 @@ export declare fn vmin(value: number) -> CSSUnitValue
 export declare fn vw(value: number) -> CSSUnitValue
 
 export declare interface BlobCallback {
-    (blob: Blob | null) -> unknown
+    (blob: file.Blob | null) -> unknown
 }
 
 export declare interface CustomElementConstructor {
@@ -18390,7 +18417,7 @@ export declare interface ErrorCallback {
 }
 
 export declare interface FileCallback {
-    (file: File) -> unknown
+    (file: file.File) -> unknown
 }
 
 export declare interface FileSystemEntriesCallback {
@@ -18438,7 +18465,7 @@ export declare interface OnBeforeUnloadEventHandlerNonNull {
 }
 
 export declare interface OnErrorEventHandlerNonNull {
-    (event: Event | string, source?: string, lineno?: number, colno?: number, error?: Error) -> any
+    (event: Event | string, source?: string, lineno?: number, colno?: number, error?: error.Error) -> any
 }
 
 export declare interface PositionCallback {
@@ -18720,7 +18747,7 @@ export declare interface MathMLElementTagNameMap {
 }
 
 /** @deprecated Directly use HTMLElementTagNameMap or SVGElementTagNameMap as appropriate, instead. */
-export declare type ElementTagNameMap = HTMLElementTagNameMap & Pick<SVGElementTagNameMap, Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>>
+export declare type ElementTagNameMap = HTMLElementTagNameMap & object.Pick<SVGElementTagNameMap, object.Exclude<keyof SVGElementTagNameMap, keyof HTMLElementTagNameMap>>
 
 @js("Audio")
 export declare var Audio: {
@@ -19061,7 +19088,7 @@ export declare fn moveTo(x: number, y: number) -> unknown
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/open) */
 @js("open")
-export declare fn open(url?: string | URL, target?: string, features?: string) -> WindowProxy | null
+export declare fn open(url?: string | url.URL, target?: string, features?: string) -> WindowProxy | null
 
 /**
  * Posts a message to the given window. Messages can be structured objects, e.g. nested objects and arrays, can contain JavaScript values (strings, numbers, Date objects, etc), and can contain certain data objects such as File Blob, FileList, and ArrayBuffer objects.
@@ -19862,7 +19889,7 @@ export declare var onrejectionhandled: (fn (this: Window, ev: PromiseRejectionEv
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/storage_event) */
 @js("onstorage")
-export declare var onstorage: (fn (this: Window, ev: StorageEvent) -> any) | null
+export declare var onstorage: (fn (this: Window, ev: storage.StorageEvent) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/unhandledrejection_event) */
 @js("onunhandledrejection")
@@ -19878,7 +19905,7 @@ export declare var onunload: (fn (this: Window, ev: Event) -> any) | null
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/localStorage) */
 @js("localStorage")
-export declare var localStorage: Storage
+export declare var localStorage: storage.Storage
 
 /**
  * Available only in secure contexts.
@@ -19886,7 +19913,7 @@ export declare var localStorage: Storage
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/caches)
  */
 @js("caches")
-export declare var caches: CacheStorage
+export declare var caches: cache.CacheStorage
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/crossOriginIsolated) */
 @js("crossOriginIsolated")
@@ -19894,7 +19921,7 @@ export declare var crossOriginIsolated: boolean
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/indexedDB) */
 @js("indexedDB")
-export declare var indexedDB: IDBFactory
+export declare var indexedDB: indexeddb.IDBFactory
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/isSecureContext) */
 @js("isSecureContext")
@@ -19949,7 +19976,7 @@ export declare fn structuredClone<T = any>(value: T, options?: StructuredSeriali
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/Window/sessionStorage) */
 @js("sessionStorage")
-export declare var sessionStorage: Storage
+export declare var sessionStorage: storage.Storage
 
 @js("addEventListener")
 export declare fn addEventListener<K: keyof WindowEventMap>(type: K, listener: fn (this: Window, ev: WindowEventMap[K]) -> any, options?: boolean | AddEventListenerOptions) -> unknown
@@ -19977,9 +20004,9 @@ export declare type CSSPerspectiveValue = CSSNumericValue | CSSKeywordish
 
 export declare type CSSUnparsedSegment = string | CSSVariableReferenceValue
 
-export declare type CanvasImageSource = HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas | VideoFrame
+export declare type CanvasImageSource = HTMLOrSVGImageElement | HTMLVideoElement | HTMLCanvasElement | ImageBitmap | OffscreenCanvas | web_codecs.VideoFrame
 
-export declare type ClipboardItemData = Promise<string | Blob>
+export declare type ClipboardItemData = Promise<string | file.Blob>
 
 export declare type ClipboardItems = mut Array<ClipboardItem>
 
@@ -19993,25 +20020,25 @@ export declare type ConstrainULong = number | ConstrainULongRange
 
 export declare type EpochTimeStamp = number
 
-export declare type FileSystemWriteChunkType = BufferSource | Blob | string | WriteParams
+export declare type FileSystemWriteChunkType = BufferSource | file.Blob | string | WriteParams
 
-export declare type FormDataEntryValue = File | string
+export declare type FormDataEntryValue = file.File | string
 
 export declare type HTMLOrSVGImageElement = HTMLImageElement | SVGImageElement
 
 export declare type HTMLOrSVGScriptElement = HTMLScriptElement | SVGScriptElement
 
-export declare type ImageBitmapSource = CanvasImageSource | Blob | ImageData
+export declare type ImageBitmapSource = CanvasImageSource | file.Blob | ImageData
 
 export declare type LineAndPositionSetting = number | AutoKeyword
 
-export declare type MediaProvider = MediaStream | MediaSource | Blob
+export declare type MediaProvider = MediaStream | MediaSource | file.Blob
 
-export declare type MessageEventSource = WindowProxy | MessagePort | ServiceWorker
+export declare type MessageEventSource = WindowProxy | MessagePort | service_worker.ServiceWorker
 
 export declare type MutationRecordType = "attributes" | "characterData" | "childList"
 
-export declare type OffscreenRenderingContext = OffscreenCanvasRenderingContext2D | ImageBitmapRenderingContext | WebGLRenderingContext | WebGL2RenderingContext
+export declare type OffscreenRenderingContext = OffscreenCanvasRenderingContext2D | ImageBitmapRenderingContext | webgl.WebGLRenderingContext | webgl.WebGL2RenderingContext
 
 export declare type OnBeforeUnloadEventHandler = OnBeforeUnloadEventHandlerNonNull | null
 
@@ -20021,19 +20048,19 @@ export declare type OptionalPostfixToken<T: string> = ` ${T}` | ""
 
 export declare type OptionalPrefixToken<T: string> = `${T} ` | ""
 
-export declare type RenderingContext = CanvasRenderingContext2D | ImageBitmapRenderingContext | WebGLRenderingContext | WebGL2RenderingContext
+export declare type RenderingContext = CanvasRenderingContext2D | ImageBitmapRenderingContext | webgl.WebGLRenderingContext | webgl.WebGL2RenderingContext
 
 export declare type ReportList = mut Array<Report>
 
-export declare type TimerHandler = string | Function
+export declare type TimerHandler = string | function.Function
 
-export declare type Transferable = OffscreenCanvas | ImageBitmap | MessagePort | MediaSourceHandle | ReadableStream | WritableStream | TransformStream | AudioData | VideoFrame | RTCDataChannel | ArrayBuffer
+export declare type Transferable = OffscreenCanvas | ImageBitmap | MessagePort | MediaSourceHandle | streams.ReadableStream | streams.WritableStream | streams.TransformStream | web_codecs.AudioData | web_codecs.VideoFrame | web_rtc.RTCDataChannel | typed_arrays.ArrayBuffer
 
 export declare type VibratePattern = number | mut Array<number>
 
 export declare type WindowProxy = Window
 
-export declare type XMLHttpRequestBodyInit = Blob | BufferSource | FormData | URLSearchParams | string
+export declare type XMLHttpRequestBodyInit = file.Blob | BufferSource | FormData | url.URLSearchParams | string
 
 export declare type AlignSetting = "center" | "end" | "left" | "right" | "start"
 

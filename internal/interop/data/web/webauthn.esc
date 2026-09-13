@@ -2,6 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:object"
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+
 export declare interface AuthenticationExtensionsClientInputs {
     appid?: string,
     credProps?: boolean,
@@ -21,7 +26,7 @@ export declare interface AuthenticationExtensionsClientOutputs {
 
 export declare interface AuthenticationExtensionsPRFInputs {
     eval?: AuthenticationExtensionsPRFValues,
-    evalByCredential?: Record<string, AuthenticationExtensionsPRFValues>
+    evalByCredential?: object.Record<string, AuthenticationExtensionsPRFValues>
 }
 
 export declare interface AuthenticationExtensionsPRFOutputs {
@@ -133,11 +138,11 @@ export declare interface PublicKeyCredentialUserEntityJSON {
 @js("AuthenticatorAssertionResponse")
 export declare class AuthenticatorAssertionResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/authenticatorData) */
-    readonly authenticatorData: ArrayBuffer,
+    readonly authenticatorData: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/signature) */
-    readonly signature: ArrayBuffer,
+    readonly signature: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAssertionResponse/userHandle) */
-    readonly userHandle: ArrayBuffer | null,
+    readonly userHandle: typed_arrays.ArrayBuffer | null,
     static prototype: AuthenticatorAssertionResponse,
     constructor(mut self)
 }
@@ -150,11 +155,11 @@ export declare class AuthenticatorAssertionResponse extends AuthenticatorRespons
 @js("AuthenticatorAttestationResponse")
 export declare class AuthenticatorAttestationResponse extends AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/attestationObject) */
-    readonly attestationObject: ArrayBuffer,
+    readonly attestationObject: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getAuthenticatorData) */
-    getAuthenticatorData(self) -> ArrayBuffer,
+    getAuthenticatorData(self) -> typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKey) */
-    getPublicKey(self) -> ArrayBuffer | null,
+    getPublicKey(self) -> typed_arrays.ArrayBuffer | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getPublicKeyAlgorithm) */
     getPublicKeyAlgorithm(self) -> COSEAlgorithmIdentifier,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorAttestationResponse/getTransports) */
@@ -171,7 +176,7 @@ export declare class AuthenticatorAttestationResponse extends AuthenticatorRespo
 @js("AuthenticatorResponse")
 export declare class AuthenticatorResponse {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AuthenticatorResponse/clientDataJSON) */
-    readonly clientDataJSON: ArrayBuffer,
+    readonly clientDataJSON: typed_arrays.ArrayBuffer,
     static prototype: AuthenticatorResponse,
     constructor(mut self)
 }
@@ -182,11 +187,11 @@ export declare class AuthenticatorResponse {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential)
  */
 @js("PublicKeyCredential")
-export declare class PublicKeyCredential extends Credential {
+export declare class PublicKeyCredential extends dom.Credential {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/authenticatorAttachment) */
     readonly authenticatorAttachment: string | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/rawId) */
-    readonly rawId: ArrayBuffer,
+    readonly rawId: typed_arrays.ArrayBuffer,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/response) */
     readonly response: AuthenticatorResponse,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PublicKeyCredential/getClientExtensionResults) */
@@ -210,7 +215,7 @@ export declare type Base64URLString = string
 
 export declare type COSEAlgorithmIdentifier = number
 
-export declare type PublicKeyCredentialClientCapabilities = Record<string, boolean>
+export declare type PublicKeyCredentialClientCapabilities = object.Record<string, boolean>
 
 export declare type PublicKeyCredentialJSON = any
 

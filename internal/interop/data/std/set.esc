@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:weak_ref"
+
 @js("Set")
 export declare class Set<T> {
     /**
@@ -76,7 +78,7 @@ export declare class Set<T> {
 }
 
 @js("WeakSet")
-export declare class WeakSet<T: WeakKey> {
+export declare class WeakSet<T: weak_ref.WeakKey> {
     /**
      * Appends a new value to the end of the WeakSet.
      */
@@ -92,7 +94,7 @@ export declare class WeakSet<T: WeakKey> {
     has(self, value: T) -> boolean,
     readonly [Symbol.toStringTag]: string,
     constructor(mut self, values?: Array<T> | null),
-    static readonly prototype: WeakSet<WeakKey>,
+    static readonly prototype: WeakSet<weak_ref.WeakKey>,
     constructor(mut self, iterable: Iterable<T>)
 }
 

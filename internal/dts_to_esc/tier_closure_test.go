@@ -112,6 +112,21 @@ var unroutedPackages = set.FromSlice([]string{
 	"std:temporal",
 })
 
+// importBindings returns the names a module's own import header binds. After
+// qualification a reference reads `set.Set`, so `set` appears among the
+// collected names as the head. It is a binding rather than a type name, and
+// resolving it against what packages declare would find the unrelated `set`
+// that `std:reflect` exports.
+func importBindings(module *ast.Module) set.Set[string] {
+	bindings := set.NewSet[string]()
+	for _, file := range module.Files {
+		for _, stmt := range file.Imports {
+			bindings.Add(ast.DeriveImportName(stmt.PackageName))
+		}
+	}
+	return bindings
+}
+
 // No package refers to a name declared in a package above its own tier,
 // except for the references knownUpwardRefs records.
 //
@@ -133,9 +148,10 @@ func TestNoReferenceGoesUpATier(t *testing.T) {
 		require.True(t, ok, "%s has no tier", uri)
 
 		allowed := set.FromSlice(knownUpwardRefs[uri])
+		bindings := importBindings(module)
 		for _, name := range TypeRefNames(module).ToSlice() {
 			declaredIn, known := owner[name]
-			if !known || declaredIn == uri {
+			if !known || declaredIn == uri || bindings.Contains(name) {
 				continue
 			}
 			refTier, ok := TierOf(declaredIn)
@@ -188,9 +204,10 @@ func TestTheCoreTierIsSelfContained(t *testing.T) {
 		require.Empty(t, knownUpwardRefs[uri], "the core tier allows no exception")
 
 		var outside []string
+		bindings := importBindings(module)
 		for _, name := range TypeRefNames(module).ToSlice() {
 			declaredIn, known := owner[name]
-			if !known || declaredIn == uri {
+			if !known || declaredIn == uri || bindings.Contains(name) {
 				continue
 			}
 			if tier, ok := TierOf(declaredIn); ok && tier <= TierCore {
@@ -202,4 +219,99 @@ func TestTheCoreTierIsSelfContained(t *testing.T) {
 		require.Empty(t, outside, "%s refers outside the core tier:\n  %s",
 			uri, strings.Join(outside, "\n  "))
 	}
+}
+
+// Every import line in the committed tree names a package the partition holds,
+// and no line goes up a tier except the ones AcceptedUpwardEdges records.
+//
+// This reads the written headers rather than the references behind them, so it
+// catches a hand-edit to a generated file that the reference graph would not
+// see. #1403 item 6.
+func TestEveryCommittedImportRespectsTheTiers(t *testing.T) {
+	modules := parseCommittedTree(t)
+
+	var upward []string
+	for uri, module := range modules {
+		tier, ok := TierOf(uri)
+		require.True(t, ok, "%s has no tier", uri)
+		accepted := set.FromSlice(AcceptedUpwardEdges[uri])
+
+		for _, file := range module.Files {
+			for _, stmt := range file.Imports {
+				target := stmt.PackageName
+				_, held := PackageForURI(target)
+				require.True(t, held, "%s imports %s, which the partition does not hold", uri, target)
+
+				targetTier, ok := TierOf(target)
+				require.True(t, ok, "%s has no tier", target)
+				if targetTier <= tier {
+					continue
+				}
+				// An accepted edge is one whose every forcing reference is
+				// recorded. Checking that the importer has any accepted entry
+				// would excuse a second, unrelated upward import from it.
+				if acceptedEdgeTarget(t, modules, uri, target, accepted) {
+					continue
+				}
+				upward = append(upward, fmt.Sprintf("%s (%s) imports %s (%s)",
+					uri, tier, target, targetTier))
+			}
+		}
+	}
+	sort.Strings(upward)
+	require.Empty(t, upward, "import lines going up a tier:\n  %s", strings.Join(upward, "\n  "))
+}
+
+// Every package a file references is one it imports. A reference with no import
+// resolves nothing, which is the state the whole tree was in before #1403.
+func TestEveryCrossPackageReferenceIsImported(t *testing.T) {
+	modules := parseCommittedTree(t)
+	owner := declaringPackage(t, modules)
+
+	var missing []string
+	for _, uri := range PackageList() {
+		module, held := modules[uri]
+		if !held {
+			continue
+		}
+		imported := set.NewSet[string]()
+		for _, file := range module.Files {
+			for _, stmt := range file.Imports {
+				imported.Add(stmt.PackageName)
+			}
+		}
+		bindings := importBindings(module)
+		for _, name := range TypeRefNames(module).ToSlice() {
+			declaredIn, known := owner[name]
+			// A prelude name is ambient. The solver copies the prelude's exports
+			// into the scope every package's inference descends from, so reaching
+			// one takes no import and no qualifier.
+			if !known || declaredIn == uri || declaredIn == preludeURI ||
+				imported.Contains(declaredIn) || bindings.Contains(name) {
+				continue
+			}
+			missing = append(missing, fmt.Sprintf("%s names %s from %s without importing it",
+				uri, name, declaredIn))
+		}
+	}
+	sort.Strings(missing)
+	require.Empty(t, missing, "references with no import:\n  %s", strings.Join(missing, "\n  "))
+}
+
+// acceptedEdgeTarget reports whether every reference forcing the edge from uri
+// to target is one AcceptedUpwardEdges records for uri.
+func acceptedEdgeTarget(t *testing.T, modules map[string]*ast.Module, uri, target string, accepted set.Set[string]) bool {
+	t.Helper()
+	owner := declaringPackage(t, modules)
+	forcing := 0
+	for _, name := range TypeRefNames(modules[uri]).ToSlice() {
+		if owner[name] != target {
+			continue
+		}
+		forcing++
+		if !accepted.Contains(name) {
+			return false
+		}
+	}
+	return forcing > 0
 }

@@ -2,6 +2,11 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:typed_arrays"
+import "web:core"
+import "web:dom"
+import "web:streams"
+
 export declare interface AudioDataCopyToOptions {
     format?: AudioSampleFormat,
     frameCount?: number,
@@ -16,7 +21,7 @@ export declare interface AudioDataInit {
     numberOfFrames: number,
     sampleRate: number,
     timestamp: number,
-    transfer?: mut Array<ArrayBuffer>
+    transfer?: mut Array<typed_arrays.ArrayBuffer>
 }
 
 export declare interface AudioDecoderConfig {
@@ -63,7 +68,7 @@ export declare interface EncodedAudioChunkInit {
     data: AllowSharedBufferSource,
     duration?: number,
     timestamp: number,
-    transfer?: mut Array<ArrayBuffer>,
+    transfer?: mut Array<typed_arrays.ArrayBuffer>,
     type: EncodedAudioChunkType
 }
 
@@ -93,12 +98,12 @@ export declare interface ImageDecodeResult {
 }
 
 export declare interface ImageDecoderInit {
-    colorSpaceConversion?: ColorSpaceConversion,
+    colorSpaceConversion?: dom.ColorSpaceConversion,
     data: ImageBufferSource,
     desiredHeight?: number,
     desiredWidth?: number,
     preferAnimation?: boolean,
-    transfer?: mut Array<ArrayBuffer>,
+    transfer?: mut Array<typed_arrays.ArrayBuffer>,
     type: string
 }
 
@@ -191,14 +196,14 @@ export declare interface VideoFrameBufferInit {
     format: VideoPixelFormat,
     layout?: mut Array<PlaneLayout>,
     timestamp: number,
-    visibleRect?: DOMRectInit
+    visibleRect?: dom.DOMRectInit
 }
 
 export declare interface VideoFrameCopyToOptions {
-    colorSpace?: PredefinedColorSpace,
+    colorSpace?: dom.PredefinedColorSpace,
     format?: VideoPixelFormat,
     layout?: mut Array<PlaneLayout>,
-    rect?: DOMRectInit
+    rect?: dom.DOMRectInit
 }
 
 export declare interface VideoFrameInit {
@@ -207,7 +212,7 @@ export declare interface VideoFrameInit {
     displayWidth?: number,
     duration?: number,
     timestamp?: number,
-    visibleRect?: DOMRectInit
+    visibleRect?: dom.DOMRectInit
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/AudioData) */
@@ -500,7 +505,7 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedHeight) */
     readonly codedHeight: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedRect) */
-    readonly codedRect: DOMRectReadOnly | null,
+    readonly codedRect: dom.DOMRectReadOnly | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/codedWidth) */
     readonly codedWidth: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/colorSpace) */
@@ -516,7 +521,7 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/timestamp) */
     readonly timestamp: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/visibleRect) */
-    readonly visibleRect: DOMRectReadOnly | null,
+    readonly visibleRect: dom.DOMRectReadOnly | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/allocationSize) */
     allocationSize(mut self, options?: VideoFrameCopyToOptions) -> number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/clone) */
@@ -526,7 +531,7 @@ export declare class VideoFrame {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/VideoFrame/copyTo) */
     copyTo(self, destination: AllowSharedBufferSource, options?: VideoFrameCopyToOptions) -> Promise<mut Array<PlaneLayout>>,
     static prototype: VideoFrame,
-    constructor(mut self, image: CanvasImageSource, init?: VideoFrameInit),
+    constructor(mut self, image: dom.CanvasImageSource, init?: VideoFrameInit),
     constructor(mut self, data: AllowSharedBufferSource, init: VideoFrameBufferInit)
 }
 
@@ -550,7 +555,7 @@ export declare interface WebCodecsErrorCallback {
     (error: DOMException) -> unknown
 }
 
-export declare type ImageBufferSource = AllowSharedBufferSource | ReadableStream
+export declare type ImageBufferSource = AllowSharedBufferSource | streams.ReadableStream
 
 export declare type AlphaOption = "discard" | "keep"
 

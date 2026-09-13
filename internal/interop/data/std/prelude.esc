@@ -406,6 +406,18 @@ export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = 
     [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
 }
 
+export declare interface IteratorYieldResult<TYield> {
+    done?: false,
+    value: TYield
+}
+
+export declare interface IteratorReturnResult<TReturn> {
+    done: true,
+    value: TReturn
+}
+
+export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | IteratorReturnResult<TReturn>
+
 @js("Iterator")
 export declare class Iterator<T, TReturn = any, TNext = any> {
     next(mut self, ...value: [] | [TNext]) -> IteratorResult<T, TReturn>,
@@ -514,7 +526,7 @@ export declare interface IteratorObject<T, TReturn = unknown, TNext = unknown> e
  * Defines the `TReturn` type used for built-in iterators produced by `Array`, `Map`, `Set`, and others.
  * This is `undefined` when `strictBuiltInIteratorReturn` is `true`; otherwise, this is `any`.
  */
-export declare type BuiltinIteratorReturn = intrinsic
+export declare type BuiltinIteratorReturn = undefined
 
 export declare interface ArrayIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> ArrayIterator<T>

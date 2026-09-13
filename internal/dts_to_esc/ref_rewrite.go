@@ -94,6 +94,26 @@ type refRewriter struct {
 	// consumedCtor maps a fused constructor interface's name to the instance name it fused
 	// into. Empty when the pass is not respelling those references.
 	consumedCtor map[string]string
+	// qualifiers maps a name another package declares to the binding that
+	// package's import makes, so `Event` becomes `core.Event`. Empty when the
+	// pass is not qualifying cross-package references.
+	qualifiers map[string]string
+	// substitutions replaces a reference by name with a whole type annotation,
+	// which is how a vacuous type parameter's one occurrence becomes its
+	// constraint. Empty when the pass is not substituting.
+	substitutions map[string]ast.TypeAnn
+	// elideVacuous drops a signature's type parameter that occurs once and only
+	// among its parameters, rewriting that occurrence in place.
+	elideVacuous bool
+	// declaredNames is every name the tree declares. A qualified reference whose
+	// head is among them resolves already and is left alone.
+	declaredNames set.Set[string]
+	// flattenedQualifiers maps the last segment of a qualified reference whose
+	// head names nothing to the binding of the package declaring that segment.
+	// Namespace flattening produces those: `Intl.LocalesArgument` survives with
+	// `LocalesArgument` declared at the top level of `std:intl` and `Intl`
+	// declared nowhere, so the head is replaced rather than prefixed.
+	flattenedQualifiers map[string]string
 }
 
 // rewriteDecl dispatches over every Decl variant. The default panics
@@ -153,6 +173,12 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 }
 
 func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
+	if r.elideVacuous {
+		elideVacuousIn(sigParts{
+			typeParams: &sig.TypeParams, params: sig.Params,
+			ret: sig.Return, throws: sig.Throws,
+		})
+	}
 	r.rewriteTypeParams(sig.TypeParams)
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
@@ -209,6 +235,44 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 	}
 }
 
+// requalifyFlattenedRef replaces the head of a qualified reference whose head
+// names nothing with the binding of the package that declares its last
+// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
+func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
+	member, ok := ref.Name.(*ast.Member)
+	if !ok {
+		return false
+	}
+	head, ok := member.Left.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	if _, headResolves := r.qualifiers[head.Name]; headResolves {
+		return false
+	}
+	if r.declaredNames.Contains(head.Name) {
+		return false
+	}
+	qualifier, ok := r.flattenedQualifiers[member.Right.Name]
+	if !ok {
+		return false
+	}
+	head.Name = qualifier
+	return true
+}
+
+func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool {
+	qualifier, ok := r.qualifiers[head.Name]
+	if !ok {
+		return false
+	}
+	ref.Name = &ast.Member{
+		Left:  ast.NewIdentifier(qualifier, head.Span()),
+		Right: ast.NewIdentifier(head.Name, head.Span()),
+	}
+	return true
+}
+
 // renameTypeRefInPlace handles the rewrite inside an `extends` or
 // `implements` clause, whose AST slot holds a `*TypeRefTypeAnn` and
 // nothing else. It renames `ReadonlyFoo` → `Foo` and cannot wrap a
@@ -230,6 +294,9 @@ func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
 	}
+	if r.requalifyFlattenedRef(ref) {
+		return
+	}
 	id, ok := ref.Name.(*ast.Ident)
 	if !ok {
 		return
@@ -238,6 +305,7 @@ func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 		id.Name = mutableName
 		return
 	}
+	r.qualifyRef(ref, id)
 }
 
 // rewrite walks a TypeAnn, rewriting twin references in every
@@ -247,13 +315,31 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		return nil
 	}
 	switch tt := t.(type) {
+	case *ast.TypeOfTypeAnn:
+		// `typeof X` reaches a value another package declares, so its name is
+		// qualified the way a type reference's is.
+		if head, ok := tt.Value.(*ast.Ident); ok {
+			if qualifier, ok := r.qualifiers[head.Name]; ok {
+				tt.Value = &ast.Member{
+					Left:  ast.NewIdentifier(qualifier, head.Span()),
+					Right: ast.NewIdentifier(head.Name, head.Span()),
+				}
+			}
+		}
+		return tt
 	case *ast.TypeRefTypeAnn:
 		for i, arg := range tt.TypeArgs {
 			tt.TypeArgs[i] = r.rewrite(arg)
 		}
+		if r.requalifyFlattenedRef(tt) {
+			return tt
+		}
 		id, ok := tt.Name.(*ast.Ident)
 		if !ok {
 			return tt
+		}
+		if sub, ok := r.substitutions[id.Name]; ok {
+			return sub
 		}
 		// The constructor interface is gone, fused into the class. `typeof Array` names what
 		// `ArrayConstructor` named: the class value, carrying the constructor and the statics.
@@ -265,6 +351,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		// visibly dangling name rather than a silently wrong type.
 		if instance, ok := r.consumedCtor[id.Name]; ok && len(tt.TypeArgs) == 0 {
 			return ast.NewTypeOfTypeAnn(ast.NewIdentifier(instance, tt.Span()), tt.Span())
+		}
+		if r.qualifyRef(tt, id) {
+			return tt
 		}
 		if mutableName, ok := r.readonlyToMutable[id.Name]; ok {
 			id.Name = mutableName
@@ -290,6 +379,12 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		return tt
 	case *ast.FuncTypeAnn:
+		// No elision here. This arm is a function type nested inside another
+		// annotation, most often a callback parameter, and its own parameters are
+		// contravariant there. Widening one narrows what a caller may pass:
+		// `fn <T>(x: T) -> boolean` accepts a `fn (x: string) -> boolean` while
+		// `fn (x: unknown) -> boolean` does not. A signature a declaration owns is
+		// elided in rewriteFuncSig and rewriteFnTypeAnn instead.
 		r.rewriteTypeParams(tt.TypeParams)
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {
@@ -360,7 +455,6 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.AnyTypeAnn,
 		*ast.UnknownTypeAnn,
 		*ast.NeverTypeAnn,
-		*ast.TypeOfTypeAnn,
 		*ast.InferTypeAnn,
 		*ast.WildcardTypeAnn,
 		*ast.IntrinsicTypeAnn,
@@ -415,6 +509,12 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 func (r *refRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
 	if fn == nil {
 		return
+	}
+	if r.elideVacuous {
+		elideVacuousIn(sigParts{
+			typeParams: &fn.TypeParams, params: fn.Params,
+			ret: fn.Return, throws: fn.Throws,
+		})
 	}
 	r.rewriteTypeParams(fn.TypeParams)
 	for _, p := range fn.Params {

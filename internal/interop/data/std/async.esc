@@ -2,6 +2,8 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
+import "std:error"
+
 export declare interface AsyncGeneratorFunction {
     new (...args: mut Array<any>) -> AsyncGenerator,
     (...args: mut Array<any>) -> AsyncGenerator,
@@ -44,13 +46,13 @@ export declare interface AsyncIterableIterator<T, TReturn = any, TNext = any> ex
 }
 
 @js("AggregateError")
-export declare class AggregateError extends Error {
+export declare class AggregateError extends error.Error {
     errors: mut Array<any>,
     constructor(mut self, errors: Iterable<any>, message?: string),
     (errors: Iterable<any>, message?: string) -> AggregateError,
     static readonly prototype: AggregateError,
-    constructor(mut self, errors: Iterable<any>, message?: string, options?: ErrorOptions),
-    (errors: Iterable<any>, message?: string, options?: ErrorOptions) -> AggregateError
+    constructor(mut self, errors: Iterable<any>, message?: string, options?: error.ErrorOptions),
+    (errors: Iterable<any>, message?: string, options?: error.ErrorOptions) -> AggregateError
 }
 
 export declare type PromiseConstructorLike = fn<T> (executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: any) -> unknown) -> unknown) -> PromiseLike<T>
