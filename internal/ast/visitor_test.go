@@ -126,60 +126,41 @@ func (v *mockVisitor) ExitLifetimeAnn(l LifetimeAnnNode) {
 
 func TestDefaultVisitor_AllEnterMethodsReturnTrue(t *testing.T) {
 	visitor := &DefaultVisitor{}
+	emptyBlock := Block{
+		Stmts: nil,
+		Span:  Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0},
+	}
 
-	// Test all Enter methods return true
-	if !visitor.EnterLit(nil) {
-		t.Error("EnterLit should return true")
-	}
-	if !visitor.EnterPat(nil) {
-		t.Error("EnterPat should return true")
-	}
-	if !visitor.EnterExpr(nil) {
-		t.Error("EnterExpr should return true")
-	}
-	if !visitor.EnterObjExprElem(nil) {
-		t.Error("EnterObjExprElem should return true")
-	}
-	if !visitor.EnterStmt(nil) {
-		t.Error("EnterStmt should return true")
-	}
-	if !visitor.EnterDecl(nil) {
-		t.Error("EnterDecl should return true")
-	}
-	if !visitor.EnterTypeAnn(nil) {
-		t.Error("EnterTypeAnn should return true")
-	}
-	if !visitor.EnterBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}}) {
-		t.Error("EnterBlock should return true")
-	}
-	if !visitor.EnterObjTypeAnnElem(nil) {
-		t.Error("EnterObjTypeAnnElem should return true")
-	}
-	if !visitor.EnterLifetimeAnn(nil) {
-		t.Error("EnterLifetimeAnn should return true")
-	}
+	require.True(t, visitor.EnterLit(nil))
+	require.True(t, visitor.EnterPat(nil))
+	require.True(t, visitor.EnterExpr(nil))
+	require.True(t, visitor.EnterObjExprElem(nil))
+	require.True(t, visitor.EnterStmt(nil))
+	require.True(t, visitor.EnterDecl(nil))
+	require.True(t, visitor.EnterTypeAnn(nil))
+	require.True(t, visitor.EnterBlock(emptyBlock))
+	require.True(t, visitor.EnterObjTypeAnnElem(nil))
+	require.True(t, visitor.EnterLifetimeAnn(nil))
 }
 
 func TestDefaultVisitor_ExitMethodsDoNotPanic(t *testing.T) {
 	visitor := &DefaultVisitor{}
 
-	// Test all Exit methods can be called without panicking
-	defer func() {
-		if r := recover(); r != nil {
-			t.Errorf("Exit methods should not panic: %v", r)
-		}
-	}()
-
-	visitor.ExitLit(nil)
-	visitor.ExitPat(nil)
-	visitor.ExitExpr(nil)
-	visitor.ExitObjExprElem(nil)
-	visitor.ExitStmt(nil)
-	visitor.ExitDecl(nil)
-	visitor.ExitTypeAnn(nil)
-	visitor.ExitBlock(Block{Stmts: nil, Span: Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0}})
-	visitor.ExitObjTypeAnnElem(nil)
-	visitor.ExitLifetimeAnn(nil)
+	require.NotPanics(t, func() {
+		visitor.ExitLit(nil)
+		visitor.ExitPat(nil)
+		visitor.ExitExpr(nil)
+		visitor.ExitObjExprElem(nil)
+		visitor.ExitStmt(nil)
+		visitor.ExitDecl(nil)
+		visitor.ExitTypeAnn(nil)
+		visitor.ExitBlock(Block{
+			Stmts: nil,
+			Span:  Span{Start: Location{Offset: 0}, End: Location{Offset: 0}, SourceID: 0},
+		})
+		visitor.ExitObjTypeAnnElem(nil)
+		visitor.ExitLifetimeAnn(nil)
+	})
 }
 
 func TestErrorExpr_Accept(t *testing.T) {
