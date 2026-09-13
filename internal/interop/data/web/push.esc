@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -10,7 +9,7 @@ import "web:dom"
 export declare interface PushSubscriptionJSON {
     endpoint?: string,
     expirationTime?: dom.EpochTimeStamp | null,
-    keys?: object.Record<string, string>
+    keys?: Record<string, string>
 }
 
 export declare interface PushSubscriptionOptionsInit {

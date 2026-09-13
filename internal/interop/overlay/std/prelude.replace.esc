@@ -131,3 +131,14 @@ export declare class Array<T> {
 // The alias is replaced rather than dropped. Twenty interfaces across six
 // packages name it, so dropping it would trade one dangling name for twenty.
 export declare type BuiltinIteratorReturn = undefined
+
+// TypeScript writes `NonNullable<T>` as `T & {}`, leaning on its own
+// reading of `{}` as any value except `null` and `undefined`. Escalier's
+// `{}` is the exact empty object, so the mechanical lowering computes
+// the wrong set: `NonNullable<string>` would come out empty rather than
+// `string`.
+//
+// The complement says it directly. `~(undefined | null)` admits every
+// value the union rejects, so the intersection subtracts exactly the two
+// members TypeScript means to exclude, primitives included.
+export declare type NonNullable<T> = T & ~(undefined | null)

@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:object"
 import "web:file"
 
 /**
@@ -105,7 +104,7 @@ export declare class URLSearchParams {
     /** Returns a list of values in the search params. */
     values(self) -> URLSearchParamsIterator<string>,
     static prototype: URLSearchParams,
-    constructor(mut self, init?: mut Array<mut Array<string>> | object.Record<string, string> | string | URLSearchParams)
+    constructor(mut self, init?: mut Array<mut Array<string>> | Record<string, string> | string | URLSearchParams)
 }
 
 export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {

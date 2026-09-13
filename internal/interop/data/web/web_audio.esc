@@ -3,7 +3,6 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:map"
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -56,7 +55,7 @@ export declare interface AudioWorkletNodeOptions extends AudioNodeOptions {
     numberOfInputs?: number,
     numberOfOutputs?: number,
     outputChannelCount?: mut Array<number>,
-    parameterData?: object.Record<string, number>,
+    parameterData?: Record<string, number>,
     processorOptions?: any
 }
 

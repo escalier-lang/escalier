@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:object"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -26,7 +25,7 @@ export declare interface AuthenticationExtensionsClientOutputs {
 
 export declare interface AuthenticationExtensionsPRFInputs {
     eval?: AuthenticationExtensionsPRFValues,
-    evalByCredential?: object.Record<string, AuthenticationExtensionsPRFValues>
+    evalByCredential?: Record<string, AuthenticationExtensionsPRFValues>
 }
 
 export declare interface AuthenticationExtensionsPRFOutputs {
@@ -215,7 +214,7 @@ export declare type Base64URLString = string
 
 export declare type COSEAlgorithmIdentifier = number
 
-export declare type PublicKeyCredentialClientCapabilities = object.Record<string, boolean>
+export declare type PublicKeyCredentialClientCapabilities = Record<string, boolean>
 
 export declare type PublicKeyCredentialJSON = any
 
