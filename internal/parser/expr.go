@@ -385,6 +385,17 @@ func (p *Parser) primaryExpr() ast.Expr {
 			// continue
 		}
 
+		// A keyword followed by `.` names a value rather than meaning what the
+		// keyword means, the same rule the type-annotation parser applies. A
+		// package binds under its own name and six of them lex as keywords, so
+		// `set.Set(1)` has to reach the `Set` a `std:set` import binds. The
+		// literal keywords below already reach this by being listed as
+		// identifiers in the arm further down; this covers the rest.
+		if isKeywordQualifier(token) && p.lexer.peek2().Type == Dot {
+			p.lexer.consume()
+			expr = ast.NewIdent(token.Value, token.Span)
+			break
+		}
 		// nolint: exhaustive
 		switch token.Type {
 		case LineComment, BlockComment:

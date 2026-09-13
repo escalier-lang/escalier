@@ -16,6 +16,10 @@
     "digest": "fce3e28102d0c094"
   },
   {
+    "decl": "BuiltinIteratorReturn",
+    "digest": "12428e1afa5d2542"
+  },
+  {
     "decl": "Generator",
     "member": "throw",
     "kind": "method",

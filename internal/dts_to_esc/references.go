@@ -66,6 +66,17 @@ func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
 // `Intl.LocalesArgument`. There `Intl` names nothing and the last segment is
 // what resolves.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
+	// `typeof X` names the value X, which a package declares and an importer has
+	// to reach the same way it reaches a type.
+	if typeOf, ok := t.(*ast.TypeOfTypeAnn); ok {
+		if name, ok := headIdent(typeOf.Value); ok {
+			c.names.Add(name)
+		}
+		if member, ok := typeOf.Value.(*ast.Member); ok {
+			c.names.Add(member.Right.Name)
+		}
+		return true
+	}
 	ref, ok := t.(*ast.TypeRefTypeAnn)
 	if !ok {
 		return true

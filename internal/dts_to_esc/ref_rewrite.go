@@ -98,6 +98,16 @@ type refRewriter struct {
 	// package's import makes, so `Event` becomes `core.Event`. Empty when the
 	// pass is not qualifying cross-package references.
 	qualifiers map[string]string
+	// substitutions replaces a reference by name with a whole type annotation,
+	// which is how a vacuous type parameter's one occurrence becomes its
+	// constraint. Empty when the pass is not substituting.
+	substitutions map[string]ast.TypeAnn
+	// elideVacuous drops a signature's type parameter that occurs once and only
+	// among its parameters, rewriting that occurrence in place.
+	elideVacuous bool
+	// declaredNames is every name the tree declares. A qualified reference whose
+	// head is among them resolves already and is left alone.
+	declaredNames set.Set[string]
 	// flattenedQualifiers maps the last segment of a qualified reference whose
 	// head names nothing to the binding of the package declaring that segment.
 	// Namespace flattening produces those: `Intl.LocalesArgument` survives with
@@ -163,6 +173,12 @@ func (r *refRewriter) rewriteDecl(decl ast.Decl) {
 }
 
 func (r *refRewriter) rewriteFuncSig(sig *ast.FuncSig) {
+	if r.elideVacuous {
+		elideVacuousIn(sigParts{
+			typeParams: &sig.TypeParams, params: sig.Params,
+			ret: sig.Return, throws: sig.Throws,
+		})
+	}
 	r.rewriteTypeParams(sig.TypeParams)
 	for _, p := range sig.Params {
 		if p.TypeAnn != nil {
@@ -219,26 +235,6 @@ func (r *refRewriter) rewriteClassElem(elem ast.ClassElem) {
 	}
 }
 
-// renameTypeRefInPlace handles the rewrite inside an `extends` or
-// `implements` clause, whose AST slot holds a `*TypeRefTypeAnn` and
-// nothing else. It renames `ReadonlyFoo` → `Foo` and cannot wrap a
-// mutable twin in `MutableTypeAnn`, having no room for one. TypeArgs are
-// still walked, so nested refs are rewritten.
-//
-// A mutable twin name here is left alone, naming the whole definition
-// rather than the immutable view of it. A definition holds both `self`
-// and `mut self` methods and extending it inherits all of them, so
-// `interface RegExpMatchArray extends Array<string>` gets every `Array`
-// member including `push`; whether a given instance may call it is
-// settled where that instance is bound. Reading the bare name as the
-// immutable view would drop the mutating half of the inherited surface.
-//
-// Eight declarations in the pinned lib set take this shape,
-// `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
-// them.
-// requalifyFlattenedRef replaces the head of a qualified reference whose head
-// names nothing with the binding of the package that declares its last
-// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
 func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
 	member, ok := ref.Name.(*ast.Member)
 	if !ok {
@@ -249,6 +245,9 @@ func (r *refRewriter) requalifyFlattenedRef(ref *ast.TypeRefTypeAnn) bool {
 		return false
 	}
 	if _, headResolves := r.qualifiers[head.Name]; headResolves {
+		return false
+	}
+	if r.declaredNames.Contains(head.Name) {
 		return false
 	}
 	qualifier, ok := r.flattenedQualifiers[member.Right.Name]
@@ -271,6 +270,26 @@ func (r *refRewriter) qualifyRef(ref *ast.TypeRefTypeAnn, head *ast.Ident) bool 
 	return true
 }
 
+// renameTypeRefInPlace handles the rewrite inside an `extends` or
+// `implements` clause, whose AST slot holds a `*TypeRefTypeAnn` and
+// nothing else. It renames `ReadonlyFoo` → `Foo` and cannot wrap a
+// mutable twin in `MutableTypeAnn`, having no room for one. TypeArgs are
+// still walked, so nested refs are rewritten.
+//
+// A mutable twin name here is left alone, naming the whole definition
+// rather than the immutable view of it. A definition holds both `self`
+// and `mut self` methods and extending it inherits all of them, so
+// `interface RegExpMatchArray extends Array<string>` gets every `Array`
+// member including `push`; whether a given instance may call it is
+// settled where that instance is bound. Reading the bare name as the
+// immutable view would drop the mutating half of the inherited surface.
+//
+// Eight declarations in the pinned lib set take this shape,
+// `RegExpMatchArray`, `FontFaceSet`, and `HighlightRegistry` among
+// them.
+// requalifyFlattenedRef replaces the head of a qualified reference whose head
+// names nothing with the binding of the package that declares its last
+// segment, turning `Intl.LocalesArgument` into `intl.LocalesArgument`.
 func (r *refRewriter) renameTypeRefInPlace(ref *ast.TypeRefTypeAnn) {
 	for i, arg := range ref.TypeArgs {
 		ref.TypeArgs[i] = r.rewrite(arg)
@@ -296,6 +315,18 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		return nil
 	}
 	switch tt := t.(type) {
+	case *ast.TypeOfTypeAnn:
+		// `typeof X` reaches a value another package declares, so its name is
+		// qualified the way a type reference's is.
+		if head, ok := tt.Value.(*ast.Ident); ok {
+			if qualifier, ok := r.qualifiers[head.Name]; ok {
+				tt.Value = &ast.Member{
+					Left:  ast.NewIdentifier(qualifier, head.Span()),
+					Right: ast.NewIdentifier(head.Name, head.Span()),
+				}
+			}
+		}
+		return tt
 	case *ast.TypeRefTypeAnn:
 		for i, arg := range tt.TypeArgs {
 			tt.TypeArgs[i] = r.rewrite(arg)
@@ -306,6 +337,9 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		id, ok := tt.Name.(*ast.Ident)
 		if !ok {
 			return tt
+		}
+		if sub, ok := r.substitutions[id.Name]; ok {
+			return sub
 		}
 		// The constructor interface is gone, fused into the class. `typeof Array` names what
 		// `ArrayConstructor` named: the class value, carrying the constructor and the statics.
@@ -345,6 +379,12 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		return tt
 	case *ast.FuncTypeAnn:
+		if r.elideVacuous {
+			elideVacuousIn(sigParts{
+				typeParams: &tt.TypeParams, params: tt.Params,
+				ret: tt.Return, throws: tt.Throws,
+			})
+		}
 		r.rewriteTypeParams(tt.TypeParams)
 		for _, p := range tt.Params {
 			if p.TypeAnn != nil {
@@ -415,7 +455,6 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		*ast.AnyTypeAnn,
 		*ast.UnknownTypeAnn,
 		*ast.NeverTypeAnn,
-		*ast.TypeOfTypeAnn,
 		*ast.InferTypeAnn,
 		*ast.WildcardTypeAnn,
 		*ast.IntrinsicTypeAnn,
@@ -470,6 +509,12 @@ func (r *refRewriter) rewriteObject(obj *ast.ObjectTypeAnn) {
 func (r *refRewriter) rewriteFnTypeAnn(fn *ast.FuncTypeAnn) {
 	if fn == nil {
 		return
+	}
+	if r.elideVacuous {
+		elideVacuousIn(sigParts{
+			typeParams: &fn.TypeParams, params: fn.Params,
+			ret: fn.Return, throws: fn.Throws,
+		})
 	}
 	r.rewriteTypeParams(fn.TypeParams)
 	for _, p := range fn.Params {

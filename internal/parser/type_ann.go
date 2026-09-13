@@ -313,7 +313,7 @@ func (p *Parser) primaryTypeAnn() ast.TypeAnn {
 		// names lex as keywords — `string`, `number`, `boolean`, `bigint`, `set`
 		// and `async` — and a package binds under its own name, so each of them
 		// heads a reference somewhere in the generated tree.
-		if token.Type != Identifier && p.lexer.peek2().Type == Dot {
+		if isKeywordQualifier(token) && p.lexer.peek2().Type == Dot {
 			p.lexer.consume()
 			typeAnn = p.parseTypeRef(token)
 			break

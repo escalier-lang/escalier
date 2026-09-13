@@ -152,8 +152,32 @@ func AddImportHeaders(mods map[string]*StandaloneModule) error {
 		return err
 	}
 	for uri, mod := range mods {
+		if err := checkBindingCollisions(uri, graph[uri]); err != nil {
+			return err
+		}
 		qualifyCrossPackageRefs(mod, uri, owner)
 		setImportHeader(mod, graph[uri])
+	}
+	return nil
+}
+
+// checkBindingCollisions refuses a header binding two packages under one name.
+//
+// A binding name is the package name with the scheme dropped, so `std:url` and
+// `web:url` both bind `url`. No package in the pinned set imports both, and one
+// that did would emit a header whose second import silently shadowed the first,
+// with every qualified reference reading against whichever won.
+func checkBindingCollisions(uri string, targets []string) error {
+	seen := map[string]string{}
+	for _, target := range targets {
+		binding := ast.DeriveImportName(target)
+		if first, dup := seen[binding]; dup {
+			return fmt.Errorf(
+				"converter: %s imports both %s and %s, which bind the same name %q; "+
+					"one of them needs an alias before the header can name both",
+				uri, first, target, binding)
+		}
+		seen[binding] = target
 	}
 	return nil
 }
@@ -194,14 +218,34 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	if len(qualifiers) == 0 {
 		return
 	}
-	// The same table serves both rules. A reference resolving through its head
-	// is prefixed; one resolving through its last segment has its head replaced,
-	// which is what a flattened namespace leaves behind.
-	rw := &refRewriter{qualifiers: qualifiers, flattenedQualifiers: qualifiers}
+	// A head naming any declaration, this package's own included, keeps it. Only
+	// a head naming nothing at all is replaced, which is what a flattened
+	// namespace leaves behind: `Intl.LocalesArgument` with no `Intl` anywhere.
+	// Without that guard a local `Ns.Widget` would have `Ns` overwritten by
+	// whichever package declares `Widget`.
+	flattened := map[string]string{}
+	for name, qualifier := range qualifiers {
+		flattened[name] = qualifier
+	}
+	rw := &refRewriter{
+		qualifiers:          qualifiers,
+		flattenedQualifiers: flattened,
+		declaredNames:       declaredNamesOf(owner),
+	}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
 		for _, decl := range ns.Decls {
 			rw.rewriteDecl(decl)
 		}
 		return true
 	})
+}
+
+// declaredNamesOf is the set of every name the tree declares, which is what
+// says whether a qualified reference's head resolves to something.
+func declaredNamesOf(owner map[string]string) set.Set[string] {
+	names := set.NewSet[string]()
+	for name := range owner {
+		names.Add(name)
+	}
+	return names
 }

@@ -1,0 +1,86 @@
+package dts_to_esc
+
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
+
+// A type parameter occurring once, among the parameters, is dropped and its one
+// occurrence becomes what it was constrained to.
+func TestElideVacuousTypeParams(t *testing.T) {
+	tests := []struct {
+		name string
+		src  string
+		want string
+	}{
+		{
+			// std:boolean's call signature, the case #1579 names first.
+			name: "AnUnconstrainedParameterBecomesUnknown",
+			src:  `export declare class Boolean { <T>(value?: T) -> boolean }`,
+			want: "(value?: unknown) -> boolean",
+		},
+		{
+			name: "AConstrainedParameterBecomesItsConstraint",
+			src:  `export declare class C { m<T: string>(self, v: T) -> boolean }`,
+			want: "m(self, v: string) -> boolean",
+		},
+		{
+			// std:set's difference, the second case #1579 names.
+			name: "AParameterInsideATypeArgumentCounts",
+			src:  `export declare class C<T> { difference<U>(self, other: SetLike<U>) -> C<T> }`,
+			want: "difference(self, other: SetLike<unknown>) -> C<T>",
+		},
+		{
+			name: "AnObjectTypeMemberIsRewrittenToo",
+			src:  `export type F = { m<T>(v: T) -> boolean }`,
+			want: "m(v: unknown) -> boolean",
+		},
+
+		// Left alone.
+		{
+			name: "AParameterUsedTwiceStays",
+			src:  `export declare class C { m<T>(self, v: T) -> T }`,
+			want: "m<T>(self, v: T) -> T",
+		},
+		{
+			name: "AParameterUsedTwiceAmongTheParametersStays",
+			src:  `export declare class C { m<T>(self, a: T, b: T) -> boolean }`,
+			want: "m<T>(self, a: T, b: T) -> boolean",
+		},
+		{
+			// Nothing infers it, but rewriting it changes what a call yields.
+			name: "AReturnOnlyParameterStays",
+			src:  `export declare class C { m<T>(self) -> T }`,
+			want: "m<T>(self) -> T",
+		},
+		{
+			// Object.fromEntries. Its parameter is vacuous only because the
+			// conversion dropped the return that used it.
+			name: "ADefaultedParameterStays",
+			src:  `export declare class C { static m<T = any>(entries: Iterable<T>) -> {} }`,
+			want: "static m<T = any>(entries: Iterable<T>) -> {}",
+		},
+		{
+			name: "AParameterAnotherParameterConstrainsStays",
+			src:  `export declare class C { m<T, U: T>(self, v: T) -> U }`,
+			want: "m<T, U: T>(self, v: T) -> U",
+		},
+		{
+			name: "AParameterUsedInAThrowsStays",
+			src:  `export declare fn f<T>(v: T) -> boolean throws T`,
+			want: "fn f<T>(v: T) -> boolean throws T",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mod := &StandaloneModule{Module: parseSource(t, tt.src)}
+			elideVacuousTypeParams(mod)
+
+			out, err := RenderStandaloneModule(mod)
+			require.NoError(t, err)
+			require.Contains(t, out, tt.want, "rendered:\n%s", out)
+		})
+	}
+}

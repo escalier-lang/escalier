@@ -123,6 +123,12 @@ func Generate(opts GenerateOptions) (*GenerateResult, error) {
 		}
 	}
 
+	// Before the header, so a signature that loses a type parameter loses any
+	// import that parameter's constraint was the only reason for.
+	for _, mod := range mods {
+		elideVacuousTypeParams(mod)
+	}
+
 	// The header is computed after the overlay, so a `replace` that changes what
 	// a declaration refers to changes what its package imports.
 	graph, err := ImportGraph(mods)

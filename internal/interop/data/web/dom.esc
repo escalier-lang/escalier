@@ -17066,7 +17066,7 @@ export declare class UIEvent extends core.Event {
 export declare type webkitURL = url.URL
 
 @js("webkitURL")
-export declare var webkitURL: typeof URL
+export declare var webkitURL: typeof url.URL
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/UserActivation) */
 @js("UserActivation")

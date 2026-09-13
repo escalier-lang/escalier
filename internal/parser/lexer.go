@@ -647,3 +647,34 @@ func (lexer *Lexer) Next() *Token {
 func (lexer *Lexer) Consume() {
 	lexer.consume()
 }
+
+// keywordTokenTypes is the set of token types the lexer produces for a keyword,
+// derived from the keywords table so the two cannot drift.
+//
+// A keyword followed by `.` heads a qualified reference rather than meaning
+// what the keyword means, in a type annotation and in an expression alike. Six
+// pseudo-package names lex as keywords — `string`, `number`, `boolean`,
+// `bigint`, `set` and `async` — and a package binds under its own name, so
+// `set.Set(1)` has to reach the `Set` a `std:set` import binds.
+var keywordTokenTypes = func() map[TokenType]bool {
+	types := make(map[TokenType]bool, len(keywords))
+	for _, t := range keywords {
+		types[t] = true
+	}
+	return types
+}()
+
+// isKeywordQualifier reports whether tok is a keyword standing where a
+// qualified reference's head goes.
+//
+// A value literal is excluded even though it is a keyword. `true.valueOf()`
+// reads a member off the boolean, and `true` is not a name a package can bind.
+// A non-keyword token is excluded too, so `"a".length` stays a member access on
+// a string rather than becoming an identifier named `a`.
+func isKeywordQualifier(tok *Token) bool {
+	switch tok.Type {
+	case True, False, Null, Undefined:
+		return false
+	}
+	return keywordTokenTypes[tok.Type]
+}
