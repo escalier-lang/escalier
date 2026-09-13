@@ -961,9 +961,10 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 	"OnBeforeUnloadEventHandler",
 })
 
-// OverlayRetypedSoleReferrers names the type-only `web:dom` declarations
-// whose every reference from outside `web:dom` sits in a member an
-// overlay retypes or drops. ReportTypeOnlyRouting leaves them out.
+// OverlayRetypedSoleReferrers maps a type-only `web:dom` declaration to the
+// one package whose references to it an overlay retypes or drops.
+// ReportTypeOnlyRouting leaves a name out only when its sole referrer is the
+// package recorded here.
 //
 // The routing analysis reads the pinned `.d.ts` statements with only the
 // whole-symbol drops applied, because the per-package overlays are
@@ -972,19 +973,23 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 // analysis and is referenced by nothing outside `web:dom` in the tree the
 // run writes.
 //
-// Two checks cover an entry. The digest sidecar beside each overlay file
-// fails when a member the file stands in for changes upstream. Test
-// OverlayRetypedSoleReferrers_MatchesThePinnedLibSet fails when a name
-// here stops reading as sole-referred, which is what rerouting it or a
-// new TypeScript reference to it does.
-var OverlayRetypedSoleReferrers = set.FromSlice([]string{
+// The referrer is half the key because only that package's overlay answers
+// the references. A TypeScript bump that moves the sole reference to
+// another package leaves it unanswered, and pairing the two makes
+// TestOverlayRetypedSoleReferrers_MatchesThePinnedLibSet name it rather
+// than stay quiet. That test also catches a name the map does not cover
+// and an entry that stopped being sole-referred.
+//
+// The other half of the cover is the digest sidecar beside each overlay
+// file, which fails when a member the file stands in for changes upstream.
+var OverlayRetypedSoleReferrers = map[string]string{
 	// `web:core` declares `MessageEvent` and `MessageEventInit`, and their
 	// four references to the name are all answered there. The `source`
 	// member of each is retyped to `null` in overlay/web/core.replace.esc,
 	// and the two `initMessageEvent` overloads that name it are removed in
 	// overlay/web/core.drop.esc.
-	"MessageEventSource",
-})
+	"MessageEventSource": "web:core",
+}
 
 // DOMResidualSources is the set of `.d.ts` source-file basenames whose
 // unmapped top-level declarations route to `web:dom` (the single-DOM

@@ -50,18 +50,19 @@ func TestTheParseCacheServesASecondLoad(t *testing.T) {
 		return &ast.Module{}, nil
 	}
 
-	first, err := cache.get("export val a: number = 1", parse)
+	first, err := cache.get("box.esc", "export val a: number = 1", parse)
 	require.NoError(t, err)
-	second, err := cache.get("export val a: number = 1", parse)
+	second, err := cache.get("box.esc", "export val a: number = 1", parse)
 	require.NoError(t, err)
 
 	require.Equal(t, 1, parses)
 	require.Same(t, first, second)
 }
 
-// Two paths holding the same source share one parse. Each test seeding a stdlib
-// tree writes the same prelude to a fresh temporary directory, so keying on the
-// path would pin an identical AST per test and serve no hit between them.
+// Two directories holding the same file share one parse. Each test seeding a
+// stdlib tree writes the same prelude to a fresh temporary directory, so keying
+// on the full path would pin an identical AST per test and serve no hit between
+// them.
 func TestTheParseCacheSharesAcrossPaths(t *testing.T) {
 	t.Parallel()
 
@@ -93,9 +94,9 @@ func TestTheParseCacheRereadsChangedContent(t *testing.T) {
 		return &ast.Module{}, nil
 	}
 
-	_, err := cache.get("export val a: number = 1", parse)
+	_, err := cache.get("box.esc", "export val a: number = 1", parse)
 	require.NoError(t, err)
-	_, err = cache.get("export val a: number = 2", parse)
+	_, err = cache.get("box.esc", "export val a: number = 2", parse)
 	require.NoError(t, err)
 
 	require.Equal(t, 2, parses)
@@ -114,7 +115,7 @@ func TestTheParseCacheGivesEachSourceItsOwnID(t *testing.T) {
 	}
 
 	for _, contents := range []string{"a", "b", "a", "c", "b"} {
-		_, err := cache.get(contents, parse)
+		_, err := cache.get("box.esc", contents, parse)
 		require.NoError(t, err)
 	}
 	// Three distinct sources, three ids, none repeated.
@@ -126,13 +127,13 @@ func TestTheParseCacheDoesNotHoldAFailure(t *testing.T) {
 	t.Parallel()
 
 	cache := newParsedModuleCache(1 << 20)
-	_, err := cache.get("bad", func(int) (*ast.Module, error) {
+	_, err := cache.get("box.esc", "bad", func(int) (*ast.Module, error) {
 		return nil, errFailedParse
 	})
-	require.Error(t, err)
+	require.ErrorIs(t, err, errFailedParse)
 
 	var usedID int
-	module, err := cache.get("bad", func(sourceID int) (*ast.Module, error) {
+	module, err := cache.get("box.esc", "bad", func(sourceID int) (*ast.Module, error) {
 		usedID = sourceID
 		return &ast.Module{}, nil
 	})
@@ -142,3 +143,32 @@ func TestTheParseCacheDoesNotHoldAFailure(t *testing.T) {
 }
 
 var errFailedParse = errors.New("parse failed")
+
+// Two packages that happen to share a body are two entries, because each parse
+// records the basename it was given and GetSourcePath reads it back. One entry
+// would answer for both under whichever basename parsed first.
+func TestTheParseCacheKeepsTwoBasenamesApart(t *testing.T) {
+	t.Parallel()
+
+	cache := newParsedModuleCache(1 << 20)
+	const body = "export val a: number = 1"
+	var names []string
+	parse := func(name string) func(int) (*ast.Module, error) {
+		return func(sourceID int) (*ast.Module, error) {
+			names = append(names, name)
+			return &ast.Module{Sources: map[int]*ast.Source{
+				sourceID: {ID: sourceID, Path: name, Contents: body},
+			}}, nil
+		}
+	}
+
+	first, err := cache.get("alpha.esc", body, parse("alpha.esc"))
+	require.NoError(t, err)
+	second, err := cache.get("beta.esc", body, parse("beta.esc"))
+	require.NoError(t, err)
+
+	require.Equal(t, []string{"alpha.esc", "beta.esc"}, names)
+	require.NotSame(t, first, second)
+	require.Equal(t, "alpha.esc", first.GetSourcePath(1<<20))
+	require.Equal(t, "beta.esc", second.GetSourcePath(1<<20+1))
+}

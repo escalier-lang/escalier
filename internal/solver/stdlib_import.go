@@ -278,12 +278,14 @@ func StdlibSource(dir string) ModuleSource {
 		if err != nil {
 			return nil, "", fmt.Errorf("reading %s: %w", path, err)
 		}
-		module, err := stdlibParses.get(string(contents), func(sourceID int) (*ast.Module, error) {
+		// The basename alone, so a package's namespace comes out empty rather than
+		// derived from where the tree happens to sit on disk. It is half the cache
+		// key for the same reason: it is what the parse records.
+		base := filepath.Base(path)
+		module, err := stdlibParses.get(base, string(contents), func(sourceID int) (*ast.Module, error) {
 			source := &ast.Source{
-				ID: sourceID,
-				// The basename alone, so a package's namespace comes out empty rather
-				// than derived from where the tree happens to sit on disk.
-				Path:     filepath.Base(path),
+				ID:       sourceID,
+				Path:     base,
 				Contents: string(contents),
 			}
 			module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{source})
