@@ -94,8 +94,9 @@ func pinnedRouting(t *testing.T) *PartitionResult {
 
 // TestReportTypeOnlyRouting_PinnedLibSet is the §6.1 gate over the real
 // input: every web:dom type-only declaration is referenced by web:dom
-// itself or by two or more packages. The report prints only what still
-// needs a decision, so passing looks like an empty one.
+// itself, by two or more packages, or only through members an overlay
+// retypes. The report prints only what still needs a decision, so
+// passing looks like an empty one.
 //
 // The second assertion states the misplacement half structurally. It
 // still fails if the report's grouping ever swallows a finding.
@@ -107,7 +108,35 @@ func TestReportTypeOnlyRouting_PinnedLibSet(t *testing.T) {
 	require.NoError(t, ReportTypeOnlyRouting(res, &b))
 	require.Empty(t, b.String())
 
-	require.Empty(t, AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI).SoleReferrer)
+	for _, e := range AnalyzeTypeOnlyRouting(res).forPackage(WebDOM.URI).SoleReferrer {
+		require.True(t, OverlayRetypedSoleReferrers.Contains(e.Name),
+			"%s is referenced only by %s and is not an acknowledged overlay retype",
+			e.Name, e.ReferencedBy)
+	}
+}
+
+// TestOverlayRetypedSoleReferrers_MatchesThePinnedLibSet keeps the gate
+// above honest, the same way TestUnreferencedDOMTypes_MatchesThePinned
+// LibSet does for the orphan half. The report hides whatever the list
+// covers, so an empty report cannot on its own tell a clean tree from
+// one whose new finding the list happens to hide.
+//
+// Comparing the two sets catches both directions. A sole-referred name
+// the list does not cover is a new one needing a decision, and an entry
+// that no longer reads as sole-referred is stale, because the retype it
+// stands for is gone or the name moved packages.
+func TestOverlayRetypedSoleReferrers_MatchesThePinnedLibSet(t *testing.T) {
+	t.Parallel()
+	routing := AnalyzeTypeOnlyRouting(pinnedRouting(t)).forPackage(WebDOM.URI)
+
+	sole := make([]string, 0, len(routing.SoleReferrer))
+	for _, e := range routing.SoleReferrer {
+		sole = append(sole, e.Name)
+	}
+	acknowledged := OverlayRetypedSoleReferrers.ToSlice()
+	sort.Strings(acknowledged)
+	sort.Strings(sole)
+	require.Equal(t, acknowledged, sole)
 }
 
 // TestUnreferencedDOMTypes_MatchesThePinnedLibSet keeps the gate above

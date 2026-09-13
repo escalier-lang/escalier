@@ -1,0 +1,9 @@
+[
+  {
+    "decl": "URL",
+    "member": "createObjectURL",
+    "kind": "method",
+    "static": true,
+    "digest": "c6ae05cce649c06d"
+  }
+]

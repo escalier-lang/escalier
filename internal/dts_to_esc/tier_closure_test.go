@@ -19,32 +19,16 @@ import (
 // package's directory.
 const committedTree = "../interop/data"
 
-// knownUpwardRefs records every reference in the committed tree that names a
-// package above the referring package's tier. Each is a declaration the
-// pinned `.d.ts` types against a browser type that the portable runtimes
-// implement differently or not at all, so each is answered by an overlay
-// `replace` rather than by moving a package between tiers.
+// knownUpwardRefs excuses references in the committed tree that name a package
+// above the referring package's tier. It is the reference-level twin of
+// AcceptedUpwardEdges, which excuses the import line the reference forces.
 //
-// The list is empty for the core tier, which is what makes `web:core`
-// loadable on a runtime that has no DOM. Emptying it for the portable tier
-// is #1403 item 5, which is also where the check that forbids these edges
-// lands. Until then this test pins the set so a new one is caught.
-var knownUpwardRefs = map[string][]string{
-	// Node's FormData has no HTMLFormElement constructor, and
-	// XMLHttpRequestBodyInit names one transitively.
-	"web:fetch": {"FormData", "XMLHttpRequestBodyInit"},
-	// FileReader fires progress events, and Node 22 defines neither it nor
-	// ProgressEvent. Both leave the portable tier together, or neither does.
-	"web:file": {"ProgressEvent"},
-	// EventCounts is the performance-timeline map keyed by DOM event names.
-	"web:performance": {"EventCounts"},
-	// URL.createObjectURL takes a MediaSource in the browser and a Blob
-	// everywhere else.
-	"web:url": {"MediaSource"},
-	// MessageEvent.source is a WindowProxy or ServiceWorker in the browser
-	// and always null off it. BinaryType is the socket's payload mode.
-	"web:websocket": {"BinaryType", "MessageEvent"},
-}
+// An entry belongs here only while its answer is being written. A declaration
+// the pinned `.d.ts` types against a browser type that the portable runtimes
+// implement differently or not at all is answered by an overlay `replace` that
+// writes the portable form, or by routing the name to the package that owns
+// it.
+var knownUpwardRefs = map[string][]string{}
 
 // declaringPackage maps each exported top-level name in the committed tree to
 // the package URI that declares it.
