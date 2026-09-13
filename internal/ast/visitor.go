@@ -63,11 +63,7 @@ func (v *DefaultVisitor) EnterLifetimeAnn(l LifetimeAnnNode) bool { return true 
 func (v *DefaultVisitor) ExitLifetimeAnn(l LifetimeAnnNode)       {}
 
 // acceptTypeParams visits the constraint and default of each binder in a `<…>`
-// quantifier list. A binder's own name is a string rather than a node, so those
-// two type annotations are the whole of what a type parameter contributes.
-//
-// Every node holding a type-parameter list calls this, so the list is walked
-// one way rather than seven.
+// quantifier list, which is the whole of what a type parameter contributes.
 func acceptTypeParams(v Visitor, params []*TypeParam) {
 	for _, tp := range params {
 		if tp.Constraint != nil {
@@ -80,9 +76,8 @@ func acceptTypeParams(v Visitor, params []*TypeParam) {
 }
 
 // acceptLifetimeParams visits the bounds of each lifetime binder in a `<…>`
-// quantifier list. In `<'a, 'b: 'a>` the walk reaches the `'a` written as 'b's
-// bound. A binder's own name is a string, so the bounds are the whole of what a
-// lifetime parameter contributes.
+// quantifier list, so in `<'a, 'b: 'a>` the walk reaches the `'a` written as
+// 'b's bound.
 func acceptLifetimeParams(v Visitor, params []*LifetimeParam) {
 	for _, lp := range params {
 		for _, bound := range lp.Bounds {

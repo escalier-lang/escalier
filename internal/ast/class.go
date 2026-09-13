@@ -54,9 +54,8 @@ func (r *MethodReceiver) Span() Span { return r.Span_ }
 // member wrote no receiver at all.
 //
 // The receiver sits beside the member's function rather than inside it, so the
-// walk reaches this lifetime before the `<'a>` list that binds it. A visitor
-// scoping lifetimes has to account for that. Moving the receiver into the
-// signature, tracked in #635, would put the two in source order.
+// walk reaches this lifetime before the `<'a>` list that binds it. #635 would
+// put the two in source order.
 func acceptReceiver(v Visitor, r *MethodReceiver) {
 	if r != nil && r.Lifetime != nil {
 		r.Lifetime.Accept(v)
