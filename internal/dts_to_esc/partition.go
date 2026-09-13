@@ -102,20 +102,15 @@ var stdPackages = []struct {
 		//
 		// `IteratorResult` and its two arms are here because the
 		// prelude's own `Iterator.next` returns one and the prelude
-		// imports nothing. Every other package reaches them without a
-		// qualifier for the same reason it reaches `Promise`.
+		// imports nothing. registerIteratorResultAliases in
+		// internal/solver/prelude.go still binds the same three shapes
+		// on every Context, agreeing member for member; retiring that is
+		// #1593.
 		//
-		// registerIteratorResultAliases in internal/solver/prelude.go
-		// still binds the same three shapes on every Context. The two
-		// agree member for member, `done` optional on the yield arm
-		// included. Retiring the registration for these declarations is
-		// the same move #1561 made for `Promise`, and is #1593.
-		//
-		// One case this set stops short of. The `Intl.*` options bags
-		// stay in `std:intl`, which flattens the namespace and declares
-		// them bare, so the qualifier written against them names nothing
-		// wherever they live. Rewriting the reference is the fix, not
-		// moving the declaration.
+		// The `Intl.*` options bags stay in `std:intl` despite the same
+		// pressure. It flattens the namespace and declares them bare, so
+		// the qualifier written against them names nothing wherever they
+		// live, and rewriting the reference is the fix.
 		// `BuiltinIteratorReturn` is the second type argument of the
 		// `IteratorObject` that `ArrayIterator` extends. Its own body
 		// is `= intrinsic`, a TypeScript compiler keyword with no
@@ -131,23 +126,19 @@ var stdPackages = []struct {
 		"Disposable", "AsyncDisposable",
 		"Symbol", "SymbolConstructor",
 
-		// The utility types, which TypeScript declares global and which
-		// a program reaches without naming a package. `Partial<Config>`
-		// and `ReturnType<F>` are written the way `Promise` is, so they
-		// belong beside it rather than behind an import of `std:object`
-		// or `std:function`.
+		// The utility types, which TypeScript declares global.
+		// `Partial<Config>` and `ReturnType<F>` are written the way
+		// `Promise` is, so they belong beside it. Each is a type alias
+		// over its own parameters naming nothing outside this list,
+		// which is what lets the prelude hold them while importing
+		// nothing.
 		//
-		// The classes they were declared with stay where they are.
-		// `Object` and `Function` are reached as `object.Object` and
-		// `function.Function`, the same shape `math.E` and
-		// `number.Number` take, and neither is named by any other
-		// package. `Function` is also the one carrying
+		// The classes they were declared with stay put. `Object` and
+		// `Function` are reached as `object.Object` and
+		// `function.Function`, and no other package names either.
+		// `Function` also carries
 		// `[Symbol.metadata]: decorators.DecoratorMetadata`, so moving
 		// it would pull `std:decorators` in behind it.
-		//
-		// Every name here is a type alias over its own parameters and
-		// names nothing outside this list, which is what lets the
-		// prelude hold it while importing nothing.
 		"PropertyKey",
 		"Partial", "Required", "Readonly", "Pick", "Omit", "Record",
 		"Exclude", "Extract", "NonNullable",
@@ -442,12 +433,10 @@ var webPackages = []struct {
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
-		// The message event. The WinterTC minimum common API lists it, and
-		// `web:websocket` types its `message` handler against it. Its `source` and
-		// `ports` members name the browser, and so does the deprecated
-		// `initMessageEvent`. web/core.replace.esc retypes the first two and
-		// web/core.drop.esc removes the third. See there for why `MessagePort`
-		// could not come along.
+		// The message event, which the WinterTC minimum common API lists.
+		// `source` and `ports` name the browser and web/core.replace.esc
+		// retypes them; the deprecated `initMessageEvent` does too and
+		// web/core.drop.esc removes it.
 		"MessageEvent", "MessageEventInit",
 	}},
 	{"web:fetch", "web/fetch.esc", []string{
@@ -801,18 +790,14 @@ var webPackages = []struct {
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
-		// FormData holds files, and both `Blob` and `File` are here, so this is
-		// the one portable package it can sit in without naming another. MDN
-		// files it under XMLHttpRequest, but the tier asks which runtimes have
-		// it rather than which specification introduced it. `web:fetch` returns
-		// one from `Body.formData`, so a FormData in `web:dom` would put a
-		// portable package in a cycle with the browser tier.
-		//
-		// Its constructor takes an `HTMLFormElement` upstream, which no portable
-		// runtime has. web/file.replace.esc gives it the no-argument form.
-		//
-		// FormDataIterator comes along. FormData's `entries`, `keys` and
-		// `values` each return one, and it names only prelude types.
+		// FormData holds files, and both `Blob` and `File` are here, so this
+		// is the one portable package it can sit in without naming another.
+		// MDN files it under XMLHttpRequest, but the tier asks which runtimes
+		// have it, and `web:fetch` returns one from `Body.formData`, so a
+		// FormData in `web:dom` would cycle across two tiers.
+		// web/file.replace.esc drops the `HTMLFormElement` constructor no
+		// portable runtime has. FormDataIterator comes along, since `entries`,
+		// `keys` and `values` each return one.
 		"FormData", "FormDataEntryValue", "FormDataIterator",
 		// FileList and FileReader belong to the browser tier. Node 22 defines
 		// neither, and FileReader fires the ProgressEvent that `web:core`
@@ -986,11 +971,10 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 // package recorded here.
 //
 // The routing analysis reads the pinned `.d.ts` statements with only the
-// whole-symbol drops applied, because the per-package overlays are
-// Escalier fragments that fold into the converted tree rather than into
-// the TypeScript one. A name here therefore reads as sole-referred in the
-// analysis and is referenced by nothing outside `web:dom` in the tree the
-// run writes.
+// whole-symbol drops applied, since the per-package overlays are Escalier
+// fragments folding into the converted tree rather than the TypeScript one.
+// A name here therefore reads as sole-referred there and is referenced by
+// nothing outside `web:dom` in the tree the run writes.
 //
 // The referrer is half the key because only that package's overlay answers
 // the references. A TypeScript bump that moves the sole reference to

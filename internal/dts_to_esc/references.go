@@ -15,10 +15,9 @@ import (
 type typeRefCollector struct {
 	ast.DefaultVisitor
 	names set.Set[string]
-	// bound counts the type parameters in scope by name. A reference to one of
-	// them names the parameter rather than a declaration, so it contributes no
-	// edge. `Promise<T, E>` would otherwise be read as needing whichever package
-	// declares `E`, and `std:math` declares one.
+	// bound counts the type parameters in scope by name. A reference to one names
+	// the binder rather than a declaration, so it forces no import. `std:math`
+	// declares a top-level `E`, which `Promise<T, E>` would otherwise pull in.
 	bound map[string]int
 }
 
@@ -73,11 +72,7 @@ func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
 }
 
 // EnterExpr brings a function expression's own type parameters into scope. A
-// class member holds its signature as a `FuncExpr`, so
-// `closest<E: Element = Element>(mut self, selectors: string) -> E | null`
-// would otherwise read `E` as a name `web:dom` has to import, and `std:math`
-// declares one. The interface form of the same member is a `FuncTypeAnn` and is
-// bound by enterFuncTypeParams instead.
+// class member holds its signature as a `FuncExpr`, which nothing else binds.
 func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
 	if fn, ok := e.(*ast.FuncExpr); ok {
 		c.push(fn.TypeParams)
@@ -94,16 +89,14 @@ func (c *typeRefCollector) ExitExpr(e ast.Expr) {
 // EnterTypeAnn records a `TypeRefTypeAnn`'s name and keeps walking, so the
 // arguments of `Foo<Bar>` are collected beside `Foo` itself.
 //
-// A qualified reference contributes both ends. The head is the name an import
-// normally has to bring into scope. The last segment matters too, because
-// namespace flattening turns `namespace Intl { type LocalesArgument }` into a
-// top-level `LocalesArgument` while leaving references to it written
-// `Intl.LocalesArgument`. There `Intl` names nothing and the last segment is
-// what resolves.
+// A qualified reference contributes both ends. The head is what an import
+// normally brings into scope, and the last segment matters where namespace
+// flattening left the head naming nothing: `namespace Intl { type
+// LocalesArgument }` becomes a top-level `LocalesArgument` while references
+// still read `Intl.LocalesArgument`.
 func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	c.enterFuncTypeParams(t)
-	// `typeof X` names the value X, which a package declares and an importer has
-	// to reach the same way it reaches a type.
+	// `typeof X` names a value a package declares, reached the way a type is.
 	if typeOf, ok := t.(*ast.TypeOfTypeAnn); ok {
 		if name, ok := headIdent(typeOf.Value); ok {
 			if _, shadowed := c.bound[name]; !shadowed {
@@ -130,8 +123,7 @@ func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
 	return true
 }
 
-// enterFuncTypeParams binds a function type's own parameters over its body, the
-// way a declaration's are bound over its.
+// enterFuncTypeParams binds a function type's own parameters over its body.
 func (c *typeRefCollector) enterFuncTypeParams(t ast.TypeAnn) {
 	if fn, ok := t.(*ast.FuncTypeAnn); ok {
 		c.push(fn.TypeParams)

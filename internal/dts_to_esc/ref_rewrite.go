@@ -111,24 +111,22 @@ type refRewriter struct {
 	// flattenedQualifiers maps the last segment of a qualified reference whose
 	// head names nothing to the binding of the package declaring that segment.
 	// Namespace flattening produces those: `Intl.LocalesArgument` survives with
-	// `LocalesArgument` declared at the top level of `std:intl` and `Intl`
-	// declared nowhere, so the head is replaced rather than prefixed.
+	// `LocalesArgument` at the top level of `std:intl` and `Intl` nowhere, so the
+	// head is replaced rather than prefixed.
 	flattenedQualifiers map[string]string
 	// bound counts the type parameters in scope by name, so a reference to one
 	// takes no qualifier. `std:math` declares a top-level `E`, so
-	// `closest<E: Element = Element>(mut self, selectors: string) -> E | null`
-	// would otherwise return `math.E` and every caller would get that instead of
-	// the subtype it asked for.
+	// `closest<E: Element = Element>(…) -> E | null` would otherwise return
+	// `math.E`.
 	//
-	// Only the qualifier consults it. The readonly twins, the mutable wrap and
-	// the consumed-constructor respell are keyed by names the tree declares, and
-	// the elision substitutes a binder by name deliberately.
+	// Only the qualifier consults it. The other rules are keyed by names the tree
+	// declares, and the elision substitutes a binder by name deliberately.
 	bound map[string]int
 }
 
-// pushTypeParams brings a `<…>` list into scope for the construct that writes
-// it, and popTypeParams takes it back out. A count rather than a flag, so an
-// inner list reusing an outer name restores the outer binding on the way out.
+// pushTypeParams brings a `<…>` list into scope, and popTypeParams takes it back
+// out. A count rather than a flag, so an inner list reusing an outer name
+// restores the outer binding on the way out.
 func (r *refRewriter) pushTypeParams(tps []*ast.TypeParam) {
 	if len(tps) == 0 {
 		return
@@ -429,12 +427,11 @@ func (r *refRewriter) rewrite(t ast.TypeAnn) ast.TypeAnn {
 		}
 		return tt
 	case *ast.FuncTypeAnn:
-		// No elision here. This arm is a function type nested inside another
-		// annotation, most often a callback parameter, and its own parameters are
-		// contravariant there. Widening one narrows what a caller may pass:
-		// `fn <T>(x: T) -> boolean` accepts a `fn (x: string) -> boolean` while
-		// `fn (x: unknown) -> boolean` does not. A signature a declaration owns is
-		// elided in rewriteFuncSig and rewriteFnTypeAnn instead.
+		// No elision here. A function type nested inside another annotation is
+		// contravariant where it sits, so widening its parameters narrows what a
+		// caller may pass: `fn <T>(x: T) -> boolean` accepts a
+		// `fn (x: string) -> boolean` while `fn (x: unknown) -> boolean` does not.
+		// A signature a declaration owns is elided in rewriteFuncSig instead.
 		r.pushTypeParams(tt.TypeParams)
 		defer r.popTypeParams(tt.TypeParams)
 

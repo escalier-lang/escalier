@@ -26,11 +26,10 @@ import (
 //
 // A cycle is permitted inside a tier and refused across one. The browser tier
 // is mutually recursive for real reasons — `web:webgl` takes dom's
-// `HTMLCanvasElement` as a texture source while dom's `getContext` hands back a
-// `WebGLRenderingContext` — so refusing every cycle would refuse the tree. A
-// cycle that crosses a tier is a different thing: it would make a browser
-// declaration reachable from a package claiming to run on Node, so it is
-// refused even though loading it would succeed.
+// `HTMLCanvasElement` while dom's `getContext` hands back a
+// `WebGLRenderingContext` — so refusing every cycle would refuse the tree. One
+// crossing a tier would make a browser declaration reachable from a package
+// claiming to run on Node, so it is refused though loading it would succeed.
 
 // sccSchemes are the schemes a cycle may run through. `node:` is reserved and
 // populated by nothing, so it contributes no packages and no edges.
@@ -49,10 +48,9 @@ func (g PackageGroups) GroupOf(uri string) ([]string, bool) {
 
 // CrossTierCycleError reports a group whose members do not share a tier.
 //
-// The generated tree cannot produce one: `generate` refuses an import edge that
-// goes up a tier, so no cycle it writes can span two. A hand-written stdlib
-// directory can, and this is what stops one from smuggling a browser reference
-// into the portable tier and having it resolve.
+// The generated tree cannot produce one, since `generate` refuses an import
+// edge going up a tier. A hand-written stdlib directory can, and this stops one
+// smuggling a browser reference into the portable tier.
 type CrossTierCycleError struct {
 	// Members are the group's URIs, sorted.
 	Members []string
@@ -124,12 +122,10 @@ func buildPackageGraph(dir string) (map[string][]string, error) {
 
 // readPackageImports returns the pseudo-package URIs one file imports.
 //
-// A parse error is ignored. This pass reads import statements alone, and the
-// same file is parsed again when it actually loads, where an error is reported
-// against the importing statement with its span. An error before the last
-// import can truncate the list and put the file in a smaller group than it
-// belongs to, which changes the shape of the failure rather than hiding it:
-// the file does not load either way.
+// A parse error is ignored, since the same file is parsed again when it loads
+// and the error is reported there with a span. Truncating the import list puts
+// the file in a smaller group than it belongs to, which changes the shape of
+// the failure rather than hiding it.
 func readPackageImports(path string) ([]string, error) {
 	contents, err := os.ReadFile(path)
 	if err != nil {

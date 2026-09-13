@@ -2,10 +2,10 @@
 // from, and a submitter button beside it. Neither exists off the browser, and
 // naming them would put this package in a cycle with the browser tier.
 //
-// The no-argument form is what every runtime has, and it is the one a browser
-// program writes too unless it is populating from a form element. That case
-// loses its constructor, which is the trade the portable form makes. #1586 is
-// where a per-declaration tier would let the browser keep both.
+// The no-argument form is what every runtime has, and what a browser program
+// writes unless it is populating from a form element. That case loses its
+// constructor, which is what the portable form costs. #1586 would let the
+// browser keep both.
 export declare class FormData {
     constructor(mut self),
 }
