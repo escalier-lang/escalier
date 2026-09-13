@@ -318,10 +318,10 @@ func TestReturnValueBorrows(t *testing.T) {
 			want:  nil,
 			types: map[string]string{"f": "fn <'a>(p: &'a mut {value: number}, cond: boolean) -> &'a mut {value: number}"},
 		},
-		// Stripping reaches through a shared borrow of a carrier that itself holds a `&mut`
+		// Stripping reaches through an immutable borrow of a carrier that itself holds a `&mut`
 		// field, so the returned tree owns c as well as a. The owned form is immutable, like
 		// every stripped return: the caller's binding decides mutability.
-		"SharedBorrowOfAMutableCarrierOwnsImmutably": {
+		"ImmutableBorrowOfAMutableCarrierOwnsImmutably": {
 			src: `
 				fn f() {
 					val mut c = {value: 1}
@@ -552,8 +552,8 @@ func TestConnectedComponentMove(t *testing.T) {
 		},
 		// An acyclic shared graph moves out the same way: a holds `&b`, and b is reachable
 		// only through a. b is reached once, so borrow-stripping rewrites the return to the
-		// owned `{peer: {value: number}}`. Stripping covers shared `&` borrows as well as
-		// `&mut`, and a shared borrow leaves the owned form immutable.
+		// owned `{peer: {value: number}}`. Stripping covers immutable `&` borrows as well as
+		// `&mut`, and an immutable borrow leaves the owned form immutable.
 		"ReturnSharedComponent": {
 			src: `
 				fn build() {
