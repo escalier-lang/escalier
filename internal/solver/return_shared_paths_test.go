@@ -77,7 +77,7 @@ func TestSharedReturnPaths(t *testing.T) {
 		// The second repro in #1263. a.peer and `&mut b` both lead to b. The literal walk reads
 		// an element that is not a written `&mut` as a path that does not write, so a.peer
 		// counts as a reader here even though a holds a mutable borrow of b. Judged on what
-		// a.peer actually is, this pair is two writers and Rule 3 allows it.
+		// a.peer actually is, this pair is two writers and Rule 3 allows it. #1600 covers that.
 		"TupleReachesOneLocalTwice": {
 			src: `
 				fn build() -> [&mut {value: number}, &mut {value: number}] {

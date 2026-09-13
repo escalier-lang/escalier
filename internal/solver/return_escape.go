@@ -298,8 +298,8 @@ func reachableLocals(
 // requirement stands.
 //
 // Two borrows of one local CAN leave together in a single returned value. The move accepts it,
-// and ownedReturnType then declines to re-type it, so both stay borrowed. #1263 covers reporting
-// that.
+// and ownedReturnType then declines to re-type it, so both stay borrowed. Two writers are Rule
+// 3 and check. A writer beside a reader is what reportSharedReturnPaths reports.
 //
 // The external-reference scan reads the same borrow-edge graph the escape check is built on,
 // so it sees every alias the recording sites listed at the top of this file record. An alias
