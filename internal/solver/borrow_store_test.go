@@ -367,9 +367,9 @@ func TestCallStoreEdgePositions(t *testing.T) {
 					"out: &mut {slot: &mut {[key: string]?: &mut {value: number}}}) -> undefined",
 			},
 		},
-		// A shared borrow is stored the way a mutable one is, so the item's local escapes
+		// An immutable borrow is stored the way a mutable one is, so the item's local escapes
 		// through the target just the same.
-		"SharedBorrowArgumentIsStored": {
+		"ImmutableBorrowArgumentIsStored": {
 			src: `
 				declare fn store<'a, 'c>(
 					target: &'c mut {peer: &'a {value: number}},
