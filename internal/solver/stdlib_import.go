@@ -263,11 +263,12 @@ func (e *DuplicateImportFlagError) isSolverError()      {}
 // same subtree is invisible to it. Reaching one takes an explicit import, the
 // rule user code follows.
 func StdlibSource(dir string) ModuleSource {
-	// Each package parses under an id of its own, counted from a base no entry
-	// module reaches. A span carries its source id into provenance and into every
-	// diagnostic built from it, so a package sharing the entry module's ids would
-	// make "declared here" point at an unrelated offset in the user's own file.
-	nextSourceID := stdlibSourceIDBase
+	// The source id each package parses under is handed out by stdlibParses, once
+	// per distinct file content and from a base no entry module reaches. A span
+	// carries its id into provenance and into every diagnostic built from it, so
+	// a package sharing the entry module's ids would make "declared here" point
+	// at an unrelated offset in the user's own file, and two packages sharing one
+	// would make either's read as the other's.
 	return func(uri string) (*ast.Module, string, error) {
 		path, err := resolveStdlibPath(dir, uri)
 		if err != nil {
@@ -277,21 +278,28 @@ func StdlibSource(dir string) ModuleSource {
 		if err != nil {
 			return nil, "", fmt.Errorf("reading %s: %w", path, err)
 		}
-		source := &ast.Source{
-			ID: nextSourceID,
-			// The basename alone, so a package's namespace comes out empty rather
-			// than derived from where the tree happens to sit on disk.
-			Path:     filepath.Base(path),
-			Contents: string(contents),
-		}
-		nextSourceID++
-		module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{source})
-		if len(parseErrs) > 0 {
-			messages := make([]string, 0, len(parseErrs))
-			for _, pe := range parseErrs {
-				messages = append(messages, pe.String())
+		// The basename alone, so a package's namespace comes out empty rather than
+		// derived from where the tree happens to sit on disk. It is half the cache
+		// key for the same reason: it is what the parse records.
+		base := filepath.Base(path)
+		module, err := stdlibParses.get(base, string(contents), func(sourceID int) (*ast.Module, error) {
+			source := &ast.Source{
+				ID:       sourceID,
+				Path:     base,
+				Contents: string(contents),
 			}
-			return nil, "", fmt.Errorf("parse errors in %s: %s", path, strings.Join(messages, "; "))
+			module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{source})
+			if len(parseErrs) > 0 {
+				messages := make([]string, 0, len(parseErrs))
+				for _, pe := range parseErrs {
+					messages = append(messages, pe.String())
+				}
+				return nil, fmt.Errorf("parse errors in %s: %s", path, strings.Join(messages, "; "))
+			}
+			return module, nil
+		})
+		if err != nil {
+			return nil, "", err
 		}
 		return module, path, nil
 	}
