@@ -93,7 +93,6 @@ var webTiers = map[string]Tier{
 	"web:crypto":      TierPortable,
 	"web:performance": TierPortable,
 	"web:websocket":   TierPortable,
-	"web:encoding":    TierPortable,
 	"web:compression": TierPortable,
 
 	"web:dom":            TierBrowser,
