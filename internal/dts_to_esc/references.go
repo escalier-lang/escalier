@@ -1,0 +1,167 @@
+package dts_to_esc
+
+import (
+	"github.com/escalier-lang/escalier/internal/ast"
+	"github.com/escalier-lang/escalier/internal/set"
+)
+
+// references.go collects the type names a module refers to, which is what
+// says which packages it has to import and whether any of those sits above
+// it in the tier order.
+
+// typeRefCollector gathers the head name of every type reference a walk
+// reaches. It is the AST visitor rather than a hand-rolled traversal, so a
+// reference in a slot added later is picked up without a change here.
+type typeRefCollector struct {
+	ast.DefaultVisitor
+	names set.Set[string]
+}
+
+// EnterDecl visits the slots the AST walk does not reach on its own: a type
+// parameter's constraint and default, and a signature's `throws` clause.
+// `Accept` skips all three, so `class Box<T: HTMLElement>` would otherwise
+// name `HTMLElement` with nothing recording it. #1587 covers closing the gap
+// in the walk itself, which is where it belongs.
+//
+// It returns true, so the ordinary walk still runs and the slots it does
+// reach are collected once each. A name recorded twice costs nothing, since
+// the result is a set.
+func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
+	switch d := d.(type) {
+	case *ast.ClassDecl:
+		c.visitTypeParams(d.TypeParams)
+	case *ast.TypeDecl:
+		c.visitTypeParams(d.TypeParams)
+	case *ast.InterfaceDecl:
+		c.visitTypeParams(d.TypeParams)
+	case *ast.EnumDecl:
+		c.visitTypeParams(d.TypeParams)
+	case *ast.FuncDecl:
+		c.visitTypeParams(d.TypeParams)
+		if d.Throws != nil {
+			d.Throws.Accept(c)
+		}
+	}
+	return true
+}
+
+func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
+	for _, tp := range params {
+		if tp.Constraint != nil {
+			tp.Constraint.Accept(c)
+		}
+		if tp.Default != nil {
+			tp.Default.Accept(c)
+		}
+	}
+}
+
+// EnterTypeAnn records a `TypeRefTypeAnn`'s head name and keeps walking, so
+// the arguments of `Foo<Bar>` are collected beside `Foo` itself.
+//
+// A qualified reference contributes its FIRST segment alone. `Intl.Collator`
+// records `Intl`, since that is the name an import has to bring into scope;
+// `Collator` is read off it and belongs to no package on its own.
+func (c *typeRefCollector) EnterTypeAnn(t ast.TypeAnn) bool {
+	ref, ok := t.(*ast.TypeRefTypeAnn)
+	if !ok {
+		return true
+	}
+	if name, ok := headIdent(ref.Name); ok {
+		c.names.Add(name)
+	}
+	return true
+}
+
+// headIdent returns the leftmost segment of a qualified identifier.
+func headIdent(q ast.QualIdent) (string, bool) {
+	for {
+		switch n := q.(type) {
+		case *ast.Ident:
+			return n.Name, true
+		case *ast.Member:
+			q = n.Left
+		default:
+			return "", false
+		}
+	}
+}
+
+// TypeRefNames returns every type name the module's declarations refer to.
+// A name the module declares itself is included; the caller resolves each
+// name against what every package declares and drops the local ones.
+func TypeRefNames(module *ast.Module) set.Set[string] {
+	c := &typeRefCollector{names: set.NewSet[string]()}
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			decl.Accept(c)
+		}
+		return true
+	})
+	return c.names
+}
+
+// DeclaredNames returns every top-level name the module declares, which is
+// the other half of the reference graph: what a package offers, against what
+// its siblings ask for.
+//
+// A `DeclareModuleDecl` and a `DeclareGlobalDecl` contribute nothing. Neither
+// binds a name a sibling package can refer to.
+func DeclaredNames(module *ast.Module) set.Set[string] {
+	names := set.NewSet[string]()
+	module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {
+		for _, decl := range ns.Decls {
+			addDeclName(names, decl)
+		}
+		return true
+	})
+	return names
+}
+
+func addDeclName(names set.Set[string], decl ast.Decl) {
+	switch d := decl.(type) {
+	case *ast.VarDecl:
+		addPatNames(names, d.Pattern)
+	case *ast.FuncDecl:
+		names.Add(d.Name.Name)
+	case *ast.TypeDecl:
+		names.Add(d.Name.Name)
+	case *ast.InterfaceDecl:
+		names.Add(d.Name.Name)
+	case *ast.EnumDecl:
+		names.Add(d.Name.Name)
+	case *ast.ClassDecl:
+		names.Add(d.Name.Name)
+	case *ast.NamespaceDecl:
+		// The namespace's own name is what a sibling refers to. Its members are
+		// read off it and are not top-level names of their own.
+		names.Add(d.Name.Name)
+	}
+}
+
+// addPatNames records the identifiers a `val` or `var` pattern binds. The
+// generated tree writes a bare name, and a destructuring pattern is handled
+// so a hand-authored package cannot slip a binding past the graph.
+func addPatNames(names set.Set[string], pat ast.Pat) {
+	switch p := pat.(type) {
+	case *ast.IdentPat:
+		names.Add(p.Name)
+	case *ast.TuplePat:
+		for _, elem := range p.Elems {
+			addPatNames(names, elem)
+		}
+	case *ast.ObjectPat:
+		for _, elem := range p.Elems {
+			switch e := elem.(type) {
+			case *ast.ObjKeyValuePat:
+				addPatNames(names, e.Value)
+			case *ast.ObjShorthandPat:
+				names.Add(e.Key.Name)
+			case *ast.ObjRestPat:
+				addPatNames(names, e.Pattern)
+			}
+		}
+	case *ast.RestPat:
+		addPatNames(names, p.Pattern)
+	}
+}
