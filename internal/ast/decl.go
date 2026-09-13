@@ -533,12 +533,8 @@ func (d *DeclareGlobalDecl) Accept(v Visitor) {
 // DeclNames returns every top-level name a declaration binds, in source order.
 //
 // A `val` or `var` binds one name per leaf of its pattern, so a destructuring
-// declaration contributes several and ForEachLeafBinding is what reads them.
-// Every other kind binds the one name it is declared under, and a declaration
-// the parser left unnamed contributes none.
-//
-// A namespace contributes its own name. Its members are reached through it and
-// are not top-level names of their own.
+// declaration contributes several. Every other kind binds the one name it is
+// declared under, a namespace included, and an unnamed declaration none.
 func DeclNames(decl Decl) []string {
 	switch d := decl.(type) {
 	case *VarDecl:
