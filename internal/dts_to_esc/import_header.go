@@ -13,9 +13,9 @@ import (
 // declarations require, and rewrites every cross-package reference to go
 // through the binding that import makes.
 //
-// A package binds under its own name, so `import "web:core"` binds `core` and
-// `Event` is written `core.Event`. The two halves are one change: an import
-// with unqualified references resolves nothing, and the reverse names nothing.
+// A package binds under its own name, so `import "web:file"` binds `file` and
+// `Blob` is written `file.Blob`. The two halves are one change: an import with
+// unqualified references resolves nothing, and the reverse names nothing.
 
 // preludeURI is the package every scope already holds, so a declaration reaches
 // `Promise` by writing `Promise`. It takes no import and no qualifier, and it
@@ -212,9 +212,12 @@ func setImportHeader(mod *StandaloneModule, targets []string) {
 }
 
 // qualifyCrossPackageRefs rewrites every reference to a name another package
-// declares so it goes through that package's binding, turning `Event` into
-// `core.Event`. A reference already written qualified has its head qualified
+// declares so it goes through that package's binding, turning `Blob` into
+// `file.Blob`. A reference already written qualified has its head qualified
 // instead, and the member rides along.
+//
+// The prelude and `web:core` are skipped, since both bind their exports
+// unprefixed and a qualifier on one would name nothing.
 func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string]string) {
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
