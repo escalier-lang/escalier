@@ -273,25 +273,31 @@ func StdlibSource(dir string) ModuleSource {
 		if err != nil {
 			return nil, "", err
 		}
-		contents, err := os.ReadFile(path)
-		if err != nil {
-			return nil, "", fmt.Errorf("reading %s: %w", path, err)
-		}
-		source := &ast.Source{
-			ID: nextSourceID,
-			// The basename alone, so a package's namespace comes out empty rather
-			// than derived from where the tree happens to sit on disk.
-			Path:     filepath.Base(path),
-			Contents: string(contents),
-		}
-		nextSourceID++
-		module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{source})
-		if len(parseErrs) > 0 {
-			messages := make([]string, 0, len(parseErrs))
-			for _, pe := range parseErrs {
-				messages = append(messages, pe.String())
+		module, err := stdlibParses.get(path, func() (*ast.Module, error) {
+			contents, err := os.ReadFile(path)
+			if err != nil {
+				return nil, fmt.Errorf("reading %s: %w", path, err)
 			}
-			return nil, "", fmt.Errorf("parse errors in %s: %s", path, strings.Join(messages, "; "))
+			source := &ast.Source{
+				ID: nextSourceID,
+				// The basename alone, so a package's namespace comes out empty rather
+				// than derived from where the tree happens to sit on disk.
+				Path:     filepath.Base(path),
+				Contents: string(contents),
+			}
+			nextSourceID++
+			module, parseErrs := parser.ParseLibFiles(context.Background(), []*ast.Source{source})
+			if len(parseErrs) > 0 {
+				messages := make([]string, 0, len(parseErrs))
+				for _, pe := range parseErrs {
+					messages = append(messages, pe.String())
+				}
+				return nil, fmt.Errorf("parse errors in %s: %s", path, strings.Join(messages, "; "))
+			}
+			return module, nil
+		})
+		if err != nil {
+			return nil, "", err
 		}
 		return module, path, nil
 	}
