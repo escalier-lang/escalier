@@ -485,3 +485,98 @@ func TestStdlibImportAliasRenamesTheOnlyBinding(t *testing.T) {
 	_, bare := res.FileScopes[0].values["Shapes"]
 	require.False(t, bare, "the class is not lifted out of its package")
 }
+
+// `web:core` binds its exports under their own names, so an importer writes
+// `Event` rather than `core.Event`. It is the one package on that footing, and
+// it still takes an import, which is what separates it from the prelude.
+func TestCoreImportBindsItsExportsUnprefixed(t *testing.T) {
+	t.Parallel()
+
+	files := map[string]string{
+		"web/core.esc": `
+			export declare class Event { readonly type: string }
+			export type EventInit = { bubbles?: boolean }
+		`,
+	}
+
+	t.Run("AClassReadsWithoutAPrefix", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "web:core"
+			declare val e: Event
+			val t = e.type
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
+	})
+
+	t.Run("ATypeReadsWithoutAPrefix", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "web:core"
+			declare val init: EventInit
+			val b = init.bubbles
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "boolean | undefined", soltype.Print(inferredValueType(t, res.Scope, "b")))
+	})
+
+	t.Run("TheQualifiedSpellingStillWorks", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			import "web:core"
+			declare val e: core.Event
+			val t = e.type
+		`, files)
+
+		require.Empty(t, errorMessagesOf(res.Errors))
+		require.Equal(t, "string", soltype.Print(inferredValueType(t, res.Scope, "t")))
+	})
+
+	t.Run("WithoutTheImportTheBareNameIsUnbound", func(t *testing.T) {
+		res := inferAgainstStdlib(t, `
+			declare val e: Event
+			val t = e.type
+		`, files)
+
+		require.Equal(t, []string{"cannot find type `Event`"}, errorMessagesOf(res.Errors))
+	})
+}
+
+// Every other package keeps its prefix. Only `web:core` binds unprefixed, so a
+// sibling's export is unreachable by its bare name.
+func TestOnlyCoreBindsUnprefixed(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "web:file"
+		declare val b: Blob
+	`, map[string]string{
+		"web/file.esc": `export declare class Blob { readonly size: number }`,
+	})
+
+	require.Equal(t, []string{"cannot find type `Blob`"}, errorMessagesOf(res.Errors))
+}
+
+// A name the importing module declares itself is not displaced. An import binds
+// into the file scope, a CHILD of the module scope, so binding it unguarded
+// would shadow the module's own declaration.
+func TestCoreImportDoesNotShadowAModuleDeclaration(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstStdlib(t, `
+		import "web:core"
+		export declare class Event { readonly mine: number }
+		declare val e: Event
+		val n = e.mine
+	`, map[string]string{
+		"web/core.esc": `export declare class Event { readonly type: string }`,
+	})
+
+	require.Equal(t, []string{
+		"importing \"web:core\" binds Event, which this module already declares; " +
+			"reach the imported one as `core.Event` or rename the declaration",
+	}, errorMessagesOf(res.Errors))
+
+	// The module's own declaration is what the bare name resolves to.
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "n")))
+}

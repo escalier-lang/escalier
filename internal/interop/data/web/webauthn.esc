@@ -35,8 +35,8 @@ export declare interface AuthenticationExtensionsPRFOutputs {
 }
 
 export declare interface AuthenticationExtensionsPRFValues {
-    first: core.BufferSource,
-    second?: core.BufferSource
+    first: BufferSource,
+    second?: BufferSource
 }
 
 export declare interface AuthenticatorSelectionCriteria {
@@ -53,7 +53,7 @@ export declare interface CredentialPropertiesOutput {
 export declare interface PublicKeyCredentialCreationOptions {
     attestation?: AttestationConveyancePreference,
     authenticatorSelection?: AuthenticatorSelectionCriteria,
-    challenge: core.BufferSource,
+    challenge: BufferSource,
     excludeCredentials?: mut Array<PublicKeyCredentialDescriptor>,
     extensions?: AuthenticationExtensionsClientInputs,
     pubKeyCredParams: mut Array<PublicKeyCredentialParameters>,
@@ -76,7 +76,7 @@ export declare interface PublicKeyCredentialCreationOptionsJSON {
 }
 
 export declare interface PublicKeyCredentialDescriptor {
-    id: core.BufferSource,
+    id: BufferSource,
     transports?: mut Array<AuthenticatorTransport>,
     type: PublicKeyCredentialType
 }
@@ -98,7 +98,7 @@ export declare interface PublicKeyCredentialParameters {
 
 export declare interface PublicKeyCredentialRequestOptions {
     allowCredentials?: mut Array<PublicKeyCredentialDescriptor>,
-    challenge: core.BufferSource,
+    challenge: BufferSource,
     extensions?: AuthenticationExtensionsClientInputs,
     rpId?: string,
     timeout?: number,
@@ -121,7 +121,7 @@ export declare interface PublicKeyCredentialRpEntity extends PublicKeyCredential
 
 export declare interface PublicKeyCredentialUserEntity extends PublicKeyCredentialEntity {
     displayName: string,
-    id: core.BufferSource
+    id: BufferSource
 }
 
 export declare interface PublicKeyCredentialUserEntityJSON {

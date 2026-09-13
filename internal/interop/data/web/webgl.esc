@@ -19,7 +19,7 @@ export declare interface WebGLContextAttributes {
     stencil?: boolean
 }
 
-export declare interface WebGLContextEventInit extends core.EventInit {
+export declare interface WebGLContextEventInit extends EventInit {
     statusMessage?: string
 }
 
@@ -1451,10 +1451,10 @@ export declare interface WebGL2RenderingContextBase {
 export declare interface WebGL2RenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
-    bufferData(target: GLenum, srcData: core.AllowSharedBufferSource | null, usage: GLenum) -> unknown,
+    bufferData(target: GLenum, srcData: AllowSharedBufferSource | null, usage: GLenum) -> unknown,
     bufferData(target: GLenum, srcData: typed_arrays.ArrayBufferView, usage: GLenum, srcOffset: number, length?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGL2RenderingContext/bufferSubData) */
-    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: core.AllowSharedBufferSource) -> unknown,
+    bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: AllowSharedBufferSource) -> unknown,
     bufferSubData(target: GLenum, dstByteOffset: GLintptr, srcData: typed_arrays.ArrayBufferView, srcOffset: number, length?: GLuint) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexImage2D) */
     compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, imageSize: GLsizei, offset: GLintptr) -> unknown,
@@ -1558,7 +1558,7 @@ export declare class WebGLBuffer {
  * [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent)
  */
 @js("WebGLContextEvent")
-export declare class WebGLContextEvent extends core.Event {
+export declare class WebGLContextEvent extends Event {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLContextEvent/statusMessage) */
     readonly statusMessage: string,
     static prototype: WebGLContextEvent,
@@ -2504,9 +2504,9 @@ export declare interface WebGLRenderingContextBase {
 export declare interface WebGLRenderingContextOverloads {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/bufferData) */
     bufferData(target: GLenum, size: GLsizeiptr, usage: GLenum) -> unknown,
-    bufferData(target: GLenum, data: core.AllowSharedBufferSource | null, usage: GLenum) -> unknown,
+    bufferData(target: GLenum, data: AllowSharedBufferSource | null, usage: GLenum) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/bufferSubData) */
-    bufferSubData(target: GLenum, offset: GLintptr, data: core.AllowSharedBufferSource) -> unknown,
+    bufferSubData(target: GLenum, offset: GLintptr, data: AllowSharedBufferSource) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexImage2D) */
     compressedTexImage2D(target: GLenum, level: GLint, internalformat: GLenum, width: GLsizei, height: GLsizei, border: GLint, data: typed_arrays.ArrayBufferView) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WebGLRenderingContext/compressedTexSubImage2D) */

@@ -172,6 +172,13 @@ type checker struct {
 	// that cannot succeed yet.
 	activeGroup set.Set[string]
 
+	// moduleDeclared holds the top-level names of the module whose imports are
+	// being bound. Imports bind before the declarations are inferred, so the
+	// module scope cannot answer the question and the AST is what does. The
+	// unprefixed `web:core` binding reads it, to leave a name the module declares
+	// alone rather than shadow it from the nearer file scope.
+	moduleDeclared set.Set[string]
+
 	// prelude is the per-run scope holding the prelude package's exports, built
 	// on first request by preludeScope and shared by the entry module and every
 	// package this run loads. It sits between the process-wide operator table and

@@ -25,6 +25,20 @@ import (
 // inferred while that scope is still empty.
 const preludeURI = "std:prelude"
 
+// coreURI is the package whose exports an importer binds unprefixed.
+//
+// It still takes an import, unlike the prelude, and that is the whole
+// difference between the two. What it shares with the prelude is that a
+// qualifier buys the reader nothing: `core` names no domain, it names what the
+// portable tier needs from the DOM, and `core.Event` says less than `Event`.
+// Twenty-one packages import it, more than any other, so the qualifier would
+// have been the tree's most repeated piece of noise.
+//
+// A package whose name does say something keeps its prefix. `error.RangeError`
+// reads as one of the error classes, so `std:error` is not on this footing and
+// neither is anything else today.
+const coreURI = "web:core"
+
 // declaringPackages maps each top-level name in the converted tree to the URI
 // of the package that declares it.
 //
@@ -81,6 +95,8 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 			if !known || declaredIn == uri || declaredIn == preludeURI {
 				continue
 			}
+			// web:core is imported like any other package. Only its qualifier is
+			// dropped, and the import is what brings its names into scope.
 			needed.Add(declaredIn)
 		}
 		targets := needed.ToSlice()
@@ -226,7 +242,7 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
 		declaredIn, known := owner[name]
-		if !known || declaredIn == uri || declaredIn == preludeURI {
+		if !known || declaredIn == uri || declaredIn == preludeURI || declaredIn == coreURI {
 			continue
 		}
 		qualifiers[name] = ast.DeriveImportName(declaredIn)
