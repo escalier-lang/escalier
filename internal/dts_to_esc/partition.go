@@ -404,7 +404,7 @@ var webPackages = []struct {
 		"EventListenerOrEventListenerObject",
 		"EventListenerOptions", "AddEventListenerOptions",
 		// ProgressEvent is deliberately absent. Node 22 does not define it and
-		// the WinterCG minimum common API does not list it, so it routes to
+		// the WinterTC minimum common API does not list it, so it routes to
 		// web:dom with the rest of the browser surface.
 		// Cancellation, which fetch, streams, and any long-running call
 		// take as a parameter.
@@ -419,7 +419,7 @@ var webPackages = []struct {
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
-		// The message event. The WinterCG minimum common API lists it, and
+		// The message event. The WinterTC minimum common API lists it, and
 		// `web:websocket` types its `message` handler against it. Its `source` and
 		// `ports` members name the browser, and so does the deprecated
 		// `initMessageEvent`. web/core.replace.esc retypes the first two and

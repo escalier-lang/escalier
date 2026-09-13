@@ -1,4 +1,4 @@
-// `MessageEvent` is in the WinterCG minimum common API, so it belongs in the
+// `MessageEvent` is in the WinterTC minimum common API, so it belongs in the
 // core tier. Two of its members name the browser and are retyped here.
 //
 // `MessagePort` could not come with it. It reaches `StructuredSerializeOptions`
