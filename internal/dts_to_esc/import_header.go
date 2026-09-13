@@ -9,43 +9,35 @@ import (
 	"github.com/escalier-lang/escalier/internal/set"
 )
 
-// import_header.go gives each generated package the `import` header its own
+// import_header.go gives each generated package the `import` header its
 // declarations require, and rewrites every cross-package reference to go
 // through the binding that import makes.
 //
 // A package binds under its own name, so `import "web:core"` binds `core` and
-// a reference to `Event` inside another package is written `core.Event`. The
-// header and the qualifier are one change: an import with unqualified
-// references resolves nothing, and a qualifier with no import names nothing.
+// `Event` is written `core.Event`. The two halves are one change: an import
+// with unqualified references resolves nothing, and the reverse names nothing.
 
-// preludeURI is the package every scope already holds. The solver copies its
-// exports into the scope each package's own inference descends from, so a
-// declaration reaches `Promise` by writing `Promise`. It takes no import and no
-// qualifier, and it imports nothing itself: a package it imported would be
-// inferred while that scope is still empty.
+// preludeURI is the package every scope already holds, so a declaration reaches
+// `Promise` by writing `Promise`. It takes no import and no qualifier, and it
+// imports nothing itself, since a package it imported would be inferred while
+// that scope is still empty.
 const preludeURI = "std:prelude"
 
-// coreURI is the package whose exports an importer binds unprefixed.
+// coreURI is the package whose exports an importer binds unprefixed. It still
+// takes an import, which is the whole difference between it and the prelude.
 //
-// It still takes an import, unlike the prelude, and that is the whole
-// difference between the two. What it shares with the prelude is that a
-// qualifier buys the reader nothing: `core` names no domain, it names what the
-// portable tier needs from the DOM, and `core.Event` says less than `Event`.
-// Twenty-one packages import it, more than any other, so the qualifier would
-// have been the tree's most repeated piece of noise.
-//
-// A package whose name does say something keeps its prefix. `error.RangeError`
-// reads as one of the error classes, so `std:error` is not on this footing and
-// neither is anything else today.
+// The qualifier is dropped because `core` names no domain: it names what the
+// portable tier needs from the DOM, and `core.Event` says less than `Event`. A
+// package whose name does say something keeps its prefix, `error.RangeError`
+// being the shape that reads well.
 const coreURI = "web:core"
 
 // declaringPackages maps each top-level name in the converted tree to the URI
-// of the package that declares it.
+// of the package declaring it.
 //
-// A name two packages declare is an error rather than a last-writer-wins
-// choice. The partition rejects a symbol routed twice, so a duplicate here
-// means two packages produced the same name by other means, and every
-// reference to it would resolve by iteration order.
+// A name two packages declare fails rather than resolving by iteration order.
+// The partition already rejects a symbol routed twice, so a duplicate here
+// means two packages produced the same name by other means.
 func declaringPackages(mods map[string]*StandaloneModule) (map[string]string, error) {
 	uris := make([]string, 0, len(mods))
 	for uri := range mods {
@@ -70,11 +62,8 @@ func declaringPackages(mods map[string]*StandaloneModule) (map[string]string, er
 }
 
 // ImportGraph returns, for each package, the sorted URIs it has to import for
-// its own declarations to resolve.
-//
-// The graph is computed from the references the converted declarations make,
-// so it says what the package needs rather than what the `.d.ts` file it came
-// from happened to include.
+// its declarations to resolve. It reads the references the converted
+// declarations make, not what the `.d.ts` file happened to include.
 func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error) {
 	owner, err := declaringPackages(mods)
 	if err != nil {
@@ -85,8 +74,8 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 		needed := set.NewSet[string]()
 		if uri == preludeURI {
 			// The prelude imports nothing. A name it reaches that another package
-			// declares is a routing mistake, since the package holding that name
-			// would be inferred before the prelude scope it needs exists.
+			// declares is a routing mistake, since that package would be inferred
+			// before the prelude scope it needs exists.
 			graph[uri] = nil
 			continue
 		}
@@ -96,7 +85,7 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 				continue
 			}
 			// web:core is imported like any other package. Only its qualifier is
-			// dropped, and the import is what brings its names into scope.
+			// dropped, so it is not skipped the way the prelude is.
 			needed.Add(declaredIn)
 		}
 		targets := needed.ToSlice()
@@ -122,10 +111,8 @@ func (v TierViolation) String() string {
 		v.From, v.FromTier, v.To, v.ToTier, strings.Join(v.Names, ", "))
 }
 
-// CheckTiers returns every import edge that goes up a tier, sorted.
-//
-// Checking direct edges is enough. The tier order is monotone along an edge,
-// so a path cannot rise unless one of its edges does.
+// CheckTiers returns every import edge that goes up a tier, sorted. Direct
+// edges are enough: a path cannot rise unless one of its edges does.
 func CheckTiers(mods map[string]*StandaloneModule, graph map[string][]string) ([]TierViolation, error) {
 	owner, err := declaringPackages(mods)
 	if err != nil {
@@ -171,9 +158,6 @@ func CheckTiers(mods map[string]*StandaloneModule, graph map[string][]string) ([
 
 // AddImportHeaders writes each package's import header and qualifies every
 // reference that header covers.
-//
-// Both halves run over one package before the next, so a reference is
-// qualified against the same graph the header was built from.
 func AddImportHeaders(mods map[string]*StandaloneModule) error {
 	owner, err := declaringPackages(mods)
 	if err != nil {
@@ -195,10 +179,9 @@ func AddImportHeaders(mods map[string]*StandaloneModule) error {
 
 // checkBindingCollisions refuses a header binding two packages under one name.
 //
-// A binding name is the package name with the scheme dropped, so `std:url` and
-// `web:url` both bind `url`. No package in the pinned set imports both, and one
-// that did would emit a header whose second import silently shadowed the first,
-// with every qualified reference reading against whichever won.
+// A binding name drops the scheme, so `std:url` and `web:url` both bind `url`.
+// No package in the pinned set imports both, and one that did would have its
+// second import silently shadow the first.
 func checkBindingCollisions(uri string, targets []string) error {
 	seen := map[string]string{}
 	for _, target := range targets {
@@ -215,11 +198,8 @@ func checkBindingCollisions(uri string, targets []string) error {
 }
 
 // setImportHeader replaces a module's imports with one bare import per URI it
-// depends on, in sorted order.
-//
-// The module carries a single file, so the header lands there. A converted
-// package with no file gets one, since an import statement has nowhere else to
-// live.
+// depends on, in sorted order. A converted module carries a single file, which
+// is where the header lands.
 func setImportHeader(mod *StandaloneModule, targets []string) {
 	imports := make([]*ast.ImportStmt, 0, len(targets))
 	for _, uri := range targets {
@@ -233,11 +213,8 @@ func setImportHeader(mod *StandaloneModule, targets []string) {
 
 // qualifyCrossPackageRefs rewrites every reference to a name another package
 // declares so it goes through that package's binding, turning `Event` into
-// `core.Event`.
-//
-// A reference the tree already writes qualified is left alone. `Intl.Collator`
-// has `Intl` as its head, and `Intl` is a name `std:intl` declares, so the
-// head is what gets qualified and the member rides along.
+// `core.Event`. A reference already written qualified has its head qualified
+// instead, and the member rides along.
 func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string]string) {
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
@@ -250,15 +227,11 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	if len(qualifiers) == 0 {
 		return
 	}
-	// One table serves both rules, since a name resolving to another package is
-	// what each of them looks up. They differ in what they do with it: a
-	// reference resolving through its head is prefixed, and one resolving through
-	// its last segment has its head replaced, which is what a flattened namespace
-	// leaves behind.
-	//
-	// declaredNames is the guard on the second. Only a head naming nothing at all
-	// is replaced, so a local `Ns.Widget` keeps its `Ns` rather than having it
-	// overwritten by whichever package declares `Widget`.
+	// One table serves both rules, which look up the same thing and differ in
+	// what they do with it. A reference resolving through its head is prefixed;
+	// one resolving through its last segment has its head replaced, which is
+	// what namespace flattening leaves behind. declaredNames guards the second,
+	// so a local `Ns.Widget` keeps its `Ns`.
 	rw := &refRewriter{
 		qualifiers:          qualifiers,
 		flattenedQualifiers: qualifiers,
@@ -272,8 +245,8 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	})
 }
 
-// declaredNamesOf is the set of every name the tree declares, which is what
-// says whether a qualified reference's head resolves to something.
+// declaredNamesOf is every name the tree declares, which says whether a
+// qualified reference's head resolves to anything.
 func declaredNamesOf(owner map[string]string) set.Set[string] {
 	names := set.NewSet[string]()
 	for name := range owner {

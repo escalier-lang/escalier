@@ -17,18 +17,14 @@ import (
 // bindFileImports mints a scope per file of module and binds that file's
 // imports into it, returning the scopes keyed by source id.
 //
-// Every file scope is a child of scope, the module scope, so a file sees its
-// own imports first and then every module-level declaration. The declarations
-// are inferred afterwards into the module scope, which the file scopes already
-// point at, so an import and a declaration are both visible to the file's code
-// whatever order they were bound in.
+// Each file scope is a child of the module scope, so a file sees its own
+// imports first and every module-level declaration behind them. The
+// declarations are inferred afterwards into the scope the file scopes already
+// point at, so both are visible whatever order they were bound in.
 func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Scope {
-	// The module's own top-level names, read off the AST rather than the scope.
-	// Imports bind before the declarations are inferred, so the module scope is
-	// still empty here and only the AST says what the module declares. The
-	// unprefixed core binding is what needs it, to leave a name alone rather than
-	// shadow it. Saved and restored, since loading a package runs this same
-	// function for that package.
+	// Read off the AST, since imports bind before the declarations are inferred
+	// and the module scope is still empty. Saved and restored, because loading a
+	// package runs this same function for that package.
 	prevDeclared := c.moduleDeclared
 	c.moduleDeclared = topLevelNames(module)
 	defer func() { c.moduleDeclared = prevDeclared }()
@@ -41,19 +37,15 @@ func (c *checker) bindFileImports(scope *Scope, module *ast.Module) map[int]*Sco
 			c.errs = append(c.errs, c.bindImport(fileScope, stmt)...)
 		}
 	}
-	// Assigned after the loop, not before it. Loading an imported package runs
-	// this same function for that package, and the walk that follows reads
-	// c.fileScopes; each level installs its own once its own imports are bound,
-	// so the innermost load never leaves its map in place of the caller's.
+	// After the loop, not before. Loading an imported package reenters this
+	// function, so assigning early would leave the innermost load's map in place
+	// of this one's.
 	c.fileScopes = fileScopes
 	return fileScopes
 }
 
-// bindImport loads the package an import names and binds it into fileScope.
-//
-// One binding shape: the package becomes a namespace under the name the
-// statement binds it as, which is its alias when it wrote one and a name
-// derived from the specifier otherwise. Members are reached through it.
+// bindImport loads the package an import names and binds it into fileScope as a
+// namespace, under the statement's alias or a name derived from the specifier.
 func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	uri := stmt.PackageName
 	if IsSchemePrefixedImport(uri) {
@@ -61,10 +53,8 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 	}
 	ns, errs := c.loadPackage(uri, stmt.Span())
 	if ns == nil {
-		// Either the load failed, and errs says why, or the URI is being loaded
-		// further up this call chain. A cycle binds nothing and reports nothing:
-		// the importing side is mid-load itself, and its own surface is what the
-		// other side is waiting on.
+		// Either the load failed, and errs says why, or the URI is mid-load further
+		// up this call chain. A cycle binds nothing and reports nothing.
 		return errs
 	}
 
@@ -74,15 +64,13 @@ func (c *checker) bindImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverErr
 
 // bindPseudoPackageImport binds what a `std:` / `web:` / `node:` import names.
 //
-// The URI is validated first and a malformed one binds nothing: there is no
-// package to load, and reporting a second failure from the load would bury the
-// diagnostic that says what to fix.
+// A malformed URI binds nothing, so the load's second failure does not bury the
+// diagnostic saying what to fix.
 //
-// One binding shape, the same one an npm import gets. The package becomes a
-// namespace under the name the statement binds it as, so `import "std:date"`
-// reads `date.Date` and every export of the package is reached the same way. A
-// class is not lifted out of its package, because a binding that mixed a class
-// with its package's other exports would answer to no declaration.
+// The binding is the shape an npm import gets: a namespace, so `import
+// "std:date"` reads `date.Date`. A class is not lifted out of its package,
+// since a binding mixing a class with its package's other exports would answer
+// to no declaration.
 func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt) []SolverError {
 	if errs := validateStdlibImport(stmt); len(errs) > 0 {
 		return errs
@@ -94,9 +82,9 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 		return errs
 	}
 
-	// The name is the statement's, so `as` reaches a pseudo-package the same way
-	// it reaches an npm one. A package name is already lowercase, so an import
-	// with no alias binds what the URI spells.
+	// The statement's name, so `as` reaches a pseudo-package the way it reaches an
+	// npm one. A package name is already lowercase, so a bare import binds what
+	// the URI spells.
 	fileScope.defineNamespace(stmt.LocalName(), ns)
 
 	if uri == coreURI {
@@ -105,26 +93,22 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	return errs
 }
 
-// coreURI is the one package whose exports an importer binds unprefixed.
+// coreURI is the one package whose exports an importer binds unprefixed. It
+// still takes an import, which is the whole difference between it and the
+// prelude.
 //
-// It still takes an import, which is the whole difference between it and the
-// prelude. What it shares with the prelude is that a qualifier buys the reader
-// nothing: `core` names no domain, and `core.Event` says less than `Event`.
-// Twenty-one packages in the generated tree import it, more than any other.
-//
-// A package whose name does say something keeps its prefix.
-// `error.RangeError` reads as one of the error classes.
+// The qualifier is dropped because `core` names no domain, so `core.Event` says
+// less than `Event`. A package whose name does say something keeps its prefix,
+// `error.RangeError` being the shape that reads well.
 const coreURI = "web:core"
 
 // bindCoreExports binds each of the core package's exports into fileScope under
-// its own name, beside the namespace binding that reaches the same members
-// qualified.
+// its own name, beside the namespace binding that reaches them qualified.
 //
-// A name the importing module declares itself wins. An import binds into the
-// file scope, which is a CHILD of the module scope, so an unguarded binding
-// would shadow the module's own declaration — the reverse of what a reader
-// expects, and the reverse of how the prelude behaves, since the prelude's
-// layer is a parent. Reporting the collision beats picking either one.
+// A name the importing module declares itself wins. The file scope is a CHILD
+// of the module scope, so an unguarded binding would shadow the module's own
+// declaration, the reverse of both what a reader expects and how the prelude
+// behaves from its parent layer. Reporting the collision beats picking either.
 func (c *checker) bindCoreExports(fileScope *Scope, ns *Namespace, stmt *ast.ImportStmt) []SolverError {
 	var errs []SolverError
 	shadowed := set.NewSet[string]()
@@ -180,12 +164,8 @@ type declaredNames struct {
 }
 
 // topLevelNames returns every name a module declares at its top level, exported
-// or not, under the namespace it occupies. An unexported declaration still
-// occupies the name in its own module.
-//
-// A class occupies both: its name is the constructor value and the instance
-// type. A `val` or `fn` is a value alone, and a `type`, `interface` or `enum` is
-// a type alone.
+// or not, under the namespace it occupies. A class occupies both, since its name
+// is the constructor value and the instance type.
 func topLevelNames(module *ast.Module) declaredNames {
 	declared := declaredNames{values: set.NewSet[string](), types: set.NewSet[string]()}
 	module.Namespaces.Scan(func(nsPath string, ns *ast.Namespace) bool {
@@ -216,9 +196,8 @@ func topLevelNames(module *ast.Module) declaredNames {
 // unprefixed that the importing module already declares.
 type CoreImportShadowsDeclarationError struct {
 	Name string
-	// Binding is the name the import statement binds the package under, which is
-	// its alias when it wrote one. The remediation spells the qualified form with
-	// it, so `import "web:core" as dom` is told to write `dom.Event`.
+	// Binding is the name the import statement binds the package under, its alias
+	// when it wrote one, so the remediation spells a qualified form that resolves.
 	Binding string
 	span    ast.Span
 }
