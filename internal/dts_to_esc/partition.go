@@ -433,12 +433,10 @@ var webPackages = []struct {
 		"TextEncoder", "TextEncoderCommon", "TextEncoderEncodeIntoResult",
 		"TextDecoder", "TextDecoderCommon", "TextDecoderOptions",
 		"TextDecodeOptions",
-		// The message event. The WinterTC minimum common API lists it, and
-		// `web:websocket` types its `message` handler against it. Its `source` and
-		// `ports` members name the browser, and so does the deprecated
-		// `initMessageEvent`. web/core.replace.esc retypes the first two and
-		// web/core.drop.esc removes the third. See there for why `MessagePort`
-		// could not come along.
+		// The message event, which the WinterTC minimum common API lists.
+		// `source` and `ports` name the browser and web/core.replace.esc
+		// retypes them; the deprecated `initMessageEvent` does too and
+		// web/core.drop.esc removes it.
 		"MessageEvent", "MessageEventInit",
 	}},
 	{"web:fetch", "web/fetch.esc", []string{
@@ -792,18 +790,14 @@ var webPackages = []struct {
 	{"web:file", "web/file.esc", []string{
 		"Blob", "BlobPropertyBag", "BlobPart", "EndingType",
 		"File", "FilePropertyBag",
-		// FormData holds files, and both `Blob` and `File` are here, so this is
-		// the one portable package it can sit in without naming another. MDN
-		// files it under XMLHttpRequest, but the tier asks which runtimes have
-		// it rather than which specification introduced it. `web:fetch` returns
-		// one from `Body.formData`, so a FormData in `web:dom` would put a
-		// portable package in a cycle with the browser tier.
-		//
-		// Its constructor takes an `HTMLFormElement` upstream, which no portable
-		// runtime has. web/file.replace.esc gives it the no-argument form.
-		//
-		// FormDataIterator comes along. FormData's `entries`, `keys` and
-		// `values` each return one, and it names only prelude types.
+		// FormData holds files, and both `Blob` and `File` are here, so this
+		// is the one portable package it can sit in without naming another.
+		// MDN files it under XMLHttpRequest, but the tier asks which runtimes
+		// have it, and `web:fetch` returns one from `Body.formData`, so a
+		// FormData in `web:dom` would cycle across two tiers.
+		// web/file.replace.esc drops the `HTMLFormElement` constructor no
+		// portable runtime has. FormDataIterator comes along, since `entries`,
+		// `keys` and `values` each return one.
 		"FormData", "FormDataEntryValue", "FormDataIterator",
 		// FileList and FileReader belong to the browser tier. Node 22 defines
 		// neither, and FileReader fires the ProgressEvent that `web:core`
@@ -977,11 +971,10 @@ var UnreferencedDOMTypes = set.FromSlice([]string{
 // package recorded here.
 //
 // The routing analysis reads the pinned `.d.ts` statements with only the
-// whole-symbol drops applied, because the per-package overlays are
-// Escalier fragments that fold into the converted tree rather than into
-// the TypeScript one. A name here therefore reads as sole-referred in the
-// analysis and is referenced by nothing outside `web:dom` in the tree the
-// run writes.
+// whole-symbol drops applied, since the per-package overlays are Escalier
+// fragments folding into the converted tree rather than the TypeScript one.
+// A name here therefore reads as sole-referred there and is referenced by
+// nothing outside `web:dom` in the tree the run writes.
 //
 // The referrer is half the key because only that package's overlay answers
 // the references. A TypeScript bump that moves the sole reference to
