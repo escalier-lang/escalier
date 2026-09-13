@@ -3,7 +3,6 @@
 // derived facts, and the overlay. Change one of those and re-run.
 
 import "std:object"
-import "std:prelude"
 import "web:dom"
 import "web:file"
 
@@ -81,7 +80,7 @@ export declare class URLSearchParams {
      *
      * [MDN Reference](https://developer.mozilla.org/docs/Web/API/URLSearchParams/getAll)
      */
-    getAll(self, name: string) -> mut prelude.Array<string>,
+    getAll(self, name: string) -> mut Array<string>,
     /**
      * Returns a Boolean indicating if such a search parameter exists.
      *
@@ -107,9 +106,9 @@ export declare class URLSearchParams {
     /** Returns a list of values in the search params. */
     values(self) -> URLSearchParamsIterator<string>,
     static prototype: URLSearchParams,
-    constructor(mut self, init?: mut prelude.Array<mut prelude.Array<string>> | object.Record<string, string> | string | URLSearchParams)
+    constructor(mut self, init?: mut Array<mut Array<string>> | object.Record<string, string> | string | URLSearchParams)
 }
 
-export declare interface URLSearchParamsIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
+export declare interface URLSearchParamsIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> URLSearchParamsIterator<T>
 }

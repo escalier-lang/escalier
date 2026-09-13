@@ -2,9 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:iterator"
-import "std:math"
-
 @js("Array")
 export declare class Array<T> {
     /**
@@ -405,8 +402,8 @@ export declare class Array<T> {
 export declare interface Generator<T = unknown, TReturn = any, TNext = any, E = never> extends IteratorObject<T, TReturn, TNext> {
     next(...value: [] | [TNext]) -> iterator.IteratorResult<T, TReturn>,
     return(value: TReturn) -> iterator.IteratorResult<T, TReturn>,
-    throw(e: math.E) -> iterator.IteratorResult<T, TReturn>,
-    [Symbol.iterator]() -> Generator<T, TReturn, TNext, math.E>
+    throw(e: E) -> iterator.IteratorResult<T, TReturn>,
+    [Symbol.iterator]() -> Generator<T, TReturn, TNext, E>
 }
 
 @js("Iterator")
@@ -532,21 +529,21 @@ export declare class Promise<T, E = never> {
      * @param onfinally The callback to execute when the Promise is settled (fulfilled or rejected).
      * @returns A Promise for the completion of the callback.
      */
-    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, math.E | F>,
+    finally<F = never>(self, onfinally: fn () -> unknown throws F) -> Promise<T, E | F>,
     /**
      * Attaches callbacks for the resolution and/or rejection of the Promise.
      * @param onfulfilled The callback to execute when the Promise is resolved.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of which ever callback is executed.
      */
-    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, math.E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: math.E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
+    then<TResult1 = T, F = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> Promise<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(self, onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> Promise<TResult1 | TResult2, F | G>,
     /**
      * Attaches a callback for only the rejection of the Promise.
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of the callback.
      */
-    catch<TResult = never, G = never>(self, onrejected: fn (reason: math.E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
+    catch<TResult = never, G = never>(self, onrejected: fn (reason: E) -> TResult | PromiseLike<TResult, G> throws G) -> Promise<T | TResult, G>,
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -571,7 +568,7 @@ export declare class Promise<T, E = never> {
      * a resolve callback used to resolve the promise with a value or the result of another promise,
      * and a reject callback used to reject the promise with a provided reason or error.
      */
-    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: math.E) -> unknown) -> unknown),
+    constructor(mut self, executor: fn (resolve: fn (value: T | PromiseLike<T>) -> unknown, reject: fn (reason?: E) -> unknown) -> unknown),
     /**
      * Creates a Promise that is resolved with an array of results when all of the provided Promises
      * resolve, or rejected when any Promise is rejected.
@@ -593,7 +590,7 @@ export declare class Promise<T, E = never> {
      * @param reason The reason the promise was rejected.
      * @returns A new rejected Promise.
      */
-    static reject<T = never, E = undefined>(reason?: math.E) -> Promise<T, math.E>,
+    static reject<T = never, E = undefined>(reason?: E) -> Promise<T, E>,
     /**
      * Creates a new resolved promise.
      * @returns A resolved promise.
@@ -778,10 +775,10 @@ export declare class Symbol {
 }
 
 export declare interface AsyncGenerator<T = unknown, TReturn = any, TNext = any, E = never> extends AsyncIteratorObject<T, TReturn, TNext> {
-    next(...value: [] | [TNext]) -> Promise<iterator.IteratorResult<T, TReturn>, math.E>,
-    return(value: TReturn | PromiseLike<TReturn, math.E>) -> Promise<iterator.IteratorResult<T, TReturn>, math.E>,
-    throw(e: math.E) -> Promise<iterator.IteratorResult<T, TReturn>, math.E>,
-    [Symbol.asyncIterator]() -> AsyncGenerator<T, TReturn, TNext, math.E>
+    next(...value: [] | [TNext]) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
+    return(value: TReturn | PromiseLike<TReturn, E>) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
+    throw(e: E) -> Promise<iterator.IteratorResult<T, TReturn>, E>,
+    [Symbol.asyncIterator]() -> AsyncGenerator<T, TReturn, TNext, E>
 }
 
 export declare interface AsyncIterator<T, TReturn = any, TNext = any> {
@@ -837,8 +834,8 @@ export declare interface PromiseLike<T, E = never> {
      * @param onrejected The callback to execute when the Promise is rejected.
      * @returns A Promise for the completion of which ever callback is executed.
      */
-    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, math.E | F>,
-    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: math.E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
+    then<TResult1 = T, F = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F) -> PromiseLike<TResult1, E | F>,
+    then<TResult1 = T, TResult2 = never, F = never, G = never>(onfulfilled: fn (value: T) -> TResult1 | PromiseLike<TResult1, F> throws F, onrejected: fn (reason: E) -> TResult2 | PromiseLike<TResult2, G> throws G) -> PromiseLike<TResult1 | TResult2, F | G>
 }
 
 /**

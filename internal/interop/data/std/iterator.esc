@@ -2,11 +2,9 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
-
 export declare interface GeneratorFunction {
-    new (...args: mut prelude.Array<any>) -> prelude.Generator,
-    (...args: mut prelude.Array<any>) -> prelude.Generator,
+    new (...args: mut Array<any>) -> Generator,
+    (...args: mut Array<any>) -> Generator,
     /**
      * The length of the arguments.
      */
@@ -18,13 +16,13 @@ export declare interface GeneratorFunction {
     /**
      * A reference to the prototype.
      */
-    readonly prototype: prelude.Generator,
+    readonly prototype: Generator,
     readonly [Symbol.toStringTag]: string
 }
 
 export declare interface GeneratorFunctionConstructor {
-    new (...args: mut prelude.Array<string>) -> GeneratorFunction,
-    (...args: mut prelude.Array<string>) -> GeneratorFunction,
+    new (...args: mut Array<string>) -> GeneratorFunction,
+    (...args: mut Array<string>) -> GeneratorFunction,
     /**
      * The length of the arguments.
      */
@@ -54,6 +52,6 @@ export declare type IteratorResult<T, TReturn = any> = IteratorYieldResult<T> | 
 /**
  * Describes a user-defined {@link Iterator} that is also iterable.
  */
-export declare interface IterableIterator<T, TReturn = any, TNext = any> extends prelude.Iterator<T, TReturn, TNext> {
+export declare interface IterableIterator<T, TReturn = any, TNext = any> extends Iterator<T, TReturn, TNext> {
     [Symbol.iterator]() -> IterableIterator<T, TReturn, TNext>
 }

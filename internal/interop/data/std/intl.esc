@@ -4,7 +4,6 @@
 
 import "std:date"
 import "std:object"
-import "std:prelude"
 
 /**
  * The `Intl.getCanonicalLocales()` method returns an array containing
@@ -17,7 +16,7 @@ import "std:prelude"
  * @returns An array containing the canonical and validated locale names.
  */
 @js("Intl.getCanonicalLocales")
-export declare fn getCanonicalLocales(locale?: string | prelude.Array<string>) -> mut prelude.Array<string>
+export declare fn getCanonicalLocales(locale?: string | Array<string>) -> mut Array<string>
 
 export declare interface DateTimeFormatPartTypesRegistry {
     day: any,
@@ -44,17 +43,17 @@ export declare interface DateTimeFormatPart {
 
 @js("Intl.DateTimeFormat")
 export declare class DateTimeFormat {
-    formatToParts(mut self, date?: date.Date | number) -> mut prelude.Array<DateTimeFormatPart>,
+    formatToParts(mut self, date?: date.Date | number) -> mut Array<DateTimeFormatPart>,
     formatRange(mut self, startDate: date.Date | number | bigint, endDate: date.Date | number | bigint) -> string,
-    formatRangeToParts(mut self, startDate: date.Date | number | bigint, endDate: date.Date | number | bigint) -> mut prelude.Array<DateTimeRangeFormatPart>,
+    formatRangeToParts(mut self, startDate: date.Date | number | bigint, endDate: date.Date | number | bigint) -> mut Array<DateTimeRangeFormatPart>,
     format(mut self, date?: date.Date | number) -> string,
     resolvedOptions(mut self) -> ResolvedDateTimeFormatOptions,
     constructor(mut self, locales?: LocalesArgument, options?: DateTimeFormatOptions),
     (locales?: LocalesArgument, options?: DateTimeFormatOptions) -> DateTimeFormat,
-    static supportedLocalesOf(locales: LocalesArgument, options?: DateTimeFormatOptions) -> mut prelude.Array<string>,
-    constructor(mut self, locales?: string | mut prelude.Array<string>, options?: DateTimeFormatOptions),
-    (locales?: string | mut prelude.Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
-    static supportedLocalesOf(locales: string | mut prelude.Array<string>, options?: DateTimeFormatOptions) -> mut prelude.Array<string>,
+    static supportedLocalesOf(locales: LocalesArgument, options?: DateTimeFormatOptions) -> mut Array<string>,
+    constructor(mut self, locales?: string | mut Array<string>, options?: DateTimeFormatOptions),
+    (locales?: string | mut Array<string>, options?: DateTimeFormatOptions) -> DateTimeFormat,
+    static supportedLocalesOf(locales: string | mut Array<string>, options?: DateTimeFormatOptions) -> mut Array<string>,
     static readonly prototype: DateTimeFormat
 }
 
@@ -74,7 +73,7 @@ export declare interface PluralRulesOptions {
 
 export declare interface ResolvedPluralRulesOptions {
     locale: string,
-    pluralCategories: mut prelude.Array<LDMLPluralRule>,
+    pluralCategories: mut Array<LDMLPluralRule>,
     type: PluralRuleType,
     minimumIntegerDigits: number,
     minimumFractionDigits: number,
@@ -87,16 +86,16 @@ export declare interface ResolvedPluralRulesOptions {
 export declare class PluralRules {
     resolvedOptions(mut self) -> ResolvedPluralRulesOptions,
     select(mut self, n: number) -> LDMLPluralRule,
-    constructor(mut self, locales?: string | prelude.Array<string>, options?: PluralRulesOptions),
-    (locales?: string | prelude.Array<string>, options?: PluralRulesOptions) -> PluralRules,
-    static supportedLocalesOf(locales: string | prelude.Array<string>, options?: {
+    constructor(mut self, locales?: string | Array<string>, options?: PluralRulesOptions),
+    (locales?: string | Array<string>, options?: PluralRulesOptions) -> PluralRules,
+    static supportedLocalesOf(locales: string | Array<string>, options?: {
         localeMatcher?: "lookup" | "best fit"
-    }) -> mut prelude.Array<string>,
+    }) -> mut Array<string>,
     constructor(mut self, locales?: LocalesArgument, options?: PluralRulesOptions),
     (locales?: LocalesArgument, options?: PluralRulesOptions) -> PluralRules,
     static supportedLocalesOf(locales: LocalesArgument, options?: {
         localeMatcher?: "lookup" | "best fit"
-    }) -> mut prelude.Array<string>
+    }) -> mut Array<string>
 }
 
 export declare interface NumberFormatPartTypeRegistry {
@@ -129,20 +128,20 @@ export declare interface NumberFormatPart {
 
 @js("Intl.NumberFormat")
 export declare class NumberFormat {
-    formatToParts(mut self, number?: number | bigint) -> mut prelude.Array<NumberFormatPart>,
+    formatToParts(mut self, number?: number | bigint) -> mut Array<NumberFormatPart>,
     format(mut self, value: number | bigint) -> string,
     format(mut self, value: number | bigint | StringNumericLiteral) -> string,
-    formatToParts(mut self, value: number | bigint | StringNumericLiteral) -> mut prelude.Array<NumberFormatPart>,
+    formatToParts(mut self, value: number | bigint | StringNumericLiteral) -> mut Array<NumberFormatPart>,
     formatRange(mut self, start: number | bigint | StringNumericLiteral, end: number | bigint | StringNumericLiteral) -> string,
-    formatRangeToParts(mut self, start: number | bigint | StringNumericLiteral, end: number | bigint | StringNumericLiteral) -> mut prelude.Array<NumberRangeFormatPart>,
+    formatRangeToParts(mut self, start: number | bigint | StringNumericLiteral, end: number | bigint | StringNumericLiteral) -> mut Array<NumberRangeFormatPart>,
     format(mut self, value: number) -> string,
     resolvedOptions(mut self) -> ResolvedNumberFormatOptions,
     constructor(mut self, locales?: LocalesArgument, options?: NumberFormatOptions),
     (locales?: LocalesArgument, options?: NumberFormatOptions) -> NumberFormat,
-    static supportedLocalesOf(locales: LocalesArgument, options?: NumberFormatOptions) -> mut prelude.Array<string>,
-    constructor(mut self, locales?: string | mut prelude.Array<string>, options?: NumberFormatOptions),
-    (locales?: string | mut prelude.Array<string>, options?: NumberFormatOptions) -> NumberFormat,
-    static supportedLocalesOf(locales: string | mut prelude.Array<string>, options?: NumberFormatOptions) -> mut prelude.Array<string>,
+    static supportedLocalesOf(locales: LocalesArgument, options?: NumberFormatOptions) -> mut Array<string>,
+    constructor(mut self, locales?: string | mut Array<string>, options?: NumberFormatOptions),
+    (locales?: string | mut Array<string>, options?: NumberFormatOptions) -> NumberFormat,
+    static supportedLocalesOf(locales: string | mut Array<string>, options?: NumberFormatOptions) -> mut Array<string>,
     static readonly prototype: NumberFormat
 }
 
@@ -199,7 +198,7 @@ export declare type RelativeTimeFormatStyle = "long" | "short" | "narrow"
  *
  * See [MDN - Intl - locales argument](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl#locales_argument).
  */
-export declare type LocalesArgument = UnicodeBCP47LocaleIdentifier | Locale | prelude.Array<UnicodeBCP47LocaleIdentifier | Locale> | undefined
+export declare type LocalesArgument = UnicodeBCP47LocaleIdentifier | Locale | Array<UnicodeBCP47LocaleIdentifier | Locale> | undefined
 
 /**
  * An object with some or all of properties of `options` parameter
@@ -283,7 +282,7 @@ export declare class RelativeTimeFormat {
      *
      *  [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/RelativeTimeFormat/formatToParts).
      */
-    formatToParts(mut self, value: number, unit: RelativeTimeFormatUnit) -> mut prelude.Array<RelativeTimeFormatPart>,
+    formatToParts(mut self, value: number, unit: RelativeTimeFormatUnit) -> mut Array<RelativeTimeFormatPart>,
     /**
      * Provides access to the locale and options computed during initialization of this `Intl.RelativeTimeFormat` object.
      *
@@ -323,7 +322,7 @@ export declare class RelativeTimeFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/RelativeTimeFormat/supportedLocalesOf).
      */
-    static supportedLocalesOf(locales?: LocalesArgument, options?: RelativeTimeFormatOptions) -> mut prelude.Array<UnicodeBCP47LocaleIdentifier>
+    static supportedLocalesOf(locales?: LocalesArgument, options?: RelativeTimeFormatOptions) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 export declare interface NumberFormatOptionsStyleRegistry {
@@ -537,7 +536,7 @@ export declare class DisplayNames {
      */
     static supportedLocalesOf(locales?: LocalesArgument, options?: {
         localeMatcher?: RelativeTimeFormatLocaleMatcher
-    }) -> mut prelude.Array<UnicodeBCP47LocaleIdentifier>
+    }) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 export declare interface DateTimeRangeFormatPart extends DateTimeFormatPart {
@@ -621,7 +620,7 @@ export declare class ListFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat/format).
      */
-    format(mut self, list: prelude.Iterable<string>) -> string,
+    format(mut self, list: Iterable<string>) -> string,
     /**
      * Returns an Array of objects representing the different components that can be used to format a list of values in a locale-aware fashion.
      *
@@ -633,7 +632,7 @@ export declare class ListFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat/formatToParts).
      */
-    formatToParts(mut self, list: prelude.Iterable<string>) -> mut prelude.Array<{
+    formatToParts(mut self, list: Iterable<string>) -> mut Array<{
         type: "element" | "literal",
         value: string
     }>,
@@ -678,7 +677,7 @@ export declare class ListFormat {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/ListFormat/supportedLocalesOf).
      */
-    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<ListFormatOptions, "localeMatcher">) -> mut prelude.Array<UnicodeBCP47LocaleIdentifier>
+    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<ListFormatOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 /**
@@ -732,7 +731,7 @@ export declare class Segmenter {
      *
      * [MDN](https://developer.mozilla.org/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter/supportedLocalesOf)
      */
-    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<SegmenterOptions, "localeMatcher">) -> mut prelude.Array<UnicodeBCP47LocaleIdentifier>
+    static supportedLocalesOf(locales: LocalesArgument, options?: object.Pick<SegmenterOptions, "localeMatcher">) -> mut Array<UnicodeBCP47LocaleIdentifier>
 }
 
 export declare interface ResolvedSegmenterOptions {
@@ -740,7 +739,7 @@ export declare interface ResolvedSegmenterOptions {
     granularity: "grapheme" | "word" | "sentence"
 }
 
-export declare interface SegmentIterator<T> extends prelude.IteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
+export declare interface SegmentIterator<T> extends IteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.iterator]() -> SegmentIterator<T>
 }
 
@@ -777,7 +776,7 @@ export declare interface SegmentData {
  * @returns A sorted array of the supported values.
  */
 @js("Intl.supportedValuesOf")
-export declare fn supportedValuesOf(key: "calendar" | "collation" | "currency" | "numberingSystem" | "timeZone" | "unit") -> mut prelude.Array<string>
+export declare fn supportedValuesOf(key: "calendar" | "collation" | "currency" | "numberingSystem" | "timeZone" | "unit") -> mut Array<string>
 
 export declare interface NumberFormatOptionsUseGroupingRegistry {
     min2: never,
@@ -817,10 +816,10 @@ export declare class Collator {
     resolvedOptions(mut self) -> ResolvedCollatorOptions,
     constructor(mut self, locales?: LocalesArgument, options?: CollatorOptions),
     (locales?: LocalesArgument, options?: CollatorOptions) -> Collator,
-    static supportedLocalesOf(locales: LocalesArgument, options?: CollatorOptions) -> mut prelude.Array<string>,
-    constructor(mut self, locales?: string | mut prelude.Array<string>, options?: CollatorOptions),
-    (locales?: string | mut prelude.Array<string>, options?: CollatorOptions) -> Collator,
-    static supportedLocalesOf(locales: string | mut prelude.Array<string>, options?: CollatorOptions) -> mut prelude.Array<string>
+    static supportedLocalesOf(locales: LocalesArgument, options?: CollatorOptions) -> mut Array<string>,
+    constructor(mut self, locales?: string | mut Array<string>, options?: CollatorOptions),
+    (locales?: string | mut Array<string>, options?: CollatorOptions) -> Collator,
+    static supportedLocalesOf(locales: string | mut Array<string>, options?: CollatorOptions) -> mut Array<string>
 }
 
 export declare type NumberFormatOptionsStyle = keyof NumberFormatOptionsStyleRegistry

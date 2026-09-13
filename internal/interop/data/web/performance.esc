@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "web:core"
 import "web:dom"
 
@@ -20,7 +19,7 @@ export declare interface PerformanceMeasureOptions {
 
 export declare interface PerformanceObserverInit {
     buffered?: boolean,
-    entryTypes?: mut prelude.Array<string>,
+    entryTypes?: mut Array<string>,
     type?: string
 }
 
@@ -213,7 +212,7 @@ export declare class PerformanceObserver {
     static prototype: PerformanceObserver,
     constructor(mut self, callback: PerformanceObserverCallback),
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserver/supportedEntryTypes_static) */
-    static readonly supportedEntryTypes: prelude.Array<string>
+    static readonly supportedEntryTypes: Array<string>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceObserverEntryList) */
@@ -276,7 +275,7 @@ export declare class PerformanceResourceTiming extends PerformanceEntry {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/secureConnectionStart) */
     readonly secureConnectionStart: core.DOMHighResTimeStamp,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/serverTiming) */
-    readonly serverTiming: prelude.Array<PerformanceServerTiming>,
+    readonly serverTiming: Array<PerformanceServerTiming>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/transferSize) */
     readonly transferSize: number,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/PerformanceResourceTiming/workerStart) */
@@ -454,6 +453,6 @@ export declare interface PerformanceObserverCallback {
 @js("performance")
 export declare var performance: Performance
 
-export declare type PerformanceEntryList = mut prelude.Array<PerformanceEntry>
+export declare type PerformanceEntryList = mut Array<PerformanceEntry>
 
 export declare type NavigationTimingType = "back_forward" | "navigate" | "prerender" | "reload"

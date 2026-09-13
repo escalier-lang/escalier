@@ -26,10 +26,9 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			want: "m(self, v: string) -> boolean",
 		},
 		{
-			// std:set's difference, the second case #1579 names.
-			name: "AParameterInsideATypeArgumentCounts",
-			src:  `export declare class C<T> { difference<U>(self, other: SetLike<U>) -> C<T> }`,
-			want: "difference(self, other: SetLike<unknown>) -> C<T>",
+			name: "AConstrainedParameterKeepsAWiderConstraint",
+			src:  `export declare class C { m<T: string | number>(self, v: T) -> boolean }`,
+			want: "m(self, v: string | number) -> boolean",
 		},
 		{
 			name: "AnObjectTypeMemberIsRewrittenToo",
@@ -60,6 +59,30 @@ func TestElideVacuousTypeParams(t *testing.T) {
 			name: "ADefaultedParameterStays",
 			src:  `export declare class C { static m<T = any>(entries: Iterable<T>) -> {} }`,
 			want: "static m<T = any>(entries: Iterable<T>) -> {}",
+		},
+		{
+			// std:set's difference. #1579 asks for `ReadonlySetLike<unknown>` here,
+			// which is not sound: `ReadonlySetLike<U>` declares `has(value: U)`, so
+			// `ReadonlySetLike<unknown>` is not a supertype of the
+			// `ReadonlySetLike<string>` a caller passes today.
+			name: "AnOccurrenceInsideATypeArgumentStays",
+			src:  `export declare class C<T> { difference<U>(self, other: SetLike<U>) -> C<T> }`,
+			want: "difference<U>(self, other: SetLike<U>) -> C<T>",
+		},
+		{
+			// A parameter of a callback parameter is contravariant, so widening it
+			// rejects callbacks the generic form accepted.
+			name: "AnOccurrenceInsideACallbackParameterStays",
+			src:  `export declare fn each<T>(cb: fn (x: T) -> undefined) -> undefined`,
+			want: "fn each<T>(cb: fn (x: T) -> undefined) -> undefined",
+		},
+		{
+			// An inner signature rebinding the name contributes an occurrence, so
+			// the outer parameter is left alone rather than having the inner one
+			// rewritten under it.
+			name: "AShadowedNameStays",
+			src:  `export declare fn outer<T>(cb: fn <T>(x: T) -> boolean) -> undefined`,
+			want: "fn outer<T>(cb: fn<T> (x: T) -> boolean) -> undefined",
 		},
 		{
 			name: "AParameterAnotherParameterConstrainsStays",

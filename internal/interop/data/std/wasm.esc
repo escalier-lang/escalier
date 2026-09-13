@@ -5,7 +5,6 @@
 import "std:error"
 import "std:function"
 import "std:object"
-import "std:prelude"
 import "std:typed_arrays"
 import "web:core"
 import "web:fetch"
@@ -59,11 +58,11 @@ export declare class Module {
     static prototype: Module,
     constructor(mut self, bytes: core.BufferSource),
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/customSections_static) */
-    static customSections(moduleObject: Module, sectionName: string) -> mut prelude.Array<typed_arrays.ArrayBuffer>,
+    static customSections(moduleObject: Module, sectionName: string) -> mut Array<typed_arrays.ArrayBuffer>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/exports_static) */
-    static exports(moduleObject: Module) -> mut prelude.Array<ModuleExportDescriptor>,
+    static exports(moduleObject: Module) -> mut Array<ModuleExportDescriptor>,
     /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/Module/imports_static) */
-    static imports(moduleObject: Module) -> mut prelude.Array<ModuleImportDescriptor>
+    static imports(moduleObject: Module) -> mut Array<ModuleImportDescriptor>
 }
 
 @js("WebAssembly.RuntimeError")
@@ -149,22 +148,22 @@ export declare type ValueType = keyof ValueTypeMap
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compile_static) */
 @js("WebAssembly.compile")
-export declare fn compile(bytes: core.BufferSource) -> prelude.Promise<Module>
+export declare fn compile(bytes: core.BufferSource) -> Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/compileStreaming_static) */
 @js("WebAssembly.compileStreaming")
-export declare fn compileStreaming(source: fetch.Response | prelude.PromiseLike<fetch.Response>) -> prelude.Promise<Module>
+export declare fn compileStreaming(source: fetch.Response | PromiseLike<fetch.Response>) -> Promise<Module>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiate_static) */
 @js("WebAssembly.instantiate")
-export declare fn instantiate(bytes: core.BufferSource, importObject?: Imports) -> prelude.Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiate(bytes: core.BufferSource, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 @js("WebAssembly.instantiate")
-export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> prelude.Promise<Instance>
+export declare fn instantiate(moduleObject: Module, importObject?: Imports) -> Promise<Instance>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/instantiateStreaming_static) */
 @js("WebAssembly.instantiateStreaming")
-export declare fn instantiateStreaming(source: fetch.Response | prelude.PromiseLike<fetch.Response>, importObject?: Imports) -> prelude.Promise<WebAssemblyInstantiatedSource>
+export declare fn instantiateStreaming(source: fetch.Response | PromiseLike<fetch.Response>, importObject?: Imports) -> Promise<WebAssemblyInstantiatedSource>
 
 /** [MDN Reference](https://developer.mozilla.org/docs/WebAssembly/JavaScript_interface/validate_static) */
 @js("WebAssembly.validate")

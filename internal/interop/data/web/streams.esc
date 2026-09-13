@@ -2,11 +2,10 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "std:typed_arrays"
 import "web:core"
 
-export declare interface ReadableStreamAsyncIterator<T> extends prelude.AsyncIteratorObject<T, prelude.BuiltinIteratorReturn, unknown> {
+export declare interface ReadableStreamAsyncIterator<T> extends AsyncIteratorObject<T, BuiltinIteratorReturn, unknown> {
     [Symbol.asyncIterator]() -> ReadableStreamAsyncIterator<T>
 }
 
@@ -17,7 +16,7 @@ export declare class ReadableStream<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/cancel) */
-    cancel(mut self, reason?: unknown) -> prelude.Promise<undefined>,
+    cancel(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/getReader) */
     getReader(self, options: {
         mode: "byob"
@@ -27,7 +26,7 @@ export declare class ReadableStream<R = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeThrough) */
     pipeThrough<T>(mut self, transform: ReadableWritablePair<T, R>, options?: StreamPipeOptions) -> ReadableStream<T>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/pipeTo) */
-    pipeTo(mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> prelude.Promise<undefined>,
+    pipeTo(mut self, destination: WritableStream<R>, options?: StreamPipeOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStream/tee) */
     tee(mut self) -> [ReadableStream<R>, ReadableStream<R>],
     static prototype: ReadableStream,
@@ -127,14 +126,14 @@ export declare interface Transformer<I = any, O = any> {
 export declare interface UnderlyingByteSource {
     autoAllocateChunkSize?: number,
     cancel?: UnderlyingSourceCancelCallback,
-    pull?: fn (controller: ReadableByteStreamController) -> undefined | prelude.PromiseLike<undefined>,
+    pull?: fn (controller: ReadableByteStreamController) -> undefined | PromiseLike<undefined>,
     start?: fn (controller: ReadableByteStreamController) -> any,
     type: "bytes"
 }
 
 export declare interface UnderlyingDefaultSource<R = any> {
     cancel?: UnderlyingSourceCancelCallback,
-    pull?: fn (controller: ReadableStreamDefaultController<R>) -> undefined | prelude.PromiseLike<undefined>,
+    pull?: fn (controller: ReadableStreamDefaultController<R>) -> undefined | PromiseLike<undefined>,
     start?: fn (controller: ReadableStreamDefaultController<R>) -> any,
     type?: undefined
 }
@@ -213,7 +212,7 @@ export declare class ReadableByteStreamController {
 @js("ReadableStreamBYOBReader")
 export declare class ReadableStreamBYOBReader extends ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/read) */
-    read<T: typed_arrays.ArrayBufferView>(mut self, view: T) -> prelude.Promise<ReadableStreamReadResult<T>>,
+    read<T: typed_arrays.ArrayBufferView>(mut self, view: T) -> Promise<ReadableStreamReadResult<T>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/releaseLock) */
     releaseLock(mut self) -> unknown,
     static prototype: ReadableStreamBYOBReader,
@@ -252,7 +251,7 @@ export declare class ReadableStreamDefaultController<R = any> {
 @js("ReadableStreamDefaultReader")
 export declare class ReadableStreamDefaultReader<R = any> extends ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/read) */
-    read(mut self) -> prelude.Promise<ReadableStreamReadResult<R>>,
+    read(mut self) -> Promise<ReadableStreamReadResult<R>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamDefaultReader/releaseLock) */
     releaseLock(mut self) -> unknown,
     static prototype: ReadableStreamDefaultReader,
@@ -261,9 +260,9 @@ export declare class ReadableStreamDefaultReader<R = any> extends ReadableStream
 
 export declare interface ReadableStreamGenericReader {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/closed) */
-    readonly closed: prelude.Promise<undefined>,
+    readonly closed: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ReadableStreamBYOBReader/cancel) */
-    cancel(reason?: unknown) -> prelude.Promise<undefined>
+    cancel(reason?: unknown) -> Promise<undefined>
 }
 
 /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/TransformStream) */
@@ -302,9 +301,9 @@ export declare class WritableStream<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/locked) */
     readonly locked: boolean,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/abort) */
-    abort(mut self, reason?: unknown) -> prelude.Promise<undefined>,
+    abort(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/close) */
-    close(mut self) -> prelude.Promise<undefined>,
+    close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStream/getWriter) */
     getWriter(self) -> WritableStreamDefaultWriter<W>,
     static prototype: WritableStream,
@@ -334,19 +333,19 @@ export declare class WritableStreamDefaultController {
 @js("WritableStreamDefaultWriter")
 export declare class WritableStreamDefaultWriter<W = any> {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/closed) */
-    readonly closed: prelude.Promise<undefined>,
+    readonly closed: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/desiredSize) */
     readonly desiredSize: number | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/ready) */
-    readonly ready: prelude.Promise<undefined>,
+    readonly ready: Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/abort) */
-    abort(mut self, reason?: unknown) -> prelude.Promise<undefined>,
+    abort(mut self, reason?: unknown) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/close) */
-    close(mut self) -> prelude.Promise<undefined>,
+    close(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/releaseLock) */
     releaseLock(mut self) -> unknown,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/WritableStreamDefaultWriter/write) */
-    write(mut self, chunk?: W) -> prelude.Promise<undefined>,
+    write(mut self, chunk?: W) -> Promise<undefined>,
     static prototype: WritableStreamDefaultWriter,
     constructor(mut self, stream: WritableStream<W>)
 }
@@ -356,7 +355,7 @@ export declare interface QueuingStrategySize<T = any> {
 }
 
 export declare interface TransformerFlushCallback<O> {
-    (controller: TransformStreamDefaultController<O>) -> undefined | prelude.PromiseLike<undefined>
+    (controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface TransformerStartCallback<O> {
@@ -364,15 +363,15 @@ export declare interface TransformerStartCallback<O> {
 }
 
 export declare interface TransformerTransformCallback<I, O> {
-    (chunk: I, controller: TransformStreamDefaultController<O>) -> undefined | prelude.PromiseLike<undefined>
+    (chunk: I, controller: TransformStreamDefaultController<O>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkAbortCallback {
-    (reason?: any) -> undefined | prelude.PromiseLike<undefined>
+    (reason?: any) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkCloseCallback {
-    () -> undefined | prelude.PromiseLike<undefined>
+    () -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSinkStartCallback {
@@ -380,15 +379,15 @@ export declare interface UnderlyingSinkStartCallback {
 }
 
 export declare interface UnderlyingSinkWriteCallback<W> {
-    (chunk: W, controller: WritableStreamDefaultController) -> undefined | prelude.PromiseLike<undefined>
+    (chunk: W, controller: WritableStreamDefaultController) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourceCancelCallback {
-    (reason?: any) -> undefined | prelude.PromiseLike<undefined>
+    (reason?: any) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourcePullCallback<R> {
-    (controller: ReadableStreamController<R>) -> undefined | prelude.PromiseLike<undefined>
+    (controller: ReadableStreamController<R>) -> undefined | PromiseLike<undefined>
 }
 
 export declare interface UnderlyingSourceStartCallback<R> {

@@ -18,6 +18,13 @@ import (
 // header and the qualifier are one change: an import with unqualified
 // references resolves nothing, and a qualifier with no import names nothing.
 
+// preludeURI is the package every scope already holds. The solver copies its
+// exports into the scope each package's own inference descends from, so a
+// declaration reaches `Promise` by writing `Promise`. It takes no import and no
+// qualifier, and it imports nothing itself: a package it imported would be
+// inferred while that scope is still empty.
+const preludeURI = "std:prelude"
+
 // declaringPackages maps each top-level name in the converted tree to the URI
 // of the package that declares it.
 //
@@ -62,10 +69,19 @@ func ImportGraph(mods map[string]*StandaloneModule) (map[string][]string, error)
 	graph := make(map[string][]string, len(mods))
 	for uri, mod := range mods {
 		needed := set.NewSet[string]()
+		if uri == preludeURI {
+			// The prelude imports nothing. A name it reaches that another package
+			// declares is a routing mistake, since the package holding that name
+			// would be inferred before the prelude scope it needs exists.
+			graph[uri] = nil
+			continue
+		}
 		for _, name := range TypeRefNames(mod.Module).ToSlice() {
-			if declaredIn, known := owner[name]; known && declaredIn != uri {
-				needed.Add(declaredIn)
+			declaredIn, known := owner[name]
+			if !known || declaredIn == uri || declaredIn == preludeURI {
+				continue
 			}
+			needed.Add(declaredIn)
 		}
 		targets := needed.ToSlice()
 		sort.Strings(targets)
@@ -210,7 +226,7 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	qualifiers := map[string]string{}
 	for _, name := range TypeRefNames(mod.Module).ToSlice() {
 		declaredIn, known := owner[name]
-		if !known || declaredIn == uri {
+		if !known || declaredIn == uri || declaredIn == preludeURI {
 			continue
 		}
 		qualifiers[name] = ast.DeriveImportName(declaredIn)
@@ -218,18 +234,18 @@ func qualifyCrossPackageRefs(mod *StandaloneModule, uri string, owner map[string
 	if len(qualifiers) == 0 {
 		return
 	}
-	// A head naming any declaration, this package's own included, keeps it. Only
-	// a head naming nothing at all is replaced, which is what a flattened
-	// namespace leaves behind: `Intl.LocalesArgument` with no `Intl` anywhere.
-	// Without that guard a local `Ns.Widget` would have `Ns` overwritten by
-	// whichever package declares `Widget`.
-	flattened := map[string]string{}
-	for name, qualifier := range qualifiers {
-		flattened[name] = qualifier
-	}
+	// One table serves both rules, since a name resolving to another package is
+	// what each of them looks up. They differ in what they do with it: a
+	// reference resolving through its head is prefixed, and one resolving through
+	// its last segment has its head replaced, which is what a flattened namespace
+	// leaves behind.
+	//
+	// declaredNames is the guard on the second. Only a head naming nothing at all
+	// is replaced, so a local `Ns.Widget` keeps its `Ns` rather than having it
+	// overwritten by whichever package declares `Widget`.
 	rw := &refRewriter{
 		qualifiers:          qualifiers,
-		flattenedQualifiers: flattened,
+		flattenedQualifiers: qualifiers,
 		declaredNames:       declaredNamesOf(owner),
 	}
 	mod.Module.Namespaces.Scan(func(_ string, ns *ast.Namespace) bool {

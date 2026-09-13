@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "web:core"
 import "web:dom"
 import "web:push"
@@ -37,13 +36,13 @@ export declare interface RegistrationOptions {
 @js("NavigationPreloadManager")
 export declare class NavigationPreloadManager {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/disable) */
-    disable(mut self) -> prelude.Promise<undefined>,
+    disable(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/enable) */
-    enable(mut self) -> prelude.Promise<undefined>,
+    enable(mut self) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/getState) */
-    getState(self) -> prelude.Promise<NavigationPreloadState>,
+    getState(self) -> Promise<NavigationPreloadState>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/NavigationPreloadManager/setHeaderValue) */
-    setHeaderValue(mut self, value: string) -> prelude.Promise<undefined>,
+    setHeaderValue(mut self, value: string) -> Promise<undefined>,
     static prototype: NavigationPreloadManager,
     constructor(mut self)
 }
@@ -67,7 +66,7 @@ export declare class ServiceWorker extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/state) */
     readonly state: ServiceWorkerState,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorker/postMessage) */
-    postMessage(mut self, message: unknown, transfer: mut prelude.Array<dom.Transferable>) -> unknown,
+    postMessage(mut self, message: unknown, transfer: mut Array<dom.Transferable>) -> unknown,
     postMessage(mut self, message: unknown, options?: dom.StructuredSerializeOptions) -> unknown,
     addEventListener<K: keyof ServiceWorkerEventMap>(mut self, type: K, listener: fn (this: ServiceWorker, ev: ServiceWorkerEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
@@ -100,13 +99,13 @@ export declare class ServiceWorkerContainer extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/messageerror_event) */
     onmessageerror: (fn (this: ServiceWorkerContainer, ev: dom.MessageEvent) -> any) | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/ready) */
-    readonly ready: prelude.Promise<ServiceWorkerRegistration>,
+    readonly ready: Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistration) */
-    getRegistration(self, clientURL?: string | url.URL) -> prelude.Promise<ServiceWorkerRegistration | undefined>,
+    getRegistration(self, clientURL?: string | url.URL) -> Promise<ServiceWorkerRegistration | undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/getRegistrations) */
-    getRegistrations(self) -> prelude.Promise<prelude.Array<ServiceWorkerRegistration>>,
+    getRegistrations(self) -> Promise<Array<ServiceWorkerRegistration>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/register) */
-    register(mut self, scriptURL: string | url.URL, options?: RegistrationOptions) -> prelude.Promise<ServiceWorkerRegistration>,
+    register(mut self, scriptURL: string | url.URL, options?: RegistrationOptions) -> Promise<ServiceWorkerRegistration>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerContainer/startMessages) */
     startMessages(mut self) -> unknown,
     addEventListener<K: keyof ServiceWorkerContainerEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerContainer, ev: ServiceWorkerContainerEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
@@ -146,13 +145,13 @@ export declare class ServiceWorkerRegistration extends core.EventTarget {
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/waiting) */
     readonly waiting: ServiceWorker | null,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/getNotifications) */
-    getNotifications(self, filter?: GetNotificationOptions) -> prelude.Promise<mut prelude.Array<dom.Notification>>,
+    getNotifications(self, filter?: GetNotificationOptions) -> Promise<mut Array<dom.Notification>>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/showNotification) */
-    showNotification(mut self, title: string, options?: dom.NotificationOptions) -> prelude.Promise<undefined>,
+    showNotification(mut self, title: string, options?: dom.NotificationOptions) -> Promise<undefined>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/unregister) */
-    unregister(mut self) -> prelude.Promise<boolean>,
+    unregister(mut self) -> Promise<boolean>,
     /** [MDN Reference](https://developer.mozilla.org/docs/Web/API/ServiceWorkerRegistration/update) */
-    update(mut self) -> prelude.Promise<undefined>,
+    update(mut self) -> Promise<undefined>,
     addEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | core.AddEventListenerOptions) -> unknown,
     addEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.AddEventListenerOptions) -> unknown,
     removeEventListener<K: keyof ServiceWorkerRegistrationEventMap>(mut self, type: K, listener: fn (this: ServiceWorkerRegistration, ev: ServiceWorkerRegistrationEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,

@@ -2,7 +2,6 @@
 // Its facts come from the pinned lib.*.d.ts set, the ECMA-262
 // derived facts, and the overlay. Change one of those and re-run.
 
-import "std:prelude"
 import "std:typed_arrays"
 import "web:core"
 import "web:dom"
@@ -127,7 +126,7 @@ export declare class WebSocket extends core.EventTarget {
     removeEventListener<K: keyof WebSocketEventMap>(mut self, type: K, listener: fn (this: WebSocket, ev: WebSocketEventMap[K]) -> any, options?: boolean | core.EventListenerOptions) -> unknown,
     removeEventListener(mut self, type: string, listener: core.EventListenerOrEventListenerObject, options?: boolean | core.EventListenerOptions) -> unknown,
     static prototype: WebSocket,
-    constructor(mut self, url: string | url.URL, protocols?: string | mut prelude.Array<string>),
+    constructor(mut self, url: string | url.URL, protocols?: string | mut Array<string>),
     static readonly CONNECTING: 0,
     static readonly OPEN: 1,
     static readonly CLOSING: 2,

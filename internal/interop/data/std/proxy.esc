@@ -4,20 +4,19 @@
 
 import "std:function"
 import "std:object"
-import "std:prelude"
 
 export declare interface ProxyHandler<T: {...}> {
     /**
      * A trap method for a function call.
      * @param target The original callable object which is being proxied.
      */
-    apply?(target: T, thisArg: any, argArray: mut prelude.Array<any>) -> any,
+    apply?(target: T, thisArg: any, argArray: mut Array<any>) -> any,
     /**
      * A trap for the `new` operator.
      * @param target The original object which is being proxied.
      * @param newTarget The constructor that was originally called.
      */
-    construct?(target: T, argArray: mut prelude.Array<any>, newTarget: function.Function) -> {...},
+    construct?(target: T, argArray: mut Array<any>, newTarget: function.Function) -> {...},
     /**
      * A trap for `Object.defineProperty()`.
      * @param target The original object which is being proxied.
@@ -64,7 +63,7 @@ export declare interface ProxyHandler<T: {...}> {
      * A trap for `Reflect.ownKeys()`.
      * @param target The original object which is being proxied.
      */
-    ownKeys?(target: T) -> prelude.ArrayLike<string | symbol>,
+    ownKeys?(target: T) -> ArrayLike<string | symbol>,
     /**
      * A trap for `Object.preventExtensions()`.
      * @param target The original object which is being proxied.
