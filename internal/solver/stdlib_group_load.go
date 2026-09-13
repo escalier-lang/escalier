@@ -93,6 +93,12 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 		return errs
 	}
 
+	// A group spanning tiers is reported at the import that pulled it in, so a
+	// run reaching none of the tree's groups reports nothing and a run reaching
+	// one gets a span to point at. The load carries on: refusing it would report
+	// the violation and then every `import cycle` the grouping exists to prevent.
+	tierErrs := CheckGroupTiers(PackageGroups{group[0]: group}, span)
+
 	module, paths, err := c.groupSource(group)
 	if err != nil {
 		return []SolverError{&UnresolvedPackageError{
@@ -141,14 +147,14 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	}
 
 	if len(errs) > 0 {
-		return []SolverError{&PackageInferenceError{
+		return append(tierErrs, &PackageInferenceError{
 			URI:      strings.Join(group, ", "),
 			Path:     paths[group[0]],
 			Messages: messagesOf(errs),
 			span:     span,
-		}}
+		})
 	}
-	return nil
+	return tierErrs
 }
 
 // sortedGroup returns a copy of group in sorted order, so a diagnostic and a
@@ -185,10 +191,10 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 	// A refused group still loads as a group. Dropping to the single-package
 	// source would report the tier violation and then every `import cycle` the
 	// grouping exists to prevent, burying the one diagnostic that says what to
-	// fix under the cascade it causes.
-	result := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
-	result.Errors = append(result.Errors, CheckGroupTiers(groups, ast.Span{})...)
-	return result
+	// fix under the cascade it causes. loadPackageGroup reports the violation
+	// when it loads such a group, so a module importing none of them sees
+	// nothing.
+	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
 }
 
 // groupKeyURI is the URI a group's declarations register their type keys under.
