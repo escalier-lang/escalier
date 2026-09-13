@@ -1,6 +1,8 @@
 package solver
 
 import (
+	"fmt"
+
 	"github.com/escalier-lang/escalier/internal/ast"
 )
 
@@ -76,11 +78,21 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 
 	uri := stmt.PackageName
 	// A member of the group being inferred right now is already in the module
-	// scope, under the namespace its synthetic path put its declarations in. That
-	// is the same name this import would bind, so binding it again would shadow
-	// live declarations with a registry lookup that cannot succeed until the whole
-	// group publishes.
+	// scope, under the namespace its declarations landed in, which is the name a
+	// bare import of it binds. Binding it again would shadow live declarations
+	// with a registry lookup that cannot succeed until the whole group publishes.
+	//
+	// An `as` clause is refused rather than skipped. A member's declarations are
+	// reached by qualified name — `beta.Beta` — and nothing binds those names
+	// under a second prefix, so an alias would silently resolve nothing. The
+	// generated tree writes bare imports only, so this is a hand-written stdlib
+	// directory being told to drop the alias rather than a gap in the tree.
 	if c.activeGroup.Contains(uri) {
+		if stmt.Alias != "" {
+			return []SolverError{&AliasedCycleImportError{
+				URI: uri, Alias: stmt.Alias, span: stmt.Span(),
+			}}
+		}
 		return nil
 	}
 
@@ -95,3 +107,21 @@ func (c *checker) bindPseudoPackageImport(fileScope *Scope, stmt *ast.ImportStmt
 	fileScope.defineNamespace(stmt.LocalName(), ns)
 	return errs
 }
+
+// AliasedCycleImportError reports an `as` clause on an import naming a sibling
+// in the same cycle.
+type AliasedCycleImportError struct {
+	URI   string
+	Alias string
+	span  ast.Span
+}
+
+func (e *AliasedCycleImportError) Message() string {
+	return fmt.Sprintf(
+		"cannot import %q as %q: the two packages import each other and load as one "+
+			"module, where a sibling is reached by its own name; write the bare import",
+		e.URI, e.Alias)
+}
+func (e *AliasedCycleImportError) Span() ast.Span      { return e.span }
+func (e *AliasedCycleImportError) Related() []ast.Span { return nil }
+func (e *AliasedCycleImportError) isSolverError()      {}

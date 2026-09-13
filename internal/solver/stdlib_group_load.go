@@ -44,13 +44,13 @@ func StdlibGroupSource(dir string) GroupSource {
 			if err != nil {
 				return nil, nil, fmt.Errorf("reading %s: %w", path, err)
 			}
-			_, pkg, _ := splitScheme(uri)
 			paths[uri] = path
 			sources = append(sources, &ast.Source{
 				ID: nextSourceID,
-				// `<pkg>/index.esc`, so the member's declarations land under `<pkg>`
-				// rather than at the top level where they would collide.
-				Path:     filepath.Join(pkg, "index.esc"),
+				// `<namespace>/index.esc`, so the member's declarations land under a
+				// namespace of its own rather than at the top level where two members
+				// would collide.
+				Path:     filepath.Join(groupNamespace(uri), "index.esc"),
 				Contents: string(contents),
 			})
 			nextSourceID++
@@ -87,6 +87,10 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 			Reason: "this inference run was given no group source",
 			span:   span,
 		}}
+	}
+
+	if errs := checkGroupBindings(group, span); len(errs) > 0 {
+		return errs
 	}
 
 	module, paths, err := c.groupSource(group)
@@ -128,8 +132,7 @@ func (c *checker) loadPackageGroup(group []string, span ast.Span) []SolverError 
 	// group registers under the same one.
 	merged := exportedSurface(c.groupKeyURI(group), module, scope)
 	for _, uri := range group {
-		_, pkg, _ := splitScheme(uri)
-		member, held := merged.Nested[pkg]
+		member, held := merged.Nested[groupNamespace(uri)]
 		if !held {
 			member = newNamespace(uri)
 		}
@@ -163,24 +166,29 @@ func sortedGroup(group []string) []string {
 // directory supplies and a bare ModuleSource cannot: the groups that have to
 // load together, and a reader for a whole group at once.
 //
-// A group spanning more than one tier is refused before anything loads, so the
-// diagnostic names the cycle rather than whatever the first member happened to
-// fail on.
+// A group spanning more than one tier is reported, and still loads as a group.
+// Refusing to load it would report the violation and then every `import cycle`
+// the grouping exists to prevent.
 func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 	groups, err := BuildPackageGroups(dir)
 	if err != nil {
+		// The directory could not be scanned, so nothing is known about which
+		// packages cycle. Every package loads alone, which is right for the tree a
+		// readable directory would have held and reports honestly for one that
+		// cycles.
 		result := InferModuleWithSource(module, StdlibSource(dir))
 		result.Errors = append(result.Errors, &UnresolvedPackageError{
 			URI: dir, Reason: err.Error(), span: ast.Span{},
 		})
 		return result
 	}
-	if tierErrs := CheckGroupTiers(groups, ast.Span{}); len(tierErrs) > 0 {
-		result := InferModuleWithSource(module, StdlibSource(dir))
-		result.Errors = append(result.Errors, tierErrs...)
-		return result
-	}
-	return inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
+	// A refused group still loads as a group. Dropping to the single-package
+	// source would report the tier violation and then every `import cycle` the
+	// grouping exists to prevent, burying the one diagnostic that says what to
+	// fix under the cascade it causes.
+	result := inferModuleWithGroups(module, StdlibSource(dir), StdlibGroupSource(dir), groups)
+	result.Errors = append(result.Errors, CheckGroupTiers(groups, ast.Span{})...)
+	return result
 }
 
 // groupKeyURI is the URI a group's declarations register their type keys under.
@@ -190,3 +198,55 @@ func InferModuleAgainstStdlib(module *ast.Module, dir string) *ModuleResult {
 func (c *checker) groupKeyURI(group []string) string {
 	return group[0]
 }
+
+// groupNamespace is the namespace one member's declarations land under inside a
+// merged module.
+//
+// It is the name that member's import binds, because that is what a sibling
+// writes to reach it. A member of `std:beta` reads `beta.Beta` whether it
+// imports the package or shares a group with it, so the merged module has to
+// put beta's declarations under `beta`.
+//
+// Two members deriving one name therefore cannot both be in a group. The scheme
+// is not part of the name, so `std:url` and `web:url` collide, and
+// checkGroupBindings refuses that rather than letting each publish the other's
+// exports.
+func groupNamespace(uri string) string {
+	return ast.DeriveImportName(uri)
+}
+
+// checkGroupBindings refuses a group whose members do not each bind a distinct
+// name. A member reaches a sibling by the name its import binds, so two members
+// sharing one leave every reference to it ambiguous.
+func checkGroupBindings(group []string, span ast.Span) []SolverError {
+	seen := map[string]string{}
+	for _, uri := range group {
+		name := groupNamespace(uri)
+		if first, dup := seen[name]; dup {
+			return []SolverError{&GroupBindingCollisionError{
+				First: first, Second: uri, Binding: name, span: span,
+			}}
+		}
+		seen[name] = uri
+	}
+	return nil
+}
+
+// GroupBindingCollisionError reports two members of one group binding the same
+// name.
+type GroupBindingCollisionError struct {
+	First   string
+	Second  string
+	Binding string
+	span    ast.Span
+}
+
+func (e *GroupBindingCollisionError) Message() string {
+	return fmt.Sprintf(
+		"%s and %s import each other and both bind %q; a member of a cycle reaches a "+
+			"sibling by that name, so the two cannot be told apart",
+		e.First, e.Second, e.Binding)
+}
+func (e *GroupBindingCollisionError) Span() ast.Span      { return e.span }
+func (e *GroupBindingCollisionError) Related() []ast.Span { return nil }
+func (e *GroupBindingCollisionError) isSolverError()      {}

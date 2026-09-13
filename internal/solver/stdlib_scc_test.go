@@ -269,3 +269,101 @@ func TestAGroupPublishesOnlyExportedDeclarations(t *testing.T) {
 		require.NotEmpty(t, errorMessagesOf(res.Errors))
 	})
 }
+
+// A group that reports a diagnostic still binds its surface. Returning nothing
+// would turn one error inside the cycle into an unbound-name error on every
+// reference in the importing file.
+func TestAReportingGroupStillBinds(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val ok = a.fine
+	`, map[string]string{
+		"std/alpha.esc": `
+			import "std:beta"
+			export declare class Alpha {
+				fine: number,
+				broken: Nonexistent,
+				partner: beta.Beta,
+			}
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.Len(t, messages, 1, "only the group's own diagnostic, with no cascade: %v", messages)
+	require.Contains(t, messages[0], "cannot find type `Nonexistent`")
+	// The surface bound anyway, so the reference resolves.
+	require.Equal(t, "number", soltype.Print(inferredValueType(t, res.Scope, "ok")))
+}
+
+// An `as` clause on an import naming a sibling in the same cycle is refused. A
+// member is reached by its own name inside the merged module, so an alias would
+// resolve nothing; saying so beats binding nothing.
+func TestAnAliasedIntraGroupImportIsRefused(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:alpha"
+		declare val a: alpha.Alpha
+		val partner = a.partner
+	`, map[string]string{
+		"std/alpha.esc": `
+			import "std:beta" as b
+			export declare class Alpha { partner: b.Beta }
+		`,
+		"std/beta.esc": `
+			import "std:alpha"
+			export declare class Beta { partner: alpha.Alpha }
+		`,
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.NotEmpty(t, messages)
+	require.Contains(t, messages[0],
+		`cannot import "std:beta" as "b": the two packages import each other and load as `+
+			`one module, where a sibling is reached by its own name; write the bare import`)
+}
+
+// Two members of one group binding the same name are refused. A member reaches
+// a sibling by that name, so the two could not be told apart.
+func TestAGroupWithCollidingBindingsIsRefused(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "std:url"
+		val x = 1
+	`, map[string]string{
+		"std/url.esc": "import \"web:url\"\nexport declare val a: number",
+		"web/url.esc": "import \"std:url\"\nexport declare val b: number",
+	})
+
+	// The pair also spans tiers, since `std:*` is the language tier and `web:url`
+	// is portable, so both diagnostics are correct and both are reported.
+	require.Contains(t, errorMessagesOf(res.Errors),
+		`std:url and web:url import each other and both bind "url"; a member of a cycle `+
+			`reaches a sibling by that name, so the two cannot be told apart`)
+}
+
+// A group spanning tiers is reported once and still loads, so the diagnostic
+// that says what to fix is not buried under the cycle errors it would cause.
+func TestACrossTierGroupReportsOnceAndStillLoads(t *testing.T) {
+	t.Parallel()
+
+	res := inferAgainstCyclicStdlib(t, `
+		import "web:fetch"
+		val x = 1
+	`, map[string]string{
+		"web/fetch.esc": "import \"web:dom\"\nexport declare val a: number",
+		"web/dom.esc":   "import \"web:fetch\"\nexport declare val b: number",
+	})
+
+	messages := errorMessagesOf(res.Errors)
+	require.Len(t, messages, 1, "one diagnostic, with no cycle cascade: %v", messages)
+	require.Contains(t, messages[0], "import cycle spans more than one runtime tier")
+}
