@@ -65,43 +65,28 @@ func (c *typeRefCollector) ExitTypeAnn(t ast.TypeAnn) {
 	}
 }
 
-// EnterDecl visits the slots the AST walk does not reach on its own: a type
-// parameter's constraint and default, and a signature's `throws` clause.
-// `Accept` skips all three, so `class Box<T: HTMLElement>` would otherwise
-// name `HTMLElement` with nothing recording it. #1587 covers closing the gap
-// in the walk itself, which is where it belongs.
-//
-// It returns true, so the ordinary walk still runs and the slots it does
-// reach are collected once each. A name recorded twice costs nothing, since
-// the result is a set.
+// EnterDecl brings the declaration's own type parameters into scope for the
+// walk over its body, and returns true so that walk runs.
 func (c *typeRefCollector) EnterDecl(d ast.Decl) bool {
 	c.push(typeParamsOfDecl(d))
-	switch d := d.(type) {
-	case *ast.ClassDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.TypeDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.InterfaceDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.EnumDecl:
-		c.visitTypeParams(d.TypeParams)
-	case *ast.FuncDecl:
-		c.visitTypeParams(d.TypeParams)
-		if d.Throws != nil {
-			d.Throws.Accept(c)
-		}
+	return true
+}
+
+// EnterExpr brings a function expression's own type parameters into scope. A
+// class member holds its signature as a `FuncExpr`, so `class C { m<U>(self, x:
+// U) -> U }` would otherwise read `U` as a name the package has to import. The
+// interface form of the same member is a `FuncTypeAnn` and is bound by
+// enterFuncTypeParams instead.
+func (c *typeRefCollector) EnterExpr(e ast.Expr) bool {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.push(fn.TypeParams)
 	}
 	return true
 }
 
-func (c *typeRefCollector) visitTypeParams(params []*ast.TypeParam) {
-	for _, tp := range params {
-		if tp.Constraint != nil {
-			tp.Constraint.Accept(c)
-		}
-		if tp.Default != nil {
-			tp.Default.Accept(c)
-		}
+func (c *typeRefCollector) ExitExpr(e ast.Expr) {
+	if fn, ok := e.(*ast.FuncExpr); ok {
+		c.pop(fn.TypeParams)
 	}
 }
 

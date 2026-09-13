@@ -11,6 +11,7 @@ type Visitor interface {
 	EnterBlock(b Block) bool
 	EnterClassElem(e ClassElem) bool
 	EnterObjTypeAnnElem(e ObjTypeAnnElem) bool
+	EnterLifetimeAnn(l LifetimeAnnNode) bool
 
 	ExitLit(l Lit)
 	ExitPat(p Pat)
@@ -22,6 +23,7 @@ type Visitor interface {
 	ExitBlock(b Block)
 	ExitClassElem(e ClassElem)
 	ExitObjTypeAnnElem(e ObjTypeAnnElem)
+	ExitLifetimeAnn(l LifetimeAnnNode)
 }
 
 type DefaultVisitor struct{}
@@ -51,3 +53,40 @@ func (v *DefaultVisitor) ExitTypeAnn(t TypeAnn)               {}
 func (v *DefaultVisitor) ExitBlock(b Block)                   {}
 func (v *DefaultVisitor) ExitClassElem(e ClassElem)           {}
 func (v *DefaultVisitor) ExitObjTypeAnnElem(e ObjTypeAnnElem) {}
+
+// EnterLifetimeAnn is offered a lifetime the source writes as a node: the `'a`
+// bound in `<'b: 'a>`, the `'a` in a borrow such as `mut 'a Point`, a lifetime
+// argument such as the `'a` in `Ref<'a, T>`, and a receiver's, as in
+// `mut 'a self`. A binder's own name is a string on the parameter rather than a
+// node, so `<'a>` alone reaches nothing.
+func (v *DefaultVisitor) EnterLifetimeAnn(l LifetimeAnnNode) bool { return true }
+func (v *DefaultVisitor) ExitLifetimeAnn(l LifetimeAnnNode)       {}
+
+// acceptTypeParams visits the constraint and default of each binder in a `<…>`
+// quantifier list. A binder's own name is a string rather than a node, so those
+// two type annotations are the whole of what a type parameter contributes.
+//
+// Every node holding a type-parameter list calls this, so the list is walked
+// one way rather than seven.
+func acceptTypeParams(v Visitor, params []*TypeParam) {
+	for _, tp := range params {
+		if tp.Constraint != nil {
+			tp.Constraint.Accept(v)
+		}
+		if tp.Default != nil {
+			tp.Default.Accept(v)
+		}
+	}
+}
+
+// acceptLifetimeParams visits the bounds of each lifetime binder in a `<…>`
+// quantifier list. In `<'a, 'b: 'a>` the walk reaches the `'a` written as 'b's
+// bound. A binder's own name is a string, so the bounds are the whole of what a
+// lifetime parameter contributes.
+func acceptLifetimeParams(v Visitor, params []*LifetimeParam) {
+	for _, lp := range params {
+		for _, bound := range lp.Bounds {
+			bound.Accept(v)
+		}
+	}
+}

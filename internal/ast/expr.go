@@ -463,18 +463,12 @@ func NewFuncExpr(
 }
 func (e *FuncExpr) Accept(v Visitor) {
 	if v.EnterExpr(e) {
+		acceptLifetimeParams(v, e.LifetimeParams)
+		acceptTypeParams(v, e.TypeParams)
 		for _, param := range e.Params {
 			param.Pattern.Accept(v)
 			if param.TypeAnn != nil {
 				param.TypeAnn.Accept(v)
-			}
-		}
-		for _, tp := range e.TypeParams {
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(v)
-			}
-			if tp.Default != nil {
-				tp.Default.Accept(v)
 			}
 		}
 		if e.Return != nil {

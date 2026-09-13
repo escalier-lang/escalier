@@ -49,6 +49,20 @@ type MethodReceiver struct {
 
 func (r *MethodReceiver) Span() Span { return r.Span_ }
 
+// acceptReceiver visits the lifetime on a `self` receiver, the `'a` in
+// `mut 'a self`. A receiver holds no other node, and a nil one means the
+// member wrote no receiver at all.
+//
+// The receiver sits beside the member's function rather than inside it, so the
+// walk reaches this lifetime before the `<'a>` list that binds it. A visitor
+// scoping lifetimes has to account for that. Moving the receiver into the
+// signature, tracked in #635, would put the two in source order.
+func acceptReceiver(v Visitor, r *MethodReceiver) {
+	if r != nil && r.Lifetime != nil {
+		r.Lifetime.Accept(v)
+	}
+}
+
 // Exported constructor for use in parser
 func NewClassDecl(name *Ident, lifetimeParams []*LifetimeParam, typeParams []*TypeParam, extends *TypeRefTypeAnn, implements []*TypeRefTypeAnn, body []ClassElem, export, declare, final bool, span Span) *ClassDecl {
 	return &ClassDecl{
@@ -82,6 +96,8 @@ func (d *ClassDecl) Span() Span  { return d.span }
 func (d *ClassDecl) Accept(v Visitor) {
 	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	if v.EnterDecl(d) {
+		acceptLifetimeParams(v, d.LifetimeParams)
+		acceptTypeParams(v, d.TypeParams)
 		if d.Extends != nil {
 			d.Extends.Accept(v)
 		}
@@ -142,6 +158,7 @@ func (*MethodElem) IsClassElem() {}
 func (m *MethodElem) Accept(v Visitor) {
 	if v.EnterClassElem(m) {
 		m.Name.Accept(v)
+		acceptReceiver(v, m.Receiver)
 		if m.Fn != nil {
 			m.Fn.Accept(v)
 		}
@@ -166,6 +183,7 @@ func (*GetterElem) IsClassElem() {}
 func (g *GetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(g) {
 		g.Name.Accept(v)
+		acceptReceiver(v, g.Receiver)
 		if g.Fn != nil {
 			g.Fn.Accept(v)
 		}
@@ -195,6 +213,7 @@ type ConstructorElem struct {
 func (*ConstructorElem) IsClassElem() {}
 func (c *ConstructorElem) Accept(v Visitor) {
 	if v.EnterClassElem(c) {
+		acceptReceiver(v, c.Receiver)
 		if c.Fn != nil {
 			c.Fn.Accept(v)
 		}
@@ -219,6 +238,7 @@ func (*SetterElem) IsClassElem() {}
 func (s *SetterElem) Accept(v Visitor) {
 	if v.EnterClassElem(s) {
 		s.Name.Accept(v)
+		acceptReceiver(v, s.Receiver)
 		if s.Fn != nil {
 			s.Fn.Accept(v)
 		}

@@ -194,6 +194,8 @@ func (d *FuncDecl) Accept(v Visitor) {
 	// TODO(#634): traverse d.Decorators once Decorator has Accept.
 	// TODO(#635): once FuncSig has SelfParam, visit it before d.Params.
 	if v.EnterDecl(d) {
+		acceptLifetimeParams(v, d.LifetimeParams)
+		acceptTypeParams(v, d.TypeParams)
 		for _, param := range d.Params {
 			param.Pattern.Accept(v)
 			if param.TypeAnn != nil {
@@ -202,6 +204,9 @@ func (d *FuncDecl) Accept(v Visitor) {
 		}
 		if d.Return != nil {
 			d.Return.Accept(v)
+		}
+		if d.Throws != nil {
+			d.Throws.Accept(v)
 		}
 		if d.Body != nil {
 			d.Body.Accept(v)
@@ -243,8 +248,9 @@ func (d *TypeDecl) Override() bool     { return d.override }
 func (d *TypeDecl) SetOverride(o bool) { d.override = o }
 func (d *TypeDecl) Span() Span         { return d.span }
 func (d *TypeDecl) Accept(v Visitor) {
-	// TODO: visit type params
 	if v.EnterDecl(d) {
+		acceptLifetimeParams(v, d.LifetimeParams)
+		acceptTypeParams(v, d.TypeParams)
 		if d.TypeAnn != nil {
 			d.TypeAnn.Accept(v)
 		}
@@ -289,14 +295,8 @@ func (d *InterfaceDecl) SetOverride(o bool) { d.override = o }
 func (d *InterfaceDecl) Span() Span         { return d.span }
 func (d *InterfaceDecl) Accept(v Visitor) {
 	if v.EnterDecl(d) {
-		for _, tp := range d.TypeParams {
-			if tp.Constraint != nil {
-				tp.Constraint.Accept(v)
-			}
-			if tp.Default != nil {
-				tp.Default.Accept(v)
-			}
-		}
+		acceptLifetimeParams(v, d.LifetimeParams)
+		acceptTypeParams(v, d.TypeParams)
 		for _, ext := range d.Extends {
 			ext.Accept(v)
 		}
@@ -390,8 +390,9 @@ func (d *EnumDecl) Override() bool     { return d.override }
 func (d *EnumDecl) SetOverride(o bool) { d.override = o }
 func (d *EnumDecl) Span() Span         { return d.span }
 func (d *EnumDecl) Accept(v Visitor) {
-	// TODO: visit type params
+	// An enum takes no lifetime parameters, so this walks only the type ones.
 	if v.EnterDecl(d) {
+		acceptTypeParams(v, d.TypeParams)
 		for _, elem := range d.Elems {
 			switch e := elem.(type) {
 			case *EnumVariant:
